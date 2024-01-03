@@ -775,8 +775,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
     // Try to parse *(0,0) as an index reference.
-    size_t depth, index;
     if (succeeded(p.parseOptionalLParen())) {
+      size_t depth, index;
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRParen())
         return failure();

@@ -28,7 +28,7 @@ using namespace M::KGEN::LIT;
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, BlockArgument>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MBValue, XLValue>([&](auto val) -> BlockArgument {
+      .Case<SBValue, SRValue, XBValue, XLValue>([&](auto val) -> BlockArgument {
         if (auto bbArg = dyn_cast<BlockArgument>(Value(val)))
           if (isa<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
             return bbArg;
@@ -49,7 +49,7 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MBValue, XLValue>(
+      .Case<SBValue, SRValue, XBValue, XLValue>(
           [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
       .Default((Operation *)nullptr);
 }

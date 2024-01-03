@@ -168,7 +168,7 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
       auto lifetime = LifetimeUnionAttr::get(
           type1Ref.getContext(),
           {type1Ref.getLifetime(), type2Ref.getLifetime()});
-      return RefType::get(type1Ref.getIsMutable() & type2Ref.getIsMutable(),
+      return RefType::get(type1Ref.getIsMutable() && type2Ref.getIsMutable(),
                           eltType, lifetime);
     }
 

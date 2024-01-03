@@ -395,13 +395,13 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
 # CHECK-SAME: (%a[a]: !lit.ref<mut !StructWithInit, {{.*}}> owned_in_mem,
-# CHECK-SAME:  %b[b]: !kgen.pointer<!StructWithInit> borrow_in_mem)
+# CHECK-SAME:  %b[b]: !lit.ref<mut !StructWithInit, {{.*}}> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
     _ = a.x
-    # CHECK: [[BY:%.*]] = lit.struct.gep %b[y]
-    # CHECK: = pop.load [[BY]]
+    # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
+    # CHECK: = lit.ref.load [[BY]]
     _ = b.y
 
     # It is ok to mutate owned values.
@@ -458,7 +458,7 @@ struct BorrowStruct:
 
 
 # CHECK-LABEL: callerFn
-# CHECK-SAME: (%arg0[arg0]: !kgen.pointer<{{.*}}> borrow_in_mem)
+# CHECK-SAME: (%arg0[arg0]: !lit.ref<{{.*}}> borrow_in_mem)
 fn callerFn(borrowed arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
@@ -516,8 +516,7 @@ fn callNonRegisterDefaultArg():
     # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" var : !lit.ref<mut !MemoryType, *"`anonymous*0"> {isSynthetic}
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
-    # CHECK: %1 = lit.ref.to_pointer %anonymous2A
-    # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%1)
+    # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%anonymous2A)
     defaultArgumentNonRegisterType()
     # CHECK: lit.alias.decl {{.*}}none: none = <apply({{.*}}defaultArgumentNonRegisterType
     # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}value = 1}>
@@ -662,14 +661,14 @@ struct MemStruct:
     alias t = 5
 
 fn variadic_mem_only(*values: MemStruct) -> Int:
-    return __get_address_as_lvalue(values[1]).t
+    return __get_value_from_ref(values[1]).t
 
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<("values": !kgen.variadic<pointer<!MemStruct>> borrow_in_mem) vararg -> !Int> @{{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)",
-    # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])])>
+    # CHECK-SAME: :(!kgen.variadic<!lit.ref<mut !MemStruct, #lit.lifetime>> borrow_in_mem) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])]
     alias b = variadic_mem_only(x, y)
 
 
@@ -898,14 +897,14 @@ struct ValueMem:
 
 # CHECK: lit.func @"__copyinit__(
 # CHECK-SAME:  %self[self]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
-# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> borrow_in_mem, |)
+# CHECK-SAME:  %other[other]: !lit.ref<!ValueMem, {{.*}}> borrow_in_mem, |)
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
-# CHECK-NEXT: %1 = lit.struct.gep %other[a]
-# CHECK-NEXT: %2 = pop.load %1
+# CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
+# CHECK-NEXT: %2 = lit.ref.load %1
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
-# CHECK-NEXT: %4 = lit.struct.gep %other[b]
-# CHECK-NEXT: %5 = pop.load %4
+# CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
+# CHECK-NEXT: %5 = lit.ref.load %4
 # CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%5)
 # CHECK-NEXT: lit.ref.store %6, %3
 # CHECK-NEXT: kgen.param.constant: none
@@ -1000,7 +999,7 @@ struct TraitMember[T: Copyable]:
     # CHECK: lit.func @"__moveinit__
     # CHECK: call_param{{.*}}__copyinit__
 
-# CHECK: lit.func @"notSynthetic{{.*}}"(%self[self]: !kgen.pointer<!NotSynthetic> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"notSynthetic{{.*}}(%self[self]: !lit.ref<mut !NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.func @"__init__{{.*}}isSynthetic
 # CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
@@ -1022,7 +1021,7 @@ async fn coroutine() -> Int:
 
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync:
-    # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !kgen.none
+    # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
         # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:regtype !Int>(%[[CORO]])
@@ -1042,9 +1041,9 @@ fn call_raising_coro():
     let coro = throwing_coroutine()
 
 
-# CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !kgen.none
+# CHECK-LABEL: lit.func @"call_struct_async{{.*}}({{.*}}) async -> !kgen.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async.call[!lit.signature<({{.*}}) async -> !kgen.none>: @{{.*}}](%f)
+    # CHECK-NEXT: lit.async.call[!lit.signature<[1]({{.*}}) async -> !kgen.none>: @{{.*}}](%f)
     _ = f.do_something()
 
 
@@ -1130,7 +1129,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
 
 struct SomeParamStruct[c_param: Int]:
-    # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]({{.*}})"<{{.*}}[a_param]
+    # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]{{.*}}<{{.*}}[a_param]
     fn topLevelParamFn[a_param: Int](self):
         # CHECK: lit.func *"nestedFunction[{{.*}}$int::Int]()"<{{.*}}[b_param]
         @noncapturing
@@ -1289,7 +1288,9 @@ fn refGlobals():
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
-    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
+    # CHECK-NEXT: [[MEM_REF2:%.*]] = builtin.unrealized_conversion_cast [[MEM_REF]]
+    # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = kgen.rebind [[MEM_REF2]]
+    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF_IMM]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)
 

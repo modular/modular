@@ -281,11 +281,11 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         builder, builder.create<ParamConstantOp>(noneAttr), destructor);
     builder.create<HLCF::YieldOp>();
     builder.restoreInsertionPoint(insertionPoint);
-    builder.create<CallSignatureOp>(
-        noneType,
-        builder.create<RefLoadOp>(
-            builder.create<RefStructGEROp>(dtorSelf, dtor)),
-        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), dtorImpl);
+    Value callee = builder.create<RefLoadOp>(
+        builder.create<RefStructGEROp>(dtorSelf, dtor));
+    builder.create<CallSignatureOp>(noneType, callee,
+                                    /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+                                    dtorImpl);
   }
 
   // Populate the copy constructor.
@@ -305,8 +305,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     builder.setInsertionPoint(*returnOps.begin());
     Value copySelf = copyCtr.getBody()->getArgument(0);
     Value copyExisting = copyCtr.getBody()->getArgument(1);
-    Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
-    auto loadedExistingImpl = builder.create<POP::LoadOp>(existingImpl);
+    Value existingImpl = builder.create<RefStructGEROp>(copyExisting, impl);
+    auto loadedExistingImpl = builder.create<RefLoadOp>(existingImpl);
     auto funcPtrRef = builder.create<RefStructGEROp>(copySelf, copy);
     Value refToImpl = builder.create<RefStructGEROp>(copySelf, impl);
     auto loadedFuncPtr = builder.create<RefLoadOp>(funcPtrRef);
@@ -339,11 +339,11 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     return {};
 
   // Add the __call__ Method.
-  Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
-  auto ptrToSelfType = PointerType::get(selfType);
+  ASTType selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
-          ptrToSelfType, ValueInputConvention::BorrowedInMem, signatureType);
+          refToSelfType, ValueInputConvention::BorrowedInMem, signatureType);
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getInputConventions(),
@@ -362,34 +362,38 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
                                    : callMethod.getBody()->getArgument(0);
     SmallVector<Value> arguments;
-    SmallVector<TypedAttr> implicitLifetimes;
     if (hasResultSlot) {
       Value destArg = callMethod.getBody()->getArgument(0);
       arguments.push_back(destArg);
-      implicitLifetimes.push_back(
-          cast<RefType>(destArg.getType()).getLifetime());
     }
 
-    arguments.push_back(builder.create<POP::LoadOp>(
-        builder.create<StructGEPOp>(callSelf, impl)));
+    arguments.push_back(builder.create<RefLoadOp>(
+        builder.create<RefStructGEROp>(callSelf, impl)));
 
     for (unsigned i = 1 + hasResultSlot, e = callMethod.getNumArguments();
          i < e; i++)
       arguments.push_back(callMethod.getBody()->getArgument(i));
 
-    assert(callMemberSignatureType.getValueResults().size() == 1);
-    auto getCallMember =
-        builder.create<StructGEPOp>(PointerType::get(callMemberSignatureType),
-                                    callMember.getNameAttr(), callSelf);
+    auto getCallMember = builder.create<RefStructGEROp>(callSelf, callMember);
+    auto callMemberPtr = builder.create<RefLoadOp>(getCallMember);
+
+    SmallVector<TypedAttr> implicitLifetimes;
+    auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
+    for (auto [arg, conv] :
+         llvm::zip(arguments, calleeSig.getInputConventions()))
+      if (SignatureType::hasAddress(conv))
+        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+
     auto callResult = builder.create<CallSignatureOp>(
-        resultType, builder.create<POP::LoadOp>(getCallMember),
-        implicitLifetimes, arguments);
+        resultType, callMemberPtr, implicitLifetimes, arguments);
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();
   }
   return declOp;
 }
 
+/// Generate a Closure Implementation Struct, a struct that contains the
+/// capture list.
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFnDecl,
     ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig) {
@@ -415,6 +419,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       llvm::make_second_range(captures), [](const Capture &capture) {
         return capture.getValue().getRValueType().mlirType;
       });
+
   SmallVector<Type> paramCaptureListTypes;
   for (ParamDeclRefAttr pc : paramCaptures) {
     // Check for parameter closure captures.
@@ -459,7 +464,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Build the init method. This only needs the captured arguments. Populate the
   // function argument information.
   auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
-  auto implRefType =
+  RefType implRefType =
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true);
 
   // All arguments as positional-only.
@@ -482,12 +487,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     } else {
       initSigConventions.push_back(move ? ValueInputConvention::OwnedInMem
                                         : ValueInputConvention::BorrowedInMem);
-      // TODO(references): make unconditional
-      if (move)
-        initSigTypes.push_back(rvalueType.getRefForArgument(
-            initSigNames.back().str(), /*isMut=*/true));
-      else
-        initSigTypes.push_back(PointerType::get(rvalueType));
+      initSigTypes.push_back(rvalueType.getRefForArgument(
+          initSigNames.back().str(), /*isMut=*/move));
     }
   }
 
@@ -568,7 +569,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     assert(wrapperSig.getInputConvention(0) ==
            ValueInputConvention::ByRefResult);
     callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
-    // wrapperSig.getValueInputs()[0]);
     callConventions.push_back(ValueInputConvention::ByRefResult);
     callNames.push_back(StringAttr::get(ctx));
     callPassingKinds.push_back(PassingKind::PosOnly);
@@ -576,14 +576,15 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
-  auto implPtrType = PointerType::get(structSelfType);
-  callInputTypes.push_back(implPtrType);
+  implRefType = implRefType.getWithMutability(/*isMut=*/false);
+  callInputTypes.push_back(implRefType);
   callConventions.push_back(ValueInputConvention::BorrowedInMem);
   callNames.push_back(StringAttr::get(ctx));
   callPassingKinds.push_back(PassingKind::PosOnly);
 
-  llvm::append_range(callInputTypes,
-                     wrapperSig.getValueInputs().drop_front(hasByRefReturn));
+  llvm::append_range(
+      callInputTypes,
+      nestedFn.getFunctionType().getInputs().drop_front(hasByRefReturn));
   llvm::append_range(
       callConventions,
       wrapperSig.getInputConventions().drop_front(hasByRefReturn));
@@ -637,31 +638,53 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   builder =
       ImplicitLocOpBuilder::atBlockBegin(callFunc.getLoc(), callFunc.getBody());
   Value selfArg = callFunc.getBodyRegion().insertArgument(
-      hasByRefReturn, implPtrType, callFuncLocation);
+      hasByRefReturn, callFunc.getFunctionType().getInput(hasByRefReturn),
+      callFuncLocation);
+
   for (auto fieldDecl : paramClosureCaptureFieldDecls) {
-    Value target = builder.create<StructGEPOp>(selfArg, fieldDecl);
-    target = builder.create<POP::LoadOp>(target);
+    Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+    target = builder.create<RefLoadOp>(target);
     builder.create<CaptureListExpand>(target);
   }
   for (auto [declAndCapture, fieldOp] :
        llvm::zip(captures, normalCaptureFieldDecls)) {
     auto [decl, capture] = declAndCapture;
-    Value target = builder.create<StructGEPOp>(selfArg, fieldOp);
-    // If the rvalue type matches the real type, then it lives in register.
-    if (capture.getValue().getRValueType().isEqualCanon(
-            capture.getValue().getType()))
-      target = builder.create<POP::LoadOp>(target);
+    Value target = builder.create<RefStructGEROp>(selfArg, fieldOp);
+    // If the capture is an SValue then it lives in register.
+    if (capture.getValue().isSValue())
+      target = builder.create<RefLoadOp>(target);
 
+    // If the reference types disagree, the cast to fix the lifetime.
+    // FIXME: This isn't great.  We should really /replace/ the original
+    // lifetimes with the self lifetime.  For example, when rewriting something
+    // like:
+    //      fn outer(a: MemType):
+    //         fn inner():
+    //           use(a)
+    // the capture will use 'a' with its own `a lifetime implicitly generated on
+    // the outer type.  However, after rewriting it to a struct, we get
+    // something like this:
+    //      fn closure(self: CaptureStruct):
+    //        use(self.a)
+    // which now has the lifetime of 'self'.
     Value captureValue = capture.getMlirValue();
-    // FIXME(references): properly capture things as references instead of
-    // capturing by raw pointer.
-    if (isa<RefType>(captureValue.getType())) {
-      target = builder
-                   .create<mlir::UnrealizedConversionCastOp>(
-                       captureValue.getType(), target)
-                   .getResult(0);
+    if (captureValue.getType() != target.getType()) {
+      auto captureType = cast<RefType>(captureValue.getType());
+      auto targetRef = cast<RefType>(target.getType());
+
+      // The lifetime won't be defined in the extracted function, so stub it
+      // out.  The mutability may also differ.
+      assert(isa<ParamDeclRefAttr>(captureType.getLifetime()) &&
+             "FIXME: Doesn't support complex lifetime captures yet");
+      auto expectedLifetime = cast<ParamDeclRefAttr>(captureType.getLifetime());
+
+      builder.create<ParamDeclareOp>(ParamDeclAttr::get(expectedLifetime),
+                                     targetRef.getLifetime());
+      target = builder.create<RebindOp>(captureValue.getType(), target);
     }
 
+    assert(captureValue.getType() == target.getType() &&
+           "Capture body rewrite problem");
     replaceAllUsesInRegionWith(captureValue, target, callFunc.getBodyRegion());
   }
   nestedFn->erase();
@@ -727,6 +750,10 @@ ClosureEmitter::collectTopLevelFunctionTypes(StructDeclOp closureWrapper) {
   return topLevelTypes;
 }
 
+/// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
+/// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to
+/// specify which parameters of the ClosureWrapper should be bound to the
+/// ClosureImpl.
 LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl,
     SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
@@ -846,8 +873,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   for (auto [i, p] : llvm::enumerate(totalInputParams))
     topLevelInputParamRefs.push_back(
         ParamDeclRefAttr::get(topLevelCopyInit.getInputParams()[i]));
-  auto closureImplTopLevelType = PointerType::get(
-      makeClosureImplSelfType(closureImpl, topLevelInputParamRefs));
+  auto closureImplTopLevelType =
+      makeClosureImplSelfType(closureImpl, topLevelInputParamRefs);
+  auto closureImplTopLevelPtrType = PointerType::get(closureImplTopLevelType);
 
   // Populate copy init body.
   {
@@ -861,10 +889,11 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
     // Allocate memory on heap and call copy constructor
-    Value target = allocateHeapMemory(closureImplTopLevelType, builder);
+    Value target = allocateHeapMemory(closureImplTopLevelPtrType, builder);
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelType, body->getArgument(1));
+        closureImplTopLevelPtrType, body->getArgument(1));
 
+    // Copy the existing value into the target.
     ValueDest copyDest(MLValue(target), EC_Assignment);
     ExprEmitter emitter(shared, moduleDecl, builder);
     emitter.emitResult(MBValue(existingPtr), &node, copyDest);
@@ -902,10 +931,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
     // Cast the opaque pointer back to the closure impl type.
     Value implPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelType, body->getArgument(0));
+        closureImplTopLevelPtrType, body->getArgument(0));
     //  TODO(references)
-    auto destTy =
-        RefType::getRefForPointerHACK(closureImplTopLevelType, /*isMut=*/true);
+    auto destTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
+                                                /*isMut=*/true);
     auto castOp =
         builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
             .getResult(0);
@@ -958,27 +987,36 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     bool hasMemoryOnlyResult = closureSignature.hasMemoryOnlyResult();
     Value closureArg = body->getArgument(hasMemoryOnlyResult);
     Value implPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelType, closureArg);
+        closureImplTopLevelPtrType, closureArg);
+
+    // FIXME: Thread a lifetime through correctly.
+    auto destTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
+                                                /*isMut=*/false);
+    implPtr = builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
+                  .getResult(0);
+
     // Call the __call__ on the closure impl.
     assert(closureImpl->hasAttr(callMethodAttr) &&
            "Closure Impls are generated with a __call__ method.");
     SymbolConstantAttr symbol =
         closureImpl->getAttrOfType<SymbolConstantAttr>(callMethodAttr);
     SmallVector<Value> args;
-    SmallVector<TypedAttr> implicitLifetimes;
-    if (hasMemoryOnlyResult) {
-      Value destArg = topLevelCall.getArgument(0);
-      args.push_back(destArg);
-      implicitLifetimes.push_back(
-          cast<RefType>(destArg.getType()).getLifetime());
-    }
+    if (hasMemoryOnlyResult)
+      args.push_back(topLevelCall.getArgument(0));
     args.push_back(implPtr);
-    for (unsigned i = hasMemoryOnlyResult + 1,
+    for (unsigned i = hasMemoryOnlyResult + 1 /*implPtr*/,
                   e = closureSignature.getNumInputs();
          i < e; ++i)
       args.push_back(topLevelCall.getArgument(i));
+
     SymbolConstantAttr typedSymbol =
         createTypedSymbol(symbol, topLevelInputParams);
+
+    SmallVector<TypedAttr> implicitLifetimes;
+    auto finalSig = cast<SignatureType>(typedSymbol.getType());
+    for (auto [arg, conv] : llvm::zip(args, finalSig.getInputConventions()))
+      if (SignatureType::hasAddress(conv))
+        implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
     Value result =
         builder.create<CallOp>(resultType, typedSymbol, implicitLifetimes, args)

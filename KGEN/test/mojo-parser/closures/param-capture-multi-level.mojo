@@ -20,7 +20,7 @@ fn bar[a: Int, b: Int]() -> Int:
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*]]: !lit.signature<() -> !Int>, [[Y:[0-9a-zA-Z_]+]]: {{.*}}Foo<:!Int apply(:!lit.signature<() -> !Int> [[X]])>
-# CHECK: lit.func @"__call__{{.*}}"(
+# CHECK: lit.func @"__call__{{.*}}(
 # CHECK: constant: !Int = <{{.*}} [[X]])> {{.*}} [[Y]], "b">
 fn parameter_capture_multiple_levels[
     a: Int

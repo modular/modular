@@ -19,7 +19,7 @@ fn reference_params_through_imported_struct():
 # CHECK-SAME: lit.ref<mut {{.*}}ParameterizedType<[[X]]>{{.*}}> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK: lit.alias.fwd_decl "{{.*}}fn_type"
-    # CHECK-SAME: signature<<?, index>("x":
-    # CHECK-SAME: "y": !kgen.pointer<{{.*}}ParameterizedType<*(0,0)>
+    # CHECK-SAME: signature<[2]<?, index>("x":
+    # CHECK-SAME: "y": !lit.ref<{{.*}}ParameterizedType<*(0,0)>
     alias fn_type: fn(x: ParameterizedType, y: ParameterizedType[x.value]) -> None
     return x

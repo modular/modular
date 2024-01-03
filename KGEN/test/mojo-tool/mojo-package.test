@@ -17,7 +17,7 @@
 // CHECK: lit.package @"$inner1"
 // CHECK:   lit.file_module @"$myfile"
 // CHECK:     lit.struct.decl @Struct
-// CHECK:       lit.func @"parametric{{.*}}"<{{.*}}>
+// CHECK:       lit.func @"parametric{{.*}}<{{.*}}>
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
 // CHECK:       lit.func @"foo{{.*}}"{{.*}} preCompiledModuleRef = {{.*}}

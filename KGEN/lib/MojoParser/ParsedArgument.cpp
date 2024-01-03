@@ -739,40 +739,33 @@ void DeclResolver::computeArgumentConventions(
       break;
     }
 
-    // Adjust the MLIR type if needed.  Non-register values need to be passed
-    // by pointer/reference.
-    if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
-        arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
-
-      // Values passed by memory need an associated lifetime parameter, and
-      // need to be passed by reference.  Fun fact: explicit ref/mutref
-      // arguments have register conventions, so they won't get these.
-      // TODO(references) turn this on for everything!
-      if (isArgumentPassedWithImplicitLifetime(arg.kgenConvention)) {
-        // Given a memory argument named "foo" we give the implicit lifetime a
-        // name of "`foo".  We do this because of Rust precedent, but also
-        // because you can't spell this identifier in Mojo, even with backticks!
-        StringAttr lifetimeName;
-        if (arg.name) {
-          lifetimeName = declScope.getAnonymousLifetimeFor(
-              arg.name.str(), /*dontRenameOutermost=*/true);
-        } else { // Used by function types, for example.
-          lifetimeName = declScope.getAnonymousLifetimeFor(
-              Twine(llvm::utostr(i)) + "_unnamed",
-              /*dontRenameOutermost=*/true);
-        }
-
-        auto lifetimeDecl =
-            ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
-        implicitLifetimeDecls.push_back(lifetimeDecl);
-
-        bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
-        argType = RefType::get(
-            isMutable, argType,
-            ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
-      } else {
-        argType = PointerType::get(argType);
+    // Values passed by memory need an associated lifetime parameter, and
+    // need to be passed by reference.  Fun fact: explicit ref/mutref
+    // arguments have register conventions, so they won't get these.
+    if (SignatureType::hasAddress(arg.kgenConvention)) {
+      // Given a memory argument named "foo" we give the implicit lifetime a
+      // name of "`foo".  We do this because of Rust precedent, but also
+      // because you can't spell this identifier in Mojo, even with backticks!
+      StringAttr lifetimeName;
+      if (arg.name) {
+        lifetimeName = declScope.getAnonymousLifetimeFor(
+            arg.name.str(), /*dontRenameOutermost=*/true);
+      } else { // Used by function types, for example.
+        lifetimeName = declScope.getAnonymousLifetimeFor(
+            Twine(llvm::utostr(i)) + "_unnamed",
+            /*dontRenameOutermost=*/true);
       }
+
+      auto lifetimeDecl =
+          ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
+      implicitLifetimeDecls.push_back(lifetimeDecl);
+
+      // TODO(references) / Mutability: Borrowed should be immutable.
+      // isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
+      bool isMutable = true;
+      argType = RefType::get(
+          isMutable, argType,
+          ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
     }
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType, AnyRegTypeType::get(ctx));

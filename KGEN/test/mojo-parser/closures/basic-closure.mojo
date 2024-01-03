@@ -33,18 +33,18 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 
 # CHECK-LABEL: lit.func @"__copyinit__(
 # CHECK-SAME:   %self[self]: !lit.ref<{{.*}}> init_self,
-# CHECK-SAME:   %other[other]: !kgen.pointer<{{.*}}> borrow_in_mem
+# CHECK-SAME:   %other[other]: !lit.ref<{{.*}}> borrow_in_mem
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT:   [[V0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:   [[V1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
+# CHECK-NEXT:   [[V1:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[V2:%.*]] = lit.call @{{.*}}__copyinit__{{.*}}([[V0]], [[V1]])
 # CHECK-NEXT:   [[V3:%.*]] = lit.ref.struct.ger %self[field1]
-# CHECK-NEXT:   [[V4:%.*]] = lit.struct.gep %other[field1] : <!Int>
-# CHECK-NEXT:   [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   [[V4:%.*]] = lit.ref.struct.ger %other[field1]
+# CHECK-NEXT:   [[V5:%.*]] = lit.ref.load [[V4]]
 # CHECK-NEXT:   lit.ref.store [[V5]], [[V3]]
 # CHECK-NEXT:   [[V6:%.*]] = lit.ref.struct.ger %self[field2]
-# CHECK-NEXT:   [[V7:%.*]] = lit.struct.gep %other[field2] : <index>
-# CHECK-NEXT:   [[V8:%.*]] = pop.load [[V7]] : !kgen.pointer<index>
+# CHECK-NEXT:   [[V7:%.*]] = lit.ref.struct.ger %other[field2]
+# CHECK-NEXT:   [[V8:%.*]] = lit.ref.load [[V7]]
 # CHECK-NEXT:   lit.ref.store [[V8]], [[V6]]
 # CHECK-NEXT:   [[V9:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.return [[V9]] : !kgen.none

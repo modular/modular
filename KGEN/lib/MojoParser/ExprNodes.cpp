@@ -580,10 +580,19 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       if (!parentDecl)
         return {};
 
+      // TODO(references) switch these to take a ref.
+      // HACK: force convert to reference.
+      auto destRefTy = RefType::getRefForPointerHACK(
+          cast<PointerType>(localDecl.getType()), /*isMut=*/true);
+      localDecl = emitter.builder
+                      ->create<mlir::UnrealizedConversionCastOp>(
+                          functionContainer.getLoc(), destRefTy, localDecl)
+                      .getResult(0);
+
       // Bind the copy to the name.
       emitter.getDeclResolver().addFullyResolvedDecl(
-          DeclIRValue(MBValue(localDecl)), spelling, getLoc(), parentDecl);
-      value = MBValue(localDecl);
+          XBValue(localDecl), spelling, getLoc(), parentDecl);
+      value = XBValue(localDecl);
     }
   }
 
@@ -2566,8 +2575,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   } else if (kind == kUnpack) {
     if (auto pValue = exprRep.getIfPValue()) {
       // There are two distinct cases of unpacking:
-      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0,
-      // *a)`,
+      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
       //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This
       //    is handled with the special function `__iter__`.
       // 2. Unpacking in a type annotation, e.g. `*args: *Ts`, with the result
