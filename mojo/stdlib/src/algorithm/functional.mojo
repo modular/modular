@@ -369,7 +369,7 @@ fn sync_parallelize[
     async fn task_fn(i: Int):
         func_wrapped(i)
 
-    let rt = out_chain.get_runtime()  # Runtime()
+    let rt = Runtime()
     var tasks = TaskGroupTaskList[NoneType](num_work_items - 1)
     var tg = TaskGroup(rt)
     for i in range(num_work_items - 1):
