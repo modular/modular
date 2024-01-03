@@ -161,7 +161,12 @@ fn vectorize[
     func: fn[width: Int] (Int) capturing -> None,
 ](size: Int):
     """Maps a function which is parametrized over a simd_width over a range
-    from 0 to size in simd fashion.
+    from 0 to `size` in simd fashion.
+
+    If `size` / `simd_width` results in a remainder, an iteration will be run
+    for each remaining item where `simd_width` is equal to 1. If `size` is
+    compile time known, you can move it to the parameter slot to run a single
+    iteration where `simd_width` will be the size of the remaining items.
 
     Parameters:
         simd_width: The SIMD vector width.
@@ -174,6 +179,25 @@ fn vectorize[
     vectorize_unroll[simd_width, 1, func](size)
 
 
+@always_inline
+fn vectorize[
+    simd_width: Int,
+    size: Int,
+    func: fn[width: Int] (Int) capturing -> None,
+]():
+    """Maps a function which is parametrized over a simd_width over a range from
+    0 to size in simd fashion. If `size` / `simd_width` results in a remainder,
+    for the last iteration `simd_width` will be the size of the remainder.
+
+    Parameters:
+        simd_width: The SIMD vector width.
+        size: The total loop count.
+        func: The function for the loop body.
+    """
+    constrained[simd_width > 0, "simd width must be > 0"]()
+    vectorize_unroll[simd_width, size, 1, func]()
+
+
 fn _variadic_get(
     a: __mlir_type[`!kgen.variadic<`, fn (Int) capturing -> NoneType, `>`],
     idx: Int,
@@ -182,22 +206,11 @@ fn _variadic_get(
 
 
 @always_inline
-fn vectorize_unroll[
+fn _vectorize_unroll_impl[
     simd_width: Int,
     unroll_factor: Int,
     func: fn[width: Int] (Int) capturing -> NoneType,
-](size: Int):
-    """Maps a function which is parametrized over a simd_width over a range
-    from 0 to size in simd fashion and unroll the loop by unroll_factor.
-
-    Parameters:
-        simd_width: The SIMD vector width.
-        unroll_factor: The unroll factor for the main loop.
-        func: The function for the loop body.
-
-    Args:
-        size: The total loop count.
-    """
+](size: Int, vector_end_simd: Int):
     constrained[simd_width > 0, "simd width must be > 0"]()
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
 
@@ -205,7 +218,6 @@ fn vectorize_unroll[
     let vector_end_unrolled_simd = (
         size // unrolled_simd_width
     ) * unrolled_simd_width
-    let vector_end_simd = align_down(size, simd_width)
 
     @always_inline
     @parameter
@@ -229,8 +241,57 @@ fn vectorize_unroll[
         ):
             func[simd_width](simd_idx)
 
+
+@always_inline
+fn vectorize_unroll[
+    simd_width: Int,
+    unroll_factor: Int,
+    func: fn[width: Int] (Int) capturing -> NoneType,
+](size: Int):
+    """Maps a function which is parametrized over a simd_width over a range
+    from 0 to size in simd fashion and unroll the loop by unroll_factor.
+
+    Parameters:
+        simd_width: The SIMD vector width.
+        unroll_factor: The unroll factor for the main loop.
+        func: The function for the loop body.
+
+    Args:
+        size: The total loop count.
+    """
+    let vector_end_simd = align_down(size, simd_width)
+
+    _vectorize_unroll_impl[simd_width, unroll_factor, func](
+        size, vector_end_simd
+    )
+
     for i in range(vector_end_simd, size):
         func[1](i)
+
+
+@always_inline
+fn vectorize_unroll[
+    simd_width: Int,
+    size: Int,
+    unroll_factor: Int,
+    func: fn[width: Int] (Int) capturing -> NoneType,
+]():
+    """Maps a function which is parametrized over a simd_width over a range
+    from 0 to size in simd fashion and unroll the loop by unroll_factor.
+
+    Parameters:
+        simd_width: The SIMD vector width.
+        size: The total loop count.
+        unroll_factor: The unroll factor for the main loop.
+        func: The function for the loop body.
+    """
+    alias vector_end_simd = align_down(size, simd_width)
+
+    _vectorize_unroll_impl[simd_width, unroll_factor, func](
+        size, vector_end_simd
+    )
+
+    func[size - vector_end_simd](vector_end_simd)
 
 
 # ===----------------------------------------------------------------------===#

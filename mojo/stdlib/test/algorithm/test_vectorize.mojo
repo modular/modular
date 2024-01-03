@@ -105,6 +105,23 @@ fn test_vectorize_unroll():
     print(err)
 
 
+# CHECK-LABEL: test_vectorize_size_param
+fn test_vectorize_size_param():
+    print("== test_vectorize_size_param")
+
+    # remainder elements are corectly printed
+    @parameter
+    fn printer[els: Int](n: Int):
+        print(els, n)
+
+    # CHECK: 3 32
+    vectorize[simd_width=16, size=35, func=printer]()
+
+    # CHECK: 8
+    vectorize[simd_width=16, size=8, func=printer]()
+
+
 fn main():
     test_vectorize()
     test_vectorize_unroll()
+    test_vectorize_size_param()
