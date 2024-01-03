@@ -1324,9 +1324,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       SMLoc declLoc = decls[0]->getLoc();
       AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
                                                         EC_WithContextMgr);
-      if (auto slval = emitted.getIfMLValue()) {
-        enterDest = ValueDest(slval, EC_WithContextMgr);
-      } else if (auto ref = emitted.getIfXLValue()) {
+      if (auto ref = emitted.getIfXLValue()) {
         enterDest = ValueDest(ref, EC_WithContextMgr);
       } else {
         auto diag =

@@ -62,10 +62,7 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
-  } else if (auto val = dyn_cast<MLValue>(storage)) {
-    if (isDump)
-      os << "ML: ";
-    os << val;
+
   } else if (auto val = dyn_cast<XLValue>(storage)) {
     if (isDump)
       os << "XL: ";
@@ -149,8 +146,6 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<XBValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<MLValue>(storage))
-    return value.getType();
   if (auto value = dyn_cast<XLValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
@@ -204,7 +199,7 @@ ASTType CRValue::getRValueType() const {
 
 ASTType CValue::getRValueType() const {
   auto type = getType();
-  if (isa<MLValue, MRValue, MBValue>(storage))
+  if (isa<MRValue, MBValue>(storage))
     return type.getPointerElementType();
   if (isa<XLValue, XRValue, XBValue>(storage))
     return type.getReferenceElementType();
@@ -213,8 +208,6 @@ ASTType CValue::getRValueType() const {
 
 ASTType LValue::getRValueType() const {
   auto type = getType();
-  if (isa<MLValue>(storage))
-    return type.getPointerElementType();
   if (isa<XLValue>(storage))
     return type.getReferenceElementType();
   return type;
@@ -242,7 +235,6 @@ Value VariantValueStorageBase::getXValueReference() const {
 
 // TODO(lifetimes): remove pedantic checks.
 void MRValue::check() const { assert(::isa<PointerType>(Value::getType())); }
-void MLValue::check() const { assert(::isa<PointerType>(Value::getType())); }
 void MBValue::check() const { assert(::isa<PointerType>(Value::getType())); }
 void XRValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void XLValue::check() const { assert(::isa<RefType>(Value::getType())); }

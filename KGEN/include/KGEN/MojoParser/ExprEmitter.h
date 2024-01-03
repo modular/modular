@@ -210,10 +210,9 @@ public:
   XLValue getXLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
-  /// If this ValueDest specifies an MLValue (or an XLValue) that will be
-  /// returned by getXLValueForResult with the specified type, return it.
-  /// Otherwise return null.
-  /// TODO(references): switch this to return XLValue instead.
+  /// If this ValueDest specifies an XLValue that will be returned by
+  /// getXLValueForResult with the specified type, return it. Otherwise return
+  /// null.
   XLValue getDefinedXLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
@@ -303,9 +302,6 @@ public:
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
-  /// Emit any kind of PValue to an MLValue.
-  MBValue emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
-                              ExprContext context);
   /// Emit any kind of PValue to an XLValue.
   XBValue emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                               ExprContext context);

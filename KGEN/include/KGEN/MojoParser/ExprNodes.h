@@ -611,10 +611,11 @@ struct FunctionTypeNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-/// __get_lvalue_as_address(someMLValue)      # returns pop.pointer
-/// __get_ref_from_value(someMemValue)        # returns lit.ref
-/// __get_address_as_lvalue(pop_pointer)      # returns MLValue
-/// __get_address_as_owned_value(pop_pointer) # returns RValue
+/// __get_ref_from_value(someMemValue)     # returns !lit.ref
+/// __get_value_from_rvalue(some_ref)      # returns LValue or BValue
+/// __get_lvalue_as_address(some_ptr)      # returns !kgen.pointer
+/// __get_address_as_lvalue(some_ptr)      # returns !kgen.pointer
+/// __get_address_as_owned_value(some_ptr) # returns RValue
 struct AddressConvertNode final : public ExprNode {
   AddressConvertNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
                      SMLoc rparenLoc)

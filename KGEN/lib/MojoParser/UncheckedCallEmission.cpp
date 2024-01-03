@@ -466,11 +466,6 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
       // Parameter values will never alias.
       if (value.ir.getIfPValue())
         continue;
-      if (auto sl = value.ir.getIfMLValue()) {
-        if (ptrGuaranteedNoAlias(sl))
-          continue;
-        return false;
-      }
       if (auto mb = value.ir.getIfMBValue()) {
         if (ptrGuaranteedNoAlias(mb))
           continue;
@@ -515,19 +510,6 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-
-  // Given a legacy pointer, get it to a reference.
-  // TODO(references) remove this when MLValues go away.
-  auto hackPointerToRef = [&](Value pointer) -> XLValue {
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(pointer.getType()), /*mut=*/true);
-    return emitter.builder
-        ->create<mlir::UnrealizedConversionCastOp>(
-            emitter.translateLocation(argValAndExpr.expr->getLoc()), destTy,
-            pointer)
-        .getResult(0);
-  };
 
   Value arg;
   switch (convention) {
@@ -586,7 +568,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
-      auto ptr = emitter.builder->create<POP::StackAllocationOp>(
+      Value ptr = emitter.builder->create<POP::StackAllocationOp>(
           argLoc, PointerType::get(sbValue.getType()), 1);
       emitter.builder->create<LIT::StoreBorrowOp>(argLoc, sbValue, ptr);
 
@@ -594,18 +576,23 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
       afterCallActions.valuesToKeepAlive.push_back(sbValue);
-      return XBValue(hackPointerToRef(ptr));
+
+      // Given a legacy pointer, get it to a reference.
+      // TODO(references) remove this when StackAllocationOp does references.
+      // HACK: force convert to reference.
+      auto destTy = RefType::getRefForPointerHACK(
+          cast<PointerType>(ptr.getType()), /*mut=*/true);
+      return XBValue(
+          emitter.builder
+              ->create<mlir::UnrealizedConversionCastOp>(
+                  emitter.translateLocation(argValAndExpr.expr->getLoc()),
+                  destTy, ptr)
+              .getResult(0));
     }
     // Promote PValue's if needed.
     return emitter.emitXBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
     XLValue resultSlotRef = argValAndExpr.ir.getIfXLValue();
-    // TODO(lifetimes): remove this.
-    if (!resultSlotRef) {
-      if (auto ptr = argValAndExpr.ir.getIfMLValue())
-        resultSlotRef = hackPointerToRef(ptr);
-    }
-
     assert(resultSlotRef && "byref_result value start in a temp slot");
     auto rvalueType = resultSlotRef.getRValueType();
 
@@ -622,11 +609,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       return resultSlotRef;
     // Okay it is safe to use, so remove the temporary allocation we aren't
     // going to use.
-    if (auto cast = // TODO(references): MLValue remove this
-        resultSlotRef.getDefiningOp<mlir::UnrealizedConversionCastOp>())
-      cast->erase();
-    assert(argValAndExpr.ir.getIfXLValue());
-    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
+    resultSlotRef.getDefiningOp<VarLetDeclOp>()->erase();
     // Use the preferred location of the destination slot.
     return dest.getXLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
@@ -636,10 +619,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // dynamic/computed.
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
-
-    // TODO(references): remove MLValue
-    if (auto ptr = lv.getIfMLValue())
-      lv = hackPointerToRef(ptr);
 
     if (auto ref = lv.getIfXLValue())
       return ref;

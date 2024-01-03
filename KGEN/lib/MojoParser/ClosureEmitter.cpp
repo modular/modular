@@ -1045,8 +1045,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 }
 
 Value Capture::getMlirValue() const {
-  if (auto v = value.getIfMLValue())
-    return v;
   if (auto v = value.getIfMBValue())
     return v;
   if (auto v = value.getIfSBValue())
