@@ -215,12 +215,12 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return cast<LValue>(representation).getRValueType();
 }
 
-/// If this ValueDest specifies an XLValue that will be returned by
-/// getXLValueForResult with the specified type, return it. Otherwise return
+/// If this ValueDest specifies an MLValue that will be returned by
+/// getMLValueForResult with the specified type, return it. Otherwise return
 /// null.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
-XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
+MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
                                              ExprEmitter &emitter) {
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
@@ -235,7 +235,7 @@ XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
 
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
-    if (XLValue refValue = lValue.getIfXLValue()) {
+    if (MLValue refValue = lValue.getIfMLValue()) {
       if (lValue.getRValueType().isEqualCanon(resultType))
         return refValue;
     }
@@ -259,10 +259,10 @@ XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
 /// will not consume the ValueDest, so any user should reemit the ultimate
 /// value through it with emitResult.
 ///
-/// NOTE: This needs to be kept in sync with getDefinedXLValueIfExists.
+/// NOTE: This needs to be kept in sync with getDefinedMLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
-                                     bool requireXLValue,
+                                     bool requireMLValue,
                                      ExprEmitter &emitter) {
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
@@ -276,13 +276,13 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(RefType::get(/*isMut*/ true, materializedType,
                                              varOp.getType().getLifetime()));
-      return XLValue(varOp);
+      return MLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
     if (isa<UnresolvedType>(globalOp.getType()))
       globalOp.setType(materializedType);
 
-    return XLValue(emitter.builder->create<GlobalVarRefOp>(
+    return MLValue(emitter.builder->create<GlobalVarRefOp>(
         emitter.translateLocation(loc), globalOp));
   }
 
@@ -311,7 +311,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         lValue.getRValueType().isEqualCanon(resultType)) {
       // If the client requires a stored LValue and we don't have one, don't
       // consume it.
-      if (!requireXLValue || lValue.getIfXLValue()) {
+      if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
@@ -346,25 +346,25 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // We model this as an mutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
-  return XLValue(emitter.emitVarLetDecl("anonymous*", slotType,
+  return MLValue(emitter.emitVarLetDecl("anonymous*", slotType,
                                         emitter.translateLocation(loc),
                                         VarLetDeclKind::Var,
                                         /*isSynthetic=*/true));
 }
 
-/// Return an XLValue for this destination of the specified type that we can
+/// Return an MLValue for this destination of the specified type that we can
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest.
-XLValue ValueDest::getXLValueForResult(SMLoc loc, ASTType resultType,
+MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
                                        ExprEmitter &emitter) {
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
-                         /*requireXLValue=*/true, emitter);
+                         /*requireMLValue=*/true, emitter);
   if (!lv)
     return {};
 
-  assert(lv.getIfXLValue());
-  return lv.getIfXLValue();
+  assert(lv.getIfMLValue());
+  return lv.getIfMLValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -486,9 +486,9 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     if (!value.ir)
       return {};
   }
-  // Handle XLValue's by decaying to XBValue.
-  if (auto lv = value.ir.getIfXLValue())
-    value.ir = XBValue(lv);
+  // Handle MLValue's by decaying to MBValue.
+  if (auto lv = value.ir.getIfMLValue())
+    value.ir = MBValue(lv);
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
@@ -509,8 +509,8 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
     value.ir = SBValue(srVal);
-  else if (auto refVal = value.ir.getIfXRValue()) // Decay XRValue -> XBValue
-    value.ir = XBValue(refVal);
+  else if (auto refVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
+    value.ir = MBValue(refVal);
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -614,8 +614,8 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-/// Emit any kind of PValue to an XLValue.
-XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
+/// Emit any kind of PValue to an MLValue.
+MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
   // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
@@ -627,10 +627,10 @@ XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                    ? Value(builder->create<ParamConstantOp>(loc, value.ir))
                    : builder->create<ParamMaterializeOp>(loc, value.ir);
   builder->create<RefStoreOp>(loc, attr, dest);
-  return XBValue(dest);
+  return MBValue(dest);
 }
 
-XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
+MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   PValue pvalue = value.ir;
   // We model this as an immutable let value with a separately stored
@@ -638,9 +638,9 @@ XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
   VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
                                     translateLocation(value.expr->getLoc()),
                                     VarLetDeclKind::Var, /*isSynthetic=*/true);
-  if (!emitPValueToXLValue({pvalue, value.expr}, XLValue(var), context))
+  if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
-  return XRValue(var);
+  return MRValue(var);
 }
 
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
@@ -660,13 +660,13 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   }
 
   // If we have a value in memory, use a LoadConsumeOp to load it.
-  if (auto xrValue = value.getIfXRValue()) {
+  if (auto mrValue = value.getIfMRValue()) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(expr);
       return {};
     }
     Value result =
-        builder->create<LoadConsumeOp>(expr->getLocation(*this), xrValue);
+        builder->create<LoadConsumeOp>(expr->getLocation(*this), mrValue);
     return SRValue(result);
   }
 
@@ -679,31 +679,31 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   return emitPValueToSRValue({pValue, expr}, context);
 }
 
-XRValue ExprEmitter::emitXRValue(ASTExprAnd<AnyValue> value,
+MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
-  if (auto xr = value.ir.getIfXRValue())
-    return xr;
+  if (auto mr = value.ir.getIfMRValue())
+    return mr;
 
   if (auto pv = value.ir.getIfPValue())
-    return emitPValueToXRValue({pv, value.expr}, context);
-  llvm_unreachable("unknown XRValue");
+    return emitPValueToMRValue({pv, value.expr}, context);
+  llvm_unreachable("unknown MRValue");
 }
 
-/// This helper emits the specified value as an XBValue which has
+/// This helper emits the specified value as an MBValue which has
 /// memory-only representation, materializing PValues as needed. This
 /// returns null if emission fails.
-XBValue ExprEmitter::emitXBValue(ASTExprAnd<AnyValue> value,
+MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
   BValue bValue = emitBValue(value, context);
   if (!bValue)
     return {};
 
-  if (auto xb = bValue.getIfXBValue())
-    return xb;
+  if (auto mb = bValue.getIfMBValue())
+    return mb;
 
   // Emit PValues to memory and promote to borrow.
   if (auto pValue = bValue.getIfPValue())
-    return emitPValueToXRValue({pValue, value.expr}, context);
+    return emitPValueToMRValue({pValue, value.expr}, context);
 
   // Reject SBValue.
   emitError(value.expr->getLoc(),
@@ -834,12 +834,12 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              newType, v);
   };
-  if (auto refValue = value.getIfXLValue())
-    return XLValue(rebind(refValue));
-  if (auto refValue = value.getIfXRValue())
-    return XRValue(rebind(refValue));
-  if (auto refValue = value.getIfXBValue())
-    return XBValue(rebind(refValue));
+  if (auto refValue = value.getIfMLValue())
+    return MLValue(rebind(refValue));
+  if (auto refValue = value.getIfMRValue())
+    return MRValue(rebind(refValue));
+  if (auto refValue = value.getIfMBValue())
+    return MBValue(rebind(refValue));
   if (auto sbValue = value.getIfSBValue())
     return SBValue(rebind(sbValue));
   if (auto dlValue = value.getIfDLValue()) {
@@ -1028,7 +1028,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (canZeroCostConvert(shared, rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
-        if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
+        if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
           requiredType =
               cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
@@ -1088,16 +1088,16 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
-    auto memValue = value.getIfXRValue();
-    assert(memValue && "Must be an XRValue providing result");
-    return XBValue(memValue);
+    auto memValue = value.getIfMRValue();
+    assert(memValue && "Must be an MRValue providing result");
+    return MBValue(memValue);
   }
 
   // We know we have an CRValue/BValue and the destination is some kind of
   // LValue.  Emit the dest to figure out where to store it.
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
                                           /*allowIncompatibleTypes=*/true,
-                                          /*requireXLValue=*/false, *this);
+                                          /*requireMLValue=*/false, *this);
   if (!destLV) {
     dest.resetForError();
     return {};
@@ -1179,11 +1179,11 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
 
-  // Decay a stored LValue to an XBValue.
-  auto ref = value.ir.getIfXLValue();
+  // Decay a stored LValue to an MBValue.
+  auto ref = value.ir.getIfMLValue();
   assert(ref && "unknown lvalue kind");
   // Emit a non-consuming __copyinit__ or load of the value.
-  return emitCopyOfValue({XBValue(ref), value.expr}, dest);
+  return emitCopyOfValue({MBValue(ref), value.expr}, dest);
 }
 
 CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
@@ -1218,12 +1218,12 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
   case TypeConvention::MemoryOnly:
     // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
-    XLValue destBuffer = dest.getXLValueForResult(exprLoc, valueType, *this);
+    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};
 
     if (auto pValue = value.ir.getIfPValue())
-      return emitPValueToXLValue({pValue, value.expr}, destBuffer,
+      return emitPValueToMLValue({pValue, value.expr}, destBuffer,
                                  dest.context);
 
     if (!valueType.isCopyable(exprLoc, shared)) {
@@ -1247,7 +1247,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.
-    return emitCResult(XRValue(destBuffer), value.expr, dest);
+    return emitCResult(MRValue(destBuffer), value.expr, dest);
   }
 
   // Otherwise we can emit a direct use/load for trivial types.
@@ -1339,7 +1339,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // If it is a register passable, assign with a store.
   if (valueType.isRegisterPassable(exprLoc, shared)) {
-    // Materialize a PValue or load a XRValue if present.
+    // Materialize a PValue or load a MRValue if present.
     SRValue val = emitSRValue(value, context, valueType);
     if (!val)
       return {};
@@ -1348,7 +1348,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
     }
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    XLValue destPtr = destLV.getIfXLValue();
+    MLValue destPtr = destLV.getIfMLValue();
     assert(destPtr);
     builder->create<LIT::RefStoreOp>(translateLocation(value.expr->getLoc()),
                                      val, destPtr);
@@ -1357,13 +1357,13 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   }
 
   if (auto pvalue = value.ir.getIfPValue()) {
-    auto valRef = destLV.getIfXLValue();
+    auto valRef = destLV.getIfMLValue();
     assert(valRef && "Unknown LValue");
-    return emitPValueToXLValue({pvalue, value.expr}, valRef, context);
+    return emitPValueToMLValue({pvalue, value.expr}, valRef, context);
   }
 
-  // Otherwise we have an XLValue destination.
-  XLValue destRef = destLV.getIfXLValue();
+  // Otherwise we have an MLValue destination.
+  MLValue destRef = destLV.getIfMLValue();
   assert(destRef && "No other known LValue");
 
   // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
@@ -1376,7 +1376,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     if (!emitNamedMethodCall("__moveinit__", {operands}, moveDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
-    return XBValue(destRef);
+    return MBValue(destRef);
   }
 
   // Otherwise, we have to move this thing but don't have a move constructor!
@@ -1683,7 +1683,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
     // Treat both 'var' and 'let' decls as mutable values and defer to check
     // lifetimes to verify 'let' decls. This allows lazy 'let' initialization.
-    value = XLValue(var);
+    value = MLValue(var);
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!builder)
@@ -1692,14 +1692,14 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     auto ref = builder->create<GlobalVarRefOp>(
         translateLocation(expr->getLoc()), globalOp);
     if (globalOp.getIsVar())
-      value = XLValue(ref);
+      value = MLValue(ref);
     else
-      value = XBValue(ref);
+      value = MBValue(ref);
   } else if (auto rvalue = decl.getIfRValue()) {
     value = rvalue;
   } else if (auto bvalue = decl.getIfBValue()) {
     value = bvalue;
-  } else if (auto lvalue = decl.getIfXLValue()) {
+  } else if (auto lvalue = decl.getIfMLValue()) {
     value = lvalue;
   } else {
     emitError(expr->getLoc(), "use of declaration '")
@@ -1765,7 +1765,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
                              VarLetDeclKind::Var, /*isSynthetic=*/true);
 
   // Load the entire base LValue into tmpDecl.
-  ValueDest tmpValueDest(XLValue(tmpDecl), EC_AttributeRefBase);
+  ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
   auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
     tmpValueDest.resetForError();
@@ -1775,10 +1775,10 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // Store into the field.
   auto fieldPtr =
       emitter.builder->create<RefStructGEROp>(loc, tmpDecl, getField());
-  emitter.emitStoreToLValue(value, XLValue(fieldPtr), EC_AttributeRefBase);
+  emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
-  // Store the whole result back, transfering ownership as an XRValue.
-  baseVal.ir->emitStore({XRValue(tmpDecl), expr}, emitter);
+  // Store the whole result back, transfering ownership as an MRValue.
+  baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
 }
 
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {

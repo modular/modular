@@ -830,8 +830,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
-  ValueDest implDest(XLValue(targetRef), EC_Assignment);
-  emitter.emitResult(XRValue(source), &node, implDest);
+  ValueDest implDest(MLValue(targetRef), EC_Assignment);
+  emitter.emitResult(MRValue(source), &node, implDest);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
@@ -908,9 +908,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         builder.create<RefFromPointerOp>(existingPtr, /*isMut*/ true);
 
     // Copy the existing value into the target.
-    ValueDest copyDest(XLValue(targetRef), EC_Assignment);
+    ValueDest copyDest(MLValue(targetRef), EC_Assignment);
     ExprEmitter emitter(shared, moduleDecl, builder);
-    emitter.emitResult(XBValue(existingRef), &node, copyDest);
+    emitter.emitResult(MBValue(existingRef), &node, copyDest);
 
     // Store the allocated and populated impl into the closure wrapper.
     Value ptrToImpl = topLevelCopyInit.getBody()->getArgument(0);

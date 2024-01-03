@@ -640,7 +640,7 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-static XRValue emitClosureInstance(SignatureType closureSignature,
+static MRValue emitClosureInstance(SignatureType closureSignature,
                                    SharedState &shared, ASTDecl &nestedFnDecl,
                                    SMLoc loc) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
@@ -745,8 +745,8 @@ static XRValue emitClosureInstance(SignatureType closureSignature,
 
   if (!closureWrapperInstance)
     return {};
-  assert(closureWrapperInstance.getIfXRValue());
-  return closureWrapperInstance.getIfXRValue();
+  assert(closureWrapperInstance.getIfMRValue());
+  return closureWrapperInstance.getIfMRValue();
 }
 
 PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
@@ -1083,7 +1083,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
               "escaping closures cannot have input or result parameters yet");
         if (auto closure =
                 emitClosureInstance(signature, shared, decl, decl.getLoc())) {
-          decl.irValue = XRValue(closure);
+          decl.irValue = MRValue(closure);
         } else
           return failure();
       } else {
@@ -1136,7 +1136,7 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  ValueDest dest(XLValue(varDecl), EC_DefArgumentShadow);
+  ValueDest dest(MLValue(varDecl), EC_DefArgumentShadow);
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
 
@@ -1176,7 +1176,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       // Emit `object()` into the memory type return slot.
       ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
-      ValueDest resultDest(XLValue(func.getArgument(0)), EC_ReturnValue);
+      ValueDest resultDest(MLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
       SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
@@ -1229,7 +1229,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       if (auto rv = argDecl.getIfRValue()) {
         if (rv.getType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-      } else if (auto lv = argDecl.getIfXLValue()) {
+      } else if (auto lv = argDecl.getIfMLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       } else if (auto bv = argDecl.getIfBValue()) {
@@ -1266,7 +1266,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     case ValueInputConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
-      argIRValue = XLValue(bbArg);
+      argIRValue = MLValue(bbArg);
       break;
     case ValueInputConvention::OwnedInReg:
       argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, decl, builder,
@@ -1278,7 +1278,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       break;
 
     case ValueInputConvention::BorrowedInMem:
-      argIRValue = XBValue(bbArg);
+      argIRValue = MBValue(bbArg);
       break;
     case ValueInputConvention::None:
       llvm_unreachable("none convention not permitted in lit");
@@ -1533,7 +1533,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   if (shared.typeHasMember(ASTType(op.getType()), "__del__",
                            initExpr->getLoc())) {
     emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
-    XRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
+    MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     ValueDest dest(EC_Destructor);
     (void)emitter.emitNamedMethodCall("__del__",
                                       CallOperands({{owned, initExpr}}), dest,
@@ -2297,10 +2297,10 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     AnyValue value;
     switch (conv) {
     case ValueInputConvention::ByRef:
-      value = XLValue(arg);
+      value = MLValue(arg);
       break;
     case ValueInputConvention::OwnedInMem:
-      value = XRValue(arg);
+      value = MRValue(arg);
       break;
     case ValueInputConvention::OwnedInReg:
       value = SRValue(arg);
@@ -2309,7 +2309,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       value = SBValue(arg);
       break;
     case ValueInputConvention::BorrowedInMem:
-      value = XBValue(arg);
+      value = MBValue(arg);
       break;
     default:
       llvm_unreachable("unexpected input convention");
@@ -2331,7 +2331,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
   if (hasResultSlot)
-    dest = ValueDest(XLValue(thunk.getArgument(0)), EC_Trait);
+    dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
 
   CValue callResult = emitter.emitCallUnchecked(
       PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,

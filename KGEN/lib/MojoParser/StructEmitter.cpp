@@ -245,17 +245,17 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
         argVal = SBValue(arg);
         break;
       case ValueInputConvention::OwnedInMem:
-        argVal = XRValue(arg);
+        argVal = MRValue(arg);
         break;
       case ValueInputConvention::BorrowedInMem:
-        argVal = XBValue(arg);
+        argVal = MBValue(arg);
         break;
       }
 
       // Project self to the right field and store the RValue.
       auto fieldRef = builder.create<RefStructGEROp>(selfArg, field);
       SyntheticNode srcExpr(structDecl.getLoc());
-      emitter.emitStoreToLValue({argVal, &srcExpr}, XLValue(fieldRef),
+      emitter.emitStoreToLValue({argVal, &srcExpr}, MLValue(fieldRef),
                                 EC_AttributeRefBase);
       ++idx;
     }
@@ -317,9 +317,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
       auto targetFieldOp = b.create<RefStructGEROp>(copySelf, fieldOp);
       Value srcFieldOp = b.create<RefStructGEROp>(copyExisting, fieldOp);
       CValue src =
-          isMove ? CValue(XRValue(srcFieldOp)) : CValue(XBValue(srcFieldOp));
+          isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
       SyntheticNode srcExpr(location);
-      emitter.emitStoreToLValue({src, &srcExpr}, XLValue(targetFieldOp),
+      emitter.emitStoreToLValue({src, &srcExpr}, MLValue(targetFieldOp),
                                 EC_AttributeRefBase);
     }
     return success();

@@ -56,7 +56,7 @@ public:
   CRValue getIfRValue() const;
   BValue getIfBValue() const;
   PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
-  XLValue getIfXLValue() const { return dyn_cast_or_null<XLValue>(irValue); }
+  MLValue getIfMLValue() const { return dyn_cast_or_null<MLValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const {

@@ -1637,10 +1637,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
   // For an initialization of a memory-only type, we need to replace the
   // destination buffer with the actual destination lvalue to use.
-  XLValue destXLValue =
-      dest.getXLValueForResult(expr->getLoc(), firstArgRVType, *this);
-  posOperandsWithSelf[0].ir = destXLValue;
-  if (!destXLValue)
+  MLValue destMLValue =
+      dest.getMLValueForResult(expr->getLoc(), firstArgRVType, *this);
+  posOperandsWithSelf[0].ir = destMLValue;
+  if (!destMLValue)
     return {};
 
   // Emit the call, but not into 'dest', typically init will return None.
@@ -1652,5 +1652,5 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   // Now that we've emitted the result into the result buffer, emit a conversion
   // if the expected type and the actual type differ.  This can happen when the
   // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
-  return emitCResult(XRValue(destXLValue), expr, dest);
+  return emitCResult(MRValue(destMLValue), expr, dest);
 }

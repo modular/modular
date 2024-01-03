@@ -432,7 +432,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
-    return emitter.emitResult(XLValue(varDecl), this, dest);
+    return emitter.emitResult(MLValue(varDecl), this, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -557,7 +557,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                                            refType, tmp)
                 .getResult(0);
 
-      ValueDest copyDest(XLValue(tmp), EC_CaptureCopy);
+      ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
       if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
         diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(funcSpAttr);
@@ -598,8 +598,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
       // Bind the copy to the name.
       emitter.getDeclResolver().addFullyResolvedDecl(
-          XBValue(localDecl), spelling, getLoc(), parentDecl);
-      value = XBValue(localDecl);
+          MBValue(localDecl), spelling, getLoc(), parentDecl);
+      value = MBValue(localDecl);
     }
   }
 
@@ -654,7 +654,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   auto mlirLoc = expr->getLocation(emitter);
 
   // If the base is an memory lvalue, then we can return an lvalue to the field.
-  if (XLValue baseLV = base.ir.getIfXLValue()) {
+  if (MLValue baseLV = base.ir.getIfMLValue()) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
       emitter.emitErrorForDynamicValueInParameter(expr);
@@ -662,7 +662,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     }
     auto fieldPtr =
         emitter.builder->create<RefStructGEROp>(mlirLoc, baseLV, fieldOp);
-    return emitter.emitCResult(XLValue(fieldPtr), expr, dest);
+    return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
   }
 
   // We know the base.ir is a BValue or CRValue, decay to BValue.
@@ -683,13 +683,13 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
   }
 
-  // If the base is an XRValue or XBValue, reference the field as an
-  // XBValue so we lazy copy only the piece that is needed in the case of
+  // If the base is an MRValue or MBValue, reference the field as an
+  // MBValue so we lazy copy only the piece that is needed in the case of
   // `x.y.z.w`
-  if (XBValue baseMBV = baseBVal.getIfXBValue()) {
+  if (MBValue baseMBV = baseBVal.getIfMBValue()) {
     auto fieldRef =
         emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBV, fieldOp);
-    return emitter.emitCResult(XBValue(fieldRef), expr, dest);
+    return emitter.emitCResult(MBValue(fieldRef), expr, dest);
   }
 
   // Otherwise, we have an SSA register for the base, which must be an SRValue
@@ -1672,7 +1672,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                .isRegisterPassable(getLoc(), emitter.shared)) {
         value = emitter.builder->create<RefFromPointerOp>(
             emitter.translateLocation(getLoc()), value, true);
-        return emitter.emitResult(XRValue(value), this, dest);
+        return emitter.emitResult(MRValue(value), this, dest);
       }
     }
     return emitter.emitResult(SRValue(value), this, dest);
@@ -2419,12 +2419,12 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an XLValue to emit into, it may be
+  // the ValueDest.  It may specify an MLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an XLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  XLValue destBuffer = dest.getXLValueForResult(getLoc(), resultType, emitter);
+  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder = falseBuilder;
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2447,7 +2447,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
 
-  return emitter.emitCResult(XRValue(destBuffer), this, dest);
+  return emitter.emitCResult(MRValue(destBuffer), this, dest);
 }
 
 /// Emit the x^ expression.
@@ -2501,7 +2501,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
       emitter.builder->create<OwnershipEndLifetimeOp>(loc, value, isRegister);
   if (isRegister)
     return emitter.emitResult(SRValue(newVal), this, dest);
-  return emitter.emitResult(XRValue(newVal), this, dest);
+  return emitter.emitResult(MRValue(newVal), this, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2698,12 +2698,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an XLValue to emit into, it may be
+  // the ValueDest.  It may specify an MLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an XLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  XLValue destBuffer = dest.getXLValueForResult(getLoc(), resultType, emitter);
+  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2726,7 +2726,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
 
-  return emitter.emitCResult(XRValue(destBuffer), this, dest);
+  return emitter.emitCResult(MRValue(destBuffer), this, dest);
 }
 
 /// Emit the comparison expression with operator ops[opIdx] and operands:
@@ -2992,7 +2992,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!subExprValue)
     return {};
 
-  // __get_lvalue_as_address(someXLValue) returns a !kgen.pointer.
+  // __get_lvalue_as_address(someMLValue) returns a !kgen.pointer.
   if (kind == kGetLValueAsAddress) {
     ValueDest lValueDest(dest.getContext());
     LValue result = emitter.emitLValue({subExprValue, subExpr}, lValueDest);
@@ -3000,7 +3000,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       return {};
 
     Value resultPtr;
-    if (XLValue resultRef = result.getIfXLValue()) {
+    if (MLValue resultRef = result.getIfMLValue()) {
       resultPtr = emitter.builder->create<RefToPointerOp>(getLocation(emitter),
                                                           resultRef);
     } else {
@@ -3015,7 +3015,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultPtr);
 
-    // Return the XLValue as an SRValue since the pointer itself is the
+    // Return the MLValue as an SRValue since the pointer itself is the
     // result.
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
@@ -3025,7 +3025,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (kind == kGetRefFromValue) {
     if (subExprValue.getIfPValue()) {
       subExprValue =
-          emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());
+          emitter.emitMBValue({subExprValue, subExpr}, dest.getContext());
       if (!subExprValue)
         return {};
     }
@@ -3039,7 +3039,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     Value refValue = subExprValue.getXValueReference();
     // If this is a BValue, make sure the reference is non-mutable since we're
     // exposing it to the user.
-    if (subExprValue.getIfXBValue()) {
+    if (subExprValue.getIfMBValue()) {
       auto refType = cast<RefType>(refValue.getType());
       if (refType.getIsMutable()) {
         if (!emitter.builder) {
@@ -3054,7 +3054,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       }
     }
 
-    // Return the XBValue as an SRValue since the ref itself is the result.
+    // Return the MBValue as an SRValue since the ref itself is the result.
     return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
@@ -3072,7 +3072,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       return {};
     }
     auto result =
-        refType.getIsMutable() ? AnyValue(XLValue(ref)) : XBValue(ref);
+        refType.getIsMutable() ? AnyValue(MLValue(ref)) : MBValue(ref);
     return emitter.emitResult(result, this, dest);
   }
 
@@ -3115,10 +3115,10 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     if (needsLifetime)
       exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
           getLocation(emitter), exprVal, /*isRegister=*/false);
-    return emitter.emitResult(XRValue(exprVal), this, dest);
+    return emitter.emitResult(MRValue(exprVal), this, dest);
   }
 
-  // These both return an XLValue with different ownership semantics.
+  // These both return an MLValue with different ownership semantics.
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
   if (needsLifetime)
@@ -3126,5 +3126,5 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
         getLocation(emitter), exprVal,
         /*isLiveOnEntry=*/kind == kGetAddressAsLValue, /*isLiveOnExit=*/true);
 
-  return emitter.emitResult(XLValue(exprVal), this, dest);
+  return emitter.emitResult(MLValue(exprVal), this, dest);
 }

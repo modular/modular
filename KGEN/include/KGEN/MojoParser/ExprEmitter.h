@@ -110,7 +110,7 @@ struct LValueBufferTaken {};
 ///       In this case, the ExprNode type often conforms to the expression.
 ///   - an RValue type:
 ///       This indicates that the result may be treated in any way (e.g. dumping
-///       into a temporary memory location as an XRValue or returned in an SSA
+///       into a temporary memory location as an MRValue or returned in an SSA
 ///       register as an SRValue) but needs to have the specified RValue type.
 ///   - LValueInitializerType:
 ///       This is used when emitting LValues when there is an inferred type for
@@ -201,19 +201,19 @@ public:
   /// will not consume the ValueDest, so any user should reemit the ultimate
   /// value through it with emitResult.
   LValue getLValueForResult(SMLoc loc, ASTType resultType,
-                            bool allowIncompatibleTypes, bool requireXLValue,
+                            bool allowIncompatibleTypes, bool requireMLValue,
                             ExprEmitter &emitter);
 
-  /// Return an XLValue for this destination of the specified type that we can
+  /// Return an MLValue for this destination of the specified type that we can
   /// initialize.  This uses and consumes the destination if it matches the type
   /// of the value dest.
-  XLValue getXLValueForResult(SMLoc loc, ASTType resultType,
+  MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
-  /// If this ValueDest specifies an XLValue that will be returned by
-  /// getXLValueForResult with the specified type, return it. Otherwise return
+  /// If this ValueDest specifies an MLValue that will be returned by
+  /// getMLValueForResult with the specified type, return it. Otherwise return
   /// null.
-  XLValue getDefinedXLValueIfExists(ASTType resultType, ExprEmitter &emitter);
+  MLValue getDefinedMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
@@ -302,12 +302,12 @@ public:
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
-  /// Emit any kind of PValue to an XLValue.
-  XBValue emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
+  /// Emit any kind of PValue to an MLValue.
+  MBValue emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                               ExprContext context);
-  /// This helper emits a PValue to an XRValue that has a memory representation,
+  /// This helper emits a PValue to an MRValue that has a memory representation,
   /// materializing the PValue.
-  XRValue emitPValueToXRValue(ASTExprAnd<PValue> value, ExprContext context);
+  MRValue emitPValueToMRValue(ASTExprAnd<PValue> value, ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as
@@ -316,15 +316,15 @@ public:
   SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 
-  /// This helper emits the specified value as an XRValue which has
+  /// This helper emits the specified value as an MRValue which has
   /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
-  XRValue emitXRValue(ASTExprAnd<AnyValue> value, ExprContext context);
+  MRValue emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
-  /// This helper emits the specified value as an XBValue which has
+  /// This helper emits the specified value as an MBValue which has
   /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
-  XBValue emitXBValue(ASTExprAnd<AnyValue> value, ExprContext context);
+  MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
   /// This helper emits the specified expression as a parameter value,
   /// diagnosing the problem if the expression is only valid as a runtime value.
