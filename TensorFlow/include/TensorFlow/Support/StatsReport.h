@@ -28,8 +28,8 @@ namespace M::TF {
 struct StatsReport {
   explicit StatsReport(llvm::StringRef name)
       : name(name), numTotalOps(0), numFallbackOps(0) {
-    runtime = LLCL::createRuntime();
-    runtime->emplaceContext<Telemetry::TelemetryContext>();
+    ownedRuntime = LLCL::createRuntimeIfNeeded();
+    ownedRuntime->emplaceContextIfMissing<Telemetry::TelemetryContext>();
   }
 
   StatsReport() : StatsReport("") {}
@@ -48,7 +48,7 @@ private:
   std::string name;
   size_t numTotalOps;
   size_t numFallbackOps;
-  std::unique_ptr<LLCL::Runtime> runtime;
+  ConditionallyOwnedPointer<LLCL::Runtime> ownedRuntime;
   llvm::StringMap<size_t> fallbackHistogram;
   llvm::StringMap<size_t> opHistogram{};
 };

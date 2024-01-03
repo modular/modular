@@ -138,6 +138,8 @@ struct ConditionallyOwnedPointer {
   const T *operator->() const { return ptr; }
   T &operator*() { return *ptr; }
   const T &operator*() const { return *ptr; }
+  T *get() { return ptr; }
+  const T *get() const { return ptr; }
 
   /// Check if this has a payload just like a normal pointer.
   explicit operator bool() const { return ptr != nullptr; }

@@ -389,7 +389,8 @@ void ResolveCompilerPromisesPass::runOnOperation() {
       "ResolveCompilerPromisesPass::runOnOperation");
   auto rt =
       ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
+            .release();
       });
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();

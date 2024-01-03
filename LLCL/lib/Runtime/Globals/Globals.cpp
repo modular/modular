@@ -15,6 +15,12 @@ using namespace M::LLCL;
 [[maybe_unused]] MODULAR_CXX_EXPORT std::atomic<ssize_t>
     M::LLCL::AsyncValue::totalAllocatedAsyncValues{0};
 
+MODULAR_CXX_EXPORT CompactRuntimePtr &
+M::LLCL::Globals::getCurrentRuntimeInTLS() {
+  static thread_local CompactRuntimePtr currentRuntimeInTLS;
+  return currentRuntimeInTLS;
+}
+
 MODULAR_CXX_EXPORT Detail::TypeInfoTable &
 M::LLCL::Globals::getTypeInfoTableSingleton(
     const std::function<Detail::TypeInfoTable *()> &ctor) {

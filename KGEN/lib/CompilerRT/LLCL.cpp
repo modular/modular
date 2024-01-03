@@ -148,7 +148,7 @@ KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
 /// runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_GetCurrentRuntime() {
-  return wrap(CompactRuntimePtr::getCurrentRuntime().getOrNull());
+  return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 
 /// Create an LLCL runtime and return its pointer.
@@ -159,9 +159,9 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
   std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeOptions()
-                        .withNumThreads(numThreads)
-                        .withProfileFilename(profileFilename));
+      createNestedRuntime(RuntimeOptions()
+                              .withNumThreads(numThreads)
+                              .withProfileFilename(profileFilename));
   return wrap(runtime.release());
 }
 

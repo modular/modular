@@ -319,7 +319,9 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   // Create a BlobCache ref.
   std::filesystem::path base = ".mojo_cache";
   base /= "orc";
-  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(base.string());
+  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(
+      /*cacheDir=*/base.string(),
+      /*optExistingRuntime=*/Runtime::getCurrentRuntimeOrNull());
   if (auto err = runtimeAndCache.setup(KGEN_VERSION_STRING))
     return err.takeError();
 

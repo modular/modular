@@ -22,6 +22,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/GenericUniquePtrSet.h"
+#include "Support/STLExtras.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -34,6 +35,10 @@ class Error;
 namespace M::LLCL {
 class Allocator;
 class WorkQueue;
+
+//===----------------------------------------------------------------------===//
+// Runtime
+//===----------------------------------------------------------------------===//
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
@@ -59,6 +64,23 @@ public:
   /// This can be used by logic that needs to flag that a side effect has
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
+
+  /// Returns the runtime managing the work queue to which the callers thread
+  /// is associated (ie the callers thread is either a worker thread for that
+  /// runtime or is a 'main' thread which has donated itself to running work
+  /// items on behalf of the runtime). Returns null if no such runtime has been
+  /// associated.
+  static Runtime *getCurrentRuntimeOrNull() {
+    return CompactRuntimePtr::getCurrentRuntime().getOrNull();
+  }
+
+  /// As for getCurrentRuntimeOrNull, but assert fail if no runtime is
+  /// associated.
+  static Runtime &getCurrentRuntime() {
+    Runtime *runtime = getCurrentRuntimeOrNull();
+    assert(runtime && "no runtime is associated with the current thread");
+    return *runtime;
+  }
 
   //===--------------------------------------------------------------------===//
   // Profiling
@@ -237,9 +259,38 @@ struct RuntimeOptions {
   }
 };
 
-/// Creates a runtime with the given options.
+//===----------------------------------------------------------------------===//
+// Runtime construction
+//===----------------------------------------------------------------------===//
+
+/// Creates a runtime with the given options, on the assumption the caller
+/// is not within any outer runtime's thread (main or worker).
+///
+/// Consider using createRuntimeIfNeeded if it is possible an existing
+/// runtime has already been established by an outer context, such as
+/// within the Modular Execution Engine, and the caller is not particular
+/// about the runtime options.
+///
+/// Consider using createNestedRuntime if it is possible an existing runtime
+/// has already been established by an outer context, yet the caller must
+/// use a runtime with the given options.
 std::unique_ptr<Runtime>
-createRuntime(const RuntimeOptions &options = RuntimeOptions());
+createUniqueRuntime(const RuntimeOptions &options = RuntimeOptions());
+
+/// Creates a runtime with the given options, where it is legal for the caller
+/// to be within an outer runtime's thread (main or worker).
+std::unique_ptr<Runtime>
+createNestedRuntime(const RuntimeOptions &options = RuntimeOptions());
+
+/// Returns the current runtime for the caller's thread (main or worker). If
+/// no such runtime has been associated, creates a runtime with the given
+/// options.
+ConditionallyOwnedPointer<Runtime>
+createRuntimeIfNeeded(const RuntimeOptions &options = RuntimeOptions());
+
+//===----------------------------------------------------------------------===//
+// Debugging helpers
+//===----------------------------------------------------------------------===//
 
 /// In debug builds, assert the given runtime's 'signature' agrees with what
 /// the host's idea of signature for its dynamic library / executable.

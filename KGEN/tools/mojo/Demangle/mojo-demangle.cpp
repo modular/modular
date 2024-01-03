@@ -64,7 +64,7 @@ static int demangle(const State &state) {
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
   // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
 
   // Initialize telemetry.
   auto &telemetryCtx =

@@ -905,7 +905,8 @@ void InlineParametricPass::runOnOperation() {
   // Create a runtime instance if needed.
   auto rt =
       ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
+            .release();
       });
 
   SymbolTable &symtab =
@@ -1272,7 +1273,8 @@ void ForceInlinePass::runOnOperation() {
   // Create a runtime instance if needed.
   auto rt =
       ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
+            .release();
       });
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();

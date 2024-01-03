@@ -5,15 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/raw_os_ostream.h"
 
 #include <mutex>
 
 using namespace M;
 using namespace M::LLCL;
-
-namespace {
-static thread_local CompactRuntimePtr currentRuntimeInTLS;
-}
 
 Detail::RuntimeTable::RuntimeTable() {
   freeIndices.resize(kInvalidIndex);
@@ -59,12 +57,4 @@ void Detail::RuntimeTable::clearRuntime(uint8_t index) {
 size_t Detail::RuntimeTable::numActiveRuntimes() const {
   std::lock_guard<std::mutex> lock(mu);
   return kInvalidIndex - freeIndices.size();
-}
-
-CompactRuntimePtr CompactRuntimePtr::getCurrentRuntime() {
-  return currentRuntimeInTLS;
-}
-
-void CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr ptr) {
-  currentRuntimeInTLS = ptr;
 }

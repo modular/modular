@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  std::unique_ptr<Runtime> runtime = createRuntime();
+  std::unique_ptr<Runtime> runtime = createUniqueRuntime();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())

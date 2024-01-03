@@ -126,8 +126,7 @@ struct SharedThreadState {
             : 0;
   }
 
-  /// The runtime on behalf of which the 'worker' and 'main' threads are doing
-  /// work.
+  /// The runtime on behalf of which this thread is processing work items.
   CompactRuntimePtr runtimePtr;
 
   /// If true, the 'main' thread which constructed the work queue is going to
@@ -293,8 +292,8 @@ struct WorkQueueThread {
   /// mainWillDonate mode.
   uint64_t threadID = 0;
 
-  // The underlying worker thread, or none if this WorkQueueThread represents
-  // the 'main' thread in mainWillDonate mode.
+  /// The underlying worker thread, or none if this WorkQueueThread represents
+  /// the 'main' thread in mainWillDonate mode.
   std::optional<std::thread> thread;
 
 #if MODULAR_PARANOID
@@ -447,7 +446,7 @@ void WorkQueueThread::runOnThread() {
   LLCL::setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
-  runItemsImpl(
+  runItemsOnOwningThread(
       /*earlyStopPredicate=*/[]() { return false; }, // Always loop.
       /*lateStopPredicate=*/
       [this]() {
@@ -466,18 +465,12 @@ void WorkQueueThread::runItemsOnOwningThread(
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
   if (sharedState.mainWillDonate && workerID == 0) {
-    // The work functions run by the 'main' thread should see our runtime as
-    // the 'current' runtime.
-    CompactRuntimePtr::setCurrentRuntime(sharedState.runtimePtr);
-
     // Temporarily set the main thread's affinity while it is processing work.
     LLCL::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
           sleepingLabel);
     });
-
-    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
   } else {
     runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
         earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
@@ -678,10 +671,6 @@ public:
 
   void shutdown() override;
 
-  CompactRuntimePtr getRuntime() const override {
-    return sharedState.runtimePtr;
-  }
-
   void addTask(WorkItem &&workItem, int taskId = -1) override;
 
   void addLocalTask(WorkItem &&workItem) override;
@@ -760,6 +749,9 @@ private:
   // reference to this structure.
   SharedThreadState sharedState;
 
+  /// The outer runtime, if any, for the thread using this work queue.
+  CompactRuntimePtr outerRuntime;
+
   /// The lock-free queue of pending tasks available for any worker.
   /// It may become full.
   LockFreeRingBuffer<WorkItem> taskList;
@@ -780,6 +772,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     std::string_view poolName)
     : numWorkers(cpuIDs.size()),
       sharedState(runtimePtr, mainWillDonate, paranoid, numWorkers),
+      outerRuntime(CompactRuntimePtr::getCurrentRuntime()),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -798,6 +791,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     new (workers + workerID) WorkQueueThread(
         sharedState, taskList, overflowMutex, overflowTaskList, workerID,
         cpuIDs[workerID], threadBusyWaitTime, this->poolName);
+
+  if (mainWillDonate) {
+    // Associate this thread with the given runtime, possibly overwriting
+    // any existing runtime association.
+    CompactRuntimePtr::setCurrentRuntime(runtimePtr);
+  }
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -805,6 +804,11 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // and destroyed without ever being included in a runtime.
   assert(!taskList.dequeue() &&
          "destroying ThreadPoolWorkQueue with pending work items");
+
+  if (sharedState.mainWillDonate) {
+    // Restore the association of this thread with the outer runtime, if any.
+    CompactRuntimePtr::setCurrentRuntime(outerRuntime);
+  }
 
   // Destroy all the threads datastructures.
   for (size_t i = 0; i < numWorkers; ++i)

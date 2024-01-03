@@ -76,7 +76,8 @@ func.func private @someFunc() {
 )";
 
 TEST(CachedTransformTest, CacheHits) {
-  std::unique_ptr<Runtime> runtime = createRuntime(RuntimeOptions().forDebug());
+  std::unique_ptr<Runtime> runtime =
+      createUniqueRuntime(RuntimeOptions().forDebug());
   std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
       getLocalDefaultBackendChain(*runtime, cacheTestPath / "region");

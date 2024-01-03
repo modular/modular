@@ -83,8 +83,8 @@ struct MojoTypeSystem::Impl {
     mlirContext.appendDialectRegistry(registry);
 
     // Configure the runtime.
-    runtime =
-        LLCL::createRuntime(LLCL::RuntimeOptions().withMainWillNotDonate());
+    ownedRuntime = LLCL::createRuntimeIfNeeded(
+        LLCL::RuntimeOptions().withMainWillNotDonate());
 
     // Compute the target information for the expression.
     compilationOptions.targetTriple = archSpec.GetTriple().str();
@@ -99,7 +99,8 @@ struct MojoTypeSystem::Impl {
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // Configure the parser context.
-    LIT::ParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);
+    LIT::ParserConfig parserConfig(&mlirContext, *ownedRuntime,
+                                   compilationOptions);
     parserConfig.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
     parserContext =
         std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
@@ -134,7 +135,7 @@ struct MojoTypeSystem::Impl {
 
   /// The LLCL runtime to use for compilation/processing associated with this
   /// typesystem.
-  std::unique_ptr<LLCL::Runtime> runtime;
+  ConditionallyOwnedPointer<LLCL::Runtime> ownedRuntime;
 
   /// The compilation options to use when compiling.
   KGEN::CompilationOptions compilationOptions;
@@ -190,7 +191,7 @@ TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;
 }
 
-LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
+LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->ownedRuntime; }
 
 //===----------------------------------------------------------------------===//
 // Initialization

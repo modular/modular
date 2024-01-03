@@ -39,8 +39,8 @@ protected:
   std::unique_ptr<LLCL::Runtime> runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
-      : runtime(
-            createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator())),
+      : runtime(createUniqueRuntime(
+            LLCL::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
                 .takeValue())) {}
@@ -454,8 +454,6 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
 
   // Upon creating a new cache, all of the old versions on the filesystem
   // should be deleted.
-  std::unique_ptr<LLCL::Runtime> runtime =
-      LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
       getLocalDefaultBackendChain(*runtime, cacheDir).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
@@ -492,7 +490,8 @@ static LLCL::EncodedLocation unknownLoc() {
 }
 
 static std::unique_ptr<Runtime> makeRuntime() {
-  return LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
+  return LLCL::createUniqueRuntime(
+      LLCL::RuntimeOptions().withLeakCheckedAllocator());
 }
 
 static RCRef<BlobCacheBackend> makeFilesytemBackend(Runtime &runtime) {
