@@ -842,6 +842,11 @@ struct Inner:
 struct Outer: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
+
+@value
+struct AnyTypeMember[T: AnyType]: # expected-error {{cannot transfer value into destination, because 'T' doesn't implement `__moveinit__`}}
+    var value: T
+
 ##===----------------------------------------------------------------------===##
 # Top Level Code
 ##===----------------------------------------------------------------------===##

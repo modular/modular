@@ -208,14 +208,14 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
   if (!typeDecl)
     return true; // MLIR Types are copyable.
 
-  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
-    return true;
-
   // If the type is trivial, then it is copyable.
   if (auto structDecl = dyn_cast<StructDeclOp>(*typeDecl);
       structDecl && structDecl.isRegisterPassableTrivial())
     return true;
 
+  // Look for a copy constructor.
+  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+    return true;
   return !typeDecl->lookupInCurrentScope("__copyinit__").empty();
 }
 
@@ -223,15 +223,18 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
 /// is trivial or has a move constructor from self. Note: this resolves the
 /// body of a struct type.
 bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
-  // If the type is a register type, it is trivially movable.
-  if (isRegisterPassable(loc, shared))
+  ASTDecl *typeDecl = getDecl(shared);
+  if (!typeDecl)
+    return true; // MLIR types are movable.
+
+  // If the type is register-passable, it is trivially movable.
+  if (auto structDecl = dyn_cast<StructDeclOp>(*typeDecl);
+      structDecl && structDecl.isRegisterPassable())
     return true;
 
-  ASTDecl *typeDecl = getDecl(shared);
-  assert(typeDecl && "expected a user type");
+  // Look for a move constructor.
   if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
     return true;
-
   return !typeDecl->lookupInCurrentScope("__moveinit__").empty();
 }
 
