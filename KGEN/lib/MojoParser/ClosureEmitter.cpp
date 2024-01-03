@@ -820,13 +820,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
   Value source = init.getBody()->getArgument(1);
 
-  // HACK: force convert to reference.
-  auto targetRefTy =
-      RefType::getRefForPointerHACK(PointerType::get(closureImplType),
-                                    /*isMut=*/true);
-  Value targetRef =
-      builder.create<mlir::UnrealizedConversionCastOp>(targetRefTy, target)
-          .getResult(0);
+  // TODO(references): Move closures off pointers.
+  Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target);
 
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
@@ -903,9 +898,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         closureImplTopLevelPtrType, body->getArgument(1));
 
     // TODO(move closures to pointers).
-    Value targetRef = builder.create<RefFromPointerOp>(target, /*isMut*/ true);
+    Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target);
     Value existingRef =
-        builder.create<RefFromPointerOp>(existingPtr, /*isMut*/ true);
+        builder.create<RefFromPointerOp>(/*isMut=*/true, existingPtr);
 
     // Copy the existing value into the target.
     ValueDest copyDest(MLValue(targetRef), EC_Assignment);
@@ -946,14 +941,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     // Cast the opaque pointer back to the closure impl type.
     Value implPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, body->getArgument(0));
-    //  TODO(references)
-    auto destTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
-                                                /*isMut=*/true);
-    auto castOp =
-        builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
-            .getResult(0);
 
-    builder.create<OwnershipEndLifetimeOp>(castOp, /*isRegister=*/false);
+    // TODO(references): Move closures off pointers.
+    Value implRef = builder.create<RefFromPointerOp>(/*isMut=*/true, implPtr);
+    builder.create<OwnershipEndLifetimeOp>(implRef, /*isRegister=*/false);
 
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
@@ -1004,10 +995,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         closureImplTopLevelPtrType, closureArg);
 
     // FIXME: Thread a lifetime through correctly.
-    auto destTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
-                                                /*isMut=*/false);
-    implPtr = builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
-                  .getResult(0);
+
+    // TODO(references): Move closures off pointers.
+    Value implRef = builder.create<RefFromPointerOp>(/*isMut=*/false, implPtr);
 
     // Call the __call__ on the closure impl.
     assert(closureImpl->hasAttr(callMethodAttr) &&
@@ -1017,7 +1007,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     SmallVector<Value> args;
     if (hasMemoryOnlyResult)
       args.push_back(topLevelCall.getArgument(0));
-    args.push_back(implPtr);
+    args.push_back(implRef);
     for (unsigned i = hasMemoryOnlyResult + 1 /*implPtr*/,
                   e = closureSignature.getNumInputs();
          i < e; ++i)

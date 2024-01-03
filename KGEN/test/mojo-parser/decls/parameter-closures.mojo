@@ -146,7 +146,7 @@ fn capture_by_copy():
     var c: BoxedInt = `2`
 
     # CHECK: [[TMP:%.*]] = pop.stack_allocation
-    # CHECK-NEXT: [[TMPREF:%.*]] = builtin.unrealized_conversion_cast [[TMP]]
+    # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.from_pointer [[TMP]]
     # CHECK-NEXT: %[[VAL:.*]] = lit.ref.load %c
     # CHECK-NEXT: %[[COPY:.*]] = lit.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
     # CHECK-NEXT: lit.ref.store %[[COPY]], [[TMPREF]]
@@ -154,8 +154,9 @@ fn capture_by_copy():
     # CHECK-NEXT: lit.func *"value_closure
     fn value_closure(x: Int):
         let arg = x
-        # CHECK-NEXT: %[[STATE:.*]] = pop.stack_allocation
-        # CHECK-NEXT: pop.store %[[RAW]], %[[STATE]]
+        # CHECK-NEXT: [[STATE:%.*]] = pop.stack_allocation
+        # CHECK-NEXT: [[STATEREF:%.*]] = lit.ref.from_pointer [[STATE]]
+        # CHECK-NEXT: lit.ref.store %[[RAW]], [[STATEREF]]
         let capture = c
 
     # CHECK: %[[CLS:.*]] = kgen.create_closure{{.*}}*"value_closure

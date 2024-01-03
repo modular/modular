@@ -395,16 +395,16 @@ RefType RefType::getWithMutability(bool isMut) {
 
 /// Return a reference to the specified element type and mutability with an
 /// immortal (#lit.lifetime) lifetime.
-RefType RefType::getImmortal(bool isMut, Type elementType, unsigned addrSpace) {
+RefType RefType::getImmortal(bool isMut, Type elementType,
+                             TypedAttr addrSpace) {
   return get(isMut, elementType, LifetimeAttr::get(elementType.getContext()),
              addrSpace);
 }
 
-/// Given the specified pointer type, return a reference type of the same
-/// element but with a hacked lifetime.
-/// TODO(references): Remove. This is just for migration.
-RefType RefType::getRefForPointerHACK(PointerType type, bool isMut) {
-  return getImmortal(isMut, type.getElementType());
+RefType RefType::getImmortal(bool isMut, Type elementType, unsigned addrSpace) {
+  return getImmortal(
+      isMut, elementType,
+      IntegerAttr::get(IndexType::get(elementType.getContext()), addrSpace));
 }
 
 /// Print/Parse a parameter value that is known to have `lifetime` type.
