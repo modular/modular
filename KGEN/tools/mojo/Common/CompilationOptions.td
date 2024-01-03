@@ -66,7 +66,7 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<8>,
            "Mojo program, would yield the compile-time value `42`.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
-  Group<CompilationOptionGroup>, Index<9>,
+  Group<CompilationOptionGroup>, Index<9>, Flags<[HelpHidden]>,
   HelpText<"Parses the input file(s) as the Mojo standard library.">;
 
 //===----------------------------------------------------------------------===//
