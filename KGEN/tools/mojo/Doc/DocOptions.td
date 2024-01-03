@@ -34,7 +34,8 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
   Group<CompilationOptionGroup>, Index<1>, Flags<[HelpHidden]>,
-  HelpText<"For internal use only.">;
+  HelpText<"For internal use only; see `ParserConfig::parsingStandardLibrary` "
+           "for details.">;
 
 //===----------------------------------------------------------------------===//
 // Validation Options
