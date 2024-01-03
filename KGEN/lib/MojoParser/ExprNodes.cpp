@@ -550,7 +550,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
-      ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
+
+      auto refType = RefType::getRefForPointerHACK(ptrType, /*isMut=*/true);
+      tmp = emitter.builder
+                ->create<mlir::UnrealizedConversionCastOp>(parentFunc.getLoc(),
+                                                           refType, tmp)
+                .getResult(0);
+
+      ValueDest copyDest(XLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
       if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
         diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(funcSpAttr);
@@ -561,7 +568,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // Rig the closure formation into emitting a memcpy of the raw value
       // by causing the whole value to cross the closure boundary.
       Value rawBytes =
-          emitter.builder->create<POP::LoadOp>(parentFunc.getLoc(), tmp);
+          emitter.builder->create<RefLoadOp>(parentFunc.getLoc(), tmp);
 
       // Redeclare the value inside the closure region using a raw stack
       // allocation. We want the lifetime tracker to ignore this: the object
@@ -3019,12 +3026,13 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     if (!result)
       return {};
 
-    if (XLValue resultRef = result.getIfXLValue())
-      result = MLValue(emitter.builder->create<RefToPointerOp>(
-          getLocation(emitter), resultRef));
-
-    MLValue resultPtr = result.getIfMLValue();
-    if (!resultPtr) {
+    Value resultPtr;
+    if (XLValue resultRef = result.getIfXLValue()) {
+      resultPtr = emitter.builder->create<RefToPointerOp>(getLocation(emitter),
+                                                          resultRef);
+    } else if (MLValue mlPtr = result.getIfMLValue()) {
+      resultPtr = mlPtr;
+    } else {
       emitter.emitError(getLoc(),
                         "cannot use a dynamic LValue in this operator")
           << getRange();

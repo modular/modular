@@ -1203,14 +1203,14 @@ fn returnTup2b() -> (Int, FloatLiteral):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.globalvar.decl @trivial_global : !Int
-# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <!Int>
+# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <mut !Int, #lit.lifetime>
 # CHECK-NEXT: %1 = kgen.param.constant
-# CHECK-NEXT: pop.store %1, %0
+# CHECK-NEXT: lit.ref.store %1, %0
 var trivial_global: Int = 1
 # CHECK-LABEL: lit.globalvar.decl @trivial_global_implicit : !Int
 # CHECK-NEXT: %0 = lit.globalvar.ref
 # CHECK-NEXT: %1 = kgen.param.constant
-# CHECK-NEXT: pop.store %1, %0
+# CHECK-NEXT: lit.ref.store %1, %0
 var trivial_global_implicit = 1
 
 @value
@@ -1220,28 +1220,24 @@ struct RegType: pass
 # CHECK-LABEL: lit.globalvar.decl @reg_global : !RegType
 # CHECK-NEXT: %0 = lit.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
-# CHECK-NEXT: pop.store %0, %1
+# CHECK-NEXT: lit.ref.store %0, %1
 let reg_global: RegType = RegType()
 # CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType isVar
 # CHECK-NEXT: %0 = lit.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref
-# CHECK-NEXT: pop.store %0, %1
+# CHECK-NEXT: lit.ref.store %0, %1
 var reg_global_implicit = RegType()
 
 @value
 struct MemType: pass
 
 # CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
-# CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-# CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}(%anonymous2A)
 # CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
-# CHECK-NEXT: [[GLOBALREF:%.*]] = builtin.unrealized_conversion_cast [[GLOBAL]]
-# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBALREF]], %anonymous2A) :
+# CHECK-NEXT:  = lit.call {{.*}}__init__{{.*}}([[GLOBAL]])
 let mem_global: MemType = MemType()
 # CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-# CHECK-NEXT:  = lit.call {{.*}}__init__{{.*}}(%1)
+# CHECK-NEXT:  = lit.call {{.*}}__init__{{.*}}(%0)
 var mem_global_implicit = MemType()
 
 @value
@@ -1252,9 +1248,8 @@ struct DtorRegType:
 # CHECK-LABEL: lit.globalvar.decl @reg_dtor
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref {{.*}}@reg_dtor
-# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-# CHECK-NEXT: %2 = lit.load.consume %1
-# CHECK-NEXT:  = lit.call {{.*}}__del__{{.*}}(%2)
+# CHECK-NEXT: %1 = lit.load.consume %0
+# CHECK-NEXT:  = lit.call {{.*}}__del__{{.*}}(%1)
 var reg_dtor = DtorRegType()
 
 @value
@@ -1264,8 +1259,7 @@ struct DtorMemType:
 # CHECK-label: lit.globalvar.decl @mem_dtor : !kgen.declref<@"$decls"::@DtorMemType> {
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-# CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%1)
+# CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%0)
 var mem_dtor = DtorMemType()
 
 fn borrowGlobalInt(x: Int): pass
@@ -1275,21 +1269,19 @@ fn copyGlobalMem(owned x: MemType): pass
 
 fn refGlobals():
     # CHECK: [[TRIVIAL:%.*]] = lit.globalvar.ref {{.*}}@trivial_global
-    # CHECK-NEXT: [[VALUE:%.*]] = pop.load [[TRIVIAL]]
+    # CHECK-NEXT: [[VALUE:%.*]] = lit.ref.load [[TRIVIAL]]
     # CHECK-NEXT: call {{.*}}borrowGlobalInt{{.*}}([[VALUE]])
     borrowGlobalInt(trivial_global)
     # CHECK: [[REG:%.*]] = lit.globalvar.ref {{.*}}@reg_global
-    # CHECK-NEXT: [[VALUE:%.*]] = pop.load [[REG]]
+    # CHECK-NEXT: [[VALUE:%.*]] = lit.ref.load [[REG]]
     # CHECK-NEXT: call {{.*}}borrowGlobalReg{{.*}}([[VALUE]])
     borrowGlobalReg(reg_global)
     # CHECK: [[REG_REF:%.*]] = lit.globalvar.ref {{.*}}@reg_global
-    # CHECK-NEXT: %7 = builtin.unrealized_conversion_cast [[REG_REF]]
-    # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}(%7)
+    # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
-    # CHECK-NEXT: [[MEM_REF2:%.*]] = builtin.unrealized_conversion_cast [[MEM_REF]]
-    # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = kgen.rebind [[MEM_REF2]]
+    # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = kgen.rebind [[MEM_REF]]
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF_IMM]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)

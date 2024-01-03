@@ -145,11 +145,12 @@ fn member_method_reference():
 fn capture_by_copy():
     var c: BoxedInt = `2`
 
-    # CHECK: %[[TMP:.*]] = pop.stack_allocation
+    # CHECK: [[TMP:%.*]] = pop.stack_allocation
+    # CHECK-NEXT: [[TMPREF:%.*]] = builtin.unrealized_conversion_cast [[TMP]]
     # CHECK-NEXT: %[[VAL:.*]] = lit.ref.load %c
     # CHECK-NEXT: %[[COPY:.*]] = lit.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
-    # CHECK-NEXT: pop.store %[[COPY]], %[[TMP]]
-    # CHECK-NEXT: %[[RAW:.*]] = pop.load %[[TMP]]
+    # CHECK-NEXT: lit.ref.store %[[COPY]], [[TMPREF]]
+    # CHECK-NEXT: %[[RAW:.*]] = lit.ref.load [[TMPREF]]
     # CHECK-NEXT: lit.func *"value_closure
     fn value_closure(x: Int):
         let arg = x

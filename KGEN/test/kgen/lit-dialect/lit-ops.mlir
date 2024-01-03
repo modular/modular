@@ -403,8 +403,8 @@ lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
 
 // CHECK: lit.globalvar.decl @global_var : !kgen.declref<@Error> {
 lit.globalvar.decl @global_var : !kgen.declref<@Error> {
-  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error>
-  %0 = lit.globalvar.ref @global_var : <@Error>
+  // CHECK-NEXT: lit.globalvar.ref @global_var : <mut @Error, #lit.lifetime>
+  %0 = lit.globalvar.ref @global_var : <mut @Error, #lit.lifetime>
 // CHECK-NEXT: }, {
 }, {
 // CHECK-NEXT: }
@@ -413,7 +413,7 @@ lit.globalvar.decl @global_var : !kgen.declref<@Error> {
 // CHECK: lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar
 lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar {
 }, {
-  %0 = lit.globalvar.ref @global_let : <@Error>
+  %0 = lit.globalvar.ref @global_let : <mut @Error, #lit.lifetime>
 }
 
 // -----

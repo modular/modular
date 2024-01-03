@@ -201,7 +201,7 @@ public:
   /// will not consume the ValueDest, so any user should reemit the ultimate
   /// value through it with emitResult.
   LValue getLValueForResult(SMLoc loc, ASTType resultType,
-                            bool allowIncompatibleTypes, bool requireMLValue,
+                            bool allowIncompatibleTypes, bool requireXLValue,
                             ExprEmitter &emitter);
 
   /// Return an XLValue for this destination of the specified type that we can
@@ -214,7 +214,7 @@ public:
   /// returned by getXLValueForResult with the specified type, return it.
   /// Otherwise return null.
   /// TODO(references): switch this to return XLValue instead.
-  Value getDefinedXMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
+  XLValue getDefinedXLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.

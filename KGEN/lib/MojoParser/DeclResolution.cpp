@@ -1513,18 +1513,12 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   // Emit the initializer into an initializer function. If we have a type, then
   // emit directly into the LValue. Otherwise emit into the global to infer its
   // type.
-  ValueDest dest;
   ExprContext exprContext = op.getIsVar() ? EC_VarInit : EC_LetInit;
-  if (parsedType) {
+  if (parsedType)
     op.setType(parsedType);
-    DLValue result(
-        RCRef<GlobalDLValue>::create(op, parsedType, initExpr->getLoc()));
-    dest = ValueDest(result, exprContext);
-  } else {
-    // If we don't, we emit into the varOp itself, because this will infer the
-    // type of the varOp from the initializer expression.
-    dest = ValueDest(op, exprContext);
-  }
+  // If we don't, we emit into the varOp itself, because this will infer the
+  // type of the varOp from the initializer expression.
+  ValueDest dest(op, exprContext);
 
   op.getCtor().push_back(new Block);
   emitter.builder = OpBuilder::atBlockBegin(&op.getCtor().front());
@@ -1535,11 +1529,11 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
          "RValue emission should have inferred var type");
 
   // Emit the destructor call, if present, into the destructor function.
-  op.getDtor().push_back(new Block);
+  op.getDtor().push_back(new Block());
   if (shared.typeHasMember(ASTType(op.getType()), "__del__",
                            initExpr->getLoc())) {
     emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
-    MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
+    XRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     ValueDest dest(EC_Destructor);
     (void)emitter.emitNamedMethodCall("__del__",
                                       CallOperands({{owned, initExpr}}), dest,

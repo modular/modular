@@ -406,10 +406,12 @@ lit.globalvar.decl @foo : index {
 
 // CHECK: (ctor_fn)bar
 lit.globalvar.decl @bar : index {
-  // CHECK-NEXT: kgen.global.address @foo
-  lit.globalvar.ref @foo : <index>
-  // CHECK-NEXT: kgen.global.address @baz
-  lit.globalvar.ref @baz : <index>
+  // CHECK-NEXT: %0 = kgen.global.address @foo
+  // CHECK-NEXT:  builtin.unrealized_conversion_cast %0
+  lit.globalvar.ref @foo : <mut index, #lit.lifetime>
+  // CHECK-NEXT: %2 = kgen.global.address @baz
+  // CHECK-NEXT:  builtin.unrealized_conversion_cast %2
+  lit.globalvar.ref @baz : <mut index, #lit.lifetime>
   // CHECK-NEXT: kgen.return
 }, {
 }
@@ -417,14 +419,14 @@ lit.globalvar.decl @bar : index {
 
 // CHECK: kgen.global @baz : index [{{.*}}](1)
 lit.globalvar.decl @baz : index {
-  lit.globalvar.ref @foo : <index>
+  lit.globalvar.ref @foo : <mut index, #lit.lifetime>
 }, {
 }
 
 // CHECK: kgen.global @boo : index [{{.*}}](3)
 lit.globalvar.decl @boo : index {
-  lit.globalvar.ref @bar : <index>
-  lit.globalvar.ref @baz : <index>
+  lit.globalvar.ref @bar : <mut index, #lit.lifetime>
+  lit.globalvar.ref @baz : <mut index, #lit.lifetime>
 }, {
 }
 
@@ -437,7 +439,7 @@ lit.file_module @module {
   // CHECK-LABEL: kgen.generator @"module::ref_exported"
   lit.func @ref_exported() {
     // CHECK-NEXT: kgen.global.address @foo : <index>
-    %0 = lit.globalvar.ref @module::@exported : <index>
+    %0 = lit.globalvar.ref @module::@exported : <mut index, #lit.lifetime>
     kgen.return
   }
 }
@@ -446,12 +448,12 @@ lit.file_module @module {
 // expected-error @-2 {{cyclic dependencies between global variables in 'lower-lit' pass}}
 
 lit.globalvar.decl @foo : index {
-  lit.globalvar.ref @bar : <index>
+  lit.globalvar.ref @bar : <mut index, #lit.lifetime>
 }, {
 }
 
 lit.globalvar.decl @bar : index {
-  lit.globalvar.ref @foo : <index>
+  lit.globalvar.ref @foo : <mut index, #lit.lifetime>
 }, {
 }
 
@@ -460,9 +462,9 @@ lit.globalvar.decl @bar : index {
 // CHECK: kgen.generator @"(ctor_fn)self"
 lit.globalvar.decl @self : index {
   // CHECK-NEXT: kgen.global.address @self
-  lit.globalvar.ref @self : <index>
+  lit.globalvar.ref @self : <mut index, #lit.lifetime>
 }, {
-  lit.globalvar.ref @self : <index>
+  lit.globalvar.ref @self : <mut index, #lit.lifetime>
 }
 
 // -----

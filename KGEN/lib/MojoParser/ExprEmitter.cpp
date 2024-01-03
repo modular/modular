@@ -221,8 +221,8 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 /// TODO(references): switch this to return XLValue instead.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
-Value ValueDest::getDefinedXMLValueIfExists(ASTType resultType,
-                                            ExprEmitter &emitter) {
+XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
+                                             ExprEmitter &emitter) {
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
@@ -241,8 +241,7 @@ Value ValueDest::getDefinedXMLValueIfExists(ASTType resultType,
         return mlValue;
     }
 
-    // If emitting into an XLValue, convert the location to a pointer.
-    if (Value refValue = lValue.getIfXLValue()) {
+    if (XLValue refValue = lValue.getIfXLValue()) {
       if (lValue.getRValueType().isEqualCanon(resultType))
         return refValue;
     }
@@ -266,10 +265,10 @@ Value ValueDest::getDefinedXMLValueIfExists(ASTType resultType,
 /// will not consume the ValueDest, so any user should reemit the ultimate
 /// value through it with emitResult.
 ///
-/// NOTE: This needs to be kept in sync with getDefinedXMLValueIfExists.
+/// NOTE: This needs to be kept in sync with getDefinedXLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
-                                     bool requireMLValue,
+                                     bool requireXLValue,
                                      ExprEmitter &emitter) {
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
@@ -286,10 +285,11 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       return XLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
-    assert(isa<UnresolvedType>(globalOp.getType()) &&
-           "Cannot resolve an already-resolved global");
-    globalOp.setType(materializedType);
-    return DLValue(RCRef<GlobalDLValue>::create(globalOp, resultType, loc));
+    if (isa<UnresolvedType>(globalOp.getType()))
+      globalOp.setType(materializedType);
+
+    return XLValue(emitter.builder->create<GlobalVarRefOp>(
+        emitter.translateLocation(loc), globalOp));
   }
 
   // Otherwise, we have one of a few cases where we can produce an LValue but
@@ -317,12 +317,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         lValue.getRValueType().isEqualCanon(resultType)) {
       // If the client requires a stored LValue and we don't have one, don't
       // consume it.
-      // TODO(references): remove this.
-      if (!requireMLValue || lValue.getIfMLValue()) {
-        representation = LValueBufferTaken(); // Buffer taken!
-        return lValue;
-      }
-      if (!requireMLValue || lValue.getIfXLValue()) {
+      if (!requireXLValue || lValue.getIfXLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
@@ -365,38 +360,14 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
 /// Return an XLValue for this destination of the specified type that we can
 /// initialize. This uses and consumes the destination if it matches the type
-/// of the value dest. If the underlying value is a DLValue, attempt to coerce
-/// it to an MLValue if possible.
+/// of the value dest.
 XLValue ValueDest::getXLValueForResult(SMLoc loc, ASTType resultType,
                                        ExprEmitter &emitter) {
-  // Save the operation if it is one so we can query the type of DLValue.
-  auto *op = dyn_cast<Operation *>(representation);
-
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
-                         /*requireMLValue=*/true, emitter);
+                         /*requireXLValue=*/true, emitter);
   if (!lv)
     return {};
-
-  // Only a GlobalDLValue is possible at the moment.
-  if (lv.getIfDLValue()) {
-    // Get an MLValue by taking the address of the global.
-    auto global = cast<GlobalVarDeclOp>(op);
-    lv = MLValue(emitter.builder->create<GlobalVarRefOp>(
-        emitter.translateLocation(loc), global));
-  }
-
-  // Decay MLValue to XLValue on demand.
-  // TODO(references): Remove MLValue.
-  if (auto ptr = lv.getIfMLValue()) {
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
-    return emitter.builder
-        ->create<mlir::UnrealizedConversionCastOp>(
-            emitter.translateLocation(loc), destTy, ptr)
-        .getResult(0);
-  }
 
   assert(lv.getIfXLValue());
   return lv.getIfXLValue();
@@ -934,8 +905,8 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              newType, v);
   };
-  if (auto slValue = value.getIfMLValue())
-    return MLValue(rebind(slValue));
+  if (auto mlValue = value.getIfMLValue())
+    return MLValue(rebind(mlValue));
   if (auto mrValue = value.getIfMRValue())
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
@@ -1208,7 +1179,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // LValue.  Emit the dest to figure out where to store it.
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
                                           /*allowIncompatibleTypes=*/true,
-                                          /*requireMLValue=*/false, *this);
+                                          /*requireXLValue=*/false, *this);
   if (!destLV) {
     dest.resetForError();
     return {};
@@ -1843,9 +1814,9 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     auto ref = builder->create<GlobalVarRefOp>(
         translateLocation(expr->getLoc()), globalOp);
     if (globalOp.getIsVar())
-      value = MLValue(ref);
+      value = XLValue(ref);
     else
-      value = MBValue(ref);
+      value = XBValue(ref);
   } else if (auto rvalue = decl.getIfRValue()) {
     value = rvalue;
   } else if (auto bvalue = decl.getIfBValue()) {
@@ -2057,21 +2028,6 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
       return;
     }
   }
-}
-
-CValue GlobalDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
-  assert(emitter.builder && "cannot reference dynamic value");
-  auto global = emitter.builder->create<GlobalVarRefOp>(
-      emitter.translateLocation(loc), getGlobal());
-  return MLValue(global);
-}
-
-void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
-                              ExprEmitter &emitter) const {
-  assert(emitter.builder && "cannot reference dynamic value");
-  auto global = emitter.builder->create<GlobalVarRefOp>(
-      emitter.translateLocation(loc), getGlobal());
-  emitter.emitStoreToLValue(value, MLValue(global), EC_Assignment);
 }
 
 //===--------------------------------------------------------------------===//

@@ -125,7 +125,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 // FileModuleOp
 //===----------------------------------------------------------------------===//
 
-void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
+void FileModuleOp::build(OpBuilder &builder, OperationState &state,
                          StringAttr name, StringAttr sourceName) {
   state.addAttribute(getSymNameAttrName(state.name), name);
   state.addAttribute(getSourceNameAttrName(state.name), sourceName);
@@ -1136,14 +1136,14 @@ Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
   return evaluator.getReboundType(getType());
 }
 
-void StructFieldOp::build(OpBuilder &odsBuilder, OperationState &odsState,
+void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           StringAttr name, Type type) {
-  build(odsBuilder, odsState, name, type, nullptr);
+  build(builder, odsState, name, type, nullptr);
 }
 
-void StructFieldOp::build(OpBuilder &odsBuilder, OperationState &odsState,
+void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           const Twine &name, Type type) {
-  build(odsBuilder, odsState, odsBuilder.getStringAttr(name), type);
+  build(builder, odsState, builder.getStringAttr(name), type);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1677,6 +1677,12 @@ DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
 //===----------------------------------------------------------------------===//
 // GlobalVarRefOp
 //===----------------------------------------------------------------------===//
+
+void GlobalVarRefOp::build(OpBuilder &builder, OperationState &state,
+                           GlobalVarDeclOp op) {
+  build(builder, state, RefType::getImmortal(/*isMut=*/true, op.getType()),
+        getFullyResolvedSymbolRef(op));
+}
 
 LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
   auto global = symtab.lookupSymbolIn<GlobalVarDeclOp>(

@@ -344,19 +344,3 @@ TupleDLValue::TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
 void TupleDLValue::print(raw_ostream &os) const {
   os << "(tuple lvalue): " << elementType << " ";
 }
-
-//===----------------------------------------------------------------------===//
-// GlobalDLValue
-//===----------------------------------------------------------------------===//
-
-GlobalDLValue::GlobalDLValue(GlobalVarDeclOp op, ASTType type, SMLoc loc)
-    : BaseDLValue(type), op(op), loc(loc) {}
-
-GlobalVarDeclOp GlobalDLValue::getGlobal() const {
-  return cast<GlobalVarDeclOp>(op);
-}
-
-void GlobalDLValue::print(raw_ostream &os) const {
-  GlobalVarDeclOp opMut = getGlobal();
-  os << "(global lvalue): " << opMut.getSymName() << " : " << opMut.getType();
-}

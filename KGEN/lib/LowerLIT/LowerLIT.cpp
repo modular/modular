@@ -235,8 +235,15 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
     } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
-      b.replaceOpWithNewOp<GlobalAddressOp>(globalRefOp, globalRefOp.getType(),
-                                            globalRefOp.getGlobal());
+      Value newAddr = b.create<GlobalAddressOp>(
+          op->getLoc(), globalRefOp.getType().getAsPointerType(),
+          globalRefOp.getGlobal());
+
+      // Replace !lit.ref result type with a cast from the pointer.  This will
+      // get squashed by LowerLITTypes.
+      b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
+          globalRefOp, ArrayRef<Type>(globalRefOp.getType()), newAddr);
+
     } else if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
       lowerNestedFunction(funcOp);
     }
