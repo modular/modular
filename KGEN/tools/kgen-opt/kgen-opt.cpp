@@ -18,6 +18,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/MDialect/MAttrs.h"

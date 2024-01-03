@@ -7,6 +7,7 @@
 add_modular_mlir_library(MCompilerSupport
   Diags.cpp
   ErrorTree.cpp
+  MLIRDenseAttr.cpp
   MLIRDType.cpp
   OperationUtils.cpp
   ParserUtils.cpp

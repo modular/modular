@@ -9,13 +9,13 @@ add_modular_unittest(
   check-support
 
   SUITE_NAME
-  SupportMDialectUnitTests
+  SupportCompilerUnitTests
 
   TEST_NAME
-  SupportMDialectTests
+  SupportCompilerTests
 
-  MAttrsTest.cpp
+  MLIRDenseAttrTest.cpp
 
   LINK_LIBS PRIVATE
-  MDialect
+  MCompilerSupport
 )

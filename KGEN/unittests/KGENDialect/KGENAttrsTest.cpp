@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/MDialect/MAttrs.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/MLIRContext.h"
 #include "gtest/gtest.h"
@@ -12,7 +12,7 @@
 using namespace M;
 using namespace mlir;
 
-TEST(MAttrs, createResourceAttr) {
+TEST(MLIRDenseAttr, createResourceAttr) {
   MLIRContext ctx;
   DenseResourceElementsAttr attr;
   {

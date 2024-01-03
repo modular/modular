@@ -316,11 +316,6 @@ getAttrForTensorDataCopy(ShapedType type, StringRef bufferName,
                          ArrayRef<char> data,
                          DenseResourceElementsHandleManager &resourceManager);
 
-/// Returns an attribute with the given `name` that represents the serialized
-/// `data`. The data is always copied into the MLIR context.
-DenseResourceElementsAttr
-createResourceAttr(MLIRContext *ctx, ArrayRef<char> data, const Twine &name);
-
 /// Return the contents of the IntArrayElementsAttr as a vector in int64_t.
 SmallVector<int64_t> getIntBlob(IntArrayElementsAttr intElemsAttr);
 

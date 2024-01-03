@@ -24,6 +24,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Driver/DriverSupport.h"
 
