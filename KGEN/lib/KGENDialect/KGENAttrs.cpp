@@ -808,41 +808,30 @@ static Type upbindApplyResult(Type resultType) {
   return adjuster.replace(resultType);
 }
 
+/// Verify the apply and apply_result ParameterOperatorExprs.
 static LogicalResult
-verifyApplyLike(ArrayRef<TypedAttr> operands, Type type, StringRef prefix,
+verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
                 function_ref<InFlightDiagnostic()> emitError) {
+  StringRef prefix = isApplyResult ? "'apply_result_slot' " : "'apply' ";
   if (operands.empty())
     return emitError() << prefix << "expected a function parameter";
 
-  auto signature = cast<SignatureType>(operands.front().getType());
-  if (!signature.getResultParamTypes().empty() ||
-      !signature.getInputParamTypes().empty())
-    return emitError() << prefix << "function cannot be parametric";
-  return success();
-}
-
-static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
-                                 function_ref<InFlightDiagnostic()> emitError) {
-  if (failed(verifyApplyLike(operands, type, "'apply' ", emitError)))
-    return failure();
-
-  // Verify the result.
   auto sig = cast<SignatureType>(operands.front().getType());
-  if (sig.getValueResults().size() != 1)
-    return emitError() << "'apply' function must return one result";
-  Type resultType = upbindApplyResult(sig.getValueResults().front());
-  if (type != resultType)
-    return emitError() << "'apply' function result type must be " << type
-                       << " but got " << resultType;
+  if (!sig.getResultParamTypes().empty() || !sig.getInputParamTypes().empty())
+    return emitError() << prefix << "function cannot be parametric";
 
   // Verify the inputs.
+  // Drop the callee and the result slot type for apply_result.
   operands = operands.drop_front();
-  if (operands.size() != sig.getNumInputs()) {
-    return emitError() << "'apply' function expected " << sig.getNumInputs()
+  ArrayRef<Type> inputTypes = sig.getValueInputs();
+  if (isApplyResult)
+    inputTypes = inputTypes.drop_front();
+
+  if (operands.size() != inputTypes.size()) {
+    return emitError() << "'apply' function expected " << inputTypes.size()
                        << " inputs but got " << operands.size() << "\n";
   }
-  for (auto [i, operand, type] :
-       llvm::enumerate(operands, sig.getValueInputs())) {
+  for (auto [i, operand, type] : llvm::enumerate(operands, inputTypes)) {
     Type expected = upbindApplyResult(type);
     if (operand.getType() != expected) {
       return emitError() << "'apply' operand #" << i << " type "
@@ -854,10 +843,38 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   return success();
 }
 
+static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
+                                 function_ref<InFlightDiagnostic()> emitError) {
+  if (failed(verifyApplyLike(operands, /*isApplyResult=*/false, emitError)))
+    return failure();
+
+  // Verify the result.
+  auto sig = cast<SignatureType>(operands.front().getType());
+  if (sig.getValueResults().size() != 1)
+    return emitError() << "'apply' function must return one result";
+  Type resultType = upbindApplyResult(sig.getValueResults().front());
+  if (type != resultType)
+    return emitError() << "'apply' function result type must be " << type
+                       << " but got " << resultType;
+
+  return success();
+}
+
 static LogicalResult
 verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
                       function_ref<InFlightDiagnostic()> emitError) {
-  return verifyApplyLike(operands, type, "'apply_result_slot' ", emitError);
+  if (failed(verifyApplyLike(operands, /*isApplyResult=*/true, emitError)))
+    return failure();
+
+  auto sig = cast<SignatureType>(operands.front().getType());
+  // TODO: Cannot check !lit.ref reference types in KGEN.
+  if (auto resultPtr = dyn_cast<PointerType>(sig.getValueInputs()[0])) {
+    auto expectedResult = resultPtr.getElementType();
+    if (expectedResult != type)
+      return emitError() << "'apply_result' function result type must be "
+                         << expectedResult << " but got " << type;
+  }
+  return success();
 }
 
 static LogicalResult
