@@ -77,6 +77,13 @@ struct ParserConfig {
 
   /// If true, the inputs are parsed as if they belong to the Mojo standard
   /// library.
+  ///
+  /// In practice, this means that when the parser encounters an `import foo`
+  /// statement, it ignores any already-compiled `foo.mojopkg` that appear in
+  /// its import search paths. Doing so results in Mojo source packages named
+  /// `foo/` being found instead, and those source packages being parsed anew.
+  /// This option is used when parsing the standard library because it contains
+  /// interdependent packages, and so these must be imported as source packages.
   bool parsingStandardLibrary = false;
 
   /// If true, auto-import the builtin package.
@@ -98,7 +105,8 @@ struct ParserConfig {
 // Driver Entry Points
 //===----------------------------------------------------------------------===//
 
-/// Returns true if the given file path corresponds to a mojo package.
+/// Returns true if the given path is a Mojo package source directory (i.e. a
+/// directory that contains an `__init__.mojo` file).
 bool isMojoSourcePackagePath(const std::filesystem::path &path);
 
 /// Parse a single .mojo file and return the MLIR module for it.
