@@ -826,22 +826,6 @@ public:
   void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
-/// This DLValue implementation represents a global variable reference.
-class GlobalDLValue : public BaseDLValue {
-public:
-  /// The global variable operation.
-  Operation *op;
-  llvm::SMLoc loc;
-
-  GlobalDLValue(GlobalVarDeclOp op, ASTType type, llvm::SMLoc loc);
-
-  GlobalVarDeclOp getGlobal() const;
-
-  void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
-};
-
 } // namespace M::KGEN::LIT
 
 namespace llvm {

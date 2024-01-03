@@ -428,19 +428,18 @@ lit.globalvar.decl @x : !kgen.declref<@MyStruct> isVar {}, {}
 
 // CHECK-LABEL: lit.func @byref_result_global_ref
 lit.func @byref_result_global_ref() {
-  // CHECK-NEXT: lit.globalvar.ref @x
-  %0 = lit.globalvar.ref @x : <@MyStruct>
-  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-  // CHECK-NEXT: lit.call @MyStruct::@__del__{{.*}}(%1)
+  // CHECK-NEXT: %0 = lit.globalvar.ref @x
+  %0 = lit.globalvar.ref @x : <mut @MyStruct, #lit.lifetime>
+  // CHECK-NEXT: lit.call @MyStruct::@__del__{{.*}}(%0)
   // CHECK-NEXT: call @memory_result
-  lit.call @memory_result(%0) : !lit.signature<(!kgen.pointer<@MyStruct> byref_result) -> ()>
+  lit.call @memory_result(%0) : !lit.signature<(!lit.ref<mut @MyStruct, #lit.lifetime> byref_result) -> ()>
   kgen.return
 }
 
 // CHECK-LABEL: lit.func @global_ref_no_use
 lit.func @global_ref_no_use() {
   // CHECK-NOT: call @MyStruct::@__del__
-  %0 = lit.globalvar.ref @x : <@MyStruct>
+  %0 = lit.globalvar.ref @x : <mut @MyStruct, #lit.lifetime>
   kgen.return
 }
 
@@ -455,12 +454,11 @@ lit.globalvar.decl @y : !kgen.declref<@MyRegStruct> isVar {}, {}
 // CHECK-LABEL: lit.func @global_ref_reg_store
 lit.func @global_ref_reg_store(%x: !kgen.declref<@MyRegStruct> borrow) {
   // CHECK-NEXT: %0 = lit.globalvar.ref @y
-  %0 = lit.globalvar.ref @y : <@MyRegStruct>
-  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-  // CHECK-NEXT: %2 = lit.ref.load %1
-  // CHECK-NEXT: call @MyRegStruct::@__del__(%2)
-  // CHECK-NEXT: pop.store %x, %0
-  pop.store %x, %0 : !kgen.pointer<@MyRegStruct>
+  %0 = lit.globalvar.ref @y : <mut @MyRegStruct, #lit.lifetime>
+  // CHECK-NEXT: %1 = lit.ref.load %0
+  // CHECK-NEXT: call @MyRegStruct::@__del__(%1)
+  // CHECK-NEXT: lit.ref.store %x, %0
+  lit.ref.store %x, %0 :  <mut @MyRegStruct, #lit.lifetime>
   kgen.return
 }
 

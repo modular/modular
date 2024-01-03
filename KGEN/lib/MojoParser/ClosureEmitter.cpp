@@ -43,7 +43,8 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       copyFieldAttr(StringAttr::get(ctx, "copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
-      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
+      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
+      opaqueRefType(RefType::getImmortal(true, KGEN::NoneType::get(ctx))) {}
 
 StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
                                                   FileModuleOp fileModuleOp,
@@ -819,9 +820,17 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
   Value source = init.getBody()->getArgument(1);
 
+  // HACK: force convert to reference.
+  auto targetRefTy =
+      RefType::getRefForPointerHACK(PointerType::get(closureImplType),
+                                    /*isMut=*/true);
+  Value targetRef =
+      builder.create<mlir::UnrealizedConversionCastOp>(targetRefTy, target)
+          .getResult(0);
+
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
-  ValueDest implDest(MLValue(target), EC_Assignment);
+  ValueDest implDest(XLValue(targetRef), EC_Assignment);
   emitter.emitResult(XRValue(source), &node, implDest);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
@@ -893,8 +902,15 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, body->getArgument(1));
 
+    // HACK: force convert to reference.
+    auto targetRefTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
+                                                     /*isMut=*/true);
+    Value targetRef =
+        builder.create<mlir::UnrealizedConversionCastOp>(targetRefTy, target)
+            .getResult(0);
+
     // Copy the existing value into the target.
-    ValueDest copyDest(MLValue(target), EC_Assignment);
+    ValueDest copyDest(XLValue(targetRef), EC_Assignment);
     ExprEmitter emitter(shared, moduleDecl, builder);
     emitter.emitResult(MBValue(existingPtr), &node, copyDest);
 

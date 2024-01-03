@@ -1024,22 +1024,20 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
   let summary = "Reference to a global variable.";
   let description = [{
     The `lit.globalvar.ref` operation forms a reference to a global variable.
+    The result reference is always mutable and immortal.
 
     Example:
 
     ```mlir
-    %0 = lit.globalvar.ref @global_var : <@Int>
+    %0 = lit.globalvar.ref @global_var : <mut @Int, #lit.lifetime>
     ```
   }];
 
   let arguments = (ins SymbolRefAttr:$global);
-  let results = (outs PointerType:$result);
+  let results = (outs LIT_RefType:$result);
 
   let builders = [
-    OpBuilder<(ins "GlobalVarDeclOp":$op), [{
-      build($_builder, $_state, PointerType::get(op.getType()),
-            getFullyResolvedSymbolRef(op));
-    }]>,
+    OpBuilder<(ins "GlobalVarDeclOp":$op)>
   ];
 
   let assemblyFormat = "$global attr-dict `:` type($result)";
