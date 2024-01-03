@@ -12,7 +12,6 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
-#include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/FileSystemExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
