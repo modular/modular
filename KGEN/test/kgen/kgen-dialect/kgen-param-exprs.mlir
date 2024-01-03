@@ -156,6 +156,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 
   // CHECK: kgen.param.constant = <cond(int1, p1, p2)>
   kgen.param.constant = <cond(int1, p1, p2)>
+  // CHECK: kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <cond(int1, 0, int1)>
+  // CHECK: kgen.param.constant = <p1>
+  kgen.param.constant = <cond(ne(p1, p2), p1, p2)>
   // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <cond(int1, p1, p1)>
   // CHECK: constant = <p1>
