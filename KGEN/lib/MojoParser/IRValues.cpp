@@ -38,26 +38,26 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "SR: ";
     os << val;
-  } else if (auto val = dyn_cast<XRValue>(storage)) {
+  } else if (auto val = dyn_cast<MRValue>(storage)) {
     if (isDump)
-      os << "XR: ";
+      os << "MR: ";
     os << val;
   } else if (auto val = dyn_cast<SBValue>(storage)) {
     if (isDump)
       os << "SB: ";
     os << val;
-  } else if (auto val = dyn_cast<XBValue>(storage)) {
+  } else if (auto val = dyn_cast<MBValue>(storage)) {
     if (isDump)
-      os << "XB: ";
+      os << "MB: ";
     os << val;
   } else if (auto val = dyn_cast<ORValue>(storage)) {
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
 
-  } else if (auto val = dyn_cast<XLValue>(storage)) {
+  } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
-      os << "XL: ";
+      os << "ML: ";
     os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
@@ -128,13 +128,13 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<XRValue>(storage))
+  if (auto value = dyn_cast<MRValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<SBValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<XBValue>(storage))
+  if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<XLValue>(storage))
+  if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
@@ -177,47 +177,47 @@ ASTType PValue::getIfTypeValue() const {
 /// This method looks through references to return the element type.
 ASTType CRValue::getRValueType() const {
   auto type = getType();
-  if (isa<XRValue>(storage))
+  if (isa<MRValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
 
 ASTType CValue::getRValueType() const {
   auto type = getType();
-  if (isa<XLValue, XRValue, XBValue>(storage))
+  if (isa<MLValue, MRValue, MBValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
 
 ASTType LValue::getRValueType() const {
   auto type = getType();
-  if (isa<XLValue>(storage))
+  if (isa<MLValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
 
 ASTType BValue::getRValueType() const {
   auto type = getType();
-  if (isa<XBValue>(storage))
+  if (isa<MBValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
 
 /// Given an XValue, return the underlying reference.
 Value VariantValueStorageBase::getXValueReference() const {
-  if (auto lvalue = dyn_cast<XLValue>(storage))
+  if (auto lvalue = dyn_cast<MLValue>(storage))
     return lvalue;
-  if (auto rvalue = dyn_cast<XRValue>(storage))
+  if (auto rvalue = dyn_cast<MRValue>(storage))
     return rvalue;
-  if (auto bvalue = dyn_cast<XBValue>(storage))
+  if (auto bvalue = dyn_cast<MBValue>(storage))
     return bvalue;
   llvm_unreachable("invalid use of non-XValue");
 }
 
 // TODO(lifetimes): remove pedantic checks.
-void XRValue::check() const { assert(::isa<RefType>(Value::getType())); }
-void XLValue::check() const { assert(::isa<RefType>(Value::getType())); }
-void XBValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void MRValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void MLValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void MBValue::check() const { assert(::isa<RefType>(Value::getType())); }
 
 //===----------------------------------------------------------------------===//
 // ORValue

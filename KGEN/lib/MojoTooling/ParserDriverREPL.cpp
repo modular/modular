@@ -468,7 +468,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   auto anyRegTypeType = structBuilder.getType<AnyRegTypeType>();
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
                                       mlir::Type elementType,
-                                      TypedAttr lifetimeAttr) -> XRValue {
+                                      TypedAttr lifetimeAttr) -> MRValue {
     PointerType type = PointerType::get(elementType);
 
     // Check if the variable should be persisted.
@@ -530,14 +530,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
                 RefType::get(/*isMut=*/true, elementType, lifetime), mallocCast)
             .getResult(0);
 
-    return XRValue(mallocCast);
+    return MRValue(mallocCast);
   };
 
   for (auto &[name, decl] : variables) {
     // Handle register based let decls. These have an initializer, and never
     // expose the actual pointer.
     if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
-      XRValue field =
+      MRValue field =
           checkInsertPersistentVar(letOp, letOp.getNameAttr(), letOp.getType(),
                                    LifetimeAttr::get(letOp.getContext()));
       if (!field)
@@ -555,7 +555,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     }
     // Handle memory based decls.
     if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
-      if (XRValue field = checkInsertPersistentVar(
+      if (MRValue field = checkInsertPersistentVar(
               letOp, letOp.getNameAttr(), letOp.getType().getElementType(),
               letOp.getType().getLifetime())) {
         letOp.replaceAllUsesWith(field);

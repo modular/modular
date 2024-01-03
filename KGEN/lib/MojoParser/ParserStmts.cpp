@@ -697,7 +697,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   SignatureType declSig = decl.getSignature();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(XLValue(decl.getArgument(0)), EC_ReturnValue);
+    ValueDest resultDest(MLValue(decl.getArgument(0)), EC_ReturnValue);
     if (!emitter.emitExpr(operandExpr, resultDest))
       return success();
 
@@ -1080,7 +1080,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // continue. Otherwise break
   ValueDest lengthDest(EC_ForIterator);
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{XLValue(rangeRef), seqExpr}}), lengthDest,
+      "__len__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
       CallSyntax::kImplicitConvert, seqExpr);
   CValue lengthIndex =
       getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
@@ -1102,7 +1102,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   builder.setInsertionPointToStart(bodyBlock);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{XLValue(rangeRef), seqExpr}}), ivarDest,
+          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), ivarDest,
           CallSyntax::kImplicitConvert, seqExpr))
     return {};
 
@@ -1299,7 +1299,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // familiar to Pythonistas.
 
   // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
-  ASTType contextRVType = XLValue(contextMgrDecl).getRValueType();
+  ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();
   bool hasExitMethod =
       shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
 
@@ -1324,7 +1324,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       SMLoc declLoc = decls[0]->getLoc();
       AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
                                                         EC_WithContextMgr);
-      if (auto ref = emitted.getIfXLValue()) {
+      if (auto ref = emitted.getIfMLValue()) {
         enterDest = ValueDest(ref, EC_WithContextMgr);
       } else {
         auto diag =
@@ -1352,7 +1352,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // pass the context expression, either as an LValue referring to the bound
   // variable, or as a transfered RValue if it takes it owned (enabling some
   // advanced use cases with unique context managers).
-  AnyValue contextVal = XLValue(contextMgrDecl);
+  AnyValue contextVal = MLValue(contextMgrDecl);
 
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
@@ -1368,7 +1368,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         signature && !signature.getInputConventions().empty()) {
       auto firstArgConvention = signature.getInputConventions()[0];
       if (firstArgConvention != ValueInputConvention::ByRef && !hasExitMethod)
-        contextVal = XRValue(contextMgrDecl);
+        contextVal = MRValue(contextMgrDecl);
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
@@ -1388,7 +1388,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
               << contextRVType << " declared here";
 
         // Make the emission work even if the type isn't copyable.
-        contextVal = XRValue(contextMgrDecl);
+        contextVal = MRValue(contextMgrDecl);
       }
     }
   }
@@ -1461,7 +1461,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     if (hasExitMethod) {
       ValueDest exitDest(EC_WithExitResult);
       (void)getEmitter().emitNamedMethodCall(
-          "__exit__", CallOperands({{XLValue(contextMgrDecl), contextExp}}),
+          "__exit__", CallOperands({{MLValue(contextMgrDecl), contextExp}}),
           exitDest, CallSyntax::kMethodCall, contextExp);
     } else if (auto targetBV = getEmitter().emitBValue(
                    {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
@@ -1472,7 +1472,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       // We don't care about extending PValues if one ever happened.
       if (auto scalar = enterResult.getIfSBValue())
         ptrOrScalar = scalar;
-      if (auto scalar = enterResult.getIfXBValue())
+      if (auto scalar = enterResult.getIfMBValue())
         ptrOrScalar = scalar;
       if (ptrOrScalar)
         builder.create<OwnershipUseOp>(loc, ptrOrScalar);
@@ -1559,7 +1559,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__",
       CallOperands(
-          {{XLValue(contextMgrDecl), contextExp}, {errorVal, contextExp}}),
+          {{MLValue(contextMgrDecl), contextExp}, {errorVal, contextExp}}),
       exitResultDest, CallSyntax::kMethodCall, contextExp);
   RValue exitI1RVal =
       getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
@@ -2086,7 +2086,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     if (parsedType) {
       varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
                                              varOp.getType().getLifetime()));
-      dest = ValueDest(XLValue(varOp), exprContext);
+      dest = ValueDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.

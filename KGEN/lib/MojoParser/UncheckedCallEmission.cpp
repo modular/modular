@@ -107,7 +107,7 @@ private:
 
     // The first entry of this is a ValueDest for a DLValue that we can invoke
     // for the setter.
-    SmallVector<std::pair<ValueDest, XLValue>> lvalueWritebacks;
+    SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
 
     /// This is a list of values that we need to keep alive across the duration
     /// of the call.  They will get lit.ownership.use operations at the end of
@@ -153,7 +153,7 @@ void CallEmitter::AfterCallActions::emit() {
   // destroyed when they are emitted into.
   while (!lvalueWritebacks.empty()) {
     auto [dest, lValue] = lvalueWritebacks.pop_back_val();
-    if (!callEmitter.emitter.emitResult(XRValue(lValue), callEmitter.callExpr,
+    if (!callEmitter.emitter.emitResult(MRValue(lValue), callEmitter.callExpr,
                                         dest))
       dest.resetForError();
   }
@@ -334,7 +334,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       auto resultTmp =
           emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc,
                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
-      argumentValues.push_back({XLValue(resultTmp), callExpr});
+      argumentValues.push_back({MLValue(resultTmp), callExpr});
       continue;
     }
 
@@ -437,7 +437,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
-  XLValue destBuffer = dest.getDefinedXLValueIfExists(destRValueType, emitter);
+  MLValue destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
   if (!destBuffer)
     return true;
 
@@ -507,7 +507,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::OwnedInMem:
-    // Promote SRValue to XRValue (in case of calling a generic function).
+    // Promote SRValue to MRValue (in case of calling a generic function).
     if (SRValue srValue = argValAndExpr.ir.getIfSRValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
@@ -515,17 +515,17 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc,
                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
       emitter.builder->create<RefStoreOp>(argLoc, srValue, varOp);
-      return XRValue(varOp);
+      return MRValue(varOp);
     }
     // Promote PValue's if needed.
-    return emitter.emitXRValue(argValAndExpr, EC_CallArgValue);
+    return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return arg = emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
 
-    // If this is an XBValue, the element must be register passable but not
+    // If this is an MBValue, the element must be register passable but not
     // loaded.
-    if (auto refVal = argValAndExpr.ir.getIfXBValue()) {
+    if (auto refVal = argValAndExpr.ir.getIfMBValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       // TODO: Factor this into a helper.
       std::optional<OpBuilder> builder = emitter.builder;
@@ -558,7 +558,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // HACK: force convert to reference.
       auto destTy = RefType::getRefForPointerHACK(
           cast<PointerType>(ptr.getType()), /*mut=*/true);
-      return XBValue(
+      return MBValue(
           emitter.builder
               ->create<mlir::UnrealizedConversionCastOp>(
                   emitter.translateLocation(argValAndExpr.expr->getLoc()),
@@ -566,9 +566,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
               .getResult(0));
     }
     // Promote PValue's if needed.
-    return emitter.emitXBValue(argValAndExpr, EC_CallArgValue);
+    return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
-    XLValue resultSlotRef = argValAndExpr.ir.getIfXLValue();
+    MLValue resultSlotRef = argValAndExpr.ir.getIfMLValue();
     assert(resultSlotRef && "byref_result value start in a temp slot");
     auto rvalueType = resultSlotRef.getRValueType();
 
@@ -587,7 +587,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // going to use.
     resultSlotRef.getDefiningOp<VarLetDeclOp>()->erase();
     // Use the preferred location of the destination slot.
-    return dest.getXLValueForResult(callExpr->getLoc(), rvalueType, emitter);
+    return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
   case ValueInputConvention::ByRef:
   case ValueInputConvention::InitSelf: {
@@ -596,13 +596,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
 
-    if (auto ref = lv.getIfXLValue())
+    if (auto ref = lv.getIfMLValue())
       return ref;
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
     ValueDest dlvBuffer(lv, EC_CallArgValue);
-    XLValue mlvBuffer = dlvBuffer.getXLValueForResult(
+    MLValue mlvBuffer = dlvBuffer.getMLValueForResult(
         argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
     // Emit the 'get' into the buffer.
     ValueDest bufferDest(mlvBuffer, EC_CallArgValue);
@@ -1026,13 +1026,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     callResult = handleVariant.getResult(0);
   }
 
-  // If there is a memory result slot, the value we filled in is our XRValue
+  // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
     // Re-emit the value in case a conversion was required or if the result was
     // a dynamic-lvalue.  In both case we will have emitted into a temporary
     // slot and 'dest' will have the ultimate location to write to.
-    return emitCResult(XRValue(callArgs[0]), callExpr, dest);
+    return emitCResult(MRValue(callArgs[0]), callExpr, dest);
   }
 
   // Otherwise, register-passable results are the call result which may need to
