@@ -2032,6 +2032,22 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   if (thenAttr == elseAttr)
     return thenAttr;
 
+  // cond(A != B, A, B) == A
+  //
+  // But A != B is represented as Xor(A == B, true)
+  if (auto xorAttr = dyn_castPE(POC::Xor, condAttr)) {
+    auto eqAttr = dyn_castPE(POC::EQ, xorAttr.getOperand(0));
+    auto intAttr = dyn_cast<IntegerAttr>(xorAttr.getOperand(1));
+    if (eqAttr && intAttr && intAttr.getValue().isOne() &&
+        eqAttr.getOperand(0) == thenAttr && eqAttr.getOperand(1) == elseAttr)
+      return thenAttr;
+  }
+
+  // cond(X, false, X) == X
+  if (auto then = dyn_cast<IntegerAttr>(thenAttr))
+    if (then.getValue().isZero() && condAttr == elseAttr)
+      return thenAttr;
+
   auto c = dyn_cast<IntegerAttr>(condAttr);
   if (!c)
     return {};
