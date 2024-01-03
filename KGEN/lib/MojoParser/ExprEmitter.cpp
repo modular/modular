@@ -215,10 +215,9 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return cast<LValue>(representation).getRValueType();
 }
 
-/// If this ValueDest specifies an MLValue (or an XLValue) that will be
-/// returned by getXLValueForResult with the specified type, return it.
-/// Otherwise return null.
-/// TODO(references): switch this to return XLValue instead.
+/// If this ValueDest specifies an XLValue that will be returned by
+/// getXLValueForResult with the specified type, return it. Otherwise return
+/// null.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
 XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
@@ -236,11 +235,6 @@ XLValue ValueDest::getDefinedXLValueIfExists(ASTType resultType,
 
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
-    if (auto mlValue = lValue.getIfMLValue()) {
-      if (lValue.getRValueType().isEqualCanon(resultType))
-        return mlValue;
-    }
-
     if (XLValue refValue = lValue.getIfXLValue()) {
       if (lValue.getRValueType().isEqualCanon(resultType))
         return refValue;
@@ -492,9 +486,6 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     if (!value.ir)
       return {};
   }
-  // Handle MLValue's by decaying to MBValue.
-  if (auto lv = value.ir.getIfMLValue())
-    value.ir = MBValue(lv);
   // Handle XLValue's by decaying to XBValue.
   if (auto lv = value.ir.getIfXLValue())
     value.ir = XBValue(lv);
@@ -625,26 +616,11 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
-                                         ExprContext context) {
-  // PValues don't have lifetimes and are immortal with respect to the compiler.
-  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-only
-  // type for the sake of memcpy is safe because the bulk store will ensure the
-  // variable does not get promoted off the stack, and after struct lowering,
-  // the type is erased down to its MLIR constituents anyways.
-  Location loc = translateLocation(value.expr->getLoc());
-  Value attr = value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
-                   ? Value(builder->create<ParamConstantOp>(loc, value.ir))
-                   : builder->create<ParamMaterializeOp>(loc, value.ir);
-  builder->create<POP::StoreOp>(loc, attr, dest);
-  return MBValue(dest);
-}
-
 /// Emit any kind of PValue to an XLValue.
 XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
-  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-only
+  // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
   // type for the sake of memcpy is safe because the bulk store will ensure the
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
@@ -905,8 +881,6 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              newType, v);
   };
-  if (auto mlValue = value.getIfMLValue())
-    return MLValue(rebind(mlValue));
   if (auto mrValue = value.getIfMRValue())
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
@@ -1105,7 +1079,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (canZeroCostConvert(shared, rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
-        if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
+        if (isa<MRValue, MBValue>(cValue.getStorage())) {
           requiredType = PointerType::get(requiredType);
         } else if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
           requiredType =
@@ -1262,12 +1236,6 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
     return dlValue->emitLoad(dest, *this);
 
   // Decay a stored LValue to an MBValue.
-  if (auto mlValue = value.ir.getIfMLValue()) {
-    // Emit a non-consuming __copyinit__ or load of the value.
-    return emitCopyOfValue({MBValue(mlValue), value.expr}, dest);
-  }
-
-  // Decay a stored LValue to an MBValue.
   auto ref = value.ir.getIfXLValue();
   assert(ref && "unknown lvalue kind");
   // Emit a non-consuming __copyinit__ or load of the value.
@@ -1352,8 +1320,6 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   Value address = value.ir.getIfMBValue();
   if (!address)
     address = value.ir.getIfMRValue();
-  if (!address)
-    address = value.ir.getIfMLValue();
   if (address) {
     Value result =
         builder->create<POP::LoadOp>(value.expr->getLocation(*this), address);
@@ -1447,41 +1413,18 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
     }
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    auto loc = translateLocation(value.expr->getLoc());
+    XLValue destPtr = destLV.getIfXLValue();
+    assert(destPtr);
+    builder->create<LIT::RefStoreOp>(translateLocation(value.expr->getLoc()),
+                                     val, destPtr);
 
-    if (MLValue destPtr = destLV.getIfMLValue()) {
-      builder->create<POP::StoreOp>(loc, val, destPtr);
-    } else {
-      XLValue destPtr2 = destLV.getIfXLValue();
-      assert(destPtr2);
-      builder->create<LIT::RefStoreOp>(loc, val, destPtr2);
-    }
     return SBValue(val);
   }
 
   if (auto pvalue = value.ir.getIfPValue()) {
-    if (MLValue destPtr = destLV.getIfMLValue())
-      return emitPValueToMLValue({pvalue, value.expr}, destPtr, context);
     auto valRef = destLV.getIfXLValue();
     assert(valRef && "Unknown LValue");
     return emitPValueToXLValue({pvalue, value.expr}, valRef, context);
-  }
-
-  // If we have a pointer destination, convert to a reference
-  // TODO(references): drop this.
-  if (auto ptr = destLV.getIfMLValue()) {
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
-    destLV =
-        XLValue(builder
-                    ->create<mlir::UnrealizedConversionCastOp>(
-                        translateLocation(value.expr->getLoc()), destTy, ptr)
-                    .getResult(0));
   }
 
   // Otherwise we have an XLValue destination.

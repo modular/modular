@@ -653,19 +653,6 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
          "Dynamic lvalues should already be handled");
   auto mlirLoc = expr->getLocation(emitter);
 
-  // If the base is an stored lvalue, then we can return an lvalue to the
-  // field.
-  if (MLValue baseLV = base.ir.getIfMLValue()) {
-    // If this is a parameter context then we cannot return a dynamic field.
-    if (!emitter.builder) {
-      emitter.emitErrorForDynamicValueInParameter(expr);
-      return {};
-    }
-    auto fieldPtr =
-        emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
-    return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
-  }
-
   // If the base is an memory lvalue, then we can return an lvalue to the field.
   if (XLValue baseLV = base.ir.getIfXLValue()) {
     // If this is a parameter context then we cannot return a dynamic field.
@@ -2437,9 +2424,9 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an MLValue to emit into, it may be
+  // the ValueDest.  It may specify an XLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an XLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
   XLValue destBuffer = dest.getXLValueForResult(getLoc(), resultType, emitter);
@@ -2479,9 +2466,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // can launder into an RValue.
   Value value;
   bool isRegister = false;
-  if (auto ptr = argValue.getIfMLValue())
-    value = ptr;
-  else if (argValue.isXValue())
+  if (argValue.isXValue())
     value = argValue.getXValueReference();
   else if (auto mb = argValue.getIfMBValue())
     value = mb;
@@ -3019,7 +3004,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!subExprValue)
     return {};
 
-  // __get_lvalue_as_address(someMLValue) returns a !kgen.pointer.
+  // __get_lvalue_as_address(someXLValue) returns a !kgen.pointer.
   if (kind == kGetLValueAsAddress) {
     ValueDest lValueDest(dest.getContext());
     LValue result = emitter.emitLValue({subExprValue, subExpr}, lValueDest);
@@ -3030,8 +3015,6 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     if (XLValue resultRef = result.getIfXLValue()) {
       resultPtr = emitter.builder->create<RefToPointerOp>(getLocation(emitter),
                                                           resultRef);
-    } else if (MLValue mlPtr = result.getIfMLValue()) {
-      resultPtr = mlPtr;
     } else {
       emitter.emitError(getLoc(),
                         "cannot use a dynamic LValue in this operator")
@@ -3044,7 +3027,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultPtr);
 
-    // Return the MLValue as an SRValue since the pointer itself is the
+    // Return the XLValue as an SRValue since the pointer itself is the
     // result.
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
@@ -3152,7 +3135,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(XRValue(exprVal), this, dest);
   }
 
-  // These both return an MLValue with different ownership semantics.
+  // These both return an XLValue with different ownership semantics.
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
   if (needsLifetime)
