@@ -466,16 +466,6 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
       // Parameter values will never alias.
       if (value.ir.getIfPValue())
         continue;
-      if (auto mb = value.ir.getIfMBValue()) {
-        if (ptrGuaranteedNoAlias(mb))
-          continue;
-        return false;
-      }
-      if (auto mb = value.ir.getIfMRValue()) {
-        if (ptrGuaranteedNoAlias(mb))
-          continue;
-        return false;
-      }
       if (value.ir.isXValue()) {
         if (ptrGuaranteedNoAlias(value.ir.getXValueReference()))
           continue;
@@ -545,20 +535,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       auto load =
           builder->create<RefLoadOp>(expr->getLocation(emitter), refVal);
-      argValAndExpr.ir = SBValue(load);
-    }
-    // If this is an MBValue, the element must be register passable but not
-    // loaded.
-    if (auto mbVal = argValAndExpr.ir.getIfMBValue()) {
-      const ExprNode *expr = argValAndExpr.expr;
-      // TODO: Factor this into a helper.
-      std::optional<OpBuilder> builder = emitter.builder;
-      if (!builder) {
-        emitter.emitErrorForDynamicValueInParameter(expr);
-        return {};
-      }
-      auto load =
-          builder->create<POP::LoadOp>(expr->getLocation(emitter), mbVal);
       argValAndExpr.ir = SBValue(load);
     }
 
@@ -1050,7 +1026,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     callResult = handleVariant.getResult(0);
   }
 
-  // If there is a memory result slot, the value we filled in is our MRValue
+  // If there is a memory result slot, the value we filled in is our XRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
     // Re-emit the value in case a conversion was required or if the result was

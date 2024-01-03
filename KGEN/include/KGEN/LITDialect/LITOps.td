@@ -1542,7 +1542,7 @@ def LIT_LoadConsumeOp : LITOp<"load.consume",
   let summary = "consuming pointer load operation";
   let description = [{
     Loads the data at the given pointer like `pop.load`, but consumes the
-    ownership of the memory being accessed. This is used when performing MRValue
+    ownership of the memory being accessed. This is used when performing XRValue
     to SRValue conversion (i.e. when consuming a `var` of `@register_passable`
     type), and is lowered to `pop.load`.
 
@@ -1789,6 +1789,34 @@ def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
   let results = (outs PointerType:$ptr);
   let assemblyFormat = "$ref `:` type($ref) attr-dict";
 }
+
+//===----------------------------------------------------------------------===//
+// RefFromPointerOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
+                                 [RefPointerType<"ref", "ptr">]> {
+  let summary = "Create an immortal reference from a pointer value";
+  let description = [{
+    This op converts a raw pointer to an immortal reference of specified
+    mutability.
+
+    ```mlir
+    lit.ref.from_pointer %0 : !lit.ref<mut @Foo, life>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$ptr);
+  let results = (outs LIT_RefType:$ref);
+  let assemblyFormat = "$ptr `:` type($ref) attr-dict";
+
+  let builders = [
+    // Create with a pointer and mutability, instead of requiring a result type.
+    OpBuilder<(ins "Value":$pointer, "bool":$isMut)>,
+  ];
+
+}
+
 
 //===----------------------------------------------------------------------===//
 // RefStructGEROp

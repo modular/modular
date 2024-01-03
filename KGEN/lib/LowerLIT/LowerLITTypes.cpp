@@ -624,6 +624,11 @@ static Value lowerStructOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
   return adaptor.getRef();
 }
 
+static Value lowerStructOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  return adaptor.getPtr();
+}
+
 static Value lowerStructOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
@@ -863,8 +868,8 @@ void LowerLITTypesPass::runOnOperation() {
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
-              LIT::StructGEPOp, RefToPointerOp, RefStructGEROp, RefLoadOp,
-              RefStoreOp>(
+              LIT::StructGEPOp, RefToPointerOp, RefFromPointerOp,
+              RefStructGEROp, RefLoadOp, RefStoreOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });

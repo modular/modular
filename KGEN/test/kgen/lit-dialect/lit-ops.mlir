@@ -65,6 +65,17 @@ lit.func @attributesAndDecorators()
   lit.end_func
 }
 
+lit.func @ref_pointer<life: lifetime>(%ref1: !lit.ref<mut @MyStruct, life>) {
+  // CHECK: %0 = lit.ref.to_pointer %ref1 : <mut @MyStruct, life>
+  %ptr = lit.ref.to_pointer %ref1: !lit.ref<mut @MyStruct, *"life">
+  // CHECK: %1 = lit.ref.from_pointer %0 : <@MyStruct, life>
+  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<@MyStruct, *"life">
+
+  // CHECK: %2 = lit.ref.to_pointer %1 : <@MyStruct, life>
+  %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<@MyStruct, *"life">
+  lit.end_func
+}
+
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A

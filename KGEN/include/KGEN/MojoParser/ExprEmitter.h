@@ -110,7 +110,7 @@ struct LValueBufferTaken {};
 ///       In this case, the ExprNode type often conforms to the expression.
 ///   - an RValue type:
 ///       This indicates that the result may be treated in any way (e.g. dumping
-///       into a temporary memory location as an MRValue or returned in an SSA
+///       into a temporary memory location as an XRValue or returned in an SSA
 ///       register as an SRValue) but needs to have the specified RValue type.
 ///   - LValueInitializerType:
 ///       This is used when emitting LValues when there is an inferred type for
@@ -305,9 +305,6 @@ public:
   /// Emit any kind of PValue to an XLValue.
   XBValue emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                               ExprContext context);
-  /// This helper emits a PValue to an MRValue that has a memory representation,
-  /// materializing the PValue.
-  MRValue emitPValueToMRValue(ASTExprAnd<PValue> value, ExprContext context);
   /// This helper emits a PValue to an XRValue that has a memory representation,
   /// materializing the PValue.
   XRValue emitPValueToXRValue(ASTExprAnd<PValue> value, ExprContext context);

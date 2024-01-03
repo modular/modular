@@ -902,17 +902,15 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, body->getArgument(1));
 
-    // HACK: force convert to reference.
-    auto targetRefTy = RefType::getRefForPointerHACK(closureImplTopLevelPtrType,
-                                                     /*isMut=*/true);
-    Value targetRef =
-        builder.create<mlir::UnrealizedConversionCastOp>(targetRefTy, target)
-            .getResult(0);
+    // TODO(move closures to pointers).
+    Value targetRef = builder.create<RefFromPointerOp>(target, /*isMut*/ true);
+    Value existingRef =
+        builder.create<RefFromPointerOp>(existingPtr, /*isMut*/ true);
 
     // Copy the existing value into the target.
     ValueDest copyDest(XLValue(targetRef), EC_Assignment);
     ExprEmitter emitter(shared, moduleDecl, builder);
-    emitter.emitResult(MBValue(existingPtr), &node, copyDest);
+    emitter.emitResult(XBValue(existingRef), &node, copyDest);
 
     // Store the allocated and populated impl into the closure wrapper.
     Value ptrToImpl = topLevelCopyInit.getBody()->getArgument(0);
@@ -1045,11 +1043,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 }
 
 Value Capture::getMlirValue() const {
-  if (auto v = value.getIfMBValue())
-    return v;
   if (auto v = value.getIfSBValue())
-    return v;
-  if (auto v = value.getIfMRValue())
     return v;
   if (auto v = value.getIfSRValue())
     return v;
