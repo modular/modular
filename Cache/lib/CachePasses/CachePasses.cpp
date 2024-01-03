@@ -145,11 +145,16 @@ namespace {
 class DeflateConstantsPass
     : public impl::DeflateConstantsBase<DeflateConstantsPass> {
 public:
-  /// Construct an instance of this pass with the provided runtime.
-  DeflateConstantsPass(Runtime &rt) : Base::Base(), runtime(&rt) {}
+  /// Create pass when options and runtime are known.
+  DeflateConstantsPass(const DeflateConstantsOptions &opts, Runtime &rt)
+      : Base::Base(opts), runtime(&rt) {}
 
-  /// Construct an instance of this pass without a runtime - the pass will
-  /// construct its own.
+  /// For testing tools: Create pass with given runtime, options will be
+  /// assigned by MLIR pass machinery.
+  DeflateConstantsPass(Runtime &rt) : runtime(&rt) {}
+
+  /// For testing tools: Create poss which will create and destroy its own
+  /// runtime.
   using Base::Base;
 
   void runOnOperation() override {
@@ -181,6 +186,12 @@ private:
   Runtime *runtime = nullptr;
 };
 } // namespace
+
+std::unique_ptr<mlir::Pass>
+M::Cache::createDeflateConstantsPass(const DeflateConstantsOptions &opts,
+                                     LLCL::Runtime &rt) {
+  return std::make_unique<DeflateConstantsPass>(opts, rt);
+}
 
 std::unique_ptr<mlir::Pass>
 M::Cache::createDeflateConstantsPass(LLCL::Runtime &rt) {

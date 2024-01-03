@@ -367,8 +367,7 @@ public:
 
   /// Captures the cache directory and optional existing runtime. However
   /// the object is not valid until setup is called and returns success.
-  RuntimeAndCache(std::string cacheDir = "",
-                  Runtime *optExistingRuntime = nullptr)
+  RuntimeAndCache(std::string cacheDir, Runtime *optExistingRuntime)
       : cacheDir(std::move(cacheDir)), optExistingRuntime(optExistingRuntime) {}
 
   /// Set up the runtime and cache. The version string is passed directly to
@@ -381,7 +380,7 @@ public:
       return uriOr.takeError();
     ownedRuntime = ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
         optExistingRuntime, []() {
-          return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug())
+          return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
               .release();
         });
     auto backendList =

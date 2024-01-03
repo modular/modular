@@ -315,8 +315,8 @@ int main(int argc, char **argv) {
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
   // Register passes that require a runtime.
-  std::unique_ptr<LLCL::Runtime> runtime =
-      LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(
+      LLCL::RuntimeOptions().withLeakCheckedAllocator());
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(*runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(*runtime); });

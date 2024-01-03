@@ -499,7 +499,8 @@ uint64_t AutomaticInline::getInlineThreshold() {
 void AutomaticInline::runOnOperation() {
   auto rt =
       ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
+            .release();
       });
 
   SymbolTable &symtab =

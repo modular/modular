@@ -1753,7 +1753,7 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 struct MojoServer::Impl {
   Impl(bool singleThreaded, bool waitOnShutdown,
        SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib)
-      : runtime(LLCL::createRuntime(
+      : runtime(LLCL::createUniqueRuntime(
             LLCL::RuntimeOptions().withSingleThreaded(singleThreaded))),
         waitOnShutdown(waitOnShutdown),
         sendDiagnosticsFn(std::move(sendDiagnosticsFn)),

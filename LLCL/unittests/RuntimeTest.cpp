@@ -36,7 +36,9 @@ struct ContextC {
 };
 
 std::unique_ptr<Runtime> createRuntime() {
-  return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug());
+  return LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
+                                       .withLeakCheckedAllocator()
+                                       .withMainWillNotDonate());
 }
 
 TEST(RuntimeTest, Contexts) {

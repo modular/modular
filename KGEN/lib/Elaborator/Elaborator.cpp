@@ -2659,7 +2659,7 @@ public:
   void runOnOperation() override {
     auto rt =
         ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-          return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug())
+          return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
               .release();
         });
     ModuleOp theModule = getOperation();

@@ -23,7 +23,8 @@ int main(int argc, char **argv) {
                   Cache::CacheDialect>();
   mlir::registerCanonicalizer();
 
-  std::unique_ptr<Runtime> runtime = createRuntime(RuntimeOptions().forDebug());
+  std::unique_ptr<Runtime> runtime =
+      createUniqueRuntime(RuntimeOptions().forDebug());
 
   Cache::registerCachePasses(*runtime);
 

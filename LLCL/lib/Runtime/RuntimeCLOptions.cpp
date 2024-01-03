@@ -47,7 +47,7 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
     break;
   }
   runtimeOptions.profileFilename = profileName;
-  return LLCL::createRuntime(runtimeOptions);
+  return LLCL::createUniqueRuntime(runtimeOptions);
 }
 
 std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {

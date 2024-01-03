@@ -129,11 +129,15 @@ public:
   /// Returns the CompactRuntimePtr to the Runtime which is managing the
   /// caller's thread. Returns the invalid CompactRuntimePtr if no such
   /// runtime has been associated.
-  static CompactRuntimePtr getCurrentRuntime();
+  static CompactRuntimePtr getCurrentRuntime() {
+    return Globals::getCurrentRuntimeInTLS();
+  }
 
   /// Associates the given CompactRuntimePtr with the current thread,
   /// silently overwriting any existing association.
-  static void setCurrentRuntime(CompactRuntimePtr ptr);
+  static void setCurrentRuntime(CompactRuntimePtr ptr) {
+    Globals::getCurrentRuntimeInTLS() = ptr;
+  }
 
 private:
   friend class Runtime;

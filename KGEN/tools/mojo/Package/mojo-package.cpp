@@ -544,7 +544,7 @@ static int package(const State &state) {
   if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());
 
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
   auto &telemetryCtx =
       runtime->emplaceContext<M::Telemetry::TelemetryContext>();
 

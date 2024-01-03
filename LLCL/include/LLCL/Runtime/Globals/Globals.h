@@ -13,6 +13,7 @@
 
 namespace M::LLCL {
 class Runtime;
+class CompactRuntimePtr;
 
 namespace Detail {
 class TypeInfoTable;
@@ -22,6 +23,15 @@ class RuntimeTable;
 } // namespace M::LLCL
 
 namespace M::LLCL::Globals {
+
+/// This is a TLS CompactRuntimePtr pointing to the runtime on behalf of
+/// which the thread is processing work items. That thread may be a 'worker'
+/// thread of the runtime's work queue, or a 'main' thread which is also
+/// donating itself to processing work items for the runtime.
+///
+/// NOTE: MSVC does not allow a thread_local to have DLL linkage, so we must
+/// hide this under a function.
+extern MODULAR_CXX_EXPORT CompactRuntimePtr &getCurrentRuntimeInTLS();
 
 extern MODULAR_CXX_EXPORT Detail::TypeInfoTable &
 getTypeInfoTableSingleton(const std::function<Detail::TypeInfoTable *()> &ctor);

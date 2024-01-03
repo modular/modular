@@ -187,9 +187,6 @@ public:
   /// to be called from the same thread which created the WorkQueue.
   virtual void shutdown() = 0;
 
-  /// Returns the runtime for which this work queue is processing work items.
-  virtual CompactRuntimePtr getRuntime() const = 0;
-
 #if MODULAR_PARANOID
   /// Pushes use onto this thread's internal 'use stack'. When a task or local
   /// task is added with a null use in its WorkItem (the default),

@@ -17,6 +17,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
+using namespace M;
 using namespace M::LLCL;
 
 void WorkQueue::vtableAnchor() {}
@@ -49,9 +50,6 @@ Runtime::Runtime(CompactRuntimePtr runtimePtr,
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename), runtimeIndex(runtimePtr.index),
       readyChain(createReadyChain(*this)) {
-  assert(this->workQueue->getRuntime() == runtimePtr &&
-         "mismatched CompactRuntimePtrs");
-
   // Establish association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
 
@@ -110,7 +108,8 @@ void Runtime::restartFromCancellation() {
   AnyAsyncValueRef::take(value);
 }
 
-std::unique_ptr<Runtime> M::LLCL::createRuntime(const RuntimeOptions &options) {
+static std::unique_ptr<Runtime>
+createRuntimeImpl(const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
   std::unique_ptr<Allocator> allocator = options.useAfterFreeAllocator
@@ -132,4 +131,24 @@ std::unique_ptr<Runtime> M::LLCL::createRuntime(const RuntimeOptions &options) {
   return std::make_unique<Runtime>(runtimePtr, std::move(allocator),
                                    std::move(workQueue),
                                    options.profileFilename);
+}
+
+std::unique_ptr<Runtime>
+LLCL::createUniqueRuntime(const RuntimeOptions &options) {
+  assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
+         "creating a runtime from a thread already associated with an outer "
+         "runtime");
+  return createRuntimeImpl(options);
+}
+
+std::unique_ptr<Runtime>
+LLCL::createNestedRuntime(const RuntimeOptions &options) {
+  return createRuntimeImpl(options);
+}
+
+ConditionallyOwnedPointer<Runtime>
+LLCL::createRuntimeIfNeeded(const RuntimeOptions &options) {
+  return ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
+      Runtime::getCurrentRuntimeOrNull(),
+      [&options]() { return createRuntimeImpl(options).release(); });
 }
