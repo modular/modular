@@ -5,23 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
-# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<(!kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem, "j": !Int borrow) -> !Int>>
-# CHECK: lit.func @"__call__{{.*}}"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem, %j[j]: !Int borrow) -> !Int
-# CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.struct.gep %[[SELF]][field0]
-# CHECK-NEXT: [[closure_impl0:%.*]] = pop.load [[closure_impl_ref0]] : !kgen.pointer<pointer<none>>
-# CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.struct.gep %[[SELF]][call]
-# CHECK-NEXT: [[casting_call0:%.*]] = pop.load [[casting_call_ref0]]
-# CHECK-NEXT: [[result_of_typed_call0:%.*]] = lit.call_signature [[casting_call0]]([[closure_impl0]], %n, %j)
+# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[1](!kgen.pointer<none> borrow, |, "n": !lit.ref<mut !MemType, {{.*}}> borrow_in_mem, "j": !Int borrow) -> !Int>>
+# CHECK: lit.func @"__call__{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n[n]: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem, %j[j]: !Int borrow) -> !Int
+# CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.ref.struct.ger %[[SELF]][field0]
+# CHECK-NEXT: [[closure_impl0:%.*]] = lit.ref.load [[closure_impl_ref0]]
+# CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.ref.struct.ger %[[SELF]][call]
+# CHECK-NEXT: [[casting_call0:%.*]] = lit.ref.load [[casting_call_ref0]]
+# CHECK-NEXT: [[result_of_typed_call0:%.*]] = lit.call_signature [[casting_call0]]{{.*}}([[closure_impl0]], %n, %j)
 # CHECK-NEXT: lit.return [[result_of_typed_call0]] : !Int
 # CHECK-NEXT: lit.end_func
 # CHECK-NEXT: }
 
-# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[1](!lit.ref<mut !MemType, *[0,0]> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none>>
-# CHECK: lit.func @"__call__{{.*}}"[{{.*}}](%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
-# CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.struct.gep %[[SELF]][field0]
-# CHECK-NEXT: [[closure_impl:%.*]] = pop.load [[closure_impl_ref]] : !kgen.pointer<pointer<none>>
-# CHECK-NEXT: [[casting_call_ref:%.*]] = lit.struct.gep %[[SELF]][call]
-# CHECK-NEXT: [[casting_call:%.*]] = pop.load [[casting_call_ref]]
+# CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[2](!lit.ref<mut !MemType, *[0,0]> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none>>
+# CHECK: lit.func @"__call__{{.*}}(%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n[n]: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem)
+# CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.ref.struct.ger %[[SELF]][field0]
+# CHECK-NEXT: [[closure_impl:%.*]] = lit.ref.load [[closure_impl_ref]]
+# CHECK-NEXT: [[casting_call_ref:%.*]] = lit.ref.struct.ger %[[SELF]][call]
+# CHECK-NEXT: [[casting_call:%.*]] = lit.ref.load [[casting_call_ref]]
 # CHECK-NEXT: [[result_of_typed_call:%.*]] = lit.call_signature [[casting_call]][{{.*}}](%[[RES]], [[closure_impl]], %n)
 # CHECK-NEXT: lit.return [[result_of_typed_call]] : !kgen.none
 

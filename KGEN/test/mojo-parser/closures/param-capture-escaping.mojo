@@ -20,8 +20,8 @@
 # CHECK: lit.ref.store [[CLIST]], [[GEP]]
 
 # CHECK: lit.func @"__call__
-# CHECK: [[GEP:%.*]] = lit.struct.gep {{.*}}[field1]
-# CHECK: [[CLIST:%.*]] = pop.load [[GEP]]
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[field1]
+# CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
 # CHECK: kgen.capture_list.expand [[CLIST]]
 
 fn take_escaping(ef: fn(y: Int) escaping -> Int):

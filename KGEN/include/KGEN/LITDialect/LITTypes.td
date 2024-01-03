@@ -267,7 +267,8 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
 // RefType
 //===----------------------------------------------------------------------===//
 
-def LIT_RefType : LITType<"Ref", "ref"> {
+def LIT_RefType : LITType<"Ref", "ref",
+                        [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "lifetime-bound reference type";
   let description = [{
     This type represents a typed reference to a memory object with a lifetime.
@@ -313,6 +314,10 @@ def LIT_RefType : LITType<"Ref", "ref"> {
 
     /// Return this RefType but with a different mutability.
     RefType getWithMutability(bool isMut);
+
+    /// Return a reference to the specified element type and mutability with an
+    /// immortal (#lit.lifetime) lifetime.
+    static RefType getImmortal(bool isMut, Type elementType);
 
     /// Given the specified pointer type, return a reference type of the same
     /// element but with a hacked lifetime.

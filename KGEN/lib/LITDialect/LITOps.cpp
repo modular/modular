@@ -1614,8 +1614,7 @@ static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
   if (!lifetime)
     return p.emitError(p.getNameLoc(),
                        "expected a !lit.ref<> with named lifetime");
-
-  lifetimeDecl = ParamDeclAttr::get(lifetime.getName(), lifetime.getType());
+  lifetimeDecl = ParamDeclAttr::get(lifetime);
   return success();
 }
 

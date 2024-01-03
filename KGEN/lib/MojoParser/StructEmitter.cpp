@@ -55,7 +55,7 @@ LIT::FuncOp StructEmitter::createFunction(
   for (auto [argNo, argType, argConv] :
        llvm::enumerate(argTypes, argConventions)) {
     adjustedArgTypes.push_back(argType);
-    if (!isArgumentPassedWithImplicitLifetime(argConv))
+    if (!SignatureType::hasAddress(argConv))
       continue;
 
     // Dig out the lifetime decl.
@@ -76,7 +76,7 @@ LIT::FuncOp StructEmitter::createFunction(
       auto lifetimeRef = cast<ParamDeclRefAttr>(lifetimeAttr);
       assert(isa<LifetimeType>(lifetimeRef.getType()) &&
              "lifetimes should have LifetimeType");
-      decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeRef.getType());
+      decl = ParamDeclAttr::get(lifetimeRef);
     }
     fullInputParams.push_back(decl);
   }
@@ -248,11 +248,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
         argVal = XRValue(arg);
         break;
       case ValueInputConvention::BorrowedInMem:
-        // FIXME(references): This won't be right for first-class references.
-        if (isa<RefType>(arg.getType()))
-          argVal = XBValue(arg);
-        else
-          argVal = MBValue(arg);
+        argVal = XBValue(arg);
         break;
       }
 
@@ -319,13 +315,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     Value copyExisting = func.getBody()->getArgument(1);
     for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
       auto targetFieldOp = b.create<RefStructGEROp>(copySelf, fieldOp);
-      Value srcFieldOp;
-      if (isMove)
-        srcFieldOp = b.create<RefStructGEROp>(copyExisting, fieldOp);
-      else // TODO: Drop this.
-        srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
+      Value srcFieldOp = b.create<RefStructGEROp>(copyExisting, fieldOp);
       CValue src =
-          isMove ? CValue(XRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
+          isMove ? CValue(XRValue(srcFieldOp)) : CValue(XBValue(srcFieldOp));
       SyntheticNode srcExpr(location);
       emitter.emitStoreToLValue({src, &srcExpr}, XLValue(targetFieldOp),
                                 EC_AttributeRefBase);
@@ -510,7 +502,6 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   bool isMemoryOnly = !declOp.isRegisterPassable();
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
-  Type ptrToSelf = PointerType::get(selfType);
   Type refToSelf = ASTType(selfType).getRefForArgument("self", /*isMut=*/true);
   StringAttr selfName = b.getStringAttr("self");
   StringAttr existingName = b.getStringAttr("other");
@@ -631,8 +622,10 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
   } else if (!declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
+      Type refToExisting =
+          ASTType(selfType).getRefForArgument("existing", /*isMut=*/false);
       copyFunc = addVoidMethod(
-          structDecl, "__copyinit__", {refToSelf, ptrToSelf},
+          structDecl, "__copyinit__", {refToSelf, refToExisting},
           {ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem},
           {selfName, existingName},
           {PassingKind::PosOnly, PassingKind::PosOnly},

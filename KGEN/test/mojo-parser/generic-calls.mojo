@@ -46,8 +46,7 @@ fn borrowed_generic[T: AnyType](borrowed x: T):
 fn test_owned(owned x: RegPassable):
     # CHECK: %[[XVAR:.*]] = lit.varlet.decl "x"
     # CHECK: lit.ref.store %x, %[[XVAR]]
-    # CHECK: %[[XPTR:.*]] = lit.ref.to_pointer %[[XVAR]]
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XPTR]])
+    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<:type !RegPassable>(%[[XVAR]])
     borrowed_generic(x)
 
     # CHECK: %[[XREF:.*]] = lit.ref.load %[[XVAR]]
@@ -64,16 +63,17 @@ fn test_owned(owned x: RegPassable):
 
 # CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x[x]: !RegPassable borrow)
 fn test_borrowed(borrowed x: RegPassable):
-    # CHECK: %[[XSTACK:.*]] = pop.stack_allocation 1 x !RegPassable
-    # CHECK: lit.store.borrow %x, %[[XSTACK]] : <!RegPassable>
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XSTACK]])
+    # CHECK: [[XSTACK:%.*]] = pop.stack_allocation 1 x !RegPassable
+    # CHECK: lit.store.borrow %x, [[XSTACK]] : <!RegPassable>
+    # CHECK: [[XPTR:%.*]] = builtin.unrealized_conversion_cast [[XSTACK]]
+    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<:type !RegPassable>([[XPTR]])
     borrowed_generic(x)
     # CHECK-NEXT: lit.ownership.use %x : !RegPassable
 
-    # CHECK: %[[XCOPY:.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}"(%x)
-    # CHECK: %[[XVAR:.*]] = lit.varlet.decl
-    # CHECK: lit.ref.store %[[XCOPY]], %[[XVAR]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<:type !RegPassable>(%[[XVAR]])
+    # CHECK: [[XCOPY:%.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}(%x)
+    # CHECK: [[XVAR:%.*]] = lit.varlet.decl
+    # CHECK: lit.ref.store [[XCOPY]], [[XVAR]]
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<:type !RegPassable>([[XVAR]])
     owned_generic(x)
 
 
@@ -84,10 +84,11 @@ fn generic[T: AnyType](t: T):
 # CHECK-LABEL: lit.func @"test_reg_converts_to_generic
 # CHECK-SAME: "<[[T:.*]][T]: regtype>
 fn test_reg_converts_to_generic[T: AnyRegType](t: T):
-    # CHECK: %[[TREB:.*]] = kgen.rebind %t : !kgen.paramref<[[T]]> to !kgen.paramref<:type rebind(:regtype [[T]])>
-    # CHECK: %[[TPTR:.*]] = pop.stack_allocation 1 x :type rebind(:regtype [[T]])
-    # CHECK: lit.store.borrow %[[TREB]], %[[TPTR]]
-    # CHECK: lit.call @{{.*}}::@"generic{{.*}}"<:type rebind(:regtype [[T]])>(%[[TPTR]])
+    # CHECK: [[TREB:%.*]] = kgen.rebind %t : !kgen.paramref<[[T]]> to !kgen.paramref<:type rebind(:regtype [[T]])>
+    # CHECK: [[TPTR:%.*]] = pop.stack_allocation 1 x :type rebind(:regtype [[T]])
+    # CHECK: lit.store.borrow [[TREB]], [[TPTR]]
+    # CHECK: [[TREF:%.*]] = builtin.unrealized_conversion_cast [[TPTR]]
+    # CHECK: lit.call @{{.*}}::@"generic{{.*}}<:type rebind(:regtype [[T]])>([[TREF]])
     generic(t)
 
 
@@ -100,7 +101,7 @@ fn generic_foo[T: AnyRegType](t: Foo[T]):
 
 
 # CHECK-LABEL: lit.func @"infers_for_generic_foo
-# CHECK-SAME: "<[[T:.*]][T]: regtype>
+# CHECK-SAME: ]<[[T:.*]][T]: regtype>
 fn infers_for_generic_foo[T: AnyRegType](t: Foo[T]):
-    # CHECKL lit.call @{{.*}}::@"generic_foo{{.*}}"<:regtype [[T]]>(%t)
+    # CHECKL lit.call @{{.*}}::@"generic_foo{{.*}}<:regtype [[T]]>(%t)
     generic_foo(t)

@@ -64,8 +64,7 @@ public:
   /// slot.
   Value emitPreemittedArgumentAsDynamicValue(
       ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-      SmallVectorImpl<TypedAttr> &implicitLifetimes);
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
@@ -219,6 +218,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     operand.ir = emittedArg;
   }
 
+  bool isVarArg = calleeSig.isVarArg(argIdx);
+
   // If all of the remaining operands are compile-time values, then we can
   // represent the sequence as a variadic or pack attribute.
   if (std::all_of(remainingOperands.begin(), remainingOperands.end(),
@@ -229,7 +230,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     for (ASTExprAnd<AnyValue> operand : remainingOperands)
       args.push_back(operand.ir.getIfPValue().get());
     Attribute attr;
-    if (calleeSig.isVarArg(argIdx)) {
+    if (isVarArg) {
       auto varType = cast<VariadicType>(expectedType);
       Type varElType = varType.getElementAsType();
 
@@ -250,13 +251,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // If not all remaining operands are compile-time values, use an operation to
   // create a variadic or pack sequence.
   SmallVector<Value> args;
-  SmallVector<TypedAttr> implicitLifetimes;
   for (auto &operand : remainingOperands) {
-    Value argVal = emitPreemittedArgumentAsDynamicValue(
-        operand, convention, argumentValues, implicitLifetimes);
-    // TODO(references): figure out variadic packs of memory types.
-    assert(implicitLifetimes.empty() &&
-           "Cannot handle implicit lifetimes on variadics yet");
+    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention,
+                                                        argumentValues);
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -271,11 +268,35 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       afterCallActions.valuesToKeepAlive.emplace_back(argVal);
   }
 
+  // If there are lifetimes on anything, create a uniform representation and
+  // cast to a common reference type.
+  if (isVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
+    // If one arg is a reference, then they all are.
+    auto expectedRefType =
+        cast<RefType>(ASTType(expectedType).getVariadicElementType().mlirType);
+    SmallVector<TypedAttr> refLifetimes;
+    for (auto arg : args)
+      refLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+
+    // If there is more than one element, they probably have different
+    // lifetimes, and thus need to be rebound into a common union of them.
+    auto commonLifetime =
+        LifetimeUnionAttr::get(expectedRefType.getContext(), refLifetimes);
+    expectedRefType = expectedRefType.getWithLifetime(commonLifetime);
+    for (auto &arg : args)
+      if (arg.getType() != expectedRefType)
+        arg = emitter.builder->create<RebindOp>(loc, expectedRefType, arg);
+
+    // TODO(metatypes): preserve metatype?  These don't seem to do anything.
+    expectedType = VariadicType::get(expectedRefType,
+                                     AnyRegTypeType::get(emitter.getContext()));
+  }
+
   Value argVal;
-  if (calleeSig.isVarArg(argIdx))
+  if (isVarArg) {
     argVal =
         emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
-  else
+  } else
     argVal = emitter.builder->create<PackCreateOp>(loc, expectedType, args);
   argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
   return success();
@@ -493,8 +514,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-    SmallVectorImpl<TypedAttr> &implicitLifetimes) {
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
 
   // Given a legacy pointer, get it to a reference.
   // TODO(references) remove this when MLValues go away.
@@ -514,9 +534,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ValueInputConvention::OwnedInReg:
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
-  case ValueInputConvention::OwnedInMem: {
+  case ValueInputConvention::OwnedInMem:
     // Promote SRValue to XRValue (in case of calling a generic function).
-    XRValue result;
     if (SRValue srValue = argValAndExpr.ir.getIfSRValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
@@ -524,16 +543,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc,
                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
       emitter.builder->create<RefStoreOp>(argLoc, srValue, varOp);
-      result = XRValue(varOp);
-    } else {
-      // Promote PValue's if needed.
-      result = emitter.emitXRValue(argValAndExpr, EC_CallArgValue);
+      return XRValue(varOp);
     }
-    if (result)
-      implicitLifetimes.push_back(
-          cast<RefType>(result.getType()).getLifetime());
-    return result;
-  }
+    // Promote PValue's if needed.
+    return emitter.emitXRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return arg = emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -581,10 +594,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
       afterCallActions.valuesToKeepAlive.push_back(sbValue);
-      return MRValue(ptr);
+      return XBValue(hackPointerToRef(ptr));
     }
     // Promote PValue's if needed.
-    return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
+    return emitter.emitXBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
     XLValue resultSlotRef = argValAndExpr.ir.getIfXLValue();
     // TODO(lifetimes): remove this.
@@ -605,23 +618,17 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // In these cases we really do need a temporary+copy in the var slot.
     // At this point we've got enough information about the arguments to make
     // that assessment in a correct way.
-    if (isSafeToUseValueDestForDirectResult(rvalueType, argumentValues)) {
-      // Okay it is safe to use, so remove the temporary allocation we aren't
-      // going to use.
-      if (auto cast = // TODO(references): MLValue remove this
-          resultSlotRef.getDefiningOp<mlir::UnrealizedConversionCastOp>())
-        cast->erase();
-      assert(argValAndExpr.ir.getIfXLValue());
-      argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
-      // Use the preferred location of the destination slot.
-      resultSlotRef =
-          dest.getXLValueForResult(callExpr->getLoc(), rvalueType, emitter);
-    }
-
-    // Remember the implicit lifetime for this argument.
-    implicitLifetimes.push_back(
-        cast<RefType>(resultSlotRef.getType()).getLifetime());
-    return resultSlotRef;
+    if (!isSafeToUseValueDestForDirectResult(rvalueType, argumentValues))
+      return resultSlotRef;
+    // Okay it is safe to use, so remove the temporary allocation we aren't
+    // going to use.
+    if (auto cast = // TODO(references): MLValue remove this
+        resultSlotRef.getDefiningOp<mlir::UnrealizedConversionCastOp>())
+      cast->erase();
+    assert(argValAndExpr.ir.getIfXLValue());
+    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
+    // Use the preferred location of the destination slot.
+    return dest.getXLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
   case ValueInputConvention::ByRef:
   case ValueInputConvention::InitSelf: {
@@ -634,11 +641,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (auto ptr = lv.getIfMLValue())
       lv = hackPointerToRef(ptr);
 
-    if (auto ref = lv.getIfXLValue()) {
-      // Remember the implicit lifetime for this argument.
-      implicitLifetimes.push_back(cast<RefType>(ref.getType()).getLifetime());
+    if (auto ref = lv.getIfXLValue())
       return ref;
-    }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
@@ -654,10 +658,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     }
     afterCallActions.lvalueWritebacks.push_back(
         {std::move(dlvBuffer), mlvBuffer});
-
-    // Remember the implicit lifetime for this argument.
-    implicitLifetimes.push_back(
-        cast<RefType>(mlvBuffer.getType()).getLifetime());
     return mlvBuffer;
   }
   case ValueInputConvention::None:
@@ -715,12 +715,22 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   // Emitting a call in a parameter context. Generate an apply operator.
   SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
+
+  // If the callee has implicit lifetimes, we need to bind them to immortal
+  // references and rebind the callee.
+  SignatureType boundSigType = calleeSig;
+  if (size_t numImplLifetimes = calleeSig.getNumImplicitLifetimeDecls()) {
+    boundSigType = calleeSig.getWithImplicitLifetimesBoundImmortal();
+    operands[0] =
+        ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
+  }
+
   bool dropFirst =
-      calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+      boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
   for (auto [argIdx, argValAndExpr, calleeArgType, convention] :
-       llvm::enumerate(argumentValues,
-                       calleeSig.getValueInputs().drop_front(dropFirst),
-                       calleeSig.getInputConventions().drop_front(dropFirst))) {
+       llvm::enumerate(
+           argumentValues, boundSigType.getValueInputs().drop_front(dropFirst),
+           boundSigType.getInputConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
@@ -729,10 +739,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // conversion).
     if (SignatureType::hasAddress(convention)) {
       Type actualArgType = arg.getType();
-      if (calleeSig.isVarArg(argIdx)) {
+      if (boundSigType.isVarArg(argIdx)) {
         // If dealing with a variadic argument, we put each element into memory.
         auto varType = cast<VariadicType>(actualArgType);
-        auto varElType = PointerType::get(varType.getElementAsType());
+        auto varElType =
+            RefType::getImmortal(/*isMut=*/true, varType.getElementAsType());
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
           storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
@@ -740,7 +751,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
             varElType, AnyRegTypeType::get(emitter.getContext()));
         arg = VariadicAttr::get(storedAttrs, newVarType);
       } else {
-        arg = StoreToMemAttr::get(arg, PointerType::get(actualArgType));
+        arg = StoreToMemAttr::get(
+            arg, RefType::getImmortal(/*isMut=*/true, actualArgType));
       }
     }
     // Emit a rebind if the refined type does not match the callee arg type.
@@ -750,11 +762,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
   }
 
   bool hasResultSlot =
-      calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+      boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
   Type resultType = hasResultSlot
-                        ? ASTType(calleeSig.getValueInputs().front())
+                        ? ASTType(boundSigType.getValueInputs().front())
                               .getReferenceElementType()
-                        : ASTType(calleeSig.getValueResults().front());
+                        : ASTType(boundSigType.getValueResults().front());
   TypedAttr result = ParamOperatorAttr::get(
       hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
   return result;
@@ -937,9 +949,20 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
-        argValAndExpr, convention, argumentValues, implicitLifetimes);
+        argValAndExpr, convention, argumentValues);
     if (!arg)
       return {};
+
+    // See if we have an implicit lifetime bound for this argument.
+    if (SignatureType::hasAddress(convention)) {
+      implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
+    } else if (calleeSig.isVarArg(argIdx)) {
+      // If this is a variadic, it will have a wrapper around the ref.
+      auto eltType = ASTType(arg.getType()).getVariadicElementType();
+      if (auto refType = dyn_cast<RefType>(eltType))
+        implicitLifetimes.push_back(refType.getLifetime());
+    }
+    // TODO: What about pack types?
 
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.

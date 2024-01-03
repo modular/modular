@@ -774,34 +774,6 @@ XRValue ExprEmitter::emitXRValue(ASTExprAnd<AnyValue> value,
   llvm_unreachable("unknown XRValue");
 }
 
-MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context) {
-  if (value.ir.isXValue()) {
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-  }
-
-  if (auto ref = value.ir.getIfXRValue())
-    return MBValue(
-        builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
-  if (auto ref = value.ir.getIfXBValue())
-    return MBValue(
-        builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
-
-  if (auto mb = value.ir.getIfMBValue())
-    return mb;
-  // Decay MRValue to MBValue.
-  if (auto mr = value.ir.getIfMRValue())
-    return MBValue(mr);
-
-  if (auto pv = value.ir.getIfPValue())
-    return MBValue(emitPValueToMRValue({pv, value.expr}, context));
-
-  llvm_unreachable("unknown MBValue");
-}
-
 /// This helper emits the specified value as an XBValue which has
 /// memory-only representation, materializing PValues as needed. This
 /// returns null if emission fails.

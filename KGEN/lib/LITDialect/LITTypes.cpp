@@ -388,12 +388,17 @@ RefType RefType::getWithMutability(bool isMut) {
   return get(isMut, getElementType(), getLifetime());
 }
 
+/// Return a reference to the specified element type and mutability with an
+/// immortal (#lit.lifetime) lifetime.
+RefType RefType::getImmortal(bool isMut, Type elementType) {
+  return get(isMut, elementType, LifetimeAttr::get(elementType.getContext()));
+}
+
 /// Given the specified pointer type, return a reference type of the same
 /// element but with a hacked lifetime.
 /// TODO(references): Remove. This is just for migration.
 RefType RefType::getRefForPointerHACK(PointerType type, bool isMut) {
-  return RefType::get(isMut, type.getElementType(),
-                      LifetimeAttr::get(type.getContext()));
+  return getImmortal(isMut, type.getElementType());
 }
 
 /// Print/Parse a parameter value that is known to have `lifetime` type.
@@ -413,6 +418,32 @@ static void printMutFlag(AsmPrinter &p, bool value) {
 static ParseResult parseMutFlag(AsmParser &p, bool &value) {
   value = succeeded(p.parseOptionalKeyword("mut"));
   return success();
+}
+
+OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
+  // Parse a `store_to_mem` directive.
+  if (succeeded(p.parseOptionalKeyword("store_to_mem"))) {
+    TypedAttr memValue;
+    if (p.parseLParen() || parseParamValue(p, memValue, getElementType()) ||
+        p.parseRParen())
+      return failure();
+    value = StoreToMemAttr::get(memValue, *this);
+    return mlir::success();
+  }
+
+  return {};
+}
+
+LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
+  // Print a `store_to_mem` directive.
+  if (auto memAttr = ::dyn_cast<StoreToMemAttr>(value)) {
+    p << "store_to_mem(";
+    printParamValue(p, memAttr.getValue());
+    p << ')';
+    return success();
+  }
+
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -669,6 +700,24 @@ Type LITSignatureType::substituteImplicitLifetimes(
   return substitutor.hadError ? Type() : result;
 }
 
+/// Get this signature with all the implicit lifetimes bound to #lit.lifetime
+/// and dropped from the signature.
+SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
+  // Avoid work if this there is nothing to do.
+  if (getNumImplicitLifetimeDecls() == 0)
+    return *this;
+
+  SmallVector<TypedAttr> lifetimes(getNumImplicitLifetimeDecls(),
+                                   LifetimeAttr::get(getContext()));
+  FunctionType newFnType = substituteImplicitLifetimesIntoValues(
+      lifetimes,
+      []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
+
+  return SignatureType::get(newFnType, getInputParamTypes(),
+                            getResultParamTypes(), getInputConventions(),
+                            getFnEffects());
+}
+
 /// This method replaces direct uses of NAMED implicit lifetime declarations
 /// with index-based references.  lifetimeDecls specifies the names of the
 /// implicit lifetime decls to replace.
@@ -690,7 +739,8 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
     Attribute tryReplace(Attribute attr, size_t depth) {
       if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
         if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
-          // Subtract 1 because we're replacing the signature directly.
+          // Subtract indexOffset because we may be replacing the signature
+          // directly.
           size_t index = it->second;
           return ImplicitLifetimeRefAttr::get(attr.getContext(),
                                               depth - indexOffset, index);
@@ -734,7 +784,7 @@ size_t
 LITSignatureType::countImplicitLifetimes(ArrayRef<ValueInputConvention> convs) {
   size_t result = 0;
   for (auto conv : convs)
-    if (isArgumentPassedWithImplicitLifetime(conv))
+    if (SignatureType::hasAddress(conv))
       ++result;
   return result;
 }

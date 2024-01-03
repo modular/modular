@@ -39,8 +39,8 @@ fn foo(x: Int, y: MemType, z: MemType):
 # CHECK: lit.func @"__init__{{.*}}(
 # CHECK-SAME: %self[self]: !lit.ref<{{.*}}> init_self,
 # CHECK-SAME: %fld0[fld0]: !Int borrow,
-# CHECK-SAME: %fld1[fld1]: !kgen.pointer<!MemType> borrow_in_mem,
-# CHECK-SAME: %fld2[fld2]: !kgen.pointer<!MemType> borrow_in_mem,
+# CHECK-SAME: %fld1[fld1]: !lit.ref<!MemType, {{[^>]*}}> borrow_in_mem,
+# CHECK-SAME: %fld2[fld2]: !lit.ref<!MemType, {{.*}}> borrow_in_mem,
 
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3

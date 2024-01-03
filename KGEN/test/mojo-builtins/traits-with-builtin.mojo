@@ -49,7 +49,7 @@ struct AsyncStruct(AsyncTrait):
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
 @register_passable
 struct AsyncStructReg(AsyncTrait):
-    # CHECK-LABEL: lit.func @"`thunk_foobar{{.*}}"(%self[self]: !kgen.pointer<!AsyncStructReg>
+    # CHECK-LABEL: lit.func @"`thunk_foobar{{.*}}(%self[self]: !lit.ref<mut !AsyncStructReg, {{.*}}>
     async fn foobar(self):
         # CHECK: [[POP_CORO:%.*]] = lit.async.call
         # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
@@ -68,7 +68,7 @@ struct AsyncStructReg(AsyncTrait):
 
 # CHECK-LABEL: lit.func @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
-    # CHECK: lit.async.call[!lit.signature<("self": {{.*}} borrow_in_mem) async -> !kgen.none>: get_type_method
+    # CHECK: lit.async.call[!lit.signature<[1]("self": {{.*}} borrow_in_mem) async -> !kgen.none>: get_type_method
     _ = value.foobar()
 
 
@@ -81,6 +81,5 @@ fn nonmaterializable_trait():
     # CHECK-NEXT: [[SLOT:%.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut !Int,
     # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK-NEXT: store [[VAL]], [[SLOT]]
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[SLOT]]
     # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:trait<{{.*}}Intable> [!Int, {"__int__"
     take_intable(1)

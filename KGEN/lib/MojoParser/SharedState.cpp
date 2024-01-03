@@ -1046,18 +1046,32 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
 ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
                                                          llvm::SMLoc loc,
                                                          Type elemType) {
+  TypedAttr lifetime;
   bool elemInMem = false;
-  if (auto pointerType = dyn_cast<PointerType>(elemType)) {
+  if (auto refType = dyn_cast<RefType>(elemType)) {
+    elemType = refType.getElementType();
+    lifetime = refType.getLifetime();
     elemInMem = true;
-    elemType = pointerType.getElementType();
   }
 
   ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
   if (varListType.isTypeCheckErrorType())
     return varListType;
-  TypedAttr elemTypeValue = TypeConstantAttr::get(
-      elemType, AnyRegTypeType::get(elemType.getContext()));
-  return BindTypeAttr::get(PValue(varListType), elemTypeValue);
+
+  /// VariadicList takes an element type, VariadicListMem takes elt+lifetime.
+  SmallVector<TypedAttr> params;
+  params.push_back(TypeConstantAttr::get(
+      elemType, AnyRegTypeType::get(elemType.getContext())));
+  if (elemInMem)
+    params.push_back(lifetime);
+  TypedAttr typeType = PValue(varListType);
+  if (cast<MetaTypeType>(typeType.getType()).getParamValues().size() !=
+      params.size()) {
+    emitError(loc, "invalid VariadicList type found");
+    return getTypeCheckErrorType();
+  }
+
+  return BindTypeAttr::get(typeType, params);
 }
 
 void SharedState::loadModulesFromCache(

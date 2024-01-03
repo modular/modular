@@ -183,7 +183,7 @@ fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]][T]: regtype>
 struct TypeParameter[T: __mlir_type.`!kgen.anyregtype`]:
-  # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self[self]: {{.*}} borrow_in_mem, %val[val]: !kgen.paramref<[[TYPE]]> borrow)
+  # CHECK: @"bar($parameters::TypeParameter{{.*}}(%self[self]: {{.*}} borrow_in_mem, %val[val]: !kgen.paramref<[[TYPE]]> borrow)
   fn bar(self, val: T):
     pass
 
@@ -349,8 +349,7 @@ fn callMemoryValueParam():
     # CHECK: [[MVALUE:%.*]] = lit.varlet.decl "anonymous*"
     # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <{{.*}}copy>
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
-    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %anonymous2A_0
-    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, [[PTR]])
+    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, %anonymous2A_0)
     _ = passMemoryValue(copy)
 
     # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType apply_result_slot({{.*}}__init__{{.*}}value = 22
@@ -871,13 +870,14 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<{{.*}}[x]: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, {{.*}}> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: apply_result_slot(:(!lit.ref<mut !MemoryOnlyType, #lit.lifetime> init_self) -> !kgen.none
+# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>(
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
 # CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, {{.*}}> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:(!lit.ref<mut !MemoryOnlyType, #lit.lifetime> init_self) -> !kgen.none rebind(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -930,7 +930,7 @@ fn test_default_param_struct():
     _ = DefaultParams[4, 5, "meow"]()
 
 
-# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, {{.*}}> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
 @value
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
@@ -938,11 +938,11 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl {{.*}}T: metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 0}>,
-    # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, {{.*}}> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, {{.*}}> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>{{.*}}{isSynthetic}
+    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"{{.*}}<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
 
@@ -1072,9 +1072,9 @@ fn test_partial_binding_CTAD():
     _ = CtadStruct[b=7](Thing[6]())
     # CHECK: call @{{.*}}::@CtadStruct::@"__init__({{.*}})"{{.*}}<:!Int #lit.struct<{value = 8}>, :!Int #lit.struct<{value = 9}>>
     _ = CtadStruct[](Thing[8](), Thing[9]())
-    # CHECK: call @{{.*}}::@CtadStruct::@"foo({{.*}})"<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>>
+    # CHECK: call @{{.*}}::@CtadStruct::@"foo({{.*}}<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>>
     CtadStruct[b=7].foo(Thing[6]())
-    # CHECK: call @{{.*}}::@CtadStruct::@"foo({{.*}})"<:!Int #lit.struct<{value = 8}>, :!Int #lit.struct<{value = 9}>>
+    # CHECK: call @{{.*}}::@CtadStruct::@"foo({{.*}}<:!Int #lit.struct<{value = 8}>, :!Int #lit.struct<{value = 9}>>
     CtadStruct[].foo(Thing[8](), Thing[9]())
 
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"__init__({{.*}})"{{.*}}<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 8}>>
@@ -1083,11 +1083,11 @@ fn test_partial_binding_CTAD():
     _ = CtadStructWithDefault[](y=Thing[1](), x=Thing[2]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"__init__({{.*}})"{{.*}}<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 9}>, :!Int #lit.struct<{value = 8}>>
     _ = CtadStructWithDefault(Thing[6](), Thing[9]())
-    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 8}>>
+    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}}<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault[b=7].foo(Thing[6]())
-    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 8}>>
+    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}}<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault[].foo(y=Thing[1](), x=Thing[2]())
-    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 8}>>
+    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}}<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault.foo(y=Thing[3](), x=Thing[4]())
 
 

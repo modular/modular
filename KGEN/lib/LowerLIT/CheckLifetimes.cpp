@@ -2267,13 +2267,10 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   //   kgen.call user(%tmp)      <<= Consuming call.
   if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
     return failure();
-  if (copyInitCall.getOperand(1) != value) {
-    // TODO(references): remove this.
-    auto refToPointer =
-        copyInitCall.getOperand(1).getDefiningOp<RefToPointerOp>();
-    if (!refToPointer || refToPointer.getRef() != value)
-      return failure();
-  }
+
+  // Make sure we're destroying the whole value, not a subvalue.
+  if (copyInitCall.getOperand(1) != value)
+    return failure();
 
   // We prefer to completely delete the copy if it is into a temporary location
   // that we can forward.
@@ -2291,9 +2288,8 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
 
       ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
-      builder.create<ParamDeclareOp>(
-          ParamDeclAttr::get(param.getName(), param.getType()),
-          builder.getAttr<LifetimeAttr>());
+      builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
+                                     builder.getAttr<LifetimeAttr>());
       auto pointerCasted = builder.create<mlir::UnrealizedConversionCastOp>(
           ArrayRef<Type>(tmpDecl.getType()),
           ArrayRef<Value>(copyInitCall.getOperand(1)));
@@ -2312,23 +2308,27 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     return failure();
 
   // moveCtor must have __moveinit__(inout self, owned: Self) type.
+  auto refValue = cast<RefType>(value.getType());
+#ifndef NDEBUG
   auto moveSig = cast<SignatureType>(moveCtor.getType());
   assert(moveSig.getNumInputs() == 2);
+  assert(moveSig.getInputConvention(0) == ValueInputConvention::InitSelf);
   assert(moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem);
+  auto valueEltType = refValue.getElementType();
+  auto moveValueInputs = moveSig.getValueInputs();
+  auto moveValue1Ref = cast<RefType>(moveValueInputs[1]);
+  assert(cast<RefType>(moveValueInputs[0]).getElementType() == valueEltType &&
+         moveValue1Ref.getElementType() == valueEltType &&
+         moveValue1Ref.getIsMutable() == refValue.getIsMutable());
 
-  /// ---
-  assert(isa<PointerType>(copyInitCall.getOperand(1).getType()) &&
-         "TODO(references): copyinit and moveinit use different signatures");
-  auto refValue = cast<RefType>(value.getType());
+  auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
+  assert(destType.getElementType() == refValue.getElementType());
+#endif
+
+  // Switch the source operand, and update the lifetime associated with it.
   copyInitCall.setOperand(1, value);
-
-  // Update lifetimes while copyinit takes pointer source.
-  assert(copyInitCall.getImplicitLifetimes().size() == 1);
   copyInitCall.setImplicitLifetimes(
       {copyInitCall.getImplicitLifetimes()[0], refValue.getLifetime()});
-  // TODO(references): enable this
-  // assert(moveSig.getValueInputs()[0] == value.getType() &&
-  //       moveSig.getValueInputs()[1] == value.getType());
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);

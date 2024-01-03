@@ -35,10 +35,10 @@ trait Movable:
 # CHECK-DAG:   %[[VAL]] = lit.ref.struct.ger %[[SELF]][value] : {{.*}} loc(#[[INIT_LOC]])
 
 # CHECK-DAG: lit.func @"__copyinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)"
-# CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : {{.*}} loc(#[[COPY_LOC:loc[0-9]*]])
+# CHECK-DAG:   %[[VAL2:.*]] = lit.ref.load %[[VAL1:.*]] : {{.*}} loc(#[[COPY_LOC:loc[0-9]*]])
 # CHECK-DAG:   lit.ref.store %[[VAL2]], %[[VAL0:.*]] : {{.*}} loc(#[[COPY_LOC]])
 # CHECK-DAG:   %[[VAL0]] = lit.ref.struct.ger %self[value] : {{.*}} loc(#[[COPY_LOC]])
-# CHECK-DAG:   %[[VAL1]] = lit.struct.gep %other[value] : {{.*}} loc(#[[COPY_LOC]])
+# CHECK-DAG:   %[[VAL1]] = lit.ref.struct.ger %other[value] : {{.*}} loc(#[[COPY_LOC]])
 
 # CHECK-DAG: lit.func @"__moveinit__{{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)"
 # CHECK-DAG:   [[VAL5:%.*]] = lit.ref.struct.ger %self[value] : {{.*}} loc(#[[MOVE_LOC:loc[0-9]*]])

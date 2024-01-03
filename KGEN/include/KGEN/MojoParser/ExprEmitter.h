@@ -328,11 +328,6 @@ public:
   /// returns null if emission fails.
   XRValue emitXRValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
-  /// This helper emits the specified value as an MBValue which has
-  /// memory-only representation, materializing PValues as needed. This
-  /// returns null if emission fails.
-  MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
-
   /// This helper emits the specified value as an XBValue which has
   /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.

@@ -675,6 +675,14 @@ static XRValue emitClosureInstance(SignatureType closureSignature,
   SmallVector<ParamDeclRefAttr> paramCaptures =
       graph.usesFromAbove.takeVector();
 
+  // Don't capture lifetime parameters, they carry no state, and are often
+  // implicit lifetimes of captured references, which aren't used in the body
+  // anyway.
+  paramCaptures.erase(
+      llvm::remove_if(paramCaptures,
+                      [&](auto p) { return isa<LifetimeType>(p.getType()); }),
+      paramCaptures.end());
+
   // Create an instance of the closure implementation in the parent function
   // right after the nested function definition.
   ClosureEmitter emitter(*moduleDecl, shared);
@@ -1106,6 +1114,8 @@ static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
   SRValue val = emitter.emitSRValue({argValue, &srcExpr}, EC_DefArgumentShadow,
                                     varListType);
+  if (!val)
+    return {};
   return builder.create<LetRegDeclOp>(mloc, argName, val);
 }
 
@@ -1213,7 +1223,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // This function sets the argument decl to be fully resolved with the
     // specified IR representation.
-    auto setDecl = [&](DeclIRValue value) -> LogicalResult {
+    auto setDecl = [&](DeclIRValue value) {
       argDecl.setIRValue(value);
       argDecl.resolvedness = DeclResolvedness::fully;
       if (auto rv = argDecl.getIfRValue()) {
@@ -1227,7 +1237,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
           argDecl.hasReferenceError = true;
       }
       shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
-      return success();
     };
 
     shared.buildArgDebugInfo(builder, bbArg, argName);
@@ -1236,16 +1245,16 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     if (funcSignature.isVarArg(bbArg.getArgNumber())) {
       auto declOp = makeVarArgLValueVarSlot(SRValue(bbArg), argName, decl,
                                             builder, argDecl.getLoc(), shared);
-      if (failed(setDecl(DeclIRValue(declOp))))
+      if (!declOp)
         return failure();
+      setDecl(DeclIRValue(declOp));
       continue;
     }
 
     // PackVarArg arguments are always treated as their kgen.pack type
     // by-value right now.  TODO(literals): Project to a tuple like thing.
     if (isa<PackType>(bbArg.getType())) {
-      if (failed(setDecl(SRValue(bbArg))))
-        return failure();
+      setDecl(SRValue(bbArg));
       continue;
     }
 
@@ -1269,7 +1278,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       break;
 
     case ValueInputConvention::BorrowedInMem:
-      argIRValue = MBValue(bbArg);
+      argIRValue = XBValue(bbArg);
       break;
     case ValueInputConvention::None:
       llvm_unreachable("none convention not permitted in lit");
@@ -1277,8 +1286,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // Ok, now that we've figured out the IR representation of the ASTDecl,
     // install it.
-    if (failed(setDecl(argIRValue)))
-      return failure();
+    setDecl(argIRValue);
   }
 
   Block *body = funcOp.getBody();
@@ -2204,10 +2212,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       }
 
       // We'll be dropping the reference, so we'll drop the implicit lifetime.
-      if (conv == ValueInputConvention::OwnedInMem)
-        --numImplicitLifetimeDecls;
-      else
-        assert(!isa<RefType>(type) && "TODO: more references");
+      --numImplicitLifetimeDecls;
 
       // Unwrap the pointer type and update the convention.
       argTypes.push_back(selfType);
@@ -2254,23 +2259,6 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
     resultParamDecls.push_back(
         ParamDeclAttr::get(b.getStringAttr("o" + Twine(i)), type));
-  }
-
-  // createFunction will generate a function for us, but wants a set of input
-  // types that have symbolic names for the argument lifetimes, not indexed
-  // ones.
-  SmallVector<Type> inputTypes;
-  for (auto [conv, type, argName] :
-       llvm::zip(memSig.getInputConventions(), memSig.getValueInputs(),
-                 memSig.getArgNames())) {
-    if (!isArgumentPassedWithImplicitLifetime(conv)) {
-      inputTypes.push_back(type);
-      continue;
-    }
-
-    // The input convention will have an index type, so replace it with a
-    // ParamDeclRefAttr to a named lifetime, so createFunction can do it's
-    // thing.
   }
 
   // Synthesize the method inside the struct.
@@ -2327,7 +2315,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       value = SBValue(arg);
       break;
     case ValueInputConvention::BorrowedInMem:
-      value = MBValue(arg);
+      value = XBValue(arg);
       break;
     default:
       llvm_unreachable("unexpected input convention");
@@ -2354,6 +2342,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   CValue callResult = emitter.emitCallUnchecked(
       PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,
       dest, &node);
+  if (!callResult)
+    return;
 
   // Bind result parameters, if there are any.
   ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
@@ -2431,28 +2421,25 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
-    ValueInputConvention otherConv;
+    ValueInputConvention existingConv;
     switch (kind) {
     case SpecialFunctionKind::kCopyInit:
-      otherConv = ValueInputConvention::BorrowedInMem;
+      existingConv = ValueInputConvention::BorrowedInMem;
       break;
     case SpecialFunctionKind::kMoveInit:
-      otherConv = ValueInputConvention::OwnedInMem;
+      existingConv = ValueInputConvention::OwnedInMem;
       break;
     default:
       llvm_unreachable("unexpected special function kind to synthesize");
     }
     StringRef name = SpecialFunctionInfo::get(kind).name;
     Type existingType;
-    if (kind == SpecialFunctionKind::kMoveInit)
-      existingType = structDecl.getSelfType().getRefForArgument("existing",
-                                                                /*isMut=*/true);
-    else // FIXME: Eliminate when 'borrowed' moves.
-      existingType = PointerType::get(structDecl.getSelfType());
-
+    bool isMut = existingConv == ValueInputConvention::OwnedInMem;
+    existingType =
+        structDecl.getSelfType().getRefForArgument("existing", isMut);
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
-        {ValueInputConvention::InitSelf, otherConv}, {empty, empty},
+        {ValueInputConvention::InitSelf, existingConv}, {empty, empty},
         {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
         structDecl, kind, FnEffects(), "`thunk_");
     func = ctor;
@@ -2462,7 +2449,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     if (kind == SpecialFunctionKind::kMoveInit)
       value = b.create<LIT::LoadConsumeOp>(func.getArgument(1));
     else
-      value = b.create<POP::LoadOp>(func.getArgument(1));
+      value = b.create<RefLoadOp>(func.getArgument(1));
     b.create<RefStoreOp>(value, func.getArgument(0));
   }
   func.setInlineLevel(InlineLevel::AlwaysNoDebug);
