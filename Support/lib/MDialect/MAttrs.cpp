@@ -7,7 +7,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Config/Version.h"
 #include "Support/BuildInfo.h"
-#include "Support/Compiler/MLIRDenseAttrStorage.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"

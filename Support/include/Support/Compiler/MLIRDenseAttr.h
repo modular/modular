@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_COMPILER_MLIRDENSEATTRSTORAGE_H
-#define SUPPORT_COMPILER_MLIRDENSEATTRSTORAGE_H
+#ifndef SUPPORT_COMPILER_MLIRDENSEATTR_H
+#define SUPPORT_COMPILER_MLIRDENSEATTR_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -24,4 +24,4 @@ inline bool shouldUseOutOfLineAttrStorage(size_t numElements) {
 }
 } // namespace M
 
-#endif // SUPPORT_COMPILER_MLIRDENSEATTRSTORAGE_H
+#endif // SUPPORT_COMPILER_MLIRDENSEATTR_H
