@@ -57,8 +57,7 @@ static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
             llvm::formatv("{0} \\[em] {1}\n", cmd.getName(), cmd.getSummary()));
 }
 
-static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
-                               ArrayRef<CommandOptionGroup> groups) {
+static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd) {
   os << ".SH \"SYNOPSIS\"\n";
   for (const llvm::Record *usage : cmd.getUsages()) {
     os << "\\fB" << escape(cmd.getName(/*join=*/" ")) << "\\fR";
@@ -184,7 +183,7 @@ static bool genManPage(raw_ostream &os, const llvm::RecordKeeper &records) {
 
   genTitle(os, cmd);
   genNameSection(os, cmd);
-  genSynopsisSection(os, cmd, groups);
+  genSynopsisSection(os, cmd);
   genDescriptionSection(os, cmd);
   genSubcommandsSection(os, cmd);
   genOptionsSection(os, groups);

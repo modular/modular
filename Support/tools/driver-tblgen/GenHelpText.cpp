@@ -105,8 +105,7 @@ static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
   writeWordWrapped(os, formatted, /*indent=*/8) << "\n\n";
 }
 
-static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
-                               ArrayRef<CommandOptionGroup> groups) {
+static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd) {
   os << "SYNOPSIS\n";
   for (const llvm::Record *usage : cmd.getUsages()) {
     os.indent(8) << cmd.getName(/*join=*/" ");
@@ -228,7 +227,7 @@ static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
 
   os << "u8R\"(";
   genNameSection(os, cmd);
-  genSynopsisSection(os, cmd, groups);
+  genSynopsisSection(os, cmd);
   genDescriptionSection(os, cmd);
   genSubcommandsSection(os, cmd);
   genOptionsSection(os, groups);

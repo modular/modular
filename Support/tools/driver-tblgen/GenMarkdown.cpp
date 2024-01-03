@@ -34,8 +34,7 @@ static void genSummarySection(raw_ostream &os, const CommandDescription &cmd) {
   os << cmd.getSummary() << "\n\n";
 }
 
-static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
-                               ArrayRef<CommandOptionGroup> groups) {
+static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd) {
   os << "## Synopsis\n\n"
      << "```\n";
   for (const llvm::Record *usage : cmd.getUsages()) {
@@ -149,7 +148,7 @@ static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
 
   genFrontMatter(os, cmd);
   genSummarySection(os, cmd);
-  genSynopsisSection(os, cmd, groups);
+  genSynopsisSection(os, cmd);
   genDescriptionSection(os, cmd);
   genSubcommandsSection(os, cmd);
   genOptionsSection(os, groups);
