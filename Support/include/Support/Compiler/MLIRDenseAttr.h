@@ -10,6 +10,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
+
 /// Returns true if an array with the given number of elements is sufficiently
 /// large that out-of-line storage should be used. This indicates to the caller
 /// that the data is big enough to treat specially, e.g. that it shouldn't be
@@ -22,6 +23,11 @@ inline bool shouldUseOutOfLineAttrStorage(size_t numElements) {
   static constexpr size_t kLargeDataThreshold = 512;
   return numElements > kLargeDataThreshold;
 }
+
+/// Returns an attribute with the given `name` that represents the serialized
+/// `data`. The data is always copied into the MLIR context.
+DenseResourceElementsAttr
+createResourceAttr(MLIRContext *ctx, ArrayRef<char> data, const Twine &name);
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDENSEATTR_H

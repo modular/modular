@@ -12,6 +12,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Buffer.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
