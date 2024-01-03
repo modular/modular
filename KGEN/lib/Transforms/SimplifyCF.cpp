@@ -144,7 +144,7 @@ bool SimplifyCF::tryRemovingLoop(LoopOp loop) {
   if (count == 1 && breakOp &&
       (!(label = breakOp.getLabelAttr()) || label == loop.getLabelAttr())) {
     // Move out the loop body and then erase the loop.
-    b.inlineBlockBefore(&body, loop);
+    b.inlineBlockBefore(&body, loop, loop.getOperands());
     loop.replaceAllUsesWith(breakOp.getOperands());
 
     b.eraseOp(breakOp);
@@ -157,7 +157,7 @@ bool SimplifyCF::tryRemovingLoop(LoopOp loop) {
   if (count == 0) {
     // Move out the loop body. The loop results will have no uses after the
     // subsequent operations are erased.
-    b.inlineBlockBefore(&body, loop);
+    b.inlineBlockBefore(&body, loop, loop.getOperands());
     Block *toErase = b.splitBlock(loop->getBlock(), loop->getIterator());
     b.eraseBlock(toErase);
     return true;

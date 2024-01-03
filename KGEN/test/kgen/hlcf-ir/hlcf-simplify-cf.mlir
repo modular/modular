@@ -371,3 +371,12 @@ kgen.func @try_result_passing(%arg0: index, %arg1: si32) -> (index, si32) {
   // CHECK-NEXT: return %arg0, %arg1
   kgen.return %0#0, %0#1 : index, si32
 }
+
+// CHECK-LABEL: @loop_break
+kgen.func @loop_break(%arg0: index) -> index {
+  // CHECK-NEXT: return %arg0 : index
+  %0 = hlcf.loop (%arg1 = %arg0 : index) -> index {
+    hlcf.break %arg1 : index
+  }
+  kgen.return %0 : index
+}
