@@ -149,7 +149,7 @@ fn _destroy_global_runtime(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn _get_current_or_global_runtime() -> Runtime:
+fn _get_current_or_global_runtime() -> Pointer[NoneType]:
     """Returns the current runtime, or returns the Mojo singleton global
     runtime, creating it if it does not already exist. When Mojo is used within
     the Modular Execution Engine the current runtime will be that already
@@ -168,15 +168,6 @@ fn _get_current_or_global_runtime() -> Runtime:
     ]()
 
 
-@always_inline
-fn _is_global_runtime(runtime: Runtime) -> Bool:
-    """Returns True if runtime is the singleton Mojo runtime
-    (and thus should not be deleted).
-    """
-    let global_ptr = _get_global_or_null["Runtime"]()
-    return runtime.ptr == global_ptr
-
-
 # ===----------------------------------------------------------------------===#
 # Runtime
 # ===----------------------------------------------------------------------===#
@@ -188,17 +179,19 @@ fn _is_global_runtime(runtime: Runtime) -> Bool:
 struct Runtime:
     alias ptr_type = Pointer[NoneType]
     var ptr: Self.ptr_type
+    var owning: Bool
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
     @always_inline("nodebug")
     fn __copyinit__(self) -> Self:
-        return Self {ptr: self.ptr}
+        return Self {ptr: self.ptr, owning: False}
 
     fn __init__() -> Runtime:
         """Construct an LLCL Runtime with the same number of threads as
         processor cores.
         """
-        return _get_current_or_global_runtime()
+        let ptr = _get_current_or_global_runtime()
+        return Runtime(ptr, owning=False)
 
     fn __init__(num_threads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
@@ -208,24 +201,26 @@ struct Runtime:
         if num_threads == num_cores():
             return Runtime()
 
-        return external_call[
+        let ptr = external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
         ](num_threads)
+        return Runtime(ptr, owning=True)
 
     fn __init__(num_threads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
-        return external_call[
+        let ptr = external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", Self.ptr_type
         ](
             num_threads,
             profileFilename.data,
             profileFilename.length.value,
         )
+        return Runtime(ptr, owning=True)
 
-    fn __init__(ptr: Self.ptr_type) -> Runtime:
-        return Runtime {ptr: ptr}
+    fn __init__(ptr: Self.ptr_type, owning: Bool) -> Runtime:
+        return Runtime {ptr: ptr, owning: owning}
 
     fn __enter__(self) -> Self:
         return self
@@ -246,7 +241,7 @@ struct Runtime:
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of the context.
         """
-        if not _is_global_runtime(self):
+        if self.owning:
             external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](
                 self.ptr
             )
@@ -481,9 +476,10 @@ struct OutputChainPtr:
     @always_inline
     fn get_runtime(self) -> Runtime:
         """Returns the runtime managing the output chain."""
-        return external_call[
+        let ptr = external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime", Runtime.ptr_type
         ](self.ptr)
+        return Runtime(ptr, owning=False)
 
     @always_inline
     fn _mark_error_old[
