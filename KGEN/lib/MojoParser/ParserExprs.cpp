@@ -547,16 +547,22 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_mutref: { // mutref [lifetime] type
     consumeToken();
     // Parse the lifetime specifier.
-    ExprNode *lifetime = nullptr;
-    ExprNode *expr = nullptr;
+    ExprNode *lifetime = nullptr, *expr = nullptr, *addrSpace = nullptr;
     if (parseToken(Token::l_square, "expected '[' before lifetime") ||
-        parseExpression(lifetime, Precedence::kAssignExpr) ||
-        parseToken(Token::r_square, "expected ']' after lifetime") ||
+        parseExpression(lifetime, Precedence::kAssignExpr))
+      return failure();
+
+    if (consumeIf(Token::comma)) {
+      if (parseExpression(addrSpace, Precedence::kAssignExpr))
+        return failure();
+    }
+
+    if (parseToken(Token::r_square, "expected ']' after lifetime") ||
         parsePrimaryExpr(expr))
       return failure();
     bool isMutable = startTok.getKind() == Token::kw_mutref;
-    result =
-        alloc<OwnershipOpNode>(startTok.getLoc(), isMutable, lifetime, expr);
+    result = alloc<OwnershipOpNode>(startTok.getLoc(), isMutable, lifetime,
+                                    addrSpace, expr);
     break;
   }
 

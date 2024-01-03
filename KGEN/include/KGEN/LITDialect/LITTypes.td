@@ -282,19 +282,25 @@ def LIT_RefType : LITType<"Ref", "ref",
   }];
 
   let parameters = (ins "bool":$isMutable,
-                        "Type":$elementType, "TypedAttr":$lifetime);
+                        "Type":$elementType,
+                        "TypedAttr":$lifetime,
+                        DefaultValuedParameter<"TypedAttr",
+                          "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
     `<` custom<MutFlag>($isMutable) `` custom<ParamType>($elementType) `,`
-        custom<LifetimeParamValue>($lifetime) `>`
+        custom<LifetimeParamValue>($lifetime) ``
+        (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "bool":$isMutable,
                                         "Type":$elementType,
-                                        "TypedAttr":$lifetime)>,
+                                        "TypedAttr":$lifetime,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "bool":$isMutable,
-                                        "TypedAttr":$elementType,
-                                        "TypedAttr":$lifetime)>,
+                                        "Type":$elementType,
+                                        "TypedAttr":$lifetime,
+                                        "TypedAttr":$addressSpace)>,
   ];
 
   let extraClassDeclaration = [{
@@ -317,7 +323,8 @@ def LIT_RefType : LITType<"Ref", "ref",
 
     /// Return a reference to the specified element type and mutability with an
     /// immortal (#lit.lifetime) lifetime.
-    static RefType getImmortal(bool isMut, Type elementType);
+    static RefType getImmortal(bool isMut, Type elementType,
+                               unsigned addrSpace = 0);
 
     /// Given the specified pointer type, return a reference type of the same
     /// element but with a hacked lifetime.
