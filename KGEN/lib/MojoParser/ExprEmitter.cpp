@@ -509,8 +509,6 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
     value.ir = SBValue(srVal);
-  else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
-    value.ir = MBValue(mrVal);
   else if (auto refVal = value.ir.getIfXRValue()) // Decay XRValue -> XBValue
     value.ir = XBValue(refVal);
 
@@ -632,16 +630,6 @@ XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
   return XBValue(dest);
 }
 
-MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
-                                         ExprContext context) {
-  XRValue ref = emitPValueToXRValue(value, context);
-  if (!ref)
-    return {};
-
-  return MRValue(
-      builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
-}
-
 XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   PValue pvalue = value.ir;
@@ -671,11 +659,6 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     return {};
   }
 
-  if (auto mrValue = value.getIfMRValue()) {
-    value = XRValue(emitXBValue({MBValue(mrValue), anyValue.expr}, context));
-    if (!value)
-      return {};
-  }
   // If we have a value in memory, use a LoadConsumeOp to load it.
   if (auto xrValue = value.getIfXRValue()) {
     if (!builder) {
@@ -701,21 +684,6 @@ XRValue ExprEmitter::emitXRValue(ASTExprAnd<AnyValue> value,
   if (auto xr = value.ir.getIfXRValue())
     return xr;
 
-  // Cast MRValues to XRValues on demand.
-  if (Value ptr = value.ir.getIfMRValue()) {
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType()), /*isMut=*/true);
-    auto castOp = builder->create<mlir::UnrealizedConversionCastOp>(
-        ptr.getLoc(), destTy, ptr);
-    return XRValue(castOp.getResult(0));
-  }
-
   if (auto pv = value.ir.getIfPValue())
     return emitPValueToXRValue({pv, value.expr}, context);
   llvm_unreachable("unknown XRValue");
@@ -736,21 +704,6 @@ XBValue ExprEmitter::emitXBValue(ASTExprAnd<AnyValue> value,
   // Emit PValues to memory and promote to borrow.
   if (auto pValue = bValue.getIfPValue())
     return emitPValueToXRValue({pValue, value.expr}, context);
-
-  // Decay MBValue to XBValue on demand.
-  // TODO(references): Remove MBValue.
-  if (auto ptr = bValue.getIfMBValue()) {
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-    auto castOp = builder->create<mlir::UnrealizedConversionCastOp>(
-        ptr.getLoc(), destTy, ptr);
-    return XBValue(castOp.getResult(0));
-  }
 
   // Reject SBValue.
   emitError(value.expr->getLoc(),
@@ -881,10 +834,6 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              newType, v);
   };
-  if (auto mrValue = value.getIfMRValue())
-    return MRValue(rebind(mrValue));
-  if (auto mbValue = value.getIfMBValue())
-    return MBValue(rebind(mbValue));
   if (auto refValue = value.getIfXLValue())
     return XLValue(rebind(refValue));
   if (auto refValue = value.getIfXRValue())
@@ -1079,9 +1028,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (canZeroCostConvert(shared, rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
-        if (isa<MRValue, MBValue>(cValue.getStorage())) {
-          requiredType = PointerType::get(requiredType);
-        } else if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
+        if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
           requiredType =
               cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
@@ -1141,9 +1088,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
-    if (auto memValue = value.getIfMRValue())
-      return MBValue(memValue);
-
     auto memValue = value.getIfXRValue();
     assert(memValue && "Must be an XRValue providing result");
     return XBValue(memValue);
@@ -1235,7 +1179,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
 
-  // Decay a stored LValue to an MBValue.
+  // Decay a stored LValue to an XBValue.
   auto ref = value.ir.getIfXLValue();
   assert(ref && "unknown lvalue kind");
   // Emit a non-consuming __copyinit__ or load of the value.
@@ -1317,16 +1261,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     emitErrorForDynamicValueInParameter(value.expr);
     return {};
   }
-  Value address = value.ir.getIfMBValue();
-  if (!address)
-    address = value.ir.getIfMRValue();
-  if (address) {
-    Value result =
-        builder->create<POP::LoadOp>(value.expr->getLocation(*this), address);
-    return emitCResult(SRValue(result), value.expr, dest);
-  }
-
-  address = value.ir.getXValueReference();
+  Value address = value.ir.getXValueReference();
   assert(address && "Unknown value");
   Value result =
       builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
@@ -1404,7 +1339,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // If it is a register passable, assign with a store.
   if (valueType.isRegisterPassable(exprLoc, shared)) {
-    // Materialize a PValue or load a MRValue if present.
+    // Materialize a PValue or load a XRValue if present.
     SRValue val = emitSRValue(value, context, valueType);
     if (!val)
       return {};
@@ -1842,7 +1777,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
       emitter.builder->create<RefStructGEROp>(loc, tmpDecl, getField());
   emitter.emitStoreToLValue(value, XLValue(fieldPtr), EC_AttributeRefBase);
 
-  // Store the whole result back, transfering ownership as an MRValue.
+  // Store the whole result back, transfering ownership as an XRValue.
   baseVal.ir->emitStore({XRValue(tmpDecl), expr}, emitter);
 }
 

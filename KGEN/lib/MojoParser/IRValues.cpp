@@ -38,10 +38,6 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "SR: ";
     os << val;
-  } else if (auto val = dyn_cast<MRValue>(storage)) {
-    if (isDump)
-      os << "MR: ";
-    os << val;
   } else if (auto val = dyn_cast<XRValue>(storage)) {
     if (isDump)
       os << "XR: ";
@@ -49,10 +45,6 @@ static raw_ostream &printStorage(raw_ostream &os,
   } else if (auto val = dyn_cast<SBValue>(storage)) {
     if (isDump)
       os << "SB: ";
-    os << val;
-  } else if (auto val = dyn_cast<MBValue>(storage)) {
-    if (isDump)
-      os << "MB: ";
     os << val;
   } else if (auto val = dyn_cast<XBValue>(storage)) {
     if (isDump)
@@ -136,13 +128,9 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<MRValue>(storage))
-    return value.getType();
   if (auto value = dyn_cast<XRValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<SBValue>(storage))
-    return value.getType();
-  if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<XBValue>(storage))
     return value.getType();
@@ -186,12 +174,9 @@ ASTType PValue::getIfTypeValue() const {
   return {};
 }
 
-/// This method looks through the pointer in a MRValue to return the
-/// underlying type.
+/// This method looks through references to return the element type.
 ASTType CRValue::getRValueType() const {
   auto type = getType();
-  if (isa<MRValue>(storage))
-    return type.getPointerElementType();
   if (isa<XRValue>(storage))
     return type.getReferenceElementType();
   return type;
@@ -199,8 +184,6 @@ ASTType CRValue::getRValueType() const {
 
 ASTType CValue::getRValueType() const {
   auto type = getType();
-  if (isa<MRValue, MBValue>(storage))
-    return type.getPointerElementType();
   if (isa<XLValue, XRValue, XBValue>(storage))
     return type.getReferenceElementType();
   return type;
@@ -215,8 +198,6 @@ ASTType LValue::getRValueType() const {
 
 ASTType BValue::getRValueType() const {
   auto type = getType();
-  if (isa<MBValue>(storage))
-    return type.getPointerElementType();
   if (isa<XBValue>(storage))
     return type.getReferenceElementType();
   return type;
@@ -234,8 +215,6 @@ Value VariantValueStorageBase::getXValueReference() const {
 }
 
 // TODO(lifetimes): remove pedantic checks.
-void MRValue::check() const { assert(::isa<PointerType>(Value::getType())); }
-void MBValue::check() const { assert(::isa<PointerType>(Value::getType())); }
 void XRValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void XLValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void XBValue::check() const { assert(::isa<RefType>(Value::getType())); }

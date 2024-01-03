@@ -1474,8 +1474,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         ptrOrScalar = scalar;
       if (auto scalar = enterResult.getIfXBValue())
         ptrOrScalar = scalar;
-      if (auto scalar = enterResult.getIfMBValue())
-        ptrOrScalar = scalar;
       if (ptrOrScalar)
         builder.create<OwnershipUseOp>(loc, ptrOrScalar);
     }

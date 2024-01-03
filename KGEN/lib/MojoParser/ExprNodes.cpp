@@ -683,15 +683,6 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
   }
 
-  // If the base is an MRValue or MBValue, reference the field as an
-  // MBValue so we lazy copy only the piece that is needed in the case of
-  // `x.y.z.w`
-  if (MBValue baseMBV = baseBVal.getIfMBValue()) {
-    auto fieldPtr =
-        emitter.builder->create<StructGEPOp>(mlirLoc, baseMBV, fieldOp);
-    return emitter.emitCResult(MBValue(fieldPtr), expr, dest);
-  }
-
   // If the base is an XRValue or XBValue, reference the field as an
   // XBValue so we lazy copy only the piece that is needed in the case of
   // `x.y.z.w`
@@ -1651,6 +1642,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Check if we are subscripting a variadic. Emit `pop.variadic.get`.
   // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
   // a standard library type that implements `__getitem__` and `__setitem__`.
+  // FIXME(#28389): really this should go.
   if (auto variadic = dyn_cast<VariadicType>(baseType)) {
     // Attempt to convert the index.
     if (posOperands.size() != 2 || !kwOperands.empty()) {
@@ -1677,8 +1669,11 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (auto ptrType = dyn_cast<PointerType>(
             ASTType(variadic.getElementType()).mlirType)) {
       if (!ASTType(ptrType.getElementType())
-               .isRegisterPassable(getLoc(), emitter.shared))
-        return emitter.emitResult(MRValue(value), this, dest);
+               .isRegisterPassable(getLoc(), emitter.shared)) {
+        value = emitter.builder->create<RefFromPointerOp>(
+            emitter.translateLocation(getLoc()), value, true);
+        return emitter.emitResult(XRValue(value), this, dest);
+      }
     }
     return emitter.emitResult(SRValue(value), this, dest);
   }
@@ -2468,10 +2463,6 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   bool isRegister = false;
   if (argValue.isXValue())
     value = argValue.getXValueReference();
-  else if (auto mb = argValue.getIfMBValue())
-    value = mb;
-  else if (auto mr = argValue.getIfMRValue())
-    value = mr;
   else if (auto sb = argValue.getIfSBValue())
     value = sb, isRegister = true;
   else if (auto sr = argValue.getIfSRValue())
@@ -2510,9 +2501,6 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
       emitter.builder->create<OwnershipEndLifetimeOp>(loc, value, isRegister);
   if (isRegister)
     return emitter.emitResult(SRValue(newVal), this, dest);
-  // TODO(references): remove MRValue
-  if (isa<PointerType>(newVal.getType()))
-    return emitter.emitResult(MRValue(newVal), this, dest);
   return emitter.emitResult(XRValue(newVal), this, dest);
 }
 
@@ -3035,16 +3023,11 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   // __get_ref_from_value(someValue) returns a !lit.ref for something with a
   // reference representation.
   if (kind == kGetRefFromValue) {
-    // TODO(references): remove support for MBValue.
-    if (subExprValue.getIfMBValue() || subExprValue.getIfPValue()) {
+    if (subExprValue.getIfPValue()) {
       subExprValue =
           emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());
       if (!subExprValue)
         return {};
-    }
-    if (subExprValue.isMValue()) {
-      emitter.emitError(getLoc(), "unsupported value type") << getRange();
-      return {};
     }
     if (subExprValue.isSValue()) {
       emitter.emitError(getLoc(), "cannot get a reference to a register value")

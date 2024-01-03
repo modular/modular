@@ -46,8 +46,8 @@
 # CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
 # CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
 # CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT:  %2 = builtin.unrealized_conversion_cast [[V0]]
-# CHECK-NEXT:  %3 = builtin.unrealized_conversion_cast [[V1]]
+# CHECK-NEXT:  %2 = lit.ref.from_pointer [[V0]]
+# CHECK-NEXT:  %3 = lit.ref.from_pointer [[V1]]
 # CHECK-NEXT:  %4 = kgen.rebind %3
 # CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%2, %4)
 
