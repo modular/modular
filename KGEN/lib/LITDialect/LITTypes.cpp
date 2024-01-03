@@ -357,41 +357,47 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
 // RefType
 //===----------------------------------------------------------------------===//
 
-RefType RefType::get(bool isMutable, TypedAttr elementType,
-                     TypedAttr lifetime) {
-  auto *ctx = elementType.getContext();
-  return get(ctx, isMutable, ParamRefType::get(elementType), lifetime);
+RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
+                     TypedAttr addrSpace) {
+  return get(lifetime.getContext(), isMutable, elementType, lifetime,
+             addrSpace);
 }
 
-RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime) {
-  return get(elementType.getContext(), isMutable, elementType, lifetime);
+RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
+                     unsigned addrSpace) {
+  auto *ctx = elementType.getContext();
+  return get(isMutable, elementType, lifetime,
+             IntegerAttr::get(IndexType::get(ctx), addrSpace));
+
+  // return get(isMutable, ParamRefType::get(elementType), lifetime, addrSpace);
 }
 
 /// Return the pointer type that corresponds to this reference type, ignoring
 /// the lifetime and the mutability.
 PointerType RefType::getAsPointerType() {
-  return PointerType::get(getElementType());
+  return PointerType::get(getElementType(), getAddressSpace());
 }
 
 /// Return this RefType but with a different element type.
 RefType RefType::getWithElement(Type newElement) {
-  return get(getIsMutable(), newElement, getLifetime());
+  return get(getIsMutable(), newElement, getLifetime(), getAddressSpace());
 }
 
 /// Return this RefType but with a different lifetime.
 RefType RefType::getWithLifetime(TypedAttr newLifetime) {
-  return get(getIsMutable(), getElementType(), newLifetime);
+  return get(getIsMutable(), getElementType(), newLifetime, getAddressSpace());
 }
 
 /// Return this RefType but with a different mutability.
 RefType RefType::getWithMutability(bool isMut) {
-  return get(isMut, getElementType(), getLifetime());
+  return get(isMut, getElementType(), getLifetime(), getAddressSpace());
 }
 
 /// Return a reference to the specified element type and mutability with an
 /// immortal (#lit.lifetime) lifetime.
-RefType RefType::getImmortal(bool isMut, Type elementType) {
-  return get(isMut, elementType, LifetimeAttr::get(elementType.getContext()));
+RefType RefType::getImmortal(bool isMut, Type elementType, unsigned addrSpace) {
+  return get(isMut, elementType, LifetimeAttr::get(elementType.getContext()),
+             addrSpace);
 }
 
 /// Given the specified pointer type, return a reference type of the same

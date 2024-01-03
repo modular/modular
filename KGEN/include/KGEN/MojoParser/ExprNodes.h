@@ -534,17 +534,18 @@ struct UnaryOpNode final : public ExprNode {
                         ExprEmitter &emitter) const;
 };
 
-/// `borrowed[lt] Type` and related ownership type specifiers.
+/// `borrowed[lt, addrspace] Type` and related ownership type specifiers.
 struct OwnershipOpNode final : public ExprNode {
   OwnershipOpNode(SMLoc keywordLoc, bool isMutable, ExprNode *lifetime,
-                  ExprNode *subExpr)
+                  ExprNode *addrSpace, ExprNode *subExpr)
       : ExprNode(kRef), isMutable(isMutable), keywordLoc(keywordLoc),
-        lifetime(lifetime), subExpr(subExpr) {}
+        lifetime(lifetime), addrSpace(addrSpace), subExpr(subExpr) {}
 
   bool isMutable;
   const SMLoc keywordLoc;
   // NOTE: We don't keep track of the [] locations.
   ExprNode *const lifetime;
+  ExprNode *const addrSpace; // NOTE: This is null if unspecified.
   ExprNode *const subExpr;
 
   static bool classof(const ExprNode *node) { return node->kind == kRef; }

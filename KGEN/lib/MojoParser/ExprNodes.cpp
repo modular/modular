@@ -2593,12 +2593,23 @@ AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       lifetime, EC_LifetimeSpec, emitter.shared.getLifetimeType());
   if (!lifetimePVal)
     return {};
+
+  PValue addrSpacePVal;
+  auto indexType = IndexType::get(emitter.getContext());
+  if (addrSpace)
+    addrSpacePVal =
+        emitter.emitExprPValue(addrSpace, EC_LifetimeSpec, indexType);
+  else
+    addrSpacePVal = PValue(IntegerAttr::get(indexType, 0));
+  if (!addrSpacePVal)
+    return {};
+
   auto subType = emitter.emitExprType(subExpr);
   if (!subType)
     return {};
 
-  // FIXME: Swap RefType attr order to match syntax order.
-  auto result = RefType::get(isMutable, subType, lifetimePVal.get());
+  auto result =
+      RefType::get(isMutable, subType, lifetimePVal.get(), addrSpacePVal.get());
   return emitter.emitResult(result, this, dest);
 }
 

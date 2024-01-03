@@ -46,7 +46,8 @@ def LifetimeType : DialectType<(type)>;
 def RefType : DialectType<(type
   EnumAttr<"bool">:$isMutable,
   Type:$elementType,
-  TypedAttr:$lifetime
+  TypedAttr:$lifetime,
+  TypedAttr:$addressSpace
 )>;
 
 def REPLResultRefType : DialectType<(type

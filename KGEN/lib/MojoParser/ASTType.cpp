@@ -581,6 +581,12 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   } else if (auto refType = dyn_cast<RefType>(type)) {
     os << (refType.getIsMutable() ? "mutref[" : "ref[");
     printParam(os, refType.getLifetime(), forDiag, demangleParams);
+    if (IntegerAttr addrSpaceInt =
+            dyn_cast<IntegerAttr>(refType.getAddressSpace());
+        !addrSpaceInt || addrSpaceInt.getInt() != 0) {
+      os << ", ";
+      printParam(os, refType.getAddressSpace(), forDiag, demangleParams);
+    }
     os << "] ";
     ASTType(refType.getElementType()).print(os, forDiag);
   } else {

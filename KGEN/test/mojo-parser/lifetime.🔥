@@ -39,6 +39,11 @@ fn implicit_inout(inout a: MemExample):
 fn implicit_owned(owned a: MemExample):
   pass
 
+# CHECK-LABEL: lit.func @"addrSpace
+# CHECK: <_44x14_lt[lt]: lifetime, _44x28_addr[addr]>(%a[a]: !lit.ref<mut !MemExample, _44x14_lt, _44x28_addr> borrow)
+fn addrSpace[lt: Lifetime, addr: __mlir_type.index](a: mutref[lt, addr] MemExample):
+  pass
+
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
 ##===----------------------------------------------------------------------===##

@@ -111,3 +111,9 @@ kgen.generator @trait() {
   kgen.param.declare vtable: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :regtype i32>, {"method" : () -> () = @method}]>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @ref_types
+// CHECK: %arg0: !lit.ref<index, #lit.lifetime, 4>
+kgen.generator @ref_types(%arg0: !lit.ref<index, #lit.lifetime, 4>) {
+  kgen.unreachable
+}
