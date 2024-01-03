@@ -420,7 +420,7 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   [[maybe_unused]] auto timeScope =
       runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.kgen.compile.time", M::Telemetry::Level::L2);
+              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
   auto runPipeline = [&](mlir::PassManager &pm) -> ErrorOrSuccess {
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
