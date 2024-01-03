@@ -33,7 +33,7 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
            "this to specify the path where Mojo can find those packages.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
-  Group<CompilationOptionGroup>, Index<2>,
+  Group<CompilationOptionGroup>, Index<1>, Flags<[HelpHidden]>,
   HelpText<"For internal use only.">;
 
 //===----------------------------------------------------------------------===//
