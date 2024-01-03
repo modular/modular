@@ -1812,7 +1812,7 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
 
   let builders = [
     // Create with a pointer and mutability, instead of requiring a result type.
-    OpBuilder<(ins "Value":$pointer, "bool":$isMut)>,
+    OpBuilder<(ins "bool":$isMut, "Value":$pointer)>,
   ];
 
 }

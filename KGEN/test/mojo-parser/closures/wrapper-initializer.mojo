@@ -42,7 +42,7 @@ trait Movable:
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index
 
 # Copy source (stack) into target (heap)
-# CHECK-NEXT:  %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
+# CHECK-NEXT:  %[[V0REF:.*]] = lit.ref.from_pointer %[[V0]]
 # CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0REF]], %impl)
 
 # Store heap pointer in ClosureWrapper field
@@ -59,7 +59,7 @@ trait Movable:
 
 # CHECK-LABEL: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}(%self[self]: !kgen.pointer<none>, |)
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
-# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+# CHECK-NEXT: %1 = lit.ref.from_pointer %0
 # CHECK-NEXT: lit.ownership.end_lifetime %1
 # CHECK-NEXT: pop.aligned_free %0
 
@@ -67,7 +67,7 @@ trait Movable:
 # CHECK-SAME: (%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result,
 # CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
-# CHECK-NEXT: %[[A0REF:.*]] = builtin.unrealized_conversion_cast %[[A0]]
+# CHECK-NEXT: %[[A0REF:.*]] = lit.ref.from_pointer %[[A0]]
 # CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%[[RES]], %[[A0REF]], %n)
 # CHECK-NEXT: lit.return
 

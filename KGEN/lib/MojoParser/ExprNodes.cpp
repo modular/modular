@@ -550,13 +550,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
-
-      auto refType = RefType::getRefForPointerHACK(ptrType, /*isMut=*/true);
-      tmp = emitter.builder
-                ->create<mlir::UnrealizedConversionCastOp>(parentFunc.getLoc(),
-                                                           refType, tmp)
-                .getResult(0);
-
+      tmp = emitter.builder->create<RefFromPointerOp>(parentFunc.getLoc(),
+                                                      /*isMut=*/true, tmp);
       ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
       if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
@@ -576,9 +571,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       emitter.builder->setInsertionPointToStart(functionContainer.getBody());
       Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
           functionContainer.getLoc(), ptrType, 1);
+      localDecl = emitter.builder->create<RefFromPointerOp>(
+          functionContainer.getLoc(), /*isMut=*/true, localDecl);
+
       // Copy the raw bytes in.
-      emitter.builder->create<POP::StoreOp>(functionContainer.getLoc(),
-                                            rawBytes, localDecl);
+      emitter.builder->create<RefStoreOp>(functionContainer.getLoc(), rawBytes,
+                                          localDecl);
 
       // If the parent function was malformed somehow, it may not get added
       // to the symbol table.
@@ -586,15 +584,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           getFullyResolvedSymbolRef(functionContainer));
       if (!parentDecl)
         return {};
-
-      // TODO(references) switch these to take a ref.
-      // HACK: force convert to reference.
-      auto destRefTy = RefType::getRefForPointerHACK(
-          cast<PointerType>(localDecl.getType()), /*isMut=*/true);
-      localDecl = emitter.builder
-                      ->create<mlir::UnrealizedConversionCastOp>(
-                          functionContainer.getLoc(), destRefTy, localDecl)
-                      .getResult(0);
 
       // Bind the copy to the name.
       emitter.getDeclResolver().addFullyResolvedDecl(
@@ -1671,7 +1660,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       if (!ASTType(ptrType.getElementType())
                .isRegisterPassable(getLoc(), emitter.shared)) {
         value = emitter.builder->create<RefFromPointerOp>(
-            emitter.translateLocation(getLoc()), value, true);
+            emitter.translateLocation(getLoc()), /*isMut=*/true, value);
         return emitter.emitResult(MRValue(value), this, dest);
       }
     }
@@ -3110,14 +3099,8 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   // for it, if not, we don't need/want them.
   auto pointeeType = ASTType(pointerType).getPointerElementType();
   bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
-
-  // TODO(references) switch these to take a ref.
-  // HACK: force convert to reference.
-  auto destTy = RefType::getRefForPointerHACK(pointerType, /*isMut=*/true);
-  exprVal = emitter.builder
-                ->create<mlir::UnrealizedConversionCastOp>(getLocation(emitter),
-                                                           destTy, exprVal)
-                .getResult(0);
+  exprVal = emitter.builder->create<RefFromPointerOp>(getLocation(emitter),
+                                                      /*isMut=*/true, exprVal);
 
   /// __get_address_as_owned_value(pop_pointer) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned) {

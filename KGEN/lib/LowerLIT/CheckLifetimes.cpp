@@ -978,9 +978,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp,
-          // TODO(references): remove these.
-          RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
+  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp>(op))
     return;
 
   // A store of a whole value is an initialization.
@@ -1470,9 +1468,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp,
-          // TODO(references): remove these.
-          RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
+  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp>(op))
     return;
 
   // If this is a call, investigate each of the operands along with the
@@ -2192,12 +2188,8 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // disallow regions because we don't recurse into them.
       if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
             return mightPointTo(v, srcPointer);
-          })) {
-        // TODO(lifetimes): Ignore noop conversions from pointer to ref.
-        // mightPointTo will look thorugh them.
-        if (!isa<RefToPointerOp, mlir::UnrealizedConversionCastOp>(*it))
-          return false;
-      }
+          }))
+        return false;
 
       // If we found the user, then we succeed.  Otherwise keep scanning.
       if (&*it == user.getOperation())
@@ -2287,14 +2279,15 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       auto refType = cast<RefType>(tmpDecl.getType());
       auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
 
+      // The old reference type used a novel lifetime.  We need to declare it,
+      // and coerce back to it.
       ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
                                      builder.getAttr<LifetimeAttr>());
-      auto pointerCasted = builder.create<mlir::UnrealizedConversionCastOp>(
-          ArrayRef<Type>(tmpDecl.getType()),
-          ArrayRef<Value>(copyInitCall.getOperand(1)));
+      auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
+                                                copyInitCall.getOperand(1));
 
-      tmpDecl.getResult().replaceAllUsesWith(pointerCasted.getResult(0));
+      tmpDecl.getResult().replaceAllUsesWith(refCasted);
       opsToRemove.push_back(copyInitCall);
       opsToRemove.push_back(tmpDecl);
       return success();
@@ -2361,17 +2354,6 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // directly use the original value than to copy it and destroy the original.
   if (succeeded(elideCopyDestroyPair(value, destroyedType, opWithUse)))
     return;
-
-  // If the input value is a pointer, cast it.
-  // TODO(references): remove this.
-  if (auto ptr = dyn_cast<PointerType>(value.getType())) {
-    // HACK: force convert to reference.
-    auto destTy = RefType::getRefForPointerHACK(ptr, /*isMut=*/true);
-    value = builder
-                .create<mlir::UnrealizedConversionCastOp>(
-                    ArrayRef<Type>(destTy), ArrayRef<Value>(value))
-                .getResult(0);
-  }
 
   auto signature = cast<SignatureType>(dtor.getType());
   assert(signature.getNumResults() == 1 &&

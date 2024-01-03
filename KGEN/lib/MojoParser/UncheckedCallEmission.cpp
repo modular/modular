@@ -555,15 +555,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
       // Given a legacy pointer, get it to a reference.
       // TODO(references) remove this when StackAllocationOp does references.
-      // HACK: force convert to reference.
-      auto destTy = RefType::getRefForPointerHACK(
-          cast<PointerType>(ptr.getType()), /*mut=*/true);
-      return MBValue(
-          emitter.builder
-              ->create<mlir::UnrealizedConversionCastOp>(
-                  emitter.translateLocation(argValAndExpr.expr->getLoc()),
-                  destTy, ptr)
-              .getResult(0));
+      auto ref = emitter.builder->create<RefFromPointerOp>(
+          emitter.translateLocation(argValAndExpr.expr->getLoc()),
+          /*isMut=*/true, ptr);
+      return MBValue(ref);
     }
     // Promote PValue's if needed.
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);

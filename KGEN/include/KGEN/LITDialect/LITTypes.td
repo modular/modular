@@ -325,11 +325,8 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// immortal (#lit.lifetime) lifetime.
     static RefType getImmortal(bool isMut, Type elementType,
                                unsigned addrSpace = 0);
-
-    /// Given the specified pointer type, return a reference type of the same
-    /// element but with a hacked lifetime.
-    /// TODO(references): Remove. This is just for migration.
-    static RefType getRefForPointerHACK(PointerType type, bool isMut);
+    static RefType getImmortal(bool isMut, Type elementType,
+                               TypedAttr addrSpace);
   }];
 }
 
