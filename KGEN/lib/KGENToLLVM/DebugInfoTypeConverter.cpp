@@ -28,8 +28,7 @@ auto buildIntFpDebugType(MLIRContext *ctx, StringRef name, unsigned width,
       llvm::PowerOf2Ceil(llvm::divideCeil(width, CHAR_BIT)) * CHAR_BIT;
   align = std::min(align, conservativeAlign);
 
-  uint64_t size;
-  CHECKED_LLVM_ALIGN_TO(size, width, align);
+  uint64_t size = llvm::alignTo(width, align);
   return T::get(ctx, name, size, align);
 }
 

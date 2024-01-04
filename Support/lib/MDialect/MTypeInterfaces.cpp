@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "Support/LLVMAlignToMacro.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MathExtras.h"
 #include "mlir/IR/Builders.h"
@@ -102,9 +101,7 @@ DataLayoutInterface::getTypeAllocSize(TargetInfoAttr target, Type type) {
   std::optional<int64_t> typeABIAlign = getTypeABIAlign(target, type);
   if (!typeSize || !typeABIAlign)
     return {};
-  uint64_t size;
-  CHECKED_LLVM_ALIGN_TO(size, *typeSize, *typeABIAlign);
-  return size;
+  return llvm::alignTo(*typeSize, *typeABIAlign);
 }
 
 std::optional<int64_t>

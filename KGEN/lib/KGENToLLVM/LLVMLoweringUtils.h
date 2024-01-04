@@ -9,7 +9,6 @@
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/LLVMAlignToMacro.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -55,9 +54,7 @@ public:
   /// Get the alloc size of the type. This is the size of the type plus the
   /// required alignment padding.
   int64_t getTypeAllocSize(Type type) const {
-    int64_t size;
-    CHECKED_LLVM_ALIGN_TO(size, getTypeStoreSize(type), getTypeABIAlign(type));
-    return size;
+    return llvm::alignTo(getTypeStoreSize(type), getTypeABIAlign(type));
   }
   /// Get the ABI alignment of the LLVM type.
   int64_t getTypeABIAlign(Type type) const;

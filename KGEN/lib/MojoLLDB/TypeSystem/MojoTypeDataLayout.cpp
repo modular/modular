@@ -8,7 +8,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
-#include "Support/LLVMAlignToMacro.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -59,8 +58,8 @@ MojoTypeDataLayoutContext::Impl::calculateForStructLike(
     // locations of neighboring variables.
     if (!fieldLayout)
       return {};
-    uint64_t fieldOffset;
-    CHECKED_LLVM_ALIGN_TO(fieldOffset, size, fieldLayout->getAlignment());
+
+    uint64_t fieldOffset = llvm::alignTo(size, fieldLayout->getAlignment());
     layout.addField({fieldOffset, fieldLayout->getByteSize(),
                      fieldLayout->getAlignment(), fieldType});
     size = fieldOffset + fieldLayout->getByteSize();
