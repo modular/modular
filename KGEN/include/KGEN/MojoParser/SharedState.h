@@ -393,7 +393,7 @@ public:
   /// This returns an instance of VariadicList[elemType] with the specified
   /// element type installed.
   ASTType getBuiltinVariadicListInstantiation(ASTDecl &context, llvm::SMLoc loc,
-                                              Type elemType);
+                                              ASTType elemType);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

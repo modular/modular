@@ -1045,7 +1045,7 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
 
 ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
                                                          llvm::SMLoc loc,
-                                                         Type elemType) {
+                                                         ASTType elemType) {
   TypedAttr lifetime;
   bool elemInMem = false;
   if (auto refType = dyn_cast<RefType>(elemType)) {
@@ -1054,14 +1054,19 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
     elemInMem = true;
   }
 
+  if (isa<TraitType>(elemType.getMetaType())) {
+    emitError(loc, "unsupported variadic on trait-conforming type");
+    return getTypeCheckErrorType();
+  }
+
   ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
   if (varListType.isTypeCheckErrorType())
     return varListType;
 
   /// VariadicList takes an element type, VariadicListMem takes elt+lifetime.
   SmallVector<TypedAttr> params;
-  params.push_back(TypeConstantAttr::get(
-      elemType, AnyRegTypeType::get(elemType.getContext())));
+  params.push_back(
+      TypeConstantAttr::get(elemType, AnyRegTypeType::get(getContext())));
   if (elemInMem)
     params.push_back(lifetime);
   TypedAttr typeType = PValue(varListType);
