@@ -28,8 +28,6 @@ add_modular_testsuite(check-api-integration-tests
   tfl
   monnx
   mof
-  modular-framework-common
-  modular-framework-tf-ext
   is-cuda-available
   )
 
