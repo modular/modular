@@ -16,6 +16,7 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 MODULAR_PATH = Path.cwd()
 MODELS_DIR = MODULAR_PATH / "test-models"
@@ -25,36 +26,42 @@ YAML_PATH = MODULAR_PATH / "Models"
 top_models = {
     "bert-base-uncased-seqlen-128": {
         "s3_uri": "s3://modular-model-storage/Tensorflow/bert-base-uncased_dynamic_seqlen_savedmodel.tar.gz",
+        "saved_model_dir_name": "bert-base-uncased_dynamic_seqlen",
         "input_names": ["attention_mask", "input_ids", "token_type_ids"],
         "input_shapes": ["1x128", "1x128", "1x128"],
         "output_names": ["last_hidden_state", "pooler_output"],
     },
     "dlrm-rm1-multihot": {
         "s3_uri": "s3://modular-model-storage/dlrm/dlrm-facebook-1.tar.gz",
+        "saved_model_dir_name": "dlrm-facebook-1",
         "input_names": ["ls_i", "xt"],
         "input_shapes": ["4096x8x100", "4096x256"],
         "output_names": ["output_0"],
     },
     "dlrm-rm1": {
         "s3_uri": "s3://modular-model-storage/dlrm/dlrm_rm1.tar.gz",
+        "saved_model_dir_name": "dlrm-rm1",
         "input_names": ["ls_i", "xt"],
         "input_shapes": ["16384x8x1", "16384x256"],
         "output_names": ["output_0"],
     },
     "dlrm-rm2": {
         "s3_uri": "s3://modular-model-storage/dlrm/dlrm_rm2.tar.gz",
+        "saved_model_dir_name": "dlrm-rm2",
         "input_names": ["ls_i", "xt"],
         "input_shapes": ["2048x40x1", "2048x256"],
         "output_names": ["output_0"],
     },
     "dlrm-rm3": {
         "s3_uri": "s3://modular-model-storage/dlrm/dlrm-facebook-3.tar.gz",
+        "saved_model_dir_name": "dlrm-rm3",
         "input_names": ["ls_i", "xt"],
         "input_shapes": ["1024x10x1", "1024x2560"],
         "output_names": ["output_0"],
     },
     "clip-vit-large-patch14": {
         "s3_uri": "s3://modular-model-storage/Tensorflow/clip_vit_large_patch14_savedmodel.tar.gz",
+        "saved_model_dir_name": "clip_vit_large_patch14_savedmodel",
         "input_names": ["pixel_values", "input_ids", "attention_mask"],
         "input_shapes": ["1x3x224x224", "1x16", "1x16"],
         "output_names": [
@@ -80,7 +87,9 @@ top_models = {
 }
 
 
-def download_s3_object(s3_src: str, local_dst: Path) -> Path:
+def download_s3_object(
+    s3_src: str, local_dst: Path, dir_name: Optional[str] = None
+) -> Path:
     """Downloads and extract .tar.gz object at `s3_src` to file at `local_dst`
     """
 
@@ -91,13 +100,20 @@ def download_s3_object(s3_src: str, local_dst: Path) -> Path:
     )
     filename = s3_src.split("/")[-1]
 
+    local_file = local_dst / filename
     # ONNX models are not saved as tar archives, so we shouldn't try to unzip them
     if not filename.endswith(".tar.gz"):
-        return local_dst / filename
+        return local_file
 
-    with tarfile.open(local_dst / filename, "r") as tar:
+    with tarfile.open(local_file, "r") as tar:
         tar.extractall(local_dst)
-    return local_dst / filename.removesuffix(".tar.gz")
+
+    if dir_name:
+        return local_dst / dir_name
+
+    # Remove tar.gz extension
+    suffix_removed = str(local_file).replace(".tar.gz", "")
+    return Path(suffix_removed)
 
 
 def remove_modular_env_variables():
@@ -137,7 +153,10 @@ def test_c_package(package_path: Path):
             " --num-runs=1 --result-output-style=compact".split()
         )
         for _, value in top_models.items():
-            model_path = download_s3_object(value["s3_uri"], test_dir_path)
+            dir_name = value.get("saved_model_dir_name", None)
+            model_path = download_s3_object(
+                value["s3_uri"], test_dir_path, dir_name
+            )
             input_names_args = [
                 f"--input-names={name}" for name in value["input_names"]
             ]
@@ -258,17 +277,16 @@ def test_python_wheel():
     """Test the wheel which is assumed to be pip installed to the python
     environment this script is executed in"""
     remove_modular_env_variables()
-    from modular import engine
 
     test_dir = tempfile.TemporaryDirectory()
     test_dir_path = Path(test_dir.name)
 
-    session = engine.InferenceSession()
     for key, value in top_models.items():
         print("Model", key)
         s3_uri = value["s3_uri"]
         print("Downloading model from", s3_uri)
-        model_path = download_s3_object(s3_uri, test_dir_path)
+        dir_name = value.get("saved_model_dir_name", None)
+        model_path = download_s3_object(s3_uri, test_dir_path, dir_name)
         print("Loading and executing downloaded model ...")
         load_and_execute_on_random_input(model_path)
         print("Model executed successfully ✅")
