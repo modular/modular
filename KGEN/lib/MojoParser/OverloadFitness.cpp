@@ -117,7 +117,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   if (auto actual = dyn_cast<POP::ArrayType>(actualType))
     if (auto expected = dyn_cast<POP::ArrayType>(expectedType)) {
       matchParams(actual.getSize(), expected.getSize());
-      matchParams(actual.getElementType(), expected.getElementType());
+      matchTypes(actual.getElementType(), expected.getElementType());
       return;
     }
 
@@ -137,7 +137,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // Handle VariadicType.
   if (auto actual = dyn_cast<VariadicType>(actualType))
     if (auto expected = dyn_cast<VariadicType>(expectedType))
-      return matchParams(actual.getElementType(), expected.getElementType());
+      return matchTypes(actual.getElementType(), expected.getElementType());
 
   // Handle PackType.
   if (auto actual = dyn_cast<PackType>(actualType))
@@ -346,7 +346,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       SmallVector<TypedAttr> types;
       auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
-      Type elementType = variadicType.getElementAsType();
+      Type elementType = variadicType.getElementType();
       ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {

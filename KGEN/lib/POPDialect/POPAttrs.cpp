@@ -461,7 +461,7 @@ POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   std::optional<int64_t> size = type.getResolvedSize();
   if (!size)
     return emitError() << "array attribute expected a concrete size";
-  auto elementType = ParamRefType::get(type.getElementType());
+  Type elementType = type.getElementType();
   if (*size != static_cast<int64_t>(values.size()))
     return emitError() << "array attribute type requires " << *size
                        << " elements but value has " << values.size();

@@ -159,7 +159,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::NoneType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
   int64_t size = *type.getResolvedSize();
-  DIType elementType = convertDebugType(type.getElementAsType());
+  DIType elementType = convertDebugType(type.getElementType());
   return DIArrayType::get(elementType, size);
 }
 

@@ -332,7 +332,7 @@ InputParamBindings::verifyBindings(
           if (auto varType = dyn_cast<VariadicType>(type)) {
             setParamValue(VariadicAttr::get({}, varType));
             ++posBindingIdx;
-            fitness.lastExpectedType = varType.getElementAsType();
+            fitness.lastExpectedType = varType.getElementType();
             continue;
           }
         }
@@ -410,8 +410,7 @@ InputParamBindings::verifyBindings(
       elements.emplace_back(pValue);
     } while (posBindingIdx != numPosBindings);
 
-    auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
-                                     AnyRegTypeType::get(emitter.getContext()));
+    auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
     setParamValue(VariadicAttr::get(elements, varType));
   }
 
@@ -642,8 +641,7 @@ static VariadicAttr getAdaptiveSet(ASTType baseType,
     symConstAttrs.push_back(symbolAttr);
   }
 
-  auto varType = VariadicType::get(symConstAttrs.front().getType(),
-                                   AnyRegTypeType::get(shared.getContext()));
+  auto varType = VariadicType::get(symConstAttrs.front().getType());
   return VariadicAttr::get(shared.getContext(), symConstAttrs, varType);
 }
 
@@ -680,8 +678,8 @@ static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
   StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
   StringAttr declName = emitter.builder->getStringAttr(
       Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
-  auto decl = ParamDeclAttr::get(declName,
-                                 variadicSetAttr.getType().getElementAsType());
+  auto decl =
+      ParamDeclAttr::get(declName, variadicSetAttr.getType().getElementType());
   emitter.builder->create<ParamForkOp>(
       emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
   return PValue(ParamDeclRefAttr::get(decl));

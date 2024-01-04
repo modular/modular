@@ -189,7 +189,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Variadic types are converted to a struct representing a pointer to the
   // elements of the sequence, and the sequence size.
   addConversion([=](VariadicType variadic) -> std::optional<Type> {
-    Type convertedType = convertType(variadic.getElementAsType());
+    Type convertedType = convertType(variadic.getElementType());
     if (!convertedType)
       return {};
 
@@ -213,7 +213,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     std::optional<int64_t> size = array.getResolvedSize();
     if (!size)
       return {};
-    Type elementType = convertType(array.getElementAsType());
+    Type elementType = convertType(array.getElementType());
     if (!elementType)
       return {};
     return LLVM::LLVMArrayType::get(elementType, *size);
@@ -993,7 +993,7 @@ Value KGEN::convertParameterToLLVM(
   // Convert variadic sequence constants to an LLVM struct constant.
   if (auto variadic = dyn_cast<KGEN::VariadicAttr>(attr)) {
     // 1. Allocate space for an array of elements.
-    Type elementType = tc.convertType(variadic.getType().getElementAsType());
+    Type elementType = tc.convertType(variadic.getType().getElementType());
     if (!elementType)
       return {};
 

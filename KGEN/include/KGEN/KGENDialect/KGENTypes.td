@@ -446,19 +446,14 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$elementType);
-  let assemblyFormat = "`<` custom<TypeParamValue>($elementType) `>`";
-  let genVerifyDecl = 1;
+  let parameters = (ins "Type":$elementType);
+  let assemblyFormat = "`<` custom<ParamType>($elementType) `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType, "Type":$metaType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return $_get(elementType.getContext(), elementType);
+    }]>,
   ];
-
-  let extraClassDeclaration = [{
-    /// Return the elementType attribute as a type.
-    Type getElementAsType() const;
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -466,7 +461,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
 
 class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "ParamRefType::get($_self.cast<KGEN::VariadicType>().getElementType())",
+    "$_self.cast<KGEN::VariadicType>().getElementType()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//

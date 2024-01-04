@@ -15,7 +15,7 @@ include "Support/Compiler/Bytecode.td"
 
 def ArrayType : DialectType<(type
   TypedAttr:$size,
-  TypedAttr:$elementType
+  Type:$elementType
 )>;
 
 def SIMDType : DialectType<(type
