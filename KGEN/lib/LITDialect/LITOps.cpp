@@ -1363,26 +1363,6 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StructGEPOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-LIT::StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  Type structType = getContainer().getType().getElementType();
-  return verifyStructFieldAndType(symbolTable, *this,
-                                  cast<DeclRefType>(structType), getFieldAttr(),
-                                  getResult().getType().getElementType());
-}
-
-void LIT::StructGEPOp::build(OpBuilder &builder, OperationState &result,
-                             Value structBasePtr, StructFieldOp field) {
-  Type eltType = cast<PointerType>(structBasePtr.getType()).getElementType();
-  auto structType = field.getReboundType(cast<DeclRefType>(eltType));
-  build(builder, result, PointerType::get(structType), field.getNameAttr(),
-        structBasePtr);
-}
-
-//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 

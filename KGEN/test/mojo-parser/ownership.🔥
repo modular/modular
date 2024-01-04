@@ -493,15 +493,9 @@ struct FieldSensitiveMemExample:
   fn mutate2(inout self):
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: %1 = lit.ref.to_pointer [[F1R]]
-    # CHECK-NEXT: lit.ownership.def_lvalue %1
-    # CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
-    # CHECK-NEXT: lit.ownership.mark_destroyed %2
+    # CHECK-NEXT: lit.ownership.mark_destroyed [[F1R]]
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-      __mlir_op.`builtin.unrealized_conversion_cast`[
-          _type= __mlir_type[`!lit.ref<mut `, MemExample, `, #lit.lifetime>`]](
-       __get_lvalue_as_address(self.f1))
-    )
+       __get_ref_from_value(self.f1))
 
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[F1R]])
@@ -520,20 +514,14 @@ struct FieldSensitiveMemExample:
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: %0 = lit.ref.to_pointer %x
-  # CHECK-NEXT: lit.ownership.def_lvalue %0
-  # CHECK-NEXT: %1 = lit.ref.struct.ger %x[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%1)
-  # CHECK-NEXT: %3 = lit.ref.struct.ger %x[f2]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%3)
-  # CHECK-NEXT: %5 = builtin.unrealized_conversion_cast %0
-  # CHECK-NEXT: lit.ownership.mark_destroyed %5
+  # CHECK-NEXT: %0 = lit.ref.struct.ger %x[f1]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
+  # CHECK-NEXT: %2 = lit.ref.struct.ger %x[f2]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%2)
+  # CHECK-NEXT: lit.ownership.mark_destroyed %x
   # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-    __mlir_op.`builtin.unrealized_conversion_cast`[
-          _type= __mlir_type[`!lit.ref<mut `, FieldSensitiveMemExample, `, #lit.lifetime>`]](
-       __get_lvalue_as_address(x))
-  )
+       __get_ref_from_value(x))
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):

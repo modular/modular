@@ -546,18 +546,19 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       Location argLoc = expr->getLocation(emitter);
       Value ptr = emitter.builder->create<POP::StackAllocationOp>(
           argLoc, PointerType::get(sbValue.getType()), 1);
-      emitter.builder->create<LIT::StoreBorrowOp>(argLoc, sbValue, ptr);
+      // Given a legacy pointer, get it to a reference.
+      // TODO(references) remove this when StackAllocationOp does references.
+      auto ref = emitter.builder->create<RefFromPointerOp>(
+          emitter.translateLocation(argValAndExpr.expr->getLoc()),
+          /*isMut=*/true, ptr);
+
+      emitter.builder->create<LIT::StoreBorrowOp>(argLoc, sbValue, ref);
 
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
       afterCallActions.valuesToKeepAlive.push_back(sbValue);
 
-      // Given a legacy pointer, get it to a reference.
-      // TODO(references) remove this when StackAllocationOp does references.
-      auto ref = emitter.builder->create<RefFromPointerOp>(
-          emitter.translateLocation(argValAndExpr.expr->getLoc()),
-          /*isMut=*/true, ptr);
       return MBValue(ref);
     }
     // Promote PValue's if needed.

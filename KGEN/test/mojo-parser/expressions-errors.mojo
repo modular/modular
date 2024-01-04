@@ -454,7 +454,7 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{expression must be mutable}}
   let addr : __mlir_type.`!kgen.pointer<index>` = __get_lvalue_as_address(a)
 
-  # expected-error @+1 {{cannot use a dynamic LValue in this operator}}
+  # expected-error @+1 {{cannot use a dynamic LValue}}
   _ = __get_lvalue_as_address(b[1])
 
   # Get and use an lvalue from an address.

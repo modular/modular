@@ -588,24 +588,6 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
   if (it != valueInfoIndex.end())
     return getFullValueRef(it->second);
 
-  // If this is a GEP, check the base and focus in on a field of it.
-  // TODO(references) remove this.
-  if (auto structGEP = value.getDefiningOp<LIT::StructGEPOp>()) {
-    ValueRef baseVal = getValueRef(structGEP.getContainer(), isDeref);
-    if (!baseVal || !baseVal.isIndirect)
-      return {};
-
-    // Figure out what subset of elements we have indexed to.
-    auto containerType = structGEP.getContainer().getType().getElementType();
-    unsigned fieldOffset = typeDeclInfo.getFieldIndex(
-        cast<DeclRefType>(containerType), structGEP.getFieldAttr());
-    unsigned startBit = baseVal.startBit + fieldOffset;
-    auto resultType = structGEP.getType().getElementType();
-    return ValueRef{baseVal.valueId, startBit,
-                    startBit + typeDeclInfo.getNumFieldsInType(resultType),
-                    /*isIndirect=*/true};
-  }
-
   // If this is a GER, check the base and focus in on a field of it.
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
     ValueRef baseVal = getValueRef(structGER.getContainer(), isDeref);
@@ -650,19 +632,6 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
         return valueRef;
       }
     }
-
-  // If this is a RefToPointerOp get the underlying ref.
-  // TODO(references): Remove this.
-  if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
-    return getValueRef(refToPointer.getRef(), /*isDeref=*/isDeref);
-
-  // If this is a RefToPointerOp get the underlying ref.
-  // TODO(references): Remove this: it is only used for pointer->ref conversion.
-  if (auto pointerToRef =
-          value.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
-    if (pointerToRef.getNumOperands() == 1)
-      return getValueRef(pointerToRef.getOperand(0), /*isDeref=*/isDeref);
-  }
 
   // If this is a RebindOp get the underlying ref.
   if (auto rebind = value.getDefiningOp<RebindOp>())
@@ -978,12 +947,11 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp>(op))
+  if (isa<RefStructGEROp, RebindOp>(op))
     return;
 
   // A store of a whole value is an initialization.
-  // TODO(references): Remove POP::StoreOp.
-  if (isa<LIT::RefStoreOp, POP::StoreOp, OwnershipDefLValueOp>(op)) {
+  if (isa<LIT::RefStoreOp, OwnershipDefLValueOp>(op)) {
     // Mark the pointer as being mutated.
     checkDef(op.getOperands().back(), op, /*isDeref=*/true);
     return;
@@ -1468,7 +1436,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp>(op))
+  if (isa<RefStructGEROp, RebindOp>(op))
     return;
 
   // If this is a call, investigate each of the operands along with the
@@ -1524,14 +1492,6 @@ void DestructorInsertion::checkOp(Operation &op) {
     checkDef(letReg, op, /*isDeref=*/false);
     // This consumes its input.
     markConsumed(letReg.getOperand(), op, /*isDeref=*/false);
-    return;
-  }
-
-  // A store consumes a value and overwrites the destination.
-  // TODO(references): Remove POP::StoreOp.
-  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    markConsumed(storeOp.getArg(), op, /*isDeref=*/false);
-    checkDef(storeOp.getPtr(), op, /*isDeref=*/true);
     return;
   }
 
@@ -1652,15 +1612,8 @@ void DestructorInsertion::checkOp(Operation &op) {
             continue;
           if (fieldValueRef.isIndirect &&
               original.test(fieldValueRef.startBit)) {
-            Value subValue;
-            // TODO(references): remove support for pointers.
-            if (isa<PointerType>(topLevelValue.getType()))
-              subValue = builder.create<LIT::StructGEPOp>(op.getLoc(),
-                                                          topLevelValue, field);
-            else
-              subValue = builder.create<LIT::RefStructGEROp>(
-                  op.getLoc(), topLevelValue, field);
-
+            Value subValue = builder.create<LIT::RefStructGEROp>(
+                op.getLoc(), topLevelValue, field);
             destroyValueIfNeeded(subValue, fieldValueRef, builder, &op);
           }
         }
@@ -2024,10 +1977,6 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   if (valueRef.isAllPresent(consumedValues))
     return;
 
-  // If we have a RefToPointerOp, look through it to insert fewer casts.
-  if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
-    value = refToPointer.getOperand();
-
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
   auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
@@ -2082,8 +2031,6 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     Operation *fieldVal;
     if (!valueRef.isIndirect)
       fieldVal = builder.create<LIT::StructExtractOp>(value, field);
-    else if (isa<PointerType>(value.getType())) // TODO(references): remove ptrs
-      fieldVal = builder.create<LIT::StructGEPOp>(value, field);
     else
       fieldVal = builder.create<RefStructGEROp>(value, field);
 
@@ -2149,13 +2096,6 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
   size_t numUses = 0;
   for (OpOperand &operand : copyInitCall.getOperand(0).getUses()) {
     auto user = dyn_cast<LIT::CallOp>(operand.getOwner());
-
-    // TODO(lifetimes): ignore a RefToPointer that is converting the allocation
-    // to a pointer to pass into another call.
-    if (auto refToPtr = dyn_cast<RefToPointerOp>(operand.getOwner())) {
-      if (refToPtr->hasOneUse())
-        user = dyn_cast<LIT::CallOp>(*refToPtr->getUsers().begin());
-    }
 
     // Don't handle control flow or other weird cases that are not calls.
     if (!user || user->getBlock() != tmpBlock)
@@ -2228,15 +2168,8 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       // With var's we can have indirect operands.
       bool isOk = false;
       if (auto load = srcValue.getDefiningOp<POP::LoadOp>()) {
-        if (load.getOperand() == value) {
+        if (load.getOperand() == value)
           isOk = true;
-        } else if (auto refToPointer =
-                       load.getOperand().getDefiningOp<RefToPointerOp>()) {
-          if (refToPointer.getRef() == value) {
-            // TODO(references) remove support for pointers.
-            isOk = true;
-          }
-        }
       } else if (auto load = srcValue.getDefiningOp<LIT::RefLoadOp>()) {
         if (load.getOperand() == value)
           isOk = true;

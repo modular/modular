@@ -20,11 +20,11 @@ lit.struct.decl @Struct attributes {
   }
 
   // fn __copyinit__(inout self, existing: Self):
-  lit.func @__copyinit__[selflife](
+  lit.func @__copyinit__[selflife, existinglife](
       %self: !lit.ref<mut @Struct, selflife> init_self,
-      %existing: !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none {
-    %0 = lit.struct.gep %existing[a] : <index> from <@Struct>
-    %1 = pop.load %0 : !kgen.pointer<index>
+      %existing: !lit.ref<@Struct, existinglife> borrow_in_mem) -> !kgen.none {
+    %0 = lit.ref.struct.ger %existing[a] : <index, existinglife> from @Struct
+    %1 = lit.ref.load %0 : !lit.ref<index, existinglife>
     %2 = lit.ref.struct.ger %self[a] : <mut index, selflife> from @Struct
     lit.ref.store %1, %2 : !lit.ref<mut index, selflife>
     %none = kgen.param.constant: none = <#kgen.none>
@@ -65,22 +65,21 @@ lit.func @useDtor(
 lit.func @indirectCall(%a: !kgen.pointer<@Struct> borrow_in_mem) {
   // @noncapturing fn byrefResultFn(x: Struct) -> Struct:
   lit.func byrefResultFn(
-      %result: !kgen.pointer<@Struct> byref_result,
+      %result: !lit.ref<mut @Struct, *"life"> byref_result,
       %x: !kgen.pointer<@Struct> borrow_in_mem) {
     lit.call @Struct::@__copyinit__(%result, %x)
-        : !lit.signature<(!kgen.pointer<@Struct> byref_result,
+        : !lit.signature<(!lit.ref<mut @Struct, *"life"> byref_result,
                           !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>
     kgen.return
   }
 
   // var c = byrefResultFn(x)
   %callee = kgen.create_closure[!lit.signature<(
-      !kgen.pointer<@Struct> byref_result,
+      !lit.ref<mut @Struct, *"life"> byref_result,
       !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>: byrefResultFn]()
   %c = lit.varlet.decl "c" var : !lit.ref<mut @Struct, *"life">
-  %1 = lit.ref.to_pointer %c : !lit.ref<mut @Struct, *"life">
-  lit.call_signature %callee(%1, %a) :
-      !lit.signature<(!kgen.pointer<@Struct> byref_result,
+  lit.call_signature %callee(%c, %a) :
+      !lit.signature<(!lit.ref<mut @Struct, *"life"> byref_result,
         !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>
 
   %0 = lit.ref.struct.ger %c[a] : <mut index, *"life"> from @Struct
@@ -121,10 +120,10 @@ lit.struct.decl @Error {
 lit.struct.decl @S attributes {destructor =
 #kgen.symbol.constant<@S::@"__del__" > : !lit.signature<[1](!lit.ref<mut @S, *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
-  lit.func @__init__(%self: !kgen.pointer<@S> init_self) -> !kgen.none {
-    %0 = lit.struct.gep %self[a] : <index> from <@S>
+  lit.func @__init__(%self: !lit.ref<mut @S, #lit.lifetime> init_self) -> !kgen.none {
+    %0 = lit.ref.struct.ger %self[a] : <mut index, #lit.lifetime> from @S
     %idx1 = index.constant 1
-    pop.store %idx1, %0 : !kgen.pointer<index>
+    lit.ref.store %idx1, %0 : <mut index, #lit.lifetime>
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
@@ -136,19 +135,17 @@ lit.struct.decl @S attributes {destructor =
 
 lit.func @verify_destructor_post_throw() -> !kgen.none {
   lit.try {
-    %x = lit.varlet.decl "x" let : !lit.ref<mut @S, *"life">
-    // CHECK: [[XPTR:%.*]] = lit.ref.to_pointer %x
-    %xptr = lit.ref.to_pointer %x : !lit.ref<mut @S, *"life">
-    // CHECK: [[V:%.*]] = lit.call @foo([[XPTR]])
-    %1 = lit.call @foo(%xptr) : !lit.signature<(!kgen.pointer<@S> byref_result) throws -> !kgen.variant<@Error, none>>
-    // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], [[XPTR]] : (!kgen.variant<@Error, none>, !kgen.pointer<@S>) -> !kgen.none {
+    %x = lit.varlet.decl "x" let : !lit.ref<mut @S, life>
+    // CHECK: [[V:%.*]] = lit.call @foo(%x)
+    %1 = lit.call @foo(%x) : !lit.signature<(!lit.ref<mut @S, *"life"> byref_result) throws -> !kgen.variant<@Error, none>>
+    // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], %x : (!kgen.variant<@Error, none>, !lit.ref<mut @S, life>) -> !kgen.none {
     // CHECK: [[VAR1:%.*]] = kgen.variant.get [[V]], 1 : <@Error, none>
     // CHECK: lit.yield [[VAR1]]
     // CHECK: } else {
     // CHECK: [[VAR2:%.*]] = kgen.variant.get [[V]], 0 : <@Error, none>
     // CHECK: lit.try.raise [[VAR2]]
     // CHECK: }
-    %2 = lit.handle_variant %1, %xptr: (!kgen.variant<@Error, none>, !kgen.pointer<@S>) -> !kgen.none {
+    %2 = lit.handle_variant %1, %x: (!kgen.variant<@Error, none>, !lit.ref<mut @S, *"life">) -> !kgen.none {
       %4 = kgen.variant.get %1, 1 : <@Error, none>
       lit.yield %4 : !kgen.none
     } else {
@@ -173,10 +170,8 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
 // CHECK-LABEL: lit.func @verify_callee_destroys
 lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
   %s = lit.varlet.decl "s" let : !lit.ref<mut @S, *"SLife">
-  %sptr = lit.ref.to_pointer %s : !lit.ref<mut @S, *"SLife">
-  // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %s
-  // CHECK: lit.call @S::@__init__([[PTR]])
-  %2 = lit.call @S::@__init__(%sptr) : !lit.signature<(!kgen.pointer<@S> init_self) -> !kgen.none>
+  // CHECK: lit.call @S::@__init__(%s)
+  %2 = lit.call @S::@__init__(%s) : !lit.signature<(!lit.ref<mut @S, *"SLife"> init_self) -> !kgen.none>
   lit.try {
     hlcf.if %c {
       %5 = lit.call @mightThrow() : !lit.signature<() throws -> !kgen.variant<@Error, none>>
@@ -285,7 +280,7 @@ lit.struct.decl @DestructNone attributes {
   lit.struct.field uninitialized : !kgen.declref<@S>
   lit.struct.field register : index
 
-  lit.func @__init__(%self: !kgen.pointer<@DestructNone> init_self, %cond: i1,
+  lit.func @__init__(%self: !lit.ref<mut @DestructNone, #lit.lifetime> init_self, %cond: i1,
                      %x: !kgen.pointer<@S> borrow_in_mem,
                      %y: !kgen.pointer<@S> borrow_in_mem,
                      %takeMe: !lit.ref<mut @S, #lit.lifetime> owned_in_mem,
@@ -305,17 +300,17 @@ lit.struct.decl @DestructNone attributes {
     } else {
         hlcf.yield
     }
-    %0 = lit.struct.gep %self[a] : <@S> from <@DestructNone>
-    %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
+    %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from @DestructNone
+    %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
 
-    %100 = lit.struct.gep %self[register] : <index> from <@DestructNone>
-    pop.store %reg, %100 : !kgen.pointer<index>
+    %100 = lit.ref.struct.ger %self[register] : <mut index, #lit.lifetime> from @DestructNone
+    lit.ref.store %reg, %100 : <mut index, #lit.lifetime>
 
-    %103 = lit.struct.gep %self[stole] : <@S> from <@DestructNone>
-    %104 = lit.call @S::@__moveinit__(%103, %takeMe) : !lit.signature<(!kgen.pointer<@S> init_self, !lit.ref<mut @S, #lit.lifetime> owned_in_mem) -> !kgen.none>
+    %103 = lit.ref.struct.ger %self[stole] : <mut @S, #lit.lifetime> from @DestructNone
+    %104 = lit.call @S::@__moveinit__(%103, %takeMe) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<mut @S, #lit.lifetime> owned_in_mem) -> !kgen.none>
 
-    %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructNone>
-    %3 = lit.call @S::@"__copyinit__"(%2, %y) : !lit.signature<(!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
+    %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from @DestructNone
+    %3 = lit.call @S::@"__copyinit__"(%2, %y) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
     %none = kgen.param.constant: none = <#kgen.none>
     %14 = kgen.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !kgen.variant<@Error, none>
@@ -414,10 +409,9 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
       hlcf.yield
     }
     %anonymous2A = lit.varlet.decl "anonymous*" let : !lit.ref<mut @MyStruct, *"life"> {isSynthetic}
-    %ptr = lit.ref.to_pointer %anonymous2A : !lit.ref<mut @MyStruct, *"life">
-    %3 = lit.call @MyStruct::@__init__(%ptr) : !lit.signature<(!kgen.pointer<@MyStruct> init_self) -> !kgen.none>
+    %3 = lit.call @MyStruct::@__init__(%anonymous2A) : !lit.signature<(!lit.ref<mut @MyStruct, *"life"> init_self) -> !kgen.none>
     // CHECK: lit.call @use(
-    %6 = lit.call @use(%ptr) : !lit.signature<(!kgen.pointer<@MyStruct> borrow_in_mem) -> !kgen.none>
+    %6 = lit.call @use(%anonymous2A) : !lit.signature<(!lit.ref<mut @MyStruct, *"life"> borrow_in_mem) -> !kgen.none>
     // CHECK: lit.call @MyStruct::@__del__[life](%anonymous2A)
     hlcf.yield
   }
@@ -681,7 +675,8 @@ lit.func @use_value(%arg0: !RegType borrow) {
 lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
   %x = lit.letreg.decl "x" = %arg0 : !RegType
   %0 = pop.stack_allocation 1 x !RegType
-  lit.store.borrow %x, %0 : <!RegType>
+  %1 = lit.ref.from_pointer %0: <mut !RegType, #lit.lifetime>
+  lit.store.borrow %x, %1 : <mut !RegType, #lit.lifetime>
   lit.call @use_value(%x) : !lit.signature<(!RegType) -> ()>
   kgen.return
 }
@@ -707,9 +702,8 @@ lit.func @y(%arg1[arg1]: !kgen.declref<@Int> borrow) {
 lit.func @x(%arg0[arg0]: !kgen.declref<@Int>) {
   // expected-warning @+1 {{'x' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   %x = lit.varlet.decl "x"  var : !lit.ref<mut @Int, a>
-  %0 = lit.ref.to_pointer %x : <mut @Int, a>
   // expected-error @+1 {{value 'arg0' cannot be consumed, because it is used later}}
-  pop.store %arg0, %0 : !kgen.pointer<@Int>
+  lit.ref.store %arg0, %x : !lit.ref<mut @Int, a>
   %1 = lit.ref.load %x : <mut @Int, a>
   %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!kgen.declref<@Int>) -> !kgen.none>
   kgen.call @y(%arg0) : (!kgen.declref<@Int> borrow) -> ()
@@ -732,8 +726,8 @@ lit.struct.decl @Thing {
   }
 }
 
-lit.func @top(%c[c]: !kgen.pointer<@Box<:trait<@Destructable> !Thing>> borrow_in_mem) {
-  %0 = lit.struct.gep %c[x] : <!Thing> from <@Box<:trait<@Destructable> !Thing>>
-  lit.call @Thing::@get(%0) : !lit.signature<("self": !kgen.pointer<!Thing> borrow_in_mem) -> ()>
+lit.func @top(%c[c]: !lit.ref<mut @Box<:trait<@Destructable> !Thing>, #lit.lifetime> borrow_in_mem) {
+  %0 = lit.ref.struct.ger %c[x] : <mut !Thing, #lit.lifetime> from @Box<:trait<@Destructable> !Thing>
+  lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<mut !Thing, #lit.lifetime> borrow_in_mem) -> ()>
   kgen.return
 }

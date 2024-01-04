@@ -626,42 +626,6 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// StructGEPOp
-//===----------------------------------------------------------------------===//
-
-def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Get a pointer to a struct field.";
-  let description = [{
-    The `lit.struct.gep` operation computes a pointer to a struct field by
-    name from a parametric struct.
-
-    Example:
-
-    ```mlir
-    lit.struct.decl @MyStruct<T: dtype> {
-      lit.struct.field a : !pop.scalar<T>
-    }
-
-    %0 = lit.struct.gep %struct[a]
-      : <scalar<f64>> from <@MyStruct<T: dtype = f64>>
-    ```
-  }];
-
-  let arguments = (ins StrAttr:$field, PointerOf<KGEN_DeclRefType>:$container);
-  let results = (outs PointerType:$result);
-  let assemblyFormat = [{
-    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
-    type($result) `from` type($container)
-  }];
-
-  let builders = [
-    // Infer the result type based on the result of lookup.
-    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // TraitDeclOp
 //===----------------------------------------------------------------------===//
 
@@ -1516,7 +1480,7 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 //===----------------------------------------------------------------------===//
 
 def LIT_StoreBorrowOp : LITOp<"store.borrow",
-                              [PointerElementType<"ptr", "arg">]> {
+                              [ReferenceElementType<"ref", "arg">]> {
   let summary = "borrow register-passable value via memcpy";
   let description = [{
     The `lit.store.borrow` operation is a special store that creates a borrow
@@ -1525,12 +1489,12 @@ def LIT_StoreBorrowOp : LITOp<"store.borrow",
     Example:
 
     ```mlir
-    lit.store.borrow %arg0, %alloc : <index>
+    lit.store.borrow %arg0, %alloc : <mut index, life>
     ```
   }];
 
-  let arguments = (ins AnyType:$arg, Arg<PointerType, "", [MemWrite]>:$ptr);
-  let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
+  let arguments = (ins AnyType:$arg, Arg<LIT_RefType, "", [MemWrite]>:$ref);
+  let assemblyFormat = "$arg `,` $ref attr-dict `:` type($ref)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1817,14 +1781,13 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
 
 }
 
-
 //===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 
 def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Get a pointer to a struct field.";
+  let summary = "Get a reference to a struct field.";
   let description = [{
     The `lit.ref.struct.ger` operation computes a reference to a struct field by
     name from a parametric struct.  The result has the same lifetime as the
@@ -1885,7 +1848,7 @@ def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
 def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"ref", "arg">]> {
   let summary = "Reference store operation";
   let description = [{
-    Store the given value to the given pointer of the same element type.  The
+    Store the given value to the given reference of the same element type.  The
     reference must be mutable.
 
     Example:

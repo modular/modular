@@ -124,8 +124,8 @@ fn getAddressOf[
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
+    # CHECK-NEXT: lit.ownership.def_lvalue %arg
     # CHECK-NEXT: %0 = lit.ref.to_pointer %arg
-    # CHECK-NEXT: lit.ownership.def_lvalue %0
     # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:regtype [[T]]>(%0)
     # CHECK-NEXT: lit.return %1
 

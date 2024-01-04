@@ -2999,21 +2999,20 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     if (!result)
       return {};
 
-    Value resultPtr;
-    if (MLValue resultRef = result.getIfMLValue()) {
-      resultPtr = emitter.builder->create<RefToPointerOp>(getLocation(emitter),
-                                                          resultRef);
-    } else {
-      emitter.emitError(getLoc(),
-                        "cannot use a dynamic LValue in this operator")
-          << getRange();
+    MLValue resultRef = result.getIfMLValue();
+    if (!resultRef) {
+      emitter.emitError(getLoc(), "cannot use a dynamic LValue") << getRange();
       return {};
     }
+
     // Emit an intrinsic so the compiler knows the value is mutable.
     // TODO(references): Remove ownership.def_lvalue when we have mutability
     // in the reference types.
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
-                                                  resultPtr);
+                                                  resultRef);
+
+    Value resultPtr = emitter.builder->create<RefToPointerOp>(
+        getLocation(emitter), resultRef);
 
     // Return the MLValue as an SRValue since the pointer itself is the
     // result.
