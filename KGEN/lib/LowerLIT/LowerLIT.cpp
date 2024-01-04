@@ -167,9 +167,6 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       op->erase();
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
-    } else if (auto storeBorrow = dyn_cast<StoreBorrowOp>(op)) {
-      b.replaceOpWithNewOp<POP::StoreOp>(storeBorrow, storeBorrow.getArg(),
-                                         storeBorrow.getPtr());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       // The implicit lifetimes we're about to drop are probably used in the
       // input arguments, insert a cast to the expected type without them.

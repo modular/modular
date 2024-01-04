@@ -91,7 +91,6 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   /// has multiple elements.
   /// Using PointerUnion<KGEN::StructType, Type> instead of Type because
   /// the single-element itself can also be a struct.
-  /// PointerUnion doesn't know Type's RTTI.
   PointerUnion<KGEN::StructType, Type> substituteStructRef(DeclRefType ref);
 
   /// Try to build debug information for the given struct ref.
@@ -532,9 +531,8 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
                                       elementTypes);
 }
 
-static Value lowerStructOp(LIT::StructCreateOp op,
-                           LIT::StructCreateOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   PointerUnion<KGEN::StructType, Type> newType =
       lowerer.substituteStructRef(op.getType());
 
@@ -548,8 +546,8 @@ static Value lowerStructOp(LIT::StructCreateOp op,
       op.getLoc(), cast<KGEN::StructType>(newType), adaptor.getOperands());
 }
 
-static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
 
@@ -584,9 +582,9 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
   return result;
 }
 
-static Value lowerStructOp(LIT::StructExtractOp op,
-                           LIT::StructExtractOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(LIT::StructExtractOp op,
+                     LIT::StructExtractOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
 
@@ -601,44 +599,28 @@ static Value lowerStructOp(LIT::StructExtractOp op,
       op.getLoc(), adaptor.getContainer(), lowerer.getIndexAttr(index));
 }
 
-static Value lowerStructOp(LIT::StructGEPOp op, LIT::StructGEPOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
-  auto structType =
-      cast<DeclRefType>(op.getContainer().getType().getElementType());
-  int64_t index = lowerer.getField(op.getFieldAttr(), structType);
-
-  // Check to see if we need to flatten this.  A flattened gep is a noop.
-  if (index == 0) {
-    if (isa<Type>(lowerer.substituteStructRef(structType)))
-      return adaptor.getContainer();
-  }
-
-  return lowerer.create<KGEN::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
-                                           lowerer.getIndexAttr(index));
-}
-
-static Value lowerStructOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
   return adaptor.getRef();
 }
 
-static Value lowerStructOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   return adaptor.getPtr();
 }
 
-static Value lowerStructOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
 
   return lowerer.create<POP::LoadOp>(op.getLoc(), adaptor.getRef());
 }
 
-static Value lowerStructOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
 
@@ -647,8 +629,18 @@ static Value lowerStructOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
   return {};
 }
 
-static Value lowerStructOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
-                           StructOperationLowerer &lowerer) {
+static Value lowerOp(StoreBorrowOp op, StoreBorrowOpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
+  assert(isa<PointerType>(adaptor.getRef().getType()) &&
+         "operand should be lowered");
+
+  lowerer.create<POP::StoreOp>(op.getLoc(), adaptor.getArg(), adaptor.getRef());
+  lowerer.eraseOp(op);
+  return {};
+}
+
+static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
+                     StructOperationLowerer &lowerer) {
   auto structType =
       cast<DeclRefType>(op.getContainer().getType().getElementType());
   int64_t index = lowerer.getField(op.getFieldAttr(), structType);
@@ -704,13 +696,13 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary());
   if (op->getNumResults() == 1) {
     auto resultType = op->getResult(0).getType();
-    Value result = lowerStructOp(op, adaptor, *this);
+    Value result = lowerOp(op, adaptor, *this);
     if (result.getType() != resultType)
       result = getCastedToType(result, resultType, *this);
     replaceOp(op, {result});
   } else {
     assert(op->getNumResults() == 0);
-    Value result = lowerStructOp(op, adaptor, *this);
+    Value result = lowerOp(op, adaptor, *this);
     (void)result;
     assert(!result && "nullary lowering shouldn't produce an op");
   }
@@ -868,8 +860,8 @@ void LowerLITTypesPass::runOnOperation() {
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
-              LIT::StructGEPOp, RefToPointerOp, RefFromPointerOp,
-              RefStructGEROp, RefLoadOp, RefStoreOp>(
+              RefToPointerOp, RefFromPointerOp, RefStructGEROp, RefLoadOp,
+              RefStoreOp, StoreBorrowOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });

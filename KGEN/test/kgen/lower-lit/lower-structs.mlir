@@ -67,13 +67,6 @@ kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
   kgen.return %0 : i8
 }
 
-// CHECK-LABEL: @struct_gep
-kgen.func @struct_gep(%pair: !kgen.pointer<!i8Pair>) -> !kgen.pointer<i8> {
-  // CHECK: kgen.struct.gep %{{.*}}[1]
-  %0 = lit.struct.gep %pair[second] : <i8> from <!i8Pair>
-  kgen.return %0 : !kgen.pointer<i8>
-}
-
 lit.struct.decl @NestedA<T: regtype> register_passable {
   lit.struct.field v: !kgen.paramref<T>
 }
@@ -101,15 +94,6 @@ lit.struct.decl @IndexStruct register_passable {
 
 lit.struct.decl @StructInsideStruct register_passable {
   lit.struct.field x : !kgen.declref<@IndexStruct>
-}
-
-// CHECK-LABEL: @passStructAsLValue
-kgen.func @passStructAsLValue(%s: !kgen.pointer<@StructInsideStruct>) ->
-!kgen.pointer<index> {
-  %0 = lit.struct.gep %s[x] : <@IndexStruct> from <@StructInsideStruct>
-  %1 = lit.struct.gep %0[value] : <index> from <@IndexStruct>
-  // CHECK: kgen.return %arg0
-  kgen.return %1 : !kgen.pointer<index>
 }
 
 lit.struct.decl @IndexField {
@@ -292,13 +276,12 @@ lit.struct.decl @Pointer<ty: regtype> register_passable {
 !foo_ptr_ref = !kgen.declref<@Pointer<:regtype !foo_ref>>
 !null_ptr = !kgen.pointer<scalar<invalid>>
 
-// CHECK-LABEL: @gepFooFromBar
-kgen.func @gepFooFromBar(%s: !kgen.pointer<@Bar>) ->
-!kgen.pointer<@Pointer<:regtype !foo_ref>> {
-  // CHECK: %0 = kgen.struct.gep %arg0[0] : <struct<(pointer<struct<(struct<(pointer<scalar<invalid>>, ui32) memoryOnly>, f32) memoryOnly>>, ui32) memoryOnly>>
-  // CHECK: kgen.return %0 : !kgen.pointer<pointer<struct<(struct<(pointer<scalar<invalid>>, ui32) memoryOnly>, f32) memoryOnly>>>
-  %0 = lit.struct.gep %s[x] : <@Pointer<:regtype !foo_ref>> from <@Bar>
-  kgen.return %0 : !kgen.pointer<@Pointer<:regtype !foo_ref>>
+// CHECK-LABEL: @makeBar
+kgen.func @makeBar(%arg0: !foo_ptr_ref, %arg1: ui32) -> !bar_ref {
+  // CHECK: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(pointer<struct<(struct<(pointer<scalar<invalid>>, ui32) memoryOnly>, f32) memoryOnly>>, ui32) memoryOnly>
+  // CHECK: kgen.return %1 : !kgen.struct<(pointer<scalar<invalid>>, ui32) memoryOnly>
+  %0 = lit.struct.create(x=%arg0, y=%arg1) : (!foo_ptr_ref, ui32) -> !bar_ref
+  kgen.return %0 : !bar_ref
 }
 
 // CHECK-LABEL: @makeFoo
@@ -307,14 +290,6 @@ kgen.func @makeFoo(%arg0: !bar_ref, %arg1: f32) -> !foo_ref {
   // CHECK: kgen.return %0 : !kgen.struct<(struct<(pointer<scalar<invalid>>, ui32) memoryOnly>, f32) memoryOnly>
   %0 = lit.struct.create(x=%arg0, y=%arg1) : (!bar_ref, f32) -> !foo_ref
   kgen.return %0 : !foo_ref
-}
-
-// CHECK-LABEL: @makeBar
-kgen.func @makeBar(%arg0: !foo_ptr_ref, %arg1: ui32) -> !bar_ref {
-  // CHECK: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(pointer<struct<(struct<(pointer<scalar<invalid>>, ui32) memoryOnly>, f32) memoryOnly>>, ui32) memoryOnly>
-  // CHECK: kgen.return %1 : !kgen.struct<(pointer<scalar<invalid>>, ui32) memoryOnly>
-  %0 = lit.struct.create(x=%arg0, y=%arg1) : (!foo_ptr_ref, ui32) -> !bar_ref
-  kgen.return %0 : !bar_ref
 }
 
 // CHECK-LABEL: @structInsertUIntToBar
