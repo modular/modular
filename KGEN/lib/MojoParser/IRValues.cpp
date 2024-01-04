@@ -204,14 +204,23 @@ ASTType BValue::getRValueType() const {
 }
 
 /// Given an XValue, return the underlying reference.
-Value VariantValueStorageBase::getXValueReference() const {
+Value VariantValueStorageBase::getMValueReference() const {
   if (auto lvalue = dyn_cast<MLValue>(storage))
     return lvalue;
   if (auto rvalue = dyn_cast<MRValue>(storage))
     return rvalue;
   if (auto bvalue = dyn_cast<MBValue>(storage))
     return bvalue;
-  llvm_unreachable("invalid use of non-XValue");
+  llvm_unreachable("invalid use of non-MValue");
+}
+
+/// Given an S*Value, return the underlying register.
+Value VariantValueStorageBase::getSValueRegister() const {
+  if (auto rvalue = dyn_cast<SRValue>(storage))
+    return rvalue;
+  if (auto bvalue = dyn_cast<SBValue>(storage))
+    return bvalue;
+  llvm_unreachable("invalid use of non-SValue");
 }
 
 // TODO(lifetimes): remove pedantic checks.

@@ -1033,12 +1033,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 }
 
 Value Capture::getMlirValue() const {
-  if (auto v = value.getIfSBValue())
-    return v;
-  if (auto v = value.getIfSRValue())
-    return v;
-  if (value.isXValue())
-    return value.getXValueReference();
-
+  if (value.isSValue())
+    return value.getSValueRegister();
+  if (value.isMValue())
+    return value.getMValueReference();
   return {};
 }

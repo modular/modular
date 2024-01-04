@@ -81,12 +81,8 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
 Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function is a memory only type, return the by-ref result.
-  if (sigType.hasMemoryOnlyResult()) {
-    // TODO(clattner / references) remove memory only pointer result types.
-    if (auto ptr = dyn_cast<PointerType>(argTypes.front()))
-      return ptr.getElementType();
+  if (sigType.hasMemoryOnlyResult())
     return cast<RefType>(argTypes.front()).getElementType();
-  }
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())

@@ -486,9 +486,9 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     if (!value.ir)
       return {};
   }
-  // Handle MLValue's by decaying to MBValue.
-  if (auto lv = value.ir.getIfMLValue())
-    value.ir = MBValue(lv);
+  // Handle M*Value's by decaying to MBValue.
+  if (value.ir.isMValue())
+    value.ir = MBValue(value.ir.getMValueReference());
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
@@ -681,12 +681,27 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
 
 MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
+  auto crVal = emitCRValue(value, context);
+  if (!crVal)
+    return {};
+
   if (auto mr = value.ir.getIfMRValue())
     return mr;
 
   if (auto pv = value.ir.getIfPValue())
     return emitPValueToMRValue({pv, value.expr}, context);
-  llvm_unreachable("unknown MRValue");
+
+  // Promote SRValue to MRValue.
+  if (SRValue srValue = value.ir.getIfSRValue()) {
+    Location argLoc = value.expr->getLocation(*this);
+    VarLetDeclOp varOp =
+        emitVarLetDecl("__mem_tmp__", srValue.getType(), argLoc,
+                       VarLetDeclKind::Var, /*isSynthetic=*/true);
+    builder->create<RefStoreOp>(argLoc, srValue, varOp);
+    return MRValue(varOp);
+  }
+
+  llvm_unreachable("unknown CRValue");
 }
 
 /// This helper emits the specified value as an MBValue which has
@@ -1261,7 +1276,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     emitErrorForDynamicValueInParameter(value.expr);
     return {};
   }
-  Value address = value.ir.getXValueReference();
+  Value address = value.ir.getMValueReference();
   assert(address && "Unknown value");
   Value result =
       builder->create<RefLoadOp>(value.expr->getLocation(*this), address);

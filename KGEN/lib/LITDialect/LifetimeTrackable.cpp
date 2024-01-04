@@ -218,17 +218,10 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
   // If there are any GEP operations into the struct, dig through them.
   bool hadGEP = false;
 
-  // TODO(references): Eliminate pointer operations and be exclusively about
-  // references.
   while (true) {
-    if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
-      hadGEP = true;
-      value = structGEP.getContainer();
-    } else if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
+    if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
       hadGEP = true;
       value = structGER.getContainer();
-    } else if (auto refToPointer = value.getDefiningOp<RefToPointerOp>()) {
-      value = refToPointer.getRef();
     } else if (auto rebindOp = value.getDefiningOp<RebindOp>()) {
       value = rebindOp.getOperand();
     } else {
@@ -254,8 +247,5 @@ Type LifetimeTrackable::getTypeOrPointeeType(Type type, bool isIndirect) {
   if (!isIndirect)
     return type;
 
-  // TODO(references): Remove support for raw pointers.
-  if (auto refType = dyn_cast<RefType>(type))
-    return refType.getElementType();
-  return llvm::cast<PointerType>(type).getElementType();
+  return cast<RefType>(type).getElementType();
 }
