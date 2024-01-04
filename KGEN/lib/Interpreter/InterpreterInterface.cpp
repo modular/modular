@@ -6,7 +6,6 @@
 
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "Support/AlignedAlloc.h"
-#include "Support/LLVMAlignToMacro.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Interfaces/CallInterfaces.h"
@@ -90,7 +89,7 @@ InterpreterState::MemoryTable::addBlob(size_t size, size_t align,
     baseAddr = last.baseAddr + last.size;
   }
   // Ensure the base address is aligned.
-  CHECKED_LLVM_ALIGN_TO(baseAddr, baseAddr, align);
+  baseAddr = llvm::alignTo(baseAddr, align);
 
   // Ensure the new blob does not exceed the maximum address. The table sizes
   // are big so this is purely defensive.

@@ -6,7 +6,6 @@
 
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/LLVMAlignToMacro.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
