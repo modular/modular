@@ -28,9 +28,8 @@ class DIExprAttrBase<string attrName, string attrMnemonic,
 // DIAggregatesIntoExprAttr
 //===----------------------------------------------------------------------===//
 
-def DebugInfo_DIAggregatesIntoExprAttr : DIExprAttrBase<
-    "DIAggregatesIntoExpr", "expr.agg"
-  > {
+def DebugInfo_DIAggregatesIntoExprAttr
+  : DIExprAttrBase<"DIAggregatesIntoExpr", "expr.agg"> {
   let summary = "DI Expression fragment-to-aggregate operator.";
   let description = [{
     The `debuginfo.expr.agg` attribute represents a DI Expression operator
@@ -96,9 +95,8 @@ def DebugInfo_DIDerefExprAttr : DIExprAttrBase<"DIDerefExpr", "expr.deref"> {
 // DIIRValueExprAttr
 //===----------------------------------------------------------------------===//
 
-def DebugInfo_DIIRValueExprAttr : DIExprAttrBase<
-    "DIIRValueExpr", "expr.irvalue"
-  > {
+def DebugInfo_DIIRValueExprAttr
+  : DIExprAttrBase<"DIIRValueExpr", "expr.irvalue"> {
   let summary = "DI Expression IR Value operator.";
   let description = [{
     The `#debuginfo.expr.ir_value` attribute represents a DI Expression operator
