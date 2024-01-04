@@ -294,13 +294,15 @@ struct VariantValueStorageBase {
     return isa<SRValue>(storage) || isa<SBValue>(storage);
   }
   // Return true if this is one of the reference representation.
-  bool isXValue() const {
+  bool isMValue() const {
     return isa<MBValue>(storage) || isa<MRValue>(storage) ||
            isa<MLValue>(storage);
   }
 
-  /// Given an XValue, return the underlying reference.
-  Value getXValueReference() const;
+  /// Given an M*Value, return the underlying reference.
+  Value getMValueReference() const;
+  /// Given an S*Value, return the underlying register.
+  Value getSValueRegister() const;
 
 protected:
   Storage storage;

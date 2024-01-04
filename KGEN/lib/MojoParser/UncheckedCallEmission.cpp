@@ -466,8 +466,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
       // Parameter values will never alias.
       if (value.ir.getIfPValue())
         continue;
-      if (value.ir.isXValue()) {
-        if (ptrGuaranteedNoAlias(value.ir.getXValueReference()))
+      if (value.ir.isMValue()) {
+        if (ptrGuaranteedNoAlias(value.ir.getMValueReference()))
           continue;
         return false;
       }
@@ -507,38 +507,22 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::OwnedInMem:
-    // Promote SRValue to MRValue (in case of calling a generic function).
-    if (SRValue srValue = argValAndExpr.ir.getIfSRValue()) {
-      const ExprNode *expr = argValAndExpr.expr;
-      Location argLoc = expr->getLocation(emitter);
-      VarLetDeclOp varOp =
-          emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc,
-                                 VarLetDeclKind::Var, /*isSynthetic=*/true);
-      emitter.builder->create<RefStoreOp>(argLoc, srValue, varOp);
-      return MRValue(varOp);
-    }
     // Promote PValue's if needed.
     return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
-      return arg = emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
+      return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
 
     // If this is an MBValue, the element must be register passable but not
     // loaded.
     if (auto refVal = argValAndExpr.ir.getIfMBValue()) {
-      const ExprNode *expr = argValAndExpr.expr;
-      // TODO: Factor this into a helper.
-      std::optional<OpBuilder> builder = emitter.builder;
-      if (!builder) {
-        emitter.emitErrorForDynamicValueInParameter(expr);
-        return {};
-      }
-      auto load =
-          builder->create<RefLoadOp>(expr->getLocation(emitter), refVal);
+      auto load = emitter.builder->create<RefLoadOp>(
+          argValAndExpr.expr->getLocation(emitter), refVal);
       argValAndExpr.ir = SBValue(load);
     }
 
     arg = argValAndExpr.ir.getIfSBValue();
+    assert(arg && "unknown BValue");
     break;
   case ValueInputConvention::BorrowedInMem:
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
@@ -548,17 +532,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           argLoc, PointerType::get(sbValue.getType()), 1);
       // Given a legacy pointer, get it to a reference.
       // TODO(references) remove this when StackAllocationOp does references.
-      auto ref = emitter.builder->create<RefFromPointerOp>(
-          emitter.translateLocation(argValAndExpr.expr->getLoc()),
-          /*isMut=*/true, ptr);
-
+      auto ref = emitter.builder->create<RefFromPointerOp>(argLoc,
+                                                           /*isMut=*/true, ptr);
       emitter.builder->create<LIT::StoreBorrowOp>(argLoc, sbValue, ref);
 
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
       afterCallActions.valuesToKeepAlive.push_back(sbValue);
-
       return MBValue(ref);
     }
     // Promote PValue's if needed.

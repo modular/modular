@@ -447,6 +447,13 @@ struct ValueSet {
     // are always valid when present.  If they pass through memory, they are
     // checked when loaded from memory.
     if (val && trackable.isIndirect) {
+      if (!isa<RefType>(val.getType())) {
+        mlir::emitError(val.getLoc())
+            << "trackable IR value of type " << val.getType()
+            << " should have type '!lit.ref': " << val;
+        return;
+      }
+
       Type valType = trackable.getValueType(val);
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }

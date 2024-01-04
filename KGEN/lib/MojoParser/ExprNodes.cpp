@@ -2450,12 +2450,12 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // can launder into an RValue.
   Value value;
   bool isRegister = false;
-  if (argValue.isXValue())
-    value = argValue.getXValueReference();
-  else if (auto sb = argValue.getIfSBValue())
-    value = sb, isRegister = true;
-  else if (auto sr = argValue.getIfSRValue())
-    value = sr, isRegister = true;
+  if (argValue.isMValue())
+    value = argValue.getMValueReference();
+  else if (argValue.isSValue()) {
+    value = argValue.getSValueRegister();
+    isRegister = true;
+  }
 
   // Lifetime checking needs to understand this value or field.
   if (!value || !LifetimeTrackable::findUnderlyingValueFromField(value)) {
@@ -3028,14 +3028,13 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       if (!subExprValue)
         return {};
     }
-    if (subExprValue.isSValue()) {
+    if (!subExprValue.isMValue()) {
       emitter.emitError(getLoc(), "cannot get a reference to a register value")
           << getRange();
       return {};
     }
-    assert(subExprValue.isXValue() && "Unknown value type");
 
-    Value refValue = subExprValue.getXValueReference();
+    Value refValue = subExprValue.getMValueReference();
     // If this is a BValue, make sure the reference is non-mutable since we're
     // exposing it to the user.
     if (subExprValue.getIfMBValue()) {
@@ -3045,7 +3044,6 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
           emitter.emitErrorForDynamicValueInParameter(this);
           return {};
         }
-
         // TODO: Use a nice lit.lifetime.upcast op?
         refValue = emitter.builder->create<RebindOp>(
             emitter.translateLocation(getLoc()),
@@ -3053,7 +3051,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       }
     }
 
-    // Return the MBValue as an SRValue since the ref itself is the result.
+    // Return the M[BR]Value as an SRValue since the ref itself is the result.
     return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
