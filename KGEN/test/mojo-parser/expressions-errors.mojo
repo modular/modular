@@ -200,6 +200,16 @@ fn dynamic_used_as_param_2() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   return func_with_static_param[w.x]()
 
+fn higher_order_int_func[func: fn (Int) capturing -> Int]() -> Int:
+  return func(3)
+
+fn use_non_parameter_func() -> Int:
+  let val = 8
+  fn my_nested_func(x: Int) -> Int:
+    return val + x
+  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  print(higher_order_int_func[my_nested_func]())
+
 ##===----------------------------------------------------------------------===##
 # Keyword arguments
 ##===----------------------------------------------------------------------===##
