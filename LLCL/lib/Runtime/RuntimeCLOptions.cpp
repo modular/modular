@@ -47,7 +47,13 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
     break;
   }
   runtimeOptions.profileFilename = profileName;
-  return LLCL::createUniqueRuntime(runtimeOptions);
+  // TODO(#28412): Ideally this would be createUniqueRuntime since it's silly to
+  // be asking to create a runtime from the current cl options when one has
+  // already been established, presumably via some other configuration
+  // mechanism. However modular-api-executor.cpp has already established a
+  // runtime via the C API when it invokes
+  // setupMLIRAndRunWithLeakCheckedRuntime.
+  return LLCL::createNestedRuntime(runtimeOptions);
 }
 
 std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {
