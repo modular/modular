@@ -48,7 +48,7 @@ def DeclRefType : DialectType<(type
 )>;
 
 def VariadicType : DialectType<(type
-  TypedAttr:$elementType
+  Type:$elementType
 )>;
 
 def NoneType : DialectType<(type)>;

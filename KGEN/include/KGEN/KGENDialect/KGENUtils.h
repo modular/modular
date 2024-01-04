@@ -320,9 +320,9 @@ void printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
 template <typename SequenceType>
 ParseResult parseSequenceElements(AsmParser &p, SmallVector<TypedAttr> &values,
                                   SequenceType type) {
-  auto elementType = ParamRefType::get(type.getElementType());
-  return p.parseCommaSeparatedList(
-      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
+  return p.parseCommaSeparatedList([&] {
+    return parseParamValue(p, values.emplace_back(), type.getElementType());
+  });
 }
 
 template <typename SequenceType>

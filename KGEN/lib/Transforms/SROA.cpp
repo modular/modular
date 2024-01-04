@@ -280,7 +280,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     int64_t numElems = *containerTy.getResolvedSize();
     newAllocas.reserve(numElems);
 
-    Type elem = containerTy.getElementAsType();
+    Type elem = containerTy.getElementType();
     auto asPtr = PointerType::get(elem);
     for (int64_t i = 0; i < numElems; ++i) {
       Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);

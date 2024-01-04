@@ -795,7 +795,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
   // 1. Allocate space for an array of elements.
-  Type opElementType = op.getType().getElementAsType();
+  Type opElementType = op.getType().getElementType();
   std::optional<int64_t> typeAllocSize =
       DataLayoutInterface::getTypeAllocSize(target, opElementType);
   std::optional<int64_t> typeABIAlign =
@@ -853,8 +853,8 @@ struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
   LogicalResult
   matchAndRewrite(VariadicGetOp op, VariadicGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type ptrElement = typeConverter->convertType(
-        op.getVariadic().getType().getElementAsType());
+    Type ptrElement =
+        typeConverter->convertType(op.getVariadic().getType().getElementType());
     Value ptr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
                                                       adaptor.getVariadic(), 0);
     auto gep = rewriter.create<LLVM::GEPOp>(

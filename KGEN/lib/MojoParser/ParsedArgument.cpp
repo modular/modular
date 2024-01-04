@@ -372,7 +372,7 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
       emitter.emitError(arg.loc, "parameters may not be variadic packs");
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
-      type = VariadicType::get(type, AnyRegTypeType::get(emitter.getContext()));
+      type = VariadicType::get(type);
       paramVarArg = true;
     }
 
@@ -704,8 +704,6 @@ void DeclResolver::computeArgumentConventions(
     SharedState &shared, MutableArrayRef<ParsedArgument> args,
     MutableArrayRef<Type> argTypes,
     SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls, ASTDecl &declScope) {
-  MLIRContext *ctx = shared.getContext();
-
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
@@ -768,6 +766,6 @@ void DeclResolver::computeArgumentConventions(
           ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
     }
     if (arg.vararg == VarArgKind::VarArg)
-      argType = KGEN::VariadicType::get(argType, AnyRegTypeType::get(ctx));
+      argType = VariadicType::get(argType);
   }
 }

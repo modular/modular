@@ -82,7 +82,7 @@ void FoldGlobalConstLoads::runOnOperation() {
           return;
 
         // We are expecting the element type to remain the same.
-        if (ptr.getElementType() != arrayAttr.getType().getElementAsType())
+        if (ptr.getElementType() != arrayAttr.getType().getElementType())
           return;
 
         for (Operation *bcastUser : bitcast->getUsers()) {

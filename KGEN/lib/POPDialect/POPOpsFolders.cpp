@@ -1101,9 +1101,8 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   auto arrayType = getArray().getType().getElementAs<POP::ArrayType>();
-  TypedAttr elementType = arrayType.getElementType();
-  auto dl = cast<DataLayoutInterface>(
-      cast<ConcreteTypeConstantAttr>(elementType).getValue());
+  Type elementType = arrayType.getElementType();
+  auto dl = cast<DataLayoutInterface>(elementType);
   int64_t addr =
       ptr.getAddr() +
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),

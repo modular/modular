@@ -500,7 +500,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                               "`!kgen.variadic` but got: "
                            << type;
       }
-      type = variadic.getElementAsType();
+      type = variadic.getElementType();
     }
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
@@ -900,31 +900,6 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
-LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   TypedAttr type) {
-  assert(type && "type cannot be null");
-  if (!isTypeExpr(type))
-    return emitError()
-           << "type parameter for pointer must be a type expression";
-  return success();
-}
-
-Type VariadicType::getElementAsType() const {
-  TypedAttr eltType = getElementType();
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(eltType))
-    return typeCst.getValue();
-  assert(isTypeExpr(eltType) && "parameter expr must be a type expression");
-  return ParamRefType::get(eltType);
-}
-
-VariadicType VariadicType::get(TypedAttr elementType) {
-  return VariadicType::get(elementType.getContext(), elementType);
-}
-
-VariadicType VariadicType::get(Type elementType, Type metaType) {
-  return VariadicType::get(TypeConstantAttr::get(elementType, metaType));
-}
-
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
 /// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same
@@ -947,7 +922,7 @@ ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
   TargetInfoAttr target = state.getTarget();
 
   // Query the size and alignment of the element type.
-  Type elemType = getElementAsType();
+  Type elemType = getElementType();
   std::optional<int64_t> typeAlign =
       DataLayoutInterface::getTypeABIAlign(target, elemType);
   std::optional<int64_t> allocSize =
@@ -984,7 +959,7 @@ ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
 
   // Query the size and alignment of the element type.
   TargetInfoAttr target = state.getTarget();
-  Type elemType = getElementAsType();
+  Type elemType = getElementType();
   std::optional<int64_t> allocSize =
       DataLayoutInterface::getTypeAllocSize(target, elemType);
   if (!allocSize)
@@ -1110,8 +1085,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 
 static void printPackType(AsmPrinter &p, TypedAttr value) {
   if (auto variadic = dyn_cast<VariadicType>(value.getType())) {
-    if (isa<AnyRegTypeType>(variadic.getElementAsType()) &&
-        isa<AnyRegTypeType>(variadic.getElementType().getType())) {
+    if (isa<AnyRegTypeType>(variadic.getElementType())) {
       printParamValue(p, value);
       return;
     }
@@ -1121,7 +1095,7 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
   auto anyRegTypeType = AnyRegTypeType::get(p.getContext());
-  Type type = VariadicType::get(anyRegTypeType, anyRegTypeType);
+  Type type = VariadicType::get(anyRegTypeType);
   if (succeeded(p.parseOptionalColon()))
     if (parseKGENType(p, type))
       return failure();
@@ -1170,7 +1144,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
   auto variadicType = ::dyn_cast<VariadicType>(variadic.getType());
   if (!variadicType)
     return {};
-  Type type = variadicType.getElementAsType();
+  Type type = variadicType.getElementType();
   return DataLayoutInterface::getTypeABIAlign(target, type);
 }
 

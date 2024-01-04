@@ -30,7 +30,7 @@ static bool returnTypeIsMojoNone(FunctionType t) {
   // Not an array.
   if (!array)
     return false;
-  auto intTy = dyn_cast<IntegerType>(array.getElementAsType());
+  auto intTy = dyn_cast<IntegerType>(array.getElementType());
   // Not an array of integers.
   if (!intTy)
     return false;

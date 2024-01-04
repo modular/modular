@@ -166,7 +166,7 @@ LogicalResult FnMetadataAttr::verifySignature(
                               "`!kgen.variadic` but got: "
                            << type;
       }
-      type = variadic.getElementAsType();
+      type = variadic.getElementType();
     }
     // Verify argument conventions.
     if (SignatureType::hasAddress(conv)) {

@@ -51,12 +51,9 @@ static Type parseScalarType(AsmParser &p) {
 
 LogicalResult
 POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr size, TypedAttr elementType) {
+                       TypedAttr size, Type elementType) {
   if (!size.getType().isa<IndexType>())
     return emitError() << "expected size expression to be index type";
-  if (!isTypeExpr(elementType))
-    return emitError()
-           << "expected parameter expression to be a type expression";
   return success();
 }
 
@@ -66,24 +63,9 @@ std::optional<int64_t> POP::ArrayType::getResolvedSize() const {
   return {};
 }
 
-Type POP::ArrayType::getElementAsType() const {
-  TypedAttr eltType = getElementType();
-  if (!eltType)
-    return {};
-  if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(eltType))
-    return typeCst.getValue();
-  assert(isTypeExpr(eltType));
-  return ParamRefType::get(eltType);
-}
-
-POP::ArrayType POP::ArrayType::get(TypedAttr size, TypedAttr elementType) {
-  return get(size.getContext(), size, elementType);
-}
-
 POP::ArrayType POP::ArrayType::get(TypedAttr size, Type elementType) {
   MLIRContext *ctx = size.getContext();
-  return get(ctx, size,
-             TypeConstantAttr::get(elementType, AnyRegTypeType::get(ctx)));
+  return get(ctx, size, elementType);
 }
 
 POP::ArrayType POP::ArrayType::get(int64_t size, Type elementType) {
@@ -109,7 +91,7 @@ POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
   if (!size)
     return {};
 
-  Type elementType = getElementAsType();
+  Type elementType = getElementType();
   std::optional<int64_t> elementAllocSize =
       DataLayoutInterface::getTypeAllocSize(target, elementType);
   if (!elementAllocSize)
@@ -121,13 +103,13 @@ POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
 /// The alignment of the array is the alignment of the element type.
 std::optional<int64_t>
 POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
-  Type elementType = getElementAsType();
+  Type elementType = getElementType();
   return DataLayoutInterface::getTypeABIAlign(target, elementType);
 }
 
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
-  auto dl = ::cast<DataLayoutInterface>(getElementAsType());
+  auto dl = ::cast<DataLayoutInterface>(getElementType());
   // Store each element spaced apart by padding according to its alignment.
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
@@ -142,7 +124,7 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
 
 ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
-  Type elemType = getElementAsType();
+  Type elemType = getElementType();
   auto dl = elemType.cast<DataLayoutInterface>();
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));

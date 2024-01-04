@@ -232,14 +232,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     Attribute attr;
     if (isVarArg) {
       auto varType = cast<VariadicType>(expectedType);
-      Type varElType = varType.getElementAsType();
+      Type varElType = varType.getElementType();
 
       // If dealing with a memory-only type, remove the pointer.
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::BorrowedInMem)
         varElType = ASTType(varElType).getReferenceElementType();
-      auto newVarType = VariadicType::get(
-          varElType, AnyRegTypeType::get(emitter.getContext()));
+      auto newVarType = VariadicType::get(varElType);
       attr = VariadicAttr::get(args, newVarType);
     } else {
       attr = PackAttr::get(args, cast<PackType>(expectedType));
@@ -288,8 +287,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         arg = emitter.builder->create<RebindOp>(loc, expectedRefType, arg);
 
     // TODO(metatypes): preserve metatype?  These don't seem to do anything.
-    expectedType = VariadicType::get(expectedRefType,
-                                     AnyRegTypeType::get(emitter.getContext()));
+    expectedType = VariadicType::get(expectedRefType);
   }
 
   Value argVal;
@@ -675,12 +673,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
         // If dealing with a variadic argument, we put each element into memory.
         auto varType = cast<VariadicType>(actualArgType);
         auto varElType =
-            RefType::getImmortal(/*isMut=*/true, varType.getElementAsType());
+            RefType::getImmortal(/*isMut=*/true, varType.getElementType());
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
           storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
-        auto newVarType = VariadicType::get(
-            varElType, AnyRegTypeType::get(emitter.getContext()));
+        auto newVarType = VariadicType::get(varElType);
         arg = VariadicAttr::get(storedAttrs, newVarType);
       } else {
         arg = StoreToMemAttr::get(

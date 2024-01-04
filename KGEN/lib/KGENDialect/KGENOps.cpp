@@ -261,10 +261,7 @@ static ParseResult parseParamForkOpValue(OpAsmParser &p,
 
   if (parseParamName(p, name) || parseColonTypeOrIndex(p, valTy) ||
       p.parseEqual() || p.parseLess() ||
-      parseParamValue(
-          p, value,
-          VariadicType::get(valTy, AnyRegTypeType::get(p.getContext()))) ||
-      p.parseGreater())
+      parseParamValue(p, value, VariadicType::get(valTy)) || p.parseGreater())
     return failure();
 
   paramDecl = ParamDeclAttr::get(name, valTy);
@@ -274,9 +271,8 @@ static ParseResult parseParamForkOpValue(OpAsmParser &p,
 static void printParamForkOpValue(OpAsmPrinter &p, Operation *,
                                   ParamDeclAttr paramDecl, TypedAttr value) {
   printParamName(p, paramDecl.getName());
-  printColonTypeOrIndex(
-      p,
-      ParamRefType::get(cast<VariadicType>(value.getType()).getElementType()));
+  printColonTypeOrIndex(p,
+                        cast<VariadicType>(value.getType()).getElementType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
@@ -399,9 +395,7 @@ static ParseResult parseParamEvaluateOp(AsmParser &p, ParamDeclAttr &paramDecl,
                                         TypedAttr &candidates) {
   SignatureType evaluatorType;
   if (parseParamDecl(p, paramDecl) || p.parseEqual() ||
-      parseParamValue(p, candidates,
-                      VariadicType::get(paramDecl.getType(),
-                                        AnyRegTypeType::get(p.getContext()))) ||
+      parseParamValue(p, candidates, VariadicType::get(paramDecl.getType())) ||
       p.parseKeyword("with") || p.parseLSquare() ||
       parseKGENType(p, evaluatorType) || p.parseColon() ||
       parseParamValue(p, evaluator, evaluatorType) || p.parseRSquare())
@@ -441,8 +435,7 @@ void ParamEvaluateOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 LogicalResult ParamEvaluateOp::verify() {
-  auto sigType =
-      cast<VariadicType>(getCandidates().getType()).getElementAsType();
+  auto sigType = cast<VariadicType>(getCandidates().getType()).getElementType();
   if (sigType != getParamDecl().getType())
     return emitOpError("candidates type does not match parameter type");
   auto evalType = cast<SignatureType>(getEvaluator().getType());

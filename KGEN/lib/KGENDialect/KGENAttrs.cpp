@@ -109,7 +109,7 @@ bool VariadicAttr::isConstant() const {
 LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    ArrayRef<TypedAttr> values,
                                    VariadicType type) {
-  auto elementType = ParamRefType::get(type.getElementType());
+  Type elementType = type.getElementType();
   for (auto [idx, value] : llvm::enumerate(values))
     if (value.getType() != elementType)
       return emitError() << "variadic sequence element #" << idx << " has type "
@@ -120,9 +120,9 @@ LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 static ParseResult parseVariadicValue(AsmParser &p,
                                       SmallVector<TypedAttr> &values,
                                       VariadicType type) {
-  auto elementType = ParamRefType::get(type.getElementType());
-  return p.parseCommaSeparatedList(
-      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
+  return p.parseCommaSeparatedList([&] {
+    return parseParamValue(p, values.emplace_back(), type.getElementType());
+  });
 }
 
 OptionalParseResult VariadicType::parseValue(AsmParser &p,
@@ -1043,7 +1043,7 @@ LogicalResult ParamOperatorAttr::verify(
     if (!::isa<IndexType>(operands.back().getType()))
       return emitError()
              << "'variadic_get' expected second operand to be an index";
-    auto elType = ParamRefType::get(variadicType.getElementType());
+    Type elType = variadicType.getElementType();
     if (type != elType)
       return emitError() << "'variadic_get' result type should be variadic "
                             "element type: expected "
@@ -2016,7 +2016,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
 static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
                                      Type &resultType) {
   auto variadicType = cast<VariadicType>(operands.front().getType());
-  resultType = ParamRefType::get(variadicType.getElementType());
+  resultType = variadicType.getElementType();
   auto variadic = dyn_cast<VariadicAttr>(operands.front());
   auto index = dyn_cast<IntegerAttr>(operands.back());
   if (!variadic || !index || index.getInt() < 0 ||

@@ -43,16 +43,14 @@ def POP_ArrayType : POPType<"Array", "array", [
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$size, "TypedAttr":$elementType);
+  let parameters = (ins "TypedAttr":$size, "Type":$elementType);
   let assemblyFormat = [{
     `<` custom<IndexParamValue>($size) `,` ` `
-        custom<TypeParamValue>($elementType) `>`
+        custom<ParamType>($elementType) `>`
   }];
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
-                                        "TypedAttr":$elementType)>,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size,
                                         "Type":$elementType)>,
     TypeBuilderWithInferredContext<(ins "int64_t":$size, "Type":$elementType)>,
@@ -62,8 +60,6 @@ def POP_ArrayType : POPType<"Array", "array", [
   let extraClassDeclaration = [{
     /// Try to narrow the size expression to an integer.
     std::optional<int64_t> getResolvedSize() const;
-    /// Return the elementType attribute as a type.
-    Type getElementAsType() const;
   }];
 }
 
@@ -72,7 +68,7 @@ def POP_ArrayType : POPType<"Array", "array", [
 
 class ArrayElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches array element type", lhs, rhs,
-    "ParamRefType::get($_self.cast<POP::ArrayType>().getElementType())",
+    "$_self.cast<POP::ArrayType>().getElementType()",
     "typeRangeMatches">;
 
 def ArrayKnownSize : ConfinedType<POP_ArrayType,

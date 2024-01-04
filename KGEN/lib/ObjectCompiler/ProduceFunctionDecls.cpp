@@ -111,7 +111,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     if (!*array.getResolvedSize())
       return success();
 
-    if (failed(getCTypeForType(func, array.getElementAsType(), types)))
+    if (failed(getCTypeForType(func, array.getElementType(), types)))
       return failure();
     types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
     return success();
