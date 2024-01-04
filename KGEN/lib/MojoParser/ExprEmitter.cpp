@@ -838,16 +838,24 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 // Emission helpers for various value classifications.
 
 /// Helper to rebind a value to a new type.
-static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
+static AnyValue rebindValue(AnyValue value, Type newType, const ExprNode *expr,
                             ExprEmitter &emitter) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.getIfPValue())
     return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), newType));
+  if (auto dlValue = value.getIfDLValue()) {
+    dlValue->elementType = newType;
+    return dlValue;
+  }
+
+  // Cannot perform value rebind if only parameters are allowed.
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(expr);
 
   // Materialize a rebind operation.
   auto rebind = [&](Value v) -> Value {
-    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
-                                             newType, v);
+    return emitter.builder->create<RebindOp>(
+        emitter.translateLocation(expr->getLoc()), newType, v);
   };
   if (auto refValue = value.getIfMLValue())
     return MLValue(rebind(refValue));
@@ -857,10 +865,6 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return MBValue(rebind(refValue));
   if (auto sbValue = value.getIfSBValue())
     return SBValue(rebind(sbValue));
-  if (auto dlValue = value.getIfDLValue()) {
-    dlValue->elementType = newType;
-    return dlValue;
-  }
 
   auto srValue = value.getIfSRValue();
   assert(srValue && "Unknown value kind");
@@ -979,7 +983,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
 /// When emitting a result value, attempt to "refine" the value type by
 /// evaluating 'apply' expressions in its type. Rebind the value if the type can
 /// be further specialized.
-static AnyValue refineResultValue(AnyValue value, SMLoc loc,
+static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
                                   ExprEmitter &emitter) {
   Type valueType;
   // Only CValues can be specialized. ORValues don't have a type.
@@ -993,7 +997,7 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
   if (refinedType == valueType)
     return value;
 
-  return rebindValue(value, refinedType, loc, emitter);
+  return rebindValue(value, refinedType, expr, emitter);
 }
 
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
@@ -1005,7 +1009,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   ExprContext context = dest.getContext();
 
   // Attempt to further specialize the result value.
-  value = refineResultValue(value, expr->getLoc(), *this);
+  value = refineResultValue(value, expr, *this);
 
   // If no destination is specified or it is just a contextual type hint, then
   // we can propagate the value directly.
@@ -1047,7 +1051,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           requiredType =
               cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
-        value = rebindValue(value, requiredType, expr->getLoc(), *this);
+        value = rebindValue(value, requiredType, expr, *this);
         return emitCValue({value, expr}, dest);
       }
 
