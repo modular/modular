@@ -134,16 +134,16 @@ struct ExpansionGraph {
   std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
 
   /// Protect access to quiesceChain.
-  mutable std::mutex quiesceMu;
+  std::mutex quiesceMu;
 
   /// Protect access to worklistChain.
-  mutable std::mutex worklistMu;
+  std::mutex worklistMu;
 
   /// Number of outstanding resources created from this runtime.
   size_t numOutstandingResources = 0;
 
   /// If quiesce() has been called, the chain it returned. Otherwise null.
-  mutable AsyncValueRef<Chain> quiesceChain;
+  AsyncValueRef<Chain> quiesceChain;
 
   /// Get or create the node for a generator instantiation.
   ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
