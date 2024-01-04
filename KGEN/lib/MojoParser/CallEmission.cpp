@@ -48,7 +48,7 @@ InputParamBindings::getForDeclaredType(ASTType type, ExprEmitter &emitter) {
   inputParamBindings.defaultTypeParams = type.getDefaultParameters();
 
   // When binding a trait function, add the self type bindings.
-  if (auto trait = dyn_cast<TraitType>(type.getMetaType())) {
+  if (auto trait = dyn_cast<TraitType>(type.getMetaTypeOrSelf())) {
     inputParamBindings.addPrechecked(
         TypeConstantAttr::get(trait, AnyRegTypeType::get(trait.getContext())));
     inputParamBindings.addPrechecked(TypeConstantAttr::get(type, trait));

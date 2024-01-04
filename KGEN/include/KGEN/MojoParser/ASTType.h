@@ -57,6 +57,10 @@ public:
   /// Get the metatype of the type.
   Type getMetaType() const;
 
+  /// Get the metatype of the type or return the type itself. This method is
+  /// used to find a base nominal type.
+  Type getMetaTypeOrSelf() const;
+
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type, return null.
   ASTDecl *getDecl(SharedState &shared) const;

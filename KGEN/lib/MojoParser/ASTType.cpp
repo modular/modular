@@ -45,14 +45,9 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamRefType::get(typeParamExpr);
 }
 
-// FIXME(#27974): ASTType::getMetaType is broken
 Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
-  if (isa<MetaTypeType>(mlirType))
-    return mlirType;
-  if (isa<TraitType>(mlirType))
-    return mlirType;
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return declRef.getMetaType();
   if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
@@ -61,33 +56,44 @@ Type ASTType::getMetaType() const {
   return {};
 }
 
+Type ASTType::getMetaTypeOrSelf() const {
+  if (Type type = getMetaType())
+    return type;
+  if (isa_and_nonnull<MetaTypeType, TraitType>(mlirType))
+    return mlirType;
+  return {};
+}
+
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
-  if (auto metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+  Type type = getMetaTypeOrSelf();
+  if (auto metaType = dyn_cast_or_null<MetaTypeType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
-  if (auto traitType = dyn_cast_or_null<TraitType>(getMetaType()))
+  if (auto traitType = dyn_cast_or_null<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
   return nullptr;
 }
 
-/// If this is a parametric user defined type, return all parameter bindings
-/// on this reference to the type.  Note that this is potentially a partial
-/// binding set - incomplete bindings (missing bindings) are valid.
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+  if (MetaTypeType metaType =
+          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
     return metaType.getParamValues();
   return {};
 }
 
 ArrayRef<Type> ASTType::getInputParameters() const {
   // Query the metatype for the parameter signature.
-  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
+    return metaType.getSignature().getInputParamTypes();
+  if (MetaTypeType metaType =
+          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
     return metaType.getSignature().getInputParamTypes();
   return {};
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultParameters() const {
   // Query the metatype for the parameter signature.
-  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+  if (MetaTypeType metaType =
+          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
     return metaType.getSignature().getDefaultParameters();
   return {};
 }
@@ -96,20 +102,10 @@ bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   if (mlirType == other.mlirType)
     return true;
-  // Types with the same metatype are always equal.
-  // FIXME(#27974): ASTType::getMetaType is broken.  We shouldn't have to
-  // replicate it here.
-  auto getMetaType = [](Type mlirType) {
-    if (!mlirType)
-      return Type();
-    if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
-      return paramRef.getParam().getType();
-    if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-      return declRef.getMetaType();
-    return Type();
-  };
-  if (auto meta = getMetaType(mlirType))
-    if (meta == getMetaType(other.mlirType))
+  // Types with the same metatype are always equal. This is used to detect when
+  // two type aliases refer to the same underlying type.
+  if (Type meta = getMetaType())
+    if (meta == other.getMetaType())
       return true;
   return false;
 }
