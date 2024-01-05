@@ -455,6 +455,10 @@ struct ValueInfo {
       // TODO: Handle default arguments.
       if (inputTypes.size() != numFields)
         continue;
+      // Skip any kind of var-args.
+      FnEffects effects = signature.getFnEffects();
+      if (effects.hasAnyVarArgs() || effects.hasKWVarArgs())
+        continue;
 
       bool isMatch = true;
       for (auto [type, conv, field] :

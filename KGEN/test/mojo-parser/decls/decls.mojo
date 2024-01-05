@@ -1009,6 +1009,17 @@ struct NotSynthetic:
    fn notSynthetic(self):
       pass
 
+# CHECK-LABEL: lit.struct.decl @VarArgInit
+@value
+@register_passable("trivial")
+struct VarArgInit:
+    var a: Int
+    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<mut !ValueMem, {{.*}}>> borrow_in_mem) vararg -> !VarArgInit
+    # The argument is intentionally memory-only.
+    fn __init__(*values: ValueMem) -> Self:
+        return Self {a: 42}
+    # CHECK: lit.func @"__init__($builtin::$int::Int)"(%a[a]: !Int borrow) -> !VarArgInit
+
 ##===----------------------------------------------------------------------===##
 # async/await
 ##===----------------------------------------------------------------------===##
