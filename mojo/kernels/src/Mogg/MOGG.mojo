@@ -79,7 +79,7 @@ from ConvTranspose import conv_transpose as conv_transpose_impl
 from ConvTranspose import conv_transpose_shape
 from Cumsum import cumsum as _cumsum
 from GatherScatter import gather as _gather
-from GatherScatter import gather_nd as _gather_nd
+from GatherScatter import gather_nd as _gather_nd, gather_nd_shape
 from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
 from GatherScatter import scatter_nd_shape
@@ -161,6 +161,7 @@ fn MOGGExport():
     alias _equal = equal
     alias _floor = floor
     alias _gather_shape = gather_shape
+    alias _gather_nd_shape = gather_nd_shape
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pack_conv_filter_shape = pack_conv_filter_shape
