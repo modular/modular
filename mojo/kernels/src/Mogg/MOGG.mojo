@@ -82,6 +82,7 @@ from GatherScatter import gather as _gather
 from GatherScatter import gather_nd as _gather_nd
 from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
+from GatherScatter import scatter_nd_shape
 from GatherScatter import scatter_nd as _scatter_nd
 from GatherScatter import scatter_nd_generator
 from GatherScatter import normalize_neg_index
@@ -200,6 +201,7 @@ fn MOGGExport():
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_shape = scatter_shape
+    alias _scatter_nd_shape = scatter_nd_shape
     alias _slice = slice
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
