@@ -20,6 +20,7 @@
 #include <cassert>
 #include <chrono>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,8 @@ void ProfilingDetail::BeginEvent::dump() const {
   if (parentId)
     os << "  (parent " << parentId << ")";
   os << "\n";
+  if (dumpFn)
+    os << (*dumpFn)();
   llvm::dbgs() << str;
 }
 
@@ -90,6 +93,8 @@ void ProfilingDetail::EndEvent::dump() const {
   os << "PROFILE: ";
   os << llvm::format("%8lu", llvm::get_threadid());
   os << llvm::format("  END  %16lu  \n", id);
+  if (dumpFn)
+    os << (*dumpFn)();
   llvm::dbgs() << str;
 }
 
@@ -469,7 +474,7 @@ TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
                                      StringRef procName) {
   if constexpr (!ProfilingDetail::kProfilingEnabled) {
     llvm::dbgs() << "PROFILE: INFO: Profiling is not enabled at compile time, "
-                    "only direct profiling entries will be catpured\n";
+                    "only direct profiling entries will be captured\n";
   } else {
     llvm::dbgs() << llvm::format(
         "PROFILE: INFO: Recording profiling entries at level 0%o\n",

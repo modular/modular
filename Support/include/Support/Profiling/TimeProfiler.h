@@ -63,6 +63,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -74,9 +75,8 @@
 #include "Support/LLVMForwardDecls.h"
 
 #include <chrono>
-#include <functional>
 #include <mutex>
-#include <sstream>
+#include <optional>
 
 namespace llvm {
 class raw_pwrite_stream;
@@ -97,7 +97,17 @@ class OStream;
 
 namespace M {
 
+/// Function that returns arbitrary messages when profiler events occur.
+/// `TimeTraceScope` has to store a `ProfilerDumpFn` in order to
+/// call that function when creating an `EndEvent` if `TRACE_IN_REAL_TIME` is 1.
+/// In order to ensure its captures live until the end of the event,
+/// `ProfilerDumpFn` has to be a `unique_function`.
+using ProfilerDumpFn = llvm::unique_function<std::string() const>;
+
 /// Function to call to return profiling entry name or description string.
+/// This uses a `function_ref` because the function will be called immediately
+/// upon creation of a `Label` name for a profiling entry.
+/// Hence `ProfilerPrintFn`s are not stored and can be a `function_ref`.
 using ProfilerPrintFn = llvm::function_ref<std::string()>;
 
 /// Globally unique id for every CreateEvent and SampleEvent. Zero denotes
@@ -334,13 +344,16 @@ struct BeginEvent {
   TimePointType start = ClockType::now();
   Label name;
   Label detail;
+  std::optional<ProfilerDumpFn> dumpFn;
 
   template <typename NameStr>
   BeginEvent(StringArena &stringArena, uint64_t seqNum, ProfilerEventId id,
              ProfilerEventId parentId, NameStr &&name,
-             uint64_t nameValue = Label::kNoIntPayload)
+             uint64_t nameValue = Label::kNoIntPayload,
+             std::optional<ProfilerDumpFn> extraDumpFn = std::nullopt)
       : seqNum(seqNum), id(id), parentId(parentId),
-        name(stringArena, std::forward<NameStr>(name), nameValue) {}
+        name(stringArena, std::forward<NameStr>(name), nameValue),
+        dumpFn(std::move(extraDumpFn)) {}
 
   template <typename NameStr, typename DetailStr>
   BeginEvent(StringArena &stringArena, uint64_t seqNum, ProfilerEventId id,
@@ -364,13 +377,16 @@ struct BeginEvent {
 //===----------------------------------------------------------------------===//
 
 /// Represents the end of a timing profiling entry. It is valid for
-/// a profiling entry to be begin on one thread and ended on another.
+/// a profiling entry to begin on one thread and end on another.
 struct EndEvent {
   uint64_t seqNum;
   ProfilerEventId id;
   TimePointType end = ClockType::now();
+  std::optional<ProfilerDumpFn> dumpFn;
 
-  EndEvent(uint64_t seqNum, ProfilerEventId id) : seqNum(seqNum), id(id) {}
+  EndEvent(uint64_t seqNum, ProfilerEventId id,
+           std::optional<ProfilerDumpFn> extraDumpFn = std::nullopt)
+      : seqNum(seqNum), id(id), dumpFn(std::move(extraDumpFn)) {}
 
   void dump() const;
 };
@@ -518,9 +534,10 @@ struct TimeTraceThreadProfiler {
 
   /// End the timing entry with the given id. The event need not have been
   /// begun on this thread.
-  void end(ProfilerEventId id) {
+  template <typename... Args>
+  void end(ProfilerEventId id, Args &&...args) {
     [[maybe_unused]] const EndEvent &event =
-        endEvents.emplace_back(nextSeqNum++, id);
+        endEvents.emplace_back(nextSeqNum++, id, std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
@@ -790,6 +807,10 @@ struct TimeTraceProfiler {
 ///   -- database.
 ///   void record() &&
 ///
+///   -- Ditto, but pass a custom function that returns an arbitrary
+///   -- `std::string`.
+///   -- {Begin,End}Event dump returned strings to `llvm::dbgs()`.
+///   void record(ProfilerDumpFn dumpFn) &&
 template <bool Enabled>
 struct ProfilerEntry {};
 
@@ -834,7 +855,8 @@ struct ProfilerEntry<false> {
   bool empty() const { return true; }
   ProfilerEventId getId() const { return 0; }
 
-  void record() && {}
+  template <typename... Args>
+  void record(Args &&...args) && {}
 };
 
 /// Enabled profiling entry. Entries are created only if the profiler is active.
@@ -918,11 +940,12 @@ struct ProfilerEntry<true> {
   bool empty() const { return id == 0; }
   ProfilerEventId getId() const { return id; }
 
-  void record() && {
+  template <typename... Args>
+  void record(Args &&...args) && {
     if (id == 0)
       return;
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
-      return ctx->end(id);
+      return ctx->end(id, std::forward<Args>(args)...);
   }
 
 private:
@@ -935,22 +958,42 @@ private:
 // TimeTraceScope
 //===----------------------------------------------------------------------===//
 
+namespace {
+struct Empty {};
+} // namespace
+
 /// RAII class to automatically record the constructed or given profile entry
 /// when the object goes out of scope.
-template <bool Enabled = true>
+template <bool Enabled = true, typename DumpFnT = Empty>
 struct TimeTraceScope {
+  static_assert(std::is_same_v<DumpFnT, Empty> ||
+                    std::is_constructible_v<ProfilerDumpFn, DumpFnT>,
+                "DumpFnT must be either Empty or ProfilerDumpFn.");
+
   TimeTraceScope() = delete;
   TimeTraceScope(const TimeTraceScope &) = delete;
   TimeTraceScope &operator=(const TimeTraceScope &) = delete;
   TimeTraceScope(TimeTraceScope &&) = delete;
   TimeTraceScope &operator=(TimeTraceScope &&) = delete;
 
-  explicit TimeTraceScope(ProfilerEntry<Enabled> entry)
-      : entry(std::move(entry)) {}
+  explicit TimeTraceScope(ProfilerEntry<Enabled> entry,
+                          DumpFnT extraDumpFn = Empty{})
+      : entry(std::move(entry)), dumpFn(std::move(extraDumpFn)) {}
 
-  ~TimeTraceScope() { std::move(entry).record(); }
+  ~TimeTraceScope() {
+    if constexpr (std::is_same_v<DumpFnT, Empty>)
+      std::move(entry).record();
+    else
+      std::move(entry).record(dumpFn);
+  }
 
   ProfilerEntry<Enabled> entry;
+  /// Optional function to dump statistics upon profiler events occurring.
+  /// When present, this is a `ProfilerDumpFn`.
+  /// Otherwise, this is an empty struct `Empty` so as to be cost free.
+  /// Since few profiler entries will actually want a `dumpFn` in practice, this
+  /// is enabled/disabled separately from the `Enabled` template argument.
+  DumpFnT dumpFn;
 };
 
 // The trivial deduction guide.
