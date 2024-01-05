@@ -13,6 +13,7 @@
 
 #include "LLCL/Support/Location.h"
 #include "Support/Error.h"
+#include <variant>
 
 namespace M::LLCL {
 
@@ -39,6 +40,25 @@ public:
 private:
   Error message;
   EncodedLocation location;
+};
+
+/// Container holding either an EncodedDiagnostic or a Value. Provides locations
+/// for errors compared with ErrorOr.
+template <typename Value>
+class [[nodiscard]] ErrorDiagnosticOr {
+public:
+  bool isError() const {
+    return std::holds_alternative<EncodedDiagnostic>(data);
+  }
+
+  EncodedDiagnostic takeError() { return std::move(std::get<0>(data)); }
+  Value takeValue() { return std::move(std::get<1>(data)); }
+
+  ErrorDiagnosticOr(EncodedDiagnostic err) : data(std::move(err)){};
+  ErrorDiagnosticOr(Value val) : data(std::move(val)){};
+
+private:
+  std::variant<EncodedDiagnostic, Value> data;
 };
 
 } // namespace M::LLCL
