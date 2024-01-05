@@ -2716,7 +2716,6 @@ fn non_maximum_suppression[
         iou_threshold_float,
         score_threshold_float,
     )
-    mark_output_chain_ready(out_chain)
 
 
 fn non_maximum_suppression_shape_func[
@@ -3228,15 +3227,6 @@ fn mogg_layer_norm[
 # ===----------------------------------------------------------------------===#
 # Helpers
 # ===----------------------------------------------------------------------===#
-
-
-@mogg_register("mark_output_chain_ready")
-@always_inline
-@export
-fn mark_output_chain_ready(out_chain: OutputChainPtr):
-    """Mark output chain as ready. If chain is already an error, the error is
-    kept."""
-    pass
 
 
 # Helper function to query buffer shapes for tests.
