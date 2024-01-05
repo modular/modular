@@ -352,7 +352,7 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" {{.*}}{isSynthetic}
+    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" synth
     # CHECK-NEXT: [[ITER:.*]] = lit.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
     for item in my_list:
         # CHECK: lit.loop cond {

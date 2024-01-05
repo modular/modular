@@ -441,6 +441,8 @@ LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
   return cast<SymbolConstantAttr>(getBoundReference());
 }
 
+bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }
+
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
@@ -1000,6 +1002,8 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
     p << ')';
   }
 }
+
+bool StructDeclOp::isSynthetic() { return getIsSynthetic(); }
 
 DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
@@ -1625,15 +1629,18 @@ void VarLetDeclOp::walkDefinitions(
 
 void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
                          StringRef name, StringRef lifetimeName,
-                         VarLetDeclKind kind, bool isSynthetic) {
+                         VarLetDeclKind kind) {
   auto lifetimeType = b.getType<LifetimeType>();
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
   auto resultType = RefType::get(
       /*isMutable=*/true, elementType,
       ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
-  build(b, state, resultType, name, kind, lifetimeDecl, isSynthetic,
-        /*docString=*/{});
+  build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{});
+}
+
+bool VarLetDeclOp::isSynthetic() {
+  return getKind() == VarLetDeclKind::Synthesized;
 }
 
 //===----------------------------------------------------------------------===//
