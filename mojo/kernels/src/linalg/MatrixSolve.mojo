@@ -127,3 +127,54 @@ fn matrix_solve[
                 b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
+
+
+@always_inline
+fn matrix_solve_shape[
+    rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    a_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    b_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> StaticIntTuple[rank]:
+    """
+    Compute the output shape of a matrix solve operation (i.e., given A and B
+    from AX = B, compute X), and assert the inputs are compatible.
+
+    Parameters:
+        rank: Rank of the input and output tensors.
+        type: Type of the input and output tensors.
+
+    Args:
+        a_buff: The input tensor A.
+        b_buff: The input tensor B.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(rank >= 2, "matrix-solve requires rank >= 2")
+
+    # TODO(#17512)
+    debug_assert(
+        a_buff.dim(rank - 1) == a_buff.dim(rank - 2),
+        "matrix-solve requires first input to be a (batch of) square matrix",
+    )
+
+    # TODO(#17512)
+    debug_assert(
+        a_buff.dim(rank - 2) == b_buff.dim(rank - 2),
+        "matrix-solve input outter dimensions must match",
+    )
+
+    @unroll
+    for i in range(rank - 2):
+        # TODO(#17512)
+        debug_assert(
+            a_buff.dim(i) == b_buff.dim(i),
+            "matrix-solve batch dimensions must match",
+        )
+
+    return b_buff.get_shape()
