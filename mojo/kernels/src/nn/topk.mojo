@@ -15,6 +15,7 @@ from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 
 
+@always_inline
 fn top_k_shape[
     type: DType,
     rank: Int,

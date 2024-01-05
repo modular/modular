@@ -878,6 +878,7 @@ fn scatter_elements_shape[
     )
 
     # Check individual dimensions
+    @unroll
     for axis in range(rank):
         let input_dim = input.dim(axis)
         let indices_dim = indices.dim(axis)
