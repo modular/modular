@@ -686,6 +686,84 @@ fn scatter_nd[
     ](data, indices, updates, output, out_chain)
 
 
+@always_inline
+fn scatter_nd_shape[
+    input_rank: Int,
+    updates_rank: Int,
+    indices_rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), input_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `scatter_nd` operation, and assert the
+    inputs are compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        updates_rank: Rank of the updates tensor.
+        indices_rank: Rank of the indices tensor.
+        input_type: Type of the input tensor.
+        indices_type: Type of the indices tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input: The input tensor.
+        updates: The input tensor.
+        indices: The indices tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(
+        indices_rank >= 1,
+        "indices cannot be a scalar",
+    )
+
+    let num_sliced_dims = indices.dim(indices_rank - 1)
+    # TODO(#17512)
+    debug_assert(
+        num_sliced_dims <= input_rank,
+        "cannot slice more dimensions than what input has",
+    )
+
+    # TODO(#17512)
+    debug_assert(
+        indices_rank - 1 + input_rank - num_sliced_dims == updates_rank,
+        "invalid rank for the updates tensor",
+    )
+
+    @unroll
+    for i in range(indices_rank - 1):
+        # TODO(#17512)
+        debug_assert(
+            indices.dim(i) == updates.dim(i),
+            "batch dimensions of indices and updates don't match",
+        )
+
+    @unroll
+    for i in range(input_rank - num_sliced_dims):
+        # TODO(#17512)
+        debug_assert(
+            input.dim(i + num_sliced_dims) == updates.dim(i + indices_rank - 1),
+            "updated dimensions of input and updates don't match",
+        )
+
+    return input.get_shape()
+
+
 # ===----------------------------------------------------------------------===#
 # Gather Shape
 # ===----------------------------------------------------------------------===#
