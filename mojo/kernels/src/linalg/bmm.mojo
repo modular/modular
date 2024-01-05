@@ -666,6 +666,56 @@ fn batched_matmul[
 
 
 @always_inline
+fn batched_matmul_shape[
+    rank: Int,
+    a_type: DType,
+    b_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    a_buff: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
+    b_buff: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+) -> StaticIntTuple[rank]:
+    """
+    Compute the output shape of a `batch_matmul` operation, and assert the
+    inputs are compatible.
+
+    Parameters:
+        rank: Rank of the input and output tensors.
+        a_type: Type of the lhs input tensor.
+        b_type: Type of the rhs input tensor.
+
+    Args:
+        a_buff: The lhs input tensor.
+        b_buff: The rhs input tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(rank >= 2, "batched_matmul requires rank >= 2")
+
+    # TODO(#17512)
+    debug_assert(
+        a_buff.dim(rank - 1) == b_buff.dim(rank - 2),
+        "batched_matmul inner dimension must match",
+    )
+
+    var output_shape = a_buff.get_shape()
+
+    @unroll
+    for i in range(rank - 2):
+        # TODO(#17512)
+        debug_assert(
+            a_buff.dim(i) == b_buff.dim(i),
+            "batched_matmul batch dimensions must match",
+        )
+    output_shape[rank - 1] = b_buff.dim(rank - 1)
+
+    return output_shape
+
+
+@always_inline
 fn get_trace_information[
     rank: Int
 ](
