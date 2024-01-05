@@ -1034,6 +1034,7 @@ fn gather_elements[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn gather_nd_shape[
     input_rank: Int,
     indices_rank: Int,
@@ -1041,6 +1042,7 @@ fn gather_nd_shape[
     input_type: DType,
     indices_type: DType,
     batch_dims: Int,
+    single_thread_blocking_override: Bool = True,
 ](
     input_buf: NDBuffer[
         input_rank, DimList.create_unknown[input_rank](), input_type
@@ -1074,6 +1076,7 @@ fn gather_nd_shape[
     ]()
 
     let indices_shape = indices_buf.get_shape()
+    # TODO(#17512)
     debug_assert(
         1 <= indices_shape[indices_rank - 1] <= input_rank - batch_dims,
         "Constraint: 1 <= indices_shape[-1] <= input_rank - batch_dims",
@@ -1085,10 +1088,12 @@ fn gather_nd_shape[
 
     let input_shape = input_buf.get_shape()
 
+    @unroll
     for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
+    @unroll
     for i in range(batch_dims, indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
