@@ -1054,7 +1054,7 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
     elemInMem = true;
   }
 
-  if (isa<TraitType>(elemType.getMetaType())) {
+  if (isa_and_nonnull<TraitType>(elemType.getMetaType())) {
     emitError(loc, "unsupported variadic on trait-conforming type");
     return getTypeCheckErrorType();
   }
