@@ -18,6 +18,7 @@ alias `2` = __mlir_attr.`2 : index`
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
+
 # CHECK-LABEL: lit.struct.decl @Param
 @value
 @register_passable("trivial")
@@ -117,7 +118,7 @@ fn partially_bound_kw():
 
 
 # CHECK-LABEL: lit.func @"partial_autoparam
-# CHECK-SAME: <?, [[X:.*]]>(%value[value]: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
+# CHECK-SAME: <?, [[X:.*]]>(%value: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
 fn partial_autoparam(value: TwoParam[y=`1`]):
     alias first = value.x
     alias second = value.y

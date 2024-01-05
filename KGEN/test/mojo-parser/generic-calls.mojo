@@ -12,21 +12,26 @@
 alias AnyType = __mlir_type.`!kgen.anytype`
 alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 
+
 trait Destructable:
     fn __del__(owned self, /):
-       ...
+        ...
+
 
 trait Copyable:
     fn __copyinit__(inout self, existing: Self, /):
-       ...
+        ...
+
 
 trait Movable:
     fn __moveinit__(inout self, owned existing: Self, /):
-       ...
+        ...
+
 
 # ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
+
 
 @value
 @register_passable
@@ -42,7 +47,7 @@ fn borrowed_generic[T: AnyType](borrowed x: T):
     pass
 
 
-# CHECK-LABEL: lit.func @"test_owned{{.*}}"(%x[x]: !RegPassable)
+# CHECK-LABEL: lit.func @"test_owned{{.*}}"(%x: !RegPassable)
 fn test_owned(owned x: RegPassable):
     # CHECK: %[[XVAR:.*]] = lit.varlet.decl "x"
     # CHECK: lit.ref.store %x, %[[XVAR]]
@@ -61,7 +66,7 @@ fn test_owned(owned x: RegPassable):
     owned_generic(x ^)
 
 
-# CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x[x]: !RegPassable borrow)
+# CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x: !RegPassable borrow)
 fn test_borrowed(borrowed x: RegPassable):
     # CHECK: [[XSTACK:%.*]] = pop.stack_allocation 1 x !RegPassable
     # CHECK: [[XREF:%.*]] = lit.ref.from_pointer [[XSTACK]]

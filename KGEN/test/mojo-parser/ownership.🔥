@@ -58,7 +58,7 @@ struct RegExample:
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
-# CHECK-SAME: (%arg0[arg0]: !lit.ref<mut !MemExample, {{.*}}> owned_in_mem)
+# CHECK-SAME: (%arg0: !lit.ref<mut !MemExample, {{.*}}> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
 
@@ -1012,7 +1012,7 @@ fn optimizeCopyToMove():
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
-# CHECK-SAME: %a[a]: !lit.ref<mut !MemExample, {{.*}}> borrow_in_mem
+# CHECK-SAME: %a: !lit.ref<mut !MemExample, {{.*}}> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
   # CHECK-NEXT: kgen.param.constant: none
   pass
@@ -1118,7 +1118,7 @@ struct RegExampleValue:
     return Self {x: RegExample()}
 
   # Make sure the synthesized dtor is taken register style.
-  # CHECK: lit.func @"__del__{{.*}}(%self[self]: !RegExampleValue, |)
+  # CHECK: lit.func @"__del__{{.*}}(%self: !RegExampleValue, |)
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self"
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK: kgen.param.constant: none
@@ -1159,8 +1159,8 @@ fn test_or(a: MemExample) -> MemExample:
 
 
 # CHECK-LABEL: lit.func @"variadic_mems
-# CHECK-SAME: [*"`mems"](%a[a]: !Int borrow,
-# CHECK-SAME: %mems[mems]: !kgen.variadic<!lit.ref<mut !MemExample, *"`mems">> borrow_in_mem)
+# CHECK-SAME: [*"`mems"](%a: !Int borrow,
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<mut !MemExample, *"`mems">> borrow_in_mem)
 fn variadic_mems(a: Int, *mems: MemExample):
   # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__{{.*}}"<:regtype !MemExample, :lifetime *"`mems">(%mems)
   # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0

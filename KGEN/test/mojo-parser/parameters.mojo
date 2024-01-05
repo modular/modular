@@ -37,8 +37,8 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"fancy_signature
 # CHECK-SAME: <[[DT:.*_dt]][dt]: !DType, [[SIZE:.*_size]][size]: !Int>
-# CHECK-SAME: (%x[x]: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>{{.*}}> borrow,
-# CHECK-SAME: %exp[exp]: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>{{.*}}> borrow) -> !Int
+# CHECK-SAME: (%x: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>{{.*}}> borrow,
+# CHECK-SAME: %exp: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>{{.*}}> borrow) -> !Int
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -74,12 +74,12 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self[self]: !kgen.declref<{{.*}}TestParamStruct<:!Int [[A]]>{{.*}}> borrow,
-  # CHECK-SAME: %other[other]: {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], [[B]])>{{.*}}> borrow)
+  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self: !kgen.declref<{{.*}}TestParamStruct<:!Int [[A]]>{{.*}}> borrow,
+  # CHECK-SAME: %other: {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], [[B]])>{{.*}}> borrow)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
-  # CHECK-LABEL: lit.func @"aliases{{.*}}%x[x]: {{.*}}@TestParamStruct<
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: {{.*}}@TestParamStruct<
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A*A+1
@@ -183,7 +183,7 @@ fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]][T]: regtype>
 struct TypeParameter[T: __mlir_type.`!kgen.anyregtype`]:
-  # CHECK: @"bar($parameters::TypeParameter{{.*}}(%self[self]: {{.*}} borrow_in_mem, %val[val]: !kgen.paramref<[[TYPE]]> borrow)
+  # CHECK: @"bar($parameters::TypeParameter{{.*}}(%self: {{.*}} borrow_in_mem, %val: !kgen.paramref<[[TYPE]]> borrow)
   fn bar(self, val: T):
     pass
 
@@ -248,14 +248,14 @@ fn pass_str_param():
 
 # CHECK-LABEL: lit.func @"implicit_params
 # CHECK-SAME: <?, [[VALUE0:.*]]: !Int, [[VALUE1:.*]]: !Int>
-# CHECK-SAME: %value[value]: {{.*}}@TwoParams<:!Int [[VALUE0]], :!Int [[VALUE1]]>
+# CHECK-SAME: %value: {{.*}}@TwoParams<:!Int [[VALUE0]], :!Int [[VALUE1]]>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
 # CHECK-SAME: <{{.*}}a[a]: !Int, ?, [[LHS0:.*]]: !Int, [[LHS1:.*]]: !Int, [[RHS0:.*]]: !Int, [[RHS1:.*]]: !Int>
-# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<:!Int [[LHS0]], :!Int [[LHS1]]>
-# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<:!Int [[RHS0]], :!Int [[RHS1]]>
+# CHECK-SAME: %lhs: {{.*}}@TwoParams<:!Int [[LHS0]], :!Int [[LHS1]]>
+# CHECK-SAME: %rhs: {{.*}}@TwoParams<:!Int [[RHS0]], :!Int [[RHS1]]>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
@@ -279,8 +279,8 @@ fn test_implicit_params_with_var_params():
 
 # CHECK-LABEL: lit.func @"explicit_autoparameterization
 # CHECK-SAME: "<?, [[V0:.*_v0]]: !Int, [[W0:.*_w0]]: !Int, [[W1:.*_w1]]: !Int>(
-# CHECK-SAME: %v[v]: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
-# CHECK-SAME: %w[w]: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>>
+# CHECK-SAME: %v: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
+# CHECK-SAME: %w: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>>
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
@@ -365,7 +365,7 @@ fn memoryParam[value: MemoryType]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
-# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow, |) -> index>>(%a[a]: index borrow) -> index
+# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow, |) -> index>>(%a: index borrow) -> index
 fn takeCallable[
      callable: fn(__mlir_type.index) -> __mlir_type.index
    ](a: __mlir_type.index) -> __mlir_type.index:
@@ -882,7 +882,7 @@ fn test_mem_only_default_param():
     mem_only_default_param()
 
 # CHECK-LABEL: lit.func @"param_default{{.*}}"<
-# CHECK-SAME: [[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y[y]: !Int borrow = [[X]])
+# CHECK-SAME: [[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y: !Int borrow = [[X]])
 fn param_default[x: Int = 1](y: Int = x):
     pass
 
