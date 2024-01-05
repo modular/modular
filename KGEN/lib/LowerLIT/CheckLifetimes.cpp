@@ -16,7 +16,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -612,21 +611,6 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
                     /*isIndirect=*/true};
   }
 
-  // If this is a load from a lifetime tracked indirect value, then this is a
-  // borrow of that value.
-  if (auto load = value.getDefiningOp<POP::LoadOp>())
-    if (auto valueRef = getValueRef(load.getPtr(), /*isDeref=*/true)) {
-      if (valueRef.isIndirect) {
-        // The parser doesn't emit all the lifetime stuff for trivial types,
-        // so don't track them either.
-        if (typeDeclInfo.isRegisterPassableTrivial(load.getType()))
-          return {};
-
-        valueRef.isIndirect = false;
-        return valueRef;
-      }
-    }
-
   if (auto load = value.getDefiningOp<RefLoadOp>())
     if (auto valueRef = getValueRef(load.getRef(), /*isDeref=*/true)) {
       if (valueRef.isIndirect) {
@@ -965,7 +949,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   }
 
   // A load is a use of whatever fields are being referenced.
-  if (isa<POP::LoadOp, RefLoadOp, LoadConsumeOp, OwnershipUseOp>(op)) {
+  if (isa<RefLoadOp, LoadConsumeOp, OwnershipUseOp>(op)) {
     checkUse(op.getOperand(0), op, /*isDeref=*/true);
     if (isa<LoadConsumeOp>(op))
       checkDef(op.getResult(0), op, /*isDeref=*/false);
@@ -1513,10 +1497,6 @@ void DestructorInsertion::checkOp(Operation &op) {
   // /last/ use of a value, emit a destructor of that value.  LoadOps are used
   // to model a /borrow/ of the underlying value, so they don't define a new
   // value.
-  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    checkUse(loadOp.getPtr(), op, /*isDeref=*/true);
-    return;
-  }
   if (isa<RefLoadOp, OwnershipUseOp>(op)) {
     checkUse(op.getOperand(0), op, /*isDeref=*/true);
     return;
@@ -2174,10 +2154,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     if (srcValue != value) {
       // With var's we can have indirect operands.
       bool isOk = false;
-      if (auto load = srcValue.getDefiningOp<POP::LoadOp>()) {
-        if (load.getOperand() == value)
-          isOk = true;
-      } else if (auto load = srcValue.getDefiningOp<LIT::RefLoadOp>()) {
+      if (auto load = srcValue.getDefiningOp<LIT::RefLoadOp>()) {
         if (load.getOperand() == value)
           isOk = true;
       }
