@@ -105,9 +105,6 @@ public:
     return {packageModule.release(), thePackage};
   }
 
-  /// Get the MLIRContext.
-  mlir::MLIRContext *getContext() { return packageModule->getContext(); }
-
 private:
   /// This is the module that contains the new package we're generating.
   OwningOpRef<ModuleOp> packageModule;
