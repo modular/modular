@@ -148,6 +148,11 @@ MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
 
   auto llvmStructType =
       cast<LLVM::DICompositeTypeAttr>(convertType(attr.getDIType()));
+
+  // Fragments for single-element structs are elided in the LLVM representation.
+  if (llvmStructType.getElements().size() == 1)
+    return prefix;
+
   uint64_t prefixSize = 0;
   for (LLVM::DINodeAttr member :
        llvmStructType.getElements().take_front(attr.getFieldIndex())) {

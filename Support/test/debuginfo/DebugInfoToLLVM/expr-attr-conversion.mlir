@@ -47,6 +47,20 @@
   alignInBits = 64
 > : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>
 
+// CHECK-DAG: #[[SINGLE_FIELD_STRUCT_TYPE:.*]] = #llvm.di_composite_type<{{.*}}name = "MyStruct",{{.*}}sizeInBits = 32, alignInBits = 32
+!single_field_struct = !debuginfo.struct<MyStruct(
+                         !debuginfo.member<second: !debuginfo.unresolved<i32>>
+                       )>
+// CHECK-DAG: #[[LOCALVAR_SINGLE_FIELD_STRUCT:.*]] = #llvm.di_local_variable<{{.*}}name = "singlefieldstruct"{{.*}}type = #[[SINGLE_FIELD_STRUCT_TYPE]]
+#local_variable_single_field_struct = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "singlefieldstruct",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 32
+> : !single_field_struct
+
 // CHECK-DAG: #[[STRUCT_TYPE:.*]] = #llvm.di_composite_type<{{.*}}name = "MyStruct",{{.*}}sizeInBits = 64, alignInBits = 32
 !struct = !debuginfo.struct<MyStruct(
             !debuginfo.member<first: !debuginfo.unresolved<i8>>,
@@ -95,6 +109,7 @@
 #trivial_expr = #debuginfo.expr.irvalue : !debuginfo.unresolved<i32>
 #refof_expr = #debuginfo.expr.refof<#trivial_expr> : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>
 #deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<i32>
+#single_field_agg_expr = #debuginfo.expr.agg<#deref_expr, 0> : !single_field_struct
 #agg_expr = #debuginfo.expr.agg<#deref_expr, 1> : !struct
 #outer_agg_expr = #debuginfo.expr.agg<#agg_expr, 1> : !outer_struct
 #outer_agg_expr_2 = #debuginfo.expr.agg<#outer_agg_expr, 1> : !outer_struct_2
@@ -117,6 +132,8 @@ func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
 }
 
 func.func @simplify(%arg0: !llvm.ptr) {
+  // CHECK: #[[LOCALVAR_SINGLE_FIELD_STRUCT]] #llvm.di_expression<[DW_OP_deref]>
+  debuginfo.value #local_variable_single_field_struct #single_field_agg_expr = %arg0 : !llvm.ptr
   // CHECK: #[[LOCALVAR_OUTER_STRUCT]] #llvm.di_expression<[DW_OP_deref, DW_OP_LLVM_fragment(64, 32)]>
   debuginfo.value #local_variable_outer_struct #outer_agg_expr = %arg0 : !llvm.ptr
   // CHECK: #[[LOCALVAR_OUTER_STRUCT_2]] #llvm.di_expression<[DW_OP_deref, DW_OP_LLVM_fragment(96, 32)]>
