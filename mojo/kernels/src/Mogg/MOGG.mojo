@@ -2824,6 +2824,7 @@ fn resize_linear[
     )
 
 
+@always_inline
 fn resize_shape[
     rank: Int,
     inpType: DType,
@@ -2877,6 +2878,7 @@ fn roi_align[
     )
 
 
+@always_inline
 fn roi_align_shape[
     inpTy: DType,
     roisTy: DType,
@@ -2936,6 +2938,8 @@ fn split_ith_output_shape[
     )
 
     var split_sizes_sum = 0
+
+    @unroll
     for i in range(split_sizes_buf.dim(0)):
         split_sizes_sum += int(split_sizes_buf[i])
     # TODO(#17512)
