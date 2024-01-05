@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(DebugInfoToLLVM
   DebugInfoToLLVM.cpp
+  DIExpressionSimplifier.cpp
 
   DEPENDS
   DebugInfoToLLVMIncGen
