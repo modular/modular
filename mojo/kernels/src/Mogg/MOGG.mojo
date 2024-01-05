@@ -95,7 +95,7 @@ from Matmul import (
 )
 from MatmulUtils import GemmShape, get_trace_information, search_mm_config
 from MatrixBandPart import matrix_band_part
-from MatrixSolve import matrix_solve
+from MatrixSolve import matrix_solve, matrix_solve_shape
 from Reshape import reshape, reshape_shape
 from memory import memset_zero
 from memory.buffer import NDBuffer
@@ -182,6 +182,7 @@ fn MOGGExport():
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
     alias _matrix_solve = mogg_matrix_solve
+    alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
     alias _non_maximum_suppression = non_maximum_suppression
     alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
