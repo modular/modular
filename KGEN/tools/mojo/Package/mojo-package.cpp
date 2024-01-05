@@ -79,8 +79,8 @@ namespace {
 class PackageBuilder {
 public:
   /// Construct the PackageBuilder from the parsed package op.
-  PackageBuilder(LIT::PackageOp parsedPackageOp, TargetInfoAttr target,
-                 EnvAttr env, const CompilationOptions &options);
+  PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env,
+                 const CompilationOptions &options);
 
   /// Given a pre-elaboration module, attach the bytecode for the pre-elaborated
   /// versions of each non-parametric function to the high level lit.func in
@@ -147,8 +147,7 @@ static bool canExternalize(LIT::FuncOp func) {
   return true;
 }
 
-PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
-                               TargetInfoAttr target, EnvAttr env,
+PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env,
                                const CompilationOptions &options) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
@@ -479,8 +478,8 @@ static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
-  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target,
-                                packageArgs.env, packageArgs.compileOptions);
+  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.env,
+                                packageArgs.compileOptions);
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 
   // For now we implicilty export everything in the package, so add exports to
