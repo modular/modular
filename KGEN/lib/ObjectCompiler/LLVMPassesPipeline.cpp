@@ -282,8 +282,6 @@ static void addInlinerPasses(ModulePassManager &MPM) {
   // Now deduce any function attributes based in the current code.
   MainCGPipeline.addPass(PostOrderFunctionAttrsPass());
 
-  MainCGPipeline.addPass(ArgumentPromotionPass());
-
   // Lastly, add the core function simplification pipeline nested inside the
   // CGSCC walk.
   MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
@@ -368,16 +366,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
       createModuleToFunctionPassAdaptor(std::move(EarlyFPM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  // Interprocedural constant propagation now that basic cleanup has occurred
-  // and prior to optimizing globals.
-  // FIXME: This position in the pipeline hasn't been carefully considered in
-  // years, it should be re-analyzed.
-  MPM.addPass(IPSCCPPass(IPSCCPOptions(/*AllowFuncSpec=*/true)));
-
-  // Attach metadata to indirect call sites indicating the set of functions
-  // they may target at run-time. This should follow IPSCCP.
-  MPM.addPass(CalledValuePropagationPass());
-
   // Promote any localized globals to SSA registers.
   // FIXME: Should this instead by a run of SROA?
   // FIXME: We should probably run instcombine and simplifycfg afterward to
@@ -397,10 +385,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
                                         /*EagerlyInvalidateAnalyses*/ true));
 
   addInlinerPasses(MPM);
-
-  // Remove any dead arguments exposed by cleanups, constant folding globals,
-  // and argument promotion.
-  MPM.addPass(DeadArgumentEliminationPass());
 
   MPM.addPass(CoroCleanupPass());
 
