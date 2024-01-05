@@ -126,6 +126,9 @@ def LIT_FuncOp : LITOp<"func", [
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
     SmallVector<ParamDeclAttr> collectAllInputParams(bool includeImplLifetimes);
+
+    /// Return whether the function is compiler generated or not.
+    bool isSynthetic();
   }];
 
   let builders = [
@@ -465,6 +468,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Get a bound reference to the struct type.
     DeclRefType bindReference(ArrayRef<TypedAttr> paramValues = {});
+
+    /// Get whether this struct is compiler generated.
+    bool isSynthetic();
   }];
 
   let builders = [
@@ -900,7 +906,6 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
 
   let arguments = (ins StrAttr:$name, LIT_VarLetDeclKindAttr:$kind,
                        KGEN_ParamDeclAttr:$paramDecl,
-                       UnitAttr:$isSynthetic,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs LIT_RefType:$result);
 
@@ -911,8 +916,11 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$lifetimeName,
-                   "VarLetDeclKind":$kind,"bool":$isSynthetic)>
+                   "VarLetDeclKind":$kind)>
   ];
+  let extraClassDeclaration = [{
+    bool isSynthetic();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

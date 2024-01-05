@@ -34,7 +34,7 @@
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
     %a = lit.varlet.decl "a" var : !lit.ref<mut index, *"life_a"> loc(fused<#sp>["test.mlir":10:10])
-    %b = lit.varlet.decl "b" var : !lit.ref<mut index, *"life_b"> {isSynthetic} loc(fused<#sp>["test.mlir":12:10])
+    %b = lit.varlet.decl "b" synth : !lit.ref<mut index, *"life_b"> loc(fused<#sp>["test.mlir":12:10])
     %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
     kgen.return %let_value : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])

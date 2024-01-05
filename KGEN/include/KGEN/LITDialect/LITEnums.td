@@ -58,6 +58,8 @@ def LIT_VarLetDeclKind : I32EnumAttr<"VarLetDeclKind",
   /// For example, implicit declarations in `def` functions, target declarations
   /// in `for` statements.
   I32EnumAttrCase<"Implicit", 2, "imp">,
+  /// Value is not declared by the user at all.
+  I32EnumAttrCase<"Synthesized", 3, "synth">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

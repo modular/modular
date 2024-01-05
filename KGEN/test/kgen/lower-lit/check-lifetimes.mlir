@@ -408,7 +408,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
     } else {
       hlcf.yield
     }
-    %anonymous2A = lit.varlet.decl "anonymous*" let : !lit.ref<mut @MyStruct, *"life"> {isSynthetic}
+    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut @MyStruct, *"life">
     %3 = lit.call @MyStruct::@__init__(%anonymous2A) : !lit.signature<(!lit.ref<mut @MyStruct, *"life"> init_self) -> !kgen.none>
     // CHECK: lit.call @use(
     %6 = lit.call @use(%anonymous2A) : !lit.signature<(!lit.ref<mut @MyStruct, *"life"> borrow_in_mem) -> !kgen.none>

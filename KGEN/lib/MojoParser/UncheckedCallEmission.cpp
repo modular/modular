@@ -331,7 +331,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       expectedType = cast<RefType>(expectedType).getElementType();
       auto resultTmp =
           emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc,
-                                 VarLetDeclKind::Var, /*isSynthetic=*/true);
+                                 VarLetDeclKind::Synthesized);
       argumentValues.push_back({MLValue(resultTmp), callExpr});
       continue;
     }

@@ -409,8 +409,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     return emitter.emitVarLetDecl(spelling, contextualType,
-                                  getLocation(emitter), kind,
-                                  /*isSynthetic=*/false);
+                                  getLocation(emitter), kind);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this

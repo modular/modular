@@ -348,8 +348,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // for the initialization.
   return MLValue(emitter.emitVarLetDecl("anonymous*", slotType,
                                         emitter.translateLocation(loc),
-                                        VarLetDeclKind::Var,
-                                        /*isSynthetic=*/true));
+                                        VarLetDeclKind::Synthesized));
 }
 
 /// Return an MLValue for this destination of the specified type that we can
@@ -637,7 +636,7 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
   // initializer.
   VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
                                     translateLocation(value.expr->getLoc()),
-                                    VarLetDeclKind::Var, /*isSynthetic=*/true);
+                                    VarLetDeclKind::Synthesized);
   if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return MRValue(var);
@@ -694,9 +693,8 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
   // Promote SRValue to MRValue.
   if (SRValue srValue = value.ir.getIfSRValue()) {
     Location argLoc = value.expr->getLocation(*this);
-    VarLetDeclOp varOp =
-        emitVarLetDecl("__mem_tmp__", srValue.getType(), argLoc,
-                       VarLetDeclKind::Var, /*isSynthetic=*/true);
+    VarLetDeclOp varOp = emitVarLetDecl("__mem_tmp__", srValue.getType(),
+                                        argLoc, VarLetDeclKind::Synthesized);
     builder->create<RefStoreOp>(argLoc, srValue, varOp);
     return MRValue(varOp);
   }
@@ -1779,9 +1777,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Value tmpDecl =
-      emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
-                             VarLetDeclKind::Var, /*isSynthetic=*/true);
+  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
+                                         VarLetDeclKind::Synthesized);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
@@ -1931,17 +1928,15 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 // Var/let emission helpers.
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
-                                         Location loc, VarLetDeclKind kind,
-                                         bool isSynthetic) {
+                                         Location loc, VarLetDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind, isSynthetic);
+                                       kind);
 }
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
-                                         Location loc, VarLetDeclKind kind,
-                                         bool isSynthetic) {
+                                         Location loc, VarLetDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind, isSynthetic);
+                                       kind);
 }

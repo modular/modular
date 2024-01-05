@@ -1130,9 +1130,8 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
 
   // Emit the initializer expression into the slot.
   ExprEmitter emitter(shared, parentDecl, builder);
-  VarLetDeclOp varDecl =
-      emitter.emitVarLetDecl(argName, argValue.getRValueType(), mloc,
-                             VarLetDeclKind::Implicit, /*isSynthetic=*/false);
+  VarLetDeclOp varDecl = emitter.emitVarLetDecl(
+      argName, argValue.getRValueType(), mloc, VarLetDeclKind::Implicit);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
