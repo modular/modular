@@ -13,9 +13,9 @@
 # CHECK-LABEL:    lit.func @"makes_escaping_closure
 # CHECK-NEXT:    debuginfo.value #[[VAR0:.*]] = %m : index loc(#[[LOC26:.*]])
 # CHECK-NEXT:    debuginfo.value #[[VAR1:.*]] = %z : index
-# CHECK-NEXT:    %anonymous2A = lit.varlet.decl "anonymous*" var : !lit.ref<mut !escaping
+# CHECK-NEXT:    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
-# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var : !lit.ref<mut !wrapper
+# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !wrapper
 # CHECK-NEXT:    %1 = lit.call {{.*}}CW{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
 # CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0)
 
@@ -23,17 +23,21 @@
 
 alias int = __mlir_type.index
 
+
 trait Destructable:
     fn __del__(owned self, /):
-       ...
+        ...
+
 
 trait Copyable:
     fn __copyinit__(inout self, existing: Self, /):
-       ...
+        ...
+
 
 trait Movable:
     fn __moveinit__(inout self, owned existing: Self, /):
-       ...
+        ...
+
 
 fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
     fn myclosure(n: int) escaping -> int:
