@@ -19,21 +19,26 @@ alias `3` = __mlir_attr.`3 : index`
 alias `4` = __mlir_attr.`4 : index`
 alias `5` = __mlir_attr.`5 : index`
 
+
 @register_passable
-struct Error: pass
+struct Error:
+    pass
+
 
 # ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
+
 fn fat_signature_types():
     let x = `4`
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y[y]: index borrow) capturing -> index
+
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) capturing -> index
     @parameter
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: lit.func *"h[__mlir_type.index](__mlir_type.index,__mlir_type.index)"<[[N:.*]]>(%y[y]: index borrow, %z[z]: index borrow) capturing -> index
+    # CHECK: lit.func *"h[__mlir_type.index](__mlir_type.index,__mlir_type.index)"<[[N:.*]]>(%y: index borrow, %z: index borrow) capturing -> index
     @parameter
     fn h[
         N: __mlir_type.index
@@ -42,7 +47,7 @@ fn fat_signature_types():
 
 
 fn take_closure(
-    g: fn(borrowed __mlir_type.index) capturing -> __mlir_type.index,
+    g: fn (borrowed __mlir_type.index) capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ):
     # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) capturing -> index>
@@ -97,7 +102,7 @@ fn take_closure_with_param_main():
 
 
 fn take_closure_raises(
-    g: fn(borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
+    g: fn (borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
     # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !kgen.variant<!Error, index>>
@@ -107,7 +112,7 @@ fn take_closure_raises(
 fn throws_main() raises:
     let x = `4`
 
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y[y]: index borrow) throws|capturing -> !kgen.variant<!Error, index>
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !kgen.variant<!Error, index>
     @parameter
     fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x
@@ -183,7 +188,7 @@ fn capturing_in_struct[x: Param[fn () capturing -> Int]]():
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingMember
-struct CapturingMember[f: fn() capturing -> None]:
+struct CapturingMember[f: fn () capturing -> None]:
     # CHECK-LABEL: lit.func @"member
     # CHECK-SAME: capturing -> !kgen.none attributes
     fn member(self):

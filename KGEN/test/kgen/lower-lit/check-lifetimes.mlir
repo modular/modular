@@ -656,7 +656,7 @@ lit.struct.decl @Error register_passable attributes {
 
 lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType::@"__del__" > : !lit.signature<[1]("self": !lit.ref<mut !MemType, *[0,0]> owned_in_mem) -> !kgen.none>}  {
   // CHECK-NOT: kgen.call @MemType::@__del__
-  lit.func @i_raise(%self[self]: !lit.ref<!MemType, #lit.lifetime> borrow_in_mem) throws -> !kgen.variant<!Error, index> {
+  lit.func @i_raise(%self: !lit.ref<!MemType, #lit.lifetime> borrow_in_mem) throws -> !kgen.variant<!Error, index> {
     %0 = kgen.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error, !lit.metatype<@Error>>>
     %1 = kgen.variant.create %0, 0 : <@Error : metatype<@Error>, index>
     lit.error_return %1 : <@Error : metatype<@Error>, index>
@@ -696,10 +696,10 @@ lit.func @destroy_generic<T: trait<@Destructable>>(%x: !lit.ref<mut :trait<@Dest
 // https://github.com/modularml/modular/issues/25211
 lit.struct.decl @Int register_passable attributes {destructor = #kgen.symbol.constant<@Int::@__del__ > : !kgen.signature<!lit.signature<(!kgen.declref<@Int>) -> !kgen.none>>}  {
 }
-lit.func @y(%arg1[arg1]: !kgen.declref<@Int> borrow) {
+lit.func @y(%arg1: !kgen.declref<@Int> borrow) {
   kgen.return
 }
-lit.func @x(%arg0[arg0]: !kgen.declref<@Int>) {
+lit.func @x(%arg0: !kgen.declref<@Int>) {
   // expected-warning @+1 {{'x' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   %x = lit.varlet.decl "x"  var : !lit.ref<mut @Int, a>
   // expected-error @+1 {{value 'arg0' cannot be consumed, because it is used later}}
@@ -721,12 +721,12 @@ lit.struct.decl @Thing {
   lit.struct.field x : index
   lit.struct.field y : index
   lit.struct.field z : index
-  lit.func @get(%self[self]: !lit.ref<!Thing, #lit.lifetime> borrow_in_mem) {
+  lit.func @get(%self: !lit.ref<!Thing, #lit.lifetime> borrow_in_mem) {
     kgen.return
   }
 }
 
-lit.func @top(%c[c]: !lit.ref<mut @Box<:trait<@Destructable> !Thing>, #lit.lifetime> borrow_in_mem) {
+lit.func @top(%c: !lit.ref<mut @Box<:trait<@Destructable> !Thing>, #lit.lifetime> borrow_in_mem) {
   %0 = lit.ref.struct.ger %c[x] : <mut !Thing, #lit.lifetime> from @Box<:trait<@Destructable> !Thing>
   lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<mut !Thing, #lit.lifetime> borrow_in_mem) -> ()>
   kgen.return

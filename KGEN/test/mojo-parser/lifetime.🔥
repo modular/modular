@@ -18,12 +18,12 @@ struct MemExample:
   fn noop(self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<
-# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a[a]: !lit.ref<!MemExample, [[LT]]> borrow)
+# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a: !lit.ref<!MemExample, [[LT]]> borrow)
 fn borrow[lt: Lifetime](a: ref[lt] MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<
-# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a[a]: !lit.ref<mut !MemExample, [[LT]]> borrow)
+# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a: !lit.ref<mut !MemExample, [[LT]]> borrow)
 fn mutate[lt: Lifetime](a: mutref[lt] MemExample):
   pass
 
@@ -40,7 +40,7 @@ fn implicit_owned(owned a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"addrSpace
-# CHECK: <_44x14_lt[lt]: lifetime, _44x28_addr[addr]>(%a[a]: !lit.ref<mut !MemExample, _44x14_lt, _44x28_addr> borrow)
+# CHECK: <_44x14_lt[lt]: lifetime, _44x28_addr[addr]>(%a: !lit.ref<mut !MemExample, _44x14_lt, _44x28_addr> borrow)
 fn addrSpace[lt: Lifetime, addr: __mlir_type.index](a: mutref[lt, addr] MemExample):
   pass
 

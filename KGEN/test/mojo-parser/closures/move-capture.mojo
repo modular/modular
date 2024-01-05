@@ -6,20 +6,24 @@
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
-# CHECK: lit.func @"__init__{{.*}}_CI_{{.*}} %fld0[fld0]: !lit.ref<mut !Thing, {{.*}}> owned_in_mem
+# CHECK: lit.func @"__init__{{.*}}_CI_{{.*}} %fld0: !lit.ref<mut !Thing, {{.*}}> owned_in_mem
 # CHECK: @Thing::@"__moveinit__
+
 
 trait Destructable:
     fn __del__(owned self, /):
-       ...
+        ...
+
 
 trait Copyable:
     fn __copyinit__(inout self, existing: Self, /):
-       ...
+        ...
+
 
 trait Movable:
     fn __moveinit__(inout self, owned existing: Self, /):
-       ...
+        ...
+
 
 @value
 struct Thing:

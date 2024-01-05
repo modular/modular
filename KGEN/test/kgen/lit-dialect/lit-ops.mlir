@@ -367,7 +367,7 @@ lit.func @ref_it() {
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
 // CHECK-SAME: <c: !lit.signature<<regtype>(!kgen.paramref<*(0,0)>) -> ()>>
 lit.struct.decl @FuncParamStruct<c: !lit.signature<<regtype>(!kgen.paramref<*(0,0)>) -> ()>>  {
-  // CHECK: lit.func @foo(%x[x]: !kgen.pointer<@FuncParamStruct<:!lit.signature<<regtype>(!kgen.paramref<*(0,0)>) -> ()> c>>)
+  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<regtype>(!kgen.paramref<*(0,0)>) -> ()> c>>)
   lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<regtype>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
     lit.end_func
   }

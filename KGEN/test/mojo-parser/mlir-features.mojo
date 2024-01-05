@@ -9,7 +9,8 @@
 alias `1` = __mlir_attr.`1 : index`
 alias `42` = __mlir_attr.`42 : index`
 
-# CHECK: lit.func @"mlirMagicTest{{.*}}(%x[x]: bf16 borrow, %y[y]: f8E5M2 borrow)
+
+# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16 borrow, %y: f8E5M2 borrow)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
@@ -32,7 +33,7 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value = `42`]()
+    var idxConstant = __mlir_op.`index.constant`[value=`42`]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
@@ -117,7 +118,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"[*"`arg"]<
-# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg[arg]: !lit.ref<mut [[T]], {{.*}}> byref)
+# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg: !lit.ref<mut [[T]], {{.*}}> byref)
 fn getAddressOf[
     T: __mlir_type.`!kgen.anyregtype`
 ](inout arg: T) -> MyPointer[T]:

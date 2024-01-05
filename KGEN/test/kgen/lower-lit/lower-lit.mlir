@@ -543,7 +543,7 @@ lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
 
 !Mem = !kgen.declref<@Mem, !lit.metatype<@Mem>>
 lit.struct.decl @Mem   {
-  lit.func @"__init__($test::Mem=&)"(%self[self]: !kgen.pointer<!Mem> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @"__init__($test::Mem=&)"(%self: !kgen.pointer<!Mem> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
@@ -551,7 +551,7 @@ lit.struct.decl @Mem   {
 
 // CHECK-LABEL: kgen.generator @getThing
 // CHECK-SAME:(%arg0: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result)
-lit.func @getThing[*"`abc"](%res[res]: !lit.ref<mut !Mem, *"`abc"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
+lit.func @getThing[*"`abc"](%res: !lit.ref<mut !Mem, *"`abc"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.param.declare *"`abc": lifetime = <#lit.lifetime>
   // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`abc">
 
@@ -576,7 +576,7 @@ lit.func @getThing[*"`abc"](%res[res]: !lit.ref<mut !Mem, *"`abc"> byref_result,
 
 // CHECK-LABEL: kgen.generator @callThing
 // CHECK-SAME: (%arg0: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result)
-lit.func @callThing[*"`__result__"](%__result__[__result__]: !lit.ref<mut !Mem, *"`__result__"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
+lit.func @callThing[*"`__result__"](%__result__: !lit.ref<mut !Mem, *"`__result__"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.param.declare *"`__result__": lifetime = <#lit.lifetime>
   // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`__result__">
   // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<mut @Mem : metatype<@Mem>, *"`__result__"> to !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]>

@@ -584,13 +584,25 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   auto printElt = [&](unsigned i) {
     ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i], i);
 
-    // Print the SSA name first, followed by the user-defined argument name in
-    // brackets, and the type.
+    // Print the SSA name first, which might have been automatically uniqued.
     BlockArgument arg = region->getArgument(i);
-    p.printOperand(arg);
-    p << "[";
-    printParamName(p, argNames[i]);
-    p << "]: ";
+    std::string ssaName;
+    llvm::raw_string_ostream ss(ssaName);
+    p.printOperand(arg, ss);
+    p << ssaName;
+
+    // If different from the SSA name (e.g. because it was uniqued, or because
+    // it contains characters that need escaping), we also print the
+    // user-defined argument name in brackets.
+    StringAttr argName = argNames[i];
+    if (StringRef(ssaName).drop_front() != argName) {
+      p << "[";
+      printParamName(p, argName);
+      p << "]";
+    }
+
+    // Finally, we print the type after a colon.
+    p << ": ";
     p.printType(arg.getType());
 
     // Then we print the optional location before and input convention.

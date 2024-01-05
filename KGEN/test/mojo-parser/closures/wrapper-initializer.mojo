@@ -5,25 +5,29 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
+
 trait Destructable:
     fn __del__(owned self, /):
-       ...
+        ...
+
 
 trait Copyable:
     fn __copyinit__(inout self, existing: Self, /):
-       ...
+        ...
+
 
 trait Movable:
     fn __moveinit__(inout self, owned existing: Self, /):
-       ...
+        ...
+
 
 # CHECK: lit.struct.decl @"_CW_
 # CHECK-SAME: copyInit =
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%self[self]: !lit.ref<mut !wrapper, *"`self"> init_self,
-# CHECK-SAME: %impl[impl]: !lit.ref<mut !escaping0_, {{.*}}> owned_in_mem, |)
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<mut !wrapper, *"`self"> init_self,
+# CHECK-SAME: %impl: !lit.ref<mut !escaping0_, {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
@@ -57,7 +61,7 @@ trait Movable:
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK-LABEL: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}(%self[self]: !kgen.pointer<none>, |)
+# CHECK-LABEL: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: %1 = lit.ref.from_pointer %0
 # CHECK-NEXT: lit.ownership.end_lifetime %1
@@ -65,7 +69,7 @@ trait Movable:
 
 # CHECK-LABEL: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}[*"`0_unnamed", *"`2_unnamed"]
 # CHECK-SAME: (%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result,
-# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
 # CHECK-NEXT: %[[A0REF:.*]] = lit.ref.from_pointer %[[A0]]
 # CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%[[RES]], %[[A0REF]], %n)
