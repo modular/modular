@@ -29,6 +29,6 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["mojo", "lldb"]
+tools = ["mojo", "kgen-opt", "lldb", "llvm-objdump"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
