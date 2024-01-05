@@ -63,8 +63,9 @@ from algorithm.reduction import (
 )
 from Arange import arange, arange_shape
 from ArgNonzero import arg_nonzero, arg_nonzero_shape
-from BatchedMatmul import batched_matmul as _batched_matmul
 from BatchedMatmul import (
+    batched_matmul_shape,
+    batched_matmul as _batched_matmul,
     get_trace_information as get_trace_information_batched_matmul,
 )
 from Concat import concat as _concat
@@ -185,6 +186,7 @@ fn MOGGExport():
     alias _non_maximum_suppression = non_maximum_suppression
     alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
     alias _batched_matmul = batched_matmul
+    alias _batched_matmul_shape = batched_matmul_shape
     alias _mod = mod
     alias _mul = mul
     alias _not_equal = not_equal
