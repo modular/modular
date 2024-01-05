@@ -1018,7 +1018,7 @@ struct VarArgInit:
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}
-    # CHECK: lit.func @"__init__($builtin::$int::Int)"(%a[a]: !Int borrow) -> !VarArgInit
+    # CHECK: lit.func @"__init__($builtin::$int::Int)"(%a: !Int borrow) -> !VarArgInit
 
 ##===----------------------------------------------------------------------===##
 # async/await
