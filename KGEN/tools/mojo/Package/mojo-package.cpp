@@ -236,7 +236,6 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env) {
           flattenedNameToFunc.insert(
               {postElaborationName, {clonedFunc, preElaborationName}});
         })
-        // Drop export ops unconditionally.
         .Case([&](LIT::UnresolvedImportOp op) {
           // Drop unresolved imports within packages that were used to lazily
           // pull in nested modules. These aren't needed during packaging
