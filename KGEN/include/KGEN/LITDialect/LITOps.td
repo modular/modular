@@ -1565,7 +1565,7 @@ def LIT_OwnershipDefLValueOp : LITOp<"ownership.def_lvalue"> {
     lit.ownership.def_lvalue %0 : !somestring
     ```
   }];
-  let arguments = (ins AnyType:$value);
+  let arguments = (ins LIT_RefType:$value);
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }

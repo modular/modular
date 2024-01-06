@@ -3004,9 +3004,9 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       return {};
     }
 
-    // Emit an intrinsic so the compiler knows the value is mutable.
-    // TODO(references): Remove ownership.def_lvalue when we have mutability
-    // in the reference types.
+    // Emit an intrinsic so the compiler knows the value is mutable (it doesn't
+    // warn about vars that should be lets) and so that it is checked to be
+    // initialized at this point.
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultRef);
 
