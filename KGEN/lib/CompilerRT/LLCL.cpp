@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CUDASupport/Globals/Globals.h"
 #include "KGEN/CompilerRT/OutputChain.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -184,6 +185,17 @@ KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
 }
 
 //===----------------------------------------------------------------------===//
+// CUDA
+//===----------------------------------------------------------------------===//
+
+/// Returns the CUDA stream for the caller's thread, which may have been
+/// established by the C++ runtime for the kernel call, or may be null.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT CUstream
+KGEN_CompilerRT_LLCL_GetCurrentStream() {
+  return CUDA::Globals::getCurrentStreamInTLS();
+}
+
+//===----------------------------------------------------------------------===//
 // OutputChainPtr and OwningOutputChainPtr
 //===----------------------------------------------------------------------===//
 
@@ -228,15 +240,6 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy(LLCLOutputChainRef outChain) {
   delete &unwrap(outChain);
 }
 
-/// Returns the CUstream handle held by the OutputChain's underlying
-/// AsyncValueRef<CUDAStream>. Only valid for GPU kernels which are
-/// launched via a CPU kernel shim. The CUstream is returned as a void*
-/// to avoid depending on any CUDA headers.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream(LLCLOutputChainRef outChain) {
-  return unwrap(outChain).getCUDAStream();
-}
-
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -277,6 +280,4 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream});
 }
