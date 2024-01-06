@@ -1716,6 +1716,24 @@ fn calculate_squeeze_shape[
         output_shape_index += 1
 
 
+@always_inline
+@export
+fn squeeze_shape_shape[
+    type: DType, indices_type: DType, single_thread_blocking_override: Bool
+](
+    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    remove_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+) -> StaticIntTuple[1]:
+    let out_dim = input_shape.dim(0) - remove_indices.dim(0)
+
+    # TODO(17512)
+    debug_assert(
+        out_dim >= 0, "Cannot remove more dimensions than there exists"
+    )
+
+    return StaticIntTuple[1](out_dim)
+
+
 # ===----------------------------------------------------------------------===#
 # UnsqueezeShape op
 # ===----------------------------------------------------------------------===#
@@ -1774,6 +1792,18 @@ fn calculate_unsqueeze_shape[
             continue
         output_shape[output_shape_index] = input_shape[orig_shape_index]
         orig_shape_index += 1
+
+
+@always_inline
+@export
+fn unsqueeze_shape_shape[
+    type: DType, indices_type: DType, single_thread_blocking_override: Bool
+](
+    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    padding_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+) -> StaticIntTuple[1]:
+    let out_dim = input_shape.dim(0) + padding_indices.dim(0)
+    return StaticIntTuple[1](out_dim)
 
 
 # ===----------------------------------------------------------------------===#
