@@ -18,7 +18,6 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
-from runtime.llcl import OutputChainPtr
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
@@ -1804,7 +1803,6 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 
 
-# This type is "async safe" (see _async_parallelize).
 # This struct must match DynamicRankBuffer in Kernels/lib/MojoKernels/Kernels.cpp
 @register_passable("trivial")
 struct DynamicRankBuffer:
@@ -1933,61 +1931,6 @@ struct DynamicRankBuffer:
             self.rank > 0 and self.rank <= _MAX_RANK,
             "rank must be positive and less or equal to 8",
         )
-
-        if self.rank == 1:
-            func[1]()
-            return
-
-        if self.rank == 2:
-            func[2]()
-            return
-
-        if self.rank == 3:
-            func[3]()
-            return
-
-        if self.rank == 4:
-            func[4]()
-            return
-
-        if self.rank == 5:
-            func[5]()
-            return
-
-        if self.rank == 6:
-            func[6]()
-            return
-
-        if self.rank == 7:
-            func[7]()
-            return
-
-        if self.rank == 8:
-            func[8]()
-            return
-
-    @always_inline
-    fn rank_dispatch[
-        func: fn[rank: Int] () capturing -> None
-    ](self, out_chain: OutputChainPtr) raises:
-        """Dispatches the function call based on buffer rank.
-
-        Constraints:
-            Rank must be positive and less or equal to 8.
-
-        Parameters:
-            func: Function to dispatch. The function should be parametrized on
-              an index parameter, which will be used for rank when the function
-              will be called.
-
-        Args:
-            out_chain: The output chain.
-        """
-        if self.rank <= 0 or self.rank > _MAX_RANK:
-            raise Error(
-                "invalid rank, the rank bust be positive and less than or"
-                " equal to 8"
-            )
 
         if self.rank == 1:
             func[1]()
