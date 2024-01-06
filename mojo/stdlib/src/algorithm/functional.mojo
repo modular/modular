@@ -1398,9 +1398,7 @@ fn _elementwise_impl[
         _elementwise_gpu_kernel[False]()
 
     try:
-        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
-            is_borrowed=True
-        ]()
+        let stream = Stream.get_current_stream()
 
         # TODO cleanup after #26672
         alias func_type = fn () capturing -> None

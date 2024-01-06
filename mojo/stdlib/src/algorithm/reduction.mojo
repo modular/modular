@@ -539,7 +539,7 @@ fn _reduce_generator[
     if reduce_dim_normalized != len(shape) - 1:
         raise "GPU reduction currently limited to inner axis."
 
-    let stream = out_chain.get_cuda_stream()
+    let stream = Stream.get_current_stream()
     reduce_launch[
         input_0_fn,
         output_0_fn,
