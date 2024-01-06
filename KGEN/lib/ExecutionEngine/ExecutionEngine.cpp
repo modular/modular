@@ -373,8 +373,11 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
   auto generatorOr =
       toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
           session, compilerRTPath.c_str()));
-  if (generatorOr.isError())
-    return generatorOr.takeError();
+  if (generatorOr.isError()) {
+    return Error(Twine("error '") + Twine(generatorOr.getError()) +
+                 "' while loading compiler runtime library from '" +
+                 compilerRTPath.c_str() + "'");
+  }
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
   libJD->addGenerator(std::move(*generatorOr));
 
