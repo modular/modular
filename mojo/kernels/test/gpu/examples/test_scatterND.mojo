@@ -138,7 +138,7 @@ fn scatter_nd[
             " indices_shape[-1] - 1"
         )
 
-    let stream = Stream()
+    let stream = Stream.get_current_stream()
 
     # Copy input data to output (appropriate elements will be updated as needed
     # by the end of scatternd kernel).
