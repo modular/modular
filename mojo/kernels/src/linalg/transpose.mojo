@@ -20,10 +20,11 @@ from algorithm import (
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, StaticTuple
 from utils.list import DimList
+
+from runtime.llcl import Runtime
 
 
 fn _transpose_inplace_4x4[
@@ -495,7 +496,6 @@ fn parallel_memcpy[
     size: Int,
     task_size: Int,
     num_tasks: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     @always_inline
@@ -513,7 +513,7 @@ fn parallel_memcpy[
 
         memcpy(dst_ptr.offset(begin), src_ptr.offset(begin), to_copy)
 
-    sync_parallelize[_parallel_copy](out_chain, num_tasks)
+    sync_parallelize[_parallel_copy](num_tasks)
 
 
 # ===------------------------------------------------------------------=== #
@@ -574,7 +574,6 @@ fn _transpose_2d_serial_tiled[
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
-    out_chain: OutputChainPtr,
 ):
     alias simd_width = simdwidthof[type]()
 
@@ -641,7 +640,6 @@ fn _transpose_2d_parallel_tiled[
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     if rank < 2:
@@ -666,7 +664,7 @@ fn _transpose_2d_parallel_tiled[
 
     var work = div_ceil(n_tiles, rows_per_worker)
 
-    let num_threads = out_chain.get_runtime().parallelism_level()
+    let num_threads = Runtime().parallelism_level()
 
     let num_tasks = min(work, num_threads)
 
@@ -691,7 +689,7 @@ fn _transpose_2d_parallel_tiled[
                     input.data.offset(offset),
                 )
 
-    sync_parallelize[_parallel_tile](out_chain, num_tasks)
+    sync_parallelize[_parallel_tile](num_tasks)
 
 
 fn transpose_2d[
@@ -706,7 +704,6 @@ fn transpose_2d[
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
     offset: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     if rank < 2:
@@ -717,7 +714,7 @@ fn transpose_2d[
     let M = simplified_input_shape[simplified_rank - 1]
     alias min_work_per_task = 1024
 
-    if out_chain and _should_run_parallel(M, N, simd_width, min_work_per_task):
+    if _should_run_parallel(M, N, simd_width, min_work_per_task):
         _transpose_2d_parallel_tiled[rank, output_shape, input_shape](
             output,
             input,
@@ -725,7 +722,6 @@ fn transpose_2d[
             simplified_input_shape,
             simplified_rank,
             offset,
-            out_chain,
         )
     else:
         _transpose_2d_serial_tiled[rank, output_shape, input_shape](
@@ -735,7 +731,6 @@ fn transpose_2d[
             simplified_input_shape,
             simplified_rank,
             offset,
-            out_chain,
         )
 
         return
@@ -750,7 +745,6 @@ fn _transpose_4d_swap_middle_helper[
     M: Int,
     N: Int,
     K: Int,
-    out_chain: OutputChainPtr,
 ):
     let work = L * M * N
     let memcpy_block_size = K
@@ -766,7 +760,7 @@ fn _transpose_4d_swap_middle_helper[
     #
     # E.g. if we're transposing 2x3x8192 -> 3x2x8192, then parallelizing just
     # on dimensions M and N is not enough.
-    if not out_chain or total_size <= min_work_for_parallel:
+    if total_size <= min_work_for_parallel:
         for l in range(L):
             for m in range(M):
                 for n in range(N):
@@ -777,7 +771,7 @@ fn _transpose_4d_swap_middle_helper[
                     memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
         return
     else:
-        let num_threads = out_chain.get_runtime().parallelism_level()
+        let num_threads = Runtime().parallelism_level()
 
         let num_tasks = min(work, num_threads)
 
@@ -798,7 +792,7 @@ fn _transpose_4d_swap_middle_helper[
                 let out_off = l * M * N * K + n * M * K + m * K
                 memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
 
-        sync_parallelize[_parallel_copy](out_chain, num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks)
 
 
 fn transpose_4d_swap_middle[
@@ -812,7 +806,6 @@ fn transpose_4d_swap_middle[
     perms: DTypePointer[DType.index],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     if rank < 4:
@@ -826,9 +819,7 @@ fn transpose_4d_swap_middle[
     let K = simplified_input_shape[simplified_rank - 1]
     let src_ptr = input.data.offset(0)
     let dst_ptr = output.data.offset(0)
-    _transpose_4d_swap_middle_helper[type](
-        dst_ptr, src_ptr, L, M, N, K, out_chain
-    )
+    _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, L, M, N, K)
 
 
 fn transpose_3d_swap_outer[
@@ -842,7 +833,6 @@ fn transpose_3d_swap_outer[
     perms: DTypePointer[DType.index],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     if rank < 3:
@@ -857,9 +847,7 @@ fn transpose_3d_swap_outer[
     let K = simplified_input_shape[simplified_rank - 1]
     let src_ptr = input.data.offset(0)
     let dst_ptr = output.data.offset(0)
-    _transpose_4d_swap_middle_helper[type](
-        dst_ptr, src_ptr, 1, M, N, K, out_chain
-    )
+    _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, 1, M, N, K)
 
 
 fn transpose_3d_swap_inner[
@@ -873,7 +861,6 @@ fn transpose_3d_swap_inner[
     perms: DTypePointer[DType.index],
     simplified_input_shape: StaticIntTuple[rank],
     simplified_rank: Int,
-    out_chain: OutputChainPtr,
 ):
     @parameter
     if rank < 3:
@@ -892,7 +879,6 @@ fn transpose_3d_swap_inner[
             simplified_input_shape,
             simplified_rank,
             offset,
-            out_chain,
         )
         offset += step
 
@@ -905,7 +891,6 @@ fn transpose_trivial_memcpy[
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
-    out_chain: OutputChainPtr,
 ):
     let src_ptr = input.data.offset(0)
     let dst_ptr = output.data.offset(0)
@@ -916,14 +901,12 @@ fn transpose_trivial_memcpy[
 
     let total_size = output.size()
 
-    if not out_chain or total_size <= min_work_for_parallel:
+    if total_size <= min_work_for_parallel:
         memcpy(dst_ptr, src_ptr, total_size)
 
     else:
         let work_units = div_ceil(total_size, min_work_per_task)
-        let num_tasks = min(
-            work_units, out_chain.get_runtime().parallelism_level()
-        )
+        let num_tasks = min(work_units, Runtime().parallelism_level())
         let work_block_size = div_ceil(work_units, num_tasks)
 
         parallel_memcpy[type](
@@ -932,7 +915,6 @@ fn transpose_trivial_memcpy[
             total_size,
             work_block_size * min_work_per_task,
             num_tasks,
-            out_chain,
         )
 
 
@@ -951,7 +933,6 @@ fn _copy_with_strides[
     output_strides: DTypePointer[DType.index],
     input_offset: Int,
     output_offset: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     """
     Copy data from `input` to `output`, starting at corresponding offsets,
@@ -965,9 +946,8 @@ fn _copy_with_strides[
         output_strides: The stride at each output axis.
         input_offset: The offset at which input data starts.
         output_offset: The offset at which output data starts.
-        out_chain: The output chain.
     """
-    if axis + 1 > rank and out_chain:
+    if axis + 1 > rank:
         raise Error("out of range")
 
     let axis_dim = output.dim(axis)
@@ -1004,11 +984,7 @@ fn _copy_with_strides[
     alias min_work_per_task = 1 * KB
     alias min_work_for_parallel = 4 * min_work_per_task
 
-    if (
-        not out_chain
-        or output.bytecount() <= min_work_for_parallel
-        or axis_dim == 1
-    ):
+    if output.bytecount() <= min_work_for_parallel or axis_dim == 1:
         var next_input_offset = input_offset
         var next_output_offset = output_offset
         for _ in range(axis_dim):
@@ -1020,13 +996,12 @@ fn _copy_with_strides[
                 output_strides,
                 next_input_offset,
                 next_output_offset,
-                OutputChainPtr(),
             )
             next_input_offset += input_axis_stride
             next_output_offset += output_axis_stride
 
     else:
-        let num_threads = out_chain.get_runtime().parallelism_level()
+        let num_threads = Runtime().parallelism_level()
         let num_tasks = min(
             div_ceil(output.bytecount(), min_work_per_task), num_threads
         )
@@ -1056,14 +1031,13 @@ fn _copy_with_strides[
                     output_strides,
                     next_input_offset,
                     next_output_offset,
-                    OutputChainPtr(),
                 )
                 next_input_offset += input_axis_stride
                 next_output_offset += output_axis_stride
 
         # TODO: transpose_strided is using stack allocated structueres and
         # so depends on us being synchronous. We need a better way to do this.
-        sync_parallelize[_parallel_copy](out_chain, num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks)
 
 
 fn transpose_strided[
@@ -1075,7 +1049,6 @@ fn transpose_strided[
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
     perms: DTypePointer[DType.index],
-    out_chain: OutputChainPtr,
 ) raises:
     # Compute `permuted_input_strides`
     let input_strides = DTypePointer[DType.index].alloc(rank)
@@ -1107,7 +1080,6 @@ fn transpose_strided[
         output_strides,
         0,  # input_offset
         0,  # output_offset
-        out_chain,
     )
     input_strides.free()
     permuted_input_strides.free()
@@ -1146,48 +1118,12 @@ fn transpose[
         input: The input buffer.
         perms: Permutation of the input axes.
     """
-    transpose[rank, output_shape, input_shape, type](
-        output, input, perms, OutputChainPtr()
-    )
-
-
-fn transpose[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-    perms: DTypePointer[DType.index],
-    out_chain: OutputChainPtr,
-) raises:
-    """
-    Permute the axis of `input` based on `perms`, and place the result in
-    `output`.
-
-    Example:
-        transpose(output, input, [2, 0, 1])
-        # guarantees output[x, y, z] = input[z, x, y]
-
-    Parameters:
-        rank: The rank of input and output buffers.
-        output_shape: The shape of the output buffer.
-        input_shape: The shape of the input buffer.
-        type: The dtype of buffer elements.
-
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        perms: Permutation of the input axes.
-        out_chain: The chain to attach to.
-    """
 
     # If either input or output is not-contiguous, we need to use a general
     # strided implementation of transpose
     if not output.is_contiguous or not input.is_contiguous:
         return transpose_strided[rank, output_shape, input_shape, type](
-            output, input, perms, out_chain
+            output, input, perms
         )
 
     # If they are contiguous, we can try to recognize common special cases in
@@ -1210,7 +1146,7 @@ fn transpose[
     if simplified_rank == 1:
         # memcpy
         return transpose_trivial_memcpy[rank, output_shape, input_shape, type](
-            output, input, out_chain
+            output, input
         )
     # TODO: Reenable once #15947 is fixed.
     # elif simplified_rank == 2:
@@ -1222,7 +1158,6 @@ fn transpose[
     #         simplified_shape,
     #         simplified_rank,
     #         0,
-    #         out_chain,
     #     )
     elif rank >= 3 and simplified_rank == 3:
         if (
@@ -1239,7 +1174,6 @@ fn transpose[
                 perms,
                 simplified_shape,
                 simplified_rank,
-                out_chain,
             )
         elif (
             simplified_perms[0] == 1
@@ -1254,7 +1188,6 @@ fn transpose[
                 perms,
                 simplified_shape,
                 simplified_rank,
-                out_chain,
             )
     elif rank >= 4 and simplified_rank == 4:
         if (
@@ -1271,8 +1204,7 @@ fn transpose[
                 perms,
                 simplified_shape,
                 simplified_rank,
-                out_chain,
             )
     transpose_strided[rank, output_shape, input_shape, type](
-        output, input, perms, out_chain
+        output, input, perms
     )

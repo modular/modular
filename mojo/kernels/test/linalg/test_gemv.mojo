@@ -11,7 +11,7 @@ from Gemv import gemv, naive_gemv
 from memory.buffer import Buffer, NDBuffer
 from random import rand
 from math import abs, isclose
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 from utils.index import Index, StaticIntTuple
 from Matmul import matmul
 
@@ -91,9 +91,7 @@ fn test_gemv():
 
     out.zero()
     with Runtime(threads) as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        gemv[parallelize=True](out, lhs, rhs, out_chain.borrow())
-        out_chain.wait()
+        gemv[parallelize=True](out, lhs, rhs)
 
     # Verify the result
     for i in range(out.__len__()):
@@ -133,9 +131,7 @@ fn test_gemv():
         @always_inline
         @parameter
         fn bench_fn_parallel():
-            let out_chain = OwningOutputChainPtr(rt)
-            gemv[parallelize=True](out, lhs, rhs, out_chain.borrow())
-            out_chain.wait()
+            gemv[parallelize=True](out, lhs, rhs)
 
         let par_perf = bench_run[bench_fn_parallel]()
         benchmark.keep(out[10])
@@ -167,7 +163,6 @@ fn test_gemv():
         @always_inline
         @parameter
         fn bench_fn_matmul():
-            let out_chain = OwningOutputChainPtr(rt)
             matmul[
                 type,
                 DimList.create_unknown[2](),
@@ -181,8 +176,7 @@ fn test_gemv():
                 False,  # elementwise_epilogue_enabled
                 null_lambda,
                 False,  # saturated_vnni
-            ](out_mat, lhs, rhs_mat, out_chain.borrow())
-            out_chain.wait()
+            ](out_mat, lhs, rhs_mat)
 
         bench_fn_matmul()
 
