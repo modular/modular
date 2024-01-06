@@ -23,8 +23,6 @@ from runtime.llcl import (
     TaskGroup,
     TaskGroupTask,
     TaskGroupTaskList,
-    OutputChainPtr,
-    OwningOutputChainPtr,
     Runtime,
     num_cores,
 )
@@ -298,18 +296,19 @@ fn vectorize_unroll[
 # Parallelize
 # ===----------------------------------------------------------------------===#
 
+# TODO: Add an async_parallelize analogue to sync_parallelize which is a
+#       Mojo async function and does not block.
+
 
 @always_inline
-fn sync_parallelize[
-    func: fn (Int) capturing -> None
-](out_chain: OutputChainPtr, num_work_items: Int):
-    """Same behavior as sync_parallelize overload but func does not raise.
+fn sync_parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
+    and returns when all are complete.
 
     Parameters:
         func: The function to invoke.
 
     Args:
-        out_chain: Out chain onto which to signal completion.
         num_work_items: Number of parallel tasks.
     """
 
@@ -318,27 +317,24 @@ fn sync_parallelize[
     fn func_wrapper(i: Int) raises:
         func(i)
 
-    sync_parallelize[func_wrapper](out_chain, num_work_items)
+    # Defer to the raising overload.
+    sync_parallelize[func_wrapper](num_work_items)
 
 
 @always_inline
 fn sync_parallelize[
     func: fn (Int) raises capturing -> None
-](out_chain: OutputChainPtr, num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel.
-    Marks out_chain as ready and returns only when all sub-tasks have
-    completed.
+](num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
+    and returns when all are complete.
 
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel,
-    and return only when they have all functions have returned. The runtime
-    may execute the sub-tasks in any order and with any degree of concurrency.
-    The out_chain will be marked as ready before returning.
+    TODO: Currently exceptions raised by func will cause a trap rather than
+          be propagated back to the caller.
 
     Parameters:
         func: The function to invoke.
 
     Args:
-        out_chain: Out chain onto which to signal completion.
         num_work_items: Number of parallel tasks.
     """
     # We have no tasks, so do nothing.
@@ -346,6 +342,9 @@ fn sync_parallelize[
         # No-op
         return
 
+    # If profiling is enabled, and the caller's thread has an active profile
+    # entry, each sub-task will also be profiled with a reference back to the
+    # parent. Otherwise parent_id will be zero.
     let parent_id = tracing.get_current_trace_id()
 
     @parameter
@@ -361,6 +360,7 @@ fn sync_parallelize[
                     trap(e)
 
     if num_work_items == 1:
+        # Just run inline.
         func_wrapped(0)
         return
 
@@ -369,6 +369,10 @@ fn sync_parallelize[
     async fn task_fn(i: Int):
         func_wrapped(i)
 
+    # Run sub-tasks using the 'default' runtime. If the caller is part of
+    # Mojo kernel executing within the Modular Inference Engine then the
+    # default runtime will be that established by the engine. Otherwise a
+    # suitable runtime will be created if it does not already exist.
     let rt = Runtime()
     var tasks = TaskGroupTaskList[NoneType](num_work_items - 1)
     var tg = TaskGroup(rt)
@@ -385,13 +389,8 @@ fn sync_parallelize[
 
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None]():
-    """Executes func(0) ... func(N-1) as sub-tasks in parallel and returns when
+    """Executes func(0) ... func(N-1) as sub-tasks in parallel, and returns when
     all are complete. N is chosen to be the number of processors on the system.
-
-    Execute func(0) ... func(N-1) as sub-tasks in parallel. This function will
-    return only after all the sub-tasks have completed.
-
-    CAUTION: Creates and destroys a local runtime! Do not use from kernels!
 
     Parameters:
         func: The function to invoke.
@@ -403,11 +402,8 @@ fn parallelize[func: fn (Int) capturing -> None]():
 
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
-
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
-    function will return only after all the sub-tasks have completed.
 
     CAUTION: Creates and destroys a local runtime! Do not use from kernels!
 
@@ -426,11 +422,8 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
 fn parallelize[
     func: fn (Int) capturing -> None
 ](num_work_items: Int, num_workers: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
-
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
-    function will return only after all the sub-tasks have completed.
 
     Parameters:
         func: The function to invoke.
@@ -448,11 +441,8 @@ fn parallelize[
 fn _parallelize_impl[
     func: fn (Int) capturing -> None
 ](rt: Runtime, num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
-
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
-    function will return only after all the sub-tasks have completed.
 
     Parameters:
         func: The function to invoke.
@@ -468,11 +458,8 @@ fn _parallelize_impl[
 fn _parallelize_impl[
     func: fn (Int) capturing -> None
 ](rt: Runtime, num_work_items: Int, num_workers: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    returns when all are complete.
-
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
-    function will return only after all the sub-tasks have completed.
+    """Executes func(0) ... func(num_work_items-1), distributed over
+    num_workers parallel sub-tasks, and returns when all are complete.
 
     Parameters:
         func: The function to invoke.
@@ -494,9 +481,7 @@ fn _parallelize_impl[
         ):
             func(i)
 
-    let out_chain = OwningOutputChainPtr(rt)
-    sync_parallelize[coarse_grained_func](out_chain.borrow(), num_workers)
-    out_chain.wait()
+    sync_parallelize[coarse_grained_func](num_workers)
 
 
 # ===----------------------------------------------------------------------===#
@@ -936,14 +921,12 @@ fn tile_and_unswitch[
 
 
 @always_inline
-fn _get_num_workers(
-    problem_size: Int, runtime: Runtime, grain_size: Int = 32768
-) -> Int:
-    """Returns a number of workers to run in parallel.
+fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
+    """Returns a number of workers to run in parallel for given problem_size,
+    accounting for the available worker threads of the current runtime.
 
     Args:
         problem_size: The number of parallel tasks.
-        runtime: Runtime object.
         grain_size: Minimum number of elements to warrant an additional thread.
 
     Returns:
@@ -951,8 +934,9 @@ fn _get_num_workers(
     """
     # default grain_size copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # Ensure at least one worker is always returned to avoid division by zero.
+    let rt = Runtime()
     return max(
-        1, min(runtime.parallelism_level(), div_ceil(problem_size, grain_size))
+        1, min(rt.parallelism_level(), div_ceil(problem_size, grain_size))
     )
 
 
@@ -1056,9 +1040,7 @@ fn _elementwise[
 
     @parameter
     if target == "cuda":
-        _elementwise_impl[rank, simd_width, False, func, target](
-            shape, OutputChainPtr()
-        )
+        _elementwise_impl[rank, simd_width, False, func, target](shape)
     else:
         elementwise[rank, simd_width, func](shape)
 
@@ -1069,8 +1051,9 @@ fn elementwise[
     simd_width: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank]):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape.
+    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
 
     Parameters:
         rank: The rank of the buffer.
@@ -1079,42 +1062,16 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
-    """
-
-    with Runtime() as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        elementwise[rank, simd_width, func](shape, out_chain.borrow())
-        _ = out_chain ^
-
-
-@always_inline
-fn elementwise[
-    rank: Int,
-    simd_width: Int,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape.
-
-    Parameters:
-        rank: The rank of the buffer.
-        simd_width: The SIMD vector width to use.
-        func: The body function.
-
-    Args:
-        shape: The shape of the buffer.
-        out_chain: The output chain to attach results to.
     """
 
     _elementwise_impl[
         rank,
         simd_width,
-        False
         # On CUDA devices, we do not want to launch threads, so we use the
         # blocking API
-        or triple_is_nvidia_cuda(),
+        triple_is_nvidia_cuda(),
         func,
-    ](shape, out_chain)
+    ](shape)
 
 
 @always_inline
@@ -1126,20 +1083,20 @@ fn _elementwise_impl[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     /,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape.
+](shape: StaticIntTuple[rank]):
+    """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns when
+    all sub-tasks have completed.
 
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: If true this is a blocking op.
+        use_blocking_impl: If true the functions execute without sub-tasks.
         func: The body function.
         target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
     """
     constrained[rank == 1, "Specialization for 1D"]()
     constrained[target == "cpu", "Target must be cpu"]()
@@ -1163,7 +1120,7 @@ fn _elementwise_impl[
         ](problem_size)
         return
 
-    let num_workers = _get_num_workers(problem_size, out_chain.get_runtime())
+    let num_workers = _get_num_workers(problem_size)
     let chunk_size = div_ceil(problem_size, num_workers)
 
     @always_inline
@@ -1185,7 +1142,7 @@ fn _elementwise_impl[
             func_wrapper,
         ](len)
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 @always_inline
@@ -1197,9 +1154,10 @@ fn _elementwise_impl[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     /,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape.
+](shape: StaticIntTuple[rank]):
+    """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
+    suitable combination of width and indices so as to cover shape. Returns
+    when all sub-tasks have completed.
 
     Parameters:
         rank: The rank of the buffer.
@@ -1210,7 +1168,6 @@ fn _elementwise_impl[
 
     Args:
         shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
     """
 
     constrained[rank > 1, "Specialization for ND where N > 1"]()
@@ -1253,7 +1210,7 @@ fn _elementwise_impl[
 
         return
 
-    let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
+    let num_workers = _get_num_workers(total_size)
     let parallelism_size = total_size // shape[rank - 1]
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
@@ -1289,7 +1246,7 @@ fn _elementwise_impl[
                 func_wrapper,
             ](shape[rank - 1])
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 @always_inline
@@ -1301,7 +1258,7 @@ fn _elementwise_impl[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     /,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+](shape: StaticIntTuple[rank]):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1314,7 +1271,6 @@ fn _elementwise_impl[
 
     Args:
         shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
     """
 
     constrained[target == "cuda", "Target must be cuda"]()
@@ -1433,12 +1389,7 @@ fn _elementwise_impl[
 fn parallelize_over_rows[
     rank: Int,
     func: fn (Int, Int) capturing -> None,
-](
-    shape: StaticIntTuple[rank],
-    axis: Int,
-    out_chain: OutputChainPtr,
-    grain_size: Int,
-):
+](shape: StaticIntTuple[rank], axis: Int, grain_size: Int,):
     """Parallelize func over non-axis dims of shape.
 
     Parameters:
@@ -1448,7 +1399,6 @@ fn parallelize_over_rows[
     Args:
         shape: Shape to parallelize over.
         axis: Rows are slices along the axis dimension of shape.
-        out_chain: The out chain to attach results to.
         grain_size: The minimum number of elements to warrant using an additional thread.
     """
     let total_size = shape.flattened_length()
@@ -1456,7 +1406,7 @@ fn parallelize_over_rows[
 
     let num_workers = min(
         num_rows,
-        _get_num_workers(total_size, out_chain.get_runtime(), grain_size),
+        _get_num_workers(total_size, grain_size),
     )
     let chunk_size = div_ceil(num_rows, num_workers)
 
@@ -1468,7 +1418,7 @@ fn parallelize_over_rows[
 
         func(start_row, end_row)
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1497,7 +1447,7 @@ fn stencil[
     compute_finalize_fn: fn[simd_width: Int] (
         StaticIntTuple[rank], SIMD[type, simd_width]
     ) capturing -> None,
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+](shape: StaticIntTuple[rank]):
     """Computes stencil operation in parallel.
 
     Computes output as a function that processes input stencils, stencils are
@@ -1521,7 +1471,6 @@ fn stencil[
 
     Args:
         shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
     """
     constrained[rank == 4, "Only stencil of rank-4 supported"]()
     constrained[
@@ -1531,7 +1480,7 @@ fn stencil[
 
     let total_size = shape.flattened_length()
 
-    let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
+    let num_workers = _get_num_workers(total_size)
     let parallelism_size = total_size // shape[rank - 1]
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
@@ -1582,4 +1531,4 @@ fn stencil[
                 func_wrapper,
             ](shape[rank - 1])
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](num_workers)

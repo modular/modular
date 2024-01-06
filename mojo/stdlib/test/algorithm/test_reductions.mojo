@@ -21,7 +21,7 @@ from algorithm import (
 # TODO: Fold this import into the one above.
 from algorithm.reduction import _index_of_first_one, max, min
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -307,7 +307,6 @@ fn test_argn() raises:
         vector[i] = i
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
@@ -316,13 +315,11 @@ fn test_argn() raises:
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 92
         print("argmax = ", output[0])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
@@ -331,9 +328,8 @@ fn test_argn() raises:
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 0
         print("argmin = ", output[0])
 
@@ -357,7 +353,6 @@ fn test_argn_2() raises:
             vector[Index(i, j)] = j
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -366,9 +361,8 @@ fn test_argn_2() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 90
         # CHECK: argmax = 90
         # CHECK: argmax = 90
@@ -376,7 +370,6 @@ fn test_argn_2() raises:
         for i in range(batch_size):
             print("argmax = ", output[Index(i, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -385,9 +378,8 @@ fn test_argn_2() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 0
         # CHECK: argmin = 0
         # CHECK: argmin = 0
@@ -417,7 +409,6 @@ fn test_argn_2_test_2() raises:
                 vector[Index(i, j)] *= -1
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -426,15 +417,13 @@ fn test_argn_2_test_2() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 2
         # CHECK: argmax = 0
         for i in range(batch_size):
             print("argmax = ", output[Index(i, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -443,9 +432,8 @@ fn test_argn_2_test_2() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 0
         # CHECK: argmin = 2
         for i in range(batch_size):
@@ -473,7 +461,6 @@ fn test_argn_2_neg_axis() raises:
                 vector[Index(i, j)] *= -1
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -482,15 +469,13 @@ fn test_argn_2_neg_axis() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 2
         # CHECK: argmax = 0
         for i in range(batch_size):
             print("argmax = ", output[Index(i, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -499,9 +484,8 @@ fn test_argn_2_neg_axis() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 0
         # CHECK: argmin = 2
         for i in range(batch_size):
@@ -527,7 +511,6 @@ fn test_argn_test_zeros() raises:
             vector[Index(i, j)] = 0
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -536,14 +519,12 @@ fn test_argn_test_zeros() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 0
         for i in range(batch_size):
             print("argmax = ", output[Index(i, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 vector
@@ -552,9 +533,8 @@ fn test_argn_test_zeros() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 0
         for i in range(batch_size):
             print("argmin = ", output[Index(i, 0)])
@@ -583,7 +563,6 @@ fn test_argn_test_identity() raises:
     vector[Index(2, 4)] = 1
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
                 vector
@@ -592,9 +571,7 @@ fn test_argn_test_identity() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
 
         # CHECK: argmax = 0
         print("argmax = ", output[Index(0, 0)])
@@ -603,7 +580,6 @@ fn test_argn_test_identity() raises:
         # CHECK: argmax = 3
         print("argmax = ", output[Index(2, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
                 vector
@@ -612,9 +588,7 @@ fn test_argn_test_identity() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
 
         # CHECK: argmin = 0
         # CHECK: argmin = 0
@@ -647,7 +621,6 @@ fn test_argn_3d_identity() raises:
     vector[Index(1, 1, 3)] = 1
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[3, DimList.create_unknown[3](), DType.int64]](
                 vector
@@ -656,9 +629,7 @@ fn test_argn_3d_identity() raises:
             rebind[NDBuffer[3, DimList.create_unknown[3](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
 
         # CHECK: argmax = 0
         print("argmax = ", output[Index(0, 0, 0)])
@@ -669,7 +640,6 @@ fn test_argn_3d_identity() raises:
         # CHECK: argmax = 3
         print("argmax = ", output[Index(1, 1, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[3, DimList.create_unknown[3](), DType.int64]](
                 vector
@@ -678,9 +648,7 @@ fn test_argn_3d_identity() raises:
             rebind[NDBuffer[3, DimList.create_unknown[3](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
 
         # CHECK: argmin = 0
         # CHECK: argmin = 0
@@ -715,7 +683,6 @@ fn test_argn_less_than_simd() raises:
     vector[Index(1, 2)] = 3
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
                 vector
@@ -724,16 +691,13 @@ fn test_argn_less_than_simd() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
 
         # CHECK: argmax = 2
         print("argmax = ", output[Index(0, 0)])
         # CHECK: argmax = 0
         print("argmax = ", output[Index(1, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
                 vector
@@ -742,9 +706,7 @@ fn test_argn_less_than_simd() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
 
         # CHECK: argmin = 0
         print("argmin = ", output[Index(0, 0)])
@@ -775,7 +737,6 @@ fn test_argn_simd_index_order() raises:
     vector[9] = 1
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
@@ -784,13 +745,11 @@ fn test_argn_simd_index_order() raises:
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
+
         # CHECK: argmax = 5
         print("argmax = ", output[0])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
@@ -799,9 +758,8 @@ fn test_argn_simd_index_order() raises:
             rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
+
         # CHECK: argmin = 4
         print("argmin = ", output[0])
 
@@ -842,7 +800,6 @@ fn test_argn_parallelize() raises:
     input[Index(7, 400)] = 100
 
     with Runtime(4) as runtime:
-        let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 input
@@ -851,9 +808,7 @@ fn test_argn_parallelize() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_0.borrow(),
         )
-        out_chain_0.wait()
 
         # CHECK: argmax = 10
         print("argmax = ", output[Index(0, 0)])
@@ -872,7 +827,6 @@ fn test_argn_parallelize() raises:
         # CHECK: argmax = 400
         print("argmax = ", output[Index(7, 0)])
 
-        let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
                 input
@@ -881,9 +835,7 @@ fn test_argn_parallelize() raises:
             rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
                 output
             ),
-            out_chain_1.borrow(),
         )
-        out_chain_1.wait()
 
         # CHECK: argmin = 100
         print("argmin = ", output[Index(0, 0)])

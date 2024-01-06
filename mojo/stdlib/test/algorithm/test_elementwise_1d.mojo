@@ -11,7 +11,7 @@ from sys.info import simdwidthof
 from Activations import gelu
 from algorithm import elementwise
 from memory.buffer import Buffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
@@ -22,37 +22,33 @@ from collections.vector import UnsafeFixedVector
 fn test_elementwise_1d():
     print("== test_elementwise_1d")
 
-    with Runtime() as rt:
-        let num_work_items = rt.parallelism_level()
+    let num_work_items = Runtime().parallelism_level()
 
-        alias num_elements = 64
-        let buf = UnsafeFixedVector[Float32](num_elements)
+    alias num_elements = 64
+    let buf = UnsafeFixedVector[Float32](num_elements)
 
-        let vector = Buffer[num_elements, DType.float32](buf.data)
+    let vector = Buffer[num_elements, DType.float32](buf.data)
 
-        for i in range(len(vector)):
-            vector[i] = i
+    for i in range(len(vector)):
+        vector[i] = i
 
-        let chunk_size = div_ceil(len(vector), num_work_items)
+    let chunk_size = div_ceil(len(vector), num_work_items)
 
-        @always_inline
-        @parameter
-        fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-            let elem = vector.simd_load[simd_width](idx[0])
-            let val = exp(erf(tanh(elem + 1)))
-            vector.simd_store[simd_width](idx[0], val)
+    @always_inline
+    @parameter
+    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let elem = vector.simd_load[simd_width](idx[0])
+        let val = exp(erf(tanh(elem + 1)))
+        vector.simd_store[simd_width](idx[0], val)
 
-        let out_chain = OwningOutputChainPtr(rt)
-        elementwise[1, simdwidthof[DType.float32](), func](
-            StaticIntTuple[1](num_elements), out_chain.borrow()
-        )
+    elementwise[1, simdwidthof[DType.float32](), func](
+        StaticIntTuple[1](num_elements)
+    )
 
-        _ = out_chain ^
+    # CHECK: 2.051446{{[0-9]+}}
+    print(vector[0])
 
-        # CHECK: 2.051446{{[0-9]+}}
-        print(vector[0])
-
-        buf._del_old()
+    buf._del_old()
 
 
 fn main():
