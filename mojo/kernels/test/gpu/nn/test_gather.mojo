@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 
 from GatherScatter import gather
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple, Index
 from utils.list import DimList
@@ -98,7 +98,6 @@ fn test_gather() raises:
             output_device.make_dims_unknown(),
             input_device.make_dims_unknown(),
             indices_device.make_dims_unknown(),
-            OutputChainPtr(),
         )
         synchronize()
 

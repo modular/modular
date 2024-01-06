@@ -11,7 +11,6 @@ from Activations import gelu
 from algorithm import elementwise
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
-from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
 from gpu import (
@@ -93,7 +92,7 @@ fn gelu_elementwise(buf: DTypePointer[DType.float32], len: Int):
         buf.store(offset, gelu(buf.load(offset)))
 
     elementwise[1, simdwidthof[DType.float32](), func](
-        StaticIntTuple[1](granularity), OutputChainPtr()
+        StaticIntTuple[1](granularity)
     )
 
 

@@ -9,7 +9,7 @@
 from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 from Softmax import softmax_2_pass, softmax
 from random import rand
 
@@ -71,19 +71,16 @@ fn test_gpu_softmax() raises:
 
     softmax[
         type, 1, rank, DimList.create_unknown[rank](), input_fn_device, "cuda"
-    ](shape, out_device, rank - 1, OutputChainPtr())
+    ](shape, out_device, rank - 1)
 
-    with Runtime() as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        softmax[
-            type,
-            1,
-            rank,
-            DimList.create_unknown[rank](),
-            input_fn_host,
-            "cpu",
-        ](shape, out_ref, rank - 1, out_chain.borrow())
-        out_chain.wait()
+    softmax[
+        type,
+        1,
+        rank,
+        DimList.create_unknown[rank](),
+        input_fn_host,
+        "cpu",
+    ](shape, out_ref, rank - 1)
 
     synchronize()
     _copy_device_to_host(out_host_ptr, out_device_ptr, shape.flattened_length())
