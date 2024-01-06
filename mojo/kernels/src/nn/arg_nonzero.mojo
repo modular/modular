@@ -7,7 +7,6 @@
 from algorithm import sync_parallelize, vectorize_unroll
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
@@ -26,7 +25,6 @@ fn arg_nonzero[
 ](
     input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), output_type],
-    out_chain: OutputChainPtr,
 ):
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
@@ -39,7 +37,6 @@ fn arg_nonzero[
     Args:
         input_buffer: The tensor to count the non-zeros in.
         output_buffer: The indices of all non-zero elements.
-        out_chain: The our chain to attach results to.
     """
 
     with Trace[TraceLevel.OP]("mojo.arg_nonzero") as t:

@@ -27,12 +27,13 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
+
+from runtime.llcl import Runtime
 
 from math import align_up
 
@@ -319,7 +320,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
+](output: Buffer[buffer_size, type]):
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -335,7 +336,6 @@ fn _softmax_3_pass_base[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        out_chain: The output-chain pointer.
     """
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
@@ -380,7 +380,6 @@ fn _softmax_3_pass_base[
             StaticIntTuple[1](len(output)),
             init=min_or_neginf[type](),
             reduce_dim=0,
-            out_chain=out_chain,
         )
     except e:
         trap(e)
@@ -417,7 +416,7 @@ fn softmax_3_pass[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
+](output: Buffer[buffer_size, type]):
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -447,7 +446,6 @@ fn softmax_3_pass[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
         simd_width,
@@ -458,7 +456,7 @@ fn softmax_3_pass[
         identity,
         reciprocal,
         mul,
-    ](output, out_chain)
+    ](output)
 
 
 # ===----------------------------------------------------------------------===#
@@ -473,7 +471,7 @@ fn logsoftmax[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
+](output: Buffer[buffer_size, type]):
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -503,11 +501,10 @@ fn logsoftmax[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
         simd_width, buffer_size, type, input_fn_1d, identity, exp, log, sub
-    ](output, out_chain)
+    ](output)
 
 
 fn logsoftmax[
@@ -522,7 +519,6 @@ fn logsoftmax[
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
@@ -534,9 +530,7 @@ fn logsoftmax[
 
     let inner_dim = output.dim[rank - 1]()
     let outer_dim = product[rank](shape, rank - 1)
-    let num_workers = min(
-        out_chain.get_runtime().parallelism_level(), outer_dim
-    )
+    let num_workers = min(Runtime().parallelism_level(), outer_dim)
     let chunk_size = div_ceil(outer_dim, num_workers)
 
     @parameter
@@ -562,11 +556,9 @@ fn logsoftmax[
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
-            logsoftmax[simd_width, Dim(), type, input_fn_1d](
-                output_buffer_view, out_chain
-            )
+            logsoftmax[simd_width, Dim(), type, input_fn_1d](output_buffer_view)
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](num_workers)
 
 
 fn logsoftmax[
@@ -578,7 +570,6 @@ fn logsoftmax[
     input: NDBuffer[rank, static_shape, type],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     @parameter
     @always_inline
@@ -590,7 +581,7 @@ fn logsoftmax[
         )
 
     logsoftmax[type, simd_width, rank, static_shape, input_fn](
-        input.get_shape(), output, axis, out_chain
+        input.get_shape(), output, axis
     )
 
 
@@ -613,7 +604,6 @@ fn softmax[
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     constrained[target == "cpu", "cpu softmax"]()
     # TODO: Add rowwise generator to de-duplicate partioning logic between
@@ -635,9 +625,7 @@ fn softmax[
 
         let inner_dim = output.dim[rank - 1]()
         let outer_dim = product[rank](shape, rank - 1)
-        let num_workers = min(
-            out_chain.get_runtime().parallelism_level(), outer_dim
-        )
+        let num_workers = min(Runtime().parallelism_level(), outer_dim)
         let chunk_size = div_ceil(outer_dim, num_workers)
 
         @parameter
@@ -664,10 +652,10 @@ fn softmax[
                     return input_fn[_width, rank](indices)
 
                 softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
-                    output_buffer_view, out_chain
+                    output_buffer_view
                 )
 
-        sync_parallelize[task_func](out_chain, num_workers)
+        sync_parallelize[task_func](num_workers)
 
 
 # Softmax (no input lambda)
@@ -680,7 +668,6 @@ fn softmax[
     input: NDBuffer[rank, static_shape, type],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     @parameter
     @always_inline
@@ -692,7 +679,7 @@ fn softmax[
         )
 
     softmax[type, simd_width, rank, static_shape, input_fn](
-        input.get_shape(), output, axis, out_chain
+        input.get_shape(), output, axis
     )
 
 
@@ -792,7 +779,6 @@ fn softmax[
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
-    out_chain: OutputChainPtr,
 ) raises:
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")

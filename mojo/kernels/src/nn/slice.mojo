@@ -8,7 +8,6 @@ from math import div_ceil
 
 from algorithm import elementwise
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
@@ -98,7 +97,6 @@ fn slice_as_copy[
     start: NDBuffer[1, DimList.create_unknown[1](), index_type],
     end: NDBuffer[1, DimList.create_unknown[1](), index_type],
     step: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    out_chain: OutputChainPtr,
 ):
     # Apply slice to the tensor
     let sliced = slice_as_view(tensor, start, end, step)
@@ -113,7 +111,7 @@ fn slice_as_copy[
         )
 
     # Invoke copy.
-    elementwise[in_rank, 1, copy](output.dynamic_shape, out_chain)
+    elementwise[in_rank, 1, copy](output.dynamic_shape)
 
 
 # ===----------------------------------------------------------------------===#

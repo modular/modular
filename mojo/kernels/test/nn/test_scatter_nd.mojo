@@ -8,7 +8,7 @@
 from math import max, min
 
 from GatherScatter import scatter_nd_generator
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 
@@ -69,19 +69,14 @@ fn test_case[
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
     # last example 3,2,2,3 ; original: 3,2,3,3
-    with Runtime() as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        scatter_nd_generator[
-            type, DType.int64, 3, 2, 3, False, reduce_fn=reduce_fn
-        ](
-            data._to_ndbuffer[3](),
-            indices._to_ndbuffer[2](),
-            updates._to_ndbuffer[3](),
-            output._to_ndbuffer[3](),
-            out_chain.borrow(),
-        )
-
-        _ = out_chain ^
+    scatter_nd_generator[
+        type, DType.int64, 3, 2, 3, False, reduce_fn=reduce_fn
+    ](
+        data._to_ndbuffer[3](),
+        indices._to_ndbuffer[2](),
+        updates._to_ndbuffer[3](),
+        output._to_ndbuffer[3](),
+    )
 
     _ = data
     _ = indices

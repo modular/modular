@@ -9,7 +9,6 @@ from math import ceil, floor, max, min, round_half_down, round_half_up
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr
 from collections.vector import InlinedFixedVector
 
 
@@ -114,7 +113,6 @@ fn resize_nearest_neighbor[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
 ):
     var scales = StaticTuple[rank, Float32]()
     for i in range(rank):
@@ -164,7 +162,7 @@ fn resize_nearest_neighbor[
         output[rebind[StaticIntTuple[rank]](out_coords)] = input[in_coords]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[rank, 1, nn_interpolate](output.get_shape(), out_chain)
+    elementwise[rank, 1, nn_interpolate](output.get_shape())
 
 
 @always_inline
@@ -231,7 +229,6 @@ fn resize_linear[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
 ):
     """Resizes input to output shape using linear interpolation.
 
@@ -247,13 +244,12 @@ fn resize_linear[
     Args:
         input: The input to be resized.
         output: The output containing the resized input.
-        out_chain: The chain to attach our results to.
 
 
     """
     _resize[
         InterpolationMode.Linear, coordinate_transformation_mode, antialias
-    ](input, output, out_chain)
+    ](input, output)
 
 
 fn _resize[
@@ -265,7 +261,6 @@ fn _resize[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
 ):
     var scales = StaticTuple[rank, Float32]()
 

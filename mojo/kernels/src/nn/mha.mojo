@@ -18,7 +18,7 @@ from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory import stack_allocation
-from runtime.llcl import OwningOutputChainPtr, Runtime, OutputChainPtr
+from runtime.llcl import Runtime
 from Softmax import softmax, softmax_3_pass
 from Transpose import transpose
 
@@ -76,7 +76,6 @@ fn fused_attention[
     mask: NDBuffer[2, mask_shape, mask_type],
     scale: Float32,
     causal_mask_value: Float32,
-    out_chain: OutputChainPtr,
 ) raises:
     """Multi-head Attention with fusion.
     Compute:
@@ -99,8 +98,6 @@ fn fused_attention[
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
 
     alias simd_size = simdwidthof[output_type]()
-
-    let rt = out_chain.get_runtime()
 
     let score_size: Int
     let M: Int
@@ -198,7 +195,7 @@ fn fused_attention[
                 )
 
             softmax_3_pass[simd_size, Dim(), DType.float32, input_fn_1d](
-                row_view, out_chain
+                row_view
             )
 
     # Fuse softmax when matmul is only partitioned in M.
@@ -228,14 +225,13 @@ fn fused_attention[
             rebind[NDBuffer[rank, DimList.create_unknown[rank](), q_type]](q),
             rebind[NDBuffer[rank, DimList.create_unknown[rank](), k_type]](k),
             softmax_closure,
-            out_chain,
         )
 
     unswitch[bmm_query_key](softmax_fusable)
 
     if not softmax_fusable:
         softmax[score_type, simd_size, rank, DimList.create_unknown[rank]()](
-            score, score, rank - 1, out_chain
+            score, score, rank - 1
         )
 
     @closure
@@ -267,7 +263,6 @@ fn fused_attention[
         ),
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), v_type]](v),
         bmm_null_rowwise_epilogue,
-        out_chain,
     )
 
     # We did not reuse the output buffer, so we have to free the allocate
@@ -306,7 +301,6 @@ fn flash_attention[
     v: NDBuffer[rank, v_shape, v_type],
     mask: NDBuffer[3, mask_shape, mask_type],
     scale: Float32,
-    out_chain: OutputChainPtr,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -1366,57 +1360,53 @@ fn _naive_attention_with_transpose[
     o_perm[2] = 1
     o_perm[3] = 3
 
-    with Runtime() as rt:
-        let chain = OwningOutputChainPtr(rt)
-        try:
-            transpose[
-                4,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[4](),
-                type,
-            ](qt, q, q_perm.data, chain.borrow())
-        except e:
-            trap(e)
+    try:
+        transpose[
+            4,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            type,
+        ](qt, q, q_perm.data)
+    except e:
+        trap(e)
 
-        try:
-            transpose[
-                4,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[4](),
-                type,
-            ](kt, k, k_perm.data, chain.borrow())
-        except e:
-            trap(e)
+    try:
+        transpose[
+            4,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            type,
+        ](kt, k, k_perm.data)
+    except e:
+        trap(e)
 
-        try:
-            transpose[
-                4,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[4](),
-                type,
-            ](vt, v, q_perm.data, chain.borrow())
-        except e:
-            trap(e)
+    try:
+        transpose[
+            4,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            type,
+        ](vt, v, q_perm.data)
+    except e:
+        trap(e)
 
-        _naive_attention[type, transpose_k](
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](ot),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](qt),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](kt),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](vt),
-            mask,
-            scale,
-            chain.borrow(),
-        )
-        try:
-            transpose[
-                4,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[4](),
-                type,
-            ](output, ot, o_perm.data, chain.borrow())
-        except e:
-            trap(e)
-        _ = chain ^
+    _naive_attention[type, transpose_k](
+        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](ot),
+        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](qt),
+        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](kt),
+        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](vt),
+        mask,
+        scale,
+    )
+    try:
+        transpose[
+            4,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            type,
+        ](output, ot, o_perm.data)
+    except e:
+        trap(e)
 
     qt_ptr.free()
     kt_ptr.free()
@@ -1435,7 +1425,6 @@ fn _naive_attention[
     v: NDBuffer[4, DimList.create_unknown[4](), type],
     mask: NDBuffer[2, DimList.create_unknown[2](), type],
     scale: Float32,
-    out_chain: OutputChainPtr,
 ):
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -1459,7 +1448,6 @@ fn _naive_attention[
         score,
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-        out_chain,
     )
 
     @parameter
@@ -1472,14 +1460,13 @@ fn _naive_attention[
         )
         score.simd_store[width](rebind[StaticIntTuple[4]](coords), vec)
 
-    elementwise[4, simd_size, scale_and_mask](score.dynamic_shape, out_chain)
+    elementwise[4, simd_size, scale_and_mask](score.dynamic_shape)
 
     try:
         softmax[type, simd_size, 4, DimList.create_unknown[4]()](
             score,
             score,
             3,
-            out_chain,
         )
     except e:
         trap(e)
@@ -1488,7 +1475,6 @@ fn _naive_attention[
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
         score,
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
-        out_chain,
     )
 
     score_ptr.free()
