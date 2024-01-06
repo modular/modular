@@ -419,22 +419,17 @@ struct TaskGroup:
 
 
 # ===----------------------------------------------------------------------===#
-# OutputChainPtr and OwningOutputChainPtr
+# OutputChainPtr
+#
+# CAUTION: About to be renamed MojoCallContext
 # ===----------------------------------------------------------------------===#
 
 
 @register_passable
 struct OutputChainPtr:
-    """A pointer to a C++ heap/stack/closure allocated OutputChain, which is
-    used by the Modular C++ runtime to coordinate execution with Mojo kernels.
-
-    Pure CPU kernels which accept an OutputChainPtr argument are expected to
-    call mark_ready(), _mark_error_old(), or fork() before returning.
-
-    CPU kernels which launch non-CPU kernels (eg a CUDA kernel) must accept
-    an OuptputChainPtr, and must either call _mark_error_old() before returning,
-    or use a device-specific mechanism to coordinate execution back to the
-    C++ runtime.
+    """A pointer to a C++ OutputChain struct, which is used by the Modular
+    C++ runtime to coordinate execution with Mojo kernels. Currently only
+    supports signal_error.
     """
 
     # Actually a KGEN::OutputChain*
@@ -465,121 +460,39 @@ struct OutputChainPtr:
         return self.ptr != Self.ptr_type()
 
     @always_inline
-    fn is_error(self) -> Bool:
-        """Check if the output chain is an error or not."""
-        return external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_IsError", Bool
-        ](
-            self.ptr,
-        )
-
-    @always_inline
-    fn get_runtime(self) -> Runtime:
-        """Returns the runtime managing the output chain."""
-        let ptr = external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime", Runtime.ptr_type
-        ](self.ptr)
-        return Runtime(ptr, owning=False)
-
-    @always_inline
-    fn _mark_error_old[
-        single_thread_blocking_override: Bool = False
-    ](self, message: StringLiteral):
+    fn _mark_error_old(self, message: StringLiteral):
         """Marks the output chain as having an error with a message.
         The underlying LLCL::OutputChain is not moved.
         """
-
-        @parameter
-        if not single_thread_blocking_override:
-            let strref = StringRef(message)
-            external_call[
-                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
-            ](
-                self.ptr,
-                strref.data,
-                strref.length,
-            )
-
-    @always_inline
-    fn _mark_error_old[
-        single_thread_blocking_override: Bool = False
-    ](self, err: Error):
-        """Marks the output chain as having an error.
-        The underlying LLCL::OutputChain is not moved.
-        """
-        if not single_thread_blocking_override:
-            let str = err.__str__()
-            let strref = str._strref_dangerous()
-            external_call[
-                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
-            ](
-                self.ptr,
-                strref.data,
-                strref.length,
-            )
-            str._strref_keepalive()
-
-    @always_inline
-    fn wait(self):
-        """Returns only when the underlying LLCL::OutputChain is emplaced
-        or set to an error. May execute arbitrary tasks while waiting.
-        """
-        return
-
-
-@register_passable
-struct OwningOutputChainPtr:
-    """As for OutputChainPtr, but will destroy the underlying LLCL::OutputChain
-    when goes out of scope.
-    """
-
-    # Actually LLCL::OutputChain*
-    alias ptr_type = DTypePointer[DType.invalid]
-    var ptr: Self.ptr_type
-
-    @always_inline
-    fn __init__() -> OwningOutputChainPtr:
-        """Creates a null OwningOutputChainPtr."""
-        return OwningOutputChainPtr {ptr: Self.ptr_type()}
-
-    @always_inline
-    fn __init__(ptr: Self.ptr_type) -> OwningOutputChainPtr:
-        """Casts a raw pointer to our OwningOutputChainPtr."""
-        return OwningOutputChainPtr {ptr: ptr}
-
-    @always_inline
-    fn __init__(rt: Runtime) -> OwningOutputChainPtr:
-        """Returns a pointer to a heap-allocated empty LLCL::OutputChain.
-        The LLCL::OutputChain will have an empty location and an unemplaced
-        AsyncValueRef<Chain>.
-        """
-        let ptr = external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty", Self.ptr_type
-        ](rt.ptr)
-        return OwningOutputChainPtr {ptr: ptr}
-
-    @always_inline("nodebug")
-    fn __del__(owned self):
-        if not self.borrow().is_error():
-            external_call[
-                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady", NoneType
-            ](self.ptr)
-        """Destroys the LLCL::OutputChain."""
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy", NoneType](
-            self.ptr
+        let strref = StringRef(message)
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+        ](
+            self.ptr,
+            strref.data,
+            strref.length,
         )
 
     @always_inline
-    fn borrow(self) -> OutputChainPtr:
-        """Returns non-owning pointer to same LLCL::OutputChain."""
-        return OutputChainPtr(self.ptr)
-
-    @always_inline
-    fn wait(self):
-        """Returns only when the underlying LLCL::OutputChain is emplaced
-        or set to an error. May execute arbitrary tasks while waiting.
+    fn _mark_error_old(self, err: Error):
+        """Marks the output chain as having an error.
+        The underlying LLCL::OutputChain is not moved.
         """
-        return
+        let str = err.__str__()
+        let strref = str._strref_dangerous()
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+        ](
+            self.ptr,
+            strref.data,
+            strref.length,
+        )
+        str._strref_keepalive()
+
+
+# ===----------------------------------------------------------------------===#
+# TaskGroupTaskList
+# ===----------------------------------------------------------------------===#
 
 
 struct TaskGroupTaskList[type: AnyRegType](Sized):
