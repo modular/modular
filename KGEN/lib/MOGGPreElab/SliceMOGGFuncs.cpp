@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "mlir/IR/IRMapping.h"
@@ -75,6 +76,69 @@ SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,
   return decoratorsToCopy;
 }
 
+// Mirror of the tensor attributes as they exist in Mojo. This allows us to
+// manipulate parameters on calls as we can understand which parameter
+// corresponds to which in the tensor when passing them into a call.
+struct TensorInMojo {
+  TensorInMojo() { params.resize(NUM_PARAMS); }
+
+  SmallVector<TypedAttr> params;
+
+  void assignParam(TypedAttr param, size_t index) { params[index] = param; }
+
+  bool isParamDefaulted(size_t index) const {
+    return !isa<KGEN::ParamIndexRefAttr>(params[index]);
+  }
+
+  KGEN::ParamIndexRefAttr paramAsRef(size_t index) const {
+    return dyn_cast<KGEN::ParamIndexRefAttr>(params[index]);
+  }
+
+  KGEN::ParamIndexRefAttr outputLambdaAsRef() const {
+    return paramAsRef(OUTPUT_LAMBDA_IDX);
+  }
+
+  // The indices of each parameter as they appear on the struct.
+  // static constexpr size_t DTYPE_IDX = 0;
+  // static constexpr size_t SHAPE_IDX = 1;
+  // static constexpr size_t STRIDE_IDX = 2;
+  static constexpr size_t INPUT_LAMBDA_IDX = 3;
+  static constexpr size_t OUTPUT_LAMBDA_IDX = 4;
+  static constexpr size_t NUM_PARAMS = 5;
+};
+
+// Given a mojo function pull the tensor parameter information off of it. I.E
+// which parameter corresponds to which parameter in a given input.
+std::optional<TensorInMojo> getTensorRepFromFunctionInput(GeneratorOp generator,
+                                                          size_t index) {
+  std::optional<PreservedAttr> sig = generator.getSourceSignature();
+  if (!sig.has_value())
+    return std::nullopt;
+  auto typeAttr = dyn_cast<TypeAttr>(sig.value().getValue());
+  auto litSig = dyn_cast<LIT::LITSignatureType>(typeAttr.getValue());
+
+  Type metadata = litSig.getValues().getInputs()[index];
+
+  // Tensors are expected to be passed as references.
+  auto asLitRef = dyn_cast<LIT::RefType>(metadata);
+  if (!asLitRef)
+    return std::nullopt;
+
+  auto asDeclRef = dyn_cast<KGEN::DeclRefType>(asLitRef.getElementType());
+  if (!asDeclRef)
+    return std::nullopt;
+  if (asDeclRef.getSymbol().getRootReference() != "$MOGGTensor")
+    return std::nullopt;
+
+  TensorInMojo tensor;
+
+  for (auto [paramIdx, param] : llvm::enumerate(asDeclRef.getParamValues())) {
+    tensor.assignParam(param, paramIdx);
+  }
+
+  return tensor;
+}
+
 class SliceMOGGFuncsPass
     : public M::KGEN::MOGGPreElab::impl::SliceMOGGFuncsBase<
           SliceMOGGFuncsPass> {
@@ -95,6 +159,46 @@ private:
     /// mogg.
     SmallVector<TypedAttr> nonMOGGDecorators;
   };
+
+  /// Rewrite a given call to reflect a change in the parameters being passed.
+  /// Which parameters are controlled by the caller of this function through the
+  /// given lambda.
+  void rewriteCallWithNewParams(
+      CallOp call, SymbolTable symTab,
+      std::function<void(const TensorInMojo &, SmallVector<TypedAttr> &)>
+          updateParams) {
+    KGEN::SymbolConstantAttr symbol = call.getCallee();
+    FlatSymbolRefAttr flatSym = cast<FlatSymbolRefAttr>(symbol.getSymbol());
+    auto calledFunc =
+        cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
+
+    SmallVector<TypedAttr> newParams;
+    for (TypedAttr param : symbol.getParamValues())
+      newParams.push_back(param);
+
+    // Update the parameters using the caller provided heuristic.
+    for (auto [idx, value] : llvm::enumerate(call->getOperands())) {
+      std::optional<TensorInMojo> callRep =
+          getTensorRepFromFunctionInput(calledFunc, idx);
+      if (callRep.has_value())
+        updateParams(*callRep, newParams);
+    }
+
+    // Now we have the list of parameters which need to be updated we
+    // can rewrite the call to reflect the new lambda.
+    auto newSig = calledFunc.getSignature().getSpecializedSignature(
+        newParams, [&]() -> mlir::InFlightDiagnostic {
+          return calledFunc->emitError(
+              "INTERNAL COMPILER ERROR: Parameter specialization "
+              "failed");
+        });
+    if (!newSig)
+      signalPassFailure();
+
+    // Point the call to the new rebinding.
+    call.setCalleeAttr(
+        KGEN::SymbolConstantAttr::get(flatSym, newParams, newSig));
+  }
 
   std::optional<AnnotatedKernel> checkForMOGGAttrs(GeneratorOp userFunc) {
     AnnotatedKernel metadata;
@@ -199,6 +303,12 @@ public:
       // that tensor.
       SmallVector<KGEN::CallOp> enableFusionFuncs;
       SmallVector<KGEN::CallOp> simdStores;
+
+      std::optional<TensorInMojo> outTensorParameters =
+          getTensorRepFromFunctionInput(slicedComputeFunction, 0);
+
+      if (!outTensorParameters.has_value())
+        continue;
 
       // Scan the kernel and identify the callsites of annotated functions that
       // we can understand.
@@ -342,18 +452,23 @@ public:
         // Clone the call in the mojo template function which tells us how to
         // rebind the tensor type and remap it onto the new type.
         OwningOpRef<CallOp> newSampleCall = lambda->callUsingLambda.clone();
-        walker.recursivelyReplaceElementsIn(
-            *newSampleCall, /*replaceAttrs=*/true, /*replaceLocs=*/false,
-            /*replaceTypes=*/true);
+        walker.recursivelyReplaceElementsIn(*newSampleCall,
+                                            /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/false,
+                                            /*replaceTypes=*/true);
+
+        size_t lambdaIndex = isInput ? TensorInMojo::INPUT_LAMBDA_IDX
+                                     : TensorInMojo::OUTPUT_LAMBDA_IDX;
+        auto newLambdaBinding =
+            newSampleCall->getCallee().getParamValues()[lambdaIndex];
 
         // We now have the old binding to None for the output and the new
         // binding to the the input lambda we just cloned. We now need to
         // replace all uses of the old one with the new.
         if (isInput) {
           ParamDeclRefAttr oldLambdaBinding = cast<ParamDeclRefAttr>(
-              enableFusionFunc.getCallee().getParamValues()[3]);
-          auto newLambdaBinding =
-              newSampleCall->getCallee().getParamValues()[3];
+              enableFusionFunc.getCallee()
+                  .getParamValues()[TensorInMojo::INPUT_LAMBDA_IDX]);
 
           paramRebinds[oldLambdaBinding] = newLambdaBinding;
           for (Operation &topLevelOp : slicedComputeFunction.getOps()) {
@@ -366,26 +481,30 @@ public:
             }
           }
         } else {
-          TypedAttr oldLambdaBinding =
-              enableFusionFunc.getCallee().getParamValues()[4];
-          auto newLambdaBinding =
-              newSampleCall->getCallee().getParamValues()[4];
+          // Update all the call sites which use the output tensor to reflect
+          // the new lambda.
+          for (Operation *user : outputTensor.getUsers()) {
+            if (auto call = dyn_cast<CallOp>(user)) {
 
-          mlir::AttrTypeReplacer walker2;
-          walker2.addReplacement(
-              [&](TypedAttr attr) -> std::optional<TypedAttr> {
-                if (attr == oldLambdaBinding)
-                  return newLambdaBinding;
-                return std::nullopt;
-              });
+              // Don't include any within the lambda itself.
+              bool inLambda = false;
+              Operation *parent = call->getParentOp();
+              while (parent) {
+                if (parent == newLambda) {
+                  inLambda = true;
+                  break;
+                }
+                parent = parent->getParentOp();
+              }
+              if (inLambda)
+                continue;
 
-          for (Operation &topLevelOp : slicedComputeFunction.getOps()) {
-            if (&topLevelOp != newLambda) {
-              topLevelOp.walk([&](Operation *op) {
-                walker2.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                                     /*replaceLocs=*/false,
-                                                     /*replaceTypes=*/true);
-              });
+              auto paramUpdate = [&](const TensorInMojo &tensor,
+                                     SmallVector<TypedAttr> &newParams) {
+                if (KGEN::ParamIndexRefAttr param = tensor.outputLambdaAsRef())
+                  newParams[param.getIndex()] = newLambdaBinding;
+              };
+              rewriteCallWithNewParams(call, symTab, paramUpdate);
             }
           }
         }
@@ -435,9 +554,6 @@ public:
         if (call.getResult(0).use_empty())
           call->erase();
       }
-
-      // Locate any function with the elementwise hook and check it is the only
-      // call here.
 
       // The new attributes on the generator.
       SmallVector<NamedAttribute> newAttrs;
