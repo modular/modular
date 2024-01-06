@@ -806,10 +806,7 @@ fn softmax[
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
-    let stream = out_chain.get_cuda_stream() if out_chain else Stream[
-        is_borrowed=True
-    ]()
-
+    let stream = Stream.get_current_stream()
     let func = Function[
         fn (
             StaticIntTuple[rank],

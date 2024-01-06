@@ -359,7 +359,7 @@ fn flash_attention[
         raise Error("32bits index overflow.")
 
     try:
-        let stream = out_chain.get_cuda_stream()
+        let stream = Stream.get_current_stream()
 
         # Use fast kernel for context encoding benchmark.
         if seq_len == num_keys and seq_len % 128 == 0:
