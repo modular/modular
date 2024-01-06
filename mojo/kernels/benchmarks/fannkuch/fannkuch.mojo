@@ -8,7 +8,7 @@ from math import max, factorial, div_ceil, min
 from time import now
 from utils.index import StaticIntTuple
 from algorithm import parallelize, sync_parallelize
-from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
+from runtime.llcl import num_cores, Runtime
 from collections.vector import UnsafeFixedVector
 
 alias n = 12
@@ -78,10 +78,7 @@ fn main():
             max_flips = max(max_flips, flips)
         max_vals[thread_idx] = max_flips
 
-    with Runtime() as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        sync_parallelize[_do_parallel](out_chain.borrow(), core_count)
-        out_chain.wait()
+    sync_parallelize[_do_parallel](core_count)
 
     var max_flips = max_vals[0]
     for i in range(len(max_vals)):
