@@ -14,7 +14,7 @@ from algorithm.functional import (
 )
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple, Index
 from utils.list import Dim, DimList
@@ -60,9 +60,21 @@ fn test_elementwise[
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
     with Runtime(4) as runtime:
-        _elementwise_impl[outer_rank, 1, is_blocking, func](
-            rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
-        )
+
+        @parameter
+        if is_blocking:
+            _elementwise_impl[outer_rank, 1, is_blocking, func](
+                rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
+                OutputChainPtr(),
+            )
+        else:
+            let out_chain = OwningOutputChainPtr(runtime)
+            _elementwise_impl[outer_rank, 1, is_blocking, func](
+                rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
+                out_chain.borrow(),
+            )
+
+            _ = out_chain ^
 
     for i2 in range(min(numelems, 64)):
         if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):

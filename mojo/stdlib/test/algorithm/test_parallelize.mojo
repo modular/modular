@@ -9,7 +9,7 @@ from math import div_ceil, min
 
 from algorithm import map, parallelize, sync_parallelize
 from memory.buffer import Buffer
-from runtime.llcl import Runtime, num_cores
+from runtime.llcl import OwningOutputChainPtr, Runtime, num_cores
 
 
 # CHECK-LABEL: test_async_parallelize
@@ -39,7 +39,9 @@ fn test_async_parallelize():
         map[add_two](end - start)
 
     with Runtime(num_work_items) as rt:
-        sync_parallelize[parallel_fn](num_work_items)
+        let out_chain = OwningOutputChainPtr(rt)
+        sync_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+        out_chain.wait()
 
     # CHECK-NOT: ERROR
     for i in range(len(vector)):
@@ -75,7 +77,9 @@ fn test_sync_parallelize():
         map[add_two](end - start)
 
     with Runtime(num_work_items) as rt:
-        sync_parallelize[parallel_fn](num_work_items)
+        let out_chain = OwningOutputChainPtr(rt)
+        sync_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+        _ = out_chain ^
 
     # CHECK-NOT: ERROR
     for i in range(len(vector)):

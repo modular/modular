@@ -37,6 +37,7 @@ from algorithm.functional import _get_num_workers
 from algorithm._gpu.reduction import reduce_launch
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from memory.unsafe import Pointer
+from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, Index
 from utils.list import Dim, DimList
@@ -299,7 +300,7 @@ fn reduce[
             output_fn,
             reduce_fn_wrapper,
             single_thread_blocking_override=True,
-        ](shape, init=init, reduce_dim=0)
+        ](shape, init=init, reduce_dim=0, out_chain=OutputChainPtr())
     except e:
         trap(e)
     return out
@@ -503,7 +504,12 @@ fn _reduce_generator[
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple, init: Scalar, reduce_dim: Int,) raises:
+](
+    shape: StaticIntTuple,
+    init: Scalar,
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+) raises:
     """Reduce the given tensor using the given reduction function.
 
     Constraints:
@@ -522,6 +528,7 @@ fn _reduce_generator[
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
     """
     constrained[target == "cuda", "only valid on GPUs"]()
 
@@ -532,7 +539,7 @@ fn _reduce_generator[
     if reduce_dim_normalized != len(shape) - 1:
         raise "GPU reduction currently limited to inner axis."
 
-    let stream = Stream.get_current_stream()
+    let stream = out_chain.get_cuda_stream()
     reduce_launch[
         input_0_fn,
         output_0_fn,
@@ -555,7 +562,12 @@ fn _reduce_generator[
     /,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
-](shape: StaticIntTuple, init: Scalar, reduce_dim: Int,) raises:
+](
+    shape: StaticIntTuple,
+    init: Scalar,
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+) raises:
     """Reduce the given tensor using the given reduction function.
 
     Constraints:
@@ -574,6 +586,7 @@ fn _reduce_generator[
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
     """
     constrained[target == "cpu", "only valid on CPUs"]()
 
@@ -590,7 +603,7 @@ fn _reduce_generator[
             output_0_fn,
             reduce_function,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](shape, init, reduce_dim_normalized)
+        ](shape, init, reduce_dim_normalized, out_chain)
     else:
         if rank - 1 == reduce_dim_normalized:
             _reduce_along_inner_dimension[
@@ -598,14 +611,14 @@ fn _reduce_generator[
                 output_0_fn,
                 reduce_function,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
+            ](shape, init, reduce_dim_normalized, out_chain)
         else:
             _reduce_along_outer_dimension[
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
+            ](shape, init, reduce_dim_normalized, out_chain)
 
 
 fn _reduce_along_inner_dimension[
@@ -620,7 +633,12 @@ fn _reduce_along_inner_dimension[
     ) capturing -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
-](shape: StaticIntTuple, init_value: Scalar, reduce_dim: Int,):
+](
+    shape: StaticIntTuple,
+    init_value: Scalar,
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
     """Reduce the given tensor using the given reduction function.
 
     Parameters:
@@ -635,6 +653,7 @@ fn _reduce_along_inner_dimension[
         shape: The shape of the tensor we are reducing
         init_value: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        out_chain: The chain to attach results to.
     """
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
@@ -652,7 +671,7 @@ fn _reduce_along_inner_dimension[
     if single_thread_blocking_override:
         num_workers = 1
     else:
-        num_workers = _get_num_workers(total_size)
+        num_workers = _get_num_workers(total_size, out_chain.get_runtime())
 
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
@@ -737,7 +756,7 @@ fn _reduce_along_inner_dimension[
     if single_thread_blocking_override:
         reduce_rows_unrolled(0, parallelism_size)
     else:
-        sync_parallelize[reduce_rows](num_workers)
+        sync_parallelize[reduce_rows](out_chain, num_workers)
 
 
 fn _reduce_along_outer_dimension[
@@ -752,7 +771,12 @@ fn _reduce_along_outer_dimension[
     ) capturing -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
-](shape: StaticIntTuple, init: Scalar, reduce_dim: Int,):
+](
+    shape: StaticIntTuple,
+    init: Scalar,
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
     """Reduce the given tensor using the given reduction function.
 
     Parameters:
@@ -767,6 +791,7 @@ fn _reduce_along_outer_dimension[
         shape: The shape of the tensor we are reducing
         init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
+        out_chain: The chain to attach results to.
     """
     alias rank = shape.size
     alias type = init.element_type
@@ -794,7 +819,7 @@ fn _reduce_along_outer_dimension[
     if single_thread_blocking_override:
         num_workers = 1
     else:
-        num_workers = _get_num_workers(total_size)
+        num_workers = _get_num_workers(total_size, out_chain.get_runtime())
 
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
@@ -834,7 +859,7 @@ fn _reduce_along_outer_dimension[
     if single_thread_blocking_override:
         reduce_slices(0)
     else:
-        sync_parallelize[reduce_slices](num_workers)
+        sync_parallelize[reduce_slices](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1166,6 +1191,7 @@ fn mean[
     input_shape: StaticIntTuple,
     reduce_dim: Int,
     output_shape: StaticIntTuple[input_shape.size],
+    out_chain: OutputChainPtr,
 ) raises:
     """Computes the mean across the input and output shape.
 
@@ -1186,6 +1212,7 @@ fn mean[
         input_shape: The input shape.
         reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
+        out_chain: The output chain to use.
     """
 
     @always_inline
@@ -1224,6 +1251,7 @@ fn mean[
             input_shape,
             init=Scalar[type](0),
             reduce_dim=reduce_dim,
+            out_chain=out_chain,
         )
 
     else:
@@ -1248,6 +1276,7 @@ fn mean[
             input_shape,
             init=Scalar[type](0),
             reduce_dim=reduce_dim,
+            out_chain=out_chain,
         )
 
 
@@ -1321,6 +1350,7 @@ fn variance(
             shape,
             init=Scalar[mean_value.type](0),
             reduce_dim=0,
+            out_chain=OutputChainPtr(),
         )
     except e:
         trap(e)
@@ -1465,7 +1495,12 @@ fn none_true(src: Buffer) -> Bool:
 
 fn _argn[
     is_max: Bool
-](input: NDBuffer, axis: Int, output: NDBuffer,) raises:
+](
+    input: NDBuffer,
+    axis: Int,
+    output: NDBuffer,
+    out_chain: OutputChainPtr,
+) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -1478,6 +1513,7 @@ fn _argn[
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        out_chain: The chain to attach results to.
     """
     alias rank = input.rank
     alias simd_width = simdwidthof[input.type]()
@@ -1522,7 +1558,9 @@ fn _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         num_workers = _min(
-            _get_num_workers(input.dynamic_shape.flattened_length()),
+            _get_num_workers(
+                input.dynamic_shape.flattened_length(), out_chain.get_runtime()
+            ),
             parallel_size,
         )
         chunk_size = div_ceil(parallel_size, num_workers)
@@ -1616,7 +1654,7 @@ fn _argn[
                 idx = min_indices.reduce_min()
             output_dim_ptr.store(idx)
 
-    sync_parallelize[task_func](parallel_size)
+    sync_parallelize[task_func](out_chain, parallel_size)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1628,6 +1666,7 @@ fn argmax(
     input: NDBuffer,
     axis: Int,
     output: NDBuffer,
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -1639,15 +1678,17 @@ fn argmax(
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        out_chain: The chain to attach results to.
     """
 
-    _argn[is_max=True](input, axis, output)
+    _argn[is_max=True](input, axis, output, out_chain)
 
 
 fn argmax(
     input: NDBuffer,
     axis_buf: NDBuffer,
     output: NDBuffer,
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -1659,9 +1700,10 @@ fn argmax(
         input: The input tensor.
         axis_buf: The axis tensor.
         output: The axis tensor.
+        out_chain: The chain to attach results to.
     """
 
-    argmax(input, int(axis_buf[0]), output)
+    argmax(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1673,6 +1715,7 @@ fn argmin(
     input: NDBuffer,
     axis: Int,
     output: NDBuffer,
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -1684,15 +1727,17 @@ fn argmin(
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        out_chain: The chain to attach results to.
     """
 
-    _argn[is_max=False](input, axis, output)
+    _argn[is_max=False](input, axis, output, out_chain)
 
 
 fn argmin(
     input: NDBuffer,
     axis_buf: NDBuffer,
     output: NDBuffer,
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -1704,9 +1749,10 @@ fn argmin(
         input: The input tensor.
         axis_buf: The axis tensor.
         output: The axis tensor.
+        out_chain: The chain to attach results to.
     """
 
-    argmin(input, int(axis_buf[0]), output)
+    argmin(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#

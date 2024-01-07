@@ -12,7 +12,7 @@ from math.limit import neginf
 from algorithm.functional import stencil
 from memory.buffer import NDBuffer
 
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 alias _map_fn_type = fn[rank: Int] (StaticIntTuple[rank]) capturing -> (
     StaticIntTuple[rank],
@@ -124,20 +124,24 @@ fn test_stencil_avg_pool():
         let res = val / (pool_window_h * pool_window_w)
         output.simd_store(point, res)
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    stencil[
-        rank,
-        stencil_rank,
-        stencil_axis,
-        simd_with,
-        dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize,
-    ](output.get_shape())
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            dilation_fn,
+            load_fn,
+            avg_pool_compute_init,
+            avg_pool_compute,
+            avg_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
 
     # CHECK: 7.0    8.0     9.0
     # CHECK: 12.0    13.0    14.0
@@ -241,21 +245,24 @@ fn test_stencil_avg_pool_padded():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    stencil[
-        rank,
-        stencil_rank,
-        stencil_axis,
-        simd_with,
-        dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize,
-    ](output.get_shape())
-
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            dilation_fn,
+            load_fn,
+            avg_pool_compute_init,
+            avg_pool_compute,
+            avg_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
     # CHECK: 2.5199999809265137      3.5999999046325684      4.8000001907348633      4.0799999237060547      3.2400000095367432
     # CHECK: 4.559999942779541       6.4000000953674316      8.3999996185302734      7.0399999618530273      5.5199999809265137
     # CHECK: 7.1999998092651367      10.0    13.0    10.800000190734863      8.3999996185302734
@@ -359,21 +366,24 @@ fn test_stencil_avg_pool_stride_2():
     fn dilation_fn(dim: Int) -> Int:
         return 1
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    stencil[
-        rank,
-        stencil_rank,
-        stencil_axis,
-        simd_with,
-        dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize,
-    ](output.get_shape())
-
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            dilation_fn,
+            load_fn,
+            avg_pool_compute_init,
+            avg_pool_compute,
+            avg_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
     # CHECK: 9.0     11.0    13.0
     # CHECK: 23.0    25.0    27.0
     # CHECK: 37.0    39.0    41.0
@@ -478,20 +488,24 @@ fn test_stencil_max_pool_dilation_2():
     fn dilation_fn(dim: Int) -> Int:
         return dilation
 
-    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    stencil[
-        rank,
-        stencil_rank,
-        stencil_axis,
-        simd_with,
-        dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        max_pool_compute_init,
-        max_pool_compute,
-        max_pool_compute_finalize,
-    ](output.get_shape())
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            dilation_fn,
+            load_fn,
+            max_pool_compute_init,
+            max_pool_compute,
+            max_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
 
     # CHECK: 33.0    34.0    35.0
     # CHECK: 40.0    41.0    42.0
