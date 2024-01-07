@@ -39,7 +39,6 @@ add_modular_library(KGENCompilerRTShared SHARED
 
   LINK_LIBS PRIVATE
   CUDASupport
-  CUDASupportGlobals
   LLCLRuntime
   LLCLRuntimeGlobals
   MProfiling
@@ -91,7 +90,6 @@ string(REPLACE " " "," kgen_system_libs "${kgen_system_libs}")
 
 set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
-  $<TARGET_OBJECTS:obj.CUDASupportGlobals-static>
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.MThreading>

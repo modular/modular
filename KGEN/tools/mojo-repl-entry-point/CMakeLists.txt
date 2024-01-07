@@ -9,7 +9,6 @@ add_modular_tool(mojo-repl-entry-point
 
   LINK_LIBS PUBLIC
   KGENCompilerRT
-  CUDASupportGlobals
   LLCLRuntimeGlobals
   MSupportGlobals
 )

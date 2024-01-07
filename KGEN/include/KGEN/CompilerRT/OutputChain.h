@@ -37,6 +37,8 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 ///  - An AnyAsyncValueRef 'chain' which is currently only used to support
 ///    the markError method.
 ///  - An EncodedLocation, which can be used by the markError method.
+///  - Additional target-specific context, such as a CUDA stream on which to
+///    launch all async CUDA operations.
 ///
 /// The Mojo OutputChainPtr struct points to heap-allocated instances of this
 /// class.
@@ -46,6 +48,16 @@ struct OutputChain {
   AnyAsyncValueRef chain;
   /// Location to use for any errors.
   LLCL::EncodedLocation loc;
+
+  /// For kernel calls using cuda.kernel.execute.via_cpu, the CUDA stream
+  /// to use for all launched CUDA kernels and other async operations.
+  /// The runtime currently ensures all kernel inputs are correctly
+  /// synchronized to this stream, and will ensure all users of the kernel
+  /// results will be similarly synchronized.
+  ///
+  /// Eventually stream management may be moved into Mojo and this field
+  /// can be removed.
+  void *cudaStream = nullptr;
 
   OutputChain(AnyAsyncValueRef chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
@@ -82,6 +94,11 @@ struct OutputChain {
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
   void setToError(Error &&error);
+
+  /// For kernel calls using cuda.kernel.execute.via_cpu only: Returns the
+  /// CUDA CUstream handle being used to synchronize execution of the launched
+  /// CUDA kernel. We'll use a void* to avoid including any CUDA headers.
+  void *getCUDAStream() const { return cudaStream; }
 };
 
 } // namespace M::KGEN
