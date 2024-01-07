@@ -56,7 +56,7 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer, bitcast
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 from Neon import _neon_matmul, _neon_dotprod
@@ -1968,6 +1968,7 @@ fn _pack_b_ndbuffer_impl[
 ](
     b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
 ):
     """Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
@@ -2048,6 +2049,7 @@ fn pack_b_ndbuffer[
 ](
     b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
 ):
     """
     Perform matmul weight packing on the given input.
@@ -2067,6 +2069,7 @@ fn pack_b_ndbuffer[
     Args:
         b_input: Input buffer that contains the weight to be packed.
         output_buffer: Output buffer to store the packed weight.
+        out_chain: The to signal when writes to output buffer have finished.
     """
     _pack_b_ndbuffer_impl[
         a_type,
@@ -2076,7 +2079,7 @@ fn pack_b_ndbuffer[
         c_type,
         c_shape,
         transposed=False,
-    ](b_input, output_buffer)
+    ](b_input, output_buffer, out_chain)
 
 
 @always_inline
@@ -2090,6 +2093,7 @@ fn pack_transposed_b_ndbuffer[
 ](
     b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
 ):
     """
     Perform matmul weight packing on a transposed input.
@@ -2109,6 +2113,7 @@ fn pack_transposed_b_ndbuffer[
     Args:
         b_input: Input buffer that contains the transposed weight to be packed.
         output_buffer: Output buffer to store the packed weight.
+        out_chain: The to signal when writes to output buffer have finished.
     """
     _pack_b_ndbuffer_impl[
         a_type,
@@ -2118,7 +2123,7 @@ fn pack_transposed_b_ndbuffer[
         c_type,
         c_shape,
         transposed=True,
-    ](b_input, output_buffer)
+    ](b_input, output_buffer, out_chain)
 
 
 @value
@@ -2934,6 +2939,7 @@ fn matmul[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
@@ -2974,7 +2980,7 @@ fn matmul[
                 c_shape,
                 indexing_integral_dtype = DType.uint32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b)
+            ](c, a, b, out_chain)
         else:
             _matmul_gpu_dispatch[
                 a_type,
@@ -2985,7 +2991,7 @@ fn matmul[
                 c_shape,
                 indexing_integral_dtype = DType.uint64,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b)
+            ](c, a, b, out_chain)
 
     else:
         if use_32bit_indexing:
@@ -2997,7 +3003,7 @@ fn matmul[
                 c_type,
                 c_shape,
                 indexing_integral_dtype = DType.uint32,
-            ](c, a, b)
+            ](c, a, b, out_chain)
         else:
             _matmul_gpu_dispatch[
                 a_type,
@@ -3007,7 +3013,7 @@ fn matmul[
                 c_type,
                 c_shape,
                 indexing_integral_dtype = DType.uint64,
-            ](c, a, b)
+            ](c, a, b, out_chain)
 
 
 @always_inline
@@ -3025,13 +3031,14 @@ fn _matmul_gpu_dispatch[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
 ):
     let shape = GemmShape.get[False, False](c, a, b)
     let m = shape.M
     let n = shape.N
     let k = shape.K
     try:
-        let stream = Stream.get_current_stream()
+        let stream = out_chain.get_cuda_stream()
 
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
@@ -3240,6 +3247,7 @@ fn matmul[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
     constrained[target == "cpu", "only valid on CPUs"]()
@@ -3280,7 +3288,7 @@ fn matmul[
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
             saturated_vnni,
-        ](c, a, b, num_threads)
+        ](c, a, b, out_chain, num_threads)
     else:
         matmul[
             a_type,
@@ -3295,7 +3303,7 @@ fn matmul[
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
             saturated_vnni,
-        ](c, a, b, num_threads)
+        ](c, a, b, out_chain, num_threads)
 
 
 @always_inline
@@ -3314,6 +3322,7 @@ fn matmul[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
     @parameter
@@ -3335,7 +3344,7 @@ fn matmul[
         False,
         null_lambda,
         False,
-    ](c, a, b, num_threads)
+    ](c, a, b, out_chain, num_threads)
 
 
 @always_inline
@@ -3355,6 +3364,7 @@ fn matmul[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
     @parameter
@@ -3376,7 +3386,7 @@ fn matmul[
         False,
         null_lambda,
         saturated_vnni,
-    ](c, a, b, num_threads)
+    ](c, a, b, out_chain, num_threads)
 
 
 from runtime.tracing import Trace, TraceLevel
@@ -3399,6 +3409,7 @@ fn matmul[
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
+    out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
@@ -3423,12 +3434,13 @@ fn matmul[
             b_type=b_type,
             elementwise_epilogue_enabled=elementwise_epilogue_enabled,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](out, lhs, rhs)
+        ](out, lhs, rhs, out_chain)
     else:
         let complexity = m * n * k
         let num_tasks = min(
             div_ceil(complexity, get_min_task_size()),
-            num_threads if num_threads > 0 else Runtime().parallelism_level(),
+            num_threads if num_threads
+            > 0 else out_chain.get_runtime().parallelism_level(),
         )
 
         alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
@@ -3528,12 +3540,12 @@ fn matmul[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         if use_i8mm and m < n:
-            sync_parallelize[pack_task_func](num_tasks)
+            sync_parallelize[pack_task_func](out_chain, num_tasks)
             # Ensure that pack_chain is not destructed until sync_parallelize is finished.
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](out_chain, num_tasks)
         a_packed_ptr.free()
 
 

@@ -11,6 +11,7 @@ from utils.index import Index
 from utils.list import Dim, DimList
 from MatmulUtils import elementwise_lambda_fn_sig_type
 
+from runtime.llcl import OutputChainPtr
 
 # Parallelized version of Gemv
 
@@ -27,6 +28,7 @@ fn gemv[
     c_buf: Buffer[c_size, c_type],
     a_buf: NDBuffer[2, a_shape, a_type],
     b_buf: Buffer[b_size, b_type],
+    out_chain: OutputChainPtr = OutputChainPtr(),
 ):
     @parameter
     fn null_lambda[
@@ -44,7 +46,7 @@ fn gemv[
         b_type,
         False,
         null_lambda,
-    ](c_buf, a_buf, b_buf)
+    ](c_buf, a_buf, b_buf, out_chain)
 
 
 @always_inline
@@ -62,6 +64,7 @@ fn gemv[
     c_buf: Buffer[c_size, c_type],
     a_buf: NDBuffer[2, a_shape, a_type],
     b_buf: Buffer[b_size, b_type],
+    out_chain: OutputChainPtr = OutputChainPtr(),
 ):
     alias simd_width = simdwidthof[c_type]()
 
@@ -111,6 +114,7 @@ fn gemv[
             Index(M, K),
             init=Scalar[c_type](0),
             reduce_dim=1,
+            out_chain=out_chain,
         )
 
     except e:

@@ -7,6 +7,7 @@
 
 from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
@@ -27,6 +28,7 @@ fn matrix_band_part[
     num_upper: NDBuffer[1, DimList.create_unknown[1](), int_type],
     exclude_buf: NDBuffer[1, DimList.create_unknown[1](), cond_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
 ):
     let lower_diagonal_index = int(num_lower[0])
     let upper_diagonal_index = int(num_upper[0])
@@ -57,4 +59,5 @@ fn matrix_band_part[
 
     _elementwise_impl[rank, 1, single_thread_blocking_override, func](
         input.dynamic_shape,
+        out_chain,
     )

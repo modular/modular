@@ -25,7 +25,7 @@ from MatmulUtils import (
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -91,6 +91,7 @@ fn _small_batched_matmul[
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    out_chain: OutputChainPtr,
 ):
     alias simd_width = simdwidthof[c_type]()
 
@@ -158,6 +159,7 @@ fn _small_batched_matmul[
                     a_view.dynamic_shape,
                     init=Scalar[c_type](0),
                     reduce_dim=0,
+                    out_chain=out_chain,
                 )
             except e:
                 trap(e)
@@ -234,6 +236,7 @@ fn batched_matmul[
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    out_chain: OutputChainPtr,
 ):
     # TODO: generalize to > rank 3
     @parameter
@@ -245,7 +248,7 @@ fn batched_matmul[
     ):
         return _small_batched_matmul[
             elementwise_epilogue_enabled, elementwise_epilogue_fn
-        ](c_buf, a_buf, b_buf)
+        ](c_buf, a_buf, b_buf, out_chain)
 
     @closure
     @always_inline
@@ -272,7 +275,7 @@ fn batched_matmul[
             rowwise_epilogue_enabled=False,
             saturated_vnni=saturated_vnni,
             target=target,
-        ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
+        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
     else:
         batched_matmul[
             rank,
@@ -286,7 +289,7 @@ fn batched_matmul[
             rowwise_epilogue_enabled=False,
             saturated_vnni=saturated_vnni,
             target=target,
-        ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
+        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
 @always_inline
@@ -301,6 +304,7 @@ fn batched_matmul[
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    out_chain: OutputChainPtr,
 ):
     @parameter
     fn null_elementwise_epilogue[
@@ -327,7 +331,7 @@ fn batched_matmul[
         False,
         null_elementwise_epilogue,
         False,
-    ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
+    ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
 @adaptive
@@ -353,6 +357,7 @@ fn batched_matmul[
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
+    out_chain: OutputChainPtr,
 ):
     constrained[target == "cpu", "only valid on CPUs"]()
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
@@ -367,7 +372,7 @@ fn batched_matmul[
     let m = c.dim[1]()
     let n = c.dim[2]()
     let k = a.dim[1]() if adj_a else a.dim[2]()
-    let num_threads = Runtime().parallelism_level()
+    let num_threads = out_chain.get_runtime().parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     let max_num_tasks_batch = min(
         div_ceil(m * n * k * batch_size, get_min_task_size()), batch_size
@@ -496,7 +501,7 @@ fn batched_matmul[
                 rowwise_closure,
             )
 
-    sync_parallelize[task_func](num_tasks)
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 @always_inline
@@ -521,6 +526,7 @@ fn batched_matmul[
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
+    out_chain: OutputChainPtr,
 ):
     constrained[target == "cpu", "only valid on GPUs"]()
     batched_matmul[
@@ -534,7 +540,7 @@ fn batched_matmul[
         elementwise_epilogue_fn,
         rowwise_epilogue_enabled,
         saturated_vnni=False,
-    ](c_buf, a_buf, b_buf, rowwise_epilogue)
+    ](c_buf, a_buf, b_buf, rowwise_epilogue, out_chain)
 
 
 alias elementwise_lambda_fn_sig_type = fn[
@@ -606,6 +612,7 @@ fn batched_matmul[
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
+    out_chain: OutputChainPtr,
 ):
     constrained[target == "cuda", "only valid on GPUs"]()
     constrained[
@@ -625,7 +632,9 @@ fn batched_matmul[
     let n = b_buf_reshaped.dim(2)
 
     try:
-        let stream = Stream.get_current_stream()
+        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
+            is_borrowed=True
+        ]()
         let gpu_func = Function[
             fn (
                 NDBuffer[3, unkown_shape, c_type],
