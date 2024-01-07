@@ -58,25 +58,25 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   // The lit.ownership.end_lifetime op ends a register/mem lifetime and creates
   // a new one.  This defines the properties of its new lifetime.
   if (auto endLifetime = v.getDefiningOp<OwnershipEndLifetimeOp>()) {
-    name = StringAttr::get(v.getContext(), "(consumed value)");
+    name = StringAttr::get(v.getContext(), "(transferred value)");
     isIndirect = !endLifetime.getIsReg();
     startsUninit = true;
     endsUninit = true;
     return;
   }
 
-  // The lit.ownership.make_pointer_lvalue op takes an address and projects to a
-  // liveness tracked indirect value.
-  if (auto makePointer = v.getDefiningOp<OwnershipMakeRefLValue>()) {
-    // Don't track values that are uninitialized on entry at all.  They are free
-    // reign and don't need to be initialized on all paths to be used properly.
-    startsUninit = !makePointer.getLiveOnEntry();
-    if (startsUninit)
-      return;
-
-    name = StringAttr::get(v.getContext(), "(pointee value)");
+  // The lit.ref.from_pointer op takes an lifetime-tracked reference.  We
+  // unconditionally model this as same liveness on entry to the function as on
+  // exit, because some control flow paths may never execute the operation.
+  //
+  // When the op is executed to take ownership of the raw pointer,
+  // CheckLifetimes will notice its actual effect: if it is init on entry and
+  // uninit on exit, CheckLifetimes will ensure the value gets consumed or
+  // destroyed.
+  if (auto refFromPtr = v.getDefiningOp<RefFromPointerOp>()) {
+    name = StringAttr::get(v.getContext(), "(reference value)");
     isIndirect = true;
-    endsUninit = !makePointer.getLiveOnExit();
+    startsUninit = endsUninit = refFromPtr.getEndUninit();
     return;
   }
 

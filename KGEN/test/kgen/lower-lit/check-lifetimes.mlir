@@ -675,8 +675,8 @@ lit.func @use_value(%arg0: !RegType borrow) {
 lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
   %x = lit.letreg.decl "x" = %arg0 : !RegType
   %0 = pop.stack_allocation 1 x !RegType
+  pop.store %x, %0 : !kgen.pointer<!RegType>
   %1 = lit.ref.from_pointer %0: <mut !RegType, #lit.lifetime>
-  lit.store.borrow %x, %1 : <mut !RegType, #lit.lifetime>
   lit.call @use_value(%x) : !lit.signature<(!RegType) -> ()>
   kgen.return
 }

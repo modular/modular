@@ -550,7 +550,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
       tmp = emitter.builder->create<RefFromPointerOp>(parentFunc.getLoc(),
-                                                      /*isMut=*/true, tmp);
+                                                      /*isMut=*/true, tmp,
+                                                      /*startUninit=*/true,
+                                                      /*endUninit=*/false);
       ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
       if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
@@ -571,7 +573,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
           functionContainer.getLoc(), ptrType, 1);
       localDecl = emitter.builder->create<RefFromPointerOp>(
-          functionContainer.getLoc(), /*isMut=*/true, localDecl);
+          functionContainer.getLoc(), /*isMut=*/true, localDecl,
+          /*startUninit=*/true, /*endUninit=*/false);
 
       // Copy the raw bytes in.
       emitter.builder->create<RefStoreOp>(functionContainer.getLoc(), rawBytes,
@@ -1659,7 +1662,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       if (!ASTType(ptrType.getElementType())
                .isRegisterPassable(getLoc(), emitter.shared)) {
         value = emitter.builder->create<RefFromPointerOp>(
-            emitter.translateLocation(getLoc()), /*isMut=*/true, value);
+            emitter.translateLocation(getLoc()), /*isMut=*/true, value,
+            /*startUninit=*/false,
+            /*endUninit=*/true);
         return emitter.emitResult(MRValue(value), this, dest);
       }
     }
@@ -3079,42 +3084,29 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!exprRVal)
     return {};
 
-  auto pointerType = dyn_cast<PointerType>(exprRVal.getRValueType());
-  if (!pointerType) {
+  if (!isa<PointerType>(exprRVal.getRValueType())) {
     emitter.emitError(getLoc(),
                       "operand must have '!kgen.pointer<T>' type, not ")
         << exprRVal.getRValueType() << getRange();
     return {};
   }
 
-  SRValue exprVal = emitter.emitSRValue({exprRVal, subExpr}, dest.getContext());
+  Value exprVal = emitter.emitSRValue({exprRVal, subExpr}, dest.getContext());
   if (!exprVal)
     return {};
 
-  // If this is a user defined type with ownership, emit lifetime intrinsics
-  // for it, if not, we don't need/want them.
-  auto pointeeType = ASTType(pointerType).getPointerElementType();
-  bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
+  bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
+  bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
   exprVal = emitter.builder->create<RefFromPointerOp>(getLocation(emitter),
-                                                      /*isMut=*/true, exprVal);
+                                                      /*isMut=*/true, exprVal,
+                                                      startsUninit, endsUninit);
 
-  /// __get_address_as_owned_value(pop_pointer) # returns RValue
-  if (kind == ExprNode::kGetAddressAsOwned) {
-    // Make sure to take ownership of the address and create a new lifetime
-    // tracked value.
-    if (needsLifetime)
-      exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
-          getLocation(emitter), exprVal, /*isRegister=*/false);
+  /// __get_address_as_owned_value(ptr) # returns RValue
+  if (kind == ExprNode::kGetAddressAsOwned)
     return emitter.emitResult(MRValue(exprVal), this, dest);
-  }
 
   // These both return an MLValue with different ownership semantics.
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
-  if (needsLifetime)
-    exprVal = emitter.builder->create<OwnershipMakeRefLValue>(
-        getLocation(emitter), exprVal,
-        /*isLiveOnEntry=*/kind == kGetAddressAsLValue, /*isLiveOnExit=*/true);
-
   return emitter.emitResult(MLValue(exprVal), this, dest);
 }

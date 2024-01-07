@@ -63,8 +63,7 @@ trait Movable:
 
 # CHECK-LABEL: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
-# CHECK-NEXT: %1 = lit.ref.from_pointer %0
-# CHECK-NEXT: lit.ownership.end_lifetime %1
+# CHECK-NEXT: %1 = lit.ref.from_pointer %0 end_uninit
 # CHECK-NEXT: pop.aligned_free %0
 
 # CHECK-LABEL: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}[*"`0_unnamed", *"`2_unnamed"]

@@ -1484,28 +1484,6 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 }
 
 //===----------------------------------------------------------------------===//
-// StoreBorrowOp
-//===----------------------------------------------------------------------===//
-
-def LIT_StoreBorrowOp : LITOp<"store.borrow",
-                              [ReferenceElementType<"ref", "arg">]> {
-  let summary = "borrow register-passable value via memcpy";
-  let description = [{
-    The `lit.store.borrow` operation is a special store that creates a borrow
-    of a register-passable value that lives in-memory.
-
-    Example:
-
-    ```mlir
-    lit.store.borrow %arg0, %alloc : <mut index, life>
-    ```
-  }];
-
-  let arguments = (ins AnyType:$arg, Arg<LIT_RefType, "", [MemWrite]>:$ref);
-  let assemblyFormat = "$arg `,` $ref attr-dict `:` type($ref)";
-}
-
-//===----------------------------------------------------------------------===//
 // LoadConsumeOp
 //===----------------------------------------------------------------------===//
 
@@ -1591,36 +1569,6 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end_lifetime",
   let arguments = (ins AnyType:$value, BoolAttr:$isReg);
   let results = (outs AnyType:$newValue);
   let assemblyFormat = "$value `:` type($value) attr-dict";
-}
-
-
-//===----------------------------------------------------------------------===//
-// OwnershipMakeRefLValue
-//===----------------------------------------------------------------------===//
-
-def LIT_OwnershipMakeRefLValue : LITOp<"ownership.make_ref_lvalue",
-                                        [AllTypesMatch<["ref", "valueRef"]>]> {
-  let summary = "Project a reference as a tracked LValue";
-  let description = [{
-    This op projects a `!lit.ref` value as an LValue, whose value is
-    initialized on entry (or not) based on the first property, and initialized
-    after last use (or not) depending on the second one.
-
-    This works with memory values.
-
-    ```mlir
-    %1 = lit.ownership.make_ref_lvalue %0 : !lit.ref<mut @MyStruct, #lifetime>
-    ```
-  }];
-
-  let arguments = (ins RefOf<KGEN_DeclRefType>:$ref,
-                       BoolAttr:$liveOnEntry,
-                       BoolAttr:$liveOnExit);
-  let results = (outs RefOf<KGEN_DeclRefType>:$valueRef);
-  let assemblyFormat = [{
-    $ref `live_on_entry``=`$liveOnEntry`,` `exit``=`$liveOnExit
-    `:` type($ref) attr-dict
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1771,22 +1719,28 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to an immortal reference of specified
-    mutability.
+    mutability.  When `startsUninit` is true, the reference is assumed to be
+    uninitialized but needs to be initialized before exit.  When false it is
+    assumed to be initialized and must be initialized on exit.
 
     ```mlir
-    lit.ref.from_pointer %0 : !lit.ref<mut @Foo, life>
+    lit.ref.from_pointer %0, startUninit=true : !lit.ref<mut @Foo, life>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr);
+  let arguments = (ins PointerType:$ptr, UnitAttr:$startUninit,
+                       UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
-  let assemblyFormat = "$ptr `:` type($ref) attr-dict";
+  let assemblyFormat = [{
+    $ptr (`start_uninit` $startUninit^)? (`end_uninit` $endUninit^)?
+    `:` type($ref) attr-dict
+  }];
 
   let builders = [
     // Create with a pointer and mutability, instead of requiring a result type.
-    OpBuilder<(ins "bool":$isMut, "Value":$pointer)>,
+    OpBuilder<(ins "bool":$isMut, "Value":$pointer, "bool":$startsUninit,
+                   "bool":$endsUninit)>,
   ];
-
 }
 
 //===----------------------------------------------------------------------===//

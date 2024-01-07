@@ -1020,12 +1020,19 @@ void UninitializedValueScan::checkOp(Operation &op) {
     }
   }
 
-  // OwnershipMakeRefLValue is a def if liveOnEntry.
-  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
-    checkUse(makePointer.getOperand(), op, /*isDeref=*/true);
-    checkDef(makePointer.getOperand(), op, /*isDeref=*/true);
-    if (makePointer.getLiveOnEntry())
-      checkDef(makePointer.getResult(), op, /*isDeref=*/true);
+  // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
+  // field impacts the execution of the operation (now), not its modeling at
+  // start of the function.  We have to assume its liveness at start of function
+  // is the same as its liveness at end of function because not all control
+  // flow paths will execute the operation.
+  if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
+    // If the entry and exit liveness differ, we need to notice the effect.
+    if (refFromPtr.getStartUninit() != refFromPtr.getEndUninit()) {
+      if (refFromPtr.getStartUninit()) // start uninit, end init.
+        checkConsume(refFromPtr.getResult(), op, /*isDeref=*/true);
+      else // start init, end uninit
+        checkDef(refFromPtr.getResult(), op, /*isDeref=*/true);
+    }
     return;
   }
 
@@ -1516,11 +1523,20 @@ void DestructorInsertion::checkOp(Operation &op) {
     markConsumed(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
   }
 
-  // OwnershipMakeRefLValue is a def if liveOnEntry.
-  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
-    checkUse(makePointer.getOperand(), op, /*isDeref=*/true);
-    if (makePointer.getLiveOnEntry())
-      checkUse(makePointer.getResult(), op, /*isDeref=*/true);
+  // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
+  // field impacts the execution of the operation (now), not its modeling at
+  // start of the function.  We have to assume its liveness at start of function
+  // is the same as its liveness at end of function because not all control
+  // flow paths will execute the operation.
+  if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
+    // If the entry and exit liveness differ, we need to notice the effect.
+    if (refFromPtr.getStartUninit() != refFromPtr.getEndUninit()) {
+      if (refFromPtr.getStartUninit()) // start uninit, end init.
+        markConsumed(refFromPtr.getResult(), op, /*isDeref=*/true);
+      else // start init, end uninit
+        checkDef(refFromPtr.getResult(), op, /*isDeref=*/true);
+    }
+    return;
   }
 
   // A return consumes all the live-out values from the function.

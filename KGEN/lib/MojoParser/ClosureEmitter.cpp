@@ -821,7 +821,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   Value source = init.getBody()->getArgument(1);
 
   // TODO(references): Move closures off pointers.
-  Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target);
+  Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target,
+                                                     /*startUninit=*/true,
+                                                     /*endUninit=*/false);
 
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
@@ -898,9 +900,13 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         closureImplTopLevelPtrType, body->getArgument(1));
 
     // TODO(move closures to pointers).
-    Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target);
+    Value targetRef = builder.create<RefFromPointerOp>(/*isMut=*/true, target,
+                                                       /*startUninit=*/true,
+                                                       /*endUninit=*/false);
     Value existingRef =
-        builder.create<RefFromPointerOp>(/*isMut=*/true, existingPtr);
+        builder.create<RefFromPointerOp>(/*isMut=*/true, existingPtr,
+                                         /*startUninit=*/false,
+                                         /*endUninit=*/false);
 
     // Copy the existing value into the target.
     ValueDest copyDest(MLValue(targetRef), EC_Assignment);
@@ -943,8 +949,12 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         closureImplTopLevelPtrType, body->getArgument(0));
 
     // TODO(references): Move closures off pointers.
-    Value implRef = builder.create<RefFromPointerOp>(/*isMut=*/true, implPtr);
-    builder.create<OwnershipEndLifetimeOp>(implRef, /*isRegister=*/false);
+    // This takes ownership of the pointer, telling checklifetimes that the
+    // value should be destroyed by the exit of the function.  ASAP destruction
+    // will make sure it is immediately destroyed because there are no uses.
+    (void)builder.create<RefFromPointerOp>(/*isMut=*/true, implPtr,
+                                           /*startUninit=*/false,
+                                           /*endUninit=*/true);
 
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
@@ -997,7 +1007,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     // FIXME: Thread a lifetime through correctly.
 
     // TODO(references): Move closures off pointers.
-    Value implRef = builder.create<RefFromPointerOp>(/*isMut=*/false, implPtr);
+    Value implRef = builder.create<RefFromPointerOp>(/*isMut=*/false, implPtr,
+                                                     /*startUninit=*/false,
+                                                     /*endUninit=*/false);
 
     // Call the __call__ on the closure impl.
     assert(closureImpl->hasAttr(callMethodAttr) &&
