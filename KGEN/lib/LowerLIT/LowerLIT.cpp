@@ -162,7 +162,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // lit.alias.fwd_decl and lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
-    } else if (isa<OwnershipEndLifetimeOp, OwnershipMakeRefLValue>(op)) {
+    } else if (isa<OwnershipEndLifetimeOp>(op)) {
       op->getResult(0).replaceAllUsesWith(op->getOperand(0));
       op->erase();
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {

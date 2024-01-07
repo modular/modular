@@ -1428,13 +1428,12 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             bool isMut, Value pointer) {
+                             bool isMut, Value pointer, bool startsUninit,
+                             bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
-
-  build(
-      builder, result,
-      RefType::getImmortal(isMut, ptr.getElementType(), ptr.getAddressSpace()),
-      pointer);
+  auto refType =
+      RefType::getImmortal(isMut, ptr.getElementType(), ptr.getAddressSpace());
+  build(builder, result, refType, pointer, startsUninit, endsUninit);
 }
 
 //===----------------------------------------------------------------------===//
