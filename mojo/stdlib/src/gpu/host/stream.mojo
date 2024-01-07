@@ -10,14 +10,6 @@ from debug._debug import trap
 
 from ._utils import _check_error, _get_dylib_function
 
-
-@always_inline
-fn _get_current_stream() -> DTypePointer[DType.invalid]:
-    return external_call[
-        "KGEN_CompilerRT_LLCL_GetCurrentStream", DTypePointer[DType.invalid]
-    ]()
-
-
 # ===----------------------------------------------------------------------===#
 # StreamImpl
 # ===----------------------------------------------------------------------===#
@@ -43,17 +35,11 @@ struct _StreamImpl:
 # ===----------------------------------------------------------------------===#
 
 
-struct Stream:
+struct Stream[is_borrowed: Bool = False]:
     var stream: _StreamImpl
-    var owning: Bool
-
-    @staticmethod
-    fn get_current_stream() -> Stream:
-        return Stream(_StreamImpl(_get_current_stream()))
 
     fn __init__(inout self, stream: _StreamImpl):
         self.stream = stream
-        self.owning = False
 
     fn __init__(inout self, flags: Int = 0) raises:
         var stream = _StreamImpl()
@@ -65,11 +51,14 @@ struct Stream:
         )
 
         self.stream = stream
-        self.owning = True
 
     fn __del__(owned self):
         try:
-            if self.owning and self.stream:
+
+            @parameter
+            if is_borrowed:
+                return
+            if self.stream:
                 _check_error(
                     _get_dylib_function[fn (_StreamImpl) -> Result](
                         "cuStreamDestroy"
@@ -80,9 +69,7 @@ struct Stream:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.stream = existing.stream
-        self.owning = existing.owning
         existing.stream = _StreamImpl()
-        existing.owning = False
 
     fn synchronize(inout self) raises:
         if self.stream:
