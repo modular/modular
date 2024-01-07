@@ -119,7 +119,7 @@ from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
 from Resize import resize_nearest_neighbor
 from ROIAlign import roi_align_nhwc
-from runtime.llcl import OutputChainPtr, Runtime
+from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
@@ -573,6 +573,7 @@ fn elementwise_wrapper[
             target=target,
         ](
             buffer.dynamic_shape,
+            out_chain,
         )
 
 
@@ -707,8 +708,8 @@ fn broadcast_shape[
     let lhs_size = lhs_buf.size()
     let rhs_size = rhs_buf.size()
     if lhs_size > rhs_size:
-        return broadcast_shape_impl(rhs_buf, lhs_buf, out_buf)
-    return broadcast_shape_impl(lhs_buf, rhs_buf, out_buf)
+        return broadcast_shape_impl(rhs_buf, lhs_buf, out_buf, out_chain)
+    return broadcast_shape_impl(lhs_buf, rhs_buf, out_buf, out_chain)
 
 
 @always_inline
@@ -720,6 +721,7 @@ fn broadcast_shape_impl[
     lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
     rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
     out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
+    out_chain: OutputChainPtr,
 ):
     # Ensure lhs is always the smaller shape
     let lhs_rank = lhs_buf.size()
@@ -938,7 +940,7 @@ fn argmax_wrapped[
     out_chain: OutputChainPtr,
 ):
     try:
-        _argmax(input, axis_buf, output)
+        _argmax(input, axis_buf, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -967,7 +969,7 @@ fn argmin_wrapped[
     out_chain: OutputChainPtr,
 ):
     try:
-        _argmin(input, axis_buf, output)
+        _argmin(input, axis_buf, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -1012,7 +1014,7 @@ fn concat_from_list[
 ):
     try:
         _concat[rank, type, single_thread_blocking_override](
-            output, normalize_neg_index(axis[0], rank), inputs
+            output, normalize_neg_index(axis[0], rank), inputs, out_chain
         )
     except e:
         out_chain._mark_error_old(e)
@@ -1043,6 +1045,7 @@ fn concat[
             output,
             normalize_neg_index(buffer_to_scalar(axis), rank),
             ins,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -1131,7 +1134,7 @@ fn avg_pool[
     out_chain: OutputChainPtr,
 ):
     return _avg_pool[count_boundary=count_boundary](
-        input, filter, strides, dilations, paddings, output
+        input, filter, strides, dilations, paddings, output, out_chain
     )
 
 
@@ -1185,7 +1188,7 @@ fn split[
     # NOTE: Synchronous, so stack allocated variadic list is safe
     try:
         _split[type, rank](
-            input, normalize_neg_index(axis[0], rank), variadic_outs
+            input, normalize_neg_index(axis[0], rank), variadic_outs, out_chain
         )
     except e:
         out_chain._mark_error_old(e)
@@ -1310,6 +1313,7 @@ fn mean[
                 input_shape,
                 int(axis),
                 output_shape,
+                out_chain,
             )
         except e:
             out_chain._mark_error_old(e)
@@ -1442,7 +1446,7 @@ fn reduce_add[
                 reduce_impl,
                 target=target,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](input_shape, Scalar[type](0), int(axis))
+            ](input_shape, Scalar[type](0), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -1498,7 +1502,7 @@ fn reduce_max[
                 reduce_impl,
                 target=target,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](input_shape, min_or_neginf[type](), int(axis))
+            ](input_shape, min_or_neginf[type](), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -1555,7 +1559,7 @@ fn reduce_min[
                 reduce_impl,
                 target=target,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](input_shape, max_or_inf[type](), int(axis))
+            ](input_shape, max_or_inf[type](), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -1612,7 +1616,7 @@ fn reduce_mul[
                 reduce_impl,
                 target=target,
                 single_thread_blocking_override=single_thread_blocking_override,
-            ](input_shape, Scalar[type](1), int(axis))
+            ](input_shape, Scalar[type](1), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -1921,7 +1925,7 @@ fn mogg_gather_sum[
         1,
         simdwidthof[type](),
         add,
-    ](output, input, indices, 0)
+    ](output, input, indices, 0, out_chain)
 
 
 @mogg_register("mo.gather")
@@ -2001,6 +2005,7 @@ fn gather[
             input_shape,
             indices.dynamic_shape,
             output_shape,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2100,6 +2105,7 @@ fn matmul[
             c,
             a,
             b,
+            out_chain,
         )
 
 
@@ -2173,7 +2179,7 @@ fn batched_matmul[
             False,  # saturated_vnni
             single_thread_blocking_override,
             target=target,
-        ](c, a, b)
+        ](c, a, b, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2218,6 +2224,7 @@ fn scatter[
             updates,
             normalize_neg_index(axis[0], rank),
             output,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2260,6 +2267,7 @@ fn scatter_add[
             updates,
             normalize_neg_index(axis[0], rank),
             output,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2302,6 +2310,7 @@ fn scatter_max[
             updates,
             normalize_neg_index(axis[0], rank),
             output,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2344,6 +2353,7 @@ fn scatter_min[
             updates,
             normalize_neg_index(axis[0], rank),
             output,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2386,6 +2396,7 @@ fn scatter_mul[
             updates,
             normalize_neg_index(axis[0], rank),
             output,
+            out_chain,
         )
     except e:
         out_chain._mark_error_old(e)
@@ -2436,7 +2447,7 @@ fn scatter_nd[
             updates_rank,
             single_thread_blocking_override,
             target,
-        ](input, indices, updates, output)
+        ](input, indices, updates, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2488,7 +2499,7 @@ fn scatter_nd_add[
             single_thread_blocking_override,
             target,
             reduce_fn=reduce_fn,
-        ](input, indices, updates, output)
+        ](input, indices, updates, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2540,7 +2551,7 @@ fn scatter_nd_max[
             single_thread_blocking_override,
             target,
             reduce_fn=reduce_fn,
-        ](input, indices, updates, output)
+        ](input, indices, updates, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2592,7 +2603,7 @@ fn scatter_nd_min[
             single_thread_blocking_override,
             target,
             reduce_fn=reduce_fn,
-        ](input, indices, updates, output)
+        ](input, indices, updates, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2644,7 +2655,7 @@ fn scatter_nd_mul[
             single_thread_blocking_override,
             target,
             reduce_fn=reduce_fn,
-        ](input, indices, updates, output)
+        ](input, indices, updates, output, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2676,7 +2687,7 @@ fn softmax[
             DimList.create_unknown[rank](),
             input_0_fn,
             target,
-        ](shape, output, rank - 1)
+        ](shape, output, rank - 1, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2703,7 +2714,7 @@ fn logsoftmax[
             rank,
             DimList.create_unknown[rank](),
             input_0_fn,
-        ](shape, output, rank - 1)
+        ](shape, output, rank - 1, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -2825,7 +2836,7 @@ fn resize_nearest[
 ):
     resize_nearest_neighbor[
         coordinate_transform_mode, round_mode, rank, inpType
-    ](input, output)
+    ](input, output, out_chain)
 
 
 @mogg_register("mo.resize.linear")
@@ -2844,7 +2855,7 @@ fn resize_linear[
     out_chain: OutputChainPtr,
 ):
     resize_linear_kernel[coordinate_transform_mode, antialias, rank, inpType](
-        input, output
+        input, output, out_chain
     )
 
 
@@ -3109,7 +3120,7 @@ fn conv[
                 conv_info_static,
                 lambdas_have_fusion,
                 epilogue_wrapper,
-            ](input, filter, output, conv_info)
+            ](input, filter, output, conv_info, out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -3160,7 +3171,7 @@ fn conv_transpose[
         strides_type,
         dilation_type,
         padding_type,
-    ](output, input, filter, strides, dilation, paddings)
+    ](output, input, filter, strides, dilation, paddings, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -3208,7 +3219,7 @@ fn mogg_layer_norm[
         let output_buf = reshape[rank, 2, type, True](output, flat_shape)
 
         let num_workers = min(
-            Runtime().parallelism_level(), prod_all_but_last_dim
+            out_chain.get_runtime().parallelism_level(), prod_all_but_last_dim
         )
         let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
 
@@ -3241,7 +3252,7 @@ fn mogg_layer_norm[
                 output_buf_view, gamma, beta, eps
             )
 
-        sync_parallelize[task_func](num_workers)
+        sync_parallelize[task_func](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
@@ -3302,6 +3313,7 @@ fn bottom_k[
         False,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
+        out_chain,
         sorted[0],
     )
 
@@ -3329,6 +3341,7 @@ fn top_k[
         True,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
+        out_chain,
         sorted[0],
     )
 
@@ -3374,7 +3387,7 @@ fn pack_conv_filter[
     packed_filter: NDBuffer[5, DimList.create_unknown[5](), filter_type],
     out_chain: OutputChainPtr,
 ):
-    _pack_conv_filter(filter, packed_filter, num_groups)
+    _pack_conv_filter(filter, packed_filter, num_groups, out_chain)
 
 
 @always_inline
@@ -3472,7 +3485,7 @@ fn multi_head_flash_attention[
             output_type,
             True,
             target,
-        ](output, q, k, v, mask, scale[0])
+        ](output, q, k, v, mask, scale[0], out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -3545,7 +3558,7 @@ fn no_mask_fused_attention_cpu[
             False,  # transpose_k
             False,  # add_attn_mask
             False,  # add_causal_mask
-        ](output, q, k, v, mask, scale_f32, causal_mask)
+        ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -3618,7 +3631,7 @@ fn with_mask_fused_attention_cpu[
             False,  # transpose_k
             True,  # add_attn_mask
             False,  # add_causal_mask
-        ](output, q, k, v, attn_mask, scale_f32, causal_mask)
+        ](output, q, k, v, attn_mask, scale_f32, causal_mask, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -3786,7 +3799,7 @@ fn qmatmul_Af32_BTQ4symG32_Cf32[
     out_chain: OutputChainPtr,
 ):
     try:
-        matmul_int4[32](a, b, c)
+        matmul_int4[32](a, b, c, out_chain)
     except e:
         out_chain._mark_error_old(e)
 
@@ -3820,6 +3833,6 @@ fn mogg_matrix_solve[
     try:
         matrix_solve[
             type, x_rank, a_rank, b_rank, single_thread_blocking_override
-        ](a, b, x)
+        ](a, b, x, out_chain)
     except e:
         out_chain._mark_error_old(e)
