@@ -12,6 +12,7 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from algorithm.sort import _quicksort, partition, sort
 from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
 
 
 @always_inline
@@ -70,6 +71,7 @@ fn top_k[
     largest: Bool,
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    out_chain: OutputChainPtr,
     sorted: Bool = True,
 ):
     """
@@ -87,6 +89,7 @@ fn top_k[
         largest: If true, acts like top K. Otherwise, bottom K.
         out_vals: Output values.
         out_idxs: Output indices.
+        out_chain: Output chain to notify for errors and ready states.
         sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
     """
     alias grain_size = 1000
@@ -97,6 +100,7 @@ fn top_k[
         largest,
         out_vals,
         out_idxs,
+        out_chain,
         grain_size,
         sorted,
     )
@@ -111,6 +115,7 @@ fn _top_k[
     largest: Bool,
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    out_chain: OutputChainPtr,
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):
@@ -199,5 +204,5 @@ fn _top_k[
                 out_idxs[indices] = idxs[i]
 
     parallelize_over_rows[rank, process_rows](
-        shape, axis, parallelism_grain_size
+        shape, axis, out_chain, parallelism_grain_size
     )

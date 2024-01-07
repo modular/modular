@@ -11,7 +11,7 @@ from collections.vector import DynamicVector
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from TopK import _top_k
 
 
@@ -59,16 +59,20 @@ fn test_case[
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
 
-    _top_k(
-        input.to_ndbuffer(),
-        K,
-        axis,
-        largest,
-        out_vals.to_ndbuffer(),
-        out_idxs.to_ndbuffer(),
-        1,  # force multithreading for small test cases,
-        sorted,
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        _top_k(
+            input.to_ndbuffer(),
+            K,
+            axis,
+            largest,
+            out_vals.to_ndbuffer(),
+            out_idxs.to_ndbuffer(),
+            out_chain.borrow(),
+            1,  # force multithreading for small test cases,
+            sorted,
+        )
+        out_chain.wait()
 
     let xxx_no_lifetimes = input ^  # intentionally bad name
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr, Runtime
 
 # TODO: This implementation supports up to 4 dimensions.
 
@@ -30,6 +30,7 @@ fn tile[
         type_repeats,
     ],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy
@@ -47,6 +48,7 @@ fn tile[
                  copies along each of the input's dimensions. Length equals
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
+        out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
 
     if rank > 4:

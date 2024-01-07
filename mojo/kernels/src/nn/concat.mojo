@@ -17,6 +17,7 @@ from algorithm.functional import (
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
+from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, product
 from utils.list import Dim, DimList
@@ -121,6 +122,7 @@ fn _concat_parallel[
     inputs: InlinedFixedVector[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
+    out_chain: OutputChainPtr,
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -230,7 +232,7 @@ fn _concat_parallel[
 
     # The do_chunk closure captures the stack allocated _NDBufferVector,
     # so this kernel must be run synchronously.
-    sync_parallelize[do_chunk](num_chunks)
+    sync_parallelize[do_chunk](out_chain, num_chunks)
 
 
 @always_inline
@@ -367,6 +369,7 @@ fn _concat_small[
     inputs: InlinedFixedVector[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
+    out_chain: OutputChainPtr,
 ):
     alias single_thread_blocking_override = True
     alias simd_width = simdwidthof[type]()
@@ -415,12 +418,12 @@ fn _concat_small[
     if axis == rank - 1 and inputs_simd_aligned:
         _elementwise_impl[
             rank, simd_width, single_thread_blocking_override, concat_lambda
-        ](output.dynamic_shape)
+        ](output.dynamic_shape, out_chain)
     else:
         # Otherwise we must run scalar.
         _elementwise_impl[
             rank, 1, single_thread_blocking_override, concat_lambda
-        ](output.dynamic_shape)
+        ](output.dynamic_shape, out_chain)
 
 
 @adaptive
@@ -436,6 +439,7 @@ fn concat[
     inputs: InlinedFixedVector[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
+    out_chain: OutputChainPtr,
 ) raises:
     constrained[
         target == "cpu", "Concat kernel implementation only valid on CPU."
@@ -443,7 +447,7 @@ fn concat[
 
     @parameter
     if single_thread_blocking_override:
-        return _concat_small[rank, type](output, axis, inputs)
+        return _concat_small[rank, type](output, axis, inputs, out_chain)
 
     _check_input_consistency[rank, type](axis, inputs)
 
@@ -460,9 +464,9 @@ fn concat[
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
         # _NDBufferVector, so this kernel must be run synchronously.
-        sync_parallelize[dispatch_serial](1)
+        sync_parallelize[dispatch_serial](out_chain, 1)
     else:
-        _concat_parallel(output, axis, inputs)
+        _concat_parallel(output, axis, inputs, out_chain)
 
 
 @always_inline
@@ -544,6 +548,7 @@ fn concat[
     inputs: InlinedFixedVector[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
+    out_chain: OutputChainPtr,
 ) raises:
     constrained[
         target == "cuda", "Concat kernel implementation only valid on GPU."
@@ -558,24 +563,28 @@ fn concat[
                 output,
                 axis,
                 StaticTuple[1](inputs[0]),
+                out_chain,
             )
         if num_inputs == 2:
             return _concat_gpu[num_inputs=2](
                 output,
                 axis,
                 StaticTuple[2](inputs[0], inputs[1]),
+                out_chain,
             )
         if num_inputs == 3:
             return _concat_gpu[num_inputs=3](
                 output,
                 axis,
                 StaticTuple[3](inputs[0], inputs[1], inputs[2]),
+                out_chain,
             )
         if num_inputs == 4:
             return _concat_gpu[num_inputs=4](
                 output,
                 axis,
                 StaticTuple[4](inputs[0], inputs[1], inputs[2], inputs[3]),
+                out_chain,
             )
         if num_inputs == 5:
             return _concat_gpu[num_inputs=5](
@@ -584,6 +593,7 @@ fn concat[
                 StaticTuple[5](
                     inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]
                 ),
+                out_chain,
             )
         if num_inputs == 6:
             return _concat_gpu[num_inputs=6](
@@ -597,6 +607,7 @@ fn concat[
                     inputs[4],
                     inputs[5],
                 ),
+                out_chain,
             )
         if num_inputs == 7:
             return _concat_gpu[num_inputs=7](
@@ -611,6 +622,7 @@ fn concat[
                     inputs[5],
                     inputs[6],
                 ),
+                out_chain,
             )
         if num_inputs == 8:
             return _concat_gpu[num_inputs=8](
@@ -626,6 +638,7 @@ fn concat[
                     inputs[6],
                     inputs[7],
                 ),
+                out_chain,
             )
         if num_inputs == 9:
             return _concat_gpu[num_inputs=9](
@@ -642,6 +655,7 @@ fn concat[
                     inputs[7],
                     inputs[8],
                 ),
+                out_chain,
             )
         if num_inputs == 10:
             return _concat_gpu[num_inputs=10](
@@ -659,6 +673,7 @@ fn concat[
                     inputs[8],
                     inputs[9],
                 ),
+                out_chain,
             )
         if num_inputs == 11:
             return _concat_gpu[num_inputs=11](
@@ -677,6 +692,7 @@ fn concat[
                     inputs[9],
                     inputs[10],
                 ),
+                out_chain,
             )
         if num_inputs == 12:
             return _concat_gpu[num_inputs=12](
@@ -696,6 +712,7 @@ fn concat[
                     inputs[10],
                     inputs[11],
                 ),
+                out_chain,
             )
         if num_inputs == 13:
             return _concat_gpu[num_inputs=13](
@@ -716,6 +733,7 @@ fn concat[
                     inputs[11],
                     inputs[12],
                 ),
+                out_chain,
             )
         if num_inputs == 14:
             return _concat_gpu[num_inputs=14](
@@ -737,6 +755,7 @@ fn concat[
                     inputs[12],
                     inputs[13],
                 ),
+                out_chain,
             )
         if num_inputs == 15:
             return _concat_gpu[num_inputs=15](
@@ -759,6 +778,7 @@ fn concat[
                     inputs[13],
                     inputs[14],
                 ),
+                out_chain,
             )
         if num_inputs == 16:
             return _concat_gpu[num_inputs=16](
@@ -782,6 +802,7 @@ fn concat[
                     inputs[14],
                     inputs[15],
                 ),
+                out_chain,
             )
         if num_inputs == 17:
             return _concat_gpu[num_inputs=17](
@@ -806,6 +827,7 @@ fn concat[
                     inputs[15],
                     inputs[16],
                 ),
+                out_chain,
             )
         if num_inputs == 18:
             return _concat_gpu[num_inputs=18](
@@ -831,6 +853,7 @@ fn concat[
                     inputs[16],
                     inputs[17],
                 ),
+                out_chain,
             )
         if num_inputs == 19:
             return _concat_gpu[num_inputs=19](
@@ -857,6 +880,7 @@ fn concat[
                     inputs[17],
                     inputs[18],
                 ),
+                out_chain,
             )
         if num_inputs == 20:
             return _concat_gpu[num_inputs=20](
@@ -884,6 +908,7 @@ fn concat[
                     inputs[18],
                     inputs[19],
                 ),
+                out_chain,
             )
         if num_inputs == 21:
             return _concat_gpu[num_inputs=21](
@@ -912,6 +937,7 @@ fn concat[
                     inputs[19],
                     inputs[20],
                 ),
+                out_chain,
             )
         if num_inputs == 22:
             return _concat_gpu[num_inputs=22](
@@ -941,6 +967,7 @@ fn concat[
                     inputs[20],
                     inputs[21],
                 ),
+                out_chain,
             )
         if num_inputs == 23:
             return _concat_gpu[num_inputs=23](
@@ -971,6 +998,7 @@ fn concat[
                     inputs[21],
                     inputs[22],
                 ),
+                out_chain,
             )
         if num_inputs == 24:
             return _concat_gpu[num_inputs=24](
@@ -1002,6 +1030,7 @@ fn concat[
                     inputs[22],
                     inputs[23],
                 ),
+                out_chain,
             )
         if num_inputs == 25:
             return _concat_gpu[num_inputs=25](
@@ -1034,6 +1063,7 @@ fn concat[
                     inputs[23],
                     inputs[24],
                 ),
+                out_chain,
             )
         if num_inputs == 26:
             return _concat_gpu[num_inputs=26](
@@ -1067,6 +1097,7 @@ fn concat[
                     inputs[24],
                     inputs[25],
                 ),
+                out_chain,
             )
         if num_inputs == 27:
             return _concat_gpu[num_inputs=27](
@@ -1101,6 +1132,7 @@ fn concat[
                     inputs[25],
                     inputs[26],
                 ),
+                out_chain,
             )
         if num_inputs == 28:
             return _concat_gpu[num_inputs=28](
@@ -1136,6 +1168,7 @@ fn concat[
                     inputs[26],
                     inputs[27],
                 ),
+                out_chain,
             )
         if num_inputs == 29:
             return _concat_gpu[num_inputs=29](
@@ -1172,6 +1205,7 @@ fn concat[
                     inputs[27],
                     inputs[28],
                 ),
+                out_chain,
             )
         if num_inputs == 30:
             return _concat_gpu[num_inputs=30](
@@ -1209,6 +1243,7 @@ fn concat[
                     inputs[28],
                     inputs[29],
                 ),
+                out_chain,
             )
         if num_inputs == 31:
             return _concat_gpu[num_inputs=31](
@@ -1247,6 +1282,7 @@ fn concat[
                     inputs[29],
                     inputs[30],
                 ),
+                out_chain,
             )
         if num_inputs == 32:
             return _concat_gpu[num_inputs=32](
@@ -1286,6 +1322,7 @@ fn concat[
                     inputs[30],
                     inputs[31],
                 ),
+                out_chain,
             )
 
         else:
@@ -1328,8 +1365,11 @@ fn _concat_gpu[
     inputs: StaticTuple[
         num_inputs, NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
+    out_chain: OutputChainPtr,
 ) raises:
-    var stream = Stream.get_current_stream()
+    var stream = out_chain.get_cuda_stream() if out_chain else Stream[
+        is_borrowed=True
+    ]()
 
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1
@@ -1419,4 +1459,4 @@ fn _concat_gpu[
         False,
         per_output_elem,
         target,
-    ](output.get_shape())
+    ](output.get_shape(), out_chain)

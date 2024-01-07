@@ -10,7 +10,7 @@ import builtin
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
 from Pool import max_pool, avg_pool, PoolMethod
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
@@ -70,24 +70,29 @@ fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
 
     alias simd_width = simdwidthof[DType.float32]()
 
-    if pool_method == PoolMethod.MAX:
-        max_pool[int_type = DType.int32](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
-        )
-    else:
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
-        )
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        if pool_method == PoolMethod.MAX:
+            max_pool[int_type = DType.int32](
+                input_tensor._to_ndbuffer[4](),
+                filter_tensor._to_ndbuffer[1](),
+                stride_tensor._to_ndbuffer[1](),
+                dilation_tensor._to_ndbuffer[1](),
+                paddings_tensor._to_ndbuffer[1](),
+                output_tensor._to_ndbuffer[4](),
+                out_chain.borrow(),
+            )
+        else:
+            avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+                input_tensor._to_ndbuffer[4](),
+                filter_tensor._to_ndbuffer[1](),
+                stride_tensor._to_ndbuffer[1](),
+                dilation_tensor._to_ndbuffer[1](),
+                paddings_tensor._to_ndbuffer[1](),
+                output_tensor._to_ndbuffer[4](),
+                out_chain.borrow(),
+            )
+        out_chain.wait()
 
     print_buffer[4](output_tensor._to_ndbuffer[4]())
 
@@ -187,14 +192,18 @@ fn test_avg_pool_2d_with_padding[count_boundary: Bool = False]():
 
     alias simd_width = simdwidthof[DType.float32]()
 
-    avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-        input_tensor._to_ndbuffer[4](),
-        filter_tensor._to_ndbuffer[1](),
-        stride_tensor._to_ndbuffer[1](),
-        dilation_tensor._to_ndbuffer[1](),
-        paddings_tensor._to_ndbuffer[1](),
-        output_tensor._to_ndbuffer[4](),
-    )
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+            input_tensor._to_ndbuffer[4](),
+            filter_tensor._to_ndbuffer[1](),
+            stride_tensor._to_ndbuffer[1](),
+            dilation_tensor._to_ndbuffer[1](),
+            paddings_tensor._to_ndbuffer[1](),
+            output_tensor._to_ndbuffer[4](),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print_buffer[4](output_tensor._to_ndbuffer[4]())
 

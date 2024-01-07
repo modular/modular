@@ -6,7 +6,7 @@
 
 from memory.buffer import NDBuffer
 from memory.memory import memset_zero
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr, Runtime
 
 # Indicate position in pads tensor for height, width.
 alias PADS_H_START = 0
@@ -53,6 +53,7 @@ fn conv_transpose[
     strides: NDBuffer[1, DimList.create_unknown[1](), strides_type],
     dilations: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
     pads: NDBuffer[1, DimList.create_unknown[1](), pads_type],
+    out_chain: OutputChainPtr,
 ):
     """
     Implements the ConvTranspose operator from the MO spec.
@@ -76,6 +77,7 @@ fn conv_transpose[
         dilations: Dilation value along each spatial axis of the filter.
         pads: Padding at the beginning and ending of each spatial axis. Follows
               the format [x1_begin, x2_begin, x1_end, x2_end].
+        out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
 
     let N = Int(input.dim(0))  # Number of images (num. batches)

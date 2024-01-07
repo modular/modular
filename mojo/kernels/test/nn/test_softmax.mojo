@@ -8,7 +8,7 @@
 from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from Softmax import logsoftmax, softmax_2_pass
 
 from utils.list import Dim, DimList
@@ -29,7 +29,12 @@ fn test_logsoftmax() raises:
         for i in range(len(in_buf_flat)):
             in_buf_flat[i] = i
 
-        logsoftmax[type, simd_width, rank, shape](in_buf, out_buf, rank - 1)
+        with Runtime() as rt:
+            let chain = OwningOutputChainPtr(rt)
+            logsoftmax[type, simd_width, rank, shape](
+                in_buf, out_buf, rank - 1, chain.borrow()
+            )
+            chain.wait()
 
         for i in range(len(out_buf_flat)):
             print(out_buf_flat[i])

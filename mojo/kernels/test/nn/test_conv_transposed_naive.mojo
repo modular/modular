@@ -7,7 +7,7 @@
 
 from ConvTranspose import conv_transpose
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 
 # CHECK-LABEL: test_convtranspose_pads
@@ -128,14 +128,18 @@ fn test_convtranspose_pads():
     pads[2] = 1
     pads[3] = 2
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
+            output.make_dims_unknown(),
+            input.make_dims_unknown(),
+            kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for k in range(2):
@@ -261,14 +265,18 @@ fn test_convtranspose():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
+            output.make_dims_unknown(),
+            input.make_dims_unknown(),
+            kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(1):
@@ -373,14 +381,18 @@ fn test_convtranspose_dilation():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
+            output.make_dims_unknown(),
+            input.make_dims_unknown(),
+            kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(1):
@@ -518,14 +530,18 @@ fn test_convtranspose_attributes():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
+            output.make_dims_unknown(),
+            input.make_dims_unknown(),
+            kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(1):

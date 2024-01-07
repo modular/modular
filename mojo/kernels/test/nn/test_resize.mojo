@@ -11,7 +11,7 @@ from Resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 from testing import assert_almost_equal
@@ -23,10 +23,15 @@ fn test_case_nearest[
     round_mode: RoundMode,
     type: DType,
 ](input: Tensor[type], output: Tensor[type]):
-    resize_nearest_neighbor[coord_transform, round_mode,](
-        input._to_ndbuffer[rank](),
-        output._to_ndbuffer[rank](),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        resize_nearest_neighbor[coord_transform, round_mode,](
+            input._to_ndbuffer[rank](),
+            output._to_ndbuffer[rank](),
+            out_chain.borrow(),
+        )
+
+        _ = out_chain ^
 
     for i in range(output.num_elements()):
         print_no_newline(output._to_buffer()[i])
@@ -40,10 +45,14 @@ fn test_case_linear[
     antialias: Bool,
     type: DType,
 ](input: Tensor[type], output: Tensor[type], reference: Tensor[type]) raises:
-    resize_linear[coord_transform, antialias](
-        input._to_ndbuffer[rank](),
-        output._to_ndbuffer[rank](),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        resize_linear[coord_transform, antialias](
+            input._to_ndbuffer[rank](),
+            output._to_ndbuffer[rank](),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     for i in range(output.num_elements()):
         assert_almost_equal(

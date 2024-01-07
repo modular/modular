@@ -13,7 +13,7 @@ from Concat import (
 )
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
@@ -59,7 +59,12 @@ fn test_concat() raises:
 
     with Runtime(4) as rt:
         let input_vec = variadic_list_to_vector(input_list)
-        concat[rank, type, False](output_dyn, concat_axis, input_vec)
+        let out_chain = OwningOutputChainPtr(rt)
+        concat[rank, type, False](
+            output_dyn, concat_axis, input_vec, out_chain.borrow()
+        )
+
+        _ = out_chain ^
         input_vec._del_old()
 
     # CHECK: == test_concat
@@ -115,8 +120,13 @@ fn test_concat_parallel():
     ](x1_dyn, x2_dyn, x3_dyn)
 
     with Runtime(4) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
         let input_vec = variadic_list_to_vector(input_list)
-        _concat_parallel[rank, type](output_dyn, concat_axis, input_vec)
+        _concat_parallel[rank, type](
+            output_dyn, concat_axis, input_vec, out_chain.borrow()
+        )
+
+        _ = out_chain ^
         input_vec._del_old()
 
     # CHECK: == test_concat_parallel

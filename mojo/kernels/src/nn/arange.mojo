@@ -9,6 +9,7 @@ from sys.info import simdwidthof
 
 from memory.buffer import NDBuffer
 from utils._annotations import *
+from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

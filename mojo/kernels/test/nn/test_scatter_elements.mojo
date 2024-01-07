@@ -8,7 +8,7 @@
 from math import max
 
 from GatherScatter import scatter_elements
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 
@@ -66,13 +66,18 @@ fn test_case[
     linear_fill(updates, updates_vals)
     let output = Tensor[type](input_shape)
 
-    scatter_elements[reduce_fn](
-        data._to_ndbuffer[2](),
-        indices._to_ndbuffer[2](),
-        updates._to_ndbuffer[2](),
-        axis,
-        output._to_ndbuffer[2](),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        scatter_elements[reduce_fn](
+            data._to_ndbuffer[2](),
+            indices._to_ndbuffer[2](),
+            updates._to_ndbuffer[2](),
+            axis,
+            output._to_ndbuffer[2](),
+            out_chain.borrow(),
+        )
+
+        _ = out_chain ^
 
     _ = data
     _ = indices

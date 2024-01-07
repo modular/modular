@@ -22,7 +22,7 @@ from ConvUtils import (
     get_micro_kernel_shape,
 )
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList, Dim
@@ -120,6 +120,7 @@ fn test[
     # Conv attributes.
     alias conv_attr_dynamic = ConvInfoStatic.create_unknown()
 
+    let chain0 = OwningOutputChainPtr(rt)
     ConvDirectNHWC[
         5,
         DimList.create_unknown[4](),  # input shape
@@ -136,7 +137,9 @@ fn test[
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](input),
         packed_filter_dynamic,
         conv_shape,
+        chain0.borrow(),
     )
+    chain0.wait()
 
     alias conv_attr_static = ConvInfoStatic(
         DimList(pad_h[0], pad_h[1]),
@@ -170,6 +173,7 @@ fn test[
         num_groups,
     )
 
+    let chain1 = OwningOutputChainPtr(rt)
     ConvDirectNHWC[
         5,
         DimList(N, H, W, C),
@@ -186,7 +190,9 @@ fn test[
         input,
         packed_filter_static,
         conv_shape,
+        chain1.borrow(),
     )
+    chain1.wait()
 
     input_ptr.free()
     filter_ptr.free()

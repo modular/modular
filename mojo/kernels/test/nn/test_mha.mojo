@@ -9,7 +9,7 @@ from math import div_ceil, min, abs, rsqrt, isclose
 from memory.buffer import NDBuffer, _compute_nd_index
 from memory.unsafe import DTypePointer
 from random import rand
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, OutputChainPtr, Runtime
 from utils.index import Index
 from utils.list import DimList
 from BatchedMatmul import batched_matmul
@@ -130,30 +130,36 @@ fn test() raises:
         ) if transpose_key else Index(batch_size, num_heads, depth, seq_len)
         let k = NDBuffer[4, DimList.create_unknown[4](), type](k_ptr, k_shape)
 
-        _naive_attention[type, transpose_key](
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
-            mask,
-            scale,
-        )
+        with Runtime() as rt:
+            var chain = OwningOutputChainPtr(rt)
+            _naive_attention[type, transpose_key](
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
+                mask,
+                scale,
+                chain.borrow(),
+            )
+            chain.wait()
 
-        fused_attention[
-            4,
-            BHSD,
-            DimList.create_unknown[4](),
-            BHSD,
-            DimList.create_unknown[2](),
-            BHSD,
-            type,
-            type,
-            type,
-            type,
-            type,
-            transpose_key,
-            add_attn_mask=True,
-        ](mha_output, q, k, v, mask, scale, Float32())
+            chain = OwningOutputChainPtr(rt)
+            fused_attention[
+                4,
+                BHSD,
+                DimList.create_unknown[4](),
+                BHSD,
+                DimList.create_unknown[2](),
+                BHSD,
+                type,
+                type,
+                type,
+                type,
+                type,
+                transpose_key,
+                add_attn_mask=True,
+            ](mha_output, q, k, v, mask, scale, Float32(), chain.borrow())
+            chain.wait()
 
     test_body[False]()
     # CHECK: Transpose_k = False succeeds

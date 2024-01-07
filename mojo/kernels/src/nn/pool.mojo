@@ -11,6 +11,7 @@ from sys.info import simdwidthof
 from algorithm import elementwise, stencil
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
@@ -131,6 +132,7 @@ fn max_pool[
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
 ):
     """Computes fp32 pooling.
 
@@ -145,6 +147,7 @@ fn max_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
+        out_chain: OutputChain.
     """
 
     var empty_padding = True
@@ -274,9 +277,9 @@ fn max_pool[
         max_pool_compute_finalize,
     ]
     if empty_padding:
-        return stencil_empty_padding(output.get_shape())
+        return stencil_empty_padding(output.get_shape(), out_chain)
     else:
-        return stencil_with_padding(output.get_shape())
+        return stencil_with_padding(output.get_shape(), out_chain)
 
 
 @always_inline
@@ -292,6 +295,7 @@ fn avg_pool[
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
 ):
     """Computes the average pool.
 
@@ -309,6 +313,7 @@ fn avg_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
+        out_chain: OutputChain.
     """
 
     var empty_padding = True
@@ -489,13 +494,13 @@ fn avg_pool[
     ]
 
     if empty_padding:
-        return stencil_empty_padding(output.get_shape())
+        return stencil_empty_padding(output.get_shape(), out_chain)
     else:
 
         @parameter
         if count_boundary:
-            return stencil_with_padding(output.get_shape())
+            return stencil_with_padding(output.get_shape(), out_chain)
         else:
             return stencil_with_padding_count_exclude_boundry(
-                output.get_shape()
+                output.get_shape(), out_chain
             )

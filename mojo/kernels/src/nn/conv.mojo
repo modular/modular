@@ -63,11 +63,11 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer
+from runtime.llcl import OutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
-from runtime.llcl import Runtime
 
 alias MAX_NUM_CHANNELS_TILE = 384
 
@@ -436,6 +436,7 @@ struct ConvDirectNHWC[
         input: NDBuffer[4, shape_input, input_type],
         filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
+        out_chain: OutputChainPtr,
     ) raises:
         Self.run(
             output,
@@ -443,6 +444,7 @@ struct ConvDirectNHWC[
             filter,
             conv_shape,
             direct_null_elementwise_epilogue,
+            out_chain,
         )
 
     @staticmethod
@@ -452,6 +454,7 @@ struct ConvDirectNHWC[
         filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
         elementwise_epilogue_fn: elementwise_epilogue_type,
+        out_chain: OutputChainPtr,
     ) raises:
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
@@ -486,7 +489,7 @@ struct ConvDirectNHWC[
             raise Error("filter count must be divisible by group count")
 
         # Number of partitions in n_ho_wo, c, f dimensions.
-        let num_threads = Runtime().parallelism_level()
+        let num_threads = out_chain.get_runtime().parallelism_level()
         let max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
         let num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
@@ -595,7 +598,7 @@ struct ConvDirectNHWC[
             instance._n_loop()
 
         if num_partitions[1] > 1:
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](out_chain, num_tasks)
 
             # Reduce from the output scratch buffer to the actual output.
             @parameter
@@ -638,11 +641,11 @@ struct ConvDirectNHWC[
                         )
 
             # NOTE: synchronous, so use of locally allocated output_ptr is safe.
-            sync_parallelize[reduce_task](num_threads)
+            sync_parallelize[reduce_task](out_chain, num_threads)
             output_ptr.free()
         else:
             # Use sync to work around #12624
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](out_chain, num_tasks)
 
     fn _n_loop(self):
         """Loop over the batch size.
@@ -2539,6 +2542,7 @@ fn pack_conv_filter[
     filter: NDBuffer[4, DimList.create_unknown[4](), type],
     packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
     num_groups: Int,
+    out_chain: OutputChainPtr,
 ):
     """This packs the filter form RSCF to FRSCf.
 
@@ -2549,6 +2553,7 @@ fn pack_conv_filter[
             R, S, C - original R, S, C.
             f       - the index within a continuous segments.
         num_groups: The number of groups in the convolution.
+        out_chain: Chain to signal when writes to `packed_filter` have finished.
     """
     pack_filter(filter, packed_filter, num_groups)
 
@@ -2678,6 +2683,7 @@ fn conv_2d_nhwc_direct[
     filter: NDBuffer[filter_rank, filter_shape, filter_type],
     output: NDBuffer[4, output_shape, output_type],
     conv_info: ConvInfo[conv_info_static],
+    out_chain: OutputChainPtr,
 ) raises:
     constrained[
         input_type == filter_type and input_type == output_type,
@@ -2750,4 +2756,5 @@ fn conv_2d_nhwc_direct[
         filter,
         conv_shape,
         elementwise_epilogue_closure,
+        out_chain,
     )

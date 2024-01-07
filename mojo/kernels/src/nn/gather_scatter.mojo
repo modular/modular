@@ -19,7 +19,7 @@ from algorithm.functional import _elementwise_impl, tile
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from Reshape import reshape
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
@@ -27,7 +27,6 @@ from utils.list import Dim, DimList
 from utils._optional_param import OptionalParamInt
 from utils._optional import Optional
 from gpu.memory import _copy_device_to_device_async
-from gpu.host.stream import Stream
 
 
 @always_inline
@@ -72,6 +71,7 @@ fn gather_reduce[
         DType.int32,
     ],
     reduce_init: SIMD[type, 1],
+    out_chain: OutputChainPtr,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output accross axis 1 to produce output[i, k].
@@ -94,7 +94,7 @@ fn gather_reduce[
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
-    let num_threads = Runtime().parallelism_level()
+    let num_threads = out_chain.get_runtime().parallelism_level()
     let num_tasks = min(
         div_ceil(
             indices.dim[0]()
@@ -199,7 +199,7 @@ fn gather_reduce[
                 tile_sizes,
             ](0, row_size)
 
-    sync_parallelize[task_func](num_tasks)
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 fn gather[
@@ -217,6 +217,7 @@ fn gather[
     indices: NDBuffer[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
+    out_chain: OutputChainPtr,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -306,6 +307,7 @@ fn gather[
         input.dynamic_shape,
         indices.dynamic_shape,
         output.dynamic_shape,
+        out_chain,
     )
 
 
@@ -337,6 +339,7 @@ fn gather[
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
+    out_chain: OutputChainPtr,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -439,6 +442,7 @@ fn gather[
                 target,
             ](
                 output_shape,
+                out_chain,
             )
         else:
             _elementwise_impl[
@@ -449,6 +453,7 @@ fn gather[
                 target,
             ](
                 output_shape,
+                out_chain,
             )
 
 
@@ -483,6 +488,7 @@ fn scatter_nd_generator[
     output: NDBuffer[
         data_rank, DimList.create_unknown[data_rank](), output_type
     ],
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -506,6 +512,7 @@ fn scatter_nd_generator[
         updates: Tensor containing values to update output tensor based on
                  indices tensor.
         output: Tensor of rank data_rank, shaped the same as data tensor.
+        out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
     if data.get_shape() != output.get_shape():
         raise Error("Input and output shapes in scatter_nd must be the same.")
@@ -537,7 +544,7 @@ fn scatter_nd_generator[
 
     @parameter
     if target == "cuda":
-        let stream = Stream.get_current_stream()
+        let stream = out_chain.get_cuda_stream()
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             _copy_device_to_device_async(
@@ -640,7 +647,7 @@ fn scatter_nd_generator[
         single_thread_blocking_override,
         update_func,
         target,
-    ](iter_shape)
+    ](iter_shape, out_chain)
 
 
 @always_inline
@@ -663,6 +670,7 @@ fn scatter_nd[
     output: NDBuffer[
         data_rank, DimList.create_unknown[data_rank](), output_type
     ],
+    out_chain: OutputChainPtr,
 ) raises:
     """Scatter_nd operation without any reduction."""
 
@@ -675,7 +683,7 @@ fn scatter_nd[
         single_thread_blocking_override,
         target,
         reduce_fn=None,
-    ](data, indices, updates, output)
+    ](data, indices, updates, output, out_chain)
 
 
 @always_inline
@@ -856,6 +864,7 @@ fn scatter_elements[
     updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     _axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -901,7 +910,7 @@ fn scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[rank, 1, update_func](indices.get_shape())
+    elementwise[rank, 1, update_func](indices.get_shape(), out_chain)
 
 
 @always_inline
@@ -982,6 +991,7 @@ fn gather_elements[
     indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
     _axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1016,7 +1026,7 @@ fn gather_elements[
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[rank, 1, gather_func](output.get_shape())
+    elementwise[rank, 1, gather_func](output.get_shape(), out_chain)
 
 
 # ===----------------------------------------------------------------------===#

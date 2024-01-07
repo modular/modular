@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 from Tile import tile
 
 
@@ -53,11 +53,15 @@ fn test_tile_eg1() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -112,11 +116,15 @@ fn test_tile_eg2() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(6):
@@ -169,11 +177,15 @@ fn test_tile_eg3() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -236,11 +248,15 @@ fn test_tile_eg4() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -305,11 +321,15 @@ fn test_tile_eg5() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -362,11 +382,15 @@ fn test_tile_eg6() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(2):
@@ -419,11 +443,15 @@ fn test_tile_eg7() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -480,11 +508,15 @@ fn test_tile_eg8() raises:
         for j in range(4):
             output[StaticIntTuple[rank](i, j)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -560,11 +592,15 @@ fn test_tile_eg9() raises:
             for k in range(2):
                 output[StaticIntTuple[rank](i, j, k)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):
@@ -645,11 +681,15 @@ fn test_tile_eg10() raises:
         type,
     ].stack_allocation()
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(6):
@@ -752,11 +792,15 @@ fn test_tile_eg11() raises:
             for k in range(2):
                 output[StaticIntTuple[rank](i, j, k)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(6):
@@ -819,11 +863,15 @@ fn test_tile_eg12() raises:
                 for l in range(6):
                     output[StaticIntTuple[rank](i, j, k, l)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(1):
@@ -915,11 +963,15 @@ fn test_tile_eg13() raises:
                 for l in range(6):
                     output[StaticIntTuple[rank](i, j, k, l)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(2):
@@ -1027,11 +1079,15 @@ fn test_tile_eg14() raises:
                 for l in range(6):
                     output[StaticIntTuple[rank](i, j, k, l)] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     print()
     for i in range(4):

@@ -9,6 +9,7 @@ from sys import external_call
 from algorithm import sync_parallelize
 from memory import memcpy
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
+from runtime.llcl import OutputChainPtr
 
 from utils.index import product
 from utils.list import Dim, DimList
@@ -142,6 +143,7 @@ fn split[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
     outputs: _NDBufferVector[rank, type],
+    out_chain: OutputChainPtr,
 ) raises:
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(outputs)):
@@ -165,4 +167,4 @@ fn split[
 
     # The task_func closure captures the stack allocated _NDBufferVector,
     # so this kernel must run synchronously.
-    sync_parallelize[task_func](1)
+    sync_parallelize[task_func](out_chain, 1)

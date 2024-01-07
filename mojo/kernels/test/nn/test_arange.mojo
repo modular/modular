@@ -11,7 +11,7 @@ from algorithm import elementwise
 from Arange import arange, arange_shape
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from Slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
@@ -33,9 +33,13 @@ fn print_elements[
         print(tensor[index])
 
     with Runtime(1) as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+
         elementwise[in_rank, 1, print_elements_lambda](
             rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
+            out_chain.borrow(),
         )
+        _ = out_chain ^
 
 
 # slice_dim
@@ -78,6 +82,7 @@ fn test_arange[
     )
 
     with Runtime(1) as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
 
         @always_inline
         @parameter
@@ -90,7 +95,9 @@ fn test_arange[
 
         elementwise[1, 1, arange_lambda](
             rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
+            out_chain.borrow(),
         )
+        _ = out_chain ^
 
         print_elements[dtype, 1](out_tensor)
 

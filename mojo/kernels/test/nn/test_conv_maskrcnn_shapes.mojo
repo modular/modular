@@ -31,7 +31,7 @@ from ConvUtils import (
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -165,6 +165,7 @@ fn test[
     )
 
     # Test direct conv
+    let conv_chain = OwningOutputChainPtr(rt)
 
     if algorithm == ConvAlgorithm.Direct:
         alias conv_attr = ConvInfoStatic.create_unknown()
@@ -182,7 +183,7 @@ fn test[
                 True,
                 conv_attr,
                 False,
-            ].run(output, input, packed_filter, conv_shape)
+            ].run(output, input, packed_filter, conv_shape, conv_chain.borrow())
         else:
             ConvDirectNHWC[
                 4,
@@ -195,7 +196,8 @@ fn test[
                 False,
                 conv_attr,
                 False,
-            ].run(output, input, filter, conv_shape)
+            ].run(output, input, filter, conv_shape, conv_chain.borrow())
+    conv_chain.wait()
 
     input_ptr.free()
     filter_ptr.free()
