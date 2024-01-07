@@ -70,7 +70,7 @@ fn run_vec_add() raises:
 
     let block_dim = 32
     func._call_impl[0, populate](
-        Stream(),
+        Stream[is_borrowed=False](),
         (length // block_dim),
         (block_dim),
         out_device,

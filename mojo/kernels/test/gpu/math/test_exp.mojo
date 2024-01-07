@@ -9,6 +9,7 @@
 from math import exp, isclose
 from sys.info import triple_is_nvidia_cuda
 
+from runtime.llcl import OutputChainPtr
 from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
 from gpu import *
@@ -67,6 +68,7 @@ fn run_elementwise() raises:
 
     _elementwise_impl[1, pack_size, True, func, target="cuda"](
         StaticIntTuple[1](length),
+        OutputChainPtr(),
     )
     synchronize()
 

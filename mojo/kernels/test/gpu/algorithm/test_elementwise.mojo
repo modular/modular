@@ -9,6 +9,7 @@
 from math import exp
 from sys.info import triple_is_nvidia_cuda
 
+from runtime.llcl import OutputChainPtr
 from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
 from gpu import *
@@ -71,6 +72,7 @@ fn run_elementwise() raises:
 
     _elementwise_impl[3, pack_size, True, func, target="cuda"](
         StaticIntTuple[3](2, 3, 2),
+        OutputChainPtr(),
     )
     synchronize()
 
@@ -139,6 +141,7 @@ fn run_elementwise_uneven_simd() raises:
 
     _elementwise_impl[2, pack_size, True, func, target="cuda"](
         StaticIntTuple[2](3, 3),
+        OutputChainPtr(),
     )
     synchronize()
     _copy_device_to_host(out_host.data(), out_device, flattened_length)
@@ -198,6 +201,7 @@ fn run_elementwise_transpose_copy() raises:
 
     _elementwise_impl[3, 4, True, func, target="cuda"](
         StaticIntTuple[3](4, 2, 5),
+        OutputChainPtr(),
     )
     synchronize()
     _copy_device_to_host(out_host.data(), out_device, flattened_length)

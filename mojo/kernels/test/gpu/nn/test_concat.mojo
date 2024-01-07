@@ -10,6 +10,7 @@ from sys import argv
 from Concat import _concat_gpu, _concat_inner_most_single_dim
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
 
 from gpu import BlockIdx, ThreadIdx
 from gpu.host.event import time_function
@@ -195,6 +196,7 @@ fn test_concat_4_inputs_rank5() raises:
                 input_2_device,
                 input_3_device,
             ),
+            OutputChainPtr(),
         )
         synchronize()
 
