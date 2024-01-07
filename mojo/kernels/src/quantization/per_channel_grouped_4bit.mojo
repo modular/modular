@@ -8,6 +8,7 @@ from sys.info import sizeof, alignof
 from memory.unsafe import bitcast
 from memory.buffer import NDBuffer, prod_dims
 from math import is_power_of_2
+from runtime.llcl import OutputChainPtr
 
 
 @always_inline
@@ -709,6 +710,7 @@ fn matmul_int4[
     a: NDBuffer[2, DimList.create_unknown[2](), type],
     b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
     c: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
 ) raises:
     alias block_size = sizeof[Q4sym[group_size, type]]()
 
@@ -752,7 +754,7 @@ fn matmul_int4[
         for m in range(end_batch_item, end_item):
             _process_rows[group_size, 1](a_quant, a_scale, b, c, m)
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](out_chain, num_workers)
 
     a_quant_base_ptr.free()
     a_scale_base_ptr.free()
