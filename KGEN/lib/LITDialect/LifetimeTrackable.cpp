@@ -47,7 +47,9 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  if (auto loadConsume = v.getDefiningOp<LoadConsumeOp>()) {
+  if (v.getDefiningOp<LoadConsumeOp>() ||
+      v.getDefiningOp<LIT::StructCreateOp>() ||
+      v.getDefiningOp<ParamMaterializeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;
     startsUninit = true;

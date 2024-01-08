@@ -508,7 +508,7 @@ lit.func @init(%self: !lit.ref<mut @MyStruct, #lit.lifetime> init_self) {
 // CHECK-LABEL: lit.struct.decl @Error
 lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
   lit.struct.field a : index
-  lit.func @__init__() -> !Error {
+  lit.func @__init__() ownedresult -> !Error {
      %idx0 = index.constant 0
      %0 = lit.struct.create(a=%idx0) : (index) -> !Error
      kgen.return %0 : !Error
@@ -647,7 +647,7 @@ lit.func @copy_del_reg_value() {
 lit.struct.decl @Error register_passable attributes {
   destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
   lit.struct.field a : index
-  lit.func @__init__() -> !Error {
+  lit.func @__init__() ownedresult -> !Error {
      %idx0 = index.constant 0
      %0 = lit.struct.create(a=%idx0) : (index) -> !Error
      kgen.return %0 : !Error

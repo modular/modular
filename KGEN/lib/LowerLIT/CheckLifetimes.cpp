@@ -439,23 +439,28 @@ struct ValueSet {
   ///  * whether the value is uninit or init at normal function return.
   ///
   void addValue(Value val, LifetimeTrackable trackable) {
-    unsigned firstValueBit = getNumTotalBits();
-    unsigned numValueBits = 1;
-    // We are only field sensitive for memory objects, not in-register values.
-    // It isn't possible to update in-register values: register_passable values
-    // are always valid when present.  If they pass through memory, they are
-    // checked when loaded from memory.
-    if (val && trackable.isIndirect) {
+    // Figure out how many bits to track for this value.
+    unsigned numValueBits;
+    if (!val) {
+      numValueBits = 1; // Nothing to do for the sentinel.
+    } else if (trackable.isIndirect) {
+      // This should be an assertion, but check softly to help IR clients.
       if (!isa<RefType>(val.getType())) {
         mlir::emitError(val.getLoc())
             << "trackable IR value of type " << val.getType()
             << " should have type '!lit.ref': " << val;
         return;
       }
-
       Type valType = trackable.getValueType(val);
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+    } else {
+      // We don't track trivial values of register type.
+      if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
+        return;
+      // We are only field sensitive for memory objects, not in-register values.
+      numValueBits = 1;
     }
+    unsigned firstValueBit = getNumTotalBits();
 
     // Determine if we should reject mutations after initialization.
     bool isLet = false;
@@ -893,6 +898,11 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
   if (!valueRef)
     return;
 
+  // The value must be completely live in order for us to consume it.  If not,
+  // use "checkUse" to diagnose the problem.
+  if (!valueRef.isAllPresent(liveValues))
+    checkUse(value, op, isDeref);
+
   // If tracked, marks its value as dead.
   if (!valueSet.typeDeclInfo.isRegisterPassableTrivial(
           valueRef.getValueType(value)))
@@ -953,6 +963,13 @@ void UninitializedValueScan::checkOp(Operation &op) {
     checkUse(op.getOperand(0), op, /*isDeref=*/true);
     if (isa<LoadConsumeOp>(op))
       checkDef(op.getResult(0), op, /*isDeref=*/false);
+    return;
+  }
+
+  if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
+    for (auto operand : op.getOperands())
+      checkUse(operand, op, /*isDeref=*/false);
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
     return;
   }
 
@@ -1039,9 +1056,15 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // lit.ownership.end_lifetime consumes its operand then defines its result.
   if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
     bool isIndirect = !ownershipEnd.getIsReg();
-    checkUse(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
     checkConsume(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
     checkDef(ownershipEnd.getResult(), op, /*isDeref=*/isIndirect);
+    return;
+  }
+
+  // kgen.variant.create consumes and produces an owned value.
+  if (isa<VariantCreateOp>(op)) {
+    checkConsume(op.getOperand(0), op, /*isDeref=*/false);
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
     return;
   }
 
@@ -1510,7 +1533,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // These operations consume their operands and define a result.
-  if (isa<LoadConsumeOp, LIT::StructCreateOp>(op)) {
+  if (isa<LoadConsumeOp, LIT::StructCreateOp, ParamMaterializeOp>(op)) {
     checkDef(op.getResult(0), op, /*isDeref=*/false);
     bool isIndirect = !isa<LIT::StructCreateOp>(op);
     for (auto operand : op.getOperands())
@@ -1521,6 +1544,13 @@ void DestructorInsertion::checkOp(Operation &op) {
     bool isIndirect = !ownershipEnd.getIsReg();
     checkDef(op.getResult(0), op, /*isDeref=*/isIndirect);
     markConsumed(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
+  }
+
+  // kgen.variant.create consumes and produces an owned value.
+  if (isa<VariantCreateOp>(op)) {
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
+    markConsumed(op.getOperand(0), op, /*isDeref=*/false);
+    return;
   }
 
   // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
@@ -1630,11 +1660,8 @@ void DestructorInsertion::checkOp(Operation &op) {
         consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
       }
 
-    // Handle the operand of the return op.
-    auto createVariant =
-        cast<VariantCreateOp>(errorReturn.getVariant().getDefiningOp());
-    auto error = createVariant.getOperand();
-    markConsumed(error, op, /*isDeref=*/false);
+    // Consume the input value.
+    markConsumed(errorReturn.getVariant(), op, /*isDeref=*/false);
     return;
   }
   // A unreachable consumes nothing.  Nothing needs to be destroyed here!
