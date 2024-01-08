@@ -659,6 +659,17 @@ fn function_with_struct():
   struct Foo: # expected-error {{struct inside a function not supported here}}
     var x: Int
 
+# https://github.com/modularml/modular/issues/12598
+struct not_nested_struct[*Ts: AnyType]:
+    fn __init__(inout self, *args: *Ts):
+        pass
+fn function_with_struct2():
+    let s1 = not_nested_struct()  # ok
+    struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
+        fn __init__(inout self, *args: *Ts):
+            pass
+    let s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
+
 struct TypeGetItem:
     fn __getitem__(inout self, key: Int): # expected-note {{function declared here}}
         pass

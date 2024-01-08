@@ -2167,12 +2167,17 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
                                         size_t curIndent) {
   // We don't support non-top level structs (yet?).
-  if (isa<StructDeclOp>(getParentDecl()))
+  bool nestFailure = false;
+  if (isa<StructDeclOp>(getParentDecl())) {
     emitTokenError("nested struct not supported here");
-  else if (isa<TraitDeclOp>(getParentDecl()))
+    nestFailure = true;
+  } else if (isa<TraitDeclOp>(getParentDecl())) {
     emitTokenError("nested struct in a trait not supported here");
-  else if (isa<LIT::FuncOp>(getParentDecl()))
+    nestFailure = true;
+  } else if (isa<LIT::FuncOp>(getParentDecl())) {
     emitTokenError("struct inside a function not supported here");
+    nestFailure = true;
+  }
 
   auto smLoc = consumeToken(Token::kw_struct).getLoc();
   auto loc = translateLocation(smLoc);
@@ -2187,10 +2192,15 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   // same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
 
-  // Remember that we parsed this declaration so we can finish type checking it
-  // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, smLoc, nameAttr, curDeclScope,
-                            startCursor, getLexer().getCursor(), curIndent);
+  if (nestFailure) {
+    getDeclResolver().addErroneousDecl(nameAttr.getValue(), smLoc,
+                                       curDeclScope);
+  } else {
+    // Remember that we parsed this declaration so we can finish type checking
+    // it when it gets referenced.
+    getDeclResolver().addDecl(newStruct, smLoc, nameAttr, curDeclScope,
+                              startCursor, getLexer().getCursor(), curIndent);
+  }
   return success();
 }
 
