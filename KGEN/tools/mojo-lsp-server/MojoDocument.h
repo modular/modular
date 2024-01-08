@@ -235,6 +235,11 @@ public:
                    const mlir::lsp::Range &range,
                    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
 
+  void onReferences(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &position,
+                    bool includeDeclaration,
+                    OnResultFn<std::vector<mlir::lsp::Location>> onReferences);
+
   void onSemanticTokens(
       const mlir::lsp::URIForFile &uri,
       OnResultFn<std::optional<std::vector<SemanticToken>>> onSemanticTokens);
@@ -327,6 +332,9 @@ private:
   std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
 
   std::vector<mlir::lsp::InlayHint> onInlayHintSync(llvm::SMRange range);
+
+  std::vector<mlir::lsp::Location> onReferencesSync(SMLoc smLoc,
+                                                    bool includeDeclaration);
 
   std::optional<std::vector<SemanticToken>>
   onSemanticTokensSync(llvm::SMRange range);

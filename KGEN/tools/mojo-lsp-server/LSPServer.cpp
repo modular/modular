@@ -79,6 +79,9 @@ struct LSPServer {
   void onInlayHint(const InlayHintsParams &params,
                    Callback<std::vector<InlayHint>> reply);
 
+  void onReferences(const ReferenceParams &params,
+                    Callback<std::vector<mlir::lsp::Location>> reply);
+
   void onSemanticTokens(const SemanticTokensParams &params,
                         Callback<llvm::json::Value> reply);
   void onSemanticTokensDelta(const SemanticTokensDeltaParams &params,
@@ -150,6 +153,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
                {"cells", JSONArray{JSONObject{{"language", "mojo"}}}},
            }},
        }}},
+      {"referencesProvider", true},
       {"semanticTokensProvider",
        llvm::json::Object{
            {"full", llvm::json::Object{{"delta", true}}},
@@ -325,6 +329,16 @@ void LSPServer::onInlayHint(const InlayHintsParams &params,
       });
 }
 
+void LSPServer::onReferences(const ReferenceParams &params,
+                             Callback<std::vector<mlir::lsp::Location>> reply) {
+  server.onReferences(params.textDocument.uri, params.position,
+                      params.context.includeDeclaration,
+                      [reply = std::move(reply)](
+                          std::vector<mlir::lsp::Location> locations) mutable {
+                        reply(std::move(locations));
+                      });
+}
+
 void LSPServer::onSemanticTokens(const SemanticTokensParams &params,
                                  Callback<llvm::json::Value> reply) {
   server.onSemanticTokens(
@@ -418,6 +432,8 @@ mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
   messageHandler.method("textDocument/inlayHint", &lspServer,
                         &LSPServer::onInlayHint);
+  messageHandler.method("textDocument/references", &lspServer,
+                        &LSPServer::onReferences);
   messageHandler.method("textDocument/semanticTokens/full", &lspServer,
                         &LSPServer::onSemanticTokens);
   messageHandler.method("textDocument/semanticTokens/full/delta", &lspServer,

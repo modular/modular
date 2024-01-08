@@ -27,6 +27,8 @@ from lsprotocol.types import NotebookDocument as LspNotebookDocument
 from lsprotocol.types import (
     Position,
     Range,
+    ReferenceContext,
+    ReferenceParams,
     SemanticTokensParams,
     SignatureHelpParams,
     TextDocumentIdentifier,
@@ -256,6 +258,15 @@ class Requests:
     async def hover(self, doc: Document, pos: Position):
         return await self.client.text_document_hover_async(
             params=HoverParams(position=pos, text_document=doc.identifier)
+        )
+
+    async def find_references(self, doc: Document, pos: Position):
+        return await self.client.text_document_references_async(
+            params=ReferenceParams(
+                context=ReferenceContext(include_declaration=True),
+                position=pos,
+                text_document=doc.identifier,
+            )
         )
 
     async def definition(self, doc: Document, pos: Position):
