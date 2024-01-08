@@ -74,26 +74,53 @@ struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This class provides a context for building a package alongside the normal
-/// compilation pipeline.
+
+/// This class takes a parsed `lit.package` op in its constructor, and is
+/// responsible for creating a new `lit.package` op. This new `lit.package` op
+/// is one that can be serialized into MLIR bytecode and written to disk, as a
+/// `.mojopkg` file.
+///
+/// A parsed `lit.package` op cannot simply be serialized, because it must first
+/// undergo several transformations. These transformations prepare it to be
+/// read from disk and deserialized later. For example:
+///
+/// - A parsed `lit.package` op includes MLIR for everything in the source
+///   package, including things like function bodies. However, some MLIR ops,
+///   such those in non-parametric functions' bodies, can have pre-elaboration
+///   MLIR passes run upon them at packaging time. This allows users importing
+///   the package to save some compilation time. These ops are stripped from
+///   their original locations inside the package op, and instead their
+///   serialized pre-elaboration bytecode is attached to the package op itself.
+/// - Not all ops are necessary when materializing a package, and so are
+///   removed. For example, unresolved imports of nested package modules are
+///   resolved before the package is serialized, so the import ops are removed.
+///
+/// This class performs these transformations. It also provides helpers to lower
+/// an MLIR module op representing the package's contents to post-elaboration
+/// bytecode, or finally to machine code.
 class PackageBuilder {
 public:
-  /// Construct the PackageBuilder from the parsed package op.
-  PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env);
+  /// Construct the builder from a parsed package op. This instantiates a new
+  /// module and clones the parsed package op into that module. Only what's
+  /// necessary for serialization is cloned.
+  PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env,
+                 LLCL::Runtime &runtime,
+                 RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+                 RCRef<Cache::BlobCacheBackend> regionCacheBackend);
 
-  /// Given a pre-elaboration module, attach the bytecode for the pre-elaborated
-  /// versions of each non-parametric function to the high level lit.func in
-  /// the new package.
-  ErrorOrSuccess attachPreElaboratorBytecode(ModuleOp moduleOp);
+  /// Run pre-elaboration passes on the given module, then attach an attribute
+  /// to the package op being built. The attribute contains the serialized MLIR
+  /// bytecode of the pre-elaboration module.
+  ErrorOrSuccess buildPreElaborationModule(ModuleOp theModule,
+                                           const CompilationOptions &options);
 
-  /// Given an elaborated module, returns an attribute storing its bytecode, or
-  /// an error if one could not be created.
-  ///
-  /// This also sets the new package name and the appropriate linkage on each
-  /// non-parametric `lit.func` op in the given symbol table.
-  ErrorOr<DenseResourceElementsAttr>
-  createPostElaborationModuleAttr(const SymbolTable &symtab,
-                                  const ExportMap &exportedSymbols);
+  /// Run pre-elaboration and elaboration passes on the given module, then
+  /// serialize it and attach its bytecode to the built package op. On success,
+  /// returns the post-elaboration module's symbol table and export map.
+  ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
+  buildPostElaborationModule(ModuleOp theModule,
+                             const CompilationOptions &options,
+                             TargetInfoAttr target);
 
   /// Sets the given archive on the package op that's being built.
   void attachArchive(PackageArchiveAttr archive);
@@ -106,10 +133,32 @@ public:
   }
 
 private:
-  /// This is the module that contains the new package we're generating.
+  /// Given an elaborated module, returns an attribute storing its bytecode, or
+  /// an error if one could not be created.
+  ///
+  /// This also sets the new package name and the appropriate linkage on each
+  /// non-parametric `lit.func` op in the given symbol table.
+  ErrorOr<DenseResourceElementsAttr>
+  createPostElaborationModuleAttr(const SymbolTable &symtab,
+                                  const ExportMap &exportedSymbols);
+
+  /// This is the module that contains the new package op that this class is
+  /// responsible for building.
   OwningOpRef<ModuleOp> packageModule;
-  /// This is a reference to the new package op we've created.
+  /// This is the new package op that is meant to be serialized as a `.mojopkg`
+  /// file.
   LIT::PackageOp thePackage;
+
+  /// The runtime used when applying pre-elaboration and elaboration transforms
+  /// to the module being packaged.
+  LLCL::Runtime &runtime;
+  /// The transform cache to use when applying pre-elaboration and elaboration
+  /// transforms to the module being packaged.
+  RCRef<Cache::TransformCache> transformCache;
+  /// The region cache to use when applying pre-elaboration and elaboration
+  /// transforms to the module being packaged.
+  RCRef<Cache::RegionCache> regionCache;
+
   /// This maps from a flattened name to the LIT::FuncOp in the package
   /// module.
   DenseMap<StringAttr, std::pair<LIT::FuncOp, StringAttr>> flattenedNameToFunc;
@@ -143,7 +192,14 @@ static bool canExternalize(LIT::FuncOp func) {
   return true;
 }
 
-PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env) {
+PackageBuilder::PackageBuilder(
+    LIT::PackageOp parsedPackageOp, EnvAttr env, LLCL::Runtime &runtime,
+    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+    RCRef<Cache::BlobCacheBackend> regionCacheBackend)
+    : runtime(runtime), transformCache(RCRef<Cache::TransformCache>::create(
+                            std::move(transformCacheBackend))),
+      regionCache(
+          RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend))) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
 
@@ -254,23 +310,83 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env) {
   });
 }
 
-ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
-  // Write the package bytecode to the given buffer. This will be attached to
-  // the exported high level functions.
+ErrorOrSuccess
+PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
+                                          const CompilationOptions &options) {
+  // Run all pre-elaboration passes on the module.
+  mlir::PassManager pm(theModule.getContext());
+  buildGenerateLibraryPipeline(pm, runtime, options);
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      theModule, regionCache.copy(), transformCache.copy(),
+      runtime.getReadyChain().copy(), pm,
+      /*deflateTarget=*/false);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Serialize the pre-elaboration module as MLIR bytecode.
   WriteableBufferRef str = WriteableBuffer::get();
-  if (failed(mlir::writeBytecodeToFile(moduleOp, *str)))
+  if (failed(mlir::writeBytecodeToFile(theModule, *str)))
     return Error("could not write bytecode for package module");
 
-  // Hash the bytecode itself - this will give us a unique'd attr name that
-  // shouldn't clash even when a large number of packages get imported - and
-  // if they do clash, they're guaranteed to be exactly the same.
+  // Attach the pre-elaboration module bytecode to the package op. Hash the
+  // bytecode data to generate a unique name for the attribute.
   auto hash = llvm::BLAKE3::hash(
       ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
                         (const uint8_t *)str->getBufferEnd()));
   thePackage.setPreElaborationModuleAttr(
-      createResourceAttr(moduleOp.getContext(), str->getBuffer(),
+      createResourceAttr(theModule.getContext(), str->getBuffer(),
                          "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
   return success();
+}
+
+ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
+PackageBuilder::buildPostElaborationModule(ModuleOp theModule,
+                                           const CompilationOptions &options,
+                                           TargetInfoAttr target) {
+  // Time the compilation.
+  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+      {"filename", fileLine.getFilename().str()}};
+  [[maybe_unused]] auto timeScope =
+      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
+
+  // Lower the module up to the elaborator, and be sure to include the
+  // environment attribute in the pre-elaborated bytecode.
+  theModule->setAttr(EnvAttr::getEnvAttrName(),
+                     thePackage.getCompiledEnvAttr());
+  if (auto err = buildPreElaborationModule(theModule, options))
+    return err.takeError();
+
+  // Elaborate the module for the given target.
+  setTargetInfo(theModule, target);
+  mlir::PassManager elaboratePM(theModule.getContext());
+  populateElaborateModulePasses(elaboratePM, runtime, target, options);
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      theModule, regionCache.copy(), transformCache.copy(),
+      runtime.getReadyChain().copy(), elaboratePM,
+      /*deflateTarget=*/false);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Construct the symbol table and the export map.
+  SymbolTable symtab(theModule);
+  ExportMap exportedSymbols = getExportedSymbols(theModule);
+
+  // Create the elaborated bytecode attribute, and update the functions in the
+  // symbol table.
+  auto attrOr = createPostElaborationModuleAttr(symtab, exportedSymbols);
+  if (attrOr.isError())
+    return attrOr.takeError();
+  return std::make_tuple(attrOr.takeValue(), std::move(symtab),
+                         std::move(exportedSymbols));
+}
+
+void PackageBuilder::attachArchive(PackageArchiveAttr archive) {
+  thePackage.setArchives(archive);
 }
 
 ErrorOr<DenseResourceElementsAttr>
@@ -302,10 +418,6 @@ PackageBuilder::createPostElaborationModuleAttr(
   }
 
   return bytecodeResource;
-}
-
-void PackageBuilder::attachArchive(PackageArchiveAttr archive) {
-  thePackage.setArchives(archive);
 }
 
 //===----------------------------------------------------------------------===//
@@ -390,90 +502,20 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 // buildPackage
 //===----------------------------------------------------------------------===//
 
-/// Elaborate the given module, attaching the generated IR along the way. On
-/// success, returns the symbol table and export map after elaboration has run.
-static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
-elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
-                 const CompilationOptions &options, LLCL::Runtime &runtime,
-                 TargetInfoAttr target, EnvAttr env) {
-  // Build the backends used for caching compilation.
-  auto cacheBackends = getMojoCacheBackends(runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
-  auto transformCache =
-      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
-  auto regionCache =
-      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
-
-  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-
-  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
-      {"filename", fileLine.getFilename().str()}};
-
-  // Time the compilation.
-  [[maybe_unused]] auto timeScope =
-      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
-          .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
-
-  auto runPipeline = [&](mlir::PassManager &pm) -> ErrorOrSuccess {
-    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, regionCache.copy(), transformCache.copy(),
-        runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
-    LLCL::await(ready);
-    if (ready.isError())
-      return ready.takeDiagnostic().getMessage().copy();
-    return success();
-  };
-
-  // Lower the module up to the elaborator, and be sure to include the
-  // environment attribute in the pre-elaborated bytecode.
-  theModule->setAttr(EnvAttr::getEnvAttrName(), env);
-  mlir::PassManager preElaboratePM(theModule.getContext());
-  buildGenerateLibraryPipeline(preElaboratePM, runtime, options);
-  if (auto err = runPipeline(preElaboratePM))
-    return err.takeError();
-  if (auto err = packageBuilder.attachPreElaboratorBytecode(theModule))
-    return err.takeError();
-
-  // Elaborate the module for the given target.
-  setTargetInfo(theModule, target);
-
-  mlir::PassManager elaboratePM(theModule.getContext());
-  populateElaborateModulePasses(elaboratePM, runtime, target, options);
-  if (auto err = runPipeline(elaboratePM))
-    return err.takeError();
-
-  // Construct the symbol table and the export map.
-  SymbolTable symtab(theModule);
-  ExportMap exportedSymbols = getExportedSymbols(theModule);
-
-  // Create the elaborated bytecode attribute, and update the functions in the
-  // symbol table.
-  auto attrOr =
-      packageBuilder.createPostElaborationModuleAttr(symtab, exportedSymbols);
-  if (attrOr.isError())
-    return attrOr.takeError();
-  return std::make_tuple(attrOr.takeValue(), std::move(symtab),
-                         std::move(exportedSymbols));
-}
-
-/// Given parsed module and package ops, returns either a module and package op
-/// "built" for the given target, or an error.
-///
-/// Here, "building" a package means:
-/// 1. Running the package through both the pre-elaboration and elaboration
-///    phases of the KGEN compiler, and setting the resulting MLIR bytecode of
-///    each of these as attributes on the generated package op.
-/// 2. Generating a standalone archive that can be included in a final Mojo
-///    program, and setting those bytes as an attribute on the generated package
-///    op.
+/// Given parsed module and package ops, builds a new module and package op. The
+/// newly build package op is suitable for serialization as MLIR bytecode; it
+/// may be written to a `.mojopkg` file that can be deserialized and imported
+/// into Mojo programs.
 static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
-  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.env);
-  const CompilationOptions &compilationOptions = packageArgs.compileOptions;
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.env, runtime,
+                                std::move(cacheBackends->first),
+                                std::move(cacheBackends->second));
 
   // For now we implicilty export everything in the package, so add exports to
   // the main module for the contents of the module.
@@ -484,9 +526,9 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   });
 
   // Elaborate the package, attaching the generated IR along the way.
-  auto elaboratedOr =
-      elaboratePackage(theModule, packageBuilder, compilationOptions, runtime,
-                       packageArgs.target, packageArgs.env);
+  const CompilationOptions &compilationOptions = packageArgs.compileOptions;
+  auto elaboratedOr = packageBuilder.buildPostElaborationModule(
+      theModule, compilationOptions, packageArgs.target);
   if (failed(elaboratedOr)) {
     return Error(
         llvm::formatv("compilation failed: {0}", elaboratedOr.getError()));
@@ -556,7 +598,8 @@ static int package(const State &state) {
   if (!out)
     return state.reportError(outputError);
 
-  // Parse the package.
+  // Parse the input directory as a Mojo package. This returns a module op that
+  // wraps the `lit.package` op, which represents the package contents.
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);
@@ -574,13 +617,14 @@ static int package(const State &state) {
   if (failed(module))
     return state.reportError(module.getError());
 
-  // Build the package from the inputs we just parsed, and write the output to
-  // `out`.
+  // Build a new package op based off of the parsed package op. This new op is
+  // suitable for serialization as MLIR bytecode.
   auto builtOrErr = buildPackage(packageArgs, **module, packageOp, *runtime);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
-  auto [builtModule, builtPackage] = builtOrErr.takeValue();
+  auto [builtPackageModule, builtPackage] = builtOrErr.takeValue();
 
+  // Write the new package op as serialized bytecode to the output file.
   if (failed(mlir::writeBytecodeToFile(builtPackage, out->os())))
     return state.reportError("failed to write package bytecode to a file");
 
