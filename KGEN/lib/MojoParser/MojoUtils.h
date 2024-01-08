@@ -81,6 +81,10 @@ bool canSynthesizeIfMissing(
     std::optional<std::reference_wrapper<SmallVectorImpl<SpecialFunctionKind>>>
         specialFns = std::nullopt);
 
+/// Helper to delete code in a region and mark it as unreachable when it's
+/// determined to be dead code.
+void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
+
 } // namespace M::KGEN::LIT
 
 #endif // MOJOPARSER_UTILS_H

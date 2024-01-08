@@ -52,7 +52,7 @@ fn nmTargetNoop(x: NmTarget):
     pass
 
 
-fn useNonmaterializable():
+fn useNonmaterializable(p: Bool):
     # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted1" var : !lit.ref<mut !NmTarget
     # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}true
     var gotConverted1 = NmStruct(76) + NmStruct(1)
@@ -63,10 +63,10 @@ fn useNonmaterializable():
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)
     # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVar" var : !lit.ref<mut !NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}false
-    var useIfVar = NmStruct(2) if True else NmStruct(77)
+    var useIfVar = NmStruct(2) if p else NmStruct(77)
     # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVarLopsided" var : !lit.ref<mut !NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}true
-    var useIfVarLopsided = NmTarget(False) if False else NmStruct(77)
+    var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
 
     # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar1" var : !lit.ref<mut !NmTarget
     var useOrVar1 = NmStruct(2) or NmStruct(77)

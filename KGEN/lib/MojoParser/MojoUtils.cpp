@@ -10,6 +10,7 @@
 
 #include "MojoUtils.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
@@ -267,4 +268,16 @@ bool LIT::canSynthesizeIfMissing(
     return true;
   }
   return false;
+}
+
+void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
+  Block &deadBlock = deadRegion->front();
+  {
+    Operation *op = &deadBlock.front();
+    // Erase bottom up to avoid deleting an op while something uses its results.
+    while (&deadBlock.back() != op)
+      deadBlock.back().erase();
+    op->erase();
+  }
+  OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(unreachableLoc);
 }

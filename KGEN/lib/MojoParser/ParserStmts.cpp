@@ -1632,18 +1632,37 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   // Each if/elif conditions could be dynamic or static, use some helpers to
   // generate the right structure.
   SmartVariant<HLCF::IfOp, ParamIfOp> ifOp;
-  auto parseCondAndCreateIf = [&](Location loc) -> ParseResult {
+  // Returns the parse result and, if the condition value is statically known
+  // for a non-parameter if statement, it returns the IfOp, the value for the
+  // condition as a bool, and the location of the condition expression.
+  auto parseCondAndCreateIf = [&](Location loc)
+      -> std::tuple<ParseResult,
+                    std::optional<std::tuple<HLCF::IfOp, bool, Location>>> {
     auto emitter = getEmitter();
     // If this is a normal if statement, emit the condition as a SRValue.
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
-      SRValue condRVal = emitter.emitSRValue(
-          {emitter.emitExprI1(condExp, EC_BoolCondition), condExp},
-          EC_BoolCondition);
+      RValue condI1RVal = emitter.emitExprI1(condExp, EC_BoolCondition);
+      if (!condI1RVal)
+        return {failure(), {}};
+      std::optional<bool> knownConditionForWarning = {};
+      if (PValue condI1PVal = condI1RVal.getIfPValue()) {
+        if (IntegerAttr asIntAttr =
+                dyn_cast_or_null<IntegerAttr>(condI1PVal.get()))
+          knownConditionForWarning = !asIntAttr.getValue().isZero();
+      }
+      SRValue condRVal =
+          emitter.emitSRValue({condI1RVal, condExp}, EC_BoolCondition);
       if (!condRVal)
-        return failure();
-      ifOp = builder.create<HLCF::IfOp>(loc, condRVal);
-      return success();
+        return {failure(), {}};
+      HLCF::IfOp hifOp = builder.create<HLCF::IfOp>(loc, condRVal);
+      ifOp = hifOp;
+      std::optional<std::tuple<HLCF::IfOp, bool, Location>> deadCodeInfo = {};
+      if (knownConditionForWarning.has_value()) {
+        deadCodeInfo = {hifOp, knownConditionForWarning.value(),
+                        condExp->getLocation(emitter)};
+      }
+      return {success(), deadCodeInfo};
     }
 
     // Otherwise, for a @parameter if, we emit the condition as an PValue
@@ -1651,15 +1670,17 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
     RValue condRVal = getParamEmitter(EC_BoolParamCondition)
                           .emitExprI1(condExp, EC_BoolParamCondition);
     if (!condRVal)
-      return failure();
+      return {failure(), {}};
     PValue condPVal = condRVal.getIfPValue();
     if (!condPVal)
-      return emitError(condExp->getLoc(), "@parameter 'if' requires a "
-                                          "parameter expression as a condition")
-             << condExp->getRange();
+      return {
+          (emitError(condExp->getLoc(), "@parameter 'if' requires a "
+                                        "parameter expression as a condition")
+           << condExp->getRange()),
+          {}};
 
     ifOp = builder.create<ParamIfOp>(loc, condPVal.get());
-    return success();
+    return {success(), {}};
   };
 
   auto createThenBlock = [&]() {
@@ -1683,7 +1704,14 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
       builder.create<ParamYieldOp>(loc);
   };
 
-  if (parseCondAndCreateIf(ifLoc) ||
+  // Vector of IfOps that have statically known conditions, along with those
+  // conditions.  After emitting code, these need to raise warnings and be
+  // marked as dead.
+  SmallVector<std::tuple<HLCF::IfOp, bool, Location>> ifOpsWithDeadCode;
+  auto [ifParseResult, maybeDeadCodeInfo] = parseCondAndCreateIf(ifLoc);
+  if (maybeDeadCodeInfo.has_value())
+    ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
+  if (ifParseResult ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
   createThenBlock();
@@ -1698,9 +1726,13 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
       return failure();
 
     createElseBlock();
-    if (parseCondAndCreateIf(elifLoc) ||
+
+    auto [ifParseResult, maybeDeadCodeInfo] = parseCondAndCreateIf(elifLoc);
+    if (ifParseResult ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
+    if (maybeDeadCodeInfo.has_value())
+      ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
     createYield(elifLoc);
 
     createThenBlock();
@@ -1718,6 +1750,18 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
       return failure();
   }
   createYield(ifLoc);
+  // Process dead code.  Go backward to avoid needing to erase an already erased
+  // IfOp.
+  for (auto [deadLeggedIfOp, condition, condExprLoc] :
+       llvm::reverse(ifOpsWithDeadCode)) {
+    shared.emitWarning(condExprLoc)
+        << "if statement with constant condition 'if "
+        << (condition ? "True" : "False") << "'";
+    if (condition)
+      markRegionUnreachable(&deadLeggedIfOp.getElseRegion(), ifLoc);
+    else
+      markRegionUnreachable(&deadLeggedIfOp.getThenRegion(), ifLoc);
+  }
   return success();
 }
 
