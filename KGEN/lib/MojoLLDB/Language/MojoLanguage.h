@@ -45,8 +45,6 @@ public:
     return canReadValue && isZero;
   }
 
-  llvm::StringRef GetNilReferenceSummaryString() override { return "None"; }
-
   bool IsSourceFile(llvm::StringRef filePath) const override {
     return filePath.ends_with(".mojo") || filePath.ends_with("🔥");
   }
