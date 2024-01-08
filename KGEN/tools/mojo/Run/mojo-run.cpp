@@ -90,7 +90,9 @@ static std::optional<int> parseArgs(const State &state,
                                     MLIRContext &ctx, TargetInfoAttr &target) {
   // First, parse all arguments, in order to find the index of the input
   // argument.
-  RunOptTable options;
+  // Make `options` static since the output variable `args` holds on to a
+  // pointer to the `OptTable`.
+  static RunOptTable options;
   unsigned unused = 0;
   llvm::opt::InputArgList allArgs =
       options.ParseArgs(state.arguments, unused, unused);
