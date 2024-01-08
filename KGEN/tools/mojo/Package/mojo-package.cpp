@@ -69,6 +69,29 @@ struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
+/// Returns true if the given function can be externalized.
+static bool canExternalize(LIT::FuncOp func) {
+  // If the function is marked as always inline, we can't externalize it.
+  if (func.getInlineLevel() == InlineLevel::Always ||
+      func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
+      func.getIsAdaptive())
+    return false;
+
+  // Check for parameters.
+  SignatureType signature = func.getSignature();
+  if (!signature.getInputParamTypes().empty() ||
+      !signature.getResultParamTypes().empty())
+    return false;
+  // Check if a parent has parameters.
+  LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
+  while (parentStruct) {
+    if (!parentStruct.getInputParams().empty())
+      return false;
+    parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
+  }
+  return true;
+}
+
 //===----------------------------------------------------------------------===//
 // PackageBuilder Declaration
 //===----------------------------------------------------------------------===//
@@ -114,34 +137,26 @@ public:
   ErrorOrSuccess buildPreElaborationModule(ModuleOp theModule,
                                            const CompilationOptions &options);
 
-  /// Run pre-elaboration and elaboration passes on the given module, then
-  /// serialize it and attach its bytecode to the built package op. On success,
-  /// returns the post-elaboration module's symbol table and export map.
-  ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
-  buildPostElaborationModule(ModuleOp theModule,
-                             const CompilationOptions &options,
-                             TargetInfoAttr target);
-
-  /// Sets the given archive on the package op that's being built.
-  void attachArchive(PackageArchiveAttr archive);
+  /// Run elaboration passes on the given module for the given target, then
+  /// fully lower it to machine code for that target. The elaborated module and
+  /// object code are combined into a package archive attribute that is set on
+  /// the package op being built.
+  ///
+  /// This function also performs some transformations of the package op, which
+  /// are necessary in order for its elaborated bytecode and object code to be
+  /// deserialized and imported into other Mojo programs.
+  ErrorOrSuccess buildArchive(ModuleOp theModule,
+                              const CompilationOptions &options,
+                              TargetInfoAttr target);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
   /// reference to the module, and thus invalidates the builder.
-  std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp> build() {
+  std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp> finalize() {
     return {packageModule.release(), thePackage};
   }
 
 private:
-  /// Given an elaborated module, returns an attribute storing its bytecode, or
-  /// an error if one could not be created.
-  ///
-  /// This also sets the new package name and the appropriate linkage on each
-  /// non-parametric `lit.func` op in the given symbol table.
-  ErrorOr<DenseResourceElementsAttr>
-  createPostElaborationModuleAttr(const SymbolTable &symtab,
-                                  const ExportMap &exportedSymbols);
-
   /// This is the module that contains the new package op that this class is
   /// responsible for building.
   OwningOpRef<ModuleOp> packageModule;
@@ -168,29 +183,6 @@ private:
 //===----------------------------------------------------------------------===//
 // PackageBuilder Implementation
 //===----------------------------------------------------------------------===//
-
-/// Returns true if the given function can be externalized.
-static bool canExternalize(LIT::FuncOp func) {
-  // If the function is marked as always inline, we can't externalize it.
-  if (func.getInlineLevel() == InlineLevel::Always ||
-      func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
-      func.getIsAdaptive())
-    return false;
-
-  // Check for parameters.
-  SignatureType signature = func.getSignature();
-  if (!signature.getInputParamTypes().empty() ||
-      !signature.getResultParamTypes().empty())
-    return false;
-  // Check if a parent has parameters.
-  LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
-  while (parentStruct) {
-    if (!parentStruct.getInputParams().empty())
-      return false;
-    parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
-  }
-  return true;
-}
 
 PackageBuilder::PackageBuilder(
     LIT::PackageOp parsedPackageOp, EnvAttr env, LLCL::Runtime &runtime,
@@ -313,6 +305,15 @@ PackageBuilder::PackageBuilder(
 ErrorOrSuccess
 PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
                                           const CompilationOptions &options) {
+  // Time the compilation.
+  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+      {"filename", fileLine.getFilename().str()}};
+  [[maybe_unused]] auto timeScope =
+      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
+
   // Run all pre-elaboration passes on the module.
   mlir::PassManager pm(theModule.getContext());
   buildGenerateLibraryPipeline(pm, runtime, options);
@@ -340,64 +341,45 @@ PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
   return success();
 }
 
-ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
-PackageBuilder::buildPostElaborationModule(ModuleOp theModule,
-                                           const CompilationOptions &options,
-                                           TargetInfoAttr target) {
-  // Time the compilation.
-  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
-      {"filename", fileLine.getFilename().str()}};
-  [[maybe_unused]] auto timeScope =
-      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
-          .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
-
-  // Lower the module up to the elaborator, and be sure to include the
-  // environment attribute in the pre-elaborated bytecode.
-  theModule->setAttr(EnvAttr::getEnvAttrName(),
-                     thePackage.getCompiledEnvAttr());
-  if (auto err = buildPreElaborationModule(theModule, options))
-    return err.takeError();
-
+ErrorOrSuccess PackageBuilder::buildArchive(ModuleOp theModule,
+                                            const CompilationOptions &options,
+                                            TargetInfoAttr target) {
   // Elaborate the module for the given target.
-  setTargetInfo(theModule, target);
-  mlir::PassManager elaboratePM(theModule.getContext());
-  populateElaborateModulePasses(elaboratePM, runtime, target, options);
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      theModule, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), elaboratePM,
-      /*deflateTarget=*/false);
-  LLCL::await(ready);
-  if (ready.isError())
-    return ready.takeDiagnostic().getMessage().copy();
+  {
+    // Time the elaboration.
+    auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+    llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+        {"filename", fileLine.getFilename().str()}};
+    [[maybe_unused]] auto timeScope =
+        runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+            .createUInt64Timer<std::chrono::milliseconds>(
+                "mojo.kgen.elaboration.time", M::Telemetry::Level::L2, attrs);
 
-  // Construct the symbol table and the export map.
+    mlir::PassManager elaboratePM(theModule.getContext());
+    populateElaborateModulePasses(elaboratePM, runtime, target, options);
+    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+        theModule, regionCache.copy(), transformCache.copy(),
+        runtime.getReadyChain().copy(), elaboratePM,
+        /*deflateTarget=*/false);
+    LLCL::await(ready);
+    if (ready.isError())
+      return ready.takeDiagnostic().getMessage().copy();
+  }
+
+  // Construct the symbol table and export map.
   SymbolTable symtab(theModule);
   ExportMap exportedSymbols = getExportedSymbols(theModule);
 
-  // Create the elaborated bytecode attribute, and update the functions in the
-  // symbol table.
-  auto attrOr = createPostElaborationModuleAttr(symtab, exportedSymbols);
-  if (attrOr.isError())
-    return attrOr.takeError();
-  return std::make_tuple(attrOr.takeValue(), std::move(symtab),
-                         std::move(exportedSymbols));
-}
-
-void PackageBuilder::attachArchive(PackageArchiveAttr archive) {
-  thePackage.setArchives(archive);
-}
-
-ErrorOr<DenseResourceElementsAttr>
-PackageBuilder::createPostElaborationModuleAttr(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols) {
+  // Serialize the elaborated module as bytecode.
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
-  auto bytecodeResourceOr = createElaboratedBytecodeAttr(symtab, packageName);
-  if (bytecodeResourceOr.isError())
-    return bytecodeResourceOr.takeError();
-  DenseResourceElementsAttr bytecodeResource = bytecodeResourceOr.takeValue();
+  auto bytecodeOr = createElaboratedBytecodeAttr(symtab, packageName);
+  if (bytecodeOr.isError())
+    return bytecodeOr.takeError();
+  DenseResourceElementsAttr elaboratedBytecode = bytecodeOr.takeValue();
 
+  // Now that we've pre-compiled the package module, we can attach the
+  // elaborated bytecode as an attribute on functions in the package op being
+  // built.
   for (auto [symName, exportSym] : exportedSymbols) {
     auto [hlFunc, preElaborationName] = flattenedNameToFunc.lookup(symName);
 
@@ -417,7 +399,14 @@ PackageBuilder::createPostElaborationModuleAttr(
     hlFunc.setLinkageName(symName);
   }
 
-  return bytecodeResource;
+  // Finally, lower the module to object code, and set a package archive
+  // attribute on the package op being built.
+  auto archiveOr = createPackageArchive(symtab, exportedSymbols, target,
+                                        elaboratedBytecode, options, runtime);
+  if (archiveOr.isError())
+    return archiveOr.takeError();
+  thePackage.setArchives(archiveOr.takeValue());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -525,23 +514,25 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
     return WalkResult::skip();
   });
 
-  // Elaborate the package, attaching the generated IR along the way.
+  // Lower the module to be packaged, by running all pre-elaboration passes upon
+  // it, then serialize the result to bytecode, and finally attach it as an
+  // attribute on the package op.
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
-  auto elaboratedOr = packageBuilder.buildPostElaborationModule(
-      theModule, compilationOptions, packageArgs.target);
-  if (failed(elaboratedOr)) {
-    return Error(
-        llvm::formatv("compilation failed: {0}", elaboratedOr.getError()));
-  }
-  auto [elaboratedBytecode, symtab, exportMap] = std::move(*elaboratedOr);
+  theModule->setAttr(EnvAttr::getEnvAttrName(), packageArgs.env);
+  if (auto err = packageBuilder.buildPreElaborationModule(theModule,
+                                                          compilationOptions))
+    return Error(llvm::formatv("compilation failed: {0}", err.getError()));
 
-  auto archiveOr =
-      createPackageArchive(symtab, exportMap, packageArgs.target,
-                           elaboratedBytecode, compilationOptions, runtime);
-  if (archiveOr.isError())
-    return archiveOr.takeError();
-  packageBuilder.attachArchive(archiveOr.takeValue());
-  return packageBuilder.build();
+  // Next, fully lower the module to be packaged, for the specified target
+  // architecture. This runs elaboration passes and serializes the module as a
+  // package archive attribute that's set on the package op.
+  TargetInfoAttr target = packageArgs.target;
+  setTargetInfo(theModule, target);
+  if (auto err =
+          packageBuilder.buildArchive(theModule, compilationOptions, target))
+    return Error(llvm::formatv("compilation failed: {0}", err.getError()));
+
+  return packageBuilder.finalize();
 }
 
 //===----------------------------------------------------------------------===//
