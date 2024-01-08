@@ -87,12 +87,10 @@ static std::optional<int> parseArgs(const State &state,
                                     llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
-                                    MLIRContext &ctx, TargetInfoAttr &target) {
+                                    MLIRContext &ctx, TargetInfoAttr &target,
+                                    RunOptTable &options) {
   // First, parse all arguments, in order to find the index of the input
   // argument.
-  // Make `options` static since the output variable `args` holds on to a
-  // pointer to the `OptTable`.
-  static RunOptTable options;
   unsigned unused = 0;
   llvm::opt::InputArgList allArgs =
       options.ParseArgs(state.arguments, unused, unused);
@@ -248,13 +246,14 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 /// error, otherwise returns a failure code.
 static int run(const State &state) {
   // Parse arguments.
+  RunOptTable optionsTable;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
   CompilationOptions options;
   MLIRContext context;
   TargetInfoAttr target;
-  if (std::optional<int> exitCode =
-          parseArgs(state, args, sourceManager, options, context, target))
+  if (std::optional<int> exitCode = parseArgs(
+          state, args, sourceManager, options, context, target, optionsTable))
     return *exitCode;
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
