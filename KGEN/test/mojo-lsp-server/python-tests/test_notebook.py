@@ -42,7 +42,7 @@ fn function() -> Int:
 function()
 """,
     ]
-    doc = NotebookDocument("test", cell_contents)
+    doc = NotebookDocument("test_updates", cell_contents)
 
     requests = Requests(client)
     requests.open_notebook_document(doc)
@@ -185,7 +185,7 @@ fn function() -> Int:
 fu
 """,
     ]
-    doc = NotebookDocument("test", cell_contents)
+    doc = NotebookDocument("test_completion", cell_contents)
 
     requests = Requests(client)
     requests.open_notebook_document(doc)
@@ -215,7 +215,7 @@ struct SomeStruct:
 SomeStruct()
 """,
     ]
-    doc = NotebookDocument("test", cell_contents)
+    doc = NotebookDocument("test_signature_help", cell_contents)
 
     requests = Requests(client)
     requests.open_notebook_document(doc)
@@ -245,7 +245,7 @@ def function():
 function
 """,
     ]
-    doc = NotebookDocument("test", cell_contents)
+    doc = NotebookDocument("test_python", cell_contents)
 
     requests = Requests(client)
     requests.open_notebook_document(doc)
