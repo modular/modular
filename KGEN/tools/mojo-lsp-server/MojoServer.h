@@ -115,6 +115,12 @@ public:
                    const mlir::lsp::Range &range,
                    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
 
+  // Get the references of the symbol in the given location.
+  void onReferences(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &position,
+                    bool includeDeclaration,
+                    OnResultFn<std::vector<mlir::lsp::Location>> onReferences);
+
   /// Get the semantic tokens for the given document.
   void onSemanticTokens(
       const mlir::lsp::URIForFile &uri,

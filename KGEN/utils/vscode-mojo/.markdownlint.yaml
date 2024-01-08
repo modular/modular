@@ -1,0 +1,22 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+# This configures the lint rules for markdownlint, used in lint_markdown.sh
+# It overrides for the default lint config here:
+# https://github.com/DavidAnson/markdownlint/blob/main/schema/.markdownlint.yaml
+# Also see the definition for all markdownlint rules here:
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# MD013: Allow lines >80 char if in heading, table, or code block
+line-length:
+  line_length: 80
+  headings: false # But pleaaase keep them as short as possible
+  tables: false
+  code_blocks: false
+
+# MD024: Headings with the same title are okay if they're not siblings
+no-duplicate-heading:
+  siblings_only: true

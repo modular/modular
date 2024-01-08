@@ -80,6 +80,8 @@ lsp::InlayHint MojoInlayHint::toLspInlayHint(SourceMgr &sourceMgr) const {
 
 namespace {
 /// Common representation for any kind of symbol.
+struct SymbolRef;
+
 struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
       : identifier(identifier), declRef(declRef),
@@ -95,15 +97,18 @@ struct Symbol {
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
 
-  /// API for accessing the internals of this decl.
+  /// API for accessing the internals of this symbol.
   MojoASTDeclRef declRef;
 
-  /// The approximate view kind for this decl. This can provide a rough estimate
-  /// for what kind of decl this is.
+  /// The approximate view kind for the decl of this symbol. This can provide a
+  /// rough estimate for what kind of decl this is.
   std::optional<DeclViewKind> approximateViewKind;
 
-  /// The location of the identifier of this decl.
+  /// The location of the identifier of this symbol.
   SMRange range;
+
+  /// A list of symbolRefs that point to this symbol.
+  llvm::DenseSet<SymbolRef *> symbolRefs;
 };
 } // namespace
 
@@ -161,17 +166,29 @@ namespace {
 /// This struct represents a reference or a declaration in the doc managed by
 /// this index to a symbol that might be defined elsewhere.
 struct SymbolRef {
-  SymbolRef(ArrayRef<const Symbol *> symbols, SMRange range)
+  SymbolRef(ArrayRef<Symbol *> symbols, SMRange range)
       : symbols(symbols), range(range) {}
-  SymbolRef(const Symbol &symbol, SMRange range) : SymbolRef(&symbol, range) {}
+  SymbolRef(Symbol &symbol, SMRange range) : SymbolRef(&symbol, range) {}
 
   /// Return a nicely formatted markdown text of this reference.
   std::string getMarkdownDeclaration() const;
 
   /// The symbols being referenced.
-  SmallVector<const Symbol *, 1> symbols;
+  SmallVector<Symbol *, 1> symbols;
   /// The range in the index's doc where the symbol is being referenced.
   SMRange range;
+
+  /// Remove the existing links from Symbol -> SymbolRef for this SymbolRef.
+  void removeSymbolToSymbolRefMapping() {
+    for (Symbol *symbol : symbols)
+      symbol->symbolRefs.erase(this);
+  }
+
+  /// Create the links from Symbol -> SymbolRef for reverse lookups.
+  void createSymbolToSymbolRefMapping() {
+    for (Symbol *symbol : symbols)
+      symbol->symbolRefs.insert(this);
+  }
 };
 } // namespace
 
@@ -229,6 +246,8 @@ public:
 private:
   /// Store the range corresponding to the reference or the declaration of a
   /// symbol in the main doc.
+  /// In addition, this method maintains the mapping from Symbol to SymbolRef,
+  /// as affectively here is where we commit changes to the index.
   void insertRangeInMainDoc(SymbolRef &&symbolRef);
 
   using MapT = llvm::IntervalMap<
@@ -273,9 +292,13 @@ void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
   // If an existing mapping is found, overwrite with the new reference. We may
   // resolve more specific references as the parser progresses.
   if (auto it = rangeToSymbolRef.find(range.Start); it.valid()) {
+    SymbolRef *existingSymbolRef = it.value();
     if (it.start() == range.Start && it.stop() == range.End &&
-        it.value()->symbols.size() > symbolRef.symbols.size()) {
+        existingSymbolRef->symbols.size() > symbolRef.symbols.size()) {
+
+      existingSymbolRef->removeSymbolToSymbolRefMapping();
       it.value()->symbols = std::move(symbolRef.symbols);
+      existingSymbolRef->createSymbolToSymbolRefMapping();
       return;
     }
   }
@@ -283,7 +306,9 @@ void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
   // Otherwise, insert a new mapping.
   if (!rangeToSymbolRef.overlaps(range.Start, range.End)) {
     symbolRefs.push_back(std::make_unique<SymbolRef>(std::move(symbolRef)));
-    rangeToSymbolRef.insert(range.Start, range.End, symbolRefs.back().get());
+    SymbolRef *symbolRef = symbolRefs.back().get();
+    rangeToSymbolRef.insert(range.Start, range.End, symbolRef);
+    symbolRef->createSymbolToSymbolRefMapping();
   }
 }
 
@@ -859,9 +884,9 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::getCodeActions(
-    const mlir::lsp::URIForFile &uri, const lsp::Range &pos,
+    const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
-    OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions) {
+    OnResultFn<std::vector<lsp::CodeAction>> onActions) {
   startTaskAfterParsing([uri, pos, context, onActions = std::move(onActions)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -896,8 +921,8 @@ MojoDocument::getCodeActionsSync(SMRange range,
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onCodeCompletion(
-    const mlir::lsp::URIForFile &uri, const lsp::Position &completePos,
-    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
+    const lsp::URIForFile &uri, const lsp::Position &completePos,
+    OnResultFn<lsp::CompletionList> onCompletionFn) {
   startTaskAfterParsing(
       [uri, completePos,
        onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
@@ -961,8 +986,8 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onDefinition(
-    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    OnResultFn<std::vector<lsp::Location>> onDefinitionFn) {
   startTaskAfterParsing([uri, pos, onDefinitionFn = std::move(onDefinitionFn)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -991,7 +1016,7 @@ std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::getDocumentSymbols(
-    MojoASTDeclRef decl, std::vector<mlir::lsp::DocumentSymbol> &symbols) {
+    MojoASTDeclRef decl, std::vector<lsp::DocumentSymbol> &symbols) {
   const llvm::MemoryBuffer *declBuffer = sourceMgr.getMemoryBuffer(
       getSourceMgr().FindBufferContainingLoc(decl.getLoc()));
   StringRef declBufferRef = declBuffer->getBuffer();
@@ -1004,13 +1029,13 @@ void MojoDocument::getDocumentSymbols(
 }
 
 void MojoDocument::getDocumentSymbols(
-    MojoASTDeclRef decl, std::vector<mlir::lsp::DocumentSymbol> &symbols,
+    MojoASTDeclRef decl, std::vector<lsp::DocumentSymbol> &symbols,
     function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl) {
-  std::vector<mlir::lsp::DocumentSymbol> *nestedSymbols = &symbols;
+  std::vector<lsp::DocumentSymbol> *nestedSymbols = &symbols;
 
   // Utility functor to add a new document symbol.
-  auto addSymbol = [&](const Twine &name, mlir::lsp::SymbolKind kind,
-                       mlir::lsp::Range range, std::string detail = "") {
+  auto addSymbol = [&](const Twine &name, lsp::SymbolKind kind,
+                       lsp::Range range, std::string detail = "") {
     auto &docSym = symbols.emplace_back(name, kind, range, range);
     docSym.detail = std::move(detail);
     nestedSymbols = &docSym.children;
@@ -1020,7 +1045,7 @@ void MojoDocument::getDocumentSymbols(
   auto *symbol = context->symbolIndex.findSymbol(decl);
   if (symbol && symbol->range.isValid()) {
     if (std::unique_ptr<DeclView> declView = decl.getView()) {
-      mlir::lsp::Range range(getSourceMgr(), symbol->range);
+      lsp::Range range(getSourceMgr(), symbol->range);
 
       TypeSwitch<DeclView *>(declView.get())
           .Case([&](AliasDeclView *alias) {
@@ -1029,19 +1054,18 @@ void MojoDocument::getDocumentSymbols(
             if (!alias->isGlobal())
               return;
 
-            addSymbol(alias->getName(), mlir::lsp::SymbolKind::Property, range,
+            addSymbol(alias->getName(), lsp::SymbolKind::Property, range,
                       alias->getValue().str());
           })
           .Case([&](FunctionDeclView *fn) {
-            addSymbol(fn->getName(), mlir::lsp::SymbolKind::Function, range,
+            addSymbol(fn->getName(), lsp::SymbolKind::Function, range,
                       fn->getSignature());
           })
           .Case([&](StructDeclView *structDecl) {
-            addSymbol(structDecl->getName(), mlir::lsp::SymbolKind::Struct,
-                      range);
+            addSymbol(structDecl->getName(), lsp::SymbolKind::Struct, range);
           })
           .Case([&](StructFieldDeclView *field) {
-            addSymbol(field->getName(), mlir::lsp::SymbolKind::Field, range,
+            addSymbol(field->getName(), lsp::SymbolKind::Field, range,
                       field->getType().str());
           })
           .Case([&](VariableDeclView *var) {
@@ -1050,7 +1074,7 @@ void MojoDocument::getDocumentSymbols(
             if (!var->isGlobal())
               return;
 
-            addSymbol(var->getName(), mlir::lsp::SymbolKind::Variable, range,
+            addSymbol(var->getName(), lsp::SymbolKind::Variable, range,
                       var->getType().str());
           });
     }
@@ -1065,8 +1089,8 @@ void MojoDocument::getDocumentSymbols(
 }
 
 void MojoDocument::onDocumentSymbol(
-    const mlir::lsp::URIForFile &uri,
-    OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn) {
+    const lsp::URIForFile &uri,
+    OnResultFn<std::vector<lsp::DocumentSymbol>> onSymbolsFn) {
   startTaskAfterParsing(
       [uri, onSymbolsFn = std::move(onSymbolsFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
@@ -1080,8 +1104,8 @@ void MojoDocument::onDocumentSymbol(
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onFoldingRange(
-    const mlir::lsp::URIForFile &uri,
-    OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn) {
+    const lsp::URIForFile &uri,
+    OnResultFn<std::vector<lsp::FoldingRange>> onFoldingRangeFn) {
   startTaskAfterParsing([uri, onFoldingRangeFn = std::move(onFoldingRangeFn)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -1127,9 +1151,8 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
 // MojoDocument: Hover
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::onHover(
-    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
+void MojoDocument::onHover(const lsp::URIForFile &uri, const lsp::Position &pos,
+                           OnResultFn<std::optional<lsp::Hover>> onHoverFn) {
   startTaskAfterParsing(
       [uri, pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
@@ -1144,7 +1167,7 @@ void MojoDocument::onHover(
 std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
   if (auto symbolRef = context->symbolIndex.getSymbolAt(loc)) {
     lsp::Hover hover(lsp::Range(getSourceMgr(), symbolRef->range));
-    hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
+    hover.contents.kind = lsp::MarkupKind::Markdown;
     hover.contents.value = symbolRef->getMarkdownDeclaration();
     return hover;
   }
@@ -1156,8 +1179,8 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onInlayHint(
-    const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &range,
-    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint) {
+    const lsp::URIForFile &uri, const lsp::Range &range,
+    OnResultFn<std::vector<lsp::InlayHint>> onInlayHint) {
   startTaskAfterParsing([uri, range, onInlayHint = std::move(onInlayHint)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -1181,6 +1204,46 @@ std::vector<lsp::InlayHint> MojoDocument::onInlayHintSync(SMRange range) {
     hints.push_back(hint.toLspInlayHint(sourceMgr));
 
   return hints;
+}
+
+//===----------------------------------------------------------------------===//
+// MojoDocument: References
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onReferences(
+    const lsp::URIForFile &uri, const lsp::Position &position,
+    bool includeDeclaration,
+    OnResultFn<std::vector<lsp::Location>> onReferences) {
+  startTaskAfterParsing(
+      [uri, position, includeDeclaration,
+       onReferences = std::move(onReferences)](MojoDocument &doc) mutable {
+        if (doc.isInvalidated)
+          return onReferences({});
+        SMLoc smLoc = doc.getLocFromPos(uri, position);
+        if (!smLoc.isValid())
+          return onReferences({});
+        onReferences(doc.onReferencesSync(smLoc, includeDeclaration));
+      });
+}
+
+std::vector<lsp::Location>
+MojoDocument::onReferencesSync(SMLoc smLoc, bool includeDeclaration) {
+  SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(smLoc);
+  if (!symbolRef)
+    return {};
+
+  std::vector<lsp::Location> locations;
+  for (const Symbol *symbol : symbolRef->symbols) {
+    for (SymbolRef *symbolRef : symbol->symbolRefs) {
+      if (!includeDeclaration && symbol->range.Start == symbolRef->range.Start)
+        continue;
+      if (auto uri = getURIFromLoc(symbolRef->range.Start))
+        locations.emplace_back(*uri,
+                               lsp::Range(getSourceMgr(), symbolRef->range));
+    }
+  }
+  llvm::sort(locations);
+  return locations;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1268,9 +1331,9 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 // MojoDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::onSignatureHelp(
-    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
+void MojoDocument::onSignatureHelp(const lsp::URIForFile &uri,
+                                   const lsp::Position &pos,
+                                   OnResultFn<lsp::SignatureHelp> onHelpFn) {
   startTaskAfterParsing(
       [uri, pos, onHelpFn = std::move(onHelpFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
@@ -1400,8 +1463,8 @@ auto MojoDocStrings::findContainingCodeBlock(SMLoc loc) -> CodeBlock * {
   return nullptr;
 }
 
-void MojoDocStrings::getFoldingRanges(
-    SourceMgr &sourceMgr, std::vector<mlir::lsp::FoldingRange> &ranges) {
+void MojoDocStrings::getFoldingRanges(SourceMgr &sourceMgr,
+                                      std::vector<lsp::FoldingRange> &ranges) {
   for (DocString &docString : docStrings) {
     ranges.emplace_back(lsp::Range(sourceMgr, docString.range),
                         lsp::FoldingRange::kCommentKind);
@@ -1449,8 +1512,7 @@ void MojoTextDocument::parseDocumentImpl() {
   processDocStrings(docStrings, parsedDecl);
 }
 
-const mlir::lsp::URIForFile &
-MojoTextDocument::getURIFromContainedLoc(SMLoc loc) {
+const lsp::URIForFile &MojoTextDocument::getURIFromContainedLoc(SMLoc loc) {
   return getURIs().front();
 }
 
@@ -1469,8 +1531,8 @@ SMLoc MojoTextDocument::translateParserLoc(SMLoc loc) {
   return newLoc.isValid() ? newLoc : loc;
 }
 
-SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
-                                      mlir::lsp::Position position) {
+SMLoc MojoTextDocument::getLocFromPos(const lsp::URIForFile &uri,
+                                      lsp::Position position) {
   return position.getAsSMLoc(getSourceMgr());
 }
 
@@ -1506,11 +1568,11 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 // MojoTextDocument: Document Symbol
 //===----------------------------------------------------------------------===//
 
-std::vector<mlir::lsp::DocumentSymbol>
-MojoTextDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
+std::vector<lsp::DocumentSymbol>
+MojoTextDocument::onDocumentSymbolSync(const lsp::URIForFile &uri) {
   if (!parsedDecl)
     return {};
-  std::vector<mlir::lsp::DocumentSymbol> symbols;
+  std::vector<lsp::DocumentSymbol> symbols;
   getDocumentSymbols(parsedDecl, symbols);
   return symbols;
 }
@@ -1519,11 +1581,11 @@ MojoTextDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
 // MojoTextDocument: Document Symbol
 //===----------------------------------------------------------------------===//
 
-std::vector<mlir::lsp::FoldingRange>
-MojoTextDocument::onFoldingRangeSync(const mlir::lsp::URIForFile &uri) {
+std::vector<lsp::FoldingRange>
+MojoTextDocument::onFoldingRangeSync(const lsp::URIForFile &uri) {
   if (!parsedDecl)
     return {};
-  std::vector<mlir::lsp::FoldingRange> ranges;
+  std::vector<lsp::FoldingRange> ranges;
   docStrings.getFoldingRanges(getSourceMgr(), ranges);
   return ranges;
 }
@@ -1555,9 +1617,9 @@ MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 MojoNotebookDocument::MojoNotebookDocument(
-    ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs, int64_t version,
-    ArrayRef<mlir::lsp::NotebookCell> cellInfos,
-    ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
+    ArrayRef<lsp::URIForFile> notebookAndCellURIs, int64_t version,
+    ArrayRef<lsp::NotebookCell> cellInfos,
+    ArrayRef<lsp::TextDocumentItem> cellDocuments,
     SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
     LLCL::AnyAsyncValueRef chain)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
@@ -1628,8 +1690,7 @@ void MojoNotebookDocument::parseDocumentImpl() {
   }
 }
 
-const mlir::lsp::URIForFile &
-MojoNotebookDocument::getURIFromContainedLoc(SMLoc loc) {
+const lsp::URIForFile &MojoNotebookDocument::getURIFromContainedLoc(SMLoc loc) {
   size_t bufferId = getSourceMgr().FindBufferContainingLoc(loc);
   assert(bufferId && bufferId <= cells.size() &&
          "expected to find buffer containing location");
@@ -1657,8 +1718,8 @@ SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
   return newLoc.isValid() ? newLoc : loc;
 }
 
-SMLoc MojoNotebookDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
-                                          mlir::lsp::Position position) {
+SMLoc MojoNotebookDocument::getLocFromPos(const lsp::URIForFile &uri,
+                                          lsp::Position position) {
   Cell &cell = *uriToCell[uri.file()];
   return getSourceMgr().FindLocForLineAndColumn(
       cell.bufferId, position.line + 1, position.character + 1);
@@ -1696,14 +1757,14 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 // MojoNotebookDocument: Document Symbol
 //===----------------------------------------------------------------------===//
 
-std::vector<mlir::lsp::DocumentSymbol>
-MojoNotebookDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
+std::vector<lsp::DocumentSymbol>
+MojoNotebookDocument::onDocumentSymbolSync(const lsp::URIForFile &uri) {
   auto cellIt = uriToCell.find(uri.file());
   if (cellIt == uriToCell.end() || !cellIt->second->decl ||
       cellIt->second->isPythonCell())
     return {};
 
-  std::vector<mlir::lsp::DocumentSymbol> symbols;
+  std::vector<lsp::DocumentSymbol> symbols;
   getDocumentSymbols(cellIt->second->decl, symbols);
   return symbols;
 }
@@ -1712,14 +1773,14 @@ MojoNotebookDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
 // MojoNotebookDocument: Document Symbol
 //===----------------------------------------------------------------------===//
 
-std::vector<mlir::lsp::FoldingRange>
-MojoNotebookDocument::onFoldingRangeSync(const mlir::lsp::URIForFile &uri) {
+std::vector<lsp::FoldingRange>
+MojoNotebookDocument::onFoldingRangeSync(const lsp::URIForFile &uri) {
   auto cellIt = uriToCell.find(uri.file());
   if (cellIt == uriToCell.end() || !cellIt->second->decl ||
       cellIt->second->isPythonCell())
     return {};
 
-  std::vector<mlir::lsp::FoldingRange> ranges;
+  std::vector<lsp::FoldingRange> ranges;
   cellIt->second->docStrings.getFoldingRanges(getSourceMgr(), ranges);
   return ranges;
 }
@@ -1898,8 +1959,8 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
 // Notebook Document Management
 
 void MojoServer::addNotebookDocument(
-    const mlir::lsp::URIForFile &uri, ArrayRef<mlir::lsp::NotebookCell> cells,
-    int64_t version, ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments) {
+    const lsp::URIForFile &uri, ArrayRef<lsp::NotebookCell> cells,
+    int64_t version, ArrayRef<lsp::TextDocumentItem> cellDocuments) {
   if (impl->isShuttingDown())
     return;
   MojoDocumentRef &file = impl->files[uri.file()];
@@ -1922,19 +1983,19 @@ void MojoServer::addNotebookDocument(
   file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
                                          impl->sendDiagnosticsFn,
                                          *impl->runtime, std::move(chain));
-  for (const mlir::lsp::TextDocumentItem &cell : cellDocuments)
+  for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
 }
 
 void MojoServer::removeNotebookDocument(
-    const mlir::lsp::URIForFile &uri,
-    ArrayRef<mlir::lsp::TextDocumentIdentifier> cellDocuments) {
+    const lsp::URIForFile &uri,
+    ArrayRef<lsp::TextDocumentIdentifier> cellDocuments) {
   // Remove the document from the server using the same flow as a normal text
   // document.
   removeDocument(uri);
 
   // Clear out mappings from the cell documents to the notebook document.
-  for (const mlir::lsp::TextDocumentIdentifier &cell : cellDocuments) {
+  for (const lsp::TextDocumentIdentifier &cell : cellDocuments) {
     impl->notebookCellToFile.erase(cell.uri.file());
 
     { // Clear out the semantic token state for the cell.
@@ -2031,7 +2092,7 @@ void MojoServer::updateNotebookDocument(
 void MojoServer::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
-    OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn) {
+    OnResultFn<std::vector<lsp::CodeAction>> onActionsFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->getCodeActions(uri, pos, context, std::move(onActionsFn));
   else
@@ -2040,7 +2101,7 @@ void MojoServer::getCodeActions(
 
 void MojoServer::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
-    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
+    OnResultFn<lsp::CompletionList> onCompletionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onCodeCompletion(uri, completePos, std::move(onCompletionFn));
   else
@@ -2049,7 +2110,7 @@ void MojoServer::onCodeCompletion(
 
 void MojoServer::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
+    OnResultFn<std::vector<lsp::Location>> onDefinitionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onDefinition(uri, pos, std::move(onDefinitionFn));
   else
@@ -2057,8 +2118,8 @@ void MojoServer::onDefinition(
 }
 
 void MojoServer::onDocumentSymbol(
-    const mlir::lsp::URIForFile &uri,
-    OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn) {
+    const lsp::URIForFile &uri,
+    OnResultFn<std::vector<lsp::DocumentSymbol>> onSymbolsFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onDocumentSymbol(uri, std::move(onSymbolsFn));
   else
@@ -2066,17 +2127,16 @@ void MojoServer::onDocumentSymbol(
 }
 
 void MojoServer::onFoldingRange(
-    const mlir::lsp::URIForFile &uri,
-    OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn) {
+    const lsp::URIForFile &uri,
+    OnResultFn<std::vector<lsp::FoldingRange>> onFoldingRangeFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onFoldingRange(uri, std::move(onFoldingRangeFn));
   else
     onFoldingRangeFn({});
 }
 
-void MojoServer::onHover(
-    const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
+void MojoServer::onHover(const lsp::URIForFile &uri, const lsp::Position &pos,
+                         OnResultFn<std::optional<lsp::Hover>> onHoverFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onHover(uri, pos, std::move(onHoverFn));
   else
@@ -2090,6 +2150,17 @@ void MojoServer::onInlayHint(
     doc->onInlayHint(uri, range, std::move(onInlayHint));
   else
     onInlayHint({});
+}
+
+void MojoServer::onReferences(
+    const lsp::URIForFile &uri, const lsp::Position &position,
+    bool includeDeclaration,
+    OnResultFn<std::vector<lsp::Location>> onReferences) {
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
+    doc->onReferences(uri, position, includeDeclaration,
+                      std::move(onReferences));
+  else
+    onReferences({});
 }
 
 /// Increment a numeric string: "" -> 1 -> 2 -> ... -> 9 -> 10 -> 11 ...
@@ -2172,9 +2243,9 @@ void MojoServer::onSemanticTokensDelta(
       });
 }
 
-void MojoServer::getSignatureHelp(
-    const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
+void MojoServer::getSignatureHelp(const lsp::URIForFile &uri,
+                                  const lsp::Position &pos,
+                                  OnResultFn<lsp::SignatureHelp> onHelpFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onSignatureHelp(uri, pos, std::move(onHelpFn));
   else

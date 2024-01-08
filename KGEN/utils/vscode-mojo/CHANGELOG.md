@@ -2,6 +2,13 @@
 
 ## Next version
 
+### Added
+
+- The Mojo Language Server now implements the References request. IDEs use
+  this to provide support for **Go to References** and **Find All References**.
+  A current limitation is that references outside of the current document are
+  not supported, which will be addressed in the future.
+
 ### Fixed
 
 - [#1299](https://github.com/modularml/mojo/issues/1299) - The `Run Mojo File`
