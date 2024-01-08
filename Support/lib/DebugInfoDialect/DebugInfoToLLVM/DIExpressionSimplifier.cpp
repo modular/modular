@@ -38,38 +38,40 @@ class LLVMDIExpressionSimplifier {
 public:
   using OperatorT = LLVM::DIExpressionElemAttr;
 
-  class RewritePattern {
+  class ExprRewritePattern {
   public:
     using OperatorT = LLVMDIExpressionSimplifier::OperatorT;
     using OpIterT = std::deque<OperatorT>::const_iterator;
     using OpIterRange = llvm::iterator_range<OpIterT>;
 
-    virtual ~RewritePattern() = default;
-    // Check whether a particular prefix of operators matches this pattern.
-    // The provided argument is guaranteed non-empty.
-    // Return the iterator after the last matched element.
+    virtual ~ExprRewritePattern() = default;
+    /// Check whether a particular prefix of operators matches this pattern.
+    /// The provided argument is guaranteed non-empty.
+    /// Return the iterator after the last matched element.
     virtual OpIterT match(OpIterRange) const = 0;
-    // Replace the operators with a new list of operators.
-    // The provided argument is guaranteed to be the same length as returned
-    // by the `match` function.
+    /// Replace the operators with a new list of operators.
+    /// The provided argument is guaranteed to be the same length as returned
+    /// by the `match` function.
     virtual SmallVector<OperatorT> replace(OpIterRange) const = 0;
   };
 
   /// Register a rewrite pattern with the simplifier.
   /// Rewriter patterns are attempted in the order of registration.
-  void addPattern(std::unique_ptr<RewritePattern> pattern);
+  void addPattern(std::unique_ptr<ExprRewritePattern> pattern);
 
   /// Simplify a DIExpression according to all the patterns registered.
+  /// A non-negative `maxNumRewrites` will limit the number of rewrites this
+  /// simplifier applies.
   LLVM::DIExpressionAttr simplify(LLVM::DIExpressionAttr expr,
-                                  int64_t maxNumRewrites) const;
+                                  int64_t maxNumRewrites = -1) const;
 
 private:
   /// The registered patterns.
-  SmallVector<std::unique_ptr<RewritePattern>> patterns;
+  SmallVector<std::unique_ptr<ExprRewritePattern>> patterns;
 };
 
 void LLVMDIExpressionSimplifier::addPattern(
-    std::unique_ptr<RewritePattern> pattern) {
+    std::unique_ptr<ExprRewritePattern> pattern) {
   patterns.emplace_back(std::move(pattern));
 }
 
@@ -88,10 +90,11 @@ LLVMDIExpressionSimplifier::simplify(LLVM::DIExpressionAttr expr,
   SmallVector<OperatorT> result;
 
   int64_t numRewrites = 0;
-  while (!inputs.empty() && numRewrites < maxNumRewrites) {
+  while (!inputs.empty() &&
+         (maxNumRewrites < 0 || numRewrites < maxNumRewrites)) {
     bool foundMatch = false;
-    for (const std::unique_ptr<RewritePattern> &pattern : patterns) {
-      RewritePattern::OpIterT matchEnd = pattern->match(inputs);
+    for (const std::unique_ptr<ExprRewritePattern> &pattern : patterns) {
+      ExprRewritePattern::OpIterT matchEnd = pattern->match(inputs);
       if (matchEnd == inputs.begin())
         continue;
 
@@ -111,7 +114,7 @@ LLVMDIExpressionSimplifier::simplify(LLVM::DIExpressionAttr expr,
     }
   }
 
-  if (numRewrites >= maxNumRewrites) {
+  if (maxNumRewrites >= 0 && numRewrites >= maxNumRewrites) {
     LLVM_DEBUG(llvm::dbgs()
                << "LLVMDIExpressionSimplifier exceeded max num rewrites ("
                << maxNumRewrites << ")\n");
@@ -127,7 +130,7 @@ LLVMDIExpressionSimplifier::simplify(LLVM::DIExpressionAttr expr,
 //===----------------------------------------------------------------------===//
 
 /// Adjacent DW_OP_LLVM_fragment ops can be merged into one.
-class MergeFragments : public LLVMDIExpressionSimplifier::RewritePattern {
+class MergeFragments : public LLVMDIExpressionSimplifier::ExprRewritePattern {
 public:
   OpIterT match(OpIterRange operators) const override {
     OpIterT it = operators.begin();
@@ -164,7 +167,7 @@ void DebugInfo::simplifyLLVMDIExpressionRecursively(Operation *op) {
 
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&simplifier](LLVM::DIExpressionAttr expr) {
-    return simplifier.simplify(expr, expr.getOperations().size());
+    return simplifier.simplify(expr);
   });
   replacer.recursivelyReplaceElementsIn(op);
 }
