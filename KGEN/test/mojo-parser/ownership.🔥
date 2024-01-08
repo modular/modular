@@ -40,8 +40,18 @@ fn consume(owned a: MemExample): pass
 struct RegExample:
   fn __init__() -> Self:
     return RegExample{}
-  fn __copyinit__(self) -> Self:
+  fn __copyinit__(self) -> Self: # CHECK: lit.func @"__copyinit__
     return RegExample{}
+
+  # Test a raising constructor.
+  # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
+  fn __init__(a: MemExample, b: MemExample) raises -> Self:
+    # CHECK-NEXT: %0 = kgen.param.materialize: !RegExample
+    # CHECK-NEXT: %1 = kgen.variant.create %0
+    # CHECK-NEXT: kgen.return %1
+    return RegExample{}
+
+
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
@@ -100,6 +110,19 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%anonymous2A)
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}(%anonymous2A)
   consume(MemExample()^)
+
+  # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
+  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[REG]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
+  RegExample{}.noop()
+
+  # CHECK-NEXT: [[REG2:%.*]] = lit.call {{.*}}@RegExample::@"__init__()"()
+  # CHECK-NEXT: %localReg = lit.letreg.decl{{.*}}[[REG2]]
+  # CHECK-NEXT: [[REG2C:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%localReg)
+  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=%localReg)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BIGREG]])
+  let localReg = RegExample()
+  _ = BigRegExample{a: localReg, b: localReg }
 
 
 # CHECK-LABEL: lit.func @"if_examples
@@ -680,6 +703,17 @@ struct BigRegExample:
     # CHECK-NEXT: %4 = lit.struct.create(a=%2, b=%3)
     # CHECK-NEXT: kgen.return %4
     return BigRegExample{a: self.a, b: self.b }
+
+  # Test a raising constructor.
+  # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
+  fn __init__(a: MemExample, b: MemExample) raises -> Self:
+    # CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %2 = lit.struct.create(a=%0, b=%1)
+    # CHECK-NEXT: %3 = kgen.variant.create %2, 1
+    # CHECK-NEXT: kgen.return %3
+    return BigRegExample{a: RegExample(), b: RegExample() }
+
 
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
