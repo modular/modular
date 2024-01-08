@@ -171,9 +171,9 @@ fn param_if_and[a: Bool, b: Bool]():
 # [Mojo] Can't have try inside else branch
 # https://github.com/modularml/modular/issues/25305
 # CHECK-LABEL: lit.func @"if_try
-fn if_try():
+fn if_try(p: Bool):
     # CHECK: hlcf.if %0 {
-    if True:
+    if p:
         # CHECK: lit.try {
         try:
             # CHECK: lit.letreg.decl "b"

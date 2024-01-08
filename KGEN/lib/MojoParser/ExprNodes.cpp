@@ -2304,13 +2304,17 @@ static LogicalResult materializeTypesInConditional(ExprEmitter &emitter,
 AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
+  // Emit the LHS value as a bool/i1 value.
+  CValue lhsV = emitter.emitExprCValue(lhs, EC_OperatorOperandValue);
+  RValue lhsI1Val = emitter.emitI1({lhsV, lhs}, EC_OperatorOperandValue);
+  PValue lhsI1PVal = lhsI1Val.getIfPValue();
+
   if (!emitter.builder) {
     PValue lhsPVal = emitter.emitExprPValue(lhs, EC_OperatorOperandValue);
-    RValue lhsI1Val = emitter.emitExprI1(lhs, EC_BoolCondition);
-    PValue lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
-    PValue rhsPVal = emitter.emitExprPValue(rhs, EC_BoolCondition);
+    lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
     if (!lhsI1PVal)
       return {};
+    PValue rhsPVal = emitter.emitExprPValue(rhs, EC_BoolCondition);
 
     // Coerce the true/false values into a compatible type if they disagree.
     auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
@@ -2329,11 +2333,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(value, this, dest);
   }
 
-  // Emit the LHS value as a bool/i1 value.
-  CValue lhsV = emitter.emitExprCValue(lhs, EC_OperatorOperandValue);
-  RValue lhsI1Value = emitter.emitI1({lhsV, lhs}, EC_OperatorOperandValue);
   SRValue lhsI1SRValue =
-      emitter.emitSRValue({AnyValue(lhsI1Value), lhs}, EC_BoolCondition);
+      emitter.emitSRValue({AnyValue(lhsI1Val), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
     return {};
 
@@ -2392,6 +2393,36 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
   }
 
+  // Detect unreachable code and warn about it.
+  auto deadCodeCheck = [&]() {
+    if (lhsI1PVal) {
+      if (IntegerAttr asIntAttr =
+              dyn_cast_or_null<IntegerAttr>(lhsI1PVal.get())) {
+        bool isZero = asIntAttr.getValue().isZero();
+        bool deadElse = false;
+        if (kind == kBoolOr && !isZero) {
+          deadElse = true;
+          emitter.emitWarning(this->getLoc())
+              << "unreachable code on right side of 'True or ...'";
+        } else if (kind == kBoolAnd && isZero) {
+          deadElse = true;
+          emitter.emitWarning(this->getLoc())
+              << "unreachable code on right side of 'False and ...'";
+        } else {
+          // This has no dead code, but let's still warn about a constant branch
+          // condition.
+          emitter.emitWarning(this->getLoc())
+              << "constant value on left side of '"
+              << (isZero ? "False" : "True") << " "
+              << (kind == kBoolOr ? "or" : "and") << " ...'";
+        }
+        // Eliminate the dead code.
+        if (deadElse)
+          markRegionUnreachable(&ifOp.getElseRegion(), ifOp.getLoc());
+      }
+    }
+  };
+
   // Now we know they have common types.
   auto resultType = lhsV.getRValueType();
   if (resultType.isRegisterPassable(lhs->getLoc(), emitter.shared)) {
@@ -2408,6 +2439,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsSR);
     ifOp->getResult(0).setType(lhsSR.getType());
     emitter.builder->setInsertionPointAfter(ifOp);
+    deadCodeCheck();
     return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
   }
 
@@ -2436,6 +2468,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
       emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, lhsI1SRValue);
+  deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
@@ -2678,10 +2711,30 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                            trueExpr, falseExpr, dest)))
     return {};
 
+  auto resultType = trueVal.getRValueType();
+
+  auto deadCodeCheck = [&]() {
+    if (PValue condPVal = condRVal.getIfPValue()) {
+      // Warn about dead code and remove it.
+      if (IntegerAttr asIntAttr =
+              dyn_cast_or_null<IntegerAttr>(condPVal.get())) {
+        Region *deadRegion = &ifOp.getElseRegion();
+        if (asIntAttr.getValue().isZero()) {
+          deadRegion = &ifOp.getThenRegion();
+          emitter.emitWarning(this->getLoc())
+              << "left hand side expression of 'if False' is dead";
+        } else {
+          emitter.emitWarning(this->getLoc())
+              << "right hand side expression of 'if True' is dead";
+        }
+        markRegionUnreachable(deadRegion, ifOp.getLoc());
+      }
+    }
+  };
+
   // Ok, we now know if the types were register_passable or not, so finish up
   // the logic.  register_passable values get merged together as SSA registers
   // in the 'if' result.
-  auto resultType = trueVal.getRValueType();
   if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.
     emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
@@ -2698,6 +2751,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.builder->setInsertionPointAfter(ifOp);
     // Ensure the correct type is used.
     ifOp->getResult(0).setType(trueSR.getType());
+    deadCodeCheck();
     return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
   }
 
@@ -2726,6 +2780,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
       emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, condValue);
+  deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();

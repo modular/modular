@@ -674,9 +674,9 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 
 # CHECK-LABEL: lit.func @"implicit_return_obj
 # CHECK-SAME: object{{.*}} byref_result
-def implicit_return_obj():
+def implicit_return_obj(p: Bool):
     # CHECK: if
-    if False:
+    if p:
         # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
         # CHECK: kgen.variant.create
         # CHECK: return

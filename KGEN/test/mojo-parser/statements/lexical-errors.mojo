@@ -46,9 +46,9 @@ fn test_indentation1():
   nothing()   # expected-note {{indentation should match previous statement}}
     nothing() # expected-error {{statement has excess indentation}}
 
-fn test_indentation2():
+fn test_indentation2(p: Bool):
   nothing()
-  if True:   # expected-note {{indentation should match previous statement}}
+  if p:   # expected-note {{indentation should match previous statement}}
       nothing()
    nothing() # expected-error {{statement has excess indentation}}
 
