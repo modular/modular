@@ -305,10 +305,7 @@ static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
 
   machineInfo.simdBitWidth = simdWidthFromFeatures(machineInfo.cpuFeatures);
 
-  auto physicalCoresOr = M::getNumPhysicalCores();
-  if (physicalCoresOr.isError())
-    return physicalCoresOr.takeError();
-  machineInfo.numPhysicalCores = physicalCoresOr.takeValue();
+  machineInfo.numPhysicalCores = M::getNumPhysicalCores();
 
   auto l1CacheSizeOr = getHostCPUCacheSize(1);
   if (l1CacheSizeOr.isError())

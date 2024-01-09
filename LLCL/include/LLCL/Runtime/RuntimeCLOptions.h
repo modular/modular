@@ -96,7 +96,7 @@ protected:
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
   // work queue is using a thread pool. The default number of threads is the
-  // result of std::thread::hardware_concurrency().
+  // result of M::getNumThreads().
   llvm::cl::opt<size_t> numThreads{
       "num-threads",
       llvm::cl::desc(

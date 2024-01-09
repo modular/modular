@@ -465,8 +465,7 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
 
 TEST_P(AsyncValueTest, StressAndThen) {
   // Deliberately over-subscribe threads to try to tickle any races.
-  auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
+  auto runtime = createRuntime(/*numThreads=*/M::getNumThreads() * 2);
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
@@ -516,8 +515,8 @@ TEST_P(AsyncValueTest, StressAndThen) {
 
 TEST_P(AsyncValueTest, StressParallelForEachN) {
   // Deliberately over-subscribe threads to try to tickle any races.
-  auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
+  auto runtime = createRuntime(
+      /*numThreads=*/M::getNumThreads() * 2);
 
   const size_t nShards = 500;
   std::vector<std::unique_ptr<std::atomic<bool>>> doneFlags;

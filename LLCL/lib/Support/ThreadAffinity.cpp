@@ -39,6 +39,12 @@ void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
 
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
+  if (numThreads == 0) {
+    numThreads = M::getNumThreads();
+    LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
+                            << "threads to total hardware threads across all "
+                            << "sockets " << numThreads << "\n");
+  }
   if constexpr (kUseThreadAffinity) {
     if (haveThreadAffinity()) {
       ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
@@ -51,14 +57,6 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
       } else {
         LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
                                 << *errOrSystemInfo << "\n");
-        if (numThreads == 0) {
-          for (auto &socketInfo : errOrSystemInfo->sockets)
-            numThreads += socketInfo.physicalCores.size();
-          LLVM_DEBUG(llvm::dbgs()
-                     << "getThreadAffinityCpuIds: Defaulting number of threads "
-                        "to number of physical cores across all sockets "
-                     << numThreads << "\n");
-        }
         if (numThreads > maxWorkers) {
           LLVM_DEBUG(
               llvm::dbgs()
@@ -78,16 +76,6 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
     }
   }
 
-  // Fallback case.
-  if (numThreads == 0) {
-    auto numThreadsOr = M::getRecommendedThreads();
-    if (numThreadsOr.isError())
-      return numThreadsOr.takeError();
-    numThreads = *numThreadsOr;
-    LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting "
-                               "number of threads to number of physical cores "
-                            << numThreads << "\n");
-  }
   if (numThreads > maxWorkers) {
     LLVM_DEBUG(llvm::dbgs()
                << "getThreadAffinityCpuIds: Reducing number of threads from "

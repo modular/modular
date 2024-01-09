@@ -45,28 +45,6 @@ std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
 }
 #endif
 
-#if defined(__APPLE__)
-std::optional<size_t> getNumPerformanceCores() {
-  // Attempt to read the sysctl "hw.perflevel0.physicalcpu", which contains the
-  // number of local performance cores. This is described here [1]. For
-  // auto-setting the number of threads, we use this number if it is available
-  // to avoid contention and lagging on the efficiency cores. We rely on the
-  // operating system to keep busy threads running on the performance cores
-  // rather than any explicit affinity.
-  //
-  // Per sysctl(2), this type is expected to be int32_t.
-  //
-  // [1]
-  // https://developer.apple.com/documentation/kernel/1387446-sysctlbyname/determining_system_capabilities
-  int32_t pcores;
-  size_t len = sizeof(pcores);
-  if (sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &len, NULL, 0) == 0 &&
-      pcores > 0)
-    return static_cast<size_t>(pcores);
-  return std::nullopt;
-}
-#endif
-
 } // namespace
 
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
@@ -374,28 +352,40 @@ ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
   return Error("CPUSystemInfo is not supported by this build");
 }
 
-static M::ErrorOr<size_t> getNumPhysicalCoresImpl() {
-#ifdef _MSC_VER
-  return Detail::getNumPhysicalCoresWindows();
-#else
-  return llvm::get_physical_cores();
-#endif // _MSC_VER
+size_t M::getNumPhysicalCores() {
+  auto threadStrat = llvm::hardware_concurrency();
+  threadStrat.UseHyperThreads = false;
+  return threadStrat.compute_thread_count();
 }
 
-M::ErrorOr<size_t> M::getNumPhysicalCores() {
-  static ErrorOr<size_t> numPhysicalCoresOr = getNumPhysicalCoresImpl();
-  if (numPhysicalCoresOr.isError())
-    return M::Error(numPhysicalCoresOr.getError());
-  return *numPhysicalCoresOr;
+size_t M::getNumThreads() {
+  return llvm::hardware_concurrency().compute_thread_count();
 }
 
-M::ErrorOr<size_t> M::getRecommendedThreads() {
+/// Returns the number of physical performance cores across all CPU sockets. If
+/// not known, will return the total number of physical cores.
+/// TODO: add implementations for Windows and Linux
+size_t M::getNumPerformanceCores() {
 #if defined(__APPLE__)
-  auto maybePerformanceCores = getNumPerformanceCores();
-  if (maybePerformanceCores)
-    return *maybePerformanceCores;
-#endif // __APPLE__
-  return getNumPhysicalCores();
+  // Attempt to read the sysctl "hw.perflevel0.physicalcpu", which contains the
+  // number of local performance cores. This is described here [1]. This can be
+  // used to create a runtime if it is available to avoid contention and lagging
+  // on the efficiency cores. We rely on the operating system to keep busy
+  // threads running on the performance cores rather than any explicit affinity.
+  //
+  // Per sysctl(2), this type is expected to be int32_t.
+  //
+  // [1]
+  // https://developer.apple.com/documentation/kernel/1387446-sysctlbyname/determining_system_capabilities
+  int32_t pcores;
+  size_t len = sizeof(pcores);
+  if (sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &len, nullptr, 0) ==
+          0 &&
+      pcores > 0)
+    return static_cast<size_t>(pcores);
+  return M::getNumPhysicalCores();
+#endif
+  return M::getNumPhysicalCores();
 }
 
 void CPUSystemInfo::print(raw_ostream &os) const {
