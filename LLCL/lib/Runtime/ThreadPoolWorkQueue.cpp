@@ -1143,13 +1143,6 @@ M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
     llvm::report_fatal_error(cpuIDOr.getError());
   std::vector<size_t> cpuIDs = *cpuIDOr;
   assert(!cpuIDs.empty() && "no cpu ids");
-  size_t numCores = std::thread::hardware_concurrency();
-  if (cpuIDs.size() != numCores)
-    LLVM_DEBUG(
-        llvm::dbgs()
-        << "createThreadPoolWorkQueue: Number of threads (" << cpuIDs.size()
-        << ") differs from number of cores (" << numCores
-        << "), possibly since ignoring hyperthreading and other sockets.\n");
 
   size_t taskListCapacity =
       std::max(kMinTaskListCapacity, cpuIDs.size() * kTaskListSlotsPerThread);

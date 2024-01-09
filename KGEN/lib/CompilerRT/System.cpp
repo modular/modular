@@ -15,15 +15,24 @@
 // CPU Information
 //===----------------------------------------------------------------------===//
 
-/// Returns the number of cores on the system.
+/// Returns the number of physical cores in the CPU, across all sockets
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_CoreCount() {
-  auto numCoresOr = M::getNumPhysicalCores();
-  if (!numCoresOr.isError())
-    return *numCoresOr;
-  // The above will always succeed, but in case it does not we are going to have
-  // a fallback.
-  return std::thread::hardware_concurrency();
+  return M::getNumPhysicalCores();
+}
+
+/// Returns the number of system threads, including hyperthreads across all
+/// sockets
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_ThreadCount() {
+  return M::getNumThreads();
+}
+
+/// Returns the number of physical performance cores if the info is available,
+/// otherwise returns the total number of physical cores
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_PerformanceCoreCount() {
+  return M::getNumPerformanceCores();
 }
 
 //===----------------------------------------------------------------------===//

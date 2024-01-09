@@ -23,6 +23,7 @@
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/GenericUniquePtrSet.h"
 #include "Support/STLExtras.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 
