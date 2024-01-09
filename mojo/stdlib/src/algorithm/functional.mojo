@@ -26,7 +26,7 @@ from runtime.llcl import (
     OutputChainPtr,
     OwningOutputChainPtr,
     Runtime,
-    num_cores,
+    num_threads,
 )
 
 from utils.index import StaticIntTuple
@@ -396,7 +396,7 @@ fn parallelize[func: fn (Int) capturing -> None]():
     Parameters:
         func: The function to invoke.
     """
-    let num_work_items = num_cores()
+    let num_work_items = num_threads()
     with Runtime() as rt:
         _parallelize_impl[func](rt, num_work_items, num_work_items)
 
@@ -437,11 +437,48 @@ fn parallelize[
 
     Args:
         num_work_items: Number of parallel tasks.
-        num_workers: The number of works to use for execution.
+        num_workers: The number of workers to use for execution.
     """
 
     with Runtime() as rt:
         _parallelize_impl[func](rt, num_work_items, num_workers)
+
+
+@always_inline
+fn parallelize[
+    func: fn (Int) capturing -> None
+](runtime: Runtime, num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
+    returns when all are complete.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        runtime: Use a different runtime to the default global.
+        num_work_items: Number of parallel tasks.
+    """
+
+    _parallelize_impl[func](runtime, num_work_items)
+
+
+@always_inline
+fn parallelize[
+    func: fn (Int) capturing -> None
+](runtime: Runtime, num_work_items: Int, num_workers: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
+    returns when all are complete.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        runtime: Use a different runtime to the default global.
+        num_work_items: Number of parallel tasks.
+        num_workers: The number of works to use for execution.
+    """
+
+    _parallelize_impl[func](runtime, num_work_items, num_workers)
 
 
 @always_inline
