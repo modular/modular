@@ -1458,7 +1458,7 @@ void DestructorInsertion::checkIfLikeOp(
 
 void DestructorInsertion::dump() const {
   auto &os = llvm::errs();
-  if (valueSet.getValueInfos().size() < 10) {
+  if (valueSet.getValueInfos().size() < 32) {
     valueSet.dump();
     os << "\n";
   }
@@ -1660,17 +1660,39 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp>(op)) {
+  if (isa<KGEN::ReturnOp, ErrorReturnOp>(op)) {
     consumedValues.reset();
     consumedValues.set(0); // Slot 0 indicates this block is reachable.
     for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
-      if (!valueInfo.endsUninit)
-        consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+      if (valueInfo.endsUninit)
+        continue;
+
+      // If this value starts uninit and ends init, then it must be either an
+      // initself argument or a byref result argument. These get special
+      // handling when this is an error_return (a error is thrown/rethrown out
+      // of this function) because they aren't defined on the error condition.
+      if (valueInfo.startsUninit && !valueInfo.endsUninit &&
+          isa<ErrorReturnOp>(op)) {
+        assert(isa<BlockArgument>(valueInfo.value) &&
+               "should only be byrefresult or initself argument");
+
+        // A `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
+        // __init__) demands the full-object bit (which is live on entry)
+        // because it cannot be destroyed without all the fields.  We don't
+        // want to run the destructor on 'self' itself.
+        //
+        // Otherwise, we don't consume any part of a byref result.
+        if (valueInfo.isFullObjectLiveOnEntry)
+          consumedValues.set(valueInfo.endValueBit - 1);
+        continue;
+      }
+
+      consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
     }
 
     // If the result operand is ownedresult, then consume it.
-    if (functionSignature.hasOwnedRegisterResult())
-      markConsumed(op.getOperand(0), op, /*isDeref=*/false);
+    for (auto operand : op.getOperands())
+      markConsumed(operand, op, /*isDeref=*/false);
     return;
   }
 
@@ -1680,82 +1702,6 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
-  if (auto errorReturn = dyn_cast<ErrorReturnOp>(op)) {
-    consumedValues.set(0); // Slot 0 indicates this block is reachable.
-
-    // This marks a point where we abandoned an effort to initialize
-    // a value fully. Call the destructor on the members that we
-    // initialized.
-    for (const ValueInfo &valueInfo :
-         llvm::drop_begin(valueSet.getValueInfos()))
-      // If this value is supposed to be initialized upon function exit, check
-      // for partial initialization.
-      if (!valueInfo.endsUninit && valueInfo.startsUninit) {
-        Value topLevelValue = valueInfo.value;
-        ValueRef topLevelValueRef =
-            valueSet.getValueRef(valueInfo.value, /*isDeref=*/true);
-        BitVector original = consumedValues;
-        // Pretend for a moment that the top level value has not been consumed.
-        // Otherwise, we cannot generate destructor calls.
-        topLevelValueRef.markBits(consumedValues, false);
-
-        /// Perform destruction if needed.
-        DeclRefType valueType =
-            dyn_cast<DeclRefType>(topLevelValueRef.getValueType(topLevelValue));
-        if (!valueType)
-          continue;
-
-        mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
-                                           op.getIterator());
-        if (topLevelValueRef.isAllPresent(original)) {
-          // If all the values are "consumed" then we haven't hit a field init
-          // yet, which means the entire object can be destroyed.
-          destroyValueIfNeeded(topLevelValue, topLevelValueRef, builder, &op);
-          break;
-        }
-
-        // No fields have been initialized yet, so there is nothing to
-        // destroy.
-        if (topLevelValueRef.isAllMissing(original))
-          break;
-
-        // At this point we have some values that have been initialized
-        // and some that have not. Let's destroy those that have been
-        // initialized.
-        LIT::StructDeclOp structDecl =
-            valueSet.typeDeclInfo.getStructDeclForType(valueType);
-
-        unsigned offset = 0;
-        for (StructFieldOp field : structDecl.getFieldDecls()) {
-          unsigned numBits =
-              valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
-          ValueRef fieldValueRef =
-              topLevelValueRef.getSubfield(offset, numBits);
-          offset += numBits;
-          // Trivial types do not need to be destroyed.
-          if (valueSet.typeDeclInfo.isRegisterPassableTrivial(field.getType()))
-            continue;
-          if (fieldValueRef.isIndirect &&
-              original.test(fieldValueRef.startBit)) {
-            Value subValue = builder.create<LIT::RefStructGEROp>(
-                op.getLoc(), topLevelValue, field);
-            destroyValueIfNeeded(subValue, fieldValueRef, builder, &op);
-          }
-        }
-
-        // At this point we have destroyed everything we had initialized. Revert
-        // back to the original consume set. We do not need to update the
-        // consumed value set because we emitted destructors for subfields,
-        // which are not tracked in the ValueSet.
-        consumedValues = original;
-      } else if (!valueInfo.endsUninit) {
-        consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
-      }
-
-    // Consume the input value.
-    markConsumed(errorReturn.getVariant(), op, /*isDeref=*/false);
-    return;
-  }
   // A unreachable consumes nothing.  Nothing needs to be destroyed here!
   if (isa<UnreachableOp>(op)) {
     // Slot 0 sentinel unset indicates that this block is unreachable.
@@ -1798,6 +1744,10 @@ void DestructorInsertion::checkOp(Operation &op) {
     checkDef(op.getResult(0), op, /*isDeref=*/false);
 
     BitVector expectedConsumptionInThenNotElse(consumedValues.size());
+
+    // HandleVariant has a set of the byref-result and initself arguments that
+    // would be undefined when an error is thrown.  Make sure these are not
+    // assumed to be live in the error path.
     for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
       // For each of the initialized values, is this the last reference?
       // If so, generate a destructor call after this op.
