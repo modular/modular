@@ -417,12 +417,20 @@ namespace {
 /// This struct provides an in-memory representation of the arguments passed to
 /// the `package` subcommand for structured access.
 struct PackageArgs {
+  /// The name of the package being output.
   std::string name;
+  /// The path to the Mojo package source directory to parse and output as a
+  /// package.
   std::string inputPath;
+  /// The path to which to output a `.mojopkg` file.
   std::string outputPath;
+  /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
+  /// The MLIR context used for compilation.
   mlir::MLIRContext ctx;
+  /// The target for which to compile.
   TargetInfoAttr target;
+  /// A set of `-D` compile-time parameter definition.
   EnvAttr env;
 };
 } // namespace
