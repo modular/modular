@@ -220,6 +220,8 @@ lit.struct.decl @S attributes {
   lit.struct.field a : index
 }
 
+// CHECK-LABEL: lit.struct.decl @DestructSome
+
 lit.struct.decl @DestructSome attributes {
   destructor = #kgen.symbol.constant<@DestructSome::@__del__> : !lit.signature<[1](!lit.ref<mut @DestructSome, *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !kgen.declref<@S>
@@ -246,14 +248,14 @@ lit.struct.decl @DestructSome attributes {
     %105 = lit.ref.struct.ger %self[byinit] : <mut @S, #lit.lifetime> from @DestructSome
     %106 = lit.call @S::@__init__(%105) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self) -> !kgen.none>
     // CHECK: hlcf.if %cond {
-    // CHECK-NEXT: [[VAR0:%.*]] = lit.call @Error::@__init__()
-    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.create [[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: [[VAR2:%.*]] = lit.ref.struct.ger %self[a]
     // CHECK-NEXT: [[VAR3:%.*]] = lit.call @S::@__del__{{.*}}([[VAR2]])
     // CHECK-NEXT: [[VAR4:%.*]] = lit.ref.struct.ger %self[stole]
     // CHECK-NEXT: [[VAR5:%.*]] = lit.call @S::@__del__{{.*}}([[VAR4]])
     // CHECK-NEXT: [[VAR6:%.*]] = lit.ref.struct.ger %self[byinit]
     // CHECK-NEXT: [[VAR7:%.*]] = lit.call @S::@__del__{{.*}}([[VAR6]])
+    // CHECK-NEXT: [[VAR0:%.*]] = lit.call @Error::@__init__()
+    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.create [[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: lit.error_return [[VAR1]] : <@Error, none>
     // CHECK-NEXT: } else {
     // CHECK-NEXT: hlcf.yield
@@ -273,6 +275,7 @@ lit.struct.decl @DestructSome attributes {
   }
 }
 
+// CHECK-LABEL: lit.struct.decl @DestructNone
 lit.struct.decl @DestructNone attributes {
     destructor = #kgen.symbol.constant<@DestructNone::@__del__> : !lit.signature<[1](!lit.ref<mut @DestructNone, *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !kgen.declref<@S>
@@ -287,6 +290,7 @@ lit.struct.decl @DestructNone attributes {
                      %reg: index
                      ) throws -> !kgen.variant<@Error, none> {
     // CHECK: hlcf.if %cond {
+    // CHECK-NEXT: lit.call @S::@__del__[#lit.lifetime](%arg)
     // CHECK-NEXT: %[[VAR0:.*]] = lit.call @Error::@__init__()
     // CHECK-NEXT: %[[VAR1:.*]] = kgen.variant.create %[[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: lit.error_return %[[VAR1]] : <@Error, none>
@@ -317,6 +321,7 @@ lit.struct.decl @DestructNone attributes {
   }
 }
 
+// CHECK-LABEL: lit.struct.decl @DestructFull
 lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@DestructFull::@__del__> : !lit.signature<[1](!lit.ref<mut @DestructFull, #lit.lifetime> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !kgen.declref<@S>
   lit.struct.field stole : !kgen.declref<@S>
@@ -341,10 +346,19 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
 
     %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from @DestructFull
     %3 = lit.call @S::@"__copyinit__"(%2, %y) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<@S, #lit.lifetime> borrow_in_mem) -> !kgen.none>
+    // CHECK: hlcf.if %cond {
     hlcf.if %cond {
+      // CHECK-NEXT: [[VAR2:%.*]] = lit.ref.struct.ger %self[a]
+      // CHECK-NEXT: lit.call @S::@__del__{{.*}}([[VAR2]])
+      // CHECK-NEXT: [[VAR4:%.*]] = lit.ref.struct.ger %self[stole]
+      // CHECK-NEXT: lit.call @S::@__del__{{.*}}([[VAR4]])
+      // CHECK-NEXT: [[VAR6:%.*]] = lit.ref.struct.ger %self[uninitialized]
+      // CHECK-NEXT: lit.call @S::@__del__{{.*}}([[VAR6]])
+      // CHECK-NEXT: lit.call @Error::@__init__()
       %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error>>
+      // CHECK-NEXT: kgen.variant.create
       %13 = kgen.variant.create %12, 0 : <@Error, none>
-      // CHECK: %[[VAR0:.*]] = lit.call @DestructFull::@__del__{{.*}}(%self)
+      // CHECK-NEXT: lit.error_return
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
         hlcf.yield
@@ -364,6 +378,7 @@ lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> 
   lit.struct.field a : index
 }
 
+// CHECK-LABEL: lit.struct.decl @HasMemFields
 lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<mut @HasMemFields, *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !kgen.declref<@S>
   lit.struct.field stole : !kgen.declref<@S>
@@ -393,6 +408,7 @@ lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStru
 }
 
 
+// CHECK-LABEL: lit.func @nestedLocalValueThatNeedsDestruct
 lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.none {
   %1 = kgen.param.constant: none = <#kgen.none>
   hlcf.if %cond1 {
