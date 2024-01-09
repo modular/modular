@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Driver/DriverSupport.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "Support/ErrorOr.h"
 
 #include "mlir/Support/FileUtilities.h"
@@ -47,6 +48,28 @@ M::openMojoInputFile(StringRef path) {
     return Error(inputError);
 
   return std::move(buffer);
+}
+
+ErrorOr<std::filesystem::path>
+M::resolveMojoInputFileOrPackage(StringRef path) {
+  std::error_code ec;
+  std::filesystem::path fullPath = std::filesystem::absolute(path.str(), ec);
+  if (ec) {
+    return Error(
+        llvm::formatv("failed to resolve the absolute path for '{0}': {1}",
+                      path.str(), ec.message()));
+  }
+
+  std::string ext = fullPath.extension().string();
+  if (!llvm::is_contained({".mojo", ".🔥", ".mojopkg", ".📦"}, ext) &&
+      !KGEN::LIT::isMojoSourcePackagePath(fullPath)) {
+    return Error(llvm::formatv(
+        "cannot open '{0}', since it does not appear to be a Mojo file "
+        "(it does not end in '.mojo', '.🔥', '.mojopkg', or '.📦') or a Mojo "
+        "source package",
+        path));
+  }
+  return fullPath;
 }
 
 //===----------------------------------------------------------------------===//

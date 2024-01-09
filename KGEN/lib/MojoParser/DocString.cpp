@@ -96,6 +96,23 @@ static bool requiresDocString(StructFieldOp op) {
          requiresDocString(cast<StructDeclOp>(op->getParentOp()));
 }
 
+/// Return if the operation is nested in a private module or package.
+static bool isOpInPrivateModule(Operation *declOp) {
+  if (!declOp)
+    return false;
+  for (Operation *op = declOp->getParentOp(); op; op = op->getParentOp()) {
+    if (auto fileOp = dyn_cast<FileModuleOp>(op)) {
+      StringRef name = fileOp.getName();
+      if (name.starts_with("$_") && name != "$__init__")
+        return true;
+    } else if (auto packageOp = dyn_cast<PackageOp>(op)) {
+      if (packageOp.getName().starts_with("$_"))
+        return true;
+    }
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // DocString
 //===----------------------------------------------------------------------===//
@@ -281,7 +298,8 @@ public:
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
           if (!docStr) {
-            if (validation == ValidationKind::Strict && warnMissingDocStrings)
+            if (validation == ValidationKind::Strict && warnMissingDocStrings &&
+                !isOpInPrivateModule(op))
               sharedState.emitWarning(op.getLoc(), "public symbol '")
                   << op.getName() << "' is missing a doc string";
             return;
@@ -573,7 +591,8 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict && warnMissingDocStrings) {
+    if (validation == ValidationKind::Strict && warnMissingDocStrings &&
+        !isOpInPrivateModule(funcOp)) {
       if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
@@ -611,6 +630,7 @@ private:
     processDocSections(description, sections, processFn);
 
     if (validation == ValidationKind::Strict && warnMissingDocStrings &&
+        !isOpInPrivateModule(structOp) &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
       sharedState.emitWarning(
           structOp.getLoc(),

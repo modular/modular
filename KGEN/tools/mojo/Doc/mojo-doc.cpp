@@ -86,15 +86,14 @@ static int doc(const State &state) {
   initializeTelemetry(telemetryCtx, state, args,
                       /*privateArgs=*/{options::OPT_I, options::OPT_o});
 
-  // Open the input file, or exit with an error.
-  auto bufferOrErr =
-      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
-  if (bufferOrErr.isError())
-    return state.reportError(bufferOrErr.getError());
+  // Resolve the input, or exit with an error.
+  auto pathOrErr =
+      resolveMojoInputFileOrPackage(args.getLastArgValue(options::OPT_INPUT));
+  if (pathOrErr)
+    return state.reportError(pathOrErr.getError());
 
-  // Initialize the source manager with the input file buffer and all includes.
+  // Initialize the source manager with the includes.
   llvm::SourceMgr sourceManager;
-  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
   sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
   DialectRegistry registry;
@@ -120,8 +119,7 @@ static int doc(const State &state) {
     return state.reportError(outputError);
 
   MojoParserContext parserContext(sourceManager, parserConfig);
-  MojoASTDeclRef moduleDecl =
-      parserContext.parseFile(sourceManager.getMainFileID());
+  MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(*pathOrErr);
   if (!moduleDecl)
     return state.reportError("could not generate documentation");
 

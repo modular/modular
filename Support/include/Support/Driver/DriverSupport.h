@@ -13,6 +13,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringMap.h"
 
+#include <filesystem>
 #include <memory>
 #include <string_view>
 
@@ -34,6 +35,14 @@ namespace M {
 /// end in a Mojo file extension (`.mojo` or `.🔥`), even if the `path` refers
 /// to `stdin` ("-").
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
+
+/// Resolve the absolute Mojo source file or package at the given path, or if an
+/// error occurs, return an error message.
+///
+/// Note that this function considers it an error if the given `path` does not
+/// end in a Mojo file extension (`.mojo`, `.🔥`, `.mojopkg`, `.📦`), even if
+/// the `path` refers to `stdin` ("-").
+ErrorOr<std::filesystem::path> resolveMojoInputFileOrPackage(StringRef path);
 
 /// Additional driver state that is passed to each of the subcommand functions.
 struct State {
