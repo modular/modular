@@ -259,7 +259,6 @@ fn reduce[
 
     Parameters:
         reduce_fn: The lambda implementing the reduction.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -325,7 +324,6 @@ fn reduce_boolean[
           processing the rest of the iterations. This takes the result of the
           reduce_fn and returns True to continue processing and False to early
           exit.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -450,7 +448,6 @@ fn reduce[
           vector to a scalar. E.g. when we got 8xfloat32 vector and want to reduce
           it to 1xfloat32.
         reduce_axis: The axis to reduce across.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -522,7 +519,6 @@ fn _reduce_generator[
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
         target: The target to run on.
-        : Ignore.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -580,7 +576,6 @@ fn _reduce_generator[
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
         target: The target to run on.
-        : Ignore.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -647,7 +642,6 @@ fn _reduce_along_inner_dimension[
         reduce_function: The lambda implementing the reduction.
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
-        : Ignore.
 
     Args:
         shape: The shape of the tensor we are reducing
@@ -899,7 +893,6 @@ fn _reduce_along_outer_dimension[
         reduce_function: The lambda implementing the reduction.
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
-        : Ignore.
 
     Args:
         shape: The shape of the tensor we are reducing
@@ -1010,9 +1003,6 @@ fn _simd_max_elementwise[
 fn max(src: Buffer) -> Scalar[src.type]:
     """Computes the max element in a buffer.
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
 
@@ -1027,7 +1017,6 @@ fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
 
     Parameters:
         reduce_axis: The axis to reduce across.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -1069,9 +1058,6 @@ fn _simd_min_elementwise[
 fn min(src: Buffer) -> Scalar[src.type]:
     """Computes the min element in a buffer.
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
 
@@ -1086,7 +1072,6 @@ fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
 
     Parameters:
         reduce_axis: The axis to reduce across.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -1128,9 +1113,6 @@ fn _simd_sum_elementwise[
 fn sum(src: Buffer) -> Scalar[src.type]:
     """Computes the sum of buffer elements.
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
 
@@ -1145,7 +1127,6 @@ fn sum[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
 
     Parameters:
         reduce_axis: The axis to reduce across.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -1187,9 +1168,6 @@ fn _simd_product_elementwise[
 fn product(src: Buffer) -> Scalar[src.type]:
     """Computes the product of the buffer elements.
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
 
@@ -1206,7 +1184,6 @@ fn product[
 
     Parameters:
         reduce_axis: The axis to reduce across.
-        : Product.
 
     Args:
         src: The input buffer.
@@ -1225,9 +1202,6 @@ fn product[
 @adaptive
 fn mean(src: Buffer) -> Scalar[src.type]:
     """Computes the mean value of the elements in a buffer.
-
-    Parameters:
-        : Ignore.
 
     Args:
         src: The buffer of elements for which the mean is computed.
@@ -1253,7 +1227,6 @@ fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
 
     Parameters:
         reduce_axis: The axis to reduce across.
-        : Ignore.
 
     Args:
         src: The input buffer.
@@ -1320,7 +1293,6 @@ fn mean[
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
         target: The target to run on.
-        : Ignore.
 
     Args:
         input_shape: The input shape.
@@ -1410,9 +1382,6 @@ fn variance(
     variance = sum((x - E(x))^2) / (size - correction)
     ```
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
         mean_value: The mean value of the buffer.
@@ -1478,9 +1447,6 @@ fn variance(src: Buffer, correction: Int = 1) -> Scalar[src.type]:
     variance(src) = sum((x - E(x))^2) / (size - correction)
     ```
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
         correction: Normalize variance by size - correction (Default=1).
@@ -1500,9 +1466,6 @@ fn variance(src: Buffer, correction: Int = 1) -> Scalar[src.type]:
 
 fn all_true(src: Buffer) -> Bool:
     """Returns True if all the elements in a buffer are True and False otherwise.
-
-    Parameters:
-        : Ignore.
 
     Args:
         src: The buffer.
@@ -1537,9 +1500,6 @@ fn all_true(src: Buffer) -> Bool:
 fn any_true(src: Buffer) -> Bool:
     """Returns True if any the elements in a buffer are True and False otherwise.
 
-    Parameters:
-        : Ignore.
-
     Args:
         src: The buffer.
 
@@ -1573,9 +1533,6 @@ fn any_true(src: Buffer) -> Bool:
 fn none_true(src: Buffer) -> Bool:
     """Returns True if none of the elements in a buffer are True and False
     otherwise.
-
-    Parameters:
-        : Ignore.
 
     Args:
         src: The buffer.
@@ -1621,7 +1578,6 @@ fn _argn[
     Parameters:
         is_max: If True compute then compute argmax, otherwise compute the
                 argmin.
-        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1785,9 +1741,6 @@ fn argmax(
     """
     Finds the indices of the maximum element along the specified axis.
 
-    Parameters:
-        : Ignore.
-
     Args:
         input: The input tensor.
         axis: The axis.
@@ -1806,9 +1759,6 @@ fn argmax(
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
-
-    Parameters:
-        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1834,9 +1784,6 @@ fn argmin(
     """
     Finds the indices of the maximum element along the specified axis.
 
-    Parameters:
-        : Ignore.
-
     Args:
         input: The input tensor.
         axis: The axis.
@@ -1855,9 +1802,6 @@ fn argmin(
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
-
-    Parameters:
-        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1944,9 +1888,6 @@ fn _cumsum_small(dst: Buffer, src: Buffer[dst.size, dst.type]):
 fn cumsum(dst: Buffer, src: Buffer[dst.size, dst.type]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
-
-    Parameters:
-        : Ignore.
 
     Args:
         dst: The buffer that stores the result of cumulative sum operation.
