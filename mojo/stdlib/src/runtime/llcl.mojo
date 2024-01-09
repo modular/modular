@@ -23,14 +23,57 @@ from sys.ffi import _get_global, _get_global_or_null
 
 
 @always_inline
-fn num_cores() -> Int:
-    """Returns the number of cores on the system.
+fn num_cores(perf_cores_only: Bool = False) -> Int:
+    """Returns the number of physical cores across all CPU sockets.
+
 
     Returns:
-        Int: The number of cores on the system.
+        Int: The number of physical cores on the system.
     """
     return __mlir_op.`pop.external_call`[
         func = "KGEN_CompilerRT_CoreCount".value,
+        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs = __mlir_attr.`["willreturn"]`,
+        memory = __mlir_attr[
+            `#llvm.memory_effects<other = read, `,
+            `argMem = read, `,
+            `inaccessibleMem = read>`,
+        ],
+        _type = __mlir_type.index,
+    ]()
+
+
+@always_inline
+fn num_threads() -> Int:
+    """Returns the number of hardware threads, including hyperthreads across all
+    CPU sockets.
+
+    Returns:
+        Int: The number of threads on the system.
+    """
+    return __mlir_op.`pop.external_call`[
+        func = "KGEN_CompilerRT_ThreadCount".value,
+        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs = __mlir_attr.`["willreturn"]`,
+        memory = __mlir_attr[
+            `#llvm.memory_effects<other = read, `,
+            `argMem = read, `,
+            `inaccessibleMem = read>`,
+        ],
+        _type = __mlir_type.index,
+    ]()
+
+
+@always_inline
+fn num_performance_cores() -> Int:
+    """Returns the number of physical performance cores across all CPU sockets,
+    if not known, returns the total number of physical cores.
+
+    Returns:
+        Int: The number of physical performance cores on the system.
+    """
+    return __mlir_op.`pop.external_call`[
+        func = "KGEN_CompilerRT_PerformanceCoreCount".value,
         resAttrs = __mlir_attr.`[{llvm.noundef}]`,
         funcAttrs = __mlir_attr.`["willreturn"]`,
         memory = __mlir_attr[
@@ -140,7 +183,7 @@ fn _init_global_runtime(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     """
     return external_call[
         "KGEN_CompilerRT_LLCL_CreateRuntime", Pointer[NoneType]
-    ](num_cores())
+    ](num_threads())
 
 
 fn _destroy_global_runtime(ptr: Pointer[NoneType]):
@@ -193,27 +236,27 @@ struct Runtime:
         let ptr = _get_current_or_global_runtime()
         return Runtime(ptr, owning=False)
 
-    fn __init__(num_threads: Int) -> Runtime:
+    fn __init__(threads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
 
-        # If the request was for a runtime with the default number of cores,
+        # If the request was for a runtime with the default number of threads,
         # then we can just return the global runtime.
-        if num_threads == num_cores():
+        if threads == num_threads():
             return Runtime()
 
         let ptr = external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
-        ](num_threads)
+        ](threads)
         return Runtime(ptr, owning=True)
 
-    fn __init__(num_threads: Int, profileFilename: StringRef) -> Runtime:
+    fn __init__(threads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
         let ptr = external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", Self.ptr_type
         ](
-            num_threads,
+            threads,
             profileFilename.data,
             profileFilename.length.value,
         )
