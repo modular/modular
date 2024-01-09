@@ -4,10 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TENSORFLOW_SUPPORT_STATSREPORT_H
-#define TENSORFLOW_SUPPORT_STATSREPORT_H
+#ifndef SUPPORT_FRAMEWORKS_STATSREPORT_H
+#define SUPPORT_FRAMEWORKS_STATSREPORT_H
 
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/Operation.h"
@@ -17,7 +16,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace M::TF {
+namespace M::Frameworks {
 
 /// A helper API that can collect statistics about ops lowered vs. fallback
 /// ops during an external framework translation pass. For the fallback ops,
@@ -26,13 +25,11 @@ namespace M::TF {
 /// The helper also has the functionality to record these statistics to a
 /// configurable report file.
 struct StatsReport {
-  explicit StatsReport(llvm::StringRef name)
-      : name(name), numTotalOps(0), numFallbackOps(0) {
-    ownedRuntime = LLCL::createRuntimeIfNeeded();
-    ownedRuntime->emplaceContextIfMissing<Telemetry::TelemetryContext>();
-  }
+  explicit StatsReport(llvm::StringRef framework, llvm::StringRef modelName)
+      : framework(framework), modelName(modelName), numTotalOps(0),
+        numFallbackOps(0) {}
 
-  StatsReport() : StatsReport("") {}
+  StatsReport(llvm::StringRef framework) : StatsReport(framework, "") {}
 
   /// Record one instance of an input op.
   void countOp(mlir::Operation &op);
@@ -42,17 +39,18 @@ struct StatsReport {
   void writeToFile();
 
   // Emits telemetry info on the ops collected
-  void emitTelemetry();
+  void emitTelemetry(M::Telemetry::TelemetryContext *telemetryCtx);
 
 private:
-  std::string name;
+  /// Framework name: pytorch, tf, onnx, etc.
+  std::string framework;
+  std::string modelName;
   size_t numTotalOps;
   size_t numFallbackOps;
-  ConditionallyOwnedPointer<LLCL::Runtime> ownedRuntime;
   llvm::StringMap<size_t> fallbackHistogram;
   llvm::StringMap<size_t> opHistogram{};
 };
 
-} // namespace M::TF
+} // namespace M::Frameworks
 
-#endif // TENSORFLOW_SUPPORT_STATSREPORT_H
+#endif // SUPPORT_FRAMEWORKS_STATSREPORT_H
