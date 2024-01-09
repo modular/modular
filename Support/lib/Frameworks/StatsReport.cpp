@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TensorFlow/Support/StatsReport.h"
+#include "Support/Frameworks/StatsReport.h"
 
 #include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/SmallString.h"
@@ -18,15 +18,15 @@
 #include <system_error>
 
 using namespace M;
-using namespace TF;
+using namespace Frameworks;
 
-void M::TF::StatsReport::countOp(mlir::Operation &op) {
+void M::Frameworks::StatsReport::countOp(mlir::Operation &op) {
   auto opName = op.getName().stripDialect();
   ++opHistogram[opName.str()];
   ++numTotalOps;
 }
 
-void M::TF::StatsReport::countFallback(mlir::Operation &op) {
+void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
   numFallbackOps++;
 
   // Print just the op signature - name, in/out types, attributes.
@@ -80,7 +80,7 @@ void M::TF::StatsReport::countFallback(mlir::Operation &op) {
   fallbackHistogram[key]++;
 }
 
-void M::TF::StatsReport::writeToFile() {
+void M::Frameworks::StatsReport::writeToFile() {
   std::error_code ec{};
   // TODO: Unify with the crash reporting var?
   // TODO(#17500): Include some info about the model name.
@@ -121,7 +121,7 @@ void M::TF::StatsReport::writeToFile() {
   }
 
   reportFile.keep();
-  reportFile.os() << name << "\n";
+  reportFile.os() << modelName << "\n";
   reportFile.os() << "TOTAL OPS\t" << numTotalOps << "\n";
   reportFile.os() << "FALLBACK OPS\t" << numFallbackOps << "\n";
 
@@ -132,21 +132,20 @@ void M::TF::StatsReport::writeToFile() {
   reportFile.os() << "--------------------------------------\n\n";
 }
 
-void M::TF::StatsReport::emitTelemetry() {
-  auto *telemetryContext =
-      ownedRuntime->getContext<Telemetry::TelemetryContext>();
-  assert(telemetryContext);
+void M::Frameworks::StatsReport::emitTelemetry(
+    M::Telemetry::TelemetryContext *telemetryContext) {
   auto logger = telemetryContext->getLogger("engine");
   llvm::StringMap<Telemetry::Logs::AttributeValue> attributes = {};
   attributes["total_op_count"] = numTotalOps;
   attributes["fallback_op_count"] = numFallbackOps;
-  logger->emitEvent("tf.stats", Telemetry::Logs::Severity::kInfo,
+  logger->emitEvent(framework + ".stats", Telemetry::Logs::Severity::kInfo,
                     Telemetry::Level::L1, "", attributes);
 
   llvm::StringMap<Telemetry::Logs::AttributeValue> fallbackAttributes = {};
   for (const auto &[fallbackOp, count] : fallbackHistogram) {
     fallbackAttributes[fallbackOp] = count;
   }
-  logger->emitEvent("tf.stats.fallback", Telemetry::Logs::Severity::kInfo,
-                    Telemetry::Level::L1, "", fallbackAttributes);
+  logger->emitEvent(framework + ".stats.fallback",
+                    Telemetry::Logs::Severity::kInfo, Telemetry::Level::L1, "",
+                    fallbackAttributes);
 }
