@@ -1,11 +1,17 @@
-// RUN: mojo package -D fire="🔥" %mojo_cpu_build_arch %S/test_package -o - | kgen-opt | FileCheck %s
+// RUN: mojo package -D fire="🔥" %S/test_package -o - | kgen-opt | FileCheck %s
 
 // Check that, with no `-o` argument, a `test_package.mojopkg` file is created
 // in the current working directory. Then verify its debug info. (Note that this
 // test doesn't then delete the package file; it'll remain in the test execution
 // root.)
-// RUN: mojo package -D fire="🔥" -debug-level full %mojo_cpu_build_arch %S/test_package
+// RUN: mojo package -D fire="🔥" -debug-level full %S/test_package
 // RUN: kgen-opt test_package.mojopkg | FileCheck %s --check-prefix=DEBUGINFO
+
+// Check that, when a target option is specified, such as `--target-features`
+// (even if that argument is specified with an empty value), then a pre-compiled
+// archive is included in the package.
+// RUN: mojo package -D fire="🔥" --target-features="" %mojo_cpu_build_arch \
+// RUN:   %S/test_package -o - | kgen-opt | FileCheck %s --check-prefix ARCHIVE
 
 // DEBUGINFO-DAG: #local_variable{{[0-9]+}} =
 // DEBUGINFO-DAG: !subroutine{{[0-9]+}} =
@@ -36,5 +42,6 @@
 // CHECK: {-#
 // CHECK: dialect_resources
 // CHECK: builtin
-// CHECK: archive_{{.*}}: {{.*}}
 // CHECK: bytecode_{{.*}}: {{.*}}
+// CHECK-NOT: archive_{{.*}}: {{.*}}
+// ARCHIVE: archive_{{.*}}: {{.*}}

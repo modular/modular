@@ -467,16 +467,16 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   // "source package." This means that there are no link directives to insert.
   // FIXME: Once "source packages" no longer exist, insert a link directive
   // regardless, and compile for the build target on-demand.
-  PackageArchiveArrayAttr archives = package.getArchivesAttr();
-  if (archives.getValue().empty())
+  if (!package.getPreElaborationModuleAttr())
     return success();
 
-  // We have one or more archives, so insert the link directive.
+  // We have at least some pre-compiled bytecode available, so insert a link
+  // directive.
   OpBuilder b(package.getContext());
-  auto linkOp =
-      b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
-                              package.getPreElaborationModuleAttr(),
-                              package.getCompiledEnvAttr(), archives);
+  auto linkOp = b.create<PackageLinkOp>(
+      package.getLoc(), package.getSymNameAttr(),
+      package.getPreElaborationModuleAttr(), package.getCompiledEnvAttr(),
+      package.getArchivesAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do
