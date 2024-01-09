@@ -421,6 +421,9 @@ struct ValueSet {
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
+  ///
+  /// This sentinel is also used by DestructorInsertion as a marker for
+  /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func)
       : typeDeclInfo(typeDeclInfo), func(func) {
     addValue(Value(), LifetimeTrackable(Value()));
@@ -1289,7 +1292,7 @@ private:
                             Operation *opWithUse);
 
   void checkIfLikeOp(Operation &operation,
-                     BitVector &expectedConsumptionInThenNotElse);
+                     const BitVector &expectedConsumptionInThenNotElse);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1324,8 +1327,14 @@ private:
 };
 } // namespace
 
+/// Given an 'if' like operation (normal 'if' statement, parameter if, or a
+/// HandleVariant) perform dtor analysis for each side and insert destructors at
+/// the top of the blocks to form a common upward-projected consume set.
+///
+/// expectedConsumptionInThenNotElse is non-empty for HandleVariant ops - it
+/// includes a set of values that are not live in the else block.
 void DestructorInsertion::checkIfLikeOp(
-    Operation &ifElseOp, BitVector &expectedConsumptionInThenNotElse) {
+    Operation &ifElseOp, const BitVector &expectedConsumptionInThenNotElse) {
   assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
          ifElseOp.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -1335,40 +1344,116 @@ void DestructorInsertion::checkIfLikeOp(
   // Scan 'else' block.
   thenConsumedValues.swap(consumedValues);
   scanBlock(ifElseOp.getRegion(1).front());
+
   // At this point, 'thenConsumedValues' is the set of upwardly consumed
   // values from the 'then' block and 'consumedValues' is the set of upwardly
-  // consumed values from the else branch.  See if they disagree.
-  BitVector disagreements = consumedValues;
-  disagreements ^= thenConsumedValues;
-  // If they agree, then we're done if not, we'll have to destroy fields to
-  // make them agree.
-  if (disagreements.none())
+  // consumed values from the else branch.  See if they agree already, then
+  // there is nothing to do.
+  if (thenConsumedValues == consumedValues)
     return;
 
-  // If we are in a dryrun, just compute the union of the two sets.
-  if (dryRun) {
-    consumedValues |= disagreements;
+  // We don't want to perform meets with unreachable code (e.g. from `if False:
+  // stuff`: if either of the regions is unreachable, then propagate the other
+  // one.  This matters because there is no conservative "missing" set for whole
+  // object bits.  We use the sentinel's consume bit to know if anything is
+  // consumed.
+  if (!thenConsumedValues[0]) // If "then" isn't reachable, return "else".
+    return;
+  if (!consumedValues[0]) { // If "else" isn't reachable, return "then".
+    consumedValues = thenConsumedValues;
     return;
   }
 
-  // Otherwise we have to emit destructors to get the branches to line up.
-  // If the true branch consumed values that the false branch didn't, then
-  // we need to destroy those corresponding values in the false branch.
-  BitVector consumedInElseButNotThen = consumedValues;
-  consumedInElseButNotThen &= disagreements;
-  destroyValuesAtEntry(consumedInElseButNotThen, ifElseOp.getRegion(0).front(),
+  // Given two consume sets, our upward propagated final set will be the
+  // union of both sets.
+  BitVector upwardConsumeSet = consumedValues;
+  upwardConsumeSet |= thenConsumedValues;
+
+  // It is possible that some subfields out of a value that is fully consumed
+  // are not demanded.  For example, consider something like:
+  //
+  //   fn test(cond: Bool):
+  //     # Tracked as pair.{a,b,overall}
+  //     var pair = Pair(a=String(), b=String())
+  //
+  //     if cond:            # <- consumes pair.{a,overall}, but not pair.b
+  //       pair.b = String() # <- overwrites pair.b so it isn't consumed
+  //       pair.use()        # <- consumes pair upwards
+  //       return            # <- consumes nothing
+  //     else:               # <- consumes nothing
+  //       return            # <- consumes nothing
+  //
+  // In this situation we know that "pair overall" is live into to one side
+  // and not live into the other side, that we'll need to destroy the whole
+  // thing... so the upward-propagated union needs to demand all of
+  // pair.{a,b,overall}.  Computing this allows us to rewrite this into:
+  //
+  //   fn test(cond: Bool):
+  //     # Tracked as pair.{a,b,overall}
+  //     var pair = Pair(a=String(), b=String())
+  //
+  //     if cond:
+  //       pair.b.__del__()  # the body doesn't demand pair.b, so destroy it
+  //       pair.b = String()
+  //       pair.use()
+  //       pair.__del__()    # destroyed after pair.use's last use.
+  //     else:
+  //       pair.__del__()    # block doesn't demand pair at all.
+  //       return
+  //
+  // This only happens when the whole object bit is demanded in one set, but not
+  // the other for an entire top-level object.  We know this is the case because
+  // any use of a subfield will end up demanding the object as a whole.  If we
+  // see this, have the union set demand the whole object so it can be
+  // destroyed.
+  for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
+    // If the whole-object consume bits agree on both sides, then there is
+    // nothing to do.
+    if (valueInfo.isIndirect &&
+        consumedValues[valueInfo.endValueBit - 1] !=
+            thenConsumedValues[valueInfo.endValueBit - 1]) {
+      // If it is missing in one side or the other, then the upward set needs to
+      // consume the entire object.
+      upwardConsumeSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    }
+  }
+
+  // If we are in a dryrun, just return the computed union of the two sets.
+  if (dryRun) {
+    consumedValues = upwardConsumeSet;
+    return;
+  }
+
+  // Otherwise we have to emit destructors for any non-trivial members to get
+  // the branches to line up. If the one branch consumed values that the other
+  // branch didn't, then we need to destroy those corresponding values in the
+  // other branch.
+
+  // destroyValuesAtEntry will mutate consumedValues, so do the 'else' side
+  // first, which is referencing it.
+
+  // needToConsumeInElse = upwardConsumeSet & ~consumedValues.
+  BitVector needToConsumeInElse = upwardConsumeSet;
+  needToConsumeInElse.reset(consumedValues);
+
+  // Filter out specific stuff for HandleVariant.  For normal if statements,
+  // this won't do anything because expectedConsumptionInThenNotElse will be
+  // empty.
+  //   needToConsumeInElse &= ~expectedConsumptionInThenNotElse
+  needToConsumeInElse.reset(expectedConsumptionInThenNotElse);
+  destroyValuesAtEntry(needToConsumeInElse, ifElseOp.getRegion(1).front(),
                        ifElseOp.getLoc());
 
-  BitVector consumedInThenButNotElse = thenConsumedValues;
-  consumedInThenButNotElse &= disagreements;
-  BitVector &inverse = expectedConsumptionInThenNotElse.flip();
-  consumedInThenButNotElse &= inverse;
-  destroyValuesAtEntry(consumedInThenButNotElse, ifElseOp.getRegion(1).front(),
+  // Next handle the "then" set.
+
+  //    needToConsumeInThen = upwardConsumeSet & ~thenConsumedValues.
+  BitVector needToConsumeInThen = upwardConsumeSet;
+  needToConsumeInThen.reset(thenConsumedValues);
+  destroyValuesAtEntry(needToConsumeInThen, ifElseOp.getRegion(0).front(),
                        ifElseOp.getLoc());
 
   // Restore consumedValues to the merged set.
-  consumedValues = thenConsumedValues;
-  consumedValues |= consumedInElseButNotThen;
+  consumedValues = upwardConsumeSet;
 }
 
 void DestructorInsertion::dump() const {
@@ -1407,11 +1492,16 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
     return;
 
   consumedValues.resize(valueSet.getNumTotalBits());
-  consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
+  // Slot 0 indicates this block is reachable.  This will be cleared if an
+  // 'unreachable' operation is noticed.
+  consumedValues.set(0);
 
   // Scan the body of the function.
   Block &funcBody = func.getFunctionBody().front();
   scanBlock(funcBody);
+
+  // The sentinel tracks reachability.
+  assert(consumedValues[0] && "function entry is reachable");
 
   for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
     if (valueInfo.startsUninit || valueID == 0)
@@ -1572,7 +1662,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A return consumes all the live-out values from the function.
   if (isa<KGEN::ReturnOp>(op)) {
     consumedValues.reset();
-    consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
+    consumedValues.set(0); // Slot 0 indicates this block is reachable.
     for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
       if (!valueInfo.endsUninit)
         consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
@@ -1591,6 +1681,8 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   if (auto errorReturn = dyn_cast<ErrorReturnOp>(op)) {
+    consumedValues.set(0); // Slot 0 indicates this block is reachable.
+
     // This marks a point where we abandoned an effort to initialize
     // a value fully. Call the destructor on the members that we
     // initialized.
@@ -1666,8 +1758,8 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
   // A unreachable consumes nothing.  Nothing needs to be destroyed here!
   if (isa<UnreachableOp>(op)) {
+    // Slot 0 sentinel unset indicates that this block is unreachable.
     consumedValues.reset();
-    consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
     return;
   }
 
@@ -1740,19 +1832,20 @@ void DestructorInsertion::checkOp(Operation &op) {
     // values are for the exception block.
     auto exceptSets = DestructorInsertion::copy(*this);
     exceptSets.raiseSet = raiseSet;
-    exceptSets.scanBlock(tryOp.getExceptRegion().front());
+
+    Region &exceptRegion = tryOp.getExceptRegion();
+    exceptSets.scanBlock(exceptRegion.front());
     // The except block initializes its block arguments, so if these are tracked
     // we must mark them as consumed.
-    for (Value blockArg : tryOp.getExceptRegion().getArguments())
+    for (Value blockArg : exceptRegion.getArguments())
       if (ValueRef valueRef =
               valueSet.getValueRef(blockArg, /*isDeref=*/false)) {
         if (!exceptSets.consumedValues[valueRef.startBit]) {
           // There were no references to the owned arguments, so generate a
           // destructor at beginning of the block.
           mlir::ImplicitLocOpBuilder builder =
-              ImplicitLocOpBuilder::atBlockBegin(
-                  tryOp.getExceptRegion().getLoc(),
-                  &tryOp.getExceptRegion().front());
+              ImplicitLocOpBuilder::atBlockBegin(exceptRegion.getLoc(),
+                                                 &exceptRegion.front());
           destroyValueIfNeeded(blockArg, valueRef, builder,
                                /*opWithUse=*/nullptr);
           valueRef.markBits(consumedValues, false);
@@ -1780,9 +1873,11 @@ void DestructorInsertion::checkOp(Operation &op) {
     // statement immediately after the loop.
     loopBodySets.breakSet = &consumedValues;
 
-    // We start the continueSet with no values set to be consumed.
+    // We start the continueSet with no values set to be consumed, and with
+    // sentinel slot #0 unset indicating that the continue point isn't
+    // reachable.  This will cause the first iteration to propagate values up
+    // from the 'break' points to the consume set.
     BitVector continueSet(consumedValues.size());
-    continueSet.set(0); // Never destroy slot 0, it is already destroyed.
     loopBodySets.continueSet = &continueSet;
 
     // We need to dry run the body evaluation until we get to a stable continue
@@ -1797,9 +1892,16 @@ void DestructorInsertion::checkOp(Operation &op) {
       // 'continueSet'.
       loopBodySets.scanBlock(loopOp.getBody().front());
 
+      // If we scanned the body and didn't find any live code, then we know
+      // there must not be any break statements in it.  Just consider the
+      // continue point reachable for the next iteration.
+      if (!loopBodySets.consumedValues[0])
+        loopBodySets.consumedValues[0] = true;
+
       // If the continue set is unchanged, then we converged.
       if (loopBodySets.consumedValues == continueSet)
         break;
+
       // Otherwise, use the set of values consumed on loop entry as the new
       // continue set.
       std::swap(loopBodySets.consumedValues, continueSet);
