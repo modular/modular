@@ -626,7 +626,7 @@ lit.struct.decl @Reg register_passable attributes {
     kgen.return
   }
   lit.func @__copyinit__(%other: !Reg borrow) ownedresult -> !Reg attributes {specialFnKind = 7 : i8} {
-    kgen.unreachable
+    kgen.return %other : !Reg
   }
 }
 

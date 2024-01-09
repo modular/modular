@@ -1205,3 +1205,89 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: lit.ownership.use %a
   # CHECK-NEXT: lit.ownership.use %b
   # CHECK-NEXT: kgen.param.constant: none
+
+struct MemPair:
+  var a: MemExample
+  var b: MemExample
+  fn __init__(inout self):
+    self.a = self.b := MemExample()
+
+  fn use(self): pass
+
+# CHECK-LABEL: lit.func @"test_partial_overwrite
+fn test_partial_overwrite(cond: __mlir_type.i1):
+  # CHECK-NEXT: %pair = lit.varlet.decl "pair"
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%pair)
+  var pair = MemPair()
+
+  # CHECK-NEXT: hlcf.if %cond {
+  if cond:
+    # Inserted destruction of incoming pair.b
+    # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BREF]])
+
+    # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[BREF]])
+    pair.b = MemExample()
+
+    # CHECK-NEXT: lit.call {{.*}}use{{.*}}(%pair)
+    pair.use()
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%pair)
+    # CHECK-NEXT: hlcf.yield
+  else: # CHECK-NEXT: } else {
+    # Inserted destruction of whole pair.
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%pair)
+
+    # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: kgen.return
+    return
+  # CHECK-NEXT: }
+
+
+# CHECK-LABEL: lit.struct.decl @TestLoopWithWholeObjectBit
+struct TestLoopWithWholeObjectBit:
+  var field : MemExample
+
+  # CHECK: lit.func @"__init__
+  fn __init__(inout self, cond: __mlir_type.i1):
+        # CHECK-NEXT: %buf = lit.varlet.decl "buf"
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
+        let buf = MemExample()
+
+        # CHECK-NEXT: hlcf.loop {
+        # CHECK-NEXT:   hlcf.if %cond {
+        # CHECK-NEXT:     hlcf.yield
+        # CHECK-NEXT:   } else {
+        # CHECK-NEXT:     hlcf.break
+        # CHECK-NEXT:   }
+        while cond:
+          # CHECK-NEXT:   lit.call {{.*}}noop{{.*}}(%buf)
+          # CHECK-NEXT:   hlcf.continue
+          buf.noop()
+        # CHECK-NEXT: }
+
+        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.ownership.end_lifetime %buf
+        # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], [[TRANSFER_REF]])
+        # CHECK-NEXT: %none = kgen.param.constant
+        # CHECK-NEXT: kgen.return
+        self.field = buf ^
+
+# CHECK: lit.func @"testInfiniteloop
+fn testInfiniteloop():
+  # CHECK-NEXT:  hlcf.loop {
+  # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
+  # CHECK-NEXT:    hlcf.if %0 {
+  # CHECK-NEXT:      hlcf.yield
+  # CHECK-NEXT:    } else {
+  # CHECK-NEXT:      kgen.unreachable
+  # CHECK-NEXT:    }
+  while True:
+    # CHECK-NEXT:  %localThing = lit.varlet.decl
+    # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
+    # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}(%localThing)
+    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
+    let localThing = MemExample()
+    localThing.noop()
+  # CHECK-NEXT:    hlcf.continue
+  # CHECK-NEXT:  }
