@@ -2097,7 +2097,6 @@ fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
     Parameters:
         start_dim: The index at which to begin computing the product.
         end_dim: The index at which to stop computing the product.
-        : Ignore.
 
     Args:
         x: The NDBuffer whose dimensions will be multiplied.
