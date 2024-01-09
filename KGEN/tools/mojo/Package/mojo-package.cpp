@@ -231,6 +231,7 @@ PackageBuilder::PackageBuilder(
   thePackage.setCompiledEnvAttr(env);
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
+  auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
   while (!worklist.empty()) {
     auto listFront = worklist.top();
     worklist.pop();
@@ -248,6 +249,14 @@ PackageBuilder::PackageBuilder(
         // It's a func? OK - non-parametric funcs get elided, parametric funcs
         // are cloned as-is.
         .Case([&](LIT::FuncOp func) {
+          // Map the function to the alias it will have. Otherwise, use the
+          // mangled version of the original func, because that's what its name
+          // will be post-elaboration.
+          StringAttr preElaborationName = func.getLinkageNameAttr();
+          if (!preElaborationName)
+            preElaborationName = LIT::MangledSymbol::mangle(func).mangled;
+          StringAttr postElaborationName = preElaborationName;
+
           // If the function is non-parametric, drop its body.
           LIT::FuncOp clonedFunc;
           if (canExternalize(func)) {
@@ -264,17 +273,15 @@ PackageBuilder::PackageBuilder(
             clonedFunc.getBodyRegion().push_back(bodyBlock);
             b.setInsertionPointToStart(clonedFunc.getBody());
             b.create<LIT::ExternFuncOp>(clonedFunc.getLoc());
+
+            // The function's been externalized; set attributes that point to
+            // its pre-compiled bytecode.
+            clonedFunc.setPreCompiledModuleRefAttr(packageName);
+            clonedFunc.setPreElaborationNameAttr(preElaborationName);
           } else {
             clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
           }
 
-          // Map the function to the alias it will have. Otherwise, use the
-          // mangled version of the original func, because that's what its name
-          // will be post-elaboration.
-          StringAttr preElaborationName = func.getLinkageNameAttr();
-          if (!preElaborationName)
-            preElaborationName = LIT::MangledSymbol::mangle(func).mangled;
-          StringAttr postElaborationName = preElaborationName;
           // If we are sanitizing symbols during elaboration, the
           // post-elaboration name will be different than the pre-elaboration
           // name.
@@ -426,6 +433,9 @@ struct PackageArgs {
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
+  /// Whether to include elaborated bytecode and object code (a package archive)
+  /// in the output `.mojopkg`.
+  bool precompileArchive;
   /// The MLIR context used for compilation.
   mlir::MLIRContext ctx;
   /// The target for which to compile.
@@ -486,13 +496,25 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  return parseCompilationOptions(
-      state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-      pkgArgs.target, options::OPT_I, options::OPT_target_triple,
-      options::OPT_target_cpu, options::OPT_target_features, options::OPT_march,
-      options::OPT_mcpu, options::OPT_mtune, options::OPT_no_optimization,
-      options::OPT_debug_level, options::OPT_sanitize,
-      options::OPT_debug_info_language);
+  if (auto err = parseCompilationOptions(
+          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
+          pkgArgs.target, options::OPT_I, options::OPT_target_triple,
+          options::OPT_target_cpu, options::OPT_target_features,
+          options::OPT_march, options::OPT_mcpu, options::OPT_mtune,
+          options::OPT_no_optimization, options::OPT_debug_level,
+          options::OPT_sanitize, options::OPT_debug_info_language))
+    return err.takeError();
+
+  /// If the user has explicitly specified any target information, then include
+  /// a pre-compiled package archive in the output package.
+  pkgArgs.precompileArchive = args.hasArg(options::OPT_target_triple) ||
+                              args.hasArg(options::OPT_target_cpu) ||
+                              args.hasArg(options::OPT_target_features) ||
+                              args.hasArg(options::OPT_march) ||
+                              args.hasArg(options::OPT_mcpu) ||
+                              args.hasArg(options::OPT_mtune);
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -531,14 +553,17 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
                                                           compilationOptions))
     return Error(llvm::formatv("compilation failed: {0}", err.getError()));
 
-  // Next, fully lower the module to be packaged, for the specified target
-  // architecture. This runs elaboration passes and serializes the module as a
-  // package archive attribute that's set on the package op.
-  TargetInfoAttr target = packageArgs.target;
-  setTargetInfo(theModule, target);
-  if (auto err =
-          packageBuilder.buildArchive(theModule, compilationOptions, target))
-    return Error(llvm::formatv("compilation failed: {0}", err.getError()));
+  // Next, if we're pre-compiling a package archive, fully lower the module to
+  // be packaged for the specified target architecture. This runs elaboration
+  // passes and serializes the module as a package archive attribute that's set
+  // on the package op.
+  if (packageArgs.precompileArchive) {
+    TargetInfoAttr target = packageArgs.target;
+    setTargetInfo(theModule, target);
+    if (auto err =
+            packageBuilder.buildArchive(theModule, compilationOptions, target))
+      return Error(llvm::formatv("compilation failed: {0}", err.getError()));
+  }
 
   return packageBuilder.finalize();
 }
