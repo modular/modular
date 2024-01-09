@@ -537,8 +537,11 @@ private:
 
     // Grab the parameters to the function.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (StringAttr declName : funcOp.getSignature().getParamNames())
-      seenParameters.insert({declName, nullptr});
+    LITSignatureType signature = funcOp.getSignature();
+    for (auto [paramName, passingKind] :
+         llvm::zip(signature.getParamNames(), signature.getParamPassingKinds()))
+      if (passingKind != PassingKind::Implicit)
+        seenParameters.insert({paramName, nullptr});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {

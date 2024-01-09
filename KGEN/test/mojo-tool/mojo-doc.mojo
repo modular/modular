@@ -200,6 +200,40 @@ fn fn_with_params_and_return(arg: Int) -> Int:
     return arg
 
 
+@value
+struct MyStruct[x: Int]:
+    pass
+
+
+# CHECK: "name": "fn_with_implicit_params",
+# CHECK: "parameters":
+# CHECK: {
+# CHECK:     "description": "Explicitly declared function parameter.",
+# CHECK:     "kind": "parameter",
+# CHECK:     "name": "p",
+# CHECK:     "type": "Int"
+# CHECK: },
+# CHECK: {
+# CHECK:     "description": "",
+# CHECK:     "kind": "parameter",
+# CHECK:     "name": "x0",
+# CHECK:     "type": "Int"
+# CHECK: }
+
+
+fn fn_with_implicit_params[p: Int](x: MyStruct):
+    """
+    An autoparameterized function with documentation.
+
+    Parameters:
+      p: Explicitly declared function parameter.
+
+    Args:
+      x: An argument whose declared type induces an implicit parameter.
+    """
+    pass
+
+
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_variant",
 # CHECK:  "overloads":
