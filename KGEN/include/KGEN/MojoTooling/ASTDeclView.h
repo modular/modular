@@ -653,7 +653,9 @@ public:
   ///   "kind": "package",
   ///   "name": string,
   ///   "description": string,
-  ///   "summary": string
+  ///   "summary": string,
+  ///   "modules": ModuleDeclView[],
+  ///   "packages": PackageDeclView[],
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 

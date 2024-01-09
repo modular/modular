@@ -172,17 +172,19 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
 /// and end with __.
 template <typename DeclViewType, typename OpType>
 static SmallVector<DeclViewType, 2> extractChildDecls(const ASTDecl &decl) {
+  DenseSet<Operation *> seenOps;
   SmallVector<DeclViewType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
-    if (shouldHideName(name) || decls.empty())
-      continue;
-    if (!isa<OpType>(**decls.begin()))
+    if (shouldHideName(name) || decls.empty() || !isa<OpType>(**decls.begin()))
       continue;
 
     for (auto &child : decls) {
+      if (!isa<OpType>(*child))
+        continue;
       // Skip declarations that were imported from other scopes.
-      if (child->getParentDecl() != &decl)
+      if (child->getParentDecl() != &decl ||
+          !seenOps.insert(child->getIfOperation()).second)
         continue;
       // Skip synthetic declarations that don't have accompanying documentation
       // generated with them.
@@ -972,10 +974,16 @@ std::string PackageDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object PackageDeclView::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{{"description", description},
-                            {"kind", getKindAsString()},
-                            {"name", getName().str()},
-                            {"summary", summary}};
+  auto packages = extractChildDecls<PackageDeclView, PackageOp>(*decl);
+  auto modules = extractChildDecls<ModuleDeclView, FileModuleOp>(*decl);
+  return llvm::json::Object{
+      {"description", description},
+      {"kind", getKindAsString()},
+      {"name", getName().str()},
+      {"summary", summary},
+      {"modules", toJSONArray(ctx, modules)},
+      {"packages", toJSONArray(ctx, packages)},
+  };
 }
 
 PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
