@@ -683,11 +683,6 @@ fn _reduce_along_inner_dimension[
             reduce_dim_size, unrolled_simd_width
         )
         let simd_compatible_size = align_down(reduce_dim_size, simd_width)
-        let simd_tail_size = (
-            simd_compatible_size - unrolled_simd_compatible_size
-        ) // simd_width
-        let simd_reduce_size = unroll_factor if unrolled_simd_compatible_size > 0 else simd_tail_size
-        let scalar_tail_size = reduce_dim_size - simd_compatible_size
 
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
@@ -696,153 +691,44 @@ fn _reduce_along_inner_dimension[
                 flat_index, shape, reduce_dim
             )
 
-            # initialize our unrolled accumulator
-            var acc_unrolled = StaticTuple[
-                unroll_factor, SIMD[init_value.element_type, simd_width]
-            ]()
+            var acc_unrolled_simd = SIMD[
+                init_value.element_type, unrolled_simd_width
+            ].splat(init_value)
 
-            @unroll
-            for i in range(unroll_factor):
-                acc_unrolled[i] = SIMD[
-                    init_value.element_type, simd_width
-                ].splat(init_value)
+            @always_inline
+            @parameter
+            fn reduce_helper_fn[
+                width: Int
+            ](start: Int, finish: Int, init: SIMD[_, width]) -> SIMD[
+                init.type, width
+            ]:
+                var acc = init
+                for idx in range(start, finish, width):
+                    indices[reduce_dim] = idx
+                    let load_value = input_0_fn[init.type, width, shape.size](
+                        indices
+                    )
+                    acc = reduce_function(load_value, acc)
+                return acc
 
             # Loop over unroll_factor*simd_width chunks.
-            for idx in range(
-                0, unrolled_simd_compatible_size, unrolled_simd_width
-            ):
+            acc_unrolled_simd = reduce_helper_fn(
+                0, unrolled_simd_compatible_size, acc_unrolled_simd
+            )
 
-                @unroll
-                for j in range(unroll_factor):
-                    indices[reduce_dim] = idx + j * simd_width
-                    let load_value = input_0_fn[
-                        init_value.element_type, simd_width, shape.size
-                    ](indices)
-                    acc_unrolled[j] = reduce_function(
-                        load_value, acc_unrolled[j]
-                    )
+            # Loop over remaining simd_width chunks.
+            var acc_simd = acc_unrolled_simd.reduce[
+                reduce_function, simd_width
+            ]()
+            acc_simd = reduce_helper_fn(
+                unrolled_simd_compatible_size, simd_compatible_size, acc_simd
+            )
 
-            # Handle remaining simd_width chunks.
-            @unroll
-            for i in range(unroll_factor - 1):
-                if i < simd_tail_size:
-                    indices[reduce_dim] = (
-                        i * simd_width + unrolled_simd_compatible_size
-                    )
-                    let load_value = input_0_fn[
-                        init_value.element_type, simd_width, shape.size
-                    ](indices)
-                    acc_unrolled[i] = reduce_function(
-                        load_value, acc_unrolled[i]
-                    )
-
-            # Reduce unrolled elements to a single SIMD value
-            if simd_reduce_size == 2:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 3:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 4:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[2] = reduce_function(
-                    acc_unrolled[3], acc_unrolled[2]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 5:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[2] = reduce_function(
-                    acc_unrolled[3], acc_unrolled[2]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[4], acc_unrolled[0]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 6:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[2] = reduce_function(
-                    acc_unrolled[3], acc_unrolled[2]
-                )
-                acc_unrolled[4] = reduce_function(
-                    acc_unrolled[5], acc_unrolled[4]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[4], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 7:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[2] = reduce_function(
-                    acc_unrolled[3], acc_unrolled[2]
-                )
-                acc_unrolled[4] = reduce_function(
-                    acc_unrolled[5], acc_unrolled[4]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-                acc_unrolled[4] = reduce_function(
-                    acc_unrolled[6], acc_unrolled[4]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[4], acc_unrolled[0]
-                )
-            elif simd_reduce_size == 8:
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[1], acc_unrolled[0]
-                )
-                acc_unrolled[2] = reduce_function(
-                    acc_unrolled[3], acc_unrolled[2]
-                )
-                acc_unrolled[4] = reduce_function(
-                    acc_unrolled[5], acc_unrolled[4]
-                )
-                acc_unrolled[6] = reduce_function(
-                    acc_unrolled[7], acc_unrolled[6]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[2], acc_unrolled[0]
-                )
-                acc_unrolled[4] = reduce_function(
-                    acc_unrolled[6], acc_unrolled[4]
-                )
-                acc_unrolled[0] = reduce_function(
-                    acc_unrolled[4], acc_unrolled[0]
-                )
-
-            # Reduce tail scalar values into our SIMD accumulator
-            var acc_simd = acc_unrolled[0]
-
-            @unroll
-            for i in range(simd_width - 1):
-                if i < scalar_tail_size:
-                    indices[reduce_dim] = simd_compatible_size + i
-                    let load_val = input_0_fn[
-                        init_value.element_type, 1, shape.size
-                    ](indices)
-                    acc_simd[i] = reduce_function(load_val, acc_simd[i])
-
-            # Reduce our SIMD accumulator to a scalar
-            let acc_scalar = acc_simd.reduce[reduce_function]()
+            var acc_scalar = acc_simd.reduce[reduce_function]()
+            # Loop over remaining scalar values.
+            acc_scalar = reduce_helper_fn(
+                simd_compatible_size, reduce_dim_size, acc_scalar
+            )
 
             # Store the result back to the output.
             indices[reduce_dim] = 0
