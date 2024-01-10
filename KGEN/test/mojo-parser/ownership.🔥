@@ -1135,7 +1135,7 @@ fn do_not_call_synth_dtors(owned x: RegisterNoDtor, owned y: MemoryNoDtor):
     # CHECK-LABEL: kgen.return
     pass
 
-# CHECK-LABEL: lit.struct.decl @RegExampleValue(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Destructable>) register_passable
+# CHECK-LABEL: lit.struct.decl @RegExampleValue({{.*}}) register_passable
 # Compiler crashes trying to insert a destructor call
 # https://github.com/modularml/modular/issues/26410
 @value

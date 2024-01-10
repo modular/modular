@@ -120,6 +120,11 @@ public:
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects effects = FnEffects(), StringRef prefix = "");
 
+  /// Given a struct and a trait declaration, make the trait inherit from the
+  /// struct if it does not already. This adds the trait decl to the struct's
+  /// parent list and all transitive parents that are not already there.
+  static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl);
+
 protected:
   Type noneType;
   NoneAttr noneAttr;

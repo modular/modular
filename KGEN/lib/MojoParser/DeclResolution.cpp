@@ -1851,6 +1851,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     emitError(decl.getLoc(),
               "struct declarations do not support result parameters");
 
+  // Make every nominal type inherit from `AnyType`.
+  if (ASTDecl *traitDecl =
+          shared.lookupAnyTypeTrait(decl.getLoc(), decl.getParentDecl()))
+    StructEmitter::addTraitParent(structOp, traitDecl);
+
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
   decl.setSelfType(ASTDecl::computeSelfTypeForStruct(structOp));
@@ -2502,9 +2507,10 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
 
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
         if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
-          if (canSynthesizeIfMissing(name, /*rpTrivial=*/rpTrivial,
-                                     /*regPassable=*/regPassable, specialFns))
+          if (canSynthesizeIfMissing(name, rpTrivial, regPassable)) {
+            specialFns.push_back(SpecialFunctionInfo::getKind(name));
             continue;
+          }
           diag.attachNote(traitFn.getLoc())
               << "required function '" + name.str() + "' is not implemented";
           allMatchFound = false;
@@ -2528,13 +2534,23 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
               getRegisterPassableSignature(newSignature, selfType, rpTrivial);
         }
 
+        // Omit errors for certain special functions where the parser will
+        // specifically verify their signatures if present.
+        bool emitError = !llvm::is_contained(
+            {SpecialFunctionKind::kMoveInit, SpecialFunctionKind::kCopyInit,
+             SpecialFunctionKind::kDel},
+            SpecialFunctionInfo::getKind(name));
+
         OverloadSet ov(name, decls, std::move(bindings), &node,
                        CallSyntax::kMethodCall);
         PValue result = ov.filterOverloadSetForValueType(
-            newSignature, emitter, [&](SMLoc loc) -> InflightDiag & {
-              return diag.attachNote(decl->getLoc());
-            });
-        if (!result)
+            newSignature, emitter,
+            emitError ? function_ref<InflightDiag &(SMLoc)>(
+                            [&](SMLoc loc) -> InflightDiag & {
+                              return diag.attachNote(decl->getLoc());
+                            })
+                      : nullptr);
+        if (!result && emitError)
           allMatchFound = false;
         if (regPassable)
           regStubs.insert({{name, result.get()}, traitSignature});
@@ -2710,16 +2726,12 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
 
-  // Make every trait inherit from Destructable, except itself.
+  // Make every trait inherit from `AnyType`, except itself.
   if (parentTypes.empty() && traitOp.getSymName() != "Destructable") {
-    LookupResult lookup = shared.lookupAndResolveDecl(
-        "Destructable", decl.getLoc(), *decl.getParentDecl(),
-        /*searchParentScopes=*/true);
-    if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
-      parentTypes.push_back(TypeLineageAttr::get(
-          cast<TraitDeclOp>(lookup.getIfSuccess().front()).bindReference()));
-    } else {
-      emitError(decl.getLoc(), "could not find builtin 'Destructable' trait");
+    if (ASTDecl *parentDecl =
+            shared.lookupAnyTypeTrait(decl.getLoc(), decl.getParentDecl())) {
+      parentTypes.push_back(
+          TypeLineageAttr::get(cast<TraitDeclOp>(parentDecl).bindReference()));
     }
   }
 
