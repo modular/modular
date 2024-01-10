@@ -134,10 +134,19 @@ private:
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
 /// move, or destructor members.
 bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
-  DeclRefType valueType = dyn_cast<DeclRefType>(type);
-  if (!valueType) // Values of raw MLIR type are always trivial.
+  if (DeclRefType valueType = dyn_cast<DeclRefType>(type))
+    return getStructDeclForType(valueType).isRegisterPassableTrivial();
+
+  // Variants are trivial if all elements are.
+  if (auto variantType = dyn_cast<VariantType>(type)) {
+    for (auto elt : variantType.getParameterizedElementTypes())
+      if (!isRegisterPassableTrivial(elt))
+        return false;
     return true;
-  return getStructDeclForType(valueType).isRegisterPassableTrivial();
+  }
+
+  // Other values of raw MLIR type are always trivial.
+  return true;
 }
 
 static SymbolConstantAttr getSpecialMemberForType(
@@ -1080,6 +1089,13 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
+  // VariantTakeOp takes ownership of its operand value and defines its result.
+  if (auto variantTake = dyn_cast<VariantTakeOp>(op)) {
+    checkConsume(op.getOperand(0), op, /*isDeref=*/false);
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
+    return;
+  }
+
   // If this operation has a direct use of a value we are tracking, consider
   // it a use that must be initialized.
   for (Value operand : op.getOperands())
@@ -1608,6 +1624,15 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  // VariantTakeOp takes ownership of its operand value and defines its result.
+  if (auto variantTake = dyn_cast<VariantTakeOp>(op)) {
+    // This defines the result value.  Emit a destructor if unused.
+    checkDef(variantTake, op, /*isDeref=*/false);
+    // This consumes its register input.
+    markConsumed(variantTake.getOperand(), op, /*isDeref=*/false);
+    return;
+  }
+
   // A store consumes a value and overwrites the destination.
   if (auto storeOp = dyn_cast<LIT::RefStoreOp>(op)) {
     markConsumed(storeOp.getArg(), op, /*isDeref=*/false);
@@ -1725,6 +1750,9 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (isa<LIT::TryRaiseOp>(op)) {
     assert(raiseSet && "Not in a 'try'?");
     consumedValues = *raiseSet;
+    // Consume any operand values.
+    for (auto operand : op.getOperands())
+      markConsumed(operand, op, /*isDeref=*/false);
     return;
   }
 
