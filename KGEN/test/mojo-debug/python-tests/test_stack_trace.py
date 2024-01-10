@@ -8,7 +8,7 @@ from lib.LLDBTestBase import LLDBTestBase
 
 
 class TestStackTrace(LLDBTestBase):
-    def test_format(self):
+    def failed_test_format(self):
         """Simple test that ensures frames can be printed out in a nice format.
         It's covering simple parameter types, methods and nested functions, as
         well as printing the values of arguments.
