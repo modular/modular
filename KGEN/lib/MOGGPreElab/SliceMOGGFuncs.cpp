@@ -37,10 +37,10 @@ constexpr StringLiteral experimentalDecorator =
 
 constexpr StringLiteral tensorAllocDecorator =
     "$utils::$_annotations::mogg_tensor_allocator";
-constexpr StringLiteral tensorMoveDecorator =
-    "$utils::$_annotations::mogg_tensor_move_constructor";
-constexpr StringLiteral tensorSimdStoreDecorator =
-    "$utils::$_annotations::mogg_tensor_simd_store";
+constexpr StringLiteral tensorCopyConstructDecorator =
+    "$utils::$_annotations::mogg_tensor_copy_constructor";
+constexpr StringLiteral tensorDeconstructDecorator =
+    "$utils::$_annotations::mogg_tensor_deconstructor";
 
 constexpr StringLiteral elementwiseHook =
     "$utils::$_annotations::mogg_elementwise_hook";
@@ -98,13 +98,18 @@ struct TensorInMojo {
     return paramAsRef(OUTPUT_LAMBDA_IDX);
   }
 
+  KGEN::ParamIndexRefAttr ownedMemoryAsRef() const {
+    return paramAsRef(OWNED_MEMORY);
+  }
+
   // The indices of each parameter as they appear on the struct.
   // static constexpr size_t DTYPE_IDX = 0;
   // static constexpr size_t SHAPE_IDX = 1;
   // static constexpr size_t STRIDE_IDX = 2;
   static constexpr size_t INPUT_LAMBDA_IDX = 3;
   static constexpr size_t OUTPUT_LAMBDA_IDX = 4;
-  static constexpr size_t NUM_PARAMS = 5;
+  static constexpr size_t OWNED_MEMORY = 5;
+  static constexpr size_t NUM_PARAMS = 6;
 };
 
 // Given a mojo function pull the tensor parameter information off of it. I.E
@@ -293,7 +298,7 @@ public:
 
       // Search for any function which allocates a new tensor and a move from
       // that into one of the input operands (meaning it is actually an output).
-      KGEN::CallOp allocationFunc, moveConstructor;
+      KGEN::CallOp allocationFunc, constructor;
 
       // If this is an elementwise kernel we are expecting to see a call to the
       // elementwise generator.
@@ -302,7 +307,7 @@ public:
       // If the user has any call to enable fusion then we turn on fusion for
       // that tensor.
       SmallVector<KGEN::CallOp> enableFusionFuncs;
-      SmallVector<KGEN::CallOp> simdStores;
+      SmallVector<KGEN::CallOp> deconstructors;
 
       std::optional<TensorInMojo> outTensorParameters =
           getTensorRepFromFunctionInput(slicedComputeFunction, 0);
@@ -322,45 +327,35 @@ public:
                                  SmallVector<TypedAttr> &attrsToCopy) {
           if (decoratorName.startswith(tensorAllocDecorator)) {
             allocationFunc = call;
-          } else if (decoratorName.startswith(tensorMoveDecorator)) {
-            moveConstructor = call;
+          } else if (decoratorName.startswith(tensorCopyConstructDecorator)) {
+            constructor = call;
           } else if (decoratorName.startswith(tensorEnableFusion)) {
             enableFusionFuncs.push_back(call);
           } else if (decoratorName.startswith(elementwiseHook)) {
             elementwiseOp = call;
+          } else if (decoratorName.startswith(tensorDeconstructDecorator)) {
+            deconstructors.push_back(call);
           }
         };
         forEachDecorator(func, identifyCalls);
       }
 
       // Exit and clean up if the kernel is not what we expect.
-      if (!moveConstructor || !allocationFunc) {
+      if (!constructor || !allocationFunc) {
         slicedComputeFunction.erase();
         continue;
       }
 
-      // Look for simd stores recursively.
-      slicedComputeFunction.walk([&](KGEN::CallOp call) {
-        auto func = dyn_cast_or_null<KGEN::GeneratorOp>(symTab.lookup(
-            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
-        if (!func)
-          return;
+      // Clean up all the deconstructors.
+      for (KGEN::CallOp deconstruct : deconstructors)
+        deconstruct.erase();
 
-        // Look for mogg attributes on any of the calls.
-        auto identifyCalls = [&](TypedAttr decorator, StringRef decoratorName,
-                                 SmallVector<TypedAttr> &attrsToCopy) {
-          if (decoratorName.startswith(tensorSimdStoreDecorator))
-            simdStores.push_back(call);
-        };
-        forEachDecorator(func, identifyCalls);
-      });
-
-      Value outputTensor = moveConstructor.getOperand(0);
-      Value tmpTensor = moveConstructor.getOperand(1);
+      Value outputTensor = constructor.getOperand(0);
+      Value tmpTensor = constructor.getOperand(1);
       tmpTensor.replaceAllUsesWith(outputTensor);
 
       // Remove the allocation and assignment from the sliced compute function.
-      moveConstructor.erase();
+      constructor.erase();
       allocationFunc.erase();
 
       // Resize the input and output lambda metadata to encapsulate all inputs
@@ -554,6 +549,22 @@ public:
         if (call.getResult(0).use_empty())
           call->erase();
       }
+
+      // Update all calls which reference a tensor to override the memory user
+      // parameter disable reference counting.
+      auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
+      auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
+                                          POP::SIMDType::get(1, boolType));
+
+      slicedComputeFunction.walk([&](CallOp call) {
+        auto paramUpdate = [&](const TensorInMojo &tensor,
+                               SmallVector<TypedAttr> &newParams) {
+          if (KGEN::ParamIndexRefAttr param = tensor.ownedMemoryAsRef())
+            newParams[param.getIndex()] = boolFalse;
+        };
+
+        rewriteCallWithNewParams(call, symTab, paramUpdate);
+      });
 
       // The new attributes on the generator.
       SmallVector<NamedAttribute> newAttrs;
