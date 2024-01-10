@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 set(SOURCES
+  Config.cpp
   Globals.cpp
   HashMap.cpp
   IO.cpp
