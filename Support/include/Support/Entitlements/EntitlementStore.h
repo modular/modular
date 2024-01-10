@@ -74,6 +74,16 @@ public:
   /// user's entitlements have not changed.
   ErrorOrSuccess refresh(HTTPClient &client);
 
+  /// Refresh the entitlement store if it's necessary to do so. The user can
+  /// configure a policy on when a refresh is 'necessary', using the validFrom
+  /// and validTo values of the certificate, converted to system clock time
+  /// points.
+  ErrorOrSuccess refreshIfNecessary(
+      HTTPClient &client,
+      llvm::function_ref<bool(std::chrono::system_clock::time_point from,
+                              std::chrono::system_clock::time_point to)>
+          shouldRefresh);
+
   /// Get the instance of the entitlement with type `EntitlementT`, if it's been
   /// registered. If it hasn't been registered, we return `nullptr`. Consumers
   /// should NOT save entitlements returned by this method as they may be
