@@ -243,6 +243,8 @@ function(add_mojo_package target visibility)
     list(APPEND KGEN_LIB_DEPENDS mojo-sdk)
   endif()
 
+  set(KGEN_PACKAGE_FILENAME "${KGEN_PACKAGE_DIR}/__init__.mojo")
+
   # Add the command used to generate the archive for the kernel.
   add_custom_command(
     OUTPUT ${package_file_name}
@@ -257,7 +259,7 @@ function(add_mojo_package target visibility)
     --debug-level ${KGEN_DEBUG_LEVEL}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS}
+    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME}
   )
   add_custom_target(${target} DEPENDS ${package_file_name})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
