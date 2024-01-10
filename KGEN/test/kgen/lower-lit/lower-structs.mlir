@@ -348,7 +348,7 @@ kgen.generator @thing() -> !kgen.declref<@Recursive> {
 }
 
 // CHECK-LABEL: kgen.generator @foo<T: regtype>()
-kgen.generator @foo<T: type>() {
+kgen.generator @foo<T: regtype>() {
   kgen.return
 }
 

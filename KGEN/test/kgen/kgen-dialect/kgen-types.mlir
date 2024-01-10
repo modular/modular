@@ -1,9 +1,9 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
 // RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
 
-// CHECK-LABEL: @genericSugar<scalar: regtype, T: type>
+// CHECK-LABEL: @genericSugar<scalar: regtype, T: regtype>
 // CHECK-SAME: %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>
-kgen.generator @genericSugar<scalar: regtype, T: type>(
+kgen.generator @genericSugar<scalar: regtype, T: regtype>(
   %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>
 ) {
   kgen.return
@@ -35,12 +35,12 @@ kgen.func @memory_only_struct(
 
 // CHECK-LABEL: @type_printing
 kgen.generator @type_printing() {
-  // CHECK: type = <struct<()>>
-  kgen.param.declare atype: type = <[struct<()>, {}]>
-  // CHECK: type = <struct<()>>
-  kgen.param.declare btype: type = <[struct<()>, {}]>
-  // CHECK: type = <[struct<()>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
+  // CHECK: regtype = <struct<()>>
+  kgen.param.declare atype: regtype = <[struct<()>, {}]>
+  // CHECK: regtype = <struct<()>>
+  kgen.param.declare btype: regtype = <[struct<()>, {}]>
+  // CHECK: regtype = <[struct<()>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: regtype = <[struct<()>, {"method" : () -> () = @method}]>
   kgen.return
 }
 

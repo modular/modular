@@ -139,7 +139,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       return "";
 
     // If this is a wrapper for a type, print it as such.
-    if (isa<AnyTypeType, AnyRegTypeType, MetaTypeType>(indexVal.getType()))
+    if (isa<AnyRegTypeType, MetaTypeType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);

@@ -51,27 +51,6 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyTypeType
-//===----------------------------------------------------------------------===//
-
-def KGEN_AnyTypeType : KGENType<"AnyType", "anytype",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "Arbitrary MLIR type";
-  let description = [{
-    This kgen type represents an arbitrary MLIR type, used for parameterizing
-    type-generic functions and structs. As opposed to `!kgen.anyregtype`, this
-    does not imply register passability; the implementation of type-generic
-    functions with a `!kgen.anytype` parameter must not assume that the
-    concretized type value is register-passable.
-
-    It cannot be materialized into an SSA value, because it has no runtime
-    representation.
-  }];
-
-  let assemblyFormat = "";
-}
-
-//===----------------------------------------------------------------------===//
 // AnyRegTypeType
 //===----------------------------------------------------------------------===//
 
