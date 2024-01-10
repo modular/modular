@@ -232,35 +232,21 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
   emitSortedNames(diag, std::move(names));
 }
 
-bool LIT::canSynthesizeIfMissing(
-    StringRef name, bool rpTrivial, bool regPassable,
-    std::optional<std::reference_wrapper<SmallVectorImpl<SpecialFunctionKind>>>
-        specialFns) {
-
-  auto addSpecialFn = [&](SpecialFunctionKind kind) {
-    if (!specialFns)
-      return;
-    specialFns->get().push_back(kind);
-  };
+bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
+                                 bool regPassable) {
   // Allow types that lack `__del__` to conform. A no-op destructor will be
   // synthesized for them.
-  if (name == "__del__") {
-    addSpecialFn(SpecialFunctionKind::kDel);
+  if (name == "__del__")
     return true;
-  }
   // Trivial types are not allowed to have explicit `__copyinit__` methods, so
   // if the trait requires them, consider them automatically satisfied by
   // trivial types.
-  if (rpTrivial && name == "__copyinit__") {
-    addSpecialFn(SpecialFunctionKind::kCopyInit);
+  if (rpTrivial && name == "__copyinit__")
     return true;
-  }
-  // All register-passable types are not allowed to have move  constructors, so
+  // All register-passable types are not allowed to have move constructors, so
   // permit them to conform.
-  if (regPassable && name == "__moveinit__") {
-    addSpecialFn(SpecialFunctionKind::kMoveInit);
+  if (regPassable && name == "__moveinit__")
     return true;
-  }
   return false;
 }
 

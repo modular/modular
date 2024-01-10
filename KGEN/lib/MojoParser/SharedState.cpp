@@ -648,15 +648,15 @@ static ASTDecl *findBuiltinTrait(StringRef traitName, SMLoc location,
       shared.lookupAndResolveDecl(traitName, location, *parent, true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
-      auto trait = dyn_cast<TraitDeclOp>(result);
-      if (!trait)
-        continue;
-      return result;
+      if (auto trait = dyn_cast<TraitDeclOp>(result))
+        return result;
     }
   }
-  shared.emitError(location,
-                   "builtin trait " + traitName + " is missing or overridden");
   return nullptr;
+}
+
+ASTDecl *SharedState::lookupAnyTypeTrait(llvm::SMLoc loc, ASTDecl *context) {
+  return findBuiltinTrait("Destructable", loc, context, *this);
 }
 
 ASTDecl *SharedState::lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context) {

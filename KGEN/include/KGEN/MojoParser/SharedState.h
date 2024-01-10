@@ -208,6 +208,10 @@ public:
   /// otherwise emit an error and return null.
   ASTType lookupObjectType(llvm::SMLoc loc, ASTDecl &context);
 
+  /// Lookup the `AnyType` trait in the specified context and return it if
+  /// found, otherwise emit an error and return null.
+  ASTDecl *lookupAnyTypeTrait(llvm::SMLoc loc, ASTDecl *context);
+
   /// Lookup the `Copyable` trait in the specified context and return it if
   /// found, otherwise emit an error and return null.
   ASTDecl *lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context);

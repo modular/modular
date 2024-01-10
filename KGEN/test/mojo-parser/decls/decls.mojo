@@ -761,7 +761,7 @@ fn forward_ref(x: EmptyStruct):
   pass
 
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct register_passable {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) register_passable {
 @register_passable
 struct EmptyStruct:
     pass
@@ -769,7 +769,7 @@ struct EmptyStruct:
 
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}[size]: !Int> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}[size]: !Int>
 struct OneLineStruct[size: Int]:
     pass
     pass
@@ -940,7 +940,7 @@ struct ValueMemHasMove:
        self.a = other.a
        self.b = other.b
 
-# CHECK-LABEL: lit.struct.decl @ValueRegTrivial register_passable_trivial {
+# CHECK-LABEL: lit.struct.decl @ValueRegTrivial{{.*}} register_passable_trivial {
 @value
 @register_passable("trivial")
 struct ValueRegTrivial:

@@ -185,6 +185,33 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   return {funcOp, funcDecl};
 }
 
+void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
+  SmallVector<TypeLineageAttr> parentTypes =
+      llvm::to_vector(structOp.getParentTypes());
+
+  // Helper to detect if a parent type is already in the list.
+  auto hasParent = [&](TypeLineageAttr parent) {
+    return llvm::find_if(parentTypes, [&](TypeLineageAttr type) {
+             return type.getType() == parent.getType();
+           }) != parentTypes.end();
+  };
+
+  auto targetTrait = cast<TraitDeclOp>(traitDecl);
+  TypeLineageAttr traitType = TypeLineageAttr::get(targetTrait.bindReference());
+
+  // Add the parent type and all transitive parents. Typical use case is
+  // Movable, which has only 1 parent.
+  if (hasParent(traitType))
+    return;
+  parentTypes.push_back(traitType);
+  // If trait was added, add parents as well.
+  for (TypeLineageAttr parentTrait : targetTrait.getParentTypes())
+    if (!hasParent(parentTrait))
+      parentTypes.push_back(parentTrait);
+
+  structOp.setParentTypes(parentTypes);
+}
+
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
@@ -511,8 +538,6 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   StringAttr existingName = b.getStringAttr("other");
   LIT::FuncOp destructorFunc;
   LIT::FuncOp init;
-  SmallVector<TypeLineageAttr> parentTypes =
-      llvm::to_vector(declOp.getParentTypes());
   if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {
     SmallVector<Type> argTypes;
     SmallVector<ValueInputConvention> argConventions;
@@ -591,34 +616,16 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   }
 
   auto addCopyOrMoveBuiltinTrait = [&](bool isCopy) {
-    auto hasRelatedTypeLineageAttr = [&](TypeLineageAttr newTypeLineageAttr) {
-      return llvm::find_if(parentTypes, [&](TypeLineageAttr lineage) {
-               return lineage.getType() == newTypeLineageAttr.getType();
-             }) != parentTypes.end();
-    };
     ASTDecl *traitDecl;
-    if (isCopy)
+    if (isCopy) {
       traitDecl = shared.lookupCopyableTrait(structDecl.getLoc(),
                                              structDecl.getParentDecl());
-    else
+    } else {
       traitDecl = shared.lookupMovableTrait(structDecl.getLoc(),
                                             structDecl.getParentDecl());
-    TraitDeclOp targetTrait;
-    if (traitDecl)
-      targetTrait = cast<TraitDeclOp>(traitDecl);
-    if (!targetTrait)
-      return;
-
-    TypeLineageAttr targetTypeLineageAttr =
-        TypeLineageAttr::get(targetTrait.bindReference());
-    if (hasRelatedTypeLineageAttr(targetTypeLineageAttr))
-      return;
-    parentTypes.push_back(targetTypeLineageAttr);
-    // If trait was added, add parents as well.
-    for (TypeLineageAttr parentTrait : targetTrait.getParentTypes()) {
-      if (!hasRelatedTypeLineageAttr(parentTrait))
-        parentTypes.push_back(parentTrait);
     }
+    if (traitDecl)
+      addTraitParent(declOp, traitDecl);
   };
 
   LIT::FuncOp copyFunc;
@@ -657,7 +664,6 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
         {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
         SpecialFunctionKind::kMoveInit);
   }
-  declOp.setParentTypes(parentTypes);
   return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
 }
 

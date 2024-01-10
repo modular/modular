@@ -957,8 +957,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
-        if (canSynthesizeIfMissing(name, /*rpTrivial=*/rpTrivial,
-                                   /*regPassable=*/regPassable))
+        if (canSynthesizeIfMissing(name, rpTrivial, regPassable))
           continue;
 
         // The struct does not conform to the trait. Just silently return, since
