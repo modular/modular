@@ -14,6 +14,7 @@
 #include "Support/Random.h"
 #include "mbedtls/error.h"
 #include "mbedtls/pem.h"
+#include "mbedtls/platform_util.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/x509_csr.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -183,6 +184,12 @@ public:
   /// certificate has been verified.
   ErrorOr<std::string> getSubject() const;
 
+  /// Apply `policy` to the validity period of the parsed leaf certificate.
+  ErrorOr<bool> applyToValidity(
+      llvm::function_ref<bool(std::chrono::system_clock::time_point,
+                              std::chrono::system_clock::time_point)>
+          policy);
+
 private:
   /// Get the leaf certificate in the chain. This is useful because that will be
   /// the client's cert - any intermediate CAs will be higher in the chain than
@@ -323,6 +330,49 @@ ErrorOr<std::string> Detail::CertificateChain::getSubject() const {
       &getLeafCertificate()->subject, (const char *)encoded.data(),
       encoded.size());
   return std::string{(const char *)commonName->val.p, commonName->val.len};
+}
+
+//===----------------------------------------------------------------------===//
+// Detail::CertificateChain::applyToValidity
+//===----------------------------------------------------------------------===//
+
+ErrorOr<bool> Detail::CertificateChain::applyToValidity(
+    llvm::function_ref<bool(std::chrono::system_clock::time_point,
+                            std::chrono::system_clock::time_point)>
+        policy) {
+  const mbedtls_x509_crt *leaf = getLeafCertificate();
+  tm validFrom = {/*tm_sec=*/leaf->valid_from.sec,
+                  /*tm_min=*/leaf->valid_from.min,
+                  /*tm_hour=*/leaf->valid_from.hour,
+                  /*tm_mday=*/leaf->valid_from.day,
+                  /*tm_mon*/ leaf->valid_from.mon - 1,
+                  /*tm_year=*/leaf->valid_from.year - 1900,
+                  /*tm_wday=*/-1,
+                  /*tm_yday=*/-1,
+                  /*tm_isdst=*/-1,
+                  /*tm_gmtoff=*/-1,
+                  /*tm_zone=*/nullptr};
+  time_t normalizedFrom = mktime(&validFrom);
+  if (normalizedFrom == (time_t)-1)
+    return Error("invalid validFrom date in certificate");
+
+  tm validTo = {/*tm_sec=*/leaf->valid_to.sec,
+                /*tm_min=*/leaf->valid_to.min,
+                /*tm_hour=*/leaf->valid_to.hour,
+                /*tm_mday=*/leaf->valid_to.day,
+                /*tm_mon*/ leaf->valid_to.mon - 1,
+                /*tm_year=*/leaf->valid_to.year - 1900,
+                /*tm_wday=*/-1,
+                /*tm_yday=*/-1,
+                /*tm_isdst=*/-1,
+                /*tm_gmtoff=*/-1,
+                /*tm_zone=*/nullptr};
+  time_t normalizedTo = mktime(&validTo);
+  if (normalizedTo == (time_t)-1)
+    return Error("invalid validTo date in certificate");
+
+  return policy(std::chrono::system_clock::from_time_t(normalizedFrom),
+                std::chrono::system_clock::from_time_t(normalizedTo));
 }
 
 //===----------------------------------------------------------------------===//
@@ -717,6 +767,32 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
   // Validate and flush the certificate we just got.
   if (auto err = verifyAndFlushClientCert(client))
     return err.takeError();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::refreshIfNecessary
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess EntitlementStore::refreshIfNecessary(
+    HTTPClient &client,
+    llvm::function_ref<bool(std::chrono::system_clock::time_point from,
+                            std::chrono::system_clock::time_point to)>
+        shouldRefresh) {
+  // It is an error to 'refresh' if we don't already have the client
+  // certificate.
+  if (!clientCert->isAvailable())
+    return Error("no client certificate loaded");
+
+  // Apply the `shouldRefresh` function to the validity period in the client
+  // certificate.
+  auto shouldRefreshOr = clientCert->applyToValidity(shouldRefresh);
+  if (shouldRefreshOr.isError())
+    return shouldRefreshOr.takeError();
+
+  if (*shouldRefreshOr)
+    return refresh(client);
 
   return success();
 }
