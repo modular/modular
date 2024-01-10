@@ -940,7 +940,7 @@ struct ValueMemHasMove:
        self.a = other.a
        self.b = other.b
 
-# CHECK-LABEL: lit.struct.decl @ValueRegTrivial{{.*}} register_passable_trivial {
+# CHECK-LABEL: lit.struct.decl @ValueRegTrivial({{.*}}) register_passable_trivial {
 @value
 @register_passable("trivial")
 struct ValueRegTrivial:

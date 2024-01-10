@@ -5,20 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | kgen-opt -verify-parameters | FileCheck %s
 
+
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*_X]], |>
 # CHECK: lit.struct.decl @"_CW_{{.*}}"<p0, |>
 
-trait Destructable:
-    fn __del__(owned self, /):
-       ...
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-       ...
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-       ...
 
 @register_passable
 struct Param[y: __mlir_type.index]:

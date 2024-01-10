@@ -47,8 +47,8 @@ fn foo():
   documented_method_defined_in_init()
   return
 
-trait Destructable:
-  """A stub for the Destructable trait to allow decoupling from the builtins."""
+trait AnyType:
+  """A stub for the AnyType trait to allow decoupling from the builtins."""
   pass
 
 trait Trait:

@@ -697,13 +697,13 @@ lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
   kgen.return
 }
 
-lit.trait.decl @Destructable attributes {
+lit.trait.decl @AnyType attributes {
   dtorSig = !lit.signature<[1]<regtype, !kgen.paramref<*(0,0)>>(!lit.ref<mut :!kgen.paramref<*(0,0)> *(0,1), *[0,0]>) -> !kgen.none>
 } {}
 
 // CHECK-LABEL: lit.func @destroy_generic
-lit.func @destroy_generic<T: trait<@Destructable>>(%x: !lit.ref<mut :trait<@Destructable> T, #lit.lifetime> owned_in_mem) {
-  // CHECK: lit.call_param[!lit.signature<[1](!lit.ref<mut :trait<@Destructable> T, *[0,0]>) -> !kgen.none>: get_type_method(:trait<@Destructable> T, "__del__")][#lit.lifetime](%x)
+lit.func @destroy_generic<T: trait<@AnyType>>(%x: !lit.ref<mut :trait<@AnyType> T, #lit.lifetime> owned_in_mem) {
+  // CHECK: lit.call_param[!lit.signature<[1](!lit.ref<mut :trait<@AnyType> T, *[0,0]>) -> !kgen.none>: get_type_method(:trait<@AnyType> T, "__del__")][#lit.lifetime](%x)
   kgen.return
 }
 
@@ -729,8 +729,8 @@ lit.func @x(%arg0: !kgen.declref<@Int>) {
 // -----
 
 !Thing = !kgen.declref<@Thing>
-lit.struct.decl @Box<T: trait<@Destructable>>  {
-  lit.struct.field x : !kgen.paramref<:trait<@Destructable> T>
+lit.struct.decl @Box<T: trait<@AnyType>>  {
+  lit.struct.field x : !kgen.paramref<:trait<@AnyType> T>
 }
 
 lit.struct.decl @Thing {
@@ -742,8 +742,8 @@ lit.struct.decl @Thing {
   }
 }
 
-lit.func @top(%c: !lit.ref<mut @Box<:trait<@Destructable> !Thing>, #lit.lifetime> borrow_in_mem) {
-  %0 = lit.ref.struct.ger %c[x] : <mut !Thing, #lit.lifetime> from @Box<:trait<@Destructable> !Thing>
+lit.func @top(%c: !lit.ref<mut @Box<:trait<@AnyType> !Thing>, #lit.lifetime> borrow_in_mem) {
+  %0 = lit.ref.struct.ger %c[x] : <mut !Thing, #lit.lifetime> from @Box<:trait<@AnyType> !Thing>
   lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<mut !Thing, #lit.lifetime> borrow_in_mem) -> ()>
   kgen.return
 }

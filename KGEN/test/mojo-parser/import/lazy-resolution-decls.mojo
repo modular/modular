@@ -19,6 +19,6 @@ fn assign_from():
     let bar = global_variable
 
 
-# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>, trait<{{.*}}@Destructable>[{{.*}}])
+# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>, trait<{{.*}}@AnyType>[{{.*}}])
 struct Struct(Trait):
     pass

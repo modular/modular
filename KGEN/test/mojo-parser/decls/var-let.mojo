@@ -23,12 +23,12 @@ struct Error:
 
 
 @register_passable("trivial")
-struct Bool(Destructable):
+struct Bool(AnyType):
     fn __mlir_i1__(self) -> __mlir_type.i1:
         pass
 
 
-trait Destructable:
+trait AnyType:
     pass
 
 
@@ -37,7 +37,7 @@ trait Destructable:
 # ===----------------------------------------------------------------------=== #
 
 
-fn return_generic_memory_only[T: Destructable]() -> T:
+fn return_generic_memory_only[T: AnyType]() -> T:
     pass
 
 
