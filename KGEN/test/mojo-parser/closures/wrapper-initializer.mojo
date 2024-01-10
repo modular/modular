@@ -6,21 +6,6 @@
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
 
-trait Destructable:
-    fn __del__(owned self, /):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-        ...
-
-
 # CHECK: lit.struct.decl @"_CW_
 # CHECK-SAME: copyInit =
 # CHECK-SAME: destructor =

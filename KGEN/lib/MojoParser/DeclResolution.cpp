@@ -2727,7 +2727,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     return failure();
 
   // Make every trait inherit from `AnyType`, except itself.
-  if (parentTypes.empty() && traitOp.getSymName() != "Destructable") {
+  if (parentTypes.empty() && traitOp.getSymName() != "AnyType") {
     if (ASTDecl *parentDecl =
             shared.lookupAnyTypeTrait(decl.getLoc(), decl.getParentDecl())) {
       parentTypes.push_back(

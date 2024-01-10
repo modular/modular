@@ -2,18 +2,6 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
-trait Destructable:
-    fn __del__(owned self, /):
-       ...
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-       ...
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-       ...
-
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   var x : Int
@@ -1116,17 +1104,17 @@ fn destruct_generic_return():
 
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 @register_passable
-struct RegisterExistingDtor(Destructable):
+struct RegisterExistingDtor:
     # CHECK: lit.func @"`thunk___del__
     fn __del__(owned self):
         # CHECK: call {{.*}}@"__del__
         pass
 
 @register_passable
-struct RegisterNoDtor(Destructable):
+struct RegisterNoDtor:
     pass
 
-struct MemoryNoDtor(Destructable):
+struct MemoryNoDtor:
     pass
 
 # CHECK-LABEL: lit.func @"do_not_call_synth_dtors

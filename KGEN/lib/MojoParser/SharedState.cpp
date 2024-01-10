@@ -656,7 +656,7 @@ static ASTDecl *findBuiltinTrait(StringRef traitName, SMLoc location,
 }
 
 ASTDecl *SharedState::lookupAnyTypeTrait(llvm::SMLoc loc, ASTDecl *context) {
-  return findBuiltinTrait("Destructable", loc, context, *this);
+  return findBuiltinTrait("AnyType", loc, context, *this);
 }
 
 ASTDecl *SharedState::lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context) {

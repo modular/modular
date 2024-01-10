@@ -11,17 +11,21 @@ alias Int = __mlir_type.index
 
 alias top_level_alias = __mlir_attr.`2 : index`
 
-trait Destructable:
+
+trait AnyType:
     fn __del__(owned self, /):
-       ...
+        ...
+
 
 trait Copyable:
     fn __copyinit__(inout self, existing: Self, /):
-       ...
+        ...
+
 
 trait Movable:
     fn __moveinit__(inout self, owned existing: Self, /):
-       ...
+        ...
+
 
 fn function():
     call_nested_function()

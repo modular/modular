@@ -9,17 +9,6 @@
 alias int = __mlir_type.index
 alias two = __mlir_attr.`2 : index`
 
-trait Destructable:
-    fn __del__(owned self, /):
-       ...
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-       ...
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-       ...
 
 @register_passable
 struct Thing[x: int]:

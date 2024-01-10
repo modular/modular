@@ -9,8 +9,8 @@
 alias Int = __mlir_type.index
 alias `0` = __mlir_attr.`0 : index`
 
-trait Destructable:
-    """The Destructable trait denotes a type whose value can be destroyed.
+trait AnyType:
+    """The AnyType trait denotes a type whose value can be destroyed.
     """
     fn __del__(owned self, /):
        """Del destructs.

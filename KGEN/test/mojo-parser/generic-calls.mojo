@@ -12,18 +12,8 @@
 alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 
 
-trait Destructable:
+trait AnyType:
     fn __del__(owned self, /):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
         ...
 
 
@@ -34,15 +24,15 @@ trait Movable:
 
 @value
 @register_passable
-struct RegPassable(Destructable):
+struct RegPassable:
     pass
 
 
-fn owned_generic[T: Destructable](owned x: T):
+fn owned_generic[T: AnyType](owned x: T):
     pass
 
 
-fn borrowed_generic[T: Destructable](borrowed x: T):
+fn borrowed_generic[T: AnyType](borrowed x: T):
     pass
 
 

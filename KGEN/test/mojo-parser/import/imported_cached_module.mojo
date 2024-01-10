@@ -9,9 +9,11 @@
 alias StringLiteralAlias = __mlir_attr.`"foobar" : !kgen.string`
 var global_variable = __mlir_attr.`1234 : index`
 
-# COM: Destructable stub to allow testing without builtins.
-trait Destructable:
+
+# COM: AnyType stub to allow testing without builtins.
+trait AnyType:
     pass
+
 
 trait Trait:
     pass

@@ -12,11 +12,16 @@
 
 alias Int = __mlir_type.index
 
-trait Destructable:
-    fn __del__(owned self, /): ...
+
+trait AnyType:
+    fn __del__(owned self, /):
+        ...
+
 
 trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /): ...
+    fn __copyinit__(inout self, existing: Self, /):
+        ...
+
 
 # ===----------------------------------------------------------------------=== #
 # Actual tests
@@ -26,19 +31,26 @@ trait Copyable:
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
 
+
 @register_passable("trivial")
-struct MyElement(Copyable): pass
+struct MyElement(Copyable):
+    pass
+
 
 struct ConvertibleFromInt:
-    fn __init__(inout self, a: Int): pass
+    fn __init__(inout self, a: Int):
+        pass
+
 
 struct MyContainer[T: Copyable]:
     var v: T
 
-    fn foo(self, limits: ConvertibleFromInt): pass
+    fn foo(self, limits: ConvertibleFromInt):
+        pass
 
     fn foo(self, index: Int) -> T:
         return self.v
+
 
 # CHECK-LABEL: lit.func @"test_impl
 fn test_impl(a: MyContainer[MyElement], b: Int):

@@ -6,21 +6,6 @@
 # RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
 
 
-trait Destructable:
-    fn __del__(owned self, /):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-        ...
-
-
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[A:.*]]: !Int, |>
 # CHECK: lit.struct.decl @"_CW_{{.*}}"
 # CHECK: lit.func @"__init__{{.*}}"{{.*}}<[[a:.*]][a]: !Int, |>(%self: !lit.ref<mut !wrapper, {{.*}}> init_self, %impl: !lit.ref<mut @"{{.*}}::@"`_CI_{{.*}}"<:!Int [[a]]>{{.*}}> owned_in_mem, |) -> !kgen.none {{.*}}specialFnKind = 2 : i8

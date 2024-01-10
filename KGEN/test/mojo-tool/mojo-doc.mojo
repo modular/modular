@@ -324,7 +324,7 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
 # CHECK:  "parentTraits": [
-# CHECK-NEXT:   "Destructable"
+# CHECK-NEXT:   "AnyType"
 # CHECK-NEXT:   "Sized"
 
 

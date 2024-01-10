@@ -18,12 +18,10 @@ alias Int = __mlir_type.index
 
 alias `2` = __mlir_attr.`2 : index`
 
-trait Destructable:
-    pass
-
 # ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
+
 
 trait Trait:
     fn method(self) -> Int:

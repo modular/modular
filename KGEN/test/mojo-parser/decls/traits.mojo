@@ -19,7 +19,7 @@ alias `1` = __mlir_attr.`1 : index`
 struct object: pass
 struct Error: pass
 
-trait Destructable:
+trait AnyType:
     fn __del__(owned self, /): ...
 
 # ===----------------------------------------------------------------------=== #
@@ -426,7 +426,7 @@ fn generic_fn_return_type():
 
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 @register_passable("trivial")
-struct RegTrivialSpecial(Destructable, Copyable, Movable):
+struct RegTrivialSpecial(AnyType, Copyable, Movable):
     pass
     # CHECK: lit.func @"`thunk___del__
     # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
@@ -443,7 +443,7 @@ struct RegTrivialSpecial(Destructable, Copyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
-struct RegSpecial(Destructable, Copyable, Movable):
+struct RegSpecial(AnyType, Copyable, Movable):
     fn __copyinit__(existing: Self) -> Self:
         return Self {}
 
@@ -457,7 +457,7 @@ struct RegSpecial(Destructable, Copyable, Movable):
     # CHECK-NEXT: lit.ref.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
-struct MemoryOnlySpecial(Destructable, Copyable, Movable):
+struct MemoryOnlySpecial(AnyType, Copyable, Movable):
     fn __copyinit__(inout self, existing: Self):
         pass
 
@@ -474,7 +474,7 @@ fn copy[T: Copyable](x: T):
 fn move[T: Movable](x: T):
     pass
 
-fn destroy[T: Destructable](x: T):
+fn destroy[T: AnyType](x: T):
     pass
 
 # CHECK-LABEL: lit.func @"test_special_fn_traits
@@ -504,7 +504,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NOT: foo
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
-# CHECK-SAME: (trait<{{.*}}@Destructable>)
+# CHECK-SAME: (trait<{{.*}}@AnyType>)
 trait GreatGrandFather:
     # CHECK: lit.func @"foo(T)"
     fn foo(self): ...
@@ -614,14 +614,14 @@ struct TraitMember[T: Movable]:
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
 @value
-struct MyPointer[T: Destructable]:
+struct MyPointer[T: AnyType]:
     pass
     # CHECK: lit.func @"__init__
     # CHECK: lit.func @"`thunk___del__
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
-struct HasMyPointerSelf(Destructable):
-    # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:trait<{{.*}}@Destructable>
+struct HasMyPointerSelf(AnyType):
+    # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:trait<{{.*}}@AnyType>
     var x: MyPointer[Self]
     # CHECK: lit.func @"`thunk___del__
 
