@@ -3038,7 +3038,7 @@ fn _matmul_gpu_dispatch[
     let n = shape.N
     let k = shape.K
     try:
-        let stream = out_chain.get_cuda_stream()
+        let stream = Stream.get_current_stream()
 
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
