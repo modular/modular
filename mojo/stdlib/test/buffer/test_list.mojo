@@ -14,13 +14,23 @@ from utils._optional_param import OptionalParamInt, OptionalParamInts
 fn test_dim_list():
     print("== test_dim_list")
 
-    let lst = DimList(1, 2, 3, 4)
+    let lst0 = DimList(1, 2, 3, 4)
+    let lst1 = DimList(Dim(), 2, 3, 4)
 
     # CHECK: [1, 2, 3, 4]
-    print[4](lst)
+    print[4](lst0)
 
     # CHECK: 24
-    print(lst.product[4]().get())
+    print(lst0.product[4]().get())
+
+    # CHECK: True
+    print(lst0.all_known[4]())
+
+    # CHECK: False
+    print(lst1.all_known[4]())
+
+    # CHECK: True
+    print(lst1.all_known[1, 4]())
 
 
 # CHECK-LABEL: test_dim

@@ -331,6 +331,20 @@ struct DimList(Sized):
         return not self.contains[length](Dim())
 
     @always_inline
+    fn all_known[start: Int, end: Int](self) -> Bool:
+        """Determines whether all dimensions within [start, end) are statically
+        known.
+
+        Parameters:
+            start: The first queried dimension.
+            end: The last queried dimension.
+
+        Returns:
+            True if all queried dimensions have a static value.
+        """
+        return not self._contains_impl[start, end](Dim())
+
+    @always_inline
     @staticmethod
     fn create_unknown[length: Int]() -> Self:
         """Creates a dimension list of all dynamic dimension values.
