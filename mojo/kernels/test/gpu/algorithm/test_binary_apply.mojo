@@ -42,7 +42,7 @@ fn run_binary_add(capture: Float32) raises:
 
     alias length = 1024
 
-    let stream = Stream[is_borrowed=False]()
+    let stream = Stream()
 
     let in0_host = Pointer[Float32].alloc(length)
     let in1_host = Pointer[Float32].alloc(length)
