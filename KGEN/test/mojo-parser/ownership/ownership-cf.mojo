@@ -1,0 +1,310 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
+
+# Control flow related CheckLifetimes tests.
+
+# CHECK-LABEL: lit.struct.decl @MemExample
+struct MemExample:
+  var x : Int
+  fn __init__(inout self): self.x = 42; pass
+  fn noop(self): pass
+  fn __moveinit__(inout self, owned existing: Self): self.x = existing.x
+  fn __copyinit__(inout self, existing: Self): self.x = existing.x
+  fn __bool__(self) -> Bool: return True
+  fn __del__(owned self): pass
+
+
+# CHECK-LABEL: lit.func @"if_examples
+fn if_examples(cond: __mlir_type.i1):
+  # CHECK: %a = lit.varlet.decl
+  var a: MemExample  # expected-warning {{consider switching to a 'let'}}
+
+  # CHECK-NEXT: %b = lit.varlet.decl
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+  var b = MemExample()
+
+  # CHECK: hlcf.if %cond {
+  if cond:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+    a = MemExample()
+  # CHECK-NEXT: hlcf.yield
+  # CHECK-NEXT: } else {
+  else:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+    b = MemExample()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: %c = lit.varlet.decl
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
+  var c = MemExample()
+  # CHECK: hlcf.if %cond {
+  if cond:
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
+    c = MemExample()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  else:
+    pass
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  c.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
+
+  # CHECK-NEXT:  %d = lit.varlet.decl "d"
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
+  var d = MemExample()  # expected-warning {{consider switching to a 'let'}}
+
+  # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
+  # CHECK: hlcf.if [[ONE]] {
+  if True:
+    # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+    d.noop()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+  d.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
+
+# CHECK-LABEL: lit.func @"try_examples
+fn try_examples(cond: __mlir_type.i1, err: Error):
+  # CHECK-NEXT: %a = lit.varlet.decl
+  let a : MemExample
+  # CHECK-NEXT: lit.try {
+  # CHECK-NOT: %a
+  try:
+    raise err
+  # CHECK: } except (%arg0:
+  except:
+    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
+    a = MemExample()
+    # CHECK-NEXT: lit.try.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: }
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
+  a.noop()  # ok
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+
+  # CHECK-NEXT: %b = lit.varlet.decl
+  var b : MemExample
+  # CHECK-NEXT: lit.try {
+  try:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
+    b = MemExample()
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+    raise err
+  # CHECK: } except (%arg0:
+  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+  # CHECK-NEXT: lit.try.yield
+  except:
+    pass
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
+  b = MemExample()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+
+  # CHECK-NEXT: %c = lit.varlet.decl
+  let c : MemExample
+  # CHECK-NEXT: lit.try {
+  try:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
+    c = MemExample()
+    # CHECK-NOT: %c
+    raise err
+  # CHECK: } except (%arg0:
+  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+  # CHECK-NEXT: lit.try.yield
+  except:
+    pass
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: }
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  c.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
+
+  # CHECK-NEXT: %d = lit.varlet.decl
+  let d : MemExample
+  # CHECK-NEXT: lit.try {
+  try:
+    # CHECK-NEXT:  hlcf.if %cond {
+    if cond:
+      raise err
+    # CHECK-NOT: %d
+  # CHECK: } except (%arg0:
+  except:
+    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
+    d = MemExample()
+    # CHECK-NEXT: lit.try.yield
+  # CHECK-NEXT: } else {
+  else:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
+    d = MemExample()
+    # CHECK-NEXT: lit.try.yield
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+  d.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
+
+# CHECK-LABEL: lit.func @"chris_lifetime_example
+fn chris_lifetime_example(a: Bool, b: Bool):
+    let x : MemExample
+    # CHECK: lit.try
+    try:
+        # CHECK-NEXT: lit.try
+        try:
+            # CHECK: hlcf.if
+            if a:
+                # CHECK: __init__{{.*}}(%x)
+                x = MemExample()
+                # CHECK: lit.try.raise
+                raise Error()
+        # CHECK: except
+            # CHECK: hlcf.if
+                # CHECK-NEXT: __del__{{.*}}(%x)
+                # CHECK: return
+            # CHECK: else
+            # CHECK: lit.try.raise
+        # CHECK: else
+            # CHECK: hlcf.if
+                # CHECK: return
+            # CHECK: else
+        finally:
+            if b:
+                return
+    # CHECK: except
+    except:
+        # CHECK: [[DEAD:%.*]] = lit.ownership.end_lifetime %x
+        # CHECK: __del__{{.*}}([[DEAD]])
+        _ = x^
+    # CHECK: else
+        # CHECK-NEXT: lit.try.yield
+
+# CHECK-LABEL: lit.func @"loop_example
+fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
+  var a : MemExample
+  # CHECK-NEXT: %b = lit.varlet.decl "b"
+  let b : MemExample
+  # CHECK-NEXT: %c = lit.varlet.decl "c"
+  let c : MemExample
+
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
+  a = MemExample()
+
+  # Unneeded boilerplate due to 'while True':
+  # CHECK-NEXT: hlcf.loop {
+  # CHECK-NEXT:  = kgen.param.constant: i1 = <1>
+  # CHECK-NEXT:      hlcf.if
+  # CHECK-NEXT:        hlcf.yield
+  # CHECK-NEXT:      } else {
+  # CHECK-NEXT:        kgen.unreachable
+  # CHECK-NEXT:      }
+  while True:
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
+    c = MemExample()
+    # CHECK-NEXT: hlcf.if %cond2 {
+    if cond2:
+      # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
+      b = MemExample()
+      # CHECK-NEXT: hlcf.break
+      break
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT: }
+
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: hlcf.continue
+    a = MemExample()
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
+  a.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%b)
+  b.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  c.noop()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
+
+# CHECK-LABEL: lit.struct.decl @TestLoopWithWholeObjectBit
+struct TestLoopWithWholeObjectBit:
+  var field : MemExample
+
+  # CHECK: lit.func @"__init__
+  fn __init__(inout self, cond: __mlir_type.i1):
+        # CHECK-NEXT: %buf = lit.varlet.decl "buf"
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
+        let buf = MemExample()
+
+        # CHECK-NEXT: hlcf.loop {
+        # CHECK-NEXT:   hlcf.if %cond {
+        # CHECK-NEXT:     hlcf.yield
+        # CHECK-NEXT:   } else {
+        # CHECK-NEXT:     hlcf.break
+        # CHECK-NEXT:   }
+        while cond:
+          # CHECK-NEXT:   lit.call {{.*}}noop{{.*}}(%buf)
+          # CHECK-NEXT:   hlcf.continue
+          buf.noop()
+        # CHECK-NEXT: }
+
+        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.ownership.end_lifetime %buf
+        # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], [[TRANSFER_REF]])
+        # CHECK-NEXT: %none = kgen.param.constant
+        # CHECK-NEXT: kgen.return
+        self.field = buf ^
+
+# CHECK-LABEL: lit.func @"testInfiniteloop
+fn testInfiniteloop():
+  # CHECK-NEXT:  hlcf.loop {
+  # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
+  # CHECK-NEXT:    hlcf.if %0 {
+  # CHECK-NEXT:      hlcf.yield
+  # CHECK-NEXT:    } else {
+  # CHECK-NEXT:      kgen.unreachable
+  # CHECK-NEXT:    }
+  while True:
+    # CHECK-NEXT:  %localThing = lit.varlet.decl
+    # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
+    # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}(%localThing)
+    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
+    let localThing = MemExample()
+    localThing.noop()
+  # CHECK-NEXT:    hlcf.continue
+  # CHECK-NEXT:  }
+
+# Issue #98: https://github.com/modularml/mojo/issues/98
+# CHECK-LABEL: lit.func @"mojo98
+fn mojo98(n: Int):
+    var a = MemExample()
+    for i in range(n):
+        a.x = i

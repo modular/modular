@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: %parse-mojo-isolated -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
@@ -40,7 +46,7 @@ fn implicit_owned(owned a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"addrSpace
-# CHECK: <_44x14_lt[lt]: lifetime, _44x28_addr[addr]>(%a: !lit.ref<mut !MemExample, _44x14_lt, _44x28_addr> borrow)
+# CHECK: <{{.*}}lt[lt]: lifetime, {{.*}}_addr[addr]>(%a: !lit.ref<mut !MemExample, {{.*}}_lt, {{.*}}_addr> borrow)
 fn addrSpace[lt: Lifetime, addr: __mlir_type.index](a: mutref[lt, addr] MemExample):
   pass
 
