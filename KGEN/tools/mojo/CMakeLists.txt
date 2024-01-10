@@ -49,6 +49,7 @@ add_modular_tool(mojo
   MCrashReporting
   MojoParser
   MojoTooling
+  MSupportFilesystem
   MSupportDriver
   MSupportGlobals
   KGENExecutionEngine

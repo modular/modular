@@ -8,6 +8,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "Support/ErrorOr.h"
 
+#include "Support/Filesystem/Paths.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
@@ -62,7 +63,7 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
 
   std::string ext = fullPath.extension().string();
   if (!llvm::is_contained({".mojo", ".🔥", ".mojopkg", ".📦"}, ext) &&
-      !KGEN::LIT::isMojoSourcePackagePath(fullPath)) {
+      !Filesystem::isMojoSourcePackagePath(fullPath)) {
     return Error(llvm::formatv(
         "cannot open '{0}', since it does not appear to be a Mojo file "
         "(it does not end in '.mojo', '.🔥', '.mojopkg', or '.📦') or a Mojo "

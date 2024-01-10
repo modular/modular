@@ -38,6 +38,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
 
+#include "Support/Filesystem/Paths.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -705,7 +706,7 @@ resolveModulePath(SharedState &shared, llvm::SMLoc includeLoc,
   std::filesystem::path name = *nameOr;
 
   // Check if we have a source package with this name.
-  if (isMojoSourcePackagePath(name))
+  if (Filesystem::isMojoSourcePackagePath(name))
     return name.generic_string();
 
   // Check for a binary package with this name. We don't enable binary packages
@@ -755,7 +756,7 @@ resolveModulePath(SharedState &sharedState, StringRef moduleName,
   std::optional<std::string> result;
   sharedState.traverseImportDirectories(includeBufferId, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
-    if (isMojoSourcePackagePath(dir.str())) {
+    if (Filesystem::isMojoSourcePackagePath(dir.str())) {
       // TODO: It'd be nice to emit a list of potential modules that the
       // name might correspond with if it did resolve to one inside of this
       // package.
@@ -1225,7 +1226,7 @@ bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
   if (path.extension() == ".mojo" || path.extension() == ".🔥")
     return true;
   // Handle source packages.
-  return isMojoSourcePackagePath(path);
+  return Filesystem::isMojoSourcePackagePath(path);
 }
 
 SharedState::ModuleState &
@@ -1925,7 +1926,8 @@ void SharedState::traverseImportDirectories(
         continue;
       // Skip non-directories and source packages, internal packages should be
       // imported using a relative import.
-      if (!childDir.is_directory() || isMojoSourcePackagePath(childDir.path()))
+      if (!childDir.is_directory() ||
+          Filesystem::isMojoSourcePackagePath(childDir.path()))
         continue;
       if (callback(childDir.path().string()).wasInterrupted())
         return;
@@ -1941,7 +1943,7 @@ void SharedState::traverseImportDirectories(
     // Use the top-most non-package directory.
     do {
       includerPath = includerPath.parent_path();
-    } while (isMojoSourcePackagePath(includerPath));
+    } while (Filesystem::isMojoSourcePackagePath(includerPath));
 
     if (callback(includerPath.string()).wasInterrupted())
       return;
