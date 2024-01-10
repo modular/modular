@@ -1,5 +1,10 @@
-# RUN: kgen-translate -import-mojo %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
 
+# RUN: kgen-translate -import-mojo %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
 struct Empty:
     fn __init__(inout self):

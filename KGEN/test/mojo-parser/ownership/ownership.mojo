@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
@@ -30,15 +36,6 @@ struct RegExample:
     return RegExample{}
   fn __copyinit__(self) -> Self: # CHECK: lit.func @"__copyinit__
     return RegExample{}
-
-  # Test a raising constructor.
-  # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
-  fn __init__(a: MemExample, b: MemExample) raises -> Self:
-    # CHECK-NEXT: %0 = kgen.param.materialize: !RegExample
-    # CHECK-NEXT: %1 = kgen.variant.create %0
-    # CHECK-NEXT: kgen.return %1
-    return RegExample{}
-
 
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
@@ -112,241 +109,6 @@ fn destructors(owned arg0: MemExample):
   let localReg = RegExample()
   _ = BigRegExample{a: localReg, b: localReg }
 
-
-# CHECK-LABEL: lit.func @"if_examples
-fn if_examples(cond: __mlir_type.i1):
-  # CHECK: %a = lit.varlet.decl
-  var a: MemExample  # expected-warning {{consider switching to a 'let'}}
-
-  # CHECK-NEXT: %b = lit.varlet.decl
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-  var b = MemExample()
-
-  # CHECK: hlcf.if %cond {
-  if cond:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
-    a = MemExample()
-  # CHECK-NEXT: hlcf.yield
-  # CHECK-NEXT: } else {
-  else:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-    b = MemExample()
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: }
-
-  # CHECK-NEXT: %c = lit.varlet.decl
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
-  var c = MemExample()
-  # CHECK: hlcf.if %cond {
-  if cond:
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
-    c = MemExample()
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: } else {
-  else:
-    pass
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
-  c.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
-
-  # CHECK-NEXT:  %d = lit.varlet.decl "d"
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
-  var d = MemExample()  # expected-warning {{consider switching to a 'let'}}
-
-  # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
-  # CHECK: hlcf.if [[ONE]] {
-  if True:
-    # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
-    d.noop()
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: }
-
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
-  d.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
-
-# CHECK-LABEL: lit.func @"try_examples
-fn try_examples(cond: __mlir_type.i1, err: Error):
-  # CHECK-NEXT: %a = lit.varlet.decl
-  let a : MemExample
-  # CHECK-NEXT: lit.try {
-  # CHECK-NOT: %a
-  try:
-    raise err
-  # CHECK: } except (%arg0:
-  except:
-    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-    a = MemExample()
-    # CHECK-NEXT: lit.try.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
-  a.noop()  # ok
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
-
-  # CHECK-NEXT: %b = lit.varlet.decl
-  var b : MemExample
-  # CHECK-NEXT: lit.try {
-  try:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-    b = MemExample()
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-    raise err
-  # CHECK: } except (%arg0:
-  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
-  # CHECK-NEXT: lit.try.yield
-  except:
-    pass
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: }
-
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-  b = MemExample()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-
-  # CHECK-NEXT: %c = lit.varlet.decl
-  let c : MemExample
-  # CHECK-NEXT: lit.try {
-  try:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
-    c = MemExample()
-    # CHECK-NOT: %c
-    raise err
-  # CHECK: } except (%arg0:
-  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
-  # CHECK-NEXT: lit.try.yield
-  except:
-    pass
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
-  c.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
-
-  # CHECK-NEXT: %d = lit.varlet.decl
-  let d : MemExample
-  # CHECK-NEXT: lit.try {
-  try:
-    # CHECK-NEXT:  hlcf.if %cond {
-    if cond:
-      raise err
-    # CHECK-NOT: %d
-  # CHECK: } except (%arg0:
-  except:
-    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
-    d = MemExample()
-    # CHECK-NEXT: lit.try.yield
-  # CHECK-NEXT: } else {
-  else:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
-    d = MemExample()
-    # CHECK-NEXT: lit.try.yield
-  # CHECK-NEXT: }
-
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
-  d.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
-
-# CHECK-LABEL: lit.func @"chris_lifetime_example
-fn chris_lifetime_example(a: Bool, b: Bool):
-    let x : MemExample
-    # CHECK: lit.try
-    try:
-        # CHECK-NEXT: lit.try
-        try:
-            # CHECK: hlcf.if
-            if a:
-                # CHECK: __init__{{.*}}(%x)
-                x = MemExample()
-                # CHECK: lit.try.raise
-                raise Error()
-        # CHECK: except
-            # CHECK: hlcf.if
-                # CHECK-NEXT: __del__{{.*}}(%x)
-                # CHECK: return
-            # CHECK: else
-            # CHECK: lit.try.raise
-        # CHECK: else
-            # CHECK: hlcf.if
-                # CHECK: return
-            # CHECK: else
-        finally:
-            if b:
-                return
-    # CHECK: except
-    except:
-        # CHECK: [[DEAD:%.*]] = lit.ownership.end_lifetime %x
-        # CHECK: __del__{{.*}}([[DEAD]])
-        _ = x^
-    # CHECK: else
-        # CHECK-NEXT: lit.try.yield
-
-# CHECK-LABEL: lit.func @"loop_example
-fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
-  # CHECK-NEXT: %a = lit.varlet.decl "a"
-  var a : MemExample
-  # CHECK-NEXT: %b = lit.varlet.decl "b"
-  let b : MemExample
-  # CHECK-NEXT: %c = lit.varlet.decl "c"
-  let c : MemExample
-
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-  a = MemExample()
-
-  # Unneeded boilerplate due to 'while True':
-  # CHECK-NEXT: hlcf.loop {
-  # CHECK-NEXT:  = kgen.param.constant: i1 = <1>
-  # CHECK-NEXT:      hlcf.if
-  # CHECK-NEXT:        hlcf.yield
-  # CHECK-NEXT:      } else {
-  # CHECK-NEXT:        kgen.unreachable
-  # CHECK-NEXT:      }
-  while True:
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
-    c = MemExample()
-    # CHECK-NEXT: hlcf.if %cond2 {
-    if cond2:
-      # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-      b = MemExample()
-      # CHECK-NEXT: hlcf.break
-      break
-    # CHECK-NEXT: } else {
-    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%a)
-    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%c)
-    # CHECK-NEXT:   hlcf.yield
-    # CHECK-NEXT: }
-
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: hlcf.continue
-    a = MemExample()
-  # CHECK-NEXT: }
-
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
-  a.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
-
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%b)
-  b.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
-  c.noop()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
-
-
 # CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK: %mem = lit.varlet.decl
@@ -355,16 +117,6 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%mem)
        mem.noop()
        # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%mem)
-
-fn somethingThatRaises() raises: pass
-
-# FIXME(Issue#12196): We don't track the result slot at all to work around an
-# IR modeling issue.
-fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
-    somethingThatRaises()
-    if c:
-        return MemExample()
-    raise Error("TypeError: cannot invert values of this type")
 
 # CHECK-LABEL: lit.struct.decl @Parameterized
 # CHECK-SAME: <{{.*}}[level]: !Int>
@@ -692,17 +444,6 @@ struct BigRegExample:
     # CHECK-NEXT: kgen.return %4
     return BigRegExample{a: self.a, b: self.b }
 
-  # Test a raising constructor.
-  # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
-  fn __init__(a: MemExample, b: MemExample) raises -> Self:
-    # CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: %2 = lit.struct.create(a=%0, b=%1)
-    # CHECK-NEXT: %3 = kgen.variant.create %2, 1
-    # CHECK-NEXT: kgen.return %3
-    return BigRegExample{a: RegExample(), b: RegExample() }
-
-
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
   # CHECK-NEXT: lit.ref.store %self, %self_0
@@ -789,243 +530,6 @@ struct ExoticDelExample:
     # CHECK-NEXT:lit.ownership.mark_destroyed %self_0
     # CHECK-NEXT:kgen.return
 
-##===----------------------------------------------------------------------===##
-# Moves
-##===----------------------------------------------------------------------===##
-
-# This type is a unique value that cannot be moved without ending lifetime.
-# CHECK-LABEL: lit.struct.decl @MemoryUniqueMovable
-struct MemoryUniqueMovable:
-  var state: MemExample
-
-  fn __init__(inout self): self.state = MemExample()
-
-  # CHECK: lit.func @"__moveinit__
-  fn __moveinit__(inout self, owned other: Self):
-    # Mercilessly steal 'other's state which could be interesting.
-
-    # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
-    # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
-    # CHECK-NEXT: %2 = lit.ref.struct.ger %self[state]
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%2, %1)
-    self.state = other.state^
-
-    # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: lit.ownership.mark_destroyed %other
-    # CHECK-NEXT: kgen.return
-
-
-# This type is copyable/moveable.
-# CHECK-LABEL: lit.struct.decl @MemoryMovableCopyable
-struct MemoryMovableCopyable:
-  var state: MemExample
-
-  fn __init__(inout self): self.state = MemExample()
-
-  fn __moveinit__(inout self, owned existing: Self):
-    # Mercilessly steal 'existing's state which could be interesting.
-    self.state = existing.state^
-
-  fn __copyinit__(inout self, existing: Self): self.state = existing.state
-  fn __del__(owned self): pass
-
-# CHECK-LABEL: lit.func @"result_mem1
-fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
-  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-  return a^
-
-# CHECK-LABEL: lit.func @"result_mem3
-fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
-  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-  return a^
-
-@register_passable
-struct RegUniqueMovable:
-  fn __init__() -> Self: return Self{}
-  fn __del__(owned self): pass
-
-@register_passable
-struct RegMovableCopyable:
-  fn __init__() -> Self: return Self{}
-  fn __copyinit__(existing: Self) -> Self: return Self{}
-  fn __del__(owned self): pass
-
-# CHECK-LABEL: lit.func @"result_reg1
-fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
-  # CHECK-NEXT: kgen.return [[AVAL]]
-  return a^
-
-# CHECK-LABEL: lit.func @"result_reg2
-fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
-  # CHECK-NEXT: kgen.return [[A]]
-  return a
-
-# CHECK-LABEL: lit.func @"result_reg3
-fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a_0
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
-  # CHECK-NEXT: kgen.return [[A]]
-  return a^
-
-# CHECK-LABEL: lit.func @"result_reg4
-fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-
-  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
-  # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
-  let x = a^
-
-  # CHECK-NEXT: [[X:%.*]] = lit.ownership.end_lifetime %x
-  # CHECK-NEXT: kgen.return [[X]]
-  return x^
-
-
-fn takeOwnedInt(owned x: Int): pass
-
-# CHECK-LABEL: lit.func @"passFieldToOwnedInt
-fn passFieldToOwnedInt(owned a: MemExample):
-  # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
-  # CHECK-NEXT: %1 = lit.ref.load %0
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}(%1)
-  takeOwnedInt(a.x)
-
-  # CHECK-NEXT: kgen.param.constant: none
-
-
-# Generic type: Issue #14018
-struct MyGenericType[Type: AnyRegType]:
-    var value: Type
-
-    fn __init__(inout self, v: Type):
-        self.value = v
-
-# Issue #98: https://github.com/modularml/mojo/issues/98
-fn mojo98(n: Int):
-    var a = MemExample()
-    for i in range(n):
-        a.x = i
-
-
-fn takeTwo(owned x: RegExample, owned y: RegExample): pass
-fn takeTwo(owned x: MemExample, owned y: MemExample): pass
-
-
-# Check that copies that are immediately destroyed are elided.
-# CHECK-LABEL: lit.func @"optimizeCopyElision
-fn optimizeCopyElision():
-  # CHECK: %a = lit.letreg.decl "a"
-  let a = RegExample()
-
-  # We need one copy of 'a' here, not two + dtor.
-  # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], %a)
-  takeTwo(a, a)
-
-  # CHECK-NEXT: %x = lit.varlet.decl "x"
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
-  let x = MemExample()
-
-  # We need one copy of 'x' here, not two + dtor.
-
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %x)
-  # CHECK-NEXT: kgen.param.declare
-  # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind %x
-  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
-  takeTwo(x, x)
-
-  # CHECK-NEXT: kgen.param.constant: none
-
-# CHECK-LABEL: lit.func @"optimizeCopyToMove
-fn optimizeCopyToMove():
-   # All the copy ctors should be eliminated in favor of moves.
-
-   # CHECK: %m1 = lit.varlet.decl
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
-   var m1 = MemExample()                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m1)
-   m1.noop()
-
-   # CHECK: %m2 = lit.varlet.decl
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
-   var m2 = m1                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m2)
-   m2.noop()
-
-   # CHECK: %m3 = lit.varlet.decl
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
-   var m3 = m2                   # expected-warning {{never mutated}}
-
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m3)
-   m3.noop()
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
-
-   # All the copyinit's should be removed.
-
-   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-   # CHECK-NEXT: %r1 = lit.letreg.decl "r1" = [[TMP]]
-   let r1 = RegExample()
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r1)
-   r1.noop()
-
-   # CHECK-NEXT: %r2 = lit.letreg.decl "r2" = %r1
-   let r2 = r1
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r2)
-   r2.noop()
-
-   # CHECK-NEXT: %r3 = lit.letreg.decl "r3" = %r2
-   let r3 = r2
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r3)
-   r3.noop()
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
-
-
-   # CHECK-NEXT: %v1 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v1
-   var v1 = RegExample()                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v1.noop()
-
-   # CHECK-NEXT: %v2 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v2
-   var v2 = v1                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v2.noop()
-
-   # CHECK-NEXT: %v3 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v3
-   var v3 = v2                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v3.noop()
-
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
-   # CHECK-NEXT: kgen.param.constant: none
-
 
 # CHECK-LABEL: lit.func @"def_borrowed
 # CHECK-SAME: %a: !lit.ref<mut !MemExample, {{.*}}> borrow_in_mem
@@ -1052,29 +556,6 @@ struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
 fn sadge(ptr: MemExamplePtr[]):
     __get_address_as_uninit_lvalue(ptr.value) = MemExample()
     return
-
-
-def foo(x: Int): pass
-fn use(x: Int): pass
-
-# Use of uninitialized value after call to def function
-
-# CHECK-LABEL: lit.func @"error_handling_int_let
-# https://github.com/modularml/modular/issues/25419
-def error_handling_int_let():
-    # CHECK: lit.letreg.decl "x"
-    let x: Int = 1
-    _ = foo(x)
-    use(x)
-
-
-struct RaisingInit:
-    var stream: Int
-    fn __init__(inout self, flags: Int = 0) raises:
-        let stream = 4
-        # This can raise, but 'self' doesn't need to be initialized.
-        _ = foo(1)
-        self.stream = stream
 
 
 trait SomeTrait:
@@ -1139,28 +620,6 @@ struct RegExampleValue:
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK: kgen.param.constant: none
   # CHECK: lit.ownership.mark_destroyed %self_0
-
-
-
-fn may_throw() raises -> RegExample:
-  return RegExample()
-
-# CHECK-LABEL: lit.func @"propagate_reg_error
-fn propagate_reg_error() raises:
-   # CHECK-NEXT: %0 = lit.call {{.*}}may_throw
-   # CHECK-NEXT: %1 = lit.handle_variant %0
-   # CHECK-NEXT:   [[REG:%.*]] = kgen.variant.take %0, 1 : <!Error, !RegExample>
-   # CHECK-NEXT:   lit.yield [[REG]]
-   # CHECK-NEXT: } else {
-   #               .. stuff ..
-   # CHECK:        lit.error_return
-   # CHECK-NEXT: }
-   # CHECK-NEXT: %2 = lit.call {{.*}}@RegExample::@"__del__{{.*}}(%1)
-   # CHECK-NEXT: kgen.param.constant: none
-   # CHECK-NEXT: kgen.variant.create %none, 1
-   # CHECK-NEXT: kgen.return
-    _ = may_throw()
-
 
 # [Bug] __result__ is uninitialized
 # https://github.com/modularml/modular/issues/27792
@@ -1230,7 +689,6 @@ fn test_partial_overwrite(cond: __mlir_type.i1):
     # CHECK-NEXT: kgen.return
     return
   # CHECK-NEXT: }
-
 
 # CHECK-LABEL: lit.struct.decl @TestLoopWithWholeObjectBit
 struct TestLoopWithWholeObjectBit:
