@@ -21,4 +21,5 @@ struct Foo[X: AnyRegType, Y: AnyRegType]:
 
 
 fn main():
+    let bigValue = SIMD[DType.float32, 64]()
     print(Foo[Int, Int]().getFloat(1.125, 100))
