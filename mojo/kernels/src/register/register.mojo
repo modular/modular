@@ -109,9 +109,16 @@ fn mogg_tensor_allocator():
     return
 
 
-fn mogg_tensor_move_constructor():
+fn mogg_tensor_copy_constructor():
     """
     Marks this function as being the move constructor of a tensor.
+    """
+    return
+
+
+fn mogg_tensor_deconstructor():
+    """
+    Marks this function as being the deconstructor of a tensor.
     """
     return
 
