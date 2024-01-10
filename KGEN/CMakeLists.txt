@@ -166,26 +166,26 @@ add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 # for the current source directory, or directory specified by PACKAGE_DIR.
 #   Usage:
 #
-#  add_mojo_package(MojoPackage
-#     PUBLIC
+#  add_mojo_package(MojoPackage PUBLIC
 #     Module
 #     NestedPackage/Module
 #  )
 #
-# This will generate a target, `MojoBuiltin`, and also generate
-# documentation for the provided source files. Source files are added with
-# either PUBLIC or PRIVATE to denote whether the documentation should be
-# public or internal. By default this will generate docs inside
-# <build-dir>/docs/Kernels/docs. If DOCS_DIR s given the docs will instead
-# be generated in <build-dir>/docs/${DOCS_DIR}.
+# This will generate a target, `MojoPackage`, and also generate documentation.
+# Source files of the package are explicitly added. By default this will
+# generate docs inside <build-dir>/docs/Kernels/docs. If DOCS_DIR is given the
+# docs will instead be generated in <build-dir>/docs/${DOCS_DIR}.
+# The visibility of the target can be specified as PUBLIC or PRIVATE, which
+# controls whether the documentation is generated as part of the public API
+# documentation.
 #
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
-function(add_mojo_package target)
+function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
                         "STDLIB"
                         "PACKAGE_DIR;OUTPUT_NAME;DOCS_DIR"
-                        "PRIVATE;PUBLIC;LINK_LIBS;LINK_DIRS" ${ARGN})
+                        "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -208,33 +208,19 @@ function(add_mojo_package target)
   set(package_file_name "${KGEN_OUTPUT_NAME}.mojopkg")
   file(RELATIVE_PATH package_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
 
-  add_custom_target(${target}-doc)
-
-  # Process the sources to generate documentation as necessary.
   set(KGEN_SOURCE_FILES "")
-  foreach(file ${KGEN_PRIVATE})
-    if (KGEN_STDLIB)
-      add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} ${KGEN_DOCS_DIR}/${target}/ STDLIB PACKAGE_DOC_TARGET ${target}-doc)
-    else()
-      add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} ${KGEN_DOCS_DIR}/${target}/ PACKAGE_DOC_TARGET ${target}-doc)
-    endif()
-
+  foreach(file ${KGEN_UNPARSED_ARGUMENTS})
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
-  foreach(file ${KGEN_PUBLIC})
-    string(REGEX REPLACE ".*/([^/]*)$" "\\1" PACKAGE_NAME "${KGEN_PACKAGE_DIR}")
-    if (KGEN_STDLIB)
-      add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} ${KGEN_DOCS_DIR}/stdlib/${PACKAGE_NAME}/ STDLIB PACKAGE_DOC_TARGET ${target}-doc)
-    else()
-      add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} ${KGEN_DOCS_DIR}/${target}/ PACKAGE_DOC_TARGET ${target}-doc)
-    endif()
 
-    list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
-  endforeach()
+  # Generate documentation for the package.
+  if (KGEN_STDLIB)
+    add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
+      ${KGEN_DOCS_DIR}/stdlib/ STDLIB DEPENDS ${KGEN_SOURCE_FILES})
+  else()
+    add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
+      ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES})
+  endif()
 
   # `mojo` doesn't expose synthetic debug info.
   if (${KGEN_DEBUG_LEVEL} STREQUAL "synthetic")
@@ -458,16 +444,15 @@ function(add_kgen_kernel target)
   )
 endfunction()
 
-function(add_mojo_doc target visibility doc_filename output_file output_directory)
-  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DOC_TARGET" "LINK_LIBS;LINK_DIRS" ${ARGN})
-
-  # Sanitize the target so it does not contain slashes.
-  string(REPLACE "/" "_" target "${target}")
+function(add_mojo_package_doc target visibility package_dir output_directory)
+  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
 
   _setup_libs()
 
-  set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
-  set(GEN_DOC_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.md)
+  get_filename_component(package_name ${package_dir} NAME_WE)
+  set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${package_name}.mojodoc.json)
+  set(GEN_DOC_DIR ${MODULAR_BINARY_DIR}/docs/${output_directory}${package_name})
+  set(GEN_DOC_FILE ${GEN_DOC_DIR}/index.md)
 
   # Check if we're parsing the standard library.
   set(MOJO_FRONTEND_FLAGS "")
@@ -480,11 +465,96 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
     OUTPUT "${GEN_DOC_JSON_FILE}"
 
     COMMAND $<TARGET_FILE:mojo> doc
-    -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+    -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${package_dir}
     -I ${KERNELS_BINARY_DIR}/mojo/Python ${MOJO_FRONTEND_FLAGS}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
+    DEPENDS mojo-sdk ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
+  )
+
+  # Process the JSON file into a markdown that can be rendered.
+  add_custom_command(
+    OUTPUT "${GEN_DOC_FILE}"
+
+    DEPENDS
+      ${MODULAR_SOURCE_DIR}/KGEN/utils/mojodoc_json_to_markdown.py
+      "${GEN_DOC_JSON_FILE}"
+
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      ${MODULAR_SOURCE_DIR}/KGEN/utils/mojodoc_json_to_markdown.py
+      -o ${GEN_DOC_DIR} ${GEN_DOC_JSON_FILE}
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+
+  add_custom_target(${target} DEPENDS ${GEN_DOC_FILE})
+  set(is_public FALSE)
+  if("${visibility}" STREQUAL "PUBLIC")
+    set(is_public TRUE)
+  endif()
+
+  if (is_public)
+    add_dependencies(modular-doc ${target})
+  else()
+    add_dependencies(modular-internal-doc ${target})
+  endif()
+
+  # Invoke `mojo --warn-missing-doc-strings` on the given file and pipe any
+  # stderr warnings to a file.
+  set(DOC_VALIDATE_WARNINGS_FILE ${GEN_DOC_JSON_FILE}.warnings.txt)
+  add_custom_command(
+    OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
+
+    COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
+    COMMAND $<TARGET_FILE:mojo> doc -warn-missing-doc-strings -o /dev/null
+      ${KGEN_INCLUDE_FLAGS} ${MOJO_FRONTEND_FLAGS} ${package_dir}
+      -I ${KERNELS_BINARY_DIR}/mojo/Python > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS mojo-sdk ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
+  )
+
+  # Add a `-validate` target that checks the `mojo doc -validate` output is
+  # empty.
+  set(failure_message
+      "warnings were output when was run on '${package_name}'")
+  add_custom_target("${target}-validate"
+    COMMENT "Checking `mojo doc -warn-missing-doc-strings '${package_dir}'`..."
+    COMMAND "${Python3_EXECUTABLE}"
+      "${MODULAR_SOURCE_DIR}/KGEN/utils/check-file-is-empty.py"
+      "${DOC_VALIDATE_WARNINGS_FILE}"
+    DEPENDS "${DOC_VALIDATE_WARNINGS_FILE}"
+  )
+
+  # Only add PUBLIC Mojo files to the top-level doc validation target.
+  # This ensures that `check-docs` only fails when our public
+  # libraries are legitimately missing documentation.
+  if (is_public)
+    add_dependencies(check-docs "${target}-validate")
+  endif()
+endfunction()
+
+function(add_internal_mojo_doc target doc_filename output_file output_directory)
+  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
+
+  _setup_libs()
+
+  # Sanitize the target so it does not contain slashes.
+  string(REPLACE "/" "_" target "${target}")
+
+  set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
+  set(GEN_DOC_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.md)
+
+  # Generate the JSON file containing the documentation description.
+  add_custom_command(
+    OUTPUT "${GEN_DOC_JSON_FILE}"
+
+    COMMAND $<TARGET_FILE:mojo> doc
+    -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS mojo-sdk ${doc_filename}
   )
 
   # Process the JSON file into a markdown that can be rendered.
@@ -504,55 +574,7 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
   )
 
   add_custom_target(${target}DocGen DEPENDS ${GEN_DOC_FILE})
-  set(is_public FALSE)
-  if("${visibility}" STREQUAL "PUBLIC")
-    set(is_public TRUE)
-  endif()
-
-  if (is_public)
-    add_dependencies(modular-doc ${target}DocGen)
-  else()
-    add_dependencies(modular-internal-doc ${target}DocGen)
-  endif()
-
-  if(KGEN_PACKAGE_DOC_TARGET)
-    add_dependencies(${KGEN_PACKAGE_DOC_TARGET} ${target}DocGen)
-  endif()
-
-  # Invoke `mojo --warn-missing-doc-strings` on the given file and pipe any
-  # stderr warnings to a file.
-  set(DOC_VALIDATE_WARNINGS_FILE ${GEN_DOC_JSON_FILE}.warnings.txt)
-  add_custom_command(
-    OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
-
-    COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
-    COMMAND $<TARGET_FILE:mojo> doc -warn-missing-doc-strings -o /dev/null
-      ${KGEN_INCLUDE_FLAGS} ${MOJO_FRONTEND_FLAGS} ${doc_filename}
-      -I ${KERNELS_BINARY_DIR}/mojo/Python > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
-
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
-  )
-
-  # Add a `DocValidate` target that checks the `mojo doc -validate` output is
-  # empty.
-  get_filename_component(doc_filename_we ${doc_filename} NAME_WE)
-  set(failure_message
-      "warnings were output when was run on '${doc_filename}'")
-  add_custom_target("${target}DocValidate"
-    COMMENT "Checking `mojo doc -warn-missing-doc-strings '${doc_filename}'`..."
-    COMMAND "${Python3_EXECUTABLE}"
-      "${MODULAR_SOURCE_DIR}/KGEN/utils/check-file-is-empty.py"
-      "${DOC_VALIDATE_WARNINGS_FILE}"
-    DEPENDS "${DOC_VALIDATE_WARNINGS_FILE}"
-  )
-
-  # Only add PUBLIC Mojo files to the top-level doc validation target.
-  # This ensures that `check-docs` only fails when our public
-  # libraries are legitimately missing documentation.
-  if (is_public)
-    add_dependencies(check-docs "${target}DocValidate")
-  endif()
+  add_dependencies(modular-internal-doc ${target}DocGen)
 endfunction()
 
 # Testing infrastructure
