@@ -49,7 +49,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 
   if (v.getDefiningOp<LoadConsumeOp>() ||
       v.getDefiningOp<LIT::StructCreateOp>() ||
-      v.getDefiningOp<ParamMaterializeOp>()) {
+      v.getDefiningOp<ParamMaterializeOp>() ||
+      v.getDefiningOp<VariantCreateOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;
     startsUninit = true;
@@ -89,6 +90,15 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(call result)");
     isIndirect = false;
     startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
+  // VariantTakeOp starts out initialized with its own value.
+  if (auto letReg = v.getDefiningOp<VariantTakeOp>()) {
+    name = StringAttr::get(v.getContext(), "(call result)");
+    isIndirect = false;
+    startsUninit = true; // Initialized at its definition point.
     endsUninit = true;
     return;
   }
