@@ -290,7 +290,6 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   // TODO: Need to codegen here when parametric traits are a thing.
   auto processBindType = [this](BindTypeAttr bind) {
     MetaTypeType metatype = bind.getType();
-    // TODO(#25619): build AnyTypeType instead. This is currently a hack.
     return TypeConstantAttr::get(
         replace(DeclRefType::get(metatype.getSymbol(),
                                  metatype.getParamValues(), anyRegTypeType)),
@@ -444,10 +443,9 @@ Type StructOperationLowerer::replace(Type type) {
     result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
-  } else if (isa<AnyTypeType, MetaTypeType, TraitType>(type)) {
+  } else if (isa<MetaTypeType, TraitType>(type)) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
-    // TODO(#25619): lower to AnyTypeType instead. This is currently a hack.
     result = anyRegTypeType;
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);

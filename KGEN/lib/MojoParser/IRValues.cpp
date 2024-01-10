@@ -155,7 +155,6 @@ static Type extractMetaType(Type type) {
   // The metatype is the type of the carried type expression.
   if (auto paramRef = dyn_cast<ParamRefType>(type))
     return paramRef.getParam().getType();
-  // TODO: build AnyTypeType?
   // Otherwise, this is a generic MLIR type.
   return AnyRegTypeType::get(type.getContext());
 }

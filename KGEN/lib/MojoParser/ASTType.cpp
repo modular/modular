@@ -136,7 +136,7 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
     // If this is a generic type, we treat it as memory only. If the metatype
     // is a parameter reference, then pessimistically assume it is memory-only.
     if (auto paramRefTy = dyn_cast<ParamRefType>(mlirType))
-      if (isa<AnyTypeType, ParamRefType>(paramRefTy.getParam().getType()))
+      if (isa<ParamRefType>(paramRefTy.getParam().getType()))
         return TypeConvention::MemoryOnly;
 
     // MLIR types are assumed to be register-passable + Trivial.
@@ -555,8 +555,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<AnyRegTypeType>(type)) {
     os << "AnyRegType";
-  } else if (isa<AnyTypeType>(type)) {
-    os << "AnyTypeType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
     llvm::interleaveComma(fnType.getInputs(), os,

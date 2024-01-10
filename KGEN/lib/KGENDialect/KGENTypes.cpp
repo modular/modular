@@ -43,9 +43,6 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
-      "type", &AnyTypeType::parse, TypeID::get<AnyTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "type"; });
-  registerPrettyType(
       "regtype", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
       +[](AsmPrinter &p, Type) { p << "regtype"; });
   registerMnemonicType<DTypeType>();
@@ -74,7 +71,7 @@ Type ParamRefType::get(TypedAttr param) {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyTypeType
+// AnyRegTypeType
 //===----------------------------------------------------------------------===//
 
 /// Implementation of the parsing logic for sugar types (e.g. !kgen.anytype).
@@ -126,19 +123,6 @@ static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
   return success();
 }
 
-OptionalParseResult AnyTypeType::parseValue(AsmParser &p,
-                                            TypedAttr &value) const {
-  return parseSugaredTypeValue(p, value, *this);
-}
-
-LogicalResult AnyTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printSugaredTypeValue(p, value);
-}
-
-//===----------------------------------------------------------------------===//
-// AnyRegTypeType
-//===----------------------------------------------------------------------===//
-
 OptionalParseResult AnyRegTypeType::parseValue(AsmParser &p,
                                                TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this);
@@ -148,7 +132,6 @@ LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printSugaredTypeValue(p, value);
 }
 
-// FIXME(laszlo): Move these four methods to AnyTypeType when layering is fixed.
 std::optional<int64_t>
 AnyRegTypeType::getTypeSize(TargetInfoAttr target) const {
   // TODO: Types don't have a runtime representation yet! But one can imagine it

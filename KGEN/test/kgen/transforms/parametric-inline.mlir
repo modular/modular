@@ -1236,7 +1236,7 @@ kgen.generator @inline_heuristic<A>() {
   // CHECK: %[[V:.*]] = "some.producer"
   // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<:type index>() : () -> index
+  %0 = kgen.call @callee<:regtype index>() : () -> index
   kgen.return
 }
 
@@ -1245,4 +1245,3 @@ kgen.generator @callee<T: regtype>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   kgen.return %0 : !kgen.paramref<T>
 }
-
