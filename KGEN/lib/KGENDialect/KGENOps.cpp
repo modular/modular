@@ -1648,10 +1648,10 @@ LogicalResult VariantIsOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// VariantGetOp
+// VariantTakeOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult VariantGetOp::verify() {
+LogicalResult VariantTakeOp::verify() {
   if (failed(verifyVariantIndex(*this, getVariant().getType(), getIndex())))
     return failure();
   Type elementType = getVariant().getType().getType(getIndex());
@@ -1663,11 +1663,11 @@ LogicalResult VariantGetOp::verify() {
 }
 
 LogicalResult
-VariantGetOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
-                               ValueRange operands, DictionaryAttr attrs,
-                               mlir::OpaqueProperties, RegionRange,
-                               SmallVectorImpl<Type> &types) {
-  VariantGetOpAdaptor adaptor(operands, attrs);
+VariantTakeOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
+                                ValueRange operands, DictionaryAttr attrs,
+                                mlir::OpaqueProperties, RegionRange,
+                                SmallVectorImpl<Type> &types) {
+  VariantTakeOpAdaptor adaptor(operands, attrs);
   unsigned index = adaptor.getIndex();
   auto variant = cast<VariantType>(adaptor.getVariant().getType());
   if (index >= variant.getNumTypes())

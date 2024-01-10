@@ -144,7 +144,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       // Populate the then branch (normal return).
       Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
       b.setInsertionPointToStart(thenBlock);
-      auto resVal = b.create<VariantGetOp>(res, 1);
+      auto resVal = b.create<VariantTakeOp>(res, 1);
       b.create<POP::StoreOp>(resVal, oldOperands[0]);
 
       auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
@@ -154,7 +154,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       // Populate the else branch (error return).
       Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
       b.setInsertionPointToStart(elseBlock);
-      auto err = b.create<VariantGetOp>(res, 0);
+      auto err = b.create<VariantTakeOp>(res, 0);
       Value elseRes = b.create<VariantCreateOp>(oldVariantTy, err, 0);
       b.create<HLCF::YieldOp>(elseRes);
     } else {
@@ -242,7 +242,7 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   // Populate the else branch (error return).
   Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
   b.setInsertionPointToStart(elseBlock);
-  auto err = b.create<VariantGetOp>(oldRetVal, 0);
+  auto err = b.create<VariantTakeOp>(oldRetVal, 0);
   Value elseRes = b.create<VariantCreateOp>(newVariantTy, err, 0);
   b.create<HLCF::YieldOp>(elseRes);
 

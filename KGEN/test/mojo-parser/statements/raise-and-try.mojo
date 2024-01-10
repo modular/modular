@@ -104,10 +104,10 @@ def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = lit.call @"{{.*}}"::@"maybeRaises
     # CHECK: %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
     # CHECK: {
-    # CHECK:    [[VAR:%.*]] = kgen.variant.get %0, 1 : <!Error, !Int>
+    # CHECK:    [[VAR:%.*]] = kgen.variant.take %0, 1 : <!Error, !Int>
     # CHECK:    lit.yield [[VAR]] : !Int
     # CHECK: } else {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.get %0, 0 : <!Error, !Int>
+    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0, 0 : <!Error, !Int>
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
@@ -123,10 +123,10 @@ fn propagateErrorInRaisingFn() raises:
     # CHECK:  %0 = lit.call {{.*}}::@"maybeRaises()"() : !lit.signature<() throws -> !kgen.variant<!Error, !Int>>
     # CHECK:  %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
     # CHECK:  {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.get %0
+    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0
     # CHECK:    lit.yield [[ERR]] : !Int
     # CHECK:  } else {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.get %0
+    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
@@ -143,7 +143,7 @@ fn propagateErrorInTry():
         # CHECK: %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
         # CHECK: {
         # CHECK: } else {
-        # CHECK:   [[ERR:%.*]] = kgen.variant.get %0
+        # CHECK:   [[ERR:%.*]] = kgen.variant.take %0
         # CHECK:   lit.raise [[ERR]] : !Error
         # CHECK: }
 
@@ -225,10 +225,10 @@ fn call_raising():
     try:
         # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail
         # CHECK: [[VAR0:%.*]] = lit.handle_variant [[ERR]], %x
-        # CHECK:   [[VAR1:%.*]] = kgen.variant.get [[ERR]]
+        # CHECK:   [[VAR1:%.*]] = kgen.variant.take [[ERR]]
         # CHECK:   lit.yield [[VAR1]] : !kgen.none
         # CHECK: } else {
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.get [[ERR]]
+        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
         # CHECK:   lit.raise [[VAR2]]
         # CHECK:   kgen.unreachable
         # CHECK: }
@@ -236,10 +236,10 @@ fn call_raising():
         # CHECK: %y = lit.varlet.decl "y"
         # CHECK: lit.call @{{.*}}__init__{{.*}}(%y)
         # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %y
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.get [[ERR]]
+        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
         # CHECK:   lit.yield [[VAR2]] : !kgen.none
         # CHECK: } else {
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.get [[ERR]]
+        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
         # CHECK:   lit.raise [[VAR2]]
         # CHECK:   kgen.unreachable
         # CHECK: }
@@ -258,10 +258,10 @@ fn fail_register(str: StringRef) raises -> Int:
 
 fn fail_register_raises(str: StringRef) raises -> Int:
     # CHECK: %[[VAR0:.*]] = lit.handle_variant %0
-    # CHECK:   %[[VAR1:.*]] = kgen.variant.get %0
+    # CHECK:   %[[VAR1:.*]] = kgen.variant.take %0
     # CHECK:   lit.yield %[[VAR1]]
     # CHECK: } else {
-    # CHECK:   %[[VAR2:.*]] = kgen.variant.get %0
+    # CHECK:   %[[VAR2:.*]] = kgen.variant.take %0
     # CHECK:   lit.raise %[[VAR2]]
     # CHECK:   kgen.unreachable
     # CHECK: }

@@ -299,18 +299,18 @@ lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
   // CHECK: [[V:%.*]] = kgen.call @throwing_callee(
   // CHECK: [[VAR0:%.*]] = kgen.variant.is [[V]], 1 : <@Error, none>
   // CHECK:  = hlcf.if [[VAR0]] -> !kgen.none {
-  // CHECK:   [[VAR1:%.*]] = kgen.variant.get [[V]], 1 : <@Error, none>
+  // CHECK:   [[VAR1:%.*]] = kgen.variant.take [[V]], 1 : <@Error, none>
   // CHECK:   hlcf.yield [[VAR1]] : !kgen.none
   // CHECK: } else {
-  // CHECK:   [[VAR2:%.*]] = kgen.variant.get [[V]], 0 : <@Error, none>
+  // CHECK:   [[VAR2:%.*]] = kgen.variant.take [[V]], 0 : <@Error, none>
   // CHECK:   [[VAR3:%.*]] = kgen.variant.create [[VAR2]], 0 : <@Error, none>
   // CHECK:   kgen.return [[VAR3]]
   // CHECK:  }
   %1 = lit.handle_variant %0, %yp : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
-    %7 = kgen.variant.get %0, 1 : <@Error, none>
+    %7 = kgen.variant.take %0, 1 : <@Error, none>
     lit.yield %7 : !kgen.none
   } else {
-    %8 = kgen.variant.get %0, 0 : <@Error, none>
+    %8 = kgen.variant.take %0, 0 : <@Error, none>
     %9 = kgen.variant.create %8, 0 : <@Error, none>
     kgen.return %9 : !kgen.variant<@Error, none>
   }
@@ -323,18 +323,18 @@ lit.func @caller_reg() -> !kgen.none {
     %0 = kgen.call @throwing_callee() : () throws -> !kgen.variant<@Error, index>
     // CHECK: [[VAR0:%.*]] = kgen.variant.is %0, 1 : <@Error, index>
     // CHECK: [[VAR1:%.*]] = hlcf.if [[VAR0]] -> index {
-    // CHECK:   [[VAR2:%.*]] = kgen.variant.get %0, 1 : <@Error, index>
+    // CHECK:   [[VAR2:%.*]] = kgen.variant.take %0, 1 : <@Error, index>
     // CHECK:   hlcf.yield [[VAR2]] : index
     // CHECK: } else {
-    // CHECK:   [[VAR3:%.*]] = kgen.variant.get %0, 0 : <@Error, index>
+    // CHECK:   [[VAR3:%.*]] = kgen.variant.take %0, 0 : <@Error, index>
     // CHECK:   lit.raise [[VAR3]] : <@Error>
     // CHECK:   kgen.unreachable
     // CHECK: }
     %1 = lit.handle_variant %0 : (!kgen.variant<@Error, index>) -> index {
-      %7 = kgen.variant.get %0, 1 : <@Error, index>
+      %7 = kgen.variant.take %0, 1 : <@Error, index>
       lit.yield %7 : index
     } else {
-      %8 = kgen.variant.get %0, 0 : <@Error, index>
+      %8 = kgen.variant.take %0, 0 : <@Error, index>
       lit.raise %8 : !kgen.declref<@Error>
       kgen.unreachable
     }

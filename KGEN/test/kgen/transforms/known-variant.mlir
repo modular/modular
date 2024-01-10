@@ -57,7 +57,7 @@ kgen.func @entry() -> !kgen.variant<i8, i32> {
   %1 = kgen.variant.is %0, 0 : <i8, index>
   // CHECK: %[[IF_RESULT:.*]] = hlcf.if
   %2 = hlcf.if %1 -> !kgen.variant<i8, i32> {
-    %3 = kgen.variant.get %0, 0 : <i8, index>
+    %3 = kgen.variant.take %0, 0 : <i8, index>
     %4 = kgen.variant.create %3, 0 : <i8, i32>
     hlcf.yield %4 : !kgen.variant<i8, i32>
   } else {
@@ -65,7 +65,7 @@ kgen.func @entry() -> !kgen.variant<i8, i32> {
     %5 = kgen.variant.create %3, 1 : <i8, i32>
     hlcf.yield %5 : !kgen.variant<i8, i32>
   }
-  // CHECK: %[[RETURN:.*]] = kgen.variant.get %[[IF_RESULT]], 1 : <i8, i32>
+  // CHECK: %[[RETURN:.*]] = kgen.variant.take %[[IF_RESULT]], 1 : <i8, i32>
   // CHECK: return %[[RETURN]]
   kgen.return %2 : !kgen.variant<i8, i32>
 }
@@ -139,7 +139,7 @@ kgen.func @multiple_returns(%a: i32, %b: i64) -> !kgen.variant<i32, i64> {
     %2 = kgen.variant.is %arg0, 0 : <i32, i64>
     // CHECK: hlcf.if
     hlcf.if %2 {
-      // CHECK-NEXT: %[[RES:.*]] = kgen.variant.get %arg2, 0 : <i32, i64>
+      // CHECK-NEXT: %[[RES:.*]] = kgen.variant.take %arg2, 0 : <i32, i64>
       // CHECK-NEXT: kgen.return %[[RES]]
       kgen.return %arg0 : !kgen.variant<i32, i64>
     } else {
@@ -147,12 +147,12 @@ kgen.func @multiple_returns(%a: i32, %b: i64) -> !kgen.variant<i32, i64> {
     }
     // COM: This is valid because the code is dead.
     // CHECK: %[[I64:.*]] = kgen.variant.create %arg1, 1 : <i32, i64>
-    // CHECK-NEXT: %[[I32:.*]] = kgen.variant.get %[[I64]], 0 : <i32, i64>
+    // CHECK-NEXT: %[[I32:.*]] = kgen.variant.take %[[I64]], 0 : <i32, i64>
     // CHECK-NEXT: kgen.return %[[I32]]
     %3 = kgen.variant.create %b, 1 : <i32, i64>
     kgen.return %3 : !kgen.variant<i32, i64>
   }
-  // CHECK: %[[RES:.*]] = kgen.variant.get %1, 0 : <i32, i64>
+  // CHECK: %[[RES:.*]] = kgen.variant.take %1, 0 : <i32, i64>
   // CHECK-NEXT: kgen.return %[[RES]]
   kgen.return %1 : !kgen.variant<i32, i64>
 }

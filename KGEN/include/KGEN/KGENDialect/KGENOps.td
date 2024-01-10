@@ -1664,23 +1664,25 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// VariantGetOp
+// VariantTakeOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
+def KGEN_VariantTakeOp : KGENOp<"variant.take", [Pure,
     DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
-  let summary = "Get a variant as one of its possible types.";
+  let summary = "Take a register value out of a variant.";
   let description = [{
-    The `kgen.variant.get` operation interprets the given variant as one of its
+    The `kgen.variant.take` operation interprets the given variant as one of its
     possible types and gets it as that type. This operation does NOT check
     whether the variant is that type. If the result type does not match the
-    actual type of the variant, the operation's result is a poison value.
+    actual type of the variant, the operation's result is a poison value.  From
+    an ownership perspective, this consumes the input variant and returns an
+    owned register value.
 
     Example:
 
     ```mlir
     %optional = ...
-    %intVal = kgen.variant.get %optional, 1 : !kgen.variant<struct<()>, i32>
+    %intVal = kgen.variant.take %optional, 1 : !kgen.variant<struct<()>, i32>
     ```
   }];
 
