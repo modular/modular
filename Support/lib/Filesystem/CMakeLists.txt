@@ -4,15 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MojoTooling
-  ASTDeclRef.cpp
-  ASTDeclView.cpp
-  CodeComplete.cpp
-  ParserDriver.cpp
-  ParserDriverREPL.cpp
-  REPLPythonExprUtils.cpp
-
-  LINK_LIBS PUBLIC
-  MSupportFilesystem
-  MojoParser
+add_modular_library(MSupportFilesystem
+  Paths.cpp
 )

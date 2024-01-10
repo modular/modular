@@ -10,6 +10,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/IRMapping.h"
@@ -305,22 +306,13 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
       });
 }
 
-bool LIT::isMojoSourcePackagePath(const std::filesystem::path &path) {
-  std::error_code ec;
-  if (std::filesystem::is_directory(path, ec) && !ec) {
-    return std::filesystem::exists(path / "__init__.mojo", ec) ||
-           std::filesystem::exists(path / "__init__.🔥", ec);
-  }
-  return false;
-}
-
 std::pair<OwningOpRef<ModuleOp>, PackageOp>
 LIT::importMojoPackage(StringRef path, StringRef packageName,
                        llvm::SourceMgr &sourceMgr, ParserConfig &config,
                        mlir::TimingScope &ts,
                        SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
-  if (!isMojoSourcePackagePath(path.str())) {
+  if (!Filesystem::isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
                            "provided path '" + path +
                                "' does not correspond to a package");

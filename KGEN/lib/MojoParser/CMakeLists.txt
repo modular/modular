@@ -33,6 +33,7 @@ add_modular_library(MojoParser
   KGENVersion
 
   LINK_LIBS PUBLIC
+  MSupportFilesystem
   MCompilerSupport
   KGENSupport
   KGENToolCommon

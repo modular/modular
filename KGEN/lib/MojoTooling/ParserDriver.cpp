@@ -26,6 +26,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "ParserDriverImpl.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -120,7 +121,7 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
                                       SharedState &sharedState) {
   // Collect all of the sub-package names and find the outer most package.
   SmallVector<std::string, 4> packageNames;
-  while (isMojoSourcePackagePath(filepath.parent_path())) {
+  while (Filesystem::isMojoSourcePackagePath(filepath.parent_path())) {
     packageNames.emplace_back(filepath.stem().string());
     filepath = filepath.parent_path();
   }
@@ -142,7 +143,7 @@ static ASTDecl *buildModuleDecl(const std::filesystem::path &filepath,
   // If the file is within a package, we create a decl for the outermost package
   // and import this decl from there. This ensures we process relative imports
   // and other package-level constructs correctly.
-  if (isMojoSourcePackagePath(filepath.parent_path()))
+  if (Filesystem::isMojoSourcePackagePath(filepath.parent_path()))
     return buildNestedModuleDecl(filepath, sharedState);
 
   // Otherwise, create a decl specifically for the module.
@@ -162,13 +163,13 @@ static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
                                             filepath.stem().string());
   }
   // If this isn't a source package, bail out.
-  if (!isMojoSourcePackagePath(filepath))
+  if (!Filesystem::isMojoSourcePackagePath(filepath))
     return nullptr;
 
   // If the file is within a package, we create a decl for the outermost package
   // and import this decl from there. This ensures we process relative imports
   // and other package-level constructs correctly.
-  if (isMojoSourcePackagePath(filepath.parent_path()))
+  if (Filesystem::isMojoSourcePackagePath(filepath.parent_path()))
     return buildNestedModuleDecl(filepath, sharedState);
 
   // Otherwise, create a new package.
@@ -216,8 +217,8 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
 MojoASTDeclRef
 MojoParserContext::parsePackage(const std::filesystem::path &path) {
   // Check that the path is actually a package.
-  if (!(isMojoSourcePackagePath(path) || path.extension() == ".mojopkg" ||
-        path.extension() == ".📦"))
+  if (!(Filesystem::isMojoSourcePackagePath(path) ||
+        path.extension() == ".mojopkg" || path.extension() == ".📦"))
     return nullptr;
   return parseFileOrPackage(path);
 }

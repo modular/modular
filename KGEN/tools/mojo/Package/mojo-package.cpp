@@ -28,6 +28,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Driver/DriverSupport.h"
 
+#include "Support/Filesystem/Paths.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
@@ -465,7 +466,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // Reject input files that do not appear to be mojo package directories (this
   // includes stdin "-").
   pkgArgs.inputPath = args.getLastArgValue(options::OPT_INPUT).str();
-  if (!LIT::isMojoSourcePackagePath(pkgArgs.inputPath)) {
+  if (!Filesystem::isMojoSourcePackagePath(pkgArgs.inputPath)) {
     return Error("'" + pkgArgs.inputPath +
                  "' does not correspond to a Mojo package");
   }

@@ -105,10 +105,6 @@ struct ParserConfig {
 // Driver Entry Points
 //===----------------------------------------------------------------------===//
 
-/// Returns true if the given path is a Mojo package source directory (i.e. a
-/// directory that contains an `__init__.mojo` file).
-bool isMojoSourcePackagePath(const std::filesystem::path &path);
-
 /// Parse a single .mojo file and return the MLIR module for it.
 ///
 /// If `includedFiles` is provided, it is set to the list of included files when

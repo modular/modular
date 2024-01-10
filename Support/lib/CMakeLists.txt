@@ -47,6 +47,7 @@ set_source_files_properties(BuildInfo.cpp PROPERTIES
 unset(BUILD_INFO_DEFINITIONS)
 unset(LLVM_TARGETS_BUILT)
 
+add_subdirectory(Filesystem)
 add_subdirectory(ADT)
 add_subdirectory(ASN1)
 add_subdirectory(CrashReporting)

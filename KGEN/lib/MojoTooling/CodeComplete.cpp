@@ -14,6 +14,7 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -123,7 +124,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
         if (extension == ".mojo" || extension == ".🔥")
           addImportCompletion(it.path(), /*isPackage=*/false);
         else if (extension == ".mojopkg" || extension == ".📦" ||
-                 isMojoSourcePackagePath(it.path()))
+                 Filesystem::isMojoSourcePackagePath(it.path()))
           addImportCompletion(it.path(), /*isPackage=*/true);
       }
     }
