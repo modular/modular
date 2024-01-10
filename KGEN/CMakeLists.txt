@@ -213,6 +213,11 @@ function(add_mojo_package target visibility)
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
 
+  # Ensure at least one source file is specified
+  if (NOT KGEN_SOURCE_FILES)
+    message(FATAL_ERROR "Must specify one or more mojo source files when calling `add_mojo_package`.")
+  endif()
+
   # Generate documentation for the package.
   if (KGEN_STDLIB)
     add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
