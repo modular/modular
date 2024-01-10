@@ -1367,9 +1367,7 @@ fn _concat_gpu[
     ],
     out_chain: OutputChainPtr,
 ) raises:
-    var stream = out_chain.get_cuda_stream() if out_chain else Stream[
-        is_borrowed=True
-    ]()
+    var stream = Stream.get_current_stream()
 
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1

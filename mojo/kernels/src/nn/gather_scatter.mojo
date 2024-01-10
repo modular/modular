@@ -27,6 +27,7 @@ from utils.list import Dim, DimList
 from utils._optional_param import OptionalParamInt
 from utils._optional import Optional
 from gpu.memory import _copy_device_to_device_async
+from gpu.host.stream import Stream
 
 
 @always_inline
@@ -544,7 +545,7 @@ fn scatter_nd_generator[
 
     @parameter
     if target == "cuda":
-        let stream = out_chain.get_cuda_stream()
+        let stream = Stream.get_current_stream()
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             _copy_device_to_device_async(
