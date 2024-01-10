@@ -89,6 +89,11 @@ bool isTypeExprType(Type type);
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
 
+/// Sets a common Modular environment attribute (also known as `-D` defines) for
+/// the given module. This includes things like `MODULAR_PARANOID`,
+/// `BUILD_TYPE`, LLCL profiling level, etc.
+void setModularEnvAttr(ModuleOp moduleOp);
+
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
