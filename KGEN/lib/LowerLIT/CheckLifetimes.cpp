@@ -976,6 +976,11 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
+  if (isa<GlobalVarRefOp>(op)) {
+    checkDef(op.getResult(0), op, /*isDeref=*/true);
+    return;
+  }
+
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
@@ -1046,12 +1051,16 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // is the same as its liveness at end of function because not all control
   // flow paths will execute the operation.
   if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
-    // If the entry and exit liveness differ, we need to notice the effect.
-    if (refFromPtr.getStartUninit() != refFromPtr.getEndUninit()) {
-      if (refFromPtr.getStartUninit()) // start uninit, end init.
-        checkConsume(refFromPtr.getResult(), op, /*isDeref=*/true);
-      else // start init, end uninit
-        checkDef(refFromPtr.getResult(), op, /*isDeref=*/true);
+    Value result = refFromPtr.getResult();
+    if (!refFromPtr.getStartUninit()) {
+      if (refFromPtr.getEndUninit()) {
+        checkDef(result, op, /*isDeref=*/true);
+      } else {
+        // If it start/end initialized, emit destructor if already replaced.
+        checkUse(result, op, /*isDeref=*/true);
+      }
+    } else if (refFromPtr.getStartUninit() && !refFromPtr.getEndUninit()) {
+      checkConsume(result, op, /*isDeref=*/true);
     }
     return;
   }
@@ -1501,33 +1510,26 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   scanBlock(funcBody);
 
   // The sentinel tracks reachability.
-  assert(consumedValues[0] && "function entry is reachable");
+  assert(consumedValues[0] && "function entry should be reachable");
 
-  for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
-    if (valueInfo.startsUninit || valueID == 0)
+  // If any argument values are unconsumed then they must be unused.
+  // Emit their destructor calls at the start of the function by acting as
+  // though there is a use.
+  for (auto [argValue, conv] : llvm::zip(
+           func.getArguments(), func.getSignature().getInputConventions())) {
+    // Ignore undef-on-input values.
+    if (conv == ValueInputConvention::ByRefResult ||
+        conv == ValueInputConvention::InitSelf)
       continue;
 
-    // If an op result initialized on entry was overwritten, make sure to
-    // destroy the value.
-    if (auto result = dyn_cast<OpResult>(valueInfo.value)) {
-      Operation *op = result.getOwner();
-      mlir::ImplicitLocOpBuilder builder(result.getLoc(), op->getBlock(),
-                                         ++op->getIterator());
-      checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr,
-               /*isDeref=*/true);
-      continue;
-    }
-
-    // If any owned argument values are unconsumed then they must be unused.
-    // Emit their destructor calls at the start of the function by acting as
-    // though there is a use.
-    Location loc = valueInfo.value.getLoc();
+    bool isIndirect = SignatureType::hasAddress(conv);
+    Location loc = argValue.getLoc();
     if (DebugInfo::DISubprogramAttr scope =
             DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr, /*isDeref=*/true);
+    checkUse(argValue, builder, /*opWithUse=*/nullptr, /*isDeref=*/isIndirect);
   }
 }
 
@@ -1643,18 +1645,27 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  if (isa<GlobalVarRefOp>(op)) {
+    checkDef(op.getResult(0), op, /*isDeref=*/true);
+    return;
+  }
+
   // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
   // field impacts the execution of the operation (now), not its modeling at
   // start of the function.  We have to assume its liveness at start of function
   // is the same as its liveness at end of function because not all control
   // flow paths will execute the operation.
   if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
-    // If the entry and exit liveness differ, we need to notice the effect.
-    if (refFromPtr.getStartUninit() != refFromPtr.getEndUninit()) {
-      if (refFromPtr.getStartUninit()) // start uninit, end init.
-        markConsumed(refFromPtr.getResult(), op, /*isDeref=*/true);
-      else // start init, end uninit
-        checkDef(refFromPtr.getResult(), op, /*isDeref=*/true);
+    Value result = refFromPtr.getResult();
+    if (!refFromPtr.getStartUninit()) {
+      if (refFromPtr.getEndUninit()) {
+        checkDef(result, op, /*isDeref=*/true);
+      } else {
+        // If it start/end initialized, emit destructor if already replaced.
+        checkUse(result, op, /*isDeref=*/true);
+      }
+    } else if (refFromPtr.getStartUninit() && !refFromPtr.getEndUninit()) {
+      markConsumed(result, op, /*isDeref=*/true);
     }
     return;
   }
