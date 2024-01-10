@@ -22,16 +22,11 @@ fn empty_tensor[
     strides.static_values,
 ]:
     let ptr = DTypePointer[type].alloc(shape.nelems())
+    let ref_cnt = Pointer[SIMD[DType.index, 1]].alloc(1)
+    ref_cnt.store(0, SIMD[DType.index, 1](0))
     return Tensor[type, shape.static_values, strides.static_values](
-        ptr, shape, strides
+        ptr, shape, strides, ref_cnt
     )
-
-
-# TODO figure out what to do with deconstructors.
-@export
-fn _dealloc_tensor(t: Tensor):
-    if t.data:
-        t.data.free()
 
 
 @mogg_register("to_tensor")
@@ -45,7 +40,7 @@ fn to_tensor[
     data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
     raw_shape_ptr: __mlir_type.`!kgen.pointer<index>`,
     length: Int,
-) -> Tensor[type, static_shape, static_strides]:
+) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
     let shape_ptr = Pointer(raw_shape_ptr)
 
     var shape = IntList[static_shape].empty(length)
@@ -74,8 +69,11 @@ fn to_tensor[
             strides._unsafe_set_dim(i, stride)
             stride *= shape[i]
 
-    return Tensor[type, static_shape, static_strides](
-        DTypePointer[type](data), shape, strides
+    return Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False](
+        DTypePointer[type](data),
+        shape,
+        strides,
+        Pointer[SIMD[DType.index, 1]](),
     )
 
 
@@ -98,7 +96,7 @@ fn my_add_with_fusion(
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
     out.for_each[1, func]()
-    return out ^
+    return out
 
 
 @mogg_register_override("mo.sub", 1000)
@@ -116,7 +114,7 @@ fn my_sub_without_fusion(
         return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
 
     out.for_each[1, func]()
-    return out ^
+    return out
 
 
 @mogg_register_override("mo.relu", 1000)
@@ -136,7 +134,7 @@ fn unary_op_with_fusion(
         return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
     out.for_each[1, func]()
-    return out ^
+    return out
 
 
 @mogg_register_override("mo.sqrt", 1000)
@@ -153,4 +151,4 @@ fn unary_op_without_fusion(
         return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
     out.for_each[1, func]()
-    return out ^
+    return out

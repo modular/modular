@@ -14,6 +14,35 @@ from utils._optional import Optional
 from utils._annotations import *
 
 
+from memory.unsafe import Pointer, bitcast
+
+
+@value
+@register_passable
+struct UnsafeRefCounter[type: DType]:
+    """
+    Implements an atomic which can be sharable as a copyable reference.
+
+    By design the counter memory must be managed manually, this allows us to
+    copy this around by ref and have multiple references to the same pointer
+    under the hood.
+    """
+
+    var _underlying_value: Pointer[SIMD[type, 1]]
+
+    fn deallocate(owned self):
+        self._underlying_value.free()
+
+    fn increment(self) -> SIMD[type, 1]:
+        return Atomic[type]._fetch_add(self._underlying_value, 1)
+
+    fn decrement(self) -> SIMD[type, 1]:
+        return Atomic[type]._fetch_add(self._underlying_value, -1)
+
+    fn _value(inout self) -> SIMD[type, 1]:
+        return self._underlying_value.load(0)
+
+
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     subvolume_rank: Int, static_shape: DimList
@@ -62,6 +91,7 @@ struct Tensor[
             _w: Int, _t: DType, _v: DimList
         ] (IntList[_v], SIMD[_t, _w]) capturing -> None
     ] = None,
+    _OWNED_MEMORY: Bool = True,
 ]:
     alias static_rank = -1 if len(static_shape) == 0 else len(static_shape)
 
@@ -69,6 +99,7 @@ struct Tensor[
     var shape: IntList[static_shape]
     var strides: IntList[static_strides]
     var dyn_rank: Int
+    var storage_ref_count: UnsafeRefCounter[DType.index]
 
     @always_inline
     fn __init__(
@@ -76,20 +107,55 @@ struct Tensor[
         ptr: DTypePointer[type],
         shape: IntList,
         strides: IntList,
+        ref_count_ptr: Pointer[SIMD[DType.index, 1]],
     ):
         self.data = ptr
         self.shape = IntList[static_shape](shape)
         self.strides = IntList[static_strides](strides)
         self.dyn_rank = len(shape)
 
-    @mogg_tensor_move_constructor()
+        # Increment the refcount if we own the memory otherwise create an
+        # empty counter.
+        @parameter
+        if Self._OWNED_MEMORY:
+            self.storage_ref_count = UnsafeRefCounter[DType.index](
+                ref_count_ptr
+            )
+            _ = self.storage_ref_count.increment()
+        else:
+            self.storage_ref_count = UnsafeRefCounter[DType.index](
+                Pointer[SIMD[DType.index, 1]]()
+            )
+
+    @mogg_tensor_copy_constructor()
     @no_inline
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __copyinit__(inout self, existing: Self):
+        @parameter
+        if Self._OWNED_MEMORY:
+            self.storage_ref_count = existing.storage_ref_count
+            _ = self.storage_ref_count.increment()
+        else:
+            # Create an empty refcount if the memory isn't owned.
+            self.storage_ref_count = UnsafeRefCounter[DType.index](
+                Pointer[SIMD[DType.index, 1]]()
+            )
+
         self.data = existing.data
-        self.shape = existing.shape ^
-        self.strides = existing.strides ^
+        self.shape = existing.shape
+        self.strides = existing.strides
         self.dyn_rank = existing.dyn_rank
-        existing.data = DTypePointer[type]()
+
+    @mogg_tensor_deconstructor()
+    fn __del__(owned self):
+        @parameter
+        if Self._OWNED_MEMORY:
+            let res = self.storage_ref_count.decrement()
+            if res == 1:
+                # Clean up the managed refcount itself
+                self.storage_ref_count.deallocate()
+
+                # TODO: Invoke parameterized deconstructor.
+                self.data.free()
 
     @mogg_enable_fusion()
     @no_inline
