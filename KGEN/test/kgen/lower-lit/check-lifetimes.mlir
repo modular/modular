@@ -139,17 +139,17 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
     // CHECK: [[V:%.*]] = lit.call @foo(%x)
     %1 = lit.call @foo(%x) : !lit.signature<(!lit.ref<mut @S, *"life"> byref_result) throws -> !kgen.variant<@Error, none>>
     // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], %x : (!kgen.variant<@Error, none>, !lit.ref<mut @S, life>) -> !kgen.none {
-    // CHECK: [[VAR1:%.*]] = kgen.variant.get [[V]], 1 : <@Error, none>
+    // CHECK: [[VAR1:%.*]] = kgen.variant.take [[V]], 1 : <@Error, none>
     // CHECK: lit.yield [[VAR1]]
     // CHECK: } else {
-    // CHECK: [[VAR2:%.*]] = kgen.variant.get [[V]], 0 : <@Error, none>
+    // CHECK: [[VAR2:%.*]] = kgen.variant.take [[V]], 0 : <@Error, none>
     // CHECK: lit.try.raise [[VAR2]]
     // CHECK: }
     %2 = lit.handle_variant %1, %x: (!kgen.variant<@Error, none>, !lit.ref<mut @S, *"life">) -> !kgen.none {
-      %4 = kgen.variant.get %1, 1 : <@Error, none>
+      %4 = kgen.variant.take %1, 1 : <@Error, none>
       lit.yield %4 : !kgen.none
     } else {
-      %4 = kgen.variant.get %1, 0 : <@Error, none>
+      %4 = kgen.variant.take %1, 0 : <@Error, none>
       lit.try.raise %4 : !kgen.declref<@Error>
     }
     // CHECK: lit.call @S::@__del__[life](%x) : !lit.signature<[1](!lit.ref<mut @S, *[0,0]> owned_in_mem)
@@ -176,12 +176,12 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
     hlcf.if %c {
       %5 = lit.call @mightThrow() : !lit.signature<() throws -> !kgen.variant<@Error, none>>
   	  %6 = lit.handle_variant %5 : (!kgen.variant<@Error, none>) -> !kgen.none {
-        %10 = kgen.variant.get %5, 1 : <@Error, none>
+        %10 = kgen.variant.take %5, 1 : <@Error, none>
         lit.yield %10 : !kgen.none
   	  } else {
   	    // CHECK: [[VAR0:%.*]] = lit.call @S::@__del__[SLife](%s)
-  	    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.get
-        %10 = kgen.variant.get %5, 0 : <@Error, none>
+  	    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.take
+        %10 = kgen.variant.take %5, 0 : <@Error, none>
         lit.try.raise %10 : !kgen.declref<@Error>
       }
       %7 = lit.ref.struct.ger %s[a] : <mut index, *"SLife"> from @S
@@ -546,10 +546,10 @@ lit.func @eatErrorNoRef() {
   lit.try {
     %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
-      %6 = kgen.variant.get %3, 1 : <!Error, index>
+      %6 = kgen.variant.take %3, 1 : <!Error, index>
       lit.yield %6 : index
     } else {
-      %6 = kgen.variant.get %3, 0 : <!Error, index>
+      %6 = kgen.variant.take %3, 0 : <!Error, index>
       lit.try.raise %6 : !Error
     }
     lit.try.yield
@@ -569,10 +569,10 @@ lit.func @eatErrorRef() {
   lit.try {
     %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
-      %6 = kgen.variant.get %3, 1 : <!Error, index>
+      %6 = kgen.variant.take %3, 1 : <!Error, index>
       lit.yield %6 : index
     } else {
-      %6 = kgen.variant.get %3, 0 : <!Error, index>
+      %6 = kgen.variant.take %3, 0 : <!Error, index>
       lit.try.raise %6 : !Error
     }
     lit.try.yield

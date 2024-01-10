@@ -1161,7 +1161,7 @@ fn may_throw() raises -> RegExample:
 fn propagate_reg_error() raises:
    # CHECK-NEXT: %0 = lit.call {{.*}}may_throw
    # CHECK-NEXT: %1 = lit.handle_variant %0
-   # CHECK-NEXT:   [[REG:%.*]] = kgen.variant.get %0, 1 : <!Error, !RegExample>
+   # CHECK-NEXT:   [[REG:%.*]] = kgen.variant.take %0, 1 : <!Error, !RegExample>
    # CHECK-NEXT:   lit.yield [[REG]]
    # CHECK-NEXT: } else {
    #               .. stuff ..

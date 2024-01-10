@@ -104,10 +104,10 @@ fn testWithRaising(a: ExampleCM) raises:
 
         # CHECK-NEXT: [[RESULT:%.*]] = lit.call {{.*}}raise_string()
         # CHECK-NEXT: lit.handle_variant [[RESULT]]
-        # CHECK-NEXT:   [[OK:%.*]] = kgen.variant.get [[RESULT]]
+        # CHECK-NEXT:   [[OK:%.*]] = kgen.variant.take [[RESULT]]
         # CHECK-NEXT:   lit.yield [[OK]]
         # CHECK-NEXT: } else {
-        # CHECK-NEXT:   kgen.variant.get
+        # CHECK-NEXT:   kgen.variant.take
         # CHECK-NEXT:   lit.raise
         # CHECK-NEXT:   kgen.unreachable
         # CHECK-NEXT: }
@@ -147,7 +147,7 @@ fn testWithInTry(a: ExampleCM):
             # CHECK: lit.try {
             # CHECK-NEXT: [[RESULT:%.*]] = lit.call {{.*}}raise_string()
             # CHECK-NEXT: lit.handle_variant [[RESULT]]
-            # CHECK-NEXT:   [[OK:%.*]] = kgen.variant.get [[RESULT]]
+            # CHECK-NEXT:   [[OK:%.*]] = kgen.variant.take [[RESULT]]
             # CHECK-NEXT:   lit.yield [[OK]]
             raise_string()
     except e:

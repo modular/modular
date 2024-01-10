@@ -149,7 +149,7 @@ kgen.func @byref_throws(
   // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %[[VAL0]], 1
   // CHECK-NEXT:   hlcf.yield %[[THEN]]
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %arg0, 0
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %arg0, 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
 
@@ -172,13 +172,13 @@ kgen.func @test_byref_throws(
   // CHECK: %[[RES:.*]] = kgen.call @byref_throws(%arg1)
   // CHECK-NEXT: %[[COND:.*]] = kgen.variant.is %[[RES]], 1
   // CHECK-NEXT: %[[NEWRES:.*]] = hlcf.if %[[COND]]
-  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.get %[[RES]], 1
+  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.take %[[RES]], 1
   // CHECK-NEXT:   pop.store %[[VAL]], %[[P0]] : !kgen.pointer<index>
   // CHECK-NEXT:   %none = kgen.param.constant
   // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %none, 1
   // CHECK-NEXT:   hlcf.yield %[[THEN]]
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %[[RES]], 0
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %[[RES]], 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
   %res1 = kgen.call @byref_throws(%__result__, %arg1) : (
@@ -191,13 +191,13 @@ kgen.func @test_byref_throws(
   // CHECK: %[[RES:.*]] = kgen.call_signature %arg0(%arg1)
   // CHECK-NEXT: %[[COND:.*]] = kgen.variant.is %[[RES]], 1
   // CHECK-NEXT: %[[NEWRES:.*]] = hlcf.if %[[COND]]
-  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.get %[[RES]], 1
+  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.take %[[RES]], 1
   // CHECK-NEXT:   pop.store %[[VAL]], %[[P0]] : !kgen.pointer<index>
   // CHECK-NEXT:   %none = kgen.param.constant
   // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %none, 1
   // CHECK-NEXT:   hlcf.yield %[[THEN]]
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %[[RES]], 0
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %[[RES]], 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
   %res2 = kgen.call_signature %arg0(%__result__, %arg1) : !byref_throws_sig

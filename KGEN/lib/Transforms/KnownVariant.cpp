@@ -238,8 +238,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       resultRewrites.emplace_back(idx, knownIndex);
       for (Operation *ret : returns) {
         OpBuilder b(ret);
-        Value result = b.create<VariantGetOp>(ret->getLoc(),
-                                              ret->getOperand(idx), knownIndex);
+        Value result = b.create<VariantTakeOp>(
+            ret->getLoc(), ret->getOperand(idx), knownIndex);
         ret->setOperand(idx, result);
       }
     }

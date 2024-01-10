@@ -78,10 +78,10 @@ OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// VariantGetOp
+// VariantTakeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
+OpFoldResult VariantTakeOp::fold(FoldAdaptor adaptor) {
   if (auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant())) {
     // If the variant value type is not equal to the result type, this is
     // undefined behaviour.
@@ -90,7 +90,7 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
     return variant.getValue();
   }
 
-  // Canonicalize `kgen.variant.get(kgen.variant.create(x)) -> x`.
+  // Canonicalize `kgen.variant.take(kgen.variant.create(x)) -> x`.
   auto create = getVariant().getDefiningOp<VariantCreateOp>();
   if (!create || create.getOperand().getType() != getType())
     return {};

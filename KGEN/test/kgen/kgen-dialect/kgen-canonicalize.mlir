@@ -330,22 +330,22 @@ kgen.func @variant_is() -> i1 {
 kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
-  %1 = kgen.variant.get %0, 1 : <si4, ui4>
+  %1 = kgen.variant.take %0, 1 : <si4, ui4>
   kgen.return %1 : ui4
 }
 
 // CHECK-LABEL: @variant_get_ub
 kgen.func @variant_get_ub() -> si4 {
-  // CHECK: kgen.variant.get
+  // CHECK: kgen.variant.take
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
-  %1 = kgen.variant.get %0, 0 : <si4, ui4>
+  %1 = kgen.variant.take %0, 0 : <si4, ui4>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @variant_create_get
 kgen.func @variant_create_get(%a: i32) -> i32 {
   %0 = kgen.variant.create %a, 0 : <i32, f32>
-  %1 = kgen.variant.get %0, 0 : <i32, f32>
+  %1 = kgen.variant.take %0, 0 : <i32, f32>
   // CHECK: return %arg0
   kgen.return %1 : i32
 }
