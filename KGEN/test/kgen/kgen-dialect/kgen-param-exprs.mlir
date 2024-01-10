@@ -4,7 +4,7 @@
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
+kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: regtype, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
   // CHECK: "test.someop"() {
   "test.someop" () {
@@ -16,8 +16,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
     use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index,
 
     // Type folding.
-    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.anytype
-    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<:type mlirType>> : !kgen.anytype
+    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.anyregtype
+    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<:regtype mlirType>> : !kgen.anyregtype
 
 
   } : () -> ()

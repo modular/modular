@@ -660,12 +660,12 @@ fn function_with_struct():
     var x: Int
 
 # https://github.com/modularml/modular/issues/12598
-struct not_nested_struct[*Ts: AnyType]:
+struct not_nested_struct[*Ts: Destructable]:
     fn __init__(inout self, *args: *Ts):
         pass
 fn function_with_struct2():
     let s1 = not_nested_struct()  # ok
-    struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
+    struct S2[*Ts: Destructable]: # expected-error {{struct inside a function not supported here}}
         fn __init__(inout self, *args: *Ts):
             pass
     let s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
@@ -854,9 +854,9 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
-@value
-struct AnyTypeMember[T: AnyType]: # expected-error {{cannot transfer value into destination, because 'T' doesn't implement `__moveinit__`}}
-    var value: T
+@value # expected-error {{cannot synthesize members: 'value' has non-copyable, non-movable type 'T'}}
+struct AnyTypeMember[T: Destructable]:
+    var value: T # expected-note {{'value' declared here}}
 
 ##===----------------------------------------------------------------------===##
 # Top Level Code

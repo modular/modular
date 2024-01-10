@@ -10,26 +10,36 @@
 # Stubs to allow testing without builtins
 # ===----------------------------------------------------------------------=== #
 
-alias AnyType = __mlir_type.`!kgen.anytype`
 alias Int = __mlir_type.index
 
 alias `10` = __mlir_attr.`10 : index`
 alias `42` = __mlir_attr.`42 : index`
 alias `123` = __mlir_attr.`123 : index`
 
-# COM: Stubs to allow testing without builtins
-struct Error: pass
 
-struct Bool:
+# COM: Stubs to allow testing without builtins
+struct Error:
+    pass
+
+
+@register_passable("trivial")
+struct Bool(Destructable):
     fn __mlir_i1__(self) -> __mlir_type.i1:
         pass
+
+
+trait Destructable:
+    pass
+
 
 # ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
-fn return_generic_memory_only[T: AnyType]() -> T:
+
+fn return_generic_memory_only[T: Destructable]() -> T:
     pass
+
 
 fn fudge_int(x: Int) -> Int:
     return x
@@ -45,14 +55,15 @@ fn let_decls():
     let z = fudge_int(x)
 
     # These may be declared on the same line.
-    let a = `42`; let b = a
+    let a = `42`
+    let b = a
     # CHECK: %a = lit.letreg.decl "a" =
     # CHECK-NEXT: %b = lit.letreg.decl "b" =
 
     # COM: The parser cannot emit this into a `lit.letreg.decl` because the
     # COM: generic function call assumes memory-only conventions.
     # CHECK: lit.varlet.decl "c"
-    let c = return_generic_memory_only[Int]()
+    let c = return_generic_memory_only[Bool]()
 
 
 # CHECK-LABEL: lit.func @"var_decls()
@@ -68,7 +79,8 @@ fn var_decls():
     # CHECK: %z = lit.varlet.decl {{.*}} : !lit.ref<mut index,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %y
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
-    var z = y; z = `42`
+    var z = y
+    z = `42`
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
@@ -96,6 +108,7 @@ fn test_var_let_scopes(cond: Bool):
     else:
         # CHECK: lit.letreg.decl "c"
         let c = `123`
+
 
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
 # the shadowed variable on the RHS.
