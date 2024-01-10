@@ -11,7 +11,6 @@
 # ===----------------------------------------------------------------------=== #
 
 alias Int = __mlir_type.index
-alias AnyType = __mlir_type.`!kgen.anytype`
 alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 alias StringLiteral = __mlir_type.`!kgen.string`
 
@@ -572,16 +571,6 @@ fn pass_up_trait[T: Father](x: T):
     # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<mut :trait<{{.*}}@Father> [[T]], {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} [[T]], "foo")
     # CHECK-SAME: }]>(%x)
     infer_grand_father(x)
-
-fn take_anytype[T: AnyType]():
-    pass
-
-# CHECK-LABEL: lit.func @"trait_to_anytype
-# CHECK-SAME: <[[T:.*]][T]
-fn trait_to_anytype[T: Father]():
-
-    # CHECK: call {{.*}}take_anytype{{.*}}<:type rebind(:trait<{{.*}}> [[T]])>
-    take_anytype[T]()
 
 @register_passable("trivial")
 struct MovableType[T: Movable]:

@@ -34,13 +34,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // `!kgen.anytype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
   // forbid this when traits are fully operational.
-  if (isa<MetaTypeType>(fromType) && isa<AnyTypeType, AnyRegTypeType>(toType))
-    return true;
-  // Permit upcasting from generic types to any type.
-  if (isa<TraitType>(fromType) && isa<AnyTypeType>(toType))
-    return true;
-  // Register-passable types can bind to any types.
-  if (isa<AnyRegTypeType>(fromType) && isa<AnyTypeType>(toType))
+  if (isa<MetaTypeType, TraitType>(fromType) && isa<AnyRegTypeType>(toType))
     return true;
   // Discard types can be converted to anything.
   if (isa<DiscardType>(fromType))

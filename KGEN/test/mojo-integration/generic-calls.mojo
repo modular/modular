@@ -8,22 +8,22 @@
 
 @value
 @register_passable
-struct RegPassable:
+struct RegPassable(Destructable):
     var v: Float32
     var w: Float32
 
 
 @value
-struct MemOnly:
+struct MemOnly(Destructable):
     var a: Int
     var b: Int
 
 
-fn owned_generic[T: AnyType](owned x: T):
+fn owned_generic[T: Destructable](owned x: T):
     pass
 
 
-fn borrowed_generic[T: AnyType](borrowed x: T):
+fn borrowed_generic[T: Destructable](borrowed x: T):
     pass
 
 
