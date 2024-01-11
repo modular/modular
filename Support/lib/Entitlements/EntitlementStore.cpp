@@ -735,8 +735,13 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
   if (auto err = client.setupAuth())
     return err.takeError();
 
+  // Ensure we have a data folder.
+  auto dataFolderOr = Config::getModularDataFolderPath();
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
+
   // Rotate the client's keys on each refresh.
-  auto newKeysOr = Keypair::generate(Config::getModularDataFolderPath());
+  auto newKeysOr = Keypair::generate(*dataFolderOr);
   if (newKeysOr.isError())
     return newKeysOr.takeError();
 
@@ -802,6 +807,11 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
+  // Ensure that we have a data folder.
+  auto dataFolderOr = Config::getModularDataFolderPath();
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
+
   HTTPRequest certificateRequest{"https://crl.modular.com"};
   WriteableBufferRef crlBuf = WriteableBuffer::get(
       /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
@@ -812,15 +822,14 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
   // fetch the CRL.
   if (response.isSuccess()) {
     // Flush it to the filesystem.
-    auto err =
-        writeFileUnderLock(Config::getModularDataFolderPath() / "crl.pem",
-                           [&](llvm::raw_ostream &os) {
-                             os << crlBuf->Buffer::getBuffer();
-                             // Write a null-terminator explicitly - this
-                             // is required by mbedTLS' PEM parsing
-                             // functions.
-                             os << '\0';
-                           });
+    auto err = writeFileUnderLock(*dataFolderOr / "crl.pem",
+                                  [&](llvm::raw_ostream &os) {
+                                    os << crlBuf->Buffer::getBuffer();
+                                    // Write a null-terminator explicitly - this
+                                    // is required by mbedTLS' PEM parsing
+                                    // functions.
+                                    os << '\0';
+                                  });
     if (err.isError()) {
       return err.takeError();
     }
@@ -842,7 +851,7 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
 
   // Flush the certificate to a local file now we know it's valid.
   auto err = writeFileUnderLock(
-      Config::getModularDataFolderPath() / "client.pem",
+      *dataFolderOr / "client.pem",
       [&](llvm::raw_ostream &os) { os << clientCert->getPEM(); });
   if (err.isError())
     return err.takeError();
@@ -1012,8 +1021,12 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   // Couldn't find the default keys, so create new ones and write them to the
   // MODULAR_HOME path. This will ensure we have the keys on the filesystem at
   // all times.
-  if (keysOr.isError())
-    keysOr = Keypair::generate(Config::getModularConfigFolderPath());
+  if (keysOr.isError()) {
+    auto configFolderOr = Config::getModularConfigFolderPath();
+    if (configFolderOr.isError())
+      return configFolderOr.takeError();
+    keysOr = Keypair::generate(*configFolderOr);
+  }
 
   // Now if it's an error, it's a real error.
   if (keysOr.isError())

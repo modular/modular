@@ -21,29 +21,30 @@ using namespace M;
 /// Folder type for searching.
 namespace {
 enum class FolderType { Config, Data };
+} // namespace
+
+static ErrorOrSuccess createPath(const std::filesystem::path &path) {
+  std::error_code ec;
+  if (!create_directories(path, ec)) {
+    // The directory did not exist, and we failed to create it.
+    return Error(Twine(path.string()) +
+                 " could not be created: " + ec.message());
+  }
+  return success();
 }
 
 ErrorOr<Config> Config::open() {
-  std::filesystem::path homeDirPath = getModularDataFolderPath();
+  auto configFilePathOr = getConfigFilePath(/*create=*/false);
 
-  std::error_code ec;
-  // If the modular home directory doesn't even exist, return early. We don't
-  // error out here, just return an empty config.
-  if (!std::filesystem::exists(homeDirPath, ec) && !ec)
-    return Config();
-  if (ec)
-    return Error(ec.message());
-
-  // OK great - we have the modular home path, now try and get the config file
-  // path.
-  std::filesystem::path configFilePath = getConfigFilePath();
   // If we don't have a config, then that's not an error! Simply return an empty
-  // config.
-  if (!std::filesystem::exists(configFilePath, ec)) {
+  // config. An error is returned above only if the directory cannot be created.
+  if (configFilePathOr.isError())
+    return Config();
+  std::error_code ec;
+  if (!std::filesystem::exists(*configFilePathOr, ec)) {
     if (ec)
       return Error(ec.message());
-
-    return Config{};
+    return Config();
   }
 
   // Set up variables we'll need to get this read.
@@ -51,14 +52,14 @@ ErrorOr<Config> Config::open() {
   llvm::SourceMgr sourceMgr;
   unsigned bufferIdx = 0;
 
-  // Check the permissions for the home directory - if it's not writeable then
-  // we don't need a lock.
-  if (llvm::sys::fs::access(homeDirPath.string(),
+  // Check the permissions for the directory containing the configuration. If
+  // it's not writeable, then we avoid acquiring the lock.
+  if (llvm::sys::fs::access(configFilePathOr->parent_path().string(),
                             llvm::sys::fs::AccessMode::Write)) {
     // We don't have write permission here, so we can just read it without a
     // lock.
-    auto mBufOr =
-        llvm::MemoryBuffer::getFile(configFilePath.string(), /*IsText=*/true);
+    auto mBufOr = llvm::MemoryBuffer::getFile(configFilePathOr->string(),
+                                              /*IsText=*/true);
     if (!mBufOr)
       return Error(mBufOr.getError().message());
 
@@ -67,7 +68,7 @@ ErrorOr<Config> Config::open() {
     std::optional<Error> error = std::nullopt;
     // Read the file atomically - we may have multiple processes writing.
     ErrorOrSuccess err = readFileUnderLock(
-        configFilePath, [&](const std::filesystem::path &filePath) {
+        *configFilePathOr, [&](const std::filesystem::path &filePath) {
           auto mBufOr =
               llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
           if (!mBufOr) {
@@ -335,32 +336,15 @@ void Config::flush(raw_ostream &os) {
 }
 
 ErrorOrSuccess Config::flush() {
-  std::filesystem::path configFilePath = getConfigFilePath();
+  auto configFilePathOr = getConfigFilePath(/*create=*/true);
 
-  // Ensure that the parent directory exists.
-  std::error_code ec;
-  auto parent_dir = configFilePath.parent_path();
-  if (std::filesystem::exists(parent_dir, ec)) {
-    if (!std::filesystem::is_directory(parent_dir, ec) && !ec) {
-      // We know correctly that is it not a directory.
-      return Error(Twine(parent_dir.string()) + " is not a directory");
-    } else if (ec) {
-      // We know it exists, but cannot stat it.
-      return Error(Twine(parent_dir.string()) +
-                   " could not be read: " + ec.message());
-    }
-  } else if (ec) {
-    // The parent_dir may or may not exist; an error occurred during "exists".
-    return Error(Twine(parent_dir.string()) +
-                 " could not be read: " + ec.message());
-  } else if (!create_directories(parent_dir, ec)) {
-    // The directory did not exist, and we failed to create it.
-    return Error(Twine(parent_dir.string()) +
-                 " could not be created: " + ec.message());
-  }
+  // We need to write the configuration, so if this has returned an error, then
+  // we don't actually have a writable directory that we can use.
+  if (configFilePathOr.isError())
+    return configFilePathOr.takeError();
 
   // Write the config file to the output atomically.
-  auto pathOr = writeFileUnderLock(configFilePath,
+  auto pathOr = writeFileUnderLock(*configFilePathOr,
                                    [&](llvm::raw_ostream &os) { flush(os); });
   if (pathOr.isError())
     return pathOr.takeError();
@@ -371,8 +355,21 @@ ErrorOrSuccess Config::flush() {
 /// Get the list of search paths, in order of preference.
 static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
                            FolderType type) {
-#ifndef _WIN32
+  // If MODULAR_HOME is defined, use that and only that.
+  auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
+  if (modularHome) {
+    paths.push_back(*modularHome);
+    return;
+  }
 
+  // If MODULAR_DERIVED_PATH is defined, use that and only that.
+  auto derivedPath = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+  if (derivedPath) {
+    paths.push_back(*derivedPath);
+    return;
+  }
+
+#ifndef _WIN32
   // To support existing installs, add $HOME/.modular if it exists. If it
   // does it always takes precedence.
   auto homeDir = llvm::sys::Process::GetEnv("HOME");
@@ -407,7 +404,7 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   if (!addedHome && homeDir)
     paths.push_back(std::filesystem::path(*homeDir) / ".modular");
 
-  // Add /opt/modular
+  // Add /opt/modular as a global destination.
   paths.push_back("/opt/modular");
 #else  // _WIN32
   // Add $APPDATA\Local\Modular
@@ -415,19 +412,16 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   assert(defaultRoot.has_value() && "Must have APPDATA");
   paths.push_back(std::filesystem::path(*defaultRoot) / "Local" / "Modular");
 #endif // _WIN32
+
+  // To work well in test environments, check for a standardized test
+  // environment variable. This is always the last option, if available.
+  auto testTempdir = llvm::sys::Process::GetEnv("TEST_TMPDIR");
+  if (testTempdir)
+    paths.push_back(std::filesystem::path(*testTempdir) / ".modular");
 }
 
-static std::filesystem::path findBestPathForType(FolderType type) {
-  // If MODULAR_HOME is defined, use that.
-  auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
-  if (modularHome)
-    return *modularHome;
-
-  // If MODULAR_DERIVED_PATH is defined, use that.
-  auto derivedPath = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
-  if (derivedPath)
-    return *derivedPath;
-
+static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
+                                                          bool create) {
   // Get the list of search paths.
   SmallVector<std::filesystem::path, 3> searchPaths;
   getSearchPaths(searchPaths, type);
@@ -441,26 +435,48 @@ static std::filesystem::path findBestPathForType(FolderType type) {
         assert(!ec && "error checking for path existence");
         return exists;
       });
-  if (found == searchPaths.end())
-    return searchPaths.front();
-  return *found;
+  if (found != searchPaths.end())
+    return *found;
+
+  // If we aren't supposed to create the directory, then just return the path
+  // directly. It is still our "best choice", even if we can't use it. The
+  // caller must specifically set create=false to exercise this path.
+  if (!create)
+    return searchPaths[0];
+
+  // None of the above directories exist. Attempt to create a directory, in the
+  // order provided. We iterate and return the first one we can create.
+  Error firstErr = Error("no candidates for directory");
+  bool firstErrFound = false;
+  found = llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
+    auto err = createPath(path);
+    if (err.isError()) {
+      if (!firstErrFound) {
+        firstErrFound = true;
+        firstErr = err.takeError();
+      }
+      return false;
+    }
+    return true;
+  });
+  if (found != searchPaths.end())
+    return *found;
+
+  // Nothing could be created. Return the first error encountered (which is the
+  // directory we'd want to use with the highest priority).
+  return firstErr;
 }
 
-std::filesystem::path Config::getModularConfigFolderPath() {
-  return findBestPathForType(FolderType::Config);
+ErrorOr<std::filesystem::path> Config::getModularConfigFolderPath(bool create) {
+  return findBestPathForType(FolderType::Config, create);
 }
 
-std::filesystem::path Config::getModularDataFolderPath() {
-  return findBestPathForType(FolderType::Data);
+ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
+  return findBestPathForType(FolderType::Data, create);
 }
 
-std::filesystem::path Config::getConfigFilePath() {
+ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
   constexpr llvm::StringLiteral kModularConfigFileName = "modular.cfg";
-
-  // If MODULAR_HOME is defined, always use that.
-  auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
-  if (modularHome)
-    return std::filesystem::path(*modularHome) / kModularConfigFileName.str();
 
   // If we found the config file this way, then return it.
   auto configFile = findModularFile(kModularConfigFileName);
@@ -468,22 +484,15 @@ std::filesystem::path Config::getConfigFilePath() {
     return *configFile;
 
   // Otherwise, return where it should be placed.
-  return getModularConfigFolderPath() / kModularConfigFileName.str();
+  auto configFolderOr = getModularConfigFolderPath(create);
+  if (configFolderOr.isError())
+    return configFolderOr.takeError();
+  return *configFolderOr / kModularConfigFileName.str();
 }
 
 void Config::setEnvOverride(bool newVal) { allowEnvOverride = newVal; }
 
 std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
-  // First try and find it in the home dir if we can.
-  std::error_code ec;
-  if (std::filesystem::exists(
-          Config::getModularDataFolderPath() / fileName.str(), ec)) {
-    assert(!ec && "error trying to check for file existence");
-    return Config::getModularDataFolderPath() / fileName.str();
-  }
-
-  // Now we can use the search paths on the system, we didn't find it in the
-  // home dir.
   SmallVector<std::filesystem::path, 4> searchPaths;
   getSearchPaths(searchPaths, FolderType::Config);
 #ifndef _WIN32
@@ -500,6 +509,7 @@ std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   // Try to find the file in the provided paths.
   auto found =
       llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
+        std::error_code ec;
         bool exists = std::filesystem::exists(path / fileName.str(), ec);
         assert(!ec && "error checking for path existence");
         return exists;
