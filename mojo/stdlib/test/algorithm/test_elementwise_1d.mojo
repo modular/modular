@@ -15,7 +15,7 @@ from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-from collections.vector import UnsafeFixedVector
+from collections.vector import DynamicVector
 
 
 # CHECK-LABEL: test_elementwise_1d
@@ -25,9 +25,9 @@ fn test_elementwise_1d():
     let num_work_items = Runtime().parallelism_level()
 
     alias num_elements = 64
-    let buf = UnsafeFixedVector[Float32](num_elements)
+    let ptr = DTypePointer[DType.float32].alloc(num_elements)
 
-    let vector = Buffer[num_elements, DType.float32](buf.data)
+    let vector = Buffer[num_elements, DType.float32](ptr)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -48,7 +48,7 @@ fn test_elementwise_1d():
     # CHECK: 2.051446{{[0-9]+}}
     print(vector[0])
 
-    buf._del_old()
+    ptr.free()
 
 
 fn main():
