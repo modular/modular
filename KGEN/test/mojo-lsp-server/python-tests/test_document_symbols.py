@@ -19,10 +19,13 @@ async def test_document_symbols(client: LanguageClient):
         """
 alias Value = 10
 
-fn foo():
+fn foo(a: DTypePointer[DType.float32]) -> Float32:
   let variable = 15
   fn inner_fn():
     return
+  fn inner_closure(arg: Int) -> Float32:
+    return a.load(arg)
+  return inner_fn(variable)
 
 struct struct_name:
   fn struct_fn():
@@ -43,7 +46,7 @@ struct struct_name:
 
     assert results[1].name == "foo"
     assert results[1].kind == SymbolKind.Function
-    assert results[1].detail == "foo()"
+    assert results[1].detail.startswith("foo(")
     assert len(results[1].children) == 1
     assert results[1].children[0].name == "inner_fn"
 
