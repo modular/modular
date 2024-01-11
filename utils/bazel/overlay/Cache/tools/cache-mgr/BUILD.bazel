@@ -1,0 +1,15 @@
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+cc_binary(
+    name = "cache-mgr",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Cache",
+        "//LLCL:Runtime",
+        "//Support:CommonCLOptions",
+        "@llvm-project//mlir:Support",
+    ],
+)

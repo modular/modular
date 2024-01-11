@@ -1,0 +1,1046 @@
+load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+cc_library(
+    name = "Base",
+    srcs = [
+        "lib/AlignedAlloc.cpp",
+        "lib/BuildInfo.cpp",
+        "lib/Error.cpp",
+        "lib/ErrorOr.cpp",
+        "lib/FileSystemExtras.cpp",
+        "lib/Process.cpp",
+        "lib/Random.cpp",
+        "lib/ReferenceCounted.cpp",
+        "lib/Version.cpp",
+    ],
+    hdrs = [
+        "include/Support/AlignedAlloc.h",
+        "include/Support/Binary.h",
+        "include/Support/BuildInfo.h",
+        "include/Support/CommandLine.h",
+        "include/Support/Error.h",
+        "include/Support/ErrorOr.h",
+        "include/Support/FileSystemExtras.h",
+        "include/Support/ForwardDecls.h",
+        "include/Support/FunctionExtras.h",
+        "include/Support/LLVMCompilerForwardDecls.h",
+        "include/Support/LLVMForwardDecls.h",
+        "include/Support/LLVMYAMLForwardDecls.h",
+        "include/Support/LogicalResult.h",
+        "include/Support/MathExtras.h",
+        "include/Support/PlatformUtils.h",
+        "include/Support/Preprocessor.h",
+        "include/Support/Process.h",
+        "include/Support/RCRef.h",
+        "include/Support/Random.h",
+        "include/Support/ReferenceCounted.h",
+        "include/Support/STLExtras.h",
+        "include/Support/SymbolExport.h",
+        "include/Support/Version.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        "//Config",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_test(
+    name = "BaseTest",
+    srcs = [
+        "unittests/AlignedAllocTest.cpp",
+        "unittests/ErrorOrTest.cpp",
+        "unittests/ErrorTest.cpp",
+        "unittests/FileSystemExtrasTest.cpp",
+        "unittests/FunctionExtrasTest.cpp",
+        "unittests/MathExtras.cpp",
+        "unittests/RandomTest.cpp",
+        "unittests/VersionTest.cpp",
+    ],
+    deps = [
+        ":Base",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Base64",
+    srcs = ["lib/Base64.cpp"],
+    hdrs = ["include/Support/Base64.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "Base64Test",
+    srcs = ["unittests/Base64Test.cpp"],
+    deps = [
+        ":Base64",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "CommonCLOptions",
+    srcs = ["lib/CommonCLOptions.cpp"],
+    hdrs = ["include/Support/CommonCLOptions.h"],
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+
+        # Needed for the type definitions, and the reason that this is split
+        # into a separate library when required.
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "HMAC",
+    srcs = ["lib/HMAC.cpp"],
+    hdrs = ["include/Support/HMAC.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "HMACTest",
+    srcs = ["unittests/HMACTest.cpp"],
+    deps = [
+        ":HMAC",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Buffer",
+    srcs = ["lib/Buffer.cpp"],
+    hdrs = ["include/Support/Buffer.h"],
+    strip_include_prefix = "include",
+    deps = [
+        ":ADT",
+        ":Base",
+    ],
+)
+
+cc_library(
+    name = "DeviceSpecs",
+    srcs = ["lib/DeviceSpecs.cpp"],
+    hdrs = ["include/Support/DeviceSpecs.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "DeviceSpecsTest",
+    srcs = ["unittests/DeviceSpecsTest.cpp"],
+    deps = [
+        ":DeviceSpecs",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "CPUCache",
+    srcs = ["lib/CPUCache.cpp"],
+    hdrs = ["include/Support/CPUCache.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "MicroBenchmark",
+    srcs = ["lib/MicroBenchmark.cpp"],
+    hdrs = ["include/Support/MicroBenchmark.h"],
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":CPUCache",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_test(
+    name = "MicroBenchmarkTest",
+    srcs = ["unittests/MicroBenchmarkTest.cpp"],
+    deps = [
+        ":MicroBenchmark",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Driver",
+    srcs = glob(["lib/Driver/*.cpp"]),
+    hdrs = glob(["include/Support/Driver/*.h"]),
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "CUDA",
+    srcs = glob(["lib/CUDA/*.cpp"]),
+    hdrs = glob(["include/Support/CUDA/*.h"]),
+    strip_include_prefix = "include",
+    textual_hdrs = glob(["lib/CUDA/*.h"]),
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "ASN1",
+    srcs = glob(["lib/ASN1/*.cpp"]),
+    hdrs = glob(["include/Support/ASN1/*.h"]),
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "ASN1Test",
+    srcs = ["unittests/ASN1Test.cpp"],
+    deps = [
+        ":ASN1",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Globals",
+    srcs = glob(["lib/Globals/*.cpp"]),
+    hdrs = glob(["include/Support/Globals/*.h"]),
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "ADT",
+    srcs = glob(["lib/ADT/*.cpp"]),
+    hdrs = glob(["include/Support/ADT/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_test(
+    name = "ADTTest",
+    srcs = glob(["unittests/ADT/*.cpp"]),
+    deps = [
+        ":ADT",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Configuration",
+    srcs = glob(["lib/Configuration.cpp"]),
+    hdrs = glob(["include/Support/Configuration.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":ADT",
+        ":Base",
+    ],
+)
+
+cc_test(
+    name = "ConfigurationTest",
+    srcs = ["unittests/ConfigurationTest.cpp"],
+    deps = [
+        ":Configuration",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "CrashReporting",
+    srcs = glob(["lib/CrashReporting/*.cpp"]),
+    hdrs = [
+        "include/Support/CrashReporting.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Configuration",
+        "@crashpad//:client",
+    ],
+)
+
+cc_library(
+    name = "Cryptography",
+    srcs = glob(["lib/Cryptography/*.cpp"]),
+    hdrs = glob(["include/Support/Cryptography/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Base64",
+        ":Buffer",
+        ":Configuration",
+        ":JSON",
+        "@com_github_mbedtls//:mbedtls",
+    ],
+)
+
+cc_test(
+    name = "CryptographyTest",
+    srcs = glob(["unittests/Cryptography/*.cpp"]),
+    deps = [
+        ":Cryptography",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+genrule(
+    name = "CertificatesHeader",
+    srcs = select({
+        "//:ProdBuild": glob([
+            "lib/Entitlements/RootCertificates/RootCert.inc.in",
+            "lib/Entitlements/RootCertificates/prod/*",
+        ]),
+        "//:DevBuild": glob([
+            "lib/Entitlements/RootCertificates/RootCert.inc.in",
+            "lib/Entitlements/RootCertificates/dev/*",
+        ]),
+    }),
+    outs = ["RootCert.inc"],
+    # FIXME: This will be broken when we actually have prod certificates, this
+    # logic is complex enough that we should probably do it properly and encode
+    # it into a Starlark rule. It should also go in its own directory. The rule
+    # to support this is quite trivial with `actions.expand_template` [1], we
+    # would just need to enumerate and read the inputs properly.
+    # [1] https://github.com/bazelbuild/examples/blob/main/rules/expand_template/hello.bzl
+    cmd = "cert=$$(cat $$(echo $(SRCS) | tr ' ' '\\n' | grep /cert.pem) | sed -e 's/[\\&]/\\&/g' | awk '{printf \"%s\\\\n\", $$0}') && " +
+          "key=$$(cat $$(echo $(SRCS) | tr ' ' '\\n' | grep /key.pem) | sed -e 's/[\\&]/\\&/g' | awk '{printf \"%s\\\\n\", $$0}') && " +
+          "cat $(location lib/Entitlements/RootCertificates/RootCert.inc.in) | " +
+          "sed -e \"s|@CERTIFICATE_PEM@|$${cert}|g\" | " +
+          "sed -e \"s|@KEY_PEM@|$${key}|g\" | " +
+          "cat > $@",
+)
+
+cc_library(
+    name = "Certificates",
+    hdrs = [":CertificatesHeader"],
+    # FIXME: This should really be namedspace in the proper place, but now it
+    # relies on being in the same directory as the entitlements code.
+    include_prefix = "./",
+)
+
+cc_library(
+    name = "Entitlements",
+    srcs = glob(["lib/Entitlements/*.cpp"]),
+    hdrs = glob(["include/Support/Entitlements/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":ASN1",
+        ":Base",
+        ":Certificates",
+        ":Configuration",
+        ":Cryptography",
+        ":HTTP",
+    ],
+)
+
+cc_test(
+    name = "EntitlementsTest",
+    srcs = glob(["unittests/Entitlements/*.cpp"]),
+    deps = [
+        ":Entitlements",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "IPInt",
+    srcs = ["lib/IPInt.cpp"],
+    hdrs = ["include/Support/IPInt.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "Stats",
+    srcs = ["lib/Stats.cpp"],
+    hdrs = ["include/Support/Stats.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_library(
+    name = "URI",
+    srcs = ["lib/URI.cpp"],
+    hdrs = ["include/Support/URI.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "URITest",
+    srcs = ["unittests/URITest.cpp"],
+    deps = [
+        ":URI",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "JSON",
+    srcs = ["lib/JSON.cpp"],
+    hdrs = ["include/Support/JSON.h"],
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "JSONTest",
+    srcs = ["unittests/JSONTest.cpp"],
+    deps = [
+        ":JSON",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "HTTP",
+    srcs = glob(["lib/HTTP/*.cpp"]),
+    hdrs = glob(["include/Support/HTTP/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Base64",
+        ":Buffer",
+        ":Configuration",
+        ":URI",
+        "//Cache",
+        "@curl",
+    ],
+)
+
+cc_test(
+    name = "HTTPTest",
+    srcs = glob(["unittests/HTTP/*.cpp"]),
+    deps = [
+        ":HTTP",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "ML",
+    srcs = glob(["lib/ML/*.cpp"]),
+    hdrs = glob(["include/Support/ML/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_test(
+    name = "MLTest",
+    srcs = [
+        "unittests/BCastTest.cpp",
+        "unittests/DTypeTest.cpp",
+        "unittests/TensorShapeTest.cpp",
+        "unittests/TensorSpecTest.cpp",
+    ],
+    deps = [
+        ":ML",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Threading",
+    srcs = glob(["lib/Threading/*.cpp"]),
+    hdrs = glob(["include/Support/Threading/*.h"]),
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "HostTest",
+    srcs = ["unittests/HostTest.cpp"],
+    deps = [
+        ":MArchTarget",
+        ":Threading",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Profiling",
+    srcs = glob(["lib/Profiling/*.cpp"]),
+    hdrs = glob(["include/Support/Profiling/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Globals",
+        ":MArchTarget",
+    ],
+)
+
+cc_test(
+    name = "ProfilingTest",
+    srcs = ["unittests/TimeProfilerTest.cpp"],
+    deps = [
+        ":Profiling",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "MArchTarget",
+    srcs = glob(["lib/MArchTarget/*.cpp"]),
+    hdrs = glob(["include/Support/MArchTarget/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":CPUCache",
+        ":MDialect",
+        ":DeviceSpecs",
+        ":Threading",
+
+        # Rerquired for diagnostics.
+        "@llvm-project//clang:basic",
+
+        # Used by target-info.
+        "@llvm-project//llvm:AllTargetsAsmParsers",
+        "@llvm-project//llvm:AllTargetsCodeGens",
+        "@llvm-project//llvm:AllTargetsDisassemblers",
+        "@llvm-project//llvm:AllTargetsMCAs",
+    ],
+)
+
+cc_test(
+    name = "MArchTargetTest",
+    srcs = glob(["unittests/MArchTarget/*.cpp"]),
+    deps = [
+        ":MArchTarget",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Compiler",
+    srcs = glob(["lib/Compiler/*.cpp"]),
+    hdrs = glob(["include/Support/Compiler/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":ADT",
+        ":Base",
+        ":MDialect",
+        ":Profiling",
+        "@llvm-project//mlir:AllPassesAndDialects",
+    ],
+)
+
+cc_library(
+    name = "Telemetry",
+    srcs = glob(["lib/Telemetry/**/*.cpp"]),
+    hdrs = glob(["include/Support/Telemetry/**/*.h"]),
+    defines = [
+        # FIXME(amscanne): These configurations should be removed. We
+        # unilaterally set sensible configurations for now.
+        "MODULAR_ENABLE_TELEMETRY",
+        # This is for Opentelemetry, to use standard types.
+        #"OPENTELEMETRY_STL_VERSION=2017",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Configuration",
+        ":Entitlements",
+        ":MArchTarget",
+        "@io_opentelemetry_cpp//api",
+        "@io_opentelemetry_cpp//exporters/ostream:ostream_log_record_exporter",
+        "@io_opentelemetry_cpp//exporters/ostream:ostream_metric_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_grpc_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_grpc_log_record_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_grpc_metric_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_http_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_http_log_record_exporter",
+        "@io_opentelemetry_cpp//exporters/otlp:otlp_http_metric_exporter",
+        "@io_opentelemetry_cpp//sdk:headers",
+    ],
+)
+
+cc_test(
+    name = "TelemetryTest",
+    srcs = ["unittests/TelemetryTest.cpp"],
+    deps = [
+        ":Telemetry",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+td_library(
+    name = "MTdFiles",
+    srcs = glob([
+        "include/Support/MDialect/*.td",
+        "include/Support/Compiler/*.td",
+    ]),
+    includes = ["include"],
+    deps = [
+        ":Base",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "MTypes",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-op-decls",
+            ],
+            "include/Support/MDialect/M.h.inc",
+        ),
+        (
+            [
+                "-gen-op-defs",
+            ],
+            "include/Support/MDialect/M.cpp.inc",
+        ),
+        (
+            [
+                "-gen-typedef-decls",
+                "-typedefs-dialect=M",
+            ],
+            "include/Support/MDialect/MTypes.h.inc",
+        ),
+        (
+            [
+                "-gen-typedef-defs",
+                "-typedefs-dialect=M",
+            ],
+            "include/Support/MDialect/MTypes.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=M",
+            ],
+            "include/Support/MDialect/MDialect.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=M",
+            ],
+            "include/Support/MDialect/MDialect.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/MDialect/M.td",
+    deps = [":MTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "MAttrs",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-attrdef-decls",
+            ],
+            "include/Support/MDialect/MAttrs.h.inc",
+        ),
+        (
+            [
+                "-gen-attrdef-defs",
+            ],
+            "include/Support/MDialect/MAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/MDialect/M.td",
+    deps = [":MTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "MTypeInterfaces",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-type-interface-decls",
+            ],
+            "include/Support/MDialect/MTypeInterfaces.h.inc",
+        ),
+        (
+            [
+                "-gen-type-interface-defs",
+            ],
+            "include/Support/MDialect/MTypeInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/MDialect/MTypeInterfaces.td",
+    deps = [":MTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "MAttrInterfaces",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-attr-interface-decls",
+            ],
+            "include/Support/MDialect/MAttrInterfaces.h.inc",
+        ),
+        (
+            [
+                "-gen-attr-interface-defs",
+            ],
+            "include/Support/MDialect/MAttrInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/MDialect/MAttrInterfaces.td",
+    deps = [":MTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "MDialectByteCode",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=M",
+            ],
+            "include/Support/MDialect/MDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/MDialect/MDialectBytecode.td",
+    deps = [":MTdFiles"],
+)
+
+cc_library(
+    name = "MDialect",
+    srcs = glob(["lib/MDialect/*.cpp"]),
+    hdrs = glob([
+        "include/Support/MDialect/*.h",
+        # The dialect files include some files that belong to other logical
+        # packages in an apparent set of ordering violations. These create
+        # loops in the logical package structure. Just encode these explicit
+        # exceptions for now.
+        "include/Support/Compiler/MLIRDenseAttrStorage.h",
+        "include/Support/MArchTarget/Host.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":DeviceSpecs",
+        ":MAttrInterfaces",
+        ":MAttrs",
+        ":MDialectByteCode",
+        ":ML",
+        ":MTypeInterfaces",
+        ":MTypes",
+        "@llvm-project//llvm:MC",
+        "@llvm-project//llvm:Target",
+    ],
+)
+
+cc_test(
+    name = "MDialectTest",
+    srcs = glob(["unittests/MDialect/*.cpp"]),
+    deps = [
+        ":MDialect",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+filegroup(
+    name = "DebugInfoTdFiles",
+    srcs = glob([
+        "include/Support/DebugInfoDialect/**/*.td",
+        "include/Support/Compiler/*.td",
+    ]),
+)
+
+gentbl_cc_library(
+    name = "DebugInfoToLLVMDialect",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-pass-decls",
+            ],
+            "include/Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.td",
+    deps = [
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:PassBaseTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoTypes",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-op-decls",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfo.h.inc",
+        ),
+        (
+            [
+                "-gen-op-defs",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfo.cpp.inc",
+        ),
+        (
+            [
+                "-gen-typedef-decls",
+                "-typedefs-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoTypes.h.inc",
+        ),
+        (
+            [
+                "-gen-typedef-defs",
+                "-typedefs-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoTypes.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/IR/DebugInfo.td",
+    deps = [
+        ":Base",
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoTypeInterfaces",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-op-interface-decls",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoInterfaces.h.inc",
+        ),
+        (
+            [
+                "-gen-op-interface-defs",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/IR/DebugInfoInterfaces.td",
+    deps = [
+        ":Base",
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+cc_library(
+    name = "DebugInfoDialect",
+    srcs = glob(["lib/DebugInfoDialect/IR/*.cpp"]),
+    hdrs = glob(["include/Support/DebugInfoDialect/IR/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":Compiler",
+        ":DebugInfoDialectAttrs",
+        ":DebugInfoDialectBytecode",
+        ":DebugInfoExprAttrInterfaces",
+        ":DebugInfoTypeInterfaces",
+        ":DebugInfoTypes",
+        "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoExprAttrInterfaces",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-attr-interface-decls",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.h.inc",
+        ),
+        (
+            [
+                "-gen-attr-interface-defs",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.td",
+    deps = [
+        ":Base",
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoDialectAttrs",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-enum-decls",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoEnums.h.inc",
+        ),
+        (
+            [
+                "-gen-enum-defs",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoEnums.cpp.inc",
+        ),
+        (
+            [
+                "-gen-attrdef-decls",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoAttrs.h.inc",
+        ),
+        (
+            [
+                "-gen-attrdef-defs",
+                "-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/IR/DebugInfo.td",
+    deps = [
+        ":Base",
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoDialectBytecode",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=debuginfo",
+            ],
+            "include/Support/DebugInfoDialect/IR/DebugInfoDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/IR/DebugInfoDialectBytecode.td",
+    deps = [
+        ":Base",
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "DebugInfoTransformPasses",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-pass-decls",
+            ],
+            "include/Support/DebugInfoDialect/Transforms/Transforms.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Support/DebugInfoDialect/Transforms/Passes.td",
+    deps = [
+        ":DebugInfoTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:PassBaseTdFiles",
+    ],
+)
+
+cc_library(
+    name = "DebugInfoTransforms",
+    srcs = glob(["lib/DebugInfoDialect/Transforms/*.cpp"]),
+    hdrs = glob(["include/Support/DebugInfoDialect/Transforms/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":DebugInfoDialect",
+        ":DebugInfoTransformPasses",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:TransformUtils",
+    ],
+)
+
+cc_library(
+    name = "DebugInfoToLLVM",
+    srcs = glob(["lib/DebugInfoDialect/DebugInfoToLLVM/*.cpp"]),
+    hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":DebugInfoDialect",
+        ":DebugInfoToLLVMDialect",
+        ":DebugInfoTransforms",
+        "@llvm-project//mlir:LLVMCommonConversion",
+        "@llvm-project//mlir:LLVMDialect",
+        "@llvm-project//mlir:Pass",
+    ],
+)
+
+cc_test(
+    name = "DebugInfoDialectTest",
+    srcs = glob(["unittests/DebugInfoDialect/*.cpp"]),
+    deps = [
+        ":DebugInfoDialect",
+        ":DebugInfoToLLVM",
+        ":DebugInfoTransforms",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)

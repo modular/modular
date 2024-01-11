@@ -1,0 +1,18 @@
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+cc_binary(
+    name = "cache-opt",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Cache:CacheDialect",
+        "//Cache:CachePasses",
+        "//Support:CommonCLOptions",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:Transforms",
+    ],
+)

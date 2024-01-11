@@ -1,0 +1,45 @@
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+cc_library(
+    name = "CompilerSupport",
+    srcs = glob(["lib/LLCL/CompilerSupport/*.cpp"]),
+    hdrs = glob(["include/LLCL/CompilerSupport/*.h"]),
+    strip_include_prefix = "include",
+)
+
+cc_library(
+    name = "Runtime",
+    srcs = glob(["lib/LLCL/Runtime/*.cpp"]),
+    hdrs = glob([
+        "include/LLCL/ForwardDecls.h",
+        "include/LLCL/Runtime/*.h",
+    ]),
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
+        "//conditions:default": [],
+    }),
+    strip_include_prefix = "include",
+    deps = [
+        ":RuntimeGlobals",
+        ":Support",
+        "//Support:Profiling",
+    ],
+)
+
+cc_library(
+    name = "RuntimeGlobals",
+    srcs = glob(["lib/LLCL/Runtime/Globals/*.cpp"]),
+    hdrs = glob(["include/LLCL/Runtime/Globals/*.h"]),
+    strip_include_prefix = "include",
+)
+
+cc_library(
+    name = "Support",
+    srcs = glob(["lib/LLCL/Support/*.cpp"]),
+    hdrs = glob(["include/LLCL/Support/*.h"]),
+    strip_include_prefix = "include",
+    deps = ["//Support:Threading"],
+)

@@ -1,0 +1,14 @@
+/*
+ * N.B. This is a temporary file to preserve the existing build semantics.
+ * Source-based version patches will break all incremental caching (for good
+ * reasons, since any file including this header will need to be invalidated on
+ * *any* source change). Instead, link-based stamps should be used.
+ */
+
+#define MODULAR_VERSION_MAJOR    0
+#define MODULAR_VERSION_MINOR    0
+#define MODULAR_VERSION_PATCH    0
+#define MODULAR_VERSION_REVISION "${COMMIT}"
+#define MODULAR_VERSION_LABEL    "bazel"
+#define MODULAR_BUILD_TYPE_LOWER "bazel"
+#define MODULAR_VERSION_STRING   "0.0.0-${COMMIT}"
