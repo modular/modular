@@ -3530,22 +3530,23 @@ fn no_mask_fused_attention_cpu[
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
     try:
-        cpu_fused_attention_impl[
-            rank,
-            input_0_static_shape,
-            input_1_static_shape,
-            input_2_static_shape,
-            mask_shape,
-            DimList.create_unknown[rank](),
-            q_type,
-            k_type,
-            v_type,
-            mask_type,
-            output_type,
-            False,  # transpose_k
-            False,  # add_attn_mask
-            False,  # add_causal_mask
-        ](output, q, k, v, mask, scale_f32, causal_mask)
+        with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
+            cpu_fused_attention_impl[
+                rank,
+                input_0_static_shape,
+                input_1_static_shape,
+                input_2_static_shape,
+                mask_shape,
+                DimList.create_unknown[rank](),
+                q_type,
+                k_type,
+                v_type,
+                mask_type,
+                output_type,
+                False,  # transpose_k
+                False,  # add_attn_mask
+                False,  # add_causal_mask
+            ](output, q, k, v, mask, scale_f32, causal_mask)
     except e:
         out_chain._mark_error_old(e)
 
@@ -3603,22 +3604,23 @@ fn with_mask_fused_attention_cpu[
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
     try:
-        cpu_fused_attention_impl[
-            rank,
-            input_0_static_shape,
-            input_1_static_shape,
-            input_2_static_shape,
-            input_3_static_shape,
-            DimList.create_unknown[rank](),
-            q_type,
-            k_type,
-            v_type,
-            attn_mask_type,
-            output_type,
-            False,  # transpose_k
-            True,  # add_attn_mask
-            False,  # add_causal_mask
-        ](output, q, k, v, attn_mask, scale_f32, causal_mask)
+        with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
+            cpu_fused_attention_impl[
+                rank,
+                input_0_static_shape,
+                input_1_static_shape,
+                input_2_static_shape,
+                input_3_static_shape,
+                DimList.create_unknown[rank](),
+                q_type,
+                k_type,
+                v_type,
+                attn_mask_type,
+                output_type,
+                False,  # transpose_k
+                True,  # add_attn_mask
+                False,  # add_causal_mask
+            ](output, q, k, v, attn_mask, scale_f32, causal_mask)
     except e:
         out_chain._mark_error_old(e)
 
