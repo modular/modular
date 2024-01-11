@@ -1,0 +1,36 @@
+load("//Config:version.bzl", "status_template")
+
+package(
+    default_visibility = ["//visibility:private"],
+    licenses = ["notice"],
+)
+
+cc_library(
+    name = "Config",
+    srcs = glob(["lib/**/*.cpp"]) + [
+        ":GeneratedVersion",
+    ],
+    hdrs = glob(["include/**/*.h"]) + [
+        ":GeneratedVersion",
+    ],
+    defines = [
+        # FIXME(amscanne): These are non-hermetic. These will automatically
+        # propagate to all dependent targets and be defined universally.
+        "MODULAR_LLCL_MAX_PROFILING_LEVEL=00000",
+        "MODULAR_KERNELS_BUILD_TYPE=\\\"unknown\\\"",
+        # FIXME(amscanne): This will require some basic select or plumbing of the
+        # target information somehow. This can be done in the future, but will be
+        # required to have an actual working binary.
+        "LLVM_TARGETS_BUILT=\\\"unknown\\\"",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+status_template(
+    name = "GeneratedVersion",
+    # Note that this still incldues the include/ prefix, which will be stripped
+    # above. This can only be used via a dependency on the Config library.
+    src = "include/GeneratedVersion.h.tmpl",
+    out = "include/GeneratedVersion.h",
+)

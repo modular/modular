@@ -1,0 +1,3 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests()
