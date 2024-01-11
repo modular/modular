@@ -472,10 +472,10 @@ static ParseResult parseLITFunctionSignature(
     return failure();
 
   SmallVector<StringAttr> paramNames;
-  SmallVector<TypedAttr> defaultParams;
+  SmallVector<TypedAttr> defaultPosParams;
   SmallVector<PassingKind> paramPassingKinds;
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
-                                 paramPassingKinds, defaultParams))
+                                 paramPassingKinds, defaultPosParams))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -537,7 +537,7 @@ static ParseResult parseLITFunctionSignature(
   signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, defaults, defaultParams,
+                          paramPassingKinds, defaults, defaultPosParams,
                           lifetimeDecls.size()),
       [&] { return p.emitError(startLoc); });
   if (!signature)
@@ -573,10 +573,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printOptionalParameterSpec(p, inputParams.drop_front(lifetimeDecls.size()),
                              resultParams, signature.getParamNames(),
                              signature.getParamPassingKinds(),
-                             signature.getDefaultParameters(), evaluator);
+                             signature.getDefaultPosParams(), evaluator);
 
   // Substitute input and result parameters when printing default arguments.
-  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
   size_t numInputs = signature.getNumInputs();
   size_t defaultStartIndex = numInputs - defaultArgs.size();
 
@@ -951,13 +951,13 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParams,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
-  SmallVector<TypedAttr> defaultParams;
+  SmallVector<TypedAttr> defaultPosParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
-                                 paramPassingKinds, defaultParams))
+                                 paramPassingKinds, defaultPosParams))
     return failure();
   if (!resultParams.empty())
     return p.emitError(loc, "expected no result parameters");
@@ -982,7 +982,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 
   auto sig = TypeSignatureType::remapToSignature(
       [&] { return p.emitError(loc); }, inputParams, paramNames,
-      paramPassingKinds, defaultParams, paramVarArg);
+      paramPassingKinds, defaultPosParams, paramVarArg);
   if (!sig)
     return failure();
   signature = TypeAttr::get(sig);
@@ -997,7 +997,7 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamNames(),
                              sig.getParamPassingKinds(),
-                             sig.getDefaultParameters(), evaluator);
+                             sig.getDefaultPosParams(), evaluator);
   if (sig.getParamVarArg())
     p << " param_vararg";
   if (!parentTypes.empty()) {
@@ -1032,7 +1032,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 
   // Compute the resultant signature.
   size_t defaultIdx =
-      sig.getNumInputParams() - sig.getDefaultParameters().size();
+      sig.getNumInputParams() - sig.getDefaultPosParams().size();
   SmallVector<Type> newParamTypes;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
@@ -1046,7 +1046,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       newParamNames.push_back(name);
       newPassingKinds.push_back(kind);
       if (i >= defaultIdx)
-        newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+        newDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
       if (sig.isVarArg(i))
         paramVarArg = true;
     }

@@ -39,10 +39,10 @@ public:
   ArrayRef<PassingKind> getArgPassingKinds();
 
   /// Get the function default arguments.
-  ArrayRef<TypedAttr> getDefaultArguments();
+  ArrayRef<TypedAttr> getDefaultPosArgs();
 
   /// Get the function's default parameters.
-  ArrayRef<TypedAttr> getDefaultParameters();
+  ArrayRef<TypedAttr> getDefaultPosParams();
 
   /// Get the function's (unmangled) parameter names.
   ArrayRef<StringAttr> getParamNames();

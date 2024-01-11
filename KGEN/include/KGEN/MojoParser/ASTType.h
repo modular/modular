@@ -74,7 +74,7 @@ public:
   ArrayRef<Type> getInputParameters() const;
 
   /// Get the default values for the unbound input parameters of the type.
-  ArrayRef<TypedAttr> getDefaultParameters() const;
+  ArrayRef<TypedAttr> getDefaultPosParams() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.

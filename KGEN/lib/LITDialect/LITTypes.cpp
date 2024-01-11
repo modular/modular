@@ -220,7 +220,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 
   TypeSignatureType sig = getSignature();
   size_t defaultIdx =
-      sig.getNumInputParams() - sig.getDefaultParameters().size();
+      sig.getNumInputParams() - sig.getDefaultPosParams().size();
 
   auto sigRange = llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
                                   sig.getParamPassingKinds());
@@ -242,7 +242,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
         if (i >= defaultIdx)
-          newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+          newDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
         if (sig.isVarArg(i))
           paramVarArg = true;
       }
@@ -576,9 +576,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   printOptionalParamSignature(
       p, signature.getInputParamTypes(), signature.getResultParamTypes(),
       signature.getParamNames(), signature.getParamPassingKinds(),
-      signature.getMetadata().getDefaultParameters());
+      signature.getMetadata().getDefaultPosParams());
 
-  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
   size_t numInputs = signature.getNumInputs();
   size_t defaultIndex = numInputs - defaultArgs.size();
 
@@ -636,12 +636,12 @@ ArrayRef<PassingKind> LITSignatureType::getArgPassingKinds() {
   return getMetadata().getArgPassingKinds();
 }
 
-ArrayRef<TypedAttr> LITSignatureType::getDefaultArguments() {
-  return getMetadata().getDefaultArguments();
+ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
+  return getMetadata().getDefaultPosArgs();
 }
 
-ArrayRef<TypedAttr> LITSignatureType::getDefaultParameters() {
-  return getMetadata().getDefaultParameters();
+ArrayRef<TypedAttr> LITSignatureType::getDefaultPosParams() {
+  return getMetadata().getDefaultPosParams();
 }
 
 ArrayRef<StringAttr> LITSignatureType::getParamNames() {
@@ -661,7 +661,7 @@ LITSignatureType LITSignatureType::dropParamValues() {
   auto metadata =
       FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
                           /*paramNames=*/{}, /*paramPassingKinds=*/{},
-                          getDefaultArguments(), /*defaultParameters=*/{},
+                          getDefaultPosArgs(), /*defaultParameters=*/{},
                           /*numImplicitLifetimeDecls=*/0);
   return get(getValues(), /*inputParamTypes=*/{}, getResultParamTypes(),
              getInputConventions(), getFnEffects(), metadata);

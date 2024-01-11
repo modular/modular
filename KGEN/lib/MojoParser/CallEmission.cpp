@@ -45,7 +45,7 @@ InputParamBindings::getForDeclaredType(ASTType type, ExprEmitter &emitter) {
   InputParamBindings inputParamBindings(emitter);
   ArrayRef<Type> inputParams = type.getInputParameters();
   inputParamBindings.numCtadParams = inputParams.size();
-  inputParamBindings.defaultTypeParams = type.getDefaultParameters();
+  inputParamBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast<TraitType>(type.getMetaTypeOrSelf())) {
@@ -503,7 +503,7 @@ InputParamBindings::verifyBindings(
     LITSignatureType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
-                        sig.getParamPassingKinds(), sig.getDefaultParameters(),
+                        sig.getParamPassingKinds(), sig.getDefaultPosParams(),
                         sig.hasParamVarArgs(), parameterInferenceHook,
                         isPackVarArg, diagEmitter,
                         /*allowPartiallyBound=*/false);
@@ -515,7 +515,7 @@ InputParamBindings::verifyBindings(LITSignatureType sig) const {
                           nullptr, nullptr, nullptr};
   return verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultParameters(), sig.hasParamVarArgs(),
+      sig.getDefaultPosParams(), sig.hasParamVarArgs(),
       /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
 }
 
@@ -525,7 +525,7 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
                                    bool allowPartiallyBound) const {
   auto [bindingValuesAttr, _] = verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultParameters(), sig.getParamVarArg(), structOp.getName(),
+      sig.getDefaultPosParams(), sig.getParamVarArg(), structOp.getName(),
       structOp.getLoc(), exprLoc, allowPartiallyBound);
   return bindingValuesAttr;
 }
@@ -535,7 +535,7 @@ InputParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                                    Location opLoc, llvm::SMLoc exprLoc) const {
   auto [newBindings, _] =
       verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
-                     sig.getParamPassingKinds(), sig.getDefaultParameters(),
+                     sig.getParamPassingKinds(), sig.getDefaultPosParams(),
                      sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }

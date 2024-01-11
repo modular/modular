@@ -90,11 +90,11 @@ ArrayRef<Type> ASTType::getInputParameters() const {
   return {};
 }
 
-ArrayRef<TypedAttr> ASTType::getDefaultParameters() const {
+ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
   // Query the metatype for the parameter signature.
   if (MetaTypeType metaType =
           dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
-    return metaType.getSignature().getDefaultParameters();
+    return metaType.getSignature().getDefaultPosParams();
   return {};
 }
 
