@@ -551,8 +551,6 @@ getVersionedFilesystemBackend(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-    std::filesystem::path homePath = Config::getModularDataFolderPath();
-
     // Default to the .derived directory.
     if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
       base = std::filesystem::absolute(*path, ec) / cacheDir;
@@ -564,29 +562,39 @@ getVersionedFilesystemBackend(LLCL::Runtime &runtime,
       if (ec)
         return Error("failed to get absolute path to installed dir: " +
                      ec.message());
-    } else if (std::filesystem::exists(homePath, ec) && !ec) {
-      base = std::filesystem::absolute(homePath, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to modular home dir: " +
-                     ec.message());
-#ifdef _WIN32
-    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
-#else
-    } else if (auto path = findDirInEnvPath(cacheDir.string())) {
-#endif
-      base = std::filesystem::absolute(*path, ec);
-      if (ec)
-        return Error("failed to get absolute path to directory specified by " +
-                     *path + ec.message());
     } else {
-      auto derivedPath = std::filesystem::path(MODULAR_DERIVED_DIR);
-      if (std::filesystem::exists(derivedPath, ec) && !ec)
-        base = std::filesystem::absolute(derivedPath, ec) / cacheDir;
-      else
-        base = std::filesystem::temp_directory_path(ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to derived dir: " +
-                     ec.message());
+      // Attempt to find an existing home directory, but *do not create the
+      // directory*. This is because we will fall back to the using the
+      // hard-coded derived dir below. This logic should likely be reconciled
+      // more generally, as it is generally used only for CI and local
+      // development, which is a strange pattern.
+      auto homePathOr = Config::getModularDataFolderPath(/*create=*/false);
+      if (!homePathOr.isError() && std::filesystem::exists(*homePathOr, ec) &&
+          !ec) {
+        base = std::filesystem::absolute(*homePathOr, ec) / cacheDir;
+        if (ec)
+          return Error("failed to get absolute path to modular home dir: " +
+                       ec.message());
+#ifdef _WIN32
+      } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
+#else
+      } else if (auto path = findDirInEnvPath(cacheDir.string())) {
+#endif
+        base = std::filesystem::absolute(*path, ec);
+        if (ec)
+          return Error(
+              "failed to get absolute path to directory specified by " + *path +
+              ec.message());
+      } else {
+        auto derivedPath = std::filesystem::path(MODULAR_DERIVED_DIR);
+        if (std::filesystem::exists(derivedPath, ec) && !ec)
+          base = std::filesystem::absolute(derivedPath, ec) / cacheDir;
+        else
+          base = std::filesystem::temp_directory_path(ec) / cacheDir;
+        if (ec)
+          return Error("failed to get absolute path to derived dir: " +
+                       ec.message());
+      }
     }
   }
 

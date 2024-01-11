@@ -105,13 +105,23 @@ public:
 
   /// Get the path to the canonical modular home directory.
   ///
+  /// If create is true, then this directory will be created if it does not
+  /// exist. If it cannot be created, then an error will be returned. This is
+  /// the default, and should be used by most callers. However, in some cases
+  /// callers may choose to not create the directory by setting create to false.
+  /// In this case, the caller should check for existence of the returned path,
+  /// as this may represent where the directory *would* be created.
+  ///
   /// On systems that follow the XDG Base Directory Specification, this will be
   /// the $XDG_DATA_HOME/modular folder (typically $HOME/.local/share/modular)
   ///
   /// On other systems except Windows, will typically be $HOME/.modular
-  static std::filesystem::path getModularDataFolderPath();
+  static ErrorOr<std::filesystem::path>
+  getModularDataFolderPath(bool create = true);
 
   /// Get the path to the canonical modular config folder.
+  ///
+  /// The semantics for create are the same as getModularDataFolderPath.
   ///
   /// NOTE: This will be the same as the modular data folder on systems that
   /// don't follow the XDG Base Directory Specification.
@@ -120,11 +130,12 @@ public:
   /// be the $XDG_CONFIG_HOME/modular folder (typically $HOME/.config/modular)
   ///
   /// On other systems except Windows, will typically be $HOME/.modular
-  static std::filesystem::path getModularConfigFolderPath();
+  static ErrorOr<std::filesystem::path>
+  getModularConfigFolderPath(bool create = true);
 
   /// Get the path to the canonical modular config file.
   /// Often $XDG_CONFIG_HOME/modular/modular.cfg or $HOME/.modular/modular.cfg
-  static std::filesystem::path getConfigFilePath();
+  static ErrorOr<std::filesystem::path> getConfigFilePath(bool create = false);
 
 private:
   /// Nested sections are just delimited with a `.`. Access is done with dot

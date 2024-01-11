@@ -27,11 +27,11 @@ static constexpr llvm::StringLiteral kDefaultURL =
 
 std::filesystem::path
 M::getCrashDatabasePath(Config &config,
-                        const std::filesystem::path &modularHome) {
+                        const std::filesystem::path &dataFolder) {
   StringRef fromConfig = config.getValue("crash_reporting.database_path");
   if (!fromConfig.empty())
     return std::string_view(fromConfig);
-  return modularHome / "crashdb";
+  return dataFolder / "crashdb";
 }
 
 ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config &config,
@@ -106,19 +106,11 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0, const char *program) {
   //     crashed state and generates a crash report)
   //   - Crash database, to put the crashes in before they are sent off
   //   - URL to upload crash reports to
-  std::filesystem::path modularHome = Config::getModularDataFolderPath();
+  auto dataFolderOr = Config::getModularDataFolderPath();
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
   std::filesystem::path databasePath =
-      getCrashDatabasePath(config, modularHome);
-
-  // Create the directory for the crash database if it doesn't already exist.
-  std::error_code ec;
-  if (!std::filesystem::exists(databasePath, ec))
-    std::filesystem::create_directories(databasePath, ec);
-
-  if (ec) {
-    return Error(llvm::Twine("while creating crashpad database: ") +
-                 ec.message());
-  }
+      getCrashDatabasePath(config, *dataFolderOr);
 
   auto handlerPathOr = getCrashpadHandlerPath(config, argv0);
   if (handlerPathOr)

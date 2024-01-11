@@ -45,11 +45,16 @@ int main(int argc, char **argv) {
     config = std::move(*configOr);
   }
 
-  std::filesystem::path modularHome = Config::getModularDataFolderPath();
+  auto modularHomeOr = Config::getModularDataFolderPath();
+  if (modularHomeOr.isError()) {
+    llvm::errs() << "could not determine crash path: "
+                 << modularHomeOr.getError() << '\n';
+    return EXIT_FAILURE;
+  }
 
   switch (clOptions.property) {
   case Property::CrashDBPath: {
-    auto path = getCrashDatabasePath(config, modularHome);
+    auto path = getCrashDatabasePath(config, *modularHomeOr);
     llvm::outs() << path.native() << '\n';
     break;
   }
