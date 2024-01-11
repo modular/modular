@@ -423,13 +423,11 @@ fn _concat_small[
         ](output.dynamic_shape)
 
 
-@adaptive
 @always_inline
-fn concat[
+fn _concat_cpu[
     rank: Int,
     type: DType,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
@@ -437,10 +435,6 @@ fn concat[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
 ) raises:
-    constrained[
-        target == "cpu", "Concat kernel implementation only valid on CPU."
-    ]()
-
     @parameter
     if single_thread_blocking_override:
         return _concat_small[rank, type](output, axis, inputs)
@@ -531,13 +525,11 @@ fn concat_shape[
     return output_shape
 
 
-@adaptive
 @always_inline
-fn concat[
+fn _concat_gpu_impl[
     rank: Int,
     type: DType,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
@@ -545,9 +537,6 @@ fn concat[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
 ) raises:
-    constrained[
-        target == "cuda", "Concat kernel implementation only valid on GPU."
-    ]()
     try:
         let num_inputs = len(inputs)
         # TODO: The number of Variadic arguments are know at compile time,
@@ -1292,6 +1281,24 @@ fn concat[
             raise Error("Unsupported concat with num_inputs > 32")
     except e:
         return trap(e)
+
+
+@always_inline
+fn concat[
+    rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
+) raises:
+    constrained[target == "cpu" or target == "cuda", "not a valid target"]()
+    alias func = _concat_cpu if target == "cpu" else _concat_gpu_impl
+    func[rank, type, single_thread_blocking_override](output, axis, inputs)
 
 
 fn _concat_inner_most_single_dim[
