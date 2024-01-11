@@ -20,17 +20,14 @@
 using namespace M;
 using namespace Frameworks;
 
-void M::Frameworks::StatsReport::countOp(mlir::Operation &op) {
+void M::Frameworks::StatsReport::countLowering(mlir::Operation &op) {
   auto opName = op.getName().stripDialect();
-  ++opHistogram[opName.str()];
-  ++numTotalOps;
+  ++loweredHistogram[opName.str()];
+  ++numLoweredOps;
 }
 
-void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
-  numFallbackOps++;
-
-  // Print just the op signature - name, in/out types, attributes.
-
+/// Get just the op signature: name, in/out types, attributes.
+static std::string getOpSignature(mlir::Operation &op) {
   std::string key;
   llvm::raw_string_ostream ss(key);
   ss << op.getName().stripDialect();
@@ -76,8 +73,17 @@ void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
          << attrVal.substr(attrVal.size() - 14, 14);
   }
   ss << "}";
+  return key;
+}
 
-  fallbackHistogram[key]++;
+void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
+  ++numFallbackOps;
+  ++fallbackHistogram[getOpSignature(op)];
+}
+
+void M::Frameworks::StatsReport::countFailure(mlir::Operation &op) {
+  ++numFailedOps;
+  ++failureHistogram[getOpSignature(op)];
 }
 
 void M::Frameworks::StatsReport::writeToFile() {
@@ -122,7 +128,8 @@ void M::Frameworks::StatsReport::writeToFile() {
 
   reportFile.keep();
   reportFile.os() << modelName << "\n";
-  reportFile.os() << "TOTAL OPS\t" << numTotalOps << "\n";
+  reportFile.os() << "TOTAL OPS\t"
+                  << numLoweredOps + numFallbackOps + numFailedOps << "\n";
   reportFile.os() << "FALLBACK OPS\t" << numFallbackOps << "\n";
 
   reportFile.os() << "\nFALLBACK OP LIST\n";
@@ -136,16 +143,28 @@ void M::Frameworks::StatsReport::emitTelemetry(
     M::Telemetry::TelemetryContext *telemetryContext) {
   auto logger = telemetryContext->getLogger("engine");
   llvm::StringMap<Telemetry::Logs::AttributeValue> attributes = {};
-  attributes["total_op_count"] = numTotalOps;
+  attributes["lowered_op_count"] = numLoweredOps;
   attributes["fallback_op_count"] = numFallbackOps;
+  attributes["failed_op_count"] = numFailedOps;
   logger->emitEvent(framework + ".stats", Telemetry::Logs::Severity::kInfo,
                     Telemetry::Level::L1, "", attributes);
 
+  auto logAttributes =
+      [&](llvm::StringMap<Telemetry::Logs::AttributeValue> &attributes,
+          std::string name) {
+        if (attributes.size() > 0)
+          logger->emitEvent(framework + ".stats." + name,
+                            Telemetry::Logs::Severity::kInfo,
+                            Telemetry::Level::L1, "", attributes);
+      };
+
   llvm::StringMap<Telemetry::Logs::AttributeValue> fallbackAttributes = {};
-  for (const auto &[fallbackOp, count] : fallbackHistogram) {
+  for (const auto &[fallbackOp, count] : fallbackHistogram)
     fallbackAttributes[fallbackOp] = count;
-  }
-  logger->emitEvent(framework + ".stats.fallback",
-                    Telemetry::Logs::Severity::kInfo, Telemetry::Level::L1, "",
-                    fallbackAttributes);
+  logAttributes(fallbackAttributes, "fallback");
+
+  llvm::StringMap<Telemetry::Logs::AttributeValue> failedAttributes = {};
+  for (const auto &[op, count] : failureHistogram)
+    failedAttributes[op] = count;
+  logAttributes(failedAttributes, "failed");
 }
