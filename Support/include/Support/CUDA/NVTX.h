@@ -26,7 +26,7 @@ struct Event {
     ~RangeID();
 
   private:
-    uint64_t id = 0;
+    uint64_t id;
   };
 
   ErrorOrSuccess mark();
@@ -42,7 +42,6 @@ private:
   // The ARGB color (in Hex) of the event.
   uint32_t color;
 };
-
 } // namespace M::CUDA::NVTX
 
 #endif // SUPPORT_CUDA_NVTX_H
