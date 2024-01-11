@@ -99,7 +99,7 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
 
       NodeT *calleeNode = &nodes.find(callee)->second;
       // Filter calls that do not satisfy the inlining level.
-      if (!getDerived().shouldInline(calleeNode))
+      if (!getDerived().shouldAddToGraph(calleeNode))
         return;
       {
         llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);

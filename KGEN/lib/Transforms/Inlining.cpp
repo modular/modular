@@ -749,6 +749,11 @@ struct ParametricInliningGraph
         optimizationLevel(optimizationLevel), updateDebugInfo(updateDebugInfo) {
   }
 
+  /// CallGraphBase interface for whether to add the node to the graph.
+  bool shouldAddToGraph(ParametricInliningGraphNode *node) {
+    return shouldInline(node);
+  }
+
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
     assert(node->level == node->func.getInlineLevel());
@@ -1007,6 +1012,9 @@ struct InliningGraph
                          bool updateDebugInfo)
       : InliningGraphBase(runtime), pms(pms), updateDebugInfo(updateDebugInfo) {
   }
+
+  /// CallGraphBase interface for whether to add the node to the graph.
+  bool shouldAddToGraph(InliningGraphNode *node) { return shouldInline(node); }
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {
