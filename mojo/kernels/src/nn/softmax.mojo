@@ -590,8 +590,7 @@ fn logsoftmax[
 # ===----------------------------------------------------------------------===#
 
 
-@adaptive
-fn softmax[
+fn _softmax_cpu[
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -599,13 +598,11 @@ fn softmax[
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _simd_width],
-    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
 ) raises:
-    constrained[target == "cpu", "cpu softmax"]()
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
@@ -765,8 +762,7 @@ fn softmax_kernel[
             output[row_coords] *= block_exp_sum_recip
 
 
-@adaptive
-fn softmax[
+fn _softmax_gpu[
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -774,7 +770,6 @@ fn softmax[
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _simd_width],
-    target: StringLiteral,
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
@@ -782,8 +777,6 @@ fn softmax[
 ) raises:
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
-
-    constrained[target == "cuda", "cuda softmax"]()
 
     @always_inline
     fn input_fn_wrapper[
@@ -812,3 +805,22 @@ fn softmax[
     let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
     func(stream, (num_blocks,), (BLOCK_SIZE,), shape, output, axis)
+
+
+fn softmax[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    static_shape: DimList,
+    input_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
+    target: StringLiteral = "cpu",
+](
+    shape: StaticIntTuple[rank],
+    output: NDBuffer[rank, static_shape, type],
+    axis: Int,
+) raises:
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    alias func = _softmax_cpu if target == "cpu" else _softmax_gpu
+    func[type, simd_width, rank, static_shape, input_fn](shape, output, axis)
