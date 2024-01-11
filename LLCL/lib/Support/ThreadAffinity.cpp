@@ -40,9 +40,9 @@ void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
   if (numThreads == 0) {
-    numThreads = M::getNumThreads();
+    numThreads = M::getNumPhysicalCores();
     LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
-                            << "threads to total hardware threads across all "
+                            << "threads to physical cores across all "
                             << "sockets " << numThreads << "\n");
   }
   if constexpr (kUseThreadAffinity) {
