@@ -13,7 +13,6 @@ from gpu.host import Context, synchronize
 from gpu.host.memory import _malloc, _copy_host_to_device, _copy_device_to_host
 from memory.buffer import NDBuffer
 
-from runtime.llcl import OutputChainPtr
 
 from tensor import Tensor
 from utils.index import Index, StaticIntTuple
@@ -103,7 +102,6 @@ fn test_batched_matmul() raises:
         lhs_buffer,
         rhs_buffer,
         rowwise_epilogue_empty,
-        OutputChainPtr(),
     )
     synchronize()
 
