@@ -22,8 +22,6 @@ from math import (
 from math.bit import _is_neg
 from math.polynomial import polynomial_evaluate
 
-from runtime.llcl import OutputChainPtr
-
 
 @value
 @register_passable("trivial")

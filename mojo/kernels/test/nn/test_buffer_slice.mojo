@@ -10,7 +10,7 @@ from math import mul
 from algorithm import elementwise
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 from Slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
@@ -32,14 +32,9 @@ fn print_elements[
         print(tensor[index])
 
     with Runtime(1) as runtime:
-        let out_chain = OwningOutputChainPtr(runtime)
-
         elementwise[in_rank, 1, print_elements_lambda](
             rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
-            out_chain.borrow(),
         )
-
-        _ = out_chain ^
 
 
 # slice_dim
@@ -126,7 +121,6 @@ fn test_slice[
         )
 
         with Runtime(1) as runtime:
-            let out_chain = OwningOutputChainPtr(runtime)
             slice_as_copy[dtype, DType.index, outer_rank](
                 rebind[
                     NDBuffer[
@@ -141,10 +135,7 @@ fn test_slice[
                 start_tensor,
                 end_tensor,
                 step_tensor,
-                out_chain.borrow(),
             )
-
-            _ = out_chain ^
 
             print_elements[dtype, outer_rank](
                 rebind[

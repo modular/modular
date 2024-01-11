@@ -14,7 +14,7 @@ from sys.info import simdwidthof
 
 from GatherScatter import gather
 from memory.buffer import NDBuffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
@@ -65,15 +65,11 @@ fn test_gather() raises:
         alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
-            let out_chain = OwningOutputChainPtr(rt)
             gather[2, 2, 1, DType.float32, indices_type, 0, simd_width](
                 output.make_dims_unknown(),
                 input.make_dims_unknown(),
                 indices.make_dims_unknown(),
-                out_chain.borrow(),
             )
-
-            _ = out_chain ^
 
         print(output[StaticIntTuple[2](0, 0)])
         print(output[StaticIntTuple[2](1, 0)])
@@ -136,15 +132,11 @@ fn test_gather_3d() raises:
         alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
-            let out_chain = OwningOutputChainPtr(rt)
             gather[4, 3, 2, DType.float32, indices_type, 0, simd_width](
                 output.make_dims_unknown(),
                 input.make_dims_unknown(),
                 indices.make_dims_unknown(),
-                out_chain.borrow(),
             )
-
-            _ = out_chain ^
 
         print(output[StaticIntTuple[4](0, 0, 0, 0)])
         print(output[StaticIntTuple[4](2, 0, 0, 0)])
@@ -209,15 +201,11 @@ fn test_gather_empty_indices() raises:
         alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
-            let out_chain = OwningOutputChainPtr(rt)
             gather[2, 2, 1, DType.float32, indices_type, 0, simd_width](
                 output.make_dims_unknown(),
                 input.make_dims_unknown(),
                 indices.make_dims_unknown(),
-                out_chain.borrow(),
             )
-
-            _ = out_chain ^
 
     _test_gather[DType.int32]()
     _test_gather[DType.int64]()
