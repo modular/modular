@@ -66,7 +66,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   ///
   /// In that case, we can also rely on the bit to form the edges in the graph
   /// to be processed, circumventing the issue with cycles.
-  bool shouldInline(CallGraphNode *node) {
+  bool shouldAddToGraph(CallGraphNode *node) {
     return node->func.getSignature().isCapturing();
   }
 
