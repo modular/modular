@@ -1186,8 +1186,7 @@ struct ConvDirectNHWC[
         return filter_vec
 
     @always_inline
-    @adaptive
-    fn _accumulate[
+    fn _accumulate_default[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1276,8 +1275,7 @@ struct ConvDirectNHWC[
             offset += 1
 
     @always_inline
-    @adaptive
-    fn _accumulate[
+    fn _accumulate_neon[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1362,8 +1360,59 @@ struct ConvDirectNHWC[
         tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
 
     @always_inline
-    @adaptive
     fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+        c_fully_cached: Bool,
+        has_residual: Bool,
+        prefetch_offset: Int,
+    ](
+        self,
+        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_offset: Int,
+        c_tile_size: Int,
+        filter_base: DTypePointer[filter_type],
+        output_micro_tile: NDBuffer[
+            2,
+            DimList(micro_kernel_height, micro_kernel_width * simd_size),
+            output_type,
+        ],
+    ):
+        @parameter
+        if has_neon():
+            self._accumulate_neon[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                c_fully_cached,
+                has_residual,
+                prefetch_offset,
+            ](
+                input_base_offsets,
+                input_offset,
+                c_tile_size,
+                filter_base,
+                output_micro_tile,
+            )
+        else:
+            self._accumulate_default[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                c_fully_cached,
+                has_residual,
+                prefetch_offset,
+            ](
+                input_base_offsets,
+                input_offset,
+                c_tile_size,
+                filter_base,
+                output_micro_tile,
+            )
+
+    @always_inline
+    fn _accumulate_default[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1446,8 +1495,7 @@ struct ConvDirectNHWC[
                 filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
     @always_inline
-    @adaptive
-    fn _accumulate[
+    fn _accumulate_neon[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1528,6 +1576,51 @@ struct ConvDirectNHWC[
                     filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
         tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
+
+    @always_inline
+    fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+        has_residual: Bool,
+        prefetch_offset: Int,
+    ](
+        self,
+        c_tile_size: Int,
+        input_stride: Int,
+        input_base: DTypePointer[input_type],
+        filter_base: DTypePointer[filter_type],
+        output_ptr: DTypePointer[output_type],
+    ):
+        @parameter
+        if has_neon():
+            self._accumulate_neon[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                has_residual,
+                prefetch_offset,
+            ](
+                c_tile_size,
+                input_stride,
+                input_base,
+                filter_base,
+                output_ptr,
+            )
+        else:
+            self._accumulate_default[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                has_residual,
+                prefetch_offset,
+            ](
+                c_tile_size,
+                input_stride,
+                input_base,
+                filter_base,
+                output_ptr,
+            )
 
     @always_inline
     fn _h_loop[
