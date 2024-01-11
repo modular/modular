@@ -114,10 +114,12 @@ fn test_vectorize_size_param():
     fn printer[els: Int](n: Int):
         print(els, n)
 
-    # CHECK: 3 32
-    vectorize[simd_width=16, size=35, func=printer]()
+    # CHECK: 16 0
+    # CHECK: 16 16
+    # CHECK: 8 32
+    vectorize[simd_width=16, size=40, func=printer]()
 
-    # CHECK: 8
+    # CHECK: 8 0
     vectorize[simd_width=16, size=8, func=printer]()
 
 
