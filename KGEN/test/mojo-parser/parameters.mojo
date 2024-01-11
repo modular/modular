@@ -198,13 +198,13 @@ struct ParamSubst[
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
   # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<:regtype index, :variadic<index> [1, 2]>
-  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
+  var xx : ParamSubst[index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.
 # CHECK-LABEL: lit.func @"fnToCall{{.*}}"<
 # CHECK-SAME: [[SIZE:.*_size]][size], {{.*}}[arr]: array<[[SIZE]], f32>>()
-fn fnToCall[size: __mlir_type.index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
+fn fnToCall[size: index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
   pass
 
 # CHECK: lit.func @"fnWithCall{{.*}}"<
@@ -367,17 +367,17 @@ fn memoryParam[value: MemoryType]():
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
 # CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow, |) -> index>>(%a: index borrow) -> index
 fn takeCallable[
-     callable: fn(__mlir_type.index) -> __mlir_type.index
-   ](a: __mlir_type.index) -> __mlir_type.index:
+     callable: fn(index) -> index
+   ](a: index) -> index:
   # CHECK-NEXT: %0 = lit.call_param[!lit.signature<(index borrow, |) -> index>: [[CALLABLE]]](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
-fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
+fn takeAndReturnIndex(x: index) -> index:
   return x
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
-fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
+fn passFunction(a: index) -> index:
   # CHECK: lit.call @"$parameters"::@"takeCallable{{.*}}<:!lit.signature<(index borrow, |) -> index>
   # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
@@ -397,6 +397,19 @@ fn passFunctionParam2():
   # CHECK: lit.call @"$parameters"::@"takeCallable2{{.*}}"<
   # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !kgen.none> rebind(:!lit.signature<<"type": dtype>() -> !kgen.none> @"$parameters"::@"callableWithParam
   takeCallable2[callableWithParam]()
+
+
+@register_passable("trivial")
+struct ParamType[x: index]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"dependent_function_type
+fn dependent_function_type[a: index, f: fn (ParamType[a]) -> None]():
+    alias func = dependent_function_type
+    # CHECK: bind_signature
+    func[a, f]()
+
 
 ##===----------------------------------------------------------------------===##
 # Result parameters
