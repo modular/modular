@@ -286,8 +286,8 @@ fn _pad_constant_impl[
     # TODO this recursion can add up for larger tensors, optimize in #24565
 
     let axis_dim = output_shape[axis]
-    let pre_pad = int(paddings.load(2 * axis))
-    let post_pad = int(paddings.load(2 * axis + 1))
+    let pre_pad = int(paddings[2 * axis])
+    let post_pad = int(paddings[2 * axis + 1])
     let non_pad = axis_dim - pre_pad - post_pad
 
     if axis + 1 == rank:
@@ -369,8 +369,8 @@ fn _pad_reflect_impl[
     # TODO this recursion can add up for larger tensors, optimize in #24565
 
     let axis_dim = output_shape[axis]
-    let pre_pad = int(paddings.load(2 * axis))
-    let post_pad = int(paddings.load(2 * axis + 1))
+    let pre_pad = int(paddings[2 * axis])
+    let post_pad = int(paddings[2 * axis + 1])
     let non_pad = axis_dim - pre_pad - post_pad
     let pre_pad_start_ptr = output.offset(output_offset)
     let input_start_ptr = input.offset(input_offset)
