@@ -330,9 +330,8 @@ fn batched_matmul[
     ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
 
 
-@adaptive
 @always_inline
-fn batched_matmul[
+fn _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -345,7 +344,6 @@ fn batched_matmul[
     ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
-    target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -354,7 +352,6 @@ fn batched_matmul[
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
 ):
-    constrained[target == "cpu", "only valid on CPUs"]()
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
@@ -500,7 +497,6 @@ fn batched_matmul[
 
 
 @always_inline
-@adaptive
 fn batched_matmul[
     rank: Int,
     a_type: DType,
@@ -522,7 +518,7 @@ fn batched_matmul[
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
 ):
-    constrained[target == "cpu", "only valid on GPUs"]()
+    constrained[target == "cpu", "only valid on CPUs"]()
     batched_matmul[
         rank,
         a_type,
@@ -586,8 +582,7 @@ fn batched_matmul_kernel[
 
 
 @always_inline
-@adaptive
-fn batched_matmul[
+fn _batched_matmul_gpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -598,7 +593,6 @@ fn batched_matmul[
     elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
-    target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -607,7 +601,6 @@ fn batched_matmul[
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
     ) capturing -> None,
 ):
-    constrained[target == "cuda", "only valid on GPUs"]()
     constrained[
         not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
     ]()
@@ -654,6 +647,43 @@ fn batched_matmul[
         )
     except e:
         trap(e)
+
+
+@always_inline
+fn batched_matmul[
+    rank: Int,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    adj_a: Bool,
+    adj_b: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
+    rowwise_epilogue_enabled: Bool,
+    saturated_vnni: Bool,
+    target: StringLiteral = "cpu",
+](
+    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
+    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
+    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    rowwise_epilogue: fn (
+        Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
+    ) capturing -> None,
+):
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    alias func = _batched_matmul_cpu if target == "cpu" else _batched_matmul_gpu
+    func[
+        rank,
+        a_type,
+        b_type,
+        c_type,
+        adj_a,
+        adj_b,
+        elementwise_epilogue_enabled,
+        elementwise_epilogue_fn,
+        rowwise_epilogue_enabled,
+        saturated_vnni,
+    ](c_buf, a_buf, b_buf, rowwise_epilogue)
 
 
 @always_inline
