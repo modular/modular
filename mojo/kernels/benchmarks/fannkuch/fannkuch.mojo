@@ -9,7 +9,7 @@ from time import now
 from utils.index import StaticIntTuple
 from algorithm import parallelize, sync_parallelize
 from runtime.llcl import num_cores, Runtime
-from collections.vector import UnsafeFixedVector
+from collections.vector import InlinedFixedVector
 
 alias n = 12
 
@@ -44,7 +44,7 @@ fn main():
 
     let t0 = now()
 
-    var max_vals = UnsafeFixedVector[Int](core_count)
+    var max_vals = InlinedFixedVector[Int](core_count)
     for i in range(max_vals.capacity):
         max_vals.append(0)
 
