@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
+# RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
 from sys import argv
 
 
@@ -218,7 +218,15 @@ fn main():
             return x + v
 
         let f = makeEscapingClosure[formatter](y)
-        takeClosure(f, y)
-    except e:
         # CHECK: 8
+        takeClosure(f, y)
+
+        @parameter
+        fn formatter2(v: Int) -> Int:
+            return y + formatter(v)
+
+        let f2 = makeEscapingClosure[formatter2](y)
+        # CHECK: 11
+        takeClosure(f2, y)
+    except e:
         print(e)
