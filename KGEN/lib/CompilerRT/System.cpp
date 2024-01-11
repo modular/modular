@@ -103,6 +103,8 @@ void M::KGEN::registerSystem(
   funcs.push_back(
       {"KGEN_CompilerRT_CoreCount", (void *)&KGEN_CompilerRT_CoreCount});
   funcs.push_back(
+      {"KGEN_CompilerRT_ThreadCount", (void *)&KGEN_CompilerRT_ThreadCount});
+  funcs.push_back(
       {"KGEN_CompilerRT_GetArgV", (void *)&KGEN_CompilerRT_GetArgV});
   funcs.push_back(
       {"KGEN_CompilerRT_SetArgV", (void *)&KGEN_CompilerRT_SetArgV});
