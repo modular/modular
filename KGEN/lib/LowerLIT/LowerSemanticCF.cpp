@@ -328,7 +328,8 @@ static bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
   // Create the new HLCF::LoopOp.
   OpBuilder builder(loopOp);
   builder.setInsertionPointAfter(loopOp);
-  auto newLoop = builder.create<HLCF::LoopOp>(loopLoc, loopOp.getUnrollLevel());
+  auto newLoop =
+      builder.create<HLCF::LoopOp>(loopLoc, loopOp.getUnrollLevelAttr());
   Block *newBody = builder.createBlock(&newLoop.getBody());
   Block *newExitBlock = nullptr;
 

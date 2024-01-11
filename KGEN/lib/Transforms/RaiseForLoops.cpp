@@ -467,8 +467,9 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   // Create the new ForOp with reordered operands.
   auto forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
-      loopInfo->upperBound, loopInfo->step, forOperands, loop.getUnrollLevel(),
-      loopInfo->cmpPredicate, loopInfo->indVarCompute);
+      loopInfo->upperBound, loopInfo->step, forOperands,
+      loop.getUnrollLevelValue(), loopInfo->cmpPredicate,
+      loopInfo->indVarCompute);
 
   // Create the block for the new ForOp.
   Block *block = rewriter.createBlock(&forOp.getBody());

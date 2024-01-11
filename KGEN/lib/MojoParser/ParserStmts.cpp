@@ -893,10 +893,10 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
   return success();
 }
 
-static ParseResult parseLoopDecorators(ParserBase &parser,
+static ParseResult parseLoopDecorators(StmtParser &parser,
                                        LexerCursor startCursor,
                                        size_t curIndent, Token::Kind kind,
-                                       HLCF::UnrollLevel &level) {
+                                       Attribute &unrollAttr) {
   StringRef kindName = parser.getToken().getSpelling();
 
   if (startCursor != parser.getLexer().getCursor()) {
@@ -905,16 +905,26 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
       // Handle recognized decorators.
       if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
         if (dre->spelling == "unroll") {
-          level = HLCF::UnrollLevel::full();
+          unrollAttr = HLCF::UnrollLevelAttr::getFull(parser.getContext());
           continue;
         }
       } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
         if (auto dre = dyn_cast<DeclRefNode>(callNode->callee)) {
           int32_t factor;
-          if (dre->spelling == "unroll" && callNode->operands.size() == 1 &&
-              callNode->operands[0].isPositionalIntLiteral(factor)) {
-            level = HLCF::UnrollLevel(factor);
-            continue;
+          if (dre->spelling == "unroll" && callNode->operands.size() == 1) {
+            if (callNode->operands[0].isPositionalIntLiteral(factor)) {
+              unrollAttr =
+                  HLCF::UnrollLevelAttr::get(parser.getContext(), factor);
+              continue;
+            }
+            ExprNode *unrollFactorExpr = callNode->operands[0].value;
+            CValue unrollFactor =
+                parser.getParamEmitter(EC_Decorator)
+                    .emitMLIRIndex(unrollFactorExpr, EC_Decorator);
+            if (PValue paramFactor = unrollFactor.getIfPValue()) {
+              unrollAttr = paramFactor.get();
+              continue;
+            }
           }
         }
       }
@@ -938,9 +948,10 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
 ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // We parse the decorators for the 'while' if they exist.
-  HLCF::UnrollLevel unrollLevel = HLCF::UnrollLevel::none();
+  Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
+
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_while,
-                          unrollLevel))
+                          unrollAttr))
     return success();
 
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
@@ -954,7 +965,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(whileLoc, unrollLevel.getFactor());
+  auto loopOp = builder.create<LIT::LoopOp>(whileLoc, unrollAttr);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -998,9 +1009,10 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                      size_t curIndent) {
   // We parse the decorators for the 'for' if they exist.
-  HLCF::UnrollLevel unrollLevel = HLCF::UnrollLevel::none();
+  Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
+
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_for,
-                          unrollLevel))
+                          unrollAttr))
     return success();
 
   Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
@@ -1066,7 +1078,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   }
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(forLoc, unrollLevel.getFactor());
+  auto loopOp = builder.create<LIT::LoopOp>(forLoc, unrollAttr);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
