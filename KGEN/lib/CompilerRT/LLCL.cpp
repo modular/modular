@@ -196,25 +196,8 @@ KGEN_CompilerRT_LLCL_GetCurrentStream() {
 }
 
 //===----------------------------------------------------------------------===//
-// OutputChainPtr and OwningOutputChainPtr
+// OutputChainPtr
 //===----------------------------------------------------------------------===//
-
-/// Returns outChains's runtime.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
-KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime(LLCLOutputChainRef outChain) {
-  return wrap(unwrap(outChain).getRuntime().get());
-}
-
-/// Returns is the chain is an error or not.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
-KGEN_CompilerRT_LLCL_OutputChainPtr_IsError(LLCLOutputChainRef outChain) {
-  return unwrap(outChain).chain.isError();
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady(LLCLOutputChainRef outChain) {
-  unwrap(outChain).markReady();
-}
 
 /// Sets an error message on outChain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -223,21 +206,6 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(LLCLOutputChainRef outChain,
                                               ssize_t messageLen) {
   std::string message(messagePtr, messageLen);
   unwrap(outChain).markError(message);
-}
-
-/// Returns an empty OutputChain, with empty chain and 'unknown' location.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLOutputChainRef
-KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
-  auto chain = AsyncValueRef<Chain>::allocate(unwrap(rt));
-  EncodedLocation loc = LLCL::UnknownLocationDecoder::getEncodedLocation();
-  return wrap(new OutputChain(std::move(chain), std::move(loc)));
-}
-
-/// Destroys outChain, which must be the result of a CreateEmpty or
-/// CreateMoved.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy(LLCLOutputChainRef outChain) {
-  delete &unwrap(outChain);
 }
 
 void M::KGEN::registerLLCL(
@@ -268,16 +236,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_DestroyRuntime});
   funcs.push_back({"KGEN_CompilerRT_LLCL_ParallelismLevel",
                    (void *)&KGEN_CompilerRT_LLCL_ParallelismLevel});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_IsError",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_IsError});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentStream",
+                   (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
 }
