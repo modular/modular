@@ -104,7 +104,6 @@ struct ConvShape:
         return c_idx % self.c_per_group()
 
 
-@adaptive
 fn get_conv2d_shape[
     output_shape: DimList,
     input_shape: DimList,
@@ -122,103 +121,69 @@ fn get_conv2d_shape[
     dilation: StaticIntTuple[2],
     num_groups: Int,
 ) -> ConvShape:
-    constrained[data_layout == Image2DLayout.NCHW]()
-    constrained[filter_layout == Image2DLayout.NCHW]()
-
-    return ConvShape {
-        n: input.dim[0](),
-        h: input.dim[2](),
-        w: input.dim[3](),
-        c: input.dim[1](),
-        out_h: output.dim[2](),
-        out_w: output.dim[3](),
-        f: filter.dim[0](),
-        r: filter.dim[2](),
-        s: filter.dim[3](),
-        stride: stride,
-        dilation: dilation,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
-
-
-@adaptive
-fn get_conv2d_shape[
-    output_shape: DimList,
-    input_shape: DimList,
-    filter_shape: DimList,
-    type: DType,
-    data_layout: Image2DLayout,
-    filter_layout: Image2DLayout,
-](
-    output: NDBuffer[4, output_shape, type],
-    input: NDBuffer[4, input_shape, type],
-    filter: NDBuffer[4, filter_shape, type],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-    num_groups: Int,
-) -> ConvShape:
-    constrained[data_layout == Image2DLayout.NHWC]()
-    constrained[filter_layout == Image2DLayout.NHWC]()
-
-    return ConvShape {
-        n: input.dim[0](),
-        h: input.dim[1](),
-        w: input.dim[2](),
-        c: input.dim[3](),
-        out_h: output.dim[1](),
-        out_w: output.dim[2](),
-        f: filter.dim[0](),
-        r: filter.dim[1](),
-        s: filter.dim[2](),
-        stride: stride,
-        dilation: dilation,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
-
-
-@adaptive
-fn get_conv2d_shape[
-    output_shape: DimList,
-    input_shape: DimList,
-    filter_shape: DimList,
-    type: DType,
-    data_layout: Image2DLayout,
-    filter_layout: Image2DLayout,
-](
-    output: NDBuffer[4, output_shape, type],
-    input: NDBuffer[4, input_shape, type],
-    filter: NDBuffer[4, filter_shape, type],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-    num_groups: Int,
-) -> ConvShape:
-    constrained[data_layout == Image2DLayout.NHWC]()
-    constrained[filter_layout == Image2DLayout.RSCF]()
-
-    return ConvShape {
-        n: input.dim[0](),
-        h: input.dim[1](),
-        w: input.dim[2](),
-        c: input.dim[3](),
-        out_h: output.dim[1](),
-        out_w: output.dim[2](),
-        f: filter.dim[3](),
-        r: filter.dim[0](),
-        s: filter.dim[1](),
-        stride: stride,
-        dilation: dilation,
-        pad_h: pad_h,
-        pad_w: pad_w,
-        num_groups: num_groups,
-    }
+    @parameter
+    if (
+        data_layout == Image2DLayout.NCHW
+        and filter_layout == Image2DLayout.NCHW
+    ):
+        return ConvShape {
+            n: input.dim[0](),
+            h: input.dim[2](),
+            w: input.dim[3](),
+            c: input.dim[1](),
+            out_h: output.dim[2](),
+            out_w: output.dim[3](),
+            f: filter.dim[0](),
+            r: filter.dim[2](),
+            s: filter.dim[3](),
+            stride: stride,
+            dilation: dilation,
+            pad_h: pad_h,
+            pad_w: pad_w,
+            num_groups: num_groups,
+        }
+    elif (
+        data_layout == Image2DLayout.NHWC
+        and filter_layout == Image2DLayout.NHWC
+    ):
+        return ConvShape {
+            n: input.dim[0](),
+            h: input.dim[1](),
+            w: input.dim[2](),
+            c: input.dim[3](),
+            out_h: output.dim[1](),
+            out_w: output.dim[2](),
+            f: filter.dim[0](),
+            r: filter.dim[1](),
+            s: filter.dim[2](),
+            stride: stride,
+            dilation: dilation,
+            pad_h: pad_h,
+            pad_w: pad_w,
+            num_groups: num_groups,
+        }
+    else:
+        constrained[
+            data_layout == Image2DLayout.NHWC
+            and filter_layout == Image2DLayout.RSCF,
+            "not a valid layout configuration",
+        ]()
+        return ConvShape {
+            n: input.dim[0](),
+            h: input.dim[1](),
+            w: input.dim[2](),
+            c: input.dim[3](),
+            out_h: output.dim[1](),
+            out_w: output.dim[2](),
+            f: filter.dim[3](),
+            r: filter.dim[0](),
+            s: filter.dim[1](),
+            stride: stride,
+            dilation: dilation,
+            pad_h: pad_h,
+            pad_w: pad_w,
+            num_groups: num_groups,
+        }
 
 
 fn get_conv2d_shape[
