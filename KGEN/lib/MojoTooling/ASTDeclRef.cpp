@@ -133,7 +133,11 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     // argument, so it's easier just to contruct that view and extract the
     // argument from it.
     MojoASTDeclRef parentDecl = getParentDecl();
-    auto functionView = cast<FunctionDeclView>(parentDecl.getView());
+    auto functionView =
+        llvm::unique_dyn_cast_or_null<FunctionDeclView>(parentDecl.getView());
+    if (!functionView)
+      return nullptr;
+
     // As the function decl view doesn't store by-ref arguments, we need to
     // adjust the arg index accordingly.
     size_t index = bbArg.getArgNumber();
