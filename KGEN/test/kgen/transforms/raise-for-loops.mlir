@@ -414,3 +414,41 @@ kgen.func @return_value_same_as_iter_var()  {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @stride_same_as_iter_var
+kgen.func @stride_same_as_iter_var()  {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  // CHECK-NOT: hlcf.for
+  %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
+    // loop stride value is the same as iterVar: %arg0
+    %2 = index.cmp slt(%arg0, %index1)
+    hlcf.if %2 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg0 : index
+    }
+    %3 = index.add %arg0, %arg0
+    hlcf.continue %3 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @non_const_loop_end
+kgen.func @non_const_loop_end()  {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  // CHECK-NOT: hlcf.for
+  %0 = hlcf.loop (%arg0 = %index0 : index, %arg1 = %index1 : index) -> index {
+    // loop end is not always constant
+    %2 = index.cmp slt(%arg0, %arg1)
+    hlcf.if %2 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg0 : index
+    }
+    %3 = index.add %arg0, %index1
+    hlcf.continue %3, %3 : index, index
+  }
+  kgen.return
+}

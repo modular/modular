@@ -114,25 +114,56 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
   return result;
 }
 
-static Value
-getValueIfConstInteger(Value v, std::optional<int64_t> &inductionVarArgNumber,
-                       LoopOp currLoop) {
+/// Return whether `v` is a const value.
+static bool isConstValue(Value v) {
+  return mlir::matchPattern(v, mlir::m_Constant());
+}
+
+/// If `v` is a constant at the start of the loop, return that const value.
+/// If `v` is passed in as the initial operand of the loop, argNumber is filled
+/// with that operand number.
+static Value getValueIfConstAtLoopStart(Value v,
+                                        std::optional<int64_t> &argNumber,
+                                        LoopOp currLoop) {
   Value result;
   if (auto arg = dyn_cast<BlockArgument>(v)) {
     // Return the initial value of a block argument if it is constant.
-    inductionVarArgNumber = arg.getArgNumber();
-    if (auto p = dyn_cast<LoopOp>(arg.getParentBlock()->getParentOp())) {
-      if (p == currLoop) {
-        Value input = p->getOperand(arg.getArgNumber());
-        result = getValueIfConstInteger(input, inductionVarArgNumber, currLoop);
-      }
+    argNumber = arg.getArgNumber();
+    if (arg.getParentBlock()->getParentOp() == currLoop) {
+      Value input = currLoop->getOperand(arg.getArgNumber());
+      if (isConstValue(input))
+        result = input;
     }
-  } else if (mlir::matchPattern(v, mlir::m_Constant())) {
+  } else if (isConstValue(v)) {
     // If the value v is a constant get the value.
     result = v;
   }
   // Otherwise return a null Value.
   return result;
+}
+
+/// If `v` is a constant in every iteration of the loop, return that const
+/// value. Requires `continueOp` to be the only continue in the loop.
+static Value getValueIfConstEveryIteration(Value v, LoopOp loop,
+                                           ContinueOp continueOp) {
+  if (auto arg = dyn_cast<BlockArgument>(v)) {
+    if (arg.getParentBlock()->getParentOp() == loop) {
+      // Make sure the initial input is constant.
+      Value initialConst = loop.getOperand(arg.getArgNumber());
+      if (!isConstValue(initialConst))
+        return {};
+
+      // Make sure continue is using the same value.
+      unsigned argNumber = arg.getArgNumber();
+      if (continueOp->getOperand(argNumber) != arg)
+        return {};
+
+      return initialConst;
+    }
+  } else if (isConstValue(v)) {
+    return v;
+  }
+  return {};
 }
 
 // Match CmpOp with specific predicateTypes
@@ -198,14 +229,14 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   //
   // From hlcf.if %1, we can infer that %arg0 is the induction variable
   // (inductionVarArgNumber = 0)
-  // From hlcf.break %arg1, we know that %arg1 is the return value, and the rest
-  // will be other loop carried variable
+  // From hlcf.break %arg1, we know that %arg1 is the return value, and the
+  // rest will be other loop carried variable
   IfOp ifOp = cast<IfOp>(breakOp->getParentOp());
   Value ifCond = ifOp.getOperand();
   Value start;
   Value end;
-  // Position number in the BlockArgument list where the induction variable is.
-  // Return empty value if we can't infer this number.
+  // Position number in the BlockArgument list where the induction variable
+  // is. Return empty value if we can't infer this number.
   std::optional<int64_t> inductionVarArgNumber;
 
   CmpOpMatcher matcher({mlir::index::IndexCmpPredicate::SLT,
@@ -225,12 +256,18 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     // The operand who is a block argument is the induction variable, and its
     // initial value is the start value of the loop; the other operand (if a
     // constant) is the end of the loop.
-    start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber, loop);
+    start =
+        getValueIfConstAtLoopStart(cmp.getLhs(), inductionVarArgNumber, loop);
     if (inductionVarArgNumber.has_value()) {
-      end = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber, loop);
+      // The end must always be a constant in every iteration.
+      end = getValueIfConstEveryIteration(cmp.getRhs(), loop, continueOp);
     } else {
+      // No inductionVarArgNumber means `start` is not a block argument, and
+      // comes directly from a const op. This means it is always constant every
+      // iteration too. Can safely use it as `end`.
       end = start;
-      start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber, loop);
+      start =
+          getValueIfConstAtLoopStart(cmp.getRhs(), inductionVarArgNumber, loop);
       cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
                          ? HLCF::ForLoopBoundCmpPredicate::SGT
                          : HLCF::ForLoopBoundCmpPredicate::SLT;
@@ -243,13 +280,12 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // Infer loop stride from ContinueOp's input operand expression.
   Value nextIter = continueOp.getOperand(inductionVarArgNumber.value());
   Value stride;
-  std::optional<int64_t> argNum;
   Operation *nextIterOp = nextIter.getDefiningOp();
   if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
     if (auto blockArg = dyn_cast<BlockArgument>(input0)) {
-      stride = getValueIfConstInteger(input1, argNum, loop);
+      stride = getValueIfConstEveryIteration(input1, loop, continueOp);
       indVarCompute = isa<mlir::index::AddOp>(nextIterOp)
                           ? HLCF::ForLoopIndVarCompute::ADD
                           : HLCF::ForLoopIndVarCompute::SUB;
@@ -497,9 +533,9 @@ void RaiseForLoops::runOnOperation() {
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
 
-    InFlightDiagnostic diag = mlir::emitError(
-        loop->getLoc(),
-        " loop is decorated with @unroll, but compiler can't fully unroll it");
+    InFlightDiagnostic diag =
+        mlir::emitError(loop->getLoc(), " loop is decorated with @unroll, "
+                                        "but compiler can't fully unroll it");
 
     if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll()) {
       signalPassFailure();
