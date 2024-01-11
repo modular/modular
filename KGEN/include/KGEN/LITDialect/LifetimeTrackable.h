@@ -28,6 +28,8 @@ struct LifetimeTrackable {
   /// not, this returns a null value.
   static Value findUnderlyingValueFromField(Value value);
 
+  /// This value feels true'y when it is initialized by something that can be
+  /// lifetime tracked.
   operator bool() const { return !!name; }
 
   /// This is the user's declared name for the value declaration, or null if
@@ -62,6 +64,103 @@ struct LifetimeTrackable {
   /// from the specified type, otherwise it returns it unmodified.
   static Type getTypeOrPointeeType(Type type, bool isIndirect);
 };
+
+//===----------------------------------------------------------------------===//
+// OperationValueEffects
+//===----------------------------------------------------------------------===//
+
+enum class ResultEffect {
+  /// This is an ignorable result value, e.g. a value of trivial type.
+  ignore,
+
+  /// The result defines a new reg value, e.g. an owned register  result of a
+  /// function call.
+  regDefine,
+
+  /// The result is a ref that starts uninitialized when defined, but is
+  /// initialized by the end of the function.
+  memDefineUninitToInit,
+
+  /// The result is a ref that starts uninitialized when defined, and is also
+  /// uninitialized by the end of the function.
+  memDefineUninitToUninit,
+
+  /// The result is a ref that starts initialized when defined, and is also
+  /// initialized by the end of the function.
+  memDefineInitToInit,
+
+  /// The result is a ref that starts initialized when defined, but is
+  /// uninitialized by the end of the function.
+  memDefineInitToUninit,
+};
+
+enum class OperandEffect {
+  /// Uses of operands of trivial type, as well as things like DebugInfo,
+  /// StructGEROp, and RebindOp which are handled specially.
+  ignore,
+
+  /// This reads a register value and uses it, but does not consume it, e.g.
+  /// a borrowed_reg argument.
+  regUse,
+
+  /// This takes ownership of an inreg value, e.g. owned_reg argument or
+  /// RefStoreOp (which transfers ownership from the operand to the memory).
+  regConsume,
+
+  /// This is used by operations that load the value, things like RefLoadOp,
+  /// LoadConsumeOp, OwnershipUseOp, and passing a borrowed operand.
+  memLoad,
+
+  /// This is store to the pointer that overwrites whatever is in it with a new
+  /// owned value.  For example, RefStoreOp, InitSelf and ByRefResult call
+  /// operands all do this.
+  memStoreOwned,
+
+  /// inout arg
+  memInOut,
+
+  /// This loads a value from the operand and takes ownership of the result, for
+  /// example, owned operands (e.g. __del__) and LoadConsume.
+  memConsume,
+
+  /// This indicates that the full-object should be considered destroyed, but
+  /// any fields within it are still valid.
+  memMarkDestroyed,
+};
+
+/// This is the result value of `getOperationValueEffects`, indicating
+/// out-of-bound effects (aka special cases) and whether the op is unknown.
+enum class OverallOpValueEffect {
+  /// this indicates that the returned value effects cover everything.
+  allHandled = 0,
+
+  /// This is returned when the operation is unknown.
+  unknownOp,
+
+  /// This is a terminator op like return or unreachable.
+  terminatorOp,
+
+  /// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
+  /// perform local control flow.
+  localControlFlowOp,
+
+  /// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
+  ifLikeOp,
+
+  /// This is HLCF::LoopOp.
+  loopOp,
+
+  /// This is LIT::TryOp.
+  tryOp,
+};
+
+/// This computes the effects that an operation has on any operands and result
+/// values. This information is used by both phases of CheckLifetimes.
+OverallOpValueEffect
+getOperationValueEffects(Operation &op,
+                         SmallVectorImpl<OperandEffect> &operands,
+                         SmallVectorImpl<ResultEffect> &results);
+
 } // namespace LIT
 } // namespace M::KGEN
 
