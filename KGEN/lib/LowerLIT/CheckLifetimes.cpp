@@ -184,19 +184,17 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
                                   .getDtorSig()
                                   .value_or(SignatureType());
       if (dtorSig) {
-        return ParamOperatorAttr::get(
-            POC::GetTypeMethod,
-            {generic.getParam(),
-             StringAttr::get("__del__", StringType::get(type.getContext()))},
-            dtorSig.getSpecializedSignature(
-                {TypeConstantAttr::get(trait,
-                                       AnyRegTypeType::get(type.getContext())),
-                 generic.getParam()},
-                []() -> InFlightDiagnostic {
-                  assert(false &&
-                         "getSpecializedSignature not expected to fail here");
-                  return {};
-                }));
+        auto traitWithMD = TypeConstantAttr::get(
+            trait, AnyRegTypeType::get(type.getContext()));
+        auto specSig = dtorSig.getSpecializedSignature(
+            {traitWithMD, generic.getParam()}, []() -> InFlightDiagnostic {
+              llvm_unreachable(
+                  "getSpecializedSignature not expected to fail here");
+            });
+        auto delStr =
+            StringAttr::get("__del__", StringType::get(type.getContext()));
+        return ParamOperatorAttr::get(POC::GetTypeMethod,
+                                      {generic.getParam(), delStr}, specSig);
       }
     }
   }
@@ -666,7 +664,12 @@ struct UninitializedValueScan {
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  void checkOp(Operation &op);
+  void checkTerminatorOp(Operation &op);
+  void checkLocalControlFlowOp(Operation &op);
+  void checkIfLikeOp(Operation &op);
+  void checkLoopOp(HLCF::LoopOp loopOp);
+  void checkTryOp(LIT::TryOp tryOp);
+
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
@@ -949,168 +952,149 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
 void UninitializedValueScan::scanBlock(Block &block) {
-  for (Operation &op : block)
-    checkOp(op);
+  SmallVector<OperandEffect> operandEffects;
+  SmallVector<ResultEffect> resultEffects;
+  for (Operation &op : block) {
+    operandEffects.clear();
+    resultEffects.clear();
+    auto overall = getOperationValueEffects(op, operandEffects, resultEffects);
+    /// If the operation is unknown, ignore it.
+    if (overall == OverallOpValueEffect::unknownOp) {
+      // NOTE: Can log here when extending things.
+      // op.dump();
+      continue;
+    }
+
+    assert(operandEffects.size() == op.getNumOperands() &&
+           resultEffects.size() == op.getNumResults() &&
+           "getOperationValueEffects returned wrong # effects");
+
+    // Handle all the normal operand and result effects.
+    for (auto [operand, effect] : llvm::zip(op.getOperands(), operandEffects)) {
+      switch (effect) {
+      case OperandEffect::ignore:
+        break;
+      case OperandEffect::regUse:
+        checkUse(operand, op, /*isDeref=*/false);
+        break;
+      case OperandEffect::regConsume:
+        checkConsume(operand, op, /*isDeref=*/false);
+        break;
+      case OperandEffect::memLoad:
+        checkUse(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memStoreOwned:
+        checkDef(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memInOut:
+        checkUse(operand, op, /*isDeref=*/true);
+        checkDef(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memConsume:
+        checkConsume(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memMarkDestroyed:
+        // The lit.ownership.mark_destroyed op consumes the whole object bit of
+        // a value only, but not its fields.
+        if (auto valueRef = valueSet.getValueRef(operand, /*isDeref=*/true)) {
+          // Check just that the consumed bit is live.
+          valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
+          if (!valueRef.isAllPresent(liveValues)) {
+            // If not, then there is an error which we diagnose with 'checkUse'
+            // (note that it will generate a conservative warning because we're
+            // not passing the right bit down).
+            checkUse(operand, op, /*isDeref=*/true);
+          }
+        }
+        break;
+      }
+    }
+
+    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+#ifndef NDEBUG
+      LifetimeTrackable trackable(result);
+      // Perform some general sanity checking of the LifetimeTrackable
+      // implementation.
+
+      // Since this is an op result, the live in/out behavior must match each
+      // other: if this weren't true, then control flow paths that didn't cross
+      // the op could never be satisfied.
+      if (trackable)
+        assert(trackable.startsUninit == trackable.endsUninit &&
+               "op results must have same live in/out behavior");
+#endif
+
+      switch (effect) {
+      case ResultEffect::ignore:
+        // HandleVariant has special handling of its result due to phase
+        // ordering in dtor insertion.
+        assert((!trackable || isa<HandleVariantOp>(op)) &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        continue;
+      case ResultEffect::regDefine:
+        assert(trackable && !trackable.isIndirect && trackable.endsUninit &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        checkDef(result, op, /*isDeref=*/false);
+        break;
+      case ResultEffect::memDefineUninitToInit:
+        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // live-out behavior.
+        assert(trackable && trackable.isIndirect && !trackable.endsUninit &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        // We consume on execution to provide Uninit -> Init behavior.
+        checkConsume(result, op, /*isDeref=*/true);
+        break;
+      case ResultEffect::memDefineUninitToUninit:
+        assert(trackable && trackable.isIndirect && trackable.endsUninit &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        // Nothing to do here.
+        break;
+      case ResultEffect::memDefineInitToInit:
+        assert(trackable && trackable.isIndirect && !trackable.endsUninit &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        // Nothing to do here.
+        break;
+      case ResultEffect::memDefineInitToUninit:
+        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // live-out behavior.
+        assert(trackable && trackable.isIndirect && trackable.endsUninit &&
+               "Lifetime trackable and CheckLifetimes disagree");
+        // We consume on execution to provide Init -> Uninit behavior.
+        checkDef(result, op, /*isDeref=*/true);
+        break;
+      }
+    }
+
+    switch (overall) {
+    case OverallOpValueEffect::unknownOp:
+    case OverallOpValueEffect::allHandled:
+      // No special action.
+      break;
+    case OverallOpValueEffect::terminatorOp:
+      checkTerminatorOp(op);
+      break;
+    case OverallOpValueEffect::localControlFlowOp:
+      checkLocalControlFlowOp(op);
+      break;
+    case OverallOpValueEffect::ifLikeOp:
+      checkIfLikeOp(op);
+      break;
+    case OverallOpValueEffect::loopOp:
+      checkLoopOp(cast<HLCF::LoopOp>(op));
+      break;
+    case OverallOpValueEffect::tryOp:
+      checkTryOp(cast<LIT::TryOp>(op));
+      break;
+    }
+  }
 }
 
-void UninitializedValueScan::checkOp(Operation &op) {
-  // Debuginfo ops may reference values that aren't fully initialized, so we
-  // skip over them.
-  if (isa<DebugInfo::ValueOp>(op))
-    return;
-
-  // This op is handled when used.
-  if (isa<RefStructGEROp, RebindOp>(op))
-    return;
-
-  // A store of a whole value is an initialization.
-  if (isa<LIT::RefStoreOp, OwnershipDefLValueOp>(op)) {
-    // Mark the pointer as being mutated.
-    checkDef(op.getOperands().back(), op, /*isDeref=*/true);
-    return;
-  }
-
-  // A load is a use of whatever fields are being referenced.
-  if (isa<RefLoadOp, LoadConsumeOp, OwnershipUseOp>(op)) {
-    checkUse(op.getOperand(0), op, /*isDeref=*/true);
-    if (isa<LoadConsumeOp>(op))
-      checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
-    for (auto operand : op.getOperands())
-      checkUse(operand, op, /*isDeref=*/false);
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  if (isa<GlobalVarRefOp>(op)) {
-    checkDef(op.getResult(0), op, /*isDeref=*/true);
-    return;
-  }
-
-  // If this is a call, investigate each of the operands along with the
-  // argument convention effects.
-  if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
-    SignatureType signature;
-    ValueRange operands;
-    if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
-      signature = directCall.getCalleeType();
-      operands = directCall.getArguments();
-    } else {
-      auto callSig = cast<LIT::CallSignatureOp>(op);
-      signature = callSig.getCallee().getType();
-      operands = callSig.getArguments();
-    }
-
-    assert(isa<CreateClosureOp>(op) || isa<CaptureListCreate>(op) ||
-           signature.getInputConventions().size() == operands.size());
-    for (auto [convention, operand] :
-         llvm::zip(signature.getInputConventions(), operands)) {
-      bool isIndirect = SignatureType::hasAddress(convention);
-      switch (convention) {
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::OwnedInMem:
-        checkUse(operand, op, /*isDeref=*/isIndirect); // Live -> dead
-        checkConsume(operand, op, /*isDeref=*/isIndirect);
-        break;
-      case ValueInputConvention::BorrowedInMem:
-      case ValueInputConvention::BorrowedInReg:
-        checkUse(operand, op, /*isDeref=*/isIndirect); // Live -> live
-        break;
-      case ValueInputConvention::ByRef:
-        checkUse(operand, op, /*isDeref=*/true); // Life -> Live
-        checkDef(operand, op, /*isDeref=*/true);
-        break;
-      case ValueInputConvention::ByRefResult:
-      case ValueInputConvention::InitSelf:
-        // This call defines the by-ref result.
-        checkDef(operand, op, /*isDeref=*/true);
-        break;
-      case ValueInputConvention::None:
-        llvm_unreachable("none convention not permitted in lit");
-      }
-    }
-
-    // If the result is defining an owned register value, then we treat this as
-    // a definition.
-    if (signature.hasOwnedRegisterResult())
-      checkDef(op.getResult(0), op, /*isDeref=*/false);
-
-    return;
-  }
-
-  // The lit.ownership.mark_destroyed op consumes the whole object bit of a
-  // value only, but not its fields.
-  if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
-    if (auto valueRef =
-            valueSet.getValueRef(markDestroyed.getValue(), /*isDeref=*/true)) {
-      valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
-      // If the consumed bit is live then all is good, otherwise there is an
-      // error and it will be diagnosed below.
-      if (valueRef.isAllPresent(liveValues))
-        return;
-    }
-  }
-
-  // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
-  // field impacts the execution of the operation (now), not its modeling at
-  // start of the function.  We have to assume its liveness at start of function
-  // is the same as its liveness at end of function because not all control
-  // flow paths will execute the operation.
-  if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
-    Value result = refFromPtr.getResult();
-    if (!refFromPtr.getStartUninit()) {
-      if (refFromPtr.getEndUninit()) {
-        checkDef(result, op, /*isDeref=*/true);
-      } else {
-        // If it start/end initialized, emit destructor if already replaced.
-        checkUse(result, op, /*isDeref=*/true);
-      }
-    } else if (refFromPtr.getStartUninit() && !refFromPtr.getEndUninit()) {
-      checkConsume(result, op, /*isDeref=*/true);
-    }
-    return;
-  }
-
-  // lit.ownership.end_lifetime consumes its operand then defines its result.
-  if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
-    bool isIndirect = !ownershipEnd.getIsReg();
-    checkConsume(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
-    checkDef(ownershipEnd.getResult(), op, /*isDeref=*/isIndirect);
-    return;
-  }
-
-  // kgen.variant.create consumes and produces an owned value.
-  if (isa<VariantCreateOp>(op)) {
-    checkConsume(op.getOperand(0), op, /*isDeref=*/false);
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  // VariantTakeOp takes ownership of its operand value and defines its result.
-  if (auto variantTake = dyn_cast<VariantTakeOp>(op)) {
-    checkConsume(op.getOperand(0), op, /*isDeref=*/false);
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  // If this operation has a direct use of a value we are tracking, consider
-  // it a use that must be initialized.
-  for (Value operand : op.getOperands())
-    checkUse(operand, op, /*isDeref=*/false);
-
-  // lit.letreg.decl defines its own value after using its operand.
-  if (isa<LetRegDeclOp>(op)) {
-    // Operand use already checked above.
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
-
+/// This is called when the op is a return, lit.error_return or unreachable op.
+void UninitializedValueScan::checkTerminatorOp(Operation &op) {
   // If this is a kgen.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
-  // Check that *all* of the values we are tracking are managed correctly.
+  // Check that *all* of the values are live-out of the function are
+  // initialized.
   if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op)) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos())) {
@@ -1118,30 +1102,30 @@ void UninitializedValueScan::checkOp(Operation &op) {
       if (valueInfo.endsUninit)
         continue;
 
-      // If this is a `isFullObjectLiveOnEntry` value (i.e., the 'self' member
-      // in an __init__) then it is actually not used on the error path, only
-      // the normal path.
-      if (valueInfo.isFullObjectLiveOnEntry && isa<LIT::ErrorReturnOp>(op))
+      // If this an error_return (a thrown error out of this function) and
+      // this
+      // a `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
+      // __init__) then it is actually not used on the error path, only the
+      // normal path.
+      if (valueInfo.isFullObjectLiveOnEntry && isa<ErrorReturnOp>(op))
         continue;
 
       // Otherwise, it must be live at return/raise.
       checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }
-
-    // Indicate that all values are live after the return so that an early
-    // return in an 'if' will get properly intersected with the other side of
-    // the branch.
-    liveValues.set();
-    return;
+  } else {
+    assert(isa<KGEN::UnreachableOp>(op) && "Unknown terminator");
   }
 
-  // An unreachable at the end of the block considers all values live, which
-  // makes it flexible when merging with any other control flow.
-  if (isa<KGEN::UnreachableOp>(op)) {
-    liveValues.set();
-    return;
-  }
+  // Indicate that all values are live after the return so that an early
+  // return in an 'if' will get properly intersected with the other side
+  // of the branch.
+  liveValues.set();
+}
 
+/// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
+/// perform local control flow.
+void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     *breakSet &= liveValues;
@@ -1154,118 +1138,114 @@ void UninitializedValueScan::checkOp(Operation &op) {
     *continueEverMutatedSet |= everMutatedValues;
     return;
   }
-  if (isa<LIT::TryRaiseOp>(op)) {
-    assert(raiseSet && "Not in a 'try'?");
-    *raiseSet &= liveValues;
-    *raiseEverMutatedSet |= everMutatedValues;
-    return;
-  }
 
+  assert(isa<LIT::TryRaiseOp>(op) && "Unknown local CF op");
+  assert(raiseSet && "Not in a 'try'?");
+  *raiseSet &= liveValues;
+  *raiseEverMutatedSet |= everMutatedValues;
+}
+
+/// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
+void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  if (isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)) {
-    assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
-           op.getRegion(1).hasOneBlock() &&
-           "if-like op should have two single-block regions");
-    BitVector liveValuesCopy = liveValues;
-    BitVector everMutatedCopy = everMutatedValues;
-    scanBlock(op.getRegion(0).front());
-    liveValuesCopy.swap(liveValues);
-    everMutatedCopy.swap(everMutatedValues);
-    scanBlock(op.getRegion(1).front());
-    liveValues &= liveValuesCopy;
-    everMutatedValues |= everMutatedCopy;
+  assert((isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)));
+  assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
+         op.getRegion(1).hasOneBlock() &&
+         "if-like op should have two single-block regions");
+  BitVector liveValuesCopy = liveValues;
+  BitVector everMutatedCopy = everMutatedValues;
+  scanBlock(op.getRegion(0).front());
+  liveValuesCopy.swap(liveValues);
+  everMutatedCopy.swap(everMutatedValues);
+  scanBlock(op.getRegion(1).front());
+  liveValues &= liveValuesCopy;
+  everMutatedValues |= everMutatedCopy;
 
-    // HandleVariant defines an owned value as its result, it is produced by an
-    // enclosing lit.yield.
-    if (isa<HandleVariantOp>(op))
-      checkDef(op.getResult(0), op, /*isDeref=*/false);
-    return;
-  }
+  // HandleVariant defines an owned value as its result, it is produced by an
+  // enclosing lit.yield.  This is handled by the normal operand/result effects.
+  for (auto result : op.getResults())
+    checkDef(result, op, /*isDeref=*/false);
+}
 
-  // For a loop, we analyze the body of the loop with the known live-ins but
-  // capture a new sets for continue and break results.
-  if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
-    UninitializedValueScan bodySets(valueSet);
-    // Loops are transparent to raise.
-    bodySets.raiseSet = raiseSet;
-    bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
+void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
+  UninitializedValueScan bodySets(valueSet);
+  // Loops are transparent to raise.
+  bodySets.raiseSet = raiseSet;
+  bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
 
-    // The default continueSet is the live-in set of values.  This can lose
-    // values if some 'continue' path through the body of the loop consumes a
-    // value.
-    BitVector continueSet(liveValues);
-    bodySets.continueSet = &continueSet;
-    BitVector continueEverMutatedSet(everMutatedValues);
-    bodySets.continueEverMutatedSet = &continueEverMutatedSet;
+  // The default continueSet is the live-in set of values.  This can lose
+  // values if some 'continue' path through the body of the loop consumes a
+  // value.
+  BitVector continueSet(liveValues);
+  bodySets.continueSet = &continueSet;
+  BitVector continueEverMutatedSet(everMutatedValues);
+  bodySets.continueEverMutatedSet = &continueEverMutatedSet;
 
-    // The 'breakSet' of the loop body will be the live outs of the loop.  We
-    // use the existing liveValues that we'll continue with for that set, but
-    // need to start it out thinking that everything is live so intersections
-    // from the body work correctly.
-    liveValues.set();
-    bodySets.breakSet = &liveValues;
-    bodySets.breakEverMutatedSet = &everMutatedValues;
+  // The 'breakSet' of the loop body will be the live outs of the loop.  We
+  // use the existing liveValues that we'll continue with for that set, but
+  // need to start it out thinking that everything is live so intersections
+  // from the body work correctly.
+  liveValues.set();
+  bodySets.breakSet = &liveValues;
+  bodySets.breakEverMutatedSet = &everMutatedValues;
 
-    // Iteratively scan the loop body until the live-in set converges.  This is
-    // a trivial lattice with each bit converging to "not live in", so we know
-    // this will terminate.
-    size_t numLiveIn;
-    do {
-      numLiveIn = continueSet.count();
-      // Scan the body: any breaks will intersect their live-out set with
-      // 'breakSet', and any continues will intersect their live-out set with
-      // 'continueSet'.
-      bodySets.liveValues = continueSet;
-      bodySets.everMutatedValues = continueEverMutatedSet;
-      bodySets.scanBlock(loopOp.getBody().front());
+  // Iteratively scan the loop body until the live-in set converges.  This is
+  // a trivial lattice with each bit converging to "not live in", so we know
+  // this will terminate.
+  size_t numLiveIn;
+  do {
+    numLiveIn = continueSet.count();
+    // Scan the body: any breaks will intersect their live-out set with
+    // 'breakSet', and any continues will intersect their live-out set with
+    // 'continueSet'.
+    bodySets.liveValues = continueSet;
+    bodySets.everMutatedValues = continueEverMutatedSet;
+    bodySets.scanBlock(loopOp.getBody().front());
 
-      // If any bits got cleared from the continueSet then we need to iterate.
-    } while (continueSet.count() != numLiveIn);
-    // Any code after the loop continues on with the breaks valid.
-    return;
-  }
+    // If any bits got cleared from the continueSet then we need to iterate.
+  } while (continueSet.count() != numLiveIn);
+  // Any code after the loop continues on with the breaks valid.
+}
 
-  if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
-    UninitializedValueScan bodySets(valueSet);
-    // Our current live-in set is live-in to the try body.
-    bodySets.liveValues = liveValues;
-    bodySets.everMutatedValues = everMutatedValues;
+void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
+  UninitializedValueScan bodySets(valueSet);
+  // Our current live-in set is live-in to the try body.
+  bodySets.liveValues = liveValues;
+  bodySets.everMutatedValues = everMutatedValues;
 
-    // Try is transparent to break/continue.
-    bodySets.continueSet = continueSet;
-    bodySets.continueEverMutatedSet = continueEverMutatedSet;
-    bodySets.breakSet = breakSet;
-    bodySets.breakEverMutatedSet = breakEverMutatedSet;
+  // Try is transparent to break/continue.
+  bodySets.continueSet = continueSet;
+  bodySets.continueEverMutatedSet = continueEverMutatedSet;
+  bodySets.breakSet = breakSet;
+  bodySets.breakEverMutatedSet = breakEverMutatedSet;
 
-    // We capture all the common values live-out of raise's as being the live-in
-    // to the except block.
-    BitVector exceptSet(liveValues.size(), true);
-    bodySets.raiseSet = &exceptSet;
-    BitVector exceptEverMutatedSet(liveValues.size(), false);
-    bodySets.raiseEverMutatedSet = &exceptEverMutatedSet;
-    bodySets.scanBlock(tryOp.getTryRegion().front());
+  // We capture all the common values live-out of raise's as being the live-in
+  // to the except block.
+  BitVector exceptSet(liveValues.size(), true);
+  bodySets.raiseSet = &exceptSet;
+  BitVector exceptEverMutatedSet(liveValues.size(), false);
+  bodySets.raiseEverMutatedSet = &exceptEverMutatedSet;
+  bodySets.scanBlock(tryOp.getTryRegion().front());
 
-    // The live-ins to the except block are the exceptSet.
-    for (Value arg : tryOp.getExceptRegion().getArguments())
-      if (ValueRef ref = valueSet.getValueRef(arg, /*isDeref=*/true))
-        ref.markBits(exceptSet, true);
-    liveValues = std::move(exceptSet);
-    everMutatedValues = std::move(exceptEverMutatedSet);
-    scanBlock(tryOp.getExceptRegion().front());
+  // The live-ins to the except block are the exceptSet.
+  for (Value arg : tryOp.getExceptRegion().getArguments())
+    if (ValueRef ref = valueSet.getValueRef(arg, /*isDeref=*/true))
+      ref.markBits(exceptSet, true);
+  liveValues = std::move(exceptSet);
+  everMutatedValues = std::move(exceptEverMutatedSet);
+  scanBlock(tryOp.getExceptRegion().front());
 
-    // The live-out set of the bodySet is the live-in to the else block, but
-    // exceptions raised in it go out of the try.
-    bodySets.raiseSet = raiseSet;
-    bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
-    bodySets.scanBlock(tryOp.getElseRegion().front());
+  // The live-out set of the bodySet is the live-in to the else block, but
+  // exceptions raised in it go out of the try.
+  bodySets.raiseSet = raiseSet;
+  bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
+  bodySets.scanBlock(tryOp.getElseRegion().front());
 
-    // The fall through live values are the intersection from the except and
-    // else blocks.
-    liveValues &= bodySets.liveValues;
-    everMutatedValues |= bodySets.everMutatedValues;
-    return;
-  }
+  // The fall through live values are the intersection from the except and
+  // else blocks.
+  liveValues &= bodySets.liveValues;
+  everMutatedValues |= bodySets.everMutatedValues;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1298,8 +1278,13 @@ struct DestructorInsertion {
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  void checkOp(Operation &op);
-  void markConsumed(Value value, Operation &op, bool isDeref);
+  void checkTerminatorOp(Operation &op);
+  void checkLocalControlFlowOp(Operation &op);
+  void checkIfLikeOp(Operation &op);
+  void checkLoopOp(HLCF::LoopOp loopOp);
+  void checkTryOp(LIT::TryOp tryOp);
+
+  void checkConsume(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
@@ -1315,9 +1300,6 @@ private:
   void emitDestructorCallAt(Value value, ValueRef valueRef,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
-
-  void checkIfLikeOp(Operation &operation,
-                     const BitVector &expectedConsumptionInThenNotElse);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1352,14 +1334,271 @@ private:
 };
 } // namespace
 
-/// Given an 'if' like operation (normal 'if' statement, parameter if, or a
-/// HandleVariant) perform dtor analysis for each side and insert destructors at
-/// the top of the blocks to form a common upward-projected consume set.
-///
-/// expectedConsumptionInThenNotElse is non-empty for HandleVariant ops - it
-/// includes a set of values that are not live in the else block.
-void DestructorInsertion::checkIfLikeOp(
-    Operation &ifElseOp, const BitVector &expectedConsumptionInThenNotElse) {
+void DestructorInsertion::dump() const {
+  auto &os = llvm::errs();
+  if (valueSet.getValueInfos().size() < 32) {
+    valueSet.dump();
+    os << "\n";
+  }
+
+  os << "DestructorInsertion for ";
+  valueSet.printFuncName(os);
+  if (dryRun)
+    os << " [DRYRUN]";
+  os << "\n  ";
+  valueSet.printBV(consumedValues, os) << "\n";
+
+  if (raiseSet) {
+    os << " raise: ";
+    valueSet.printBV(*raiseSet, os) << "\n";
+  }
+  if (breakSet) {
+    os << " break: ";
+    valueSet.printBV(*breakSet, os) << "\n";
+  }
+  if (continueSet) {
+    os << " continue: ";
+    valueSet.printBV(*continueSet, os) << "\n";
+  }
+  os.flush();
+}
+
+void DestructorInsertion::scanFunction(LIT::FuncOp func) {
+  if (auto fnInterface = dyn_cast<FuncInterface>(func.getOperation()))
+    functionSignature = fnInterface.getSignature();
+  else // Unknown function kind.
+    return;
+
+  consumedValues.resize(valueSet.getNumTotalBits());
+  // Slot 0 indicates this block is reachable.  This will be cleared if an
+  // 'unreachable' operation is noticed.
+  consumedValues.set(0);
+
+  // Scan the body of the function.
+  Block &funcBody = func.getFunctionBody().front();
+  scanBlock(funcBody);
+
+  // The sentinel tracks reachability.
+  assert(consumedValues[0] && "function entry should be reachable");
+
+  // If any argument values are unconsumed then they must be unused.
+  // Emit their destructor calls at the start of the function by acting as
+  // though there is a use.
+  for (auto [argValue, conv] : llvm::zip(
+           func.getArguments(), func.getSignature().getInputConventions())) {
+    // Ignore undef-on-input values.
+    if (conv == ValueInputConvention::ByRefResult ||
+        conv == ValueInputConvention::InitSelf)
+      continue;
+
+    bool isIndirect = SignatureType::hasAddress(conv);
+    Location loc = argValue.getLoc();
+    if (DebugInfo::DISubprogramAttr scope =
+            DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
+      loc = FusedLoc::get(loc.getContext(), {loc}, scope);
+
+    mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
+    checkUse(argValue, builder, /*opWithUse=*/nullptr, /*isDeref=*/isIndirect);
+  }
+}
+
+/// Scan a block top down, checking all the operations that may use a value or
+/// change its liveness state.  This diagnoses uses of values that are not yet
+/// initialized, and returns the set of values that are live at the end of the
+/// block.
+void DestructorInsertion::scanBlock(Block &block) {
+  // Process each operation bottom-up in the block.
+  SmallVector<OperandEffect> operandEffects;
+  SmallVector<ResultEffect> resultEffects;
+  for (Operation &op : llvm::reverse(block)) {
+    operandEffects.clear();
+    resultEffects.clear();
+    auto overall = getOperationValueEffects(op, operandEffects, resultEffects);
+
+    switch (overall) {
+    case OverallOpValueEffect::unknownOp:
+      // NOTE: Enable logging when debugging.
+      // op.dump();
+      continue;
+    case OverallOpValueEffect::allHandled:
+      break; // No special action.
+    case OverallOpValueEffect::terminatorOp:
+      checkTerminatorOp(op);
+      break;
+    case OverallOpValueEffect::localControlFlowOp:
+      checkLocalControlFlowOp(op);
+      break;
+    case OverallOpValueEffect::ifLikeOp:
+      checkIfLikeOp(op);
+      break;
+    case OverallOpValueEffect::loopOp:
+      checkLoopOp(cast<HLCF::LoopOp>(op));
+      break;
+    case OverallOpValueEffect::tryOp:
+      checkTryOp(cast<LIT::TryOp>(op));
+      break;
+    }
+
+    assert(operandEffects.size() == op.getNumOperands() &&
+           resultEffects.size() == op.getNumResults() &&
+           "getOperationValueEffects returned wrong # effects");
+
+    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+      // CheckUninit pass does all the paranoid checking, don't duplicate it.
+      switch (effect) {
+      case ResultEffect::ignore:
+        continue;
+      case ResultEffect::regDefine:
+        checkDef(result, op, /*isDeref=*/false);
+        break;
+      case ResultEffect::memDefineUninitToInit:
+        // The live-in behavior is modeled by LifetimeTrackable to match the
+        // live-out behavior.
+        // We consume on execution to provide Uninit -> Init behavior.
+        checkConsume(result, op, /*isDeref=*/true);
+        break;
+      case ResultEffect::memDefineUninitToUninit:
+        // Nothing to do here.
+        break;
+      case ResultEffect::memDefineInitToInit:
+        // If it start/end initialized, emit destructor if already replaced.
+        checkUse(result, op, /*isDeref=*/true);
+        break;
+      case ResultEffect::memDefineInitToUninit:
+        // We consume on execution to provide Init -> Uninit behavior.
+        checkDef(result, op, /*isDeref=*/true);
+        break;
+      }
+    }
+
+    // Handle all the normal operand and result effects.
+    for (auto [operand, effect] : llvm::zip(op.getOperands(), operandEffects)) {
+      switch (effect) {
+      case OperandEffect::ignore:
+        break;
+      case OperandEffect::regUse:
+        checkUse(operand, op, /*isDeref=*/false);
+        break;
+      case OperandEffect::regConsume:
+        checkConsume(operand, op, /*isDeref=*/false);
+        break;
+      case OperandEffect::memLoad:
+        checkUse(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memStoreOwned:
+        checkDef(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memInOut:
+        // It is sufficient to just check that we're using the input operation,
+        // and if this is the last use of the operation, we should insert a
+        // destructor for the value.  checkDef would mark the value as
+        // not-live-in, which we don't want.
+        checkUse(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memConsume:
+        checkConsume(operand, op, /*isDeref=*/true);
+        break;
+      case OperandEffect::memMarkDestroyed:
+        // The lit.ownership.mark_destroyed op consumes the whole object bit of
+        // a value only, but not its fields.  This ensures the sub-fields are
+        // destroyed but the full object is not.  It is used in destructors
+        // primarily.
+        if (auto valueRef = valueSet.getValueRef(operand, /*isDeref=*/true))
+          consumedValues.set(valueRef.endBit - 1);
+        break;
+      }
+    }
+  }
+}
+
+/// This is returned when the op is a return or unreachable op.
+void DestructorInsertion::checkTerminatorOp(Operation &op) {
+  consumedValues.reset();
+  if (isa<UnreachableOp>(op))
+    return;
+
+  assert((isa<KGEN::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
+  consumedValues.set(0); // Slot 0 indicates that this block is reachable.
+
+  for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
+    if (valueInfo.endsUninit)
+      continue;
+
+    // If this value starts uninit and ends init, then it must be either an
+    // initself argument or a byref result argument. These get special
+    // handling when this is an error_return (a error is thrown/rethrown out
+    // of this function) because they aren't defined on the error condition.
+    if (valueInfo.startsUninit && !valueInfo.endsUninit &&
+        isa<ErrorReturnOp>(op)) {
+      assert(isa<BlockArgument>(valueInfo.value) &&
+             "should only be byrefresult or initself argument");
+
+      // A `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
+      // __init__) demands the full-object bit (which is live on entry)
+      // because it cannot be destroyed without all the fields.  We don't
+      // want to run the destructor on 'self' itself.
+      //
+      // Otherwise, we don't consume any part of a byref result.
+      if (valueInfo.isFullObjectLiveOnEntry)
+        consumedValues.set(valueInfo.endValueBit - 1);
+      continue;
+    }
+
+    consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+  }
+}
+void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
+  if (isa<HLCF::BreakOp>(op)) {
+    assert(breakSet && "Not in a loop?");
+    consumedValues = *breakSet;
+    return;
+  }
+  if (isa<HLCF::ContinueOp>(op)) {
+    assert(continueSet && "Not in a loop?");
+    consumedValues = *continueSet;
+    return;
+  }
+
+  // A raise will use the consume set that was seen on entry to the enclosing
+  // except block.
+  assert(isa<LIT::TryRaiseOp>(op) && "Unknown local control flow op");
+  assert(raiseSet && "Not in a 'try'?");
+  consumedValues = *raiseSet;
+}
+
+/// 'if' operations propagate the consume sets into each branch, and use the
+/// resulting consume sets to make sure the upward propagated set of consumed
+/// values is consistent.
+void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
+  BitVector expectedConsumptionInThenNotElse(consumedValues.size());
+  // HandleVariant has a set of the byref-result and initself arguments that
+  // would be undefined when an error is thrown.  Make sure these are not
+  // assumed to be live in the error path.
+  if (auto handleVariantOp = dyn_cast<HandleVariantOp>(ifElseOp)) {
+    // This defines all of the results before doing anything else.
+    for (auto result : ifElseOp.getResults())
+      checkDef(result, ifElseOp, /*isDeref=*/false);
+
+    for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
+      // For each of the initialized values, is this the last reference?
+      // If so, generate a destructor call after this op.
+      checkUse(maybeInitValue, ifElseOp, /*isDeref=*/true);
+
+      // To prevent destructor calls from being generated for uninitialized
+      // values in the else block, we mark the exempt values in an expectation
+      // bit vector.
+      ValueRef uninitValueRef =
+          valueSet.getValueRef(maybeInitValue, /*isDeref=*/true);
+      uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
+    }
+  }
+
+  // Given an 'if' like operation (normal 'if' statement, parameter if, or a
+  // HandleVariant) perform dtor analysis for each side and insert destructors
+  // at the top of the blocks to form a common upward-projected consume set.
+  //
+  // expectedConsumptionInThenNotElse is non-empty for HandleVariant ops - it
+  // includes a set of values that are not live in the else block.
   assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
          ifElseOp.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -1481,452 +1720,103 @@ void DestructorInsertion::checkIfLikeOp(
   consumedValues = upwardConsumeSet;
 }
 
-void DestructorInsertion::dump() const {
-  auto &os = llvm::errs();
-  if (valueSet.getValueInfos().size() < 32) {
-    valueSet.dump();
-    os << "\n";
+/// For a loop, we know the consume sets for any break statements, but need
+/// to iterate the loop to find the right continue sets to use.
+void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
+  auto loopBodySets = DestructorInsertion::copy(*this);
+  // Any 'break's within the loop will produce the consume set for the
+  // statement immediately after the loop.
+  loopBodySets.breakSet = &consumedValues;
+
+  // We start the continueSet with no values set to be consumed, and with
+  // sentinel slot #0 unset indicating that the continue point isn't
+  // reachable.  This will cause the first iteration to propagate values up
+  // from the 'break' points to the consume set.
+  BitVector continueSet(consumedValues.size());
+  loopBodySets.continueSet = &continueSet;
+
+  // We need to dry run the body evaluation until we get to a stable
+  // continue set.
+  loopBodySets.dryRun = true;
+
+  // Iteratively scan the loop body until the continue set converges.
+  [[maybe_unused]] unsigned numIters = 0;
+  while (true) {
+    // Scan the body: any breaks will intersect their live-out set with
+    // 'breakSet', and any continues will intersect their live-out set with
+    // 'continueSet'.
+    loopBodySets.scanBlock(loopOp.getBody().front());
+
+    // If we scanned the body and didn't find any live code, then we know
+    // there must not be any break statements in it.  Just consider the
+    // continue point reachable for the next iteration.
+    if (!loopBodySets.consumedValues[0])
+      loopBodySets.consumedValues[0] = true;
+
+    // If the continue set is unchanged, then we converged.
+    if (loopBodySets.consumedValues == continueSet)
+      break;
+
+    // Otherwise, use the set of values consumed on loop entry as the new
+    // continue set.
+    std::swap(loopBodySets.consumedValues, continueSet);
+
+    // This should converge trivially as we are setting bits in the continue
+    // set, but when we get a consume operator in the future this may be
+    // tricky.  Don't fall into an infinite loop on accident.
+    ++numIters;
+    assert(numIters < 5 && "Loop should converge in a couple iterations");
   }
 
-  os << "DestructorInsertion for ";
-  valueSet.printFuncName(os);
-  if (dryRun)
-    os << " [DRYRUN]";
-  os << "\n  ";
-  valueSet.printBV(consumedValues, os) << "\n";
-
-  if (raiseSet) {
-    os << " raise: ";
-    valueSet.printBV(*raiseSet, os) << "\n";
+  // Once we've converged to the right continue set, we can replay one final
+  // iteration in execute mode (if the enclosing context is not dryRun mode)
+  // to insert destructors.
+  if (!dryRun) {
+    loopBodySets.dryRun = false;
+    loopBodySets.scanBlock(loopOp.getBody().front());
   }
-  if (breakSet) {
-    os << " break: ";
-    valueSet.printBV(*breakSet, os) << "\n";
-  }
-  if (continueSet) {
-    os << " continue: ";
-    valueSet.printBV(*continueSet, os) << "\n";
-  }
-  os.flush();
+  consumedValues = std::move(loopBodySets.consumedValues);
 }
 
-void DestructorInsertion::scanFunction(LIT::FuncOp func) {
-  if (auto fnInterface = dyn_cast<FuncInterface>(func.getOperation()))
-    functionSignature = fnInterface.getSignature();
-  else // Unknown function kind.
-    return;
+void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
+  // The except block is processed with a copy of the consumed value set
+  // from the bottom of the try.  After processing it, we know what the
+  // consumed values are for the exception block.
+  auto exceptSets = DestructorInsertion::copy(*this);
+  exceptSets.raiseSet = raiseSet;
 
-  consumedValues.resize(valueSet.getNumTotalBits());
-  // Slot 0 indicates this block is reachable.  This will be cleared if an
-  // 'unreachable' operation is noticed.
-  consumedValues.set(0);
-
-  // Scan the body of the function.
-  Block &funcBody = func.getFunctionBody().front();
-  scanBlock(funcBody);
-
-  // The sentinel tracks reachability.
-  assert(consumedValues[0] && "function entry should be reachable");
-
-  // If any argument values are unconsumed then they must be unused.
-  // Emit their destructor calls at the start of the function by acting as
-  // though there is a use.
-  for (auto [argValue, conv] : llvm::zip(
-           func.getArguments(), func.getSignature().getInputConventions())) {
-    // Ignore undef-on-input values.
-    if (conv == ValueInputConvention::ByRefResult ||
-        conv == ValueInputConvention::InitSelf)
-      continue;
-
-    bool isIndirect = SignatureType::hasAddress(conv);
-    Location loc = argValue.getLoc();
-    if (DebugInfo::DISubprogramAttr scope =
-            DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
-      loc = FusedLoc::get(loc.getContext(), {loc}, scope);
-
-    mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    checkUse(argValue, builder, /*opWithUse=*/nullptr, /*isDeref=*/isIndirect);
-  }
-}
-
-/// Scan a block top down, checking all the operations that may use a value or
-/// change its liveness state.  This diagnoses uses of values that are not yet
-/// initialized, and returns the set of values that are live at the end of the
-/// block.
-void DestructorInsertion::scanBlock(Block &block) {
-  for (Operation &op : llvm::reverse(block))
-    checkOp(op);
-}
-
-void DestructorInsertion::checkOp(Operation &op) {
-  // Debuginfo ops may reference values that aren't fully initialized, so we
-  // skip over them.
-  if (isa<DebugInfo::ValueOp>(op))
-    return;
-
-  // This op is handled when used.
-  if (isa<RefStructGEROp, RebindOp>(op))
-    return;
-
-  // If this is a call, investigate each of the operands along with the
-  // argument convention effects.
-  if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
-    SignatureType signature;
-    if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
-      signature = directCall.getCalleeType();
-    else
-      signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
-    ValueRange operands;
-    if (isa<LIT::CallSignatureOp>(op))
-      operands = cast<LIT::CallSignatureOp>(op).getArguments();
-    else
-      operands = op.getOperands();
-
-    // If the result is defining an owned register value, treat it as a def.
-    if (signature.hasOwnedRegisterResult())
-      checkDef(op.getResult(0), op, /*isDeref=*/false);
-
-    assert(isa<CreateClosureOp>(op) || isa<CaptureListCreate>(op) ||
-           signature.getInputConventions().size() == operands.size());
-    for (auto [convention, operand] :
-         llvm::zip(signature.getInputConventions(), operands)) {
-      bool isIndirect = SignatureType::hasAddress(convention);
-      switch (convention) {
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::OwnedInMem:
-        // This consumes the value, so it isn't dead going upwards.
-        valueSet.getValueRef(operand, /*isDeref=*/isIndirect)
-            .markBits(consumedValues, true);
-        break;
-      case ValueInputConvention::BorrowedInReg:
-      case ValueInputConvention::BorrowedInMem:
-      case ValueInputConvention::ByRef:
-        checkUse(operand, op, /*isDeref=*/isIndirect);
-        break;
-      case ValueInputConvention::ByRefResult:
-      case ValueInputConvention::InitSelf:
-        // This defines the memory it writes to.
-        checkDef(operand, op, /*isDeref=*/isIndirect);
-        break;
-      case ValueInputConvention::None:
-        llvm_unreachable("none convention not permitted in lit");
-      }
-    }
-    return;
-  }
-
-  // LetReg takes ownership of its operand value and defines its own value.
-  if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
-    // This defines the result value.  Emit a destructor if unused.
-    checkDef(letReg, op, /*isDeref=*/false);
-    // This consumes its input.
-    markConsumed(letReg.getOperand(), op, /*isDeref=*/false);
-    return;
-  }
-
-  // VariantTakeOp takes ownership of its operand value and defines its result.
-  if (auto variantTake = dyn_cast<VariantTakeOp>(op)) {
-    // This defines the result value.  Emit a destructor if unused.
-    checkDef(variantTake, op, /*isDeref=*/false);
-    // This consumes its register input.
-    markConsumed(variantTake.getOperand(), op, /*isDeref=*/false);
-    return;
-  }
-
-  // A store consumes a value and overwrites the destination.
-  if (auto storeOp = dyn_cast<LIT::RefStoreOp>(op)) {
-    markConsumed(storeOp.getArg(), op, /*isDeref=*/false);
-    checkDef(storeOp.getRef(), op, /*isDeref=*/true);
-    return;
-  }
-
-  // A load is a use of whatever fields are being referenced.  If this is the
-  // /last/ use of a value, emit a destructor of that value.  LoadOps are used
-  // to model a /borrow/ of the underlying value, so they don't define a new
-  // value.
-  if (isa<RefLoadOp, OwnershipUseOp>(op)) {
-    checkUse(op.getOperand(0), op, /*isDeref=*/true);
-    return;
-  }
-
-  // These operations consume their operands and define a result.
-  if (isa<LoadConsumeOp, LIT::StructCreateOp, ParamMaterializeOp>(op)) {
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    bool isIndirect = !isa<LIT::StructCreateOp>(op);
-    for (auto operand : op.getOperands())
-      markConsumed(operand, op, /*isDeref=*/isIndirect);
-    return;
-  }
-  if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
-    bool isIndirect = !ownershipEnd.getIsReg();
-    checkDef(op.getResult(0), op, /*isDeref=*/isIndirect);
-    markConsumed(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
-  }
-
-  // kgen.variant.create consumes and produces an owned value.
-  if (isa<VariantCreateOp>(op)) {
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-    markConsumed(op.getOperand(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  if (isa<GlobalVarRefOp>(op)) {
-    checkDef(op.getResult(0), op, /*isDeref=*/true);
-    return;
-  }
-
-  // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
-  // field impacts the execution of the operation (now), not its modeling at
-  // start of the function.  We have to assume its liveness at start of function
-  // is the same as its liveness at end of function because not all control
-  // flow paths will execute the operation.
-  if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
-    Value result = refFromPtr.getResult();
-    if (!refFromPtr.getStartUninit()) {
-      if (refFromPtr.getEndUninit()) {
-        checkDef(result, op, /*isDeref=*/true);
+  Region &exceptRegion = tryOp.getExceptRegion();
+  exceptSets.scanBlock(exceptRegion.front());
+  // The except block initializes its block arguments, so if these are tracked
+  // we must mark them as consumed.
+  for (Value blockArg : exceptRegion.getArguments())
+    if (ValueRef valueRef = valueSet.getValueRef(blockArg, /*isDeref=*/false)) {
+      if (!exceptSets.consumedValues[valueRef.startBit]) {
+        // There were no references to the owned arguments, so generate a
+        // destructor at beginning of the block.
+        mlir::ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+            exceptRegion.getLoc(), &exceptRegion.front());
+        destroyValueIfNeeded(blockArg, valueRef, builder,
+                             /*opWithUse=*/nullptr);
+        valueRef.markBits(consumedValues, false);
       } else {
-        // If it start/end initialized, emit destructor if already replaced.
-        checkUse(result, op, /*isDeref=*/true);
+        valueRef.markBits(exceptSets.consumedValues, false);
       }
-    } else if (refFromPtr.getStartUninit() && !refFromPtr.getEndUninit()) {
-      markConsumed(result, op, /*isDeref=*/true);
-    }
-    return;
-  }
-
-  // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp, ErrorReturnOp>(op)) {
-    consumedValues.reset();
-    consumedValues.set(0); // Slot 0 indicates this block is reachable.
-    for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
-      if (valueInfo.endsUninit)
-        continue;
-
-      // If this value starts uninit and ends init, then it must be either an
-      // initself argument or a byref result argument. These get special
-      // handling when this is an error_return (a error is thrown/rethrown out
-      // of this function) because they aren't defined on the error condition.
-      if (valueInfo.startsUninit && !valueInfo.endsUninit &&
-          isa<ErrorReturnOp>(op)) {
-        assert(isa<BlockArgument>(valueInfo.value) &&
-               "should only be byrefresult or initself argument");
-
-        // A `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
-        // __init__) demands the full-object bit (which is live on entry)
-        // because it cannot be destroyed without all the fields.  We don't
-        // want to run the destructor on 'self' itself.
-        //
-        // Otherwise, we don't consume any part of a byref result.
-        if (valueInfo.isFullObjectLiveOnEntry)
-          consumedValues.set(valueInfo.endValueBit - 1);
-        continue;
-      }
-
-      consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
     }
 
-    // If the result operand is ownedresult, then consume it.
-    for (auto operand : op.getOperands())
-      markConsumed(operand, op, /*isDeref=*/false);
-    return;
-  }
+  // The normal flow finishes with the else block, process it to see what
+  // the input consumedValues set to the else block is.
+  scanBlock(tryOp.getElseRegion().front());
 
-  // A yield from a HandleVariantOp consumes the operand.
-  if (isa<YieldOp>(op)) {
-    markConsumed(op.getOperand(0), op, /*isDeref=*/false);
-    return;
-  }
-
-  // A unreachable consumes nothing.  Nothing needs to be destroyed here!
-  if (isa<UnreachableOp>(op)) {
-    // Slot 0 sentinel unset indicates that this block is unreachable.
-    consumedValues.reset();
-    return;
-  }
-
-  // A raise will use the consume set that was seen on entry to the enclosing
-  // except block.
-  if (isa<LIT::TryRaiseOp>(op)) {
-    assert(raiseSet && "Not in a 'try'?");
-    consumedValues = *raiseSet;
-    // Consume any operand values.
-    for (auto operand : op.getOperands())
-      markConsumed(operand, op, /*isDeref=*/false);
-    return;
-  }
-
-  if (isa<HLCF::BreakOp>(op)) {
-    assert(breakSet && "Not in a loop?");
-    consumedValues = *breakSet;
-    return;
-  }
-  if (isa<HLCF::ContinueOp>(op)) {
-    assert(continueSet && "Not in a loop?");
-    consumedValues = *continueSet;
-    return;
-  }
-
-  // The lit.ownership.mark_destroyed op consumes the whole object bit of a
-  // value only, but not its fields.    This ensures the sub-fields are
-  // destroyed but the full object is not.  It is used in destructors primarily.
-  if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
-    if (auto valueRef =
-            valueSet.getValueRef(markDestroyed.getValue(), /*isDeref=*/true))
-      consumedValues.set(valueRef.endBit - 1);
-    return;
-  }
-
-  if (auto handleVariantOp = dyn_cast<HandleVariantOp>(op)) {
-    // The result of HandleVariantOp is always a definition of an owned value
-    // that is produced by the enclosed lit.yield operation.
-    checkDef(op.getResult(0), op, /*isDeref=*/false);
-
-    BitVector expectedConsumptionInThenNotElse(consumedValues.size());
-
-    // HandleVariant has a set of the byref-result and initself arguments that
-    // would be undefined when an error is thrown.  Make sure these are not
-    // assumed to be live in the error path.
-    for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
-      // For each of the initialized values, is this the last reference?
-      // If so, generate a destructor call after this op.
-      checkUse(maybeInitValue, op, /*isDeref=*/true);
-
-      // To prevent destructor calls from being generated for uninitialized
-      // values in the else block, we mark the exempt values in an expectation
-      // bit vector.
-      ValueRef uninitValueRef =
-          valueSet.getValueRef(maybeInitValue, /*isDeref=*/true);
-      uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
-    }
-    checkIfLikeOp(op, expectedConsumptionInThenNotElse);
-    return;
-  }
-
-  // 'if' operations propagate the consume sets into each branch, and use the
-  // resulting consume sets to make sure the upward propagated set of consumed
-  // values is consistent.
-  if (isa<HLCF::IfOp, ParamIfOp>(op)) {
-    assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
-           op.getRegion(1).hasOneBlock() &&
-           "if-like op should have two single-block regions");
-    BitVector expectedConsumptionInThenNotElse(consumedValues.size());
-    checkIfLikeOp(op, expectedConsumptionInThenNotElse);
-    return;
-  }
-
-  if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
-    // The except block is processed with a copy of the consumed value set from
-    // the bottom of the try.  After processing it, we know what the consumed
-    // values are for the exception block.
-    auto exceptSets = DestructorInsertion::copy(*this);
-    exceptSets.raiseSet = raiseSet;
-
-    Region &exceptRegion = tryOp.getExceptRegion();
-    exceptSets.scanBlock(exceptRegion.front());
-    // The except block initializes its block arguments, so if these are tracked
-    // we must mark them as consumed.
-    for (Value blockArg : exceptRegion.getArguments())
-      if (ValueRef valueRef =
-              valueSet.getValueRef(blockArg, /*isDeref=*/false)) {
-        if (!exceptSets.consumedValues[valueRef.startBit]) {
-          // There were no references to the owned arguments, so generate a
-          // destructor at beginning of the block.
-          mlir::ImplicitLocOpBuilder builder =
-              ImplicitLocOpBuilder::atBlockBegin(exceptRegion.getLoc(),
-                                                 &exceptRegion.front());
-          destroyValueIfNeeded(blockArg, valueRef, builder,
-                               /*opWithUse=*/nullptr);
-          valueRef.markBits(consumedValues, false);
-        } else {
-          valueRef.markBits(exceptSets.consumedValues, false);
-        }
-      }
-
-    // The normal flow finishes with the else block, process it to see what the
-    // input consumedValues set to the else block is.
-    scanBlock(tryOp.getElseRegion().front());
-
-    // Ok, finally we process the try body.  Any 'raise's within the try body
-    // use the consumed values set on entry to the except block.
-    llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
-    scanBlock(tryOp.getTryRegion().front());
-    return;
-  }
-
-  // For a loop, we know the consume sets for any break statements, but need to
-  // iterate the loop to find the right continue sets to use.
-  if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
-    auto loopBodySets = DestructorInsertion::copy(*this);
-    // Any 'break's within the loop will produce the consume set for the
-    // statement immediately after the loop.
-    loopBodySets.breakSet = &consumedValues;
-
-    // We start the continueSet with no values set to be consumed, and with
-    // sentinel slot #0 unset indicating that the continue point isn't
-    // reachable.  This will cause the first iteration to propagate values up
-    // from the 'break' points to the consume set.
-    BitVector continueSet(consumedValues.size());
-    loopBodySets.continueSet = &continueSet;
-
-    // We need to dry run the body evaluation until we get to a stable continue
-    // set.
-    loopBodySets.dryRun = true;
-
-    // Iteratively scan the loop body until the continue set converges.
-    [[maybe_unused]] unsigned numIters = 0;
-    while (true) {
-      // Scan the body: any breaks will intersect their live-out set with
-      // 'breakSet', and any continues will intersect their live-out set with
-      // 'continueSet'.
-      loopBodySets.scanBlock(loopOp.getBody().front());
-
-      // If we scanned the body and didn't find any live code, then we know
-      // there must not be any break statements in it.  Just consider the
-      // continue point reachable for the next iteration.
-      if (!loopBodySets.consumedValues[0])
-        loopBodySets.consumedValues[0] = true;
-
-      // If the continue set is unchanged, then we converged.
-      if (loopBodySets.consumedValues == continueSet)
-        break;
-
-      // Otherwise, use the set of values consumed on loop entry as the new
-      // continue set.
-      std::swap(loopBodySets.consumedValues, continueSet);
-
-      // This should converge trivially as we are setting bits in the continue
-      // set, but when we get a consume operator in the future this may be
-      // tricky.  Don't fall into an infinite loop on accident.
-      ++numIters;
-      assert(numIters < 5 && "Loop should converge in a couple iterations");
-    }
-
-    // Once we've converged to the right continue set, we can replay one final
-    // iteration in execute mode (if the enclosing context is not dryRun mode)
-    // to insert destructors.
-    if (!dryRun) {
-      loopBodySets.dryRun = false;
-      loopBodySets.scanBlock(loopOp.getBody().front());
-    }
-    consumedValues = std::move(loopBodySets.consumedValues);
-    return;
-  }
-
-  if (isa<OwnershipDefLValueOp>(op)) {
-    checkUse(op.getOperand(0), op, /*isDeref=*/true);
-    return;
-  }
-
-  // Otherwise this some other operation that using a SSA value.  If this is the
-  // last use of the value, make sure we destroy it when done.
-  for (Value operand : op.getOperands())
-    checkUse(operand, op, /*isDeref=*/false);
+  // Ok, finally we process the try body.  Any 'raise's within the try body
+  // use the consumed values set on entry to the except block.
+  llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
+  scanBlock(tryOp.getTryRegion().front());
 }
 
 // When the specified value is consumed by an operation we know it doesn't need
 // to be destroyed above this point.
-void DestructorInsertion::markConsumed(Value value, Operation &op,
+void DestructorInsertion::checkConsume(Value value, Operation &op,
                                        bool isDeref) {
   ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)

@@ -715,13 +715,15 @@ lit.struct.decl @Int register_passable attributes {destructor = #kgen.symbol.con
 lit.func @y(%arg1: !kgen.declref<@Int> borrow) {
   kgen.return
 }
-lit.func @x(%arg0: !kgen.declref<@Int>) {
+// expected-note @+1 {{'arg0' declared here}}
+lit.func @x(%arg0: !kgen.declref<@Int> owned) {
   // expected-warning @+1 {{'x' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   %x = lit.varlet.decl "x"  var : !lit.ref<mut @Int, a>
-  // expected-error @+1 {{value 'arg0' cannot be consumed, because it is used later}}
   lit.ref.store %arg0, %x : !lit.ref<mut @Int, a>
   %1 = lit.ref.load %x : <mut @Int, a>
   %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!kgen.declref<@Int>) -> !kgen.none>
+
+  // expected-error @+1 {{use of uninitialized value 'arg0'}}
   kgen.call @y(%arg0) : (!kgen.declref<@Int> borrow) -> ()
   kgen.return
 }
