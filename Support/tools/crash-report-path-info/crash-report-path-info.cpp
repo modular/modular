@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     config = std::move(*configOr);
   }
 
-  auto modularHomeOr = Config::getModularDataFolderPath();
+  auto modularHomeOr = Config::getModularDataFolderPath(/*create=*/false);
   if (modularHomeOr.isError()) {
     llvm::errs() << "could not determine crash path: "
                  << modularHomeOr.getError() << '\n';
