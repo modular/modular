@@ -478,8 +478,7 @@ struct PackMatrixCols[
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)
 
-    @adaptive
-    fn _pack(self):
+    fn _pack_vnni(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
         constrained[use_vnni]()
@@ -503,8 +502,7 @@ struct PackMatrixCols[
                             val,
                         )
 
-    @adaptive
-    fn _pack(self):
+    fn _pack_i8mm(self):
         constrained[use_i8mm]()
         let kc = self.valid_data_dim[0]
         let nc = self.valid_data_dim[1]
@@ -527,8 +525,7 @@ struct PackMatrixCols[
                                 val,
                             )
 
-    @adaptive
-    fn _pack(self):
+    fn _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         constrained[not use_vnni and not use_i8mm]()
@@ -554,6 +551,15 @@ struct PackMatrixCols[
                 )
                 col_idx += simd_size
             row_idx += unroll_factor
+
+    fn _pack(self):
+        @parameter
+        if use_vnni:
+            self._pack_vnni()
+        elif use_i8mm:
+            self._pack_i8mm()
+        else:
+            self._pack_default()
 
 
 struct LoadStoreOutputTile[
@@ -1007,7 +1013,6 @@ struct MatmulInnerLoopBPacked[
 
         unroll[a_row_size, pack_inner_size // simd_size, body]()
 
-    @adaptive
     fn _accumulate[
         a_col_size: Int
     ](
@@ -1180,8 +1185,7 @@ struct MatmulInnerLoopBPacked[
                     c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-    @adaptive
-    fn _run_inner_loop(self):
+    fn _run_inner_loop_vnni(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
@@ -1215,8 +1219,7 @@ struct MatmulInnerLoopBPacked[
                 self._accumulate_vnni[True](c_local, Index(idx_n, kl))
             self._store_c_tile(c_local, idx_n)
 
-    @adaptive
-    fn _run_inner_loop(self):
+    fn _run_inner_loop_default(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
@@ -1303,8 +1306,7 @@ struct MatmulInnerLoopBPacked[
 
             b_ptr = b_ptr.offset(pack_inner_size)
 
-    @adaptive
-    fn _run_inner_loop(self):
+    fn _run_inner_loop_neon(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
@@ -1390,8 +1392,7 @@ struct MatmulInnerLoopBPacked[
                 c_val = _neon_matmul(c_val, a_val, b_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-    @adaptive
-    fn _run_inner_loop(self):
+    fn _run_inner_loop_i8mm(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
@@ -1413,6 +1414,19 @@ struct MatmulInnerLoopBPacked[
             for idx_k in range(0, kl, 8):
                 self._accumulate_i8mm(c_local, Index(idx_n, idx_k))
             self._store_c_tile(c_local, idx_n)
+
+    fn _run_inner_loop(self):
+        @parameter
+        if Self.use_i8mm:
+            self._run_inner_loop_i8mm()
+        elif has_neon() and not Self.use_vnni and not Self.use_i8mm:
+            self._run_inner_loop_neon()
+        elif not Self.use_vnni and not has_neon():
+            self._run_inner_loop_default()
+        elif Self.use_vnni:
+            self._run_inner_loop_vnni()
+        else:
+            constrained[False, "no _run_inner_loop implementation"]()
 
 
 # Tiled Matmul Implementation.
@@ -2914,8 +2928,7 @@ fn matmul_kernel_naive[
 
 
 @always_inline
-@adaptive
-fn matmul[
+fn _matmul_gpu[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -2929,14 +2942,12 @@ fn matmul[
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
 ](
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
     num_threads: Int = -1,
 ):
-    constrained[target == "cuda", "only valid on CUDA GPUs"]()
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
     # single_thread_blocking_override should not be allowed, but the graph
     # compiler has a special case that does not insert the
@@ -3011,7 +3022,6 @@ fn matmul[
 
 
 @always_inline
-@adaptive
 fn _matmul_gpu_dispatch[
     a_type: DType,
     a_shape: DimList,
@@ -3220,8 +3230,7 @@ fn _matmul_gpu_dispatch[
 
 
 @always_inline
-@adaptive
-fn matmul[
+fn _matmul_cpu[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -3235,15 +3244,12 @@ fn matmul[
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
 ](
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
     b: NDBuffer[2, b_shape, b_type],
     num_threads: Int = -1,
 ):
-    constrained[target == "cpu", "only valid on CPUs"]()
-
     @parameter
     if (
         single_thread_blocking_override
@@ -3299,7 +3305,6 @@ fn matmul[
 
 
 @always_inline
-@adaptive
 fn matmul[
     a_type: DType,
     a_shape: DimList,
@@ -3339,7 +3344,47 @@ fn matmul[
 
 
 @always_inline
-@adaptive
+fn matmul[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    saturated_vnni: Bool,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
+    num_threads: Int = -1,
+):
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
+    func[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_epilogue_enabled,
+        elementwise_lambda_fn,
+        saturated_vnni,
+        single_thread_blocking_override,
+    ](c, a, b, num_threads)
+
+
+@always_inline
 fn matmul[
     a_type: DType,
     a_shape: DimList,
