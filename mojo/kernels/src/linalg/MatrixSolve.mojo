@@ -6,7 +6,6 @@
 """The module implements Matrix Solve functions."""
 
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel, Trace
 
 from utils.index import Index, StaticIntTuple
@@ -81,7 +80,6 @@ fn matrix_solve[
     a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
     b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
     x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
-    out_chain: OutputChainPtr,
 ) raises:
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS

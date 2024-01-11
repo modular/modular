@@ -13,7 +13,7 @@
 from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from Matrix import Matrix
 from memory.buffer import NDBuffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import Runtime
 
 from sys.info import has_avx2, has_neon_int8_matmul
 
@@ -121,33 +121,28 @@ fn test_matmul[
             cm0[i, j] = 0
             cm1[i, j] = cm0[i, j]
 
-    with Runtime() as runtime:
-        if b_packed:
-            let out_chain = OwningOutputChainPtr(runtime)
-            pack_b_ndbuffer[
-                a_type,
-                DimList.create_unknown[2](),
-                b_type,
-                DimList.create_unknown[2](),
-                c_type,
-                DimList.create_unknown[2](),
-            ](b, bp, out_chain.borrow())
-            out_chain.wait()
-        let out_chain = OwningOutputChainPtr(runtime)
-
-        matmul[
+    if b_packed:
+        pack_b_ndbuffer[
             a_type,
             DimList.create_unknown[2](),
             b_type,
             DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
-            False,
-            transpose_b,
-            b_packed,
-            saturated,
-        ](c, a, bp, out_chain.borrow())
-        out_chain.wait()
+        ](b, bp)
+
+    matmul[
+        a_type,
+        DimList.create_unknown[2](),
+        b_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        False,
+        transpose_b,
+        b_packed,
+        saturated,
+    ](c, a, bp)
 
     gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)
 
