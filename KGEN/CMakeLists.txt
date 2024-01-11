@@ -188,7 +188,6 @@ function(add_mojo_package target visibility)
                         "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
-  _setup_arch()
   _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
@@ -255,7 +254,6 @@ function(add_mojo_package target visibility)
     OUTPUT ${package_file_name}
 
     COMMAND $<TARGET_FILE:mojo> package
-    ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
