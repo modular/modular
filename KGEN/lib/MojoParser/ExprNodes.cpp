@@ -1478,13 +1478,15 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
 
   // Helper to install a single operand in the binding list.
   SmallVector<TypedAttr> bindOperands({callable.get()});
+  ParameterEvaluator evaluator;
   auto addBoundOperand = [&](const Operand &operand,
                              Type paramType) -> LogicalResult {
-    PValue pValue =
-        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
+    PValue pValue = emitter.emitExprPValue(operand.value, EC_CallParamValue,
+                                           evaluator.getReboundType(paramType));
     if (!pValue)
       return failure();
     bindOperands.emplace_back(pValue);
+    evaluator.addInputValue(pValue);
     return success();
   };
 
