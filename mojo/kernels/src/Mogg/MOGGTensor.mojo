@@ -40,7 +40,7 @@ struct UnsafeRefCounter[type: DType]:
         return Atomic[type]._fetch_add(self._underlying_value, -1)
 
     fn _value(inout self) -> SIMD[type, 1]:
-        return self._underlying_value.load(0)
+        return self._underlying_value.load()
 
 
 @always_inline
