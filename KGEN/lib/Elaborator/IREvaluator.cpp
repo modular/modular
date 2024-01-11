@@ -158,6 +158,34 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
   return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
 }
 
+ErrorTreeOr<SymbolConstantAttr>
+IREvaluator::concretizeFunctionSymbol(TypedAttr symbolMaybe,
+                                      Location location) {
+  ErrorTreeOr<Attribute> symMaybe =
+      concretizeParameterExpr(parent, location, symbolMaybe);
+  if (symMaybe.isError())
+    return symMaybe.takeError();
+  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(symMaybe.getValue());
+  if (!symbol)
+    return symbol;
+  if (!symbol.getParamValues().empty()) {
+    auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
+    std::optional<ErrorTreeOr<FuncOp>> maybeFuncOrError =
+        elaborator->getConcreteFunction(parent, location, ref,
+                                        symbol.getParamValues());
+    if (!maybeFuncOrError.has_value())
+      return SymbolConstantAttr();
+    if (maybeFuncOrError->isError())
+      return maybeFuncOrError->takeError();
+
+    FuncOp newCalleeFunc = maybeFuncOrError->getValue();
+    return SymbolConstantAttr::get(
+        FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+        newCalleeFunc.getSignature());
+  }
+  return symbol;
+}
+
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
@@ -323,7 +351,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
 IREvaluator::IREvaluator(Elaborator &elaborator,
                          DenseMap<StringAttr, Attribute> paramValues)
     : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.getTarget()), elaborator(&elaborator) {}
+      InterpreterState(elaborator.getTarget()), elaborator(&elaborator),
+      parent(nullptr) {}
 
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
@@ -406,4 +435,13 @@ KGEN::evaluateConstraints(ImplNode *parent,
 
   // If we made it this far, then everything folded to true.
   return success();
+}
+
+void IREvaluator::setParent(ImplNode *impl) { parent = impl; }
+
+ImplNode::ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
+                   std::string &&baseName, IREvaluator evaluator)
+    : func(func), parent(parent), paramGraph(std::move(graph)),
+      baseName(std::move(baseName)), evaluator(std::move(evaluator)) {
+  this->evaluator.setParent(this);
 }

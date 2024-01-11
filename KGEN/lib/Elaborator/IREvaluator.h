@@ -38,10 +38,10 @@ public:
   IREvaluator(Elaborator &elaborator,
               DenseMap<StringAttr, Attribute> paramValues =
                   DenseMap<StringAttr, Attribute>());
-  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx) {}
+  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx), parent(nullptr) {}
   IREvaluator(const IREvaluator &other)
       : ParameterEvaluator(other), InterpreterState(other.getTarget()),
-        elaborator(other.elaborator) {}
+        elaborator(other.elaborator), parent(other.parent) {}
 
   /// Evaluate symbolic expressions using the symbol table.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
@@ -66,6 +66,13 @@ public:
   /// Evaluate the result slot function with the provided constant inputs.
   ErrorTreeOr<TypedAttr>
   evaluateFunctionWithResultSlot(FuncOp func, ArrayRef<TypedAttr> inputs);
+
+  /// If the given typed attribute is a symbol that needs concretization, return
+  /// the concretized symbol or null if the function needs to be concretized.
+  ErrorTreeOr<SymbolConstantAttr>
+  concretizeFunctionSymbol(TypedAttr symbolMaybe, Location location);
+
+  void setParent(ImplNode *impl);
 
 private:
   /// Evaluate an apply-like operator.
@@ -120,9 +127,7 @@ evaluateConstraints(ImplNode *parent, ArrayRef<ConstraintAttr> constraints,
 struct ImplNode {
   /// Create a new generator implementation node.
   ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName, IREvaluator evaluator)
-      : func(func), parent(parent), paramGraph(std::move(graph)),
-        baseName(std::move(baseName)), evaluator(std::move(evaluator)) {}
+           std::string &&baseName, IREvaluator evaluator);
 
   /// Create a special root node. Root nodes can be identified with a null
   /// function.

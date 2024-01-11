@@ -472,6 +472,30 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 /// references. Substitute in concrete values for their references. Optionally
 /// elaborate their locations.
 static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
+  mlir::AttrTypeReplacer replacer;
+  ElaborationState captureListTypeResultState = ElaborationState::advance();
+  replacer.addReplacement([&](CaptureListType ct)
+                              -> std::pair<Type, WalkResult> {
+    ErrorTreeOr<SymbolConstantAttr> symMaybe =
+        parent->getEvaluator().concretizeFunctionSymbol(ct.getCapturingFunc(),
+                                                        op->getLoc());
+    if (symMaybe.isError()) {
+      captureListTypeResultState = ElaborationState::error();
+      parent->setToError(symMaybe.takeError());
+      return {ct, WalkResult::interrupt()};
+    }
+    SymbolConstantAttr sym = symMaybe.getValue();
+    if (!sym) {
+      captureListTypeResultState = ElaborationState::skipNode();
+      return {ct, WalkResult::interrupt()};
+    }
+    return {CaptureListType::get(sym.getContext(), sym), WalkResult::advance()};
+  });
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+  if (captureListTypeResultState.isError() ||
+      captureListTypeResultState.shouldSkipNode())
+    return captureListTypeResultState;
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
