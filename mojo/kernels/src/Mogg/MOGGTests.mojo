@@ -7,7 +7,6 @@
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr
 
 from utils._annotations import *
 from utils.index import StaticIntTuple
@@ -77,7 +76,6 @@ fn test_3D_in_out_lambda[
 ](
     tensor1: NDBuffer[3, DimList.create_unknown[3](), type],
     output: NDBuffer[3, DimList.create_unknown[3](), type],
-    out_chain: OutputChainPtr,
 ) -> NDBuffer[3, DimList.create_unknown[3](), type]:
     """
     Used as a target to test passing input and output lambdas.
@@ -211,11 +209,7 @@ fn test_unary_kernel[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
-](
-    input_shape: StaticIntTuple[rank],
-    output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
-):
+](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank],):
     print("World!")
 
 
@@ -243,7 +237,6 @@ fn test_unary_kernel_params[
 ](
     tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
 ):
     print(extra_param)
     print(extra_param2)
@@ -265,11 +258,7 @@ fn test_custom_identity[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     single_thread_blocking_override: Bool,
-](
-    input_shape: StaticIntTuple[rank],
-    output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
-):
+](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank],):
     print("The custom identity op is running!")
 
     @parameter
@@ -286,7 +275,6 @@ fn test_custom_identity[
         target="cpu",
     ](
         input_shape,
-        out_chain,
     )
 
 
