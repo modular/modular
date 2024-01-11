@@ -27,6 +27,7 @@ add_modular_unittest(
   ContextTest.cpp
   TensorTest.cpp
   ModelCollectionTest.cpp
+  AssertTest.cpp
 
   LINK_LIBS PRIVATE
   GenericMLSupport
