@@ -958,9 +958,7 @@ private:
 // TimeTraceScope
 //===----------------------------------------------------------------------===//
 
-namespace {
 struct Empty {};
-} // namespace
 
 /// RAII class to automatically record the constructed or given profile entry
 /// when the object goes out of scope.
