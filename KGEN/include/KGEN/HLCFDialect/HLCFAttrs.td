@@ -42,6 +42,14 @@ def HLCF_UnrollLevelAttr : HLCF_Attr<"UnrollLevel", "unroll_level"> {
   let returnType = "HLCF::UnrollLevel";
   let constBuilderCall = "HLCF::UnrollLevelAttr::get($_builder.getContext(), $0)";
   let convertFromStorage = "$_self.getValue()";
+
+  let extraClassDeclaration = [{
+    /// Get UnrollLevel none attribute.
+    static HLCF::UnrollLevelAttr getNone(mlir::MLIRContext* context);
+
+    /// Get UnrollLevel full attribute.
+    static HLCF::UnrollLevelAttr getFull(mlir::MLIRContext* context);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

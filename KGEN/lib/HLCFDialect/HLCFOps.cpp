@@ -257,13 +257,28 @@ ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-bool LoopOp::isFullUnroll() { return getUnrollLevel().isFull(); }
+bool LoopOp::isFullUnroll() {
+  HLCF::UnrollLevelAttr level =
+      dyn_cast_if_present<HLCF::UnrollLevelAttr>(getUnrollLevelAttr());
+  if (!level)
+    return false;
+  return level.getValue().isFull();
+}
 
 std::optional<int64_t> LoopOp::getUnrollFactorN() {
-  UnrollLevel level = getUnrollLevel();
-  if (level.isFactor())
-    return level.getFactor();
-  return {};
+  HLCF::UnrollLevel level = getUnrollLevelValue();
+  if (level.isNone())
+    return {};
+  return level.getFactor();
+}
+
+HLCF::UnrollLevel LoopOp::getUnrollLevelValue() {
+  if (auto unrollAttr =
+          dyn_cast_if_present<HLCF::UnrollLevelAttr>(getUnrollLevelAttr()))
+    return unrollAttr.getValue();
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(getUnrollLevelAttr()))
+    return (int32_t)intAttr.getInt();
+  return 0;
 }
 
 //===----------------------------------------------------------------------===//

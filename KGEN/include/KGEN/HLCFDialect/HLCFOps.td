@@ -11,6 +11,7 @@ include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFDialect.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -213,7 +214,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   let arguments = (ins
     Variadic<AnyType>:$operands,
     OptionalAttr<StrAttr>:$label,
-    DefaultValuedAttr<HLCF_UnrollLevelAttr, "UnrollLevel::none()">:$unrollLevel
+    OptionalAttr<AnyAttrOf<[HLCF_UnrollLevelAttr,
+                            TypedAttrInterface]>>:$unrollLevel
   );
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
@@ -224,9 +226,15 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   }];
 
   let builders = [
-    OpBuilder<(ins "UnrollLevel":$level), [{
+    OpBuilder<(ins "mlir::Attribute":$level), [{
       build($_builder, $_state, {}, {}, {}, level);
-    }]>
+    }]>,
+    OpBuilder<(ins "mlir::TypeRange":$results,
+                   "mlir::ValueRange":$operands,
+                   "mlir::StringAttr":$label), [{
+      build($_builder, $_state, results, operands, label,
+            HLCF::UnrollLevelAttr::get($_builder.getContext(), 0));
+    }]>,
   ];
 
   let extraClassDeclaration = [{
@@ -235,6 +243,9 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 
     /// Get unroll factor if the loop is decorated with an constant.
     std::optional<int64_t> getUnrollFactorN();
+
+    /// Get unroll level as a concrete HCLF::UnrollLevel value.
+    HLCF::UnrollLevel getUnrollLevelValue();
   }];
 
   let hasCanonicalizer = 1;

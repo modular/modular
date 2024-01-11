@@ -1519,6 +1519,10 @@ CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
                              CallSyntax::kMethodCall, value.expr);
 }
 
+CValue ExprEmitter::emitMLIRIndex(const ExprNode *expr, ExprContext context) {
+  return emitMLIRIndex({emitExprCValue(expr, context), expr}, context);
+}
+
 //===----------------------------------------------------------------------===//
 // Return emission helpers.
 

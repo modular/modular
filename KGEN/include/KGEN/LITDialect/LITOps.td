@@ -1855,8 +1855,8 @@ def LIT_LoopOp: LITOp<"loop"> {
   }];
 
   let arguments = (ins
-    DefaultValuedAttr<HLCF_UnrollLevelAttr,
-                      "HLCF::UnrollLevel::none()">:$unrollLevel
+    OptionalAttr<AnyAttrOf<[HLCF_UnrollLevelAttr,
+                            TypedAttrInterface]>>:$unrollLevel
   );
 
   let results = (outs Variadic<AnyType>:$results);
@@ -1872,7 +1872,7 @@ def LIT_LoopOp: LITOp<"loop"> {
   }];
 
   let builders = [
-    OpBuilder<(ins "HLCF::UnrollLevel":$level), [{
+    OpBuilder<(ins "mlir::Attribute":$level), [{
       build($_builder, $_state, {}, level);
     }]>
   ];

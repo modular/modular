@@ -405,6 +405,14 @@ fn unroll_while():
       _ = i
   # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
 
+fn unroll_factor_parameter():
+  alias a = 1
+  alias b = 1
+  let i = 1
+  @unroll(a+b)
+  while i < 4:
+      _ = i
+  # CHECK: } {unrollLevel = #kgen.param.expr<apply, #kgen.symbol.constant
 
 ##===----------------------------------------------------------------------===##
 

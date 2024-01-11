@@ -55,6 +55,15 @@ static void printUnrollLevel(AsmPrinter &p, UnrollLevel level) {
 
 namespace M::HLCF {
 static llvm::hash_code hash_value(UnrollLevel level) { return level.hash(); }
+
+UnrollLevelAttr UnrollLevelAttr::getNone(mlir::MLIRContext *context) {
+  return UnrollLevelAttr::get(context, 0);
+}
+
+UnrollLevelAttr UnrollLevelAttr::getFull(mlir::MLIRContext *context) {
+  return UnrollLevelAttr::get(context, -1);
+}
+
 } // namespace M::HLCF
 
 //===----------------------------------------------------------------------===//

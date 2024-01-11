@@ -491,6 +491,10 @@ public:
   /// and then invoking its `__mlir_index__` method.
   CValue emitMLIRIndex(ASTExprAnd<AnyValue> value, ExprContext context);
 
+  /// Emit the specified expression, converting it into an MLIR value by convert
+  /// it to an index value and then invoking its `__mlir_index__` method.
+  CValue emitMLIRIndex(const ExprNode *expr, ExprContext context);
+
   //===--------------------------------------------------------------------===//
   // Return emission helpers.
 
