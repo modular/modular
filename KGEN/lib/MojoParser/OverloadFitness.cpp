@@ -311,7 +311,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       // meaning there can't be anything to infer here directly, but we still
       // check to make sure that the default value doesn't contradict already
       // inferred parameters.
-      ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+      ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
       size_t numArgs = signature.getNumInputs();
       if (expectedArgIdx >= numArgs - defaultArgs.size()) {
         PValue defaultVal =
@@ -667,7 +667,7 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
 
   // One less required argument for each argument that has a default value we
   // can use instead.
-  minRequiredArgs -= signature.getDefaultArguments().size();
+  minRequiredArgs -= signature.getDefaultPosArgs().size();
 
   return {minRequiredArgs, maxAllowedArgs};
 }
@@ -1071,7 +1071,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
       // We don't need to provide a value for this argument if it has a default.
       if (expectedArgIdx >=
-          signature.getNumInputs() - signature.getDefaultArguments().size()) {
+          signature.getNumInputs() - signature.getDefaultPosArgs().size()) {
         // Arguments with default values must be followed only by other
         // arguments with default values, or by keyword arguments.
         continue;

@@ -61,8 +61,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"PassingKind">:$argPassingKinds,
     OptionalArrayRefParameter<"StringAttr">:$paramNames,
     OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultPosArgs,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultPosParams,
     "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
@@ -70,8 +70,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
         `[` (`]`) : ($argPassingKinds^   `]`)? `,`
         `[` (`]`) : ($paramNames^        `]`)? `,`
         `[` (`]`) : ($paramPassingKinds^ `]`)? `,`
-        `[` (`]`) : ($defaultArguments^  `]`)? `,`
-        `[` (`]`) : ($defaultParameters^ `]`)? `,`
+        `[` (`]`) : ($defaultPosArgs^    `]`)? `,`
+        `[` (`]`) : ($defaultPosParams^  `]`)? `,`
         $numImplicitLifetimeDecls
     `>`
   }];

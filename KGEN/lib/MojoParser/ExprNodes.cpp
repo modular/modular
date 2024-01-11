@@ -1489,7 +1489,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
   };
 
   size_t posIdx = 0;
-  ArrayRef<TypedAttr> defaultParams = sig.getDefaultParameters();
+  ArrayRef<TypedAttr> defaultParams = sig.getDefaultPosParams();
   size_t numParams = sig.getNumInputParams();
   for (auto [idx, paramType, paramName, paramPassingKind] :
        llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),

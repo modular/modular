@@ -2232,7 +2232,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getArgNames().drop_front(replacedResult),
           traitSig.getArgPassingKinds().drop_front(replacedResult),
           traitSig.getParamNames(), traitSig.getParamPassingKinds(),
-          traitSig.getDefaultArguments(), traitSig.getDefaultParameters(),
+          traitSig.getDefaultPosArgs(), traitSig.getDefaultPosParams(),
           numImplicitLifetimeDecls));
 }
 

@@ -306,7 +306,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   size_t posOperandIdx = 0;
 
   size_t numInputs = calleeSig.getNumInputs();
-  ArrayRef<TypedAttr> defaultArgs = calleeSig.getDefaultArguments();
+  ArrayRef<TypedAttr> defaultArgs = calleeSig.getDefaultPosArgs();
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(numInputs);

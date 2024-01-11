@@ -99,13 +99,13 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     ArrayRefParameter<"Type">:$paramTypes,
     ArrayRefParameter<"StringAttr">:$paramNames,
     ArrayRefParameter<"PassingKind">:$paramPassingKinds,
-    ArrayRefParameter<"TypedAttr">:$defaultParameters,
+    ArrayRefParameter<"TypedAttr">:$defaultPosParams,
     "bool":$paramVarArg
   );
 
   let assemblyFormat = [{
     `` custom<TypeSignature>($paramTypes, $paramNames, $paramPassingKinds,
-                             $defaultParameters, $paramVarArg)
+                             $defaultPosParams, $paramVarArg)
   }];
 
   let builders = [

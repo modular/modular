@@ -137,7 +137,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
                                 ParamDeclArrayAttr &resultParamDecls,
                                 SmallVectorImpl<StringAttr> &paramNames,
                                 SmallVectorImpl<PassingKind> &paramPassingKinds,
-                                SmallVectorImpl<TypedAttr> &defaultParams) {
+                                SmallVectorImpl<TypedAttr> &defaultPosParams) {
   bool foundDefault = false;
 
   PassingKindParser passingKindParser(p);
@@ -160,7 +160,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
       return failure();
     if (defaultValue) {
       foundDefault = true;
-      defaultParams.emplace_back(defaultValue);
+      defaultPosParams.emplace_back(defaultValue);
     } else if (foundDefault && !passingKindParser.isCurrentImplicit()) {
       return p.emitError(loc, "expected parameter with default value");
     }
@@ -180,7 +180,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> resultParamDecls,
                                      ArrayRef<StringAttr> paramNames,
                                      ArrayRef<PassingKind> paramPassingKinds,
-                                     ArrayRef<TypedAttr> defaultParams,
+                                     ArrayRef<TypedAttr> defaultPosParams,
                                      ParameterEvaluator &evaluator) {
   // Substitute input and result parameters when printing default parameters.
   for (ParamDeclAttr param : inputParamDecls)
@@ -190,7 +190,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
 
   size_t numParams = inputParamDecls.size();
   size_t defaultEnd = numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultStart = defaultEnd - defaultParams.size();
+  size_t defaultStart = defaultEnd - defaultPosParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -201,7 +201,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     if (idx >= defaultStart && idx < defaultEnd) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultParams[idx - defaultStart])));
+                             defaultPosParams[idx - defaultStart])));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -216,7 +216,7 @@ ParseResult LIT::parseOptionalParamSignature(
     SmallVectorImpl<Type> &resultParamTypes,
     SmallVectorImpl<StringAttr> &paramNames,
     SmallVectorImpl<PassingKind> &paramPassingKinds,
-    SmallVectorImpl<TypedAttr> &defaultParams) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams) {
   // Parse the input parameter types and optional default values.
   PassingKindParser passingKindPrinter(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
@@ -235,7 +235,7 @@ ParseResult LIT::parseOptionalParamSignature(
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
       return failure();
     if (defaultVal)
-      defaultParams.emplace_back(defaultVal);
+      defaultPosParams.emplace_back(defaultVal);
     return success();
   };
 
@@ -252,10 +252,10 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> resultParamTypes,
                                       ArrayRef<StringAttr> paramNames,
                                       ArrayRef<PassingKind> paramPassingKinds,
-                                      ArrayRef<TypedAttr> defaultParams) {
+                                      ArrayRef<TypedAttr> defaultPosParams) {
   size_t numParams = inputParamTypes.size();
   size_t defaultEnd = numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultStart = defaultEnd - defaultParams.size();
+  size_t defaultStart = defaultEnd - defaultPosParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -269,7 +269,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     printKGENType(p, type);
     if (idx >= defaultStart && idx < defaultEnd) {
       p << " = ";
-      printParamValue(p, defaultParams[idx - defaultStart]);
+      printParamValue(p, defaultPosParams[idx - defaultStart]);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.

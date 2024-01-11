@@ -89,7 +89,7 @@ parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                            ParamDeclArrayAttr &resultParamDecls,
                            SmallVectorImpl<StringAttr> &paramNames,
                            SmallVectorImpl<PassingKind> &paramPassingKinds,
-                           SmallVectorImpl<TypedAttr> &defaultParams);
+                           SmallVectorImpl<TypedAttr> &defaultPosParams);
 
 /// Print a parameter specification in a lit op. A ParameterEvaluator is
 /// necessary to substitute parameters into parametric parameters.
@@ -98,7 +98,7 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> resultParamDecls,
                                 ArrayRef<StringAttr> paramNames,
                                 ArrayRef<PassingKind> paramPassingKinds,
-                                ArrayRef<TypedAttr> defaultParams,
+                                ArrayRef<TypedAttr> defaultPosParams,
                                 ParameterEvaluator &evaluator);
 
 /// Parse a parameter signature (input/result types with optional default
@@ -109,7 +109,7 @@ parseOptionalParamSignature(AsmParser &p,
                             SmallVectorImpl<Type> &resultParamTypes,
                             SmallVectorImpl<StringAttr> &paramNames,
                             SmallVectorImpl<PassingKind> &paramPassingKinds,
-                            SmallVectorImpl<TypedAttr> &defaultParams);
+                            SmallVectorImpl<TypedAttr> &defaultPosParams);
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
@@ -117,7 +117,7 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
                                  ArrayRef<Type> resultParamTypes,
                                  ArrayRef<StringAttr> paramNames,
                                  ArrayRef<PassingKind> paramPassingKinds,
-                                 ArrayRef<TypedAttr> defaultParams);
+                                 ArrayRef<TypedAttr> defaultPosParams);
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
