@@ -549,8 +549,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
+
+      // TODO(references): the stack allocation should have a lifetime.
+      auto immortal = emitter.builder->getAttr<LifetimeAttr>();
       tmp = emitter.builder->create<RefFromPointerOp>(parentFunc.getLoc(),
                                                       /*isMut=*/true, tmp,
+                                                      immortal,
                                                       /*startUninit=*/true,
                                                       /*endUninit=*/false);
       ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
@@ -572,8 +576,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       emitter.builder->setInsertionPointToStart(functionContainer.getBody());
       Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
           functionContainer.getLoc(), ptrType, 1);
+      // TODO(references): the stack allocation should have a lifetime.
       localDecl = emitter.builder->create<RefFromPointerOp>(
-          functionContainer.getLoc(), /*isMut=*/true, localDecl,
+          functionContainer.getLoc(), /*isMut=*/true, localDecl, immortal,
           /*startUninit=*/true, /*endUninit=*/false);
 
       // Copy the raw bytes in.
@@ -1654,22 +1659,15 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
            index.getIfPValue()});
     }
     // Otherwise, emit an MLIR operation.
+    auto baseReg = emitter.emitSRValue(posOperands[0], EC_Subscript);
+    if (!baseReg)
+      return {};
+    auto idxReg =
+        emitter.emitSRValue({index, posOperands[1].expr}, EC_Subscript);
+    if (!idxReg)
+      return {};
     Value value = emitter.builder->create<POP::VariadicGetOp>(
-        emitter.translateLocation(getLoc()),
-        emitter.emitSRValue(posOperands.front(), EC_Subscript),
-        emitter.emitSRValue({index, posOperands.back().expr}, EC_Subscript));
-    // FIXME: Should not be doing a bare `!kgen.pointer` type check.
-    if (auto ptrType = dyn_cast<PointerType>(
-            ASTType(variadic.getElementType()).mlirType)) {
-      if (!ASTType(ptrType.getElementType())
-               .isRegisterPassable(getLoc(), emitter.shared)) {
-        value = emitter.builder->create<RefFromPointerOp>(
-            emitter.translateLocation(getLoc()), /*isMut=*/true, value,
-            /*startUninit=*/false,
-            /*endUninit=*/true);
-        return emitter.emitResult(MRValue(value), this, dest);
-      }
-    }
+        emitter.translateLocation(getLoc()), baseReg, idxReg);
     return emitter.emitResult(SRValue(value), this, dest);
   }
 
@@ -3157,11 +3155,13 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!exprVal)
     return {};
 
+  // TODO(references): if we keep these functions, they should take a lifetime.
+  auto immortal = emitter.builder->getAttr<LifetimeAttr>();
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
-  exprVal = emitter.builder->create<RefFromPointerOp>(getLocation(emitter),
-                                                      /*isMut=*/true, exprVal,
-                                                      startsUninit, endsUninit);
+  exprVal = emitter.builder->create<RefFromPointerOp>(
+      getLocation(emitter),
+      /*isMut=*/true, exprVal, immortal, startsUninit, endsUninit);
 
   /// __get_address_as_owned_value(ptr) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned)

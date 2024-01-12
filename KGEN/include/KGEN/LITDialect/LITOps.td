@@ -1744,8 +1744,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
                                  [RefPointerType<"ref", "ptr">]> {
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
-    This op converts a raw pointer to an immortal reference of specified
-    mutability.  When `startsUninit` is true, the reference is assumed to be
+    This op converts a raw pointer to a reference with specified mutability and
+    lifetime.  When `startsUninit` is true, the reference is assumed to be
     uninitialized but needs to be initialized before exit.  When false it is
     assumed to be initialized and must be initialized on exit.
 
@@ -1763,9 +1763,9 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   }];
 
   let builders = [
-    // Create with a pointer and mutability, instead of requiring a result type.
-    OpBuilder<(ins "bool":$isMut, "Value":$pointer, "bool":$startsUninit,
-                   "bool":$endsUninit)>,
+    // Create with a mutability, pointer and lifetime, to infer result type.
+    OpBuilder<(ins "bool":$isMut, "Value":$pointer, "TypedAttr":$lifetime,
+                   "bool":$startsUninit, "bool":$endsUninit)>,
   ];
 }
 

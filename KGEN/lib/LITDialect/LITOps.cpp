@@ -1438,11 +1438,11 @@ LogicalResult RefImmutOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             bool isMut, Value pointer, bool startsUninit,
-                             bool endsUninit) {
+                             bool isMut, Value pointer, TypedAttr lifetime,
+                             bool startsUninit, bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
-  auto refType =
-      RefType::getImmortal(isMut, ptr.getElementType(), ptr.getAddressSpace());
+  auto refType = RefType::get(isMut, ptr.getElementType(), lifetime,
+                              ptr.getAddressSpace());
   build(builder, result, refType, pointer, startsUninit, endsUninit);
 }
 

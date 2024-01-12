@@ -532,11 +532,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       // Given a legacy pointer, get it to a reference.
       // TODO(references): RefFromPointerOp should take a novel lifetime.
-      auto ref =
-          emitter.builder->create<RefFromPointerOp>(argLoc,
-                                                    /*isMut=*/false, ptr,
-                                                    /*startUninit=*/false,
-                                                    /*endUninit=*/false);
+      auto immortal = emitter.builder->getAttr<LifetimeAttr>();
+      auto ref = emitter.builder->create<RefFromPointerOp>(
+          argLoc,
+          /*isMut=*/false, ptr, immortal,
+          /*startUninit=*/false,
+          /*endUninit=*/false);
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
