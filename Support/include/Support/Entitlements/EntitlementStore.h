@@ -25,6 +25,13 @@ namespace Detail {
 class CertificateChain;
 }
 
+/// This function specifies the default entitlement refresh policy. This is used
+/// as the default argument for
+/// `EntitlementStore::refreshIfNecessary::shouldRefresh` when no
+/// application-specific policy is necessary.
+bool defaultEntitlementRefreshPolicy(std::chrono::system_clock::time_point from,
+                                     std::chrono::system_clock::time_point to);
+
 /// This provides a way to look up and see if a given entitlement exists in the
 /// current store.
 class EntitlementStore {
@@ -82,7 +89,7 @@ public:
       HTTPClient &client,
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>
-          shouldRefresh);
+          shouldRefresh = defaultEntitlementRefreshPolicy);
 
   /// Get the instance of the entitlement with type `EntitlementT`, if it's been
   /// registered. If it hasn't been registered, we return `nullptr`. Consumers
