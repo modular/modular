@@ -494,7 +494,8 @@ fn scatter_nd_generator[
         indices_rank: Rank of input (data) tensor (indices_rank >= 1).
         updates_rank: Rank of updates tensor (updates_rank = data_rank +
                       indices_rank - indices_shape[-1] - 1).
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
@@ -707,7 +708,8 @@ fn scatter_nd_shape[
         indices_rank: Rank of the indices tensor.
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input: The input tensor.
@@ -790,7 +792,8 @@ fn gather_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         axis_type: Type of the axis tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -926,7 +929,8 @@ fn scatter_elements_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         axis_type: Type of the axis tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input: The input tensor.

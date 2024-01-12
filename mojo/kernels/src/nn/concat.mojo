@@ -479,7 +479,8 @@ fn concat_shape[
         input_rank: Input_rank of the input tensor.
         input_type: Type of the input tensor.
         axis_type: Type of the axis tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input_bufs: The input tensors list.

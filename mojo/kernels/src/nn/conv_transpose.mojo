@@ -159,7 +159,8 @@ fn conv_transpose_shape[
         dilations_type: Element type of the dilations tensor.
         pads_type: Element type of the pads tensor.
         output_pads_type: Element type of the output_pads tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input: The input tensor.

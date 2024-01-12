@@ -63,7 +63,8 @@ fn pool_shape[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.

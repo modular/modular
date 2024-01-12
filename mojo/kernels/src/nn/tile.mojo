@@ -228,7 +228,8 @@ fn tile_shape[
         repeats_rank: Rank of the repeats tensor (must be 1).
         input_type: Type of the input tensor.
         repeats_type: Type of the repeats tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.

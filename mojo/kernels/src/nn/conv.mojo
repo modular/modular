@@ -2400,7 +2400,8 @@ fn pack_conv_filter_shape[
 
     Parameters:
         filter_type: Type of the filter.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         filter_buf: The filter to be packed.
@@ -2432,7 +2433,8 @@ fn pack_conv_filter_shape[
     Parameters:
         filter_type: Type of the filter.
         WO: Width dimension of the convolution output.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         filter_buf: The filter to be packed.
@@ -2679,7 +2681,8 @@ fn conv_shape[
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
         num_groups_type: Type of the num_groups tensor.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
