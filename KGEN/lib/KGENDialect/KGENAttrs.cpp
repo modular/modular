@@ -1522,8 +1522,6 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
 /// Tracks the operands of MulNuw in a form which allows easy simplification.
 namespace {
 struct DivOperandInfo {
-  MLIRContext *ctx;
-
   // tracks the occurrences of non-integral operands only, e.g. D1
   SmallDenseMap<TypedAttr, size_t> symOccurences;
 
@@ -1531,7 +1529,7 @@ struct DivOperandInfo {
   // this would be 5 * 10 = 50.
   int64_t constant = 1;
 
-  Type constType; // the type of IntegerAttr i the original expression.
+  Type attrType;
 
   // whether folding of `constant` leads to overflow on the current system
   // OR initialized with wrong attr (only support IntegerAttr and MulNuw)
@@ -1542,7 +1540,6 @@ struct DivOperandInfo {
   // Multiplies `constant` by `num`, checking overflow
   inline void updateConstant(IntegerAttr integerAttr) {
     int64_t num = integerAttr.getInt();
-    constType = integerAttr.getType();
     int64_t new_constant = constant * num;
     if (num == 0) {
       // the power of 0 -- it's always going to be 0!
@@ -1564,7 +1561,7 @@ struct DivOperandInfo {
   /// Construct an Info object using a MulNuw operator, or constant IntegerAttr
   DivOperandInfo(TypedAttr attr) {
     constant = 1;
-    ctx = attr.getContext();
+    attrType = attr.getType();
 
     if (auto constAttr = dyn_cast<IntegerAttr>(attr)) {
       updateConstant(constAttr);
@@ -1582,6 +1579,11 @@ struct DivOperandInfo {
       return;
     }
 
+    if (auto declAttr = dyn_cast<KGEN::ParamDeclRefAttr>(attr)) {
+      ++symOccurences[declAttr];
+      return;
+    }
+
     // Not supported attr
     isPoisoned = true;
   }
@@ -1591,8 +1593,7 @@ struct DivOperandInfo {
   TypedAttr getExpression() {
     SmallVector<TypedAttr> operands;
 
-    Type integerAttrType = constType ? constType : mlir::IndexType::get(ctx);
-    IntegerAttr constTerm = IntegerAttr::get(integerAttrType, constant);
+    IntegerAttr constTerm = IntegerAttr::get(attrType, constant);
 
     operands.push_back(constTerm);
     for (auto [operand, occurrences] : symOccurences)

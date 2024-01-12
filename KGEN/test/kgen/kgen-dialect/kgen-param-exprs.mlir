@@ -99,7 +99,6 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <get_alignof(mlirType, #kgen.target<{{.*}}>)>
   %24 = kgen.param.constant = <get_alignof(mlirType, #target)>
 
-
   // CHECK: = kgen.param.constant = <max(p1, 2)>
   %25 = kgen.param.constant = <max(p1, 2)>
 
@@ -196,6 +195,9 @@ kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
 
   // CHECK-NEXT: constant: i1 = <lt(:i32 p2, p1)>
   %4 = kgen.param.constant: i1 = <lt(:i32 p2, p1)>
+
+  // CHECK-NEXT: constant: i32 = <1>
+  %5 = kgen.param.constant: i32 = <div(mul_nuw(p1, p2), mul_nuw(p1, p2))>
 
   kgen.return
 }
@@ -331,6 +333,9 @@ kgen.generator @param_canonicalize<p1, p2>() {
 
   // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 3), p2)>
   kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p2, p2))>
+
+  // CHECK: = kgen.param.constant = <p1>
+  kgen.param.constant = <div(mul_nuw(p1, p2), p2)>
 
   // CHECK: = kgen.param.constant = <mul_nuw(p1, 40)>
   kgen.param.constant = <div(mul_nuw(p1, 200000), 5000)>
