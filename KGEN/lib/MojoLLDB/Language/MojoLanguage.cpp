@@ -146,7 +146,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSynthetic(
       mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
       "Mojo DynamicVector synthetic children",
-      R"(^!kgen.declref<@"\$collections"::@"\$vector"::@"?DynamicVector[\[<].*$)",
+      R"(^!kgen.declref<@"\$stdlib"::@"\$collections"::@"\$vector"::@"?DynamicVector[\[<].*$)",
       synthFlags, /*regex=*/true);
 
   // These settings are the same as the C++ ones.
@@ -183,7 +183,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(
       mojoCategorySP, vectorLikeSummaryProvider,
       "$utils::vector::DynamicVector summary provider",
-      R"(^!kgen.declref<@"\$collections"::@"\$vector"::@"DynamicVector\[.*$)",
+      R"(^!kgen.declref<@"\$stdlib"::@"\$collections"::@"\$vector"::@"DynamicVector\[.*$)",
       summaryFlags, /*regex=*/true);
 }
 

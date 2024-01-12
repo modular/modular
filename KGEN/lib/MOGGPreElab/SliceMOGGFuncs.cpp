@@ -26,30 +26,30 @@ namespace {
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
 constexpr StringLiteral registerDecorator =
-    "$utils::$_annotations::mogg_register";
+    "$stdlib::$utils::$_annotations::mogg_register";
 // TODO(#27757): Temporary as transition to Mojo async/await.
 constexpr StringLiteral willBecomeAsyncDecorator =
-    "$utils::$_annotations::mogg_will_become_async";
+    "$stdlib::$utils::$_annotations::mogg_will_become_async";
 constexpr StringLiteral registerOverrideDecorator =
-    "$utils::$_annotations::mogg_register_override";
+    "$stdlib::$utils::$_annotations::mogg_register_override";
 constexpr StringLiteral experimentalDecorator =
-    "$utils::$_annotations::mogg_kgen_experiment_kernel";
+    "$stdlib::$utils::$_annotations::mogg_kgen_experiment_kernel";
 
 constexpr StringLiteral tensorAllocDecorator =
-    "$utils::$_annotations::mogg_tensor_allocator";
+    "$stdlib::$utils::$_annotations::mogg_tensor_allocator";
 constexpr StringLiteral tensorCopyConstructDecorator =
-    "$utils::$_annotations::mogg_tensor_copy_constructor";
+    "$stdlib::$utils::$_annotations::mogg_tensor_copy_constructor";
 constexpr StringLiteral tensorDeconstructDecorator =
-    "$utils::$_annotations::mogg_tensor_deconstructor";
+    "$stdlib::$utils::$_annotations::mogg_tensor_deconstructor";
 
 constexpr StringLiteral elementwiseHook =
-    "$utils::$_annotations::mogg_elementwise_hook";
+    "$stdlib::$utils::$_annotations::mogg_elementwise_hook";
 constexpr StringLiteral tensorEnableFusion =
-    "$utils::$_annotations::mogg_enable_fusion";
+    "$stdlib::$utils::$_annotations::mogg_enable_fusion";
 constexpr StringLiteral tensorInputFusionHook =
-    "$utils::$_annotations::mogg_input_fusion_hook";
+    "$stdlib::$utils::$_annotations::mogg_input_fusion_hook";
 constexpr StringLiteral tensorOutputFusionHook =
-    "$utils::$_annotations::mogg_output_fusion_hook";
+    "$stdlib::$utils::$_annotations::mogg_output_fusion_hook";
 
 template <typename LambdaToApply>
 SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,

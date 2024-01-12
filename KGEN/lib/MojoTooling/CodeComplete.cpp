@@ -113,6 +113,18 @@ struct CodeCompletionListener : public BaseCompletionListener {
       }
     };
 
+    // Standard library packages are exposed as top-level imports, even though
+    // they are defined inside the 'stdlib' package.
+    addedImports.insert("stdlib");
+    onImport(
+        [&]() {
+          return &parserContext->getSharedState().importModule(
+              "stdlib", PackageOp(), SMLoc());
+        },
+        importLoc);
+    for (CodeCompletionResult &result : results)
+      addedImports.insert(result.label);
+
     // Compute the viable imports for the given location.
     for (const std::string &dir :
          parserContext->getModuleSearchDirectories(sourceMgr.getMainFileID())) {

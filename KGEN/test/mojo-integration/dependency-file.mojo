@@ -7,7 +7,7 @@
 # RUN: kgen -emit %mojo_cpu_build_arch %s -o %t.o -d=%t.d
 # RUN: cat %t.d | FileCheck %s
 
-# CHECK: {{.*}}.o: {{.*}}builtin.mojopkg
+# CHECK: {{.*}}.o: {{.*}}stdlib.mojopkg
 
 
 @export

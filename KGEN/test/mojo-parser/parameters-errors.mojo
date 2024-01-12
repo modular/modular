@@ -211,7 +211,7 @@ fn add_param_arg[x: Int](y: Int) -> Int:
     return x + y
 
 fn pass_simd():
-    # expected-error @below {{cannot be converted from 'SIMD[f32, add_param_arg[$builtin::$int::Int][8](8)]' to 'SIMD[f32, 8]'}}
+    # expected-error-re @below {{cannot be converted from 'SIMD[f32, add_param_arg[{{.*}}$builtin::$int::Int][8](8)]' to 'SIMD[f32, 8]'}}
     take_simd8(SIMD[DType.float32, add_param_arg[8](8)]())
     alias bar = add_param_arg
     # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}

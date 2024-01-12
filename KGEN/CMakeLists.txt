@@ -217,15 +217,6 @@ function(add_mojo_package target visibility)
     message(FATAL_ERROR "Must specify one or more mojo source files when calling `add_mojo_package`.")
   endif()
 
-  # Generate documentation for the package.
-  if (KGEN_STDLIB)
-    add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
-      ${KGEN_DOCS_DIR}/stdlib/ STDLIB DEPENDS ${KGEN_SOURCE_FILES})
-  else()
-    add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
-      ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES})
-  endif()
-
   # `mojo` doesn't expose synthetic debug info.
   if (${KGEN_DEBUG_LEVEL} STREQUAL "synthetic")
     set(KGEN_DEBUG_LEVEL "none")
@@ -238,12 +229,8 @@ function(add_mojo_package target visibility)
     set(KGEN_OPTIMIZATION_FLAG "-no-optimization")
   endif()
 
-  # If this is a standard library package, signal this to `mojo` when building
-  # the package. Otherwise, it should depend on the full-sdk.
-  set(MOJO_FRONTEND_FLAGS "")
-  if (KGEN_STDLIB)
-    set(MOJO_FRONTEND_FLAGS "--parsing-stdlib")
-  else ()
+  # If this is not a standard library package, it should depend on the full-sdk.
+  if (NOT KGEN_STDLIB)
     list(APPEND KGEN_LIB_DEPENDS mojo-sdk)
   endif()
 
@@ -257,7 +244,6 @@ function(add_mojo_package target visibility)
     ${MOJO_DEFINES}
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
-    ${MOJO_FRONTEND_FLAGS}
     ${KGEN_SANITIZER_OPTIONS}
     --debug-level ${KGEN_DEBUG_LEVEL}
 
@@ -274,6 +260,12 @@ function(add_mojo_package target visibility)
     install(FILES "${CMAKE_BINARY_DIR}/${package_file_name_rel}"
             DESTINATION "lib/mojo"
             COMPONENT mojo-sdk)
+
+  # Generate documentation for the package. Standard library documentation is
+  # generated elsewhere.
+  else()
+    add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
+      ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES})
   endif()
 endfunction()
 
@@ -450,7 +442,7 @@ function(add_kgen_kernel target)
 endfunction()
 
 function(add_mojo_package_doc target visibility package_dir output_directory)
-  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
+  cmake_parse_arguments(KGEN "" "" "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
 
   _setup_libs()
 
@@ -459,19 +451,12 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
   set(GEN_DOC_DIR ${MODULAR_BINARY_DIR}/docs/${output_directory}${package_name})
   set(GEN_DOC_FILE ${GEN_DOC_DIR}/index.md)
 
-  # Check if we're parsing the standard library.
-  set(MOJO_FRONTEND_FLAGS "")
-  if (KGEN_STDLIB)
-    set(MOJO_FRONTEND_FLAGS "--parsing-stdlib")
-  endif()
-
   # Generate the JSON file containing the documentation description.
   add_custom_command(
     OUTPUT "${GEN_DOC_JSON_FILE}"
 
     COMMAND $<TARGET_FILE:mojo> doc
     -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${package_dir}
-    -I ${KERNELS_BINARY_DIR}/mojo/Python ${MOJO_FRONTEND_FLAGS}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
@@ -513,8 +498,7 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
 
     COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
     COMMAND $<TARGET_FILE:mojo> doc -warn-missing-doc-strings -o /dev/null
-      ${KGEN_INCLUDE_FLAGS} ${MOJO_FRONTEND_FLAGS} ${package_dir}
-      -I ${KERNELS_BINARY_DIR}/mojo/Python > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
+      ${KGEN_INCLUDE_FLAGS} ${package_dir} > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
@@ -541,7 +525,7 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
 endfunction()
 
 function(add_internal_mojo_doc target doc_filename output_file output_directory)
-  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN "" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
 
