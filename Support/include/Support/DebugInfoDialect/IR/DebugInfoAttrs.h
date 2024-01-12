@@ -8,6 +8,7 @@
 #define SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/ErrorOr.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -90,6 +91,59 @@ private:
 
   std::function<ErrorOr<DIExprAttr>(DIType)> leafReplacer;
   mlir::AttrTypeReplacer replacer;
+};
+
+/// Enhanced DIExprLeafReplacer that allows replacers to take an additional
+/// opaque argument. To take advantage of caching, a replacer is created and
+/// saved for each unique argument that is used with `apply`. The user is
+/// responsible for making sure the number of unique arguments do not use up
+/// too much memory for caching.
+template <typename KeyT>
+class DIExprParameterizedLeafReplacer {
+public:
+  DIExprParameterizedLeafReplacer(
+      std::function<ErrorOr<DIExprAttr>(DIType, KeyT)> conversionFunc)
+      : leafReplacer(std::move(conversionFunc)) {}
+
+  ErrorOr<DIExprAttr> apply(DIExprAttr expr, KeyT key) {
+    mlir::AttrTypeReplacer &replacer = getOrCreateReplacer(std::move(key));
+    currErrorMsg = {};
+    auto newExpr = dyn_cast_or_null<DIExprAttr>(replacer.replace(expr));
+    if (!currErrorMsg.empty())
+      return Error(currErrorMsg);
+    if (!newExpr)
+      return Error("LeafReplacer failed to replace.");
+    return newExpr;
+  }
+
+private:
+  mlir::AttrTypeReplacer &getOrCreateReplacer(KeyT &&key) {
+    auto [it, inserted] = replacers.try_emplace(key);
+    if (inserted) {
+      it->second.addReplacement(
+          [&, key = std::move(key)](DIIRValueExprAttr irValue)
+              -> std::optional<std::pair<Attribute, WalkResult>> {
+            auto result = leafReplacer(irValue.getDIType(), key);
+            if (failed(result)) {
+              currErrorMsg = result.getError();
+              return std::make_pair(nullptr, WalkResult::skip());
+            }
+
+            auto conversionResult = result.get();
+            if (conversionResult.getDIType() != irValue.getDIType()) {
+              currErrorMsg = "Converter result type differs from input type.";
+              return std::make_pair(nullptr, WalkResult::skip());
+            }
+            return std::make_pair(conversionResult, WalkResult::skip());
+          });
+    }
+    return it->second;
+  }
+
+  std::string currErrorMsg;
+
+  std::function<ErrorOr<DIExprAttr>(DIType, KeyT)> leafReplacer;
+  DenseMap<KeyT, mlir::AttrTypeReplacer> replacers;
 };
 
 enum class ScopeWalkPolicy {
