@@ -1685,6 +1685,32 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// RefImmutOp
+//===----------------------------------------------------------------------===//
+
+class RefImmutType<string lhs, string rhs> : TypesMatchWith<
+    "reference as pointer type", lhs, rhs,
+    "$_self.cast<RefType>().getWithMutability(false)">;
+
+def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
+  let summary = "Drop mutability from a reference";
+  let description = [{
+    This op drops mutability from a reference type: given a
+    `!lit.ref<mut X, life>`, it returns `!lit.ref<X, life>`.
+
+    ```mlir
+    lit.ref.immut %0 : !lit.ref<mut @Foo, life>
+    ```
+  }];
+
+  let hasVerifier = 1;
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = "$ref `:` type($ref) attr-dict";
+}
+
+
+//===----------------------------------------------------------------------===//
 // RefToPointerOp
 //===----------------------------------------------------------------------===//
 

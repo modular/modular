@@ -3105,10 +3105,8 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
           emitter.emitErrorForDynamicValueInParameter(this);
           return {};
         }
-        // TODO: Use a nice lit.lifetime.upcast op?
-        refValue = emitter.builder->create<RebindOp>(
-            emitter.translateLocation(getLoc()),
-            refType.getWithMutability(false), refValue);
+        refValue = emitter.builder->create<RefImmutOp>(
+            emitter.translateLocation(getLoc()), refValue);
       }
     }
 

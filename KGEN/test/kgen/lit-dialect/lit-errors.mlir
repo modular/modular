@@ -434,3 +434,10 @@ lit.call @calls[a, b]() : !lit.signature<[1]() -> ()>
 
 // expected-error @+1 {{custom op 'lit.call' implicit lifetime reference at depth 0 has an out-of-range index: 1 >= 1}}
 lit.call @calls[a]() : !lit.signature<[1](!lit.ref<mut index, *[0,1]>) -> ()>
+
+// -----
+lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<@MyStruct, life>) {
+  // expected-error @+1 {{expected mutable reference operand}}
+  %ref2 = lit.ref.immut %ref1: !lit.ref<@MyStruct, *"life">
+  kgen.return %ref2: !lit.ref<@MyStruct, *"life">
+}

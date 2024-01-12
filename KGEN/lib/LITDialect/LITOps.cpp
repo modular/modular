@@ -1424,6 +1424,16 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 }
 
 //===----------------------------------------------------------------------===//
+// RefImmutOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefImmutOp::verify() {
+  if (!getRef().getType().getIsMutable())
+    return emitOpError("expected mutable reference operand");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // RefFromPointerOp
 //===----------------------------------------------------------------------===//
 

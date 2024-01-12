@@ -274,6 +274,14 @@ public:
   PValue emitErrorForDynamicValueInParameter(const ExprNode *expr,
                                              const char *customMessage = {});
 
+  /// If needed, convert the specified value to the target destination type,
+  /// with a noop cast.  This is used to adjust inconsequential details of the
+  /// type or for simple things like upcasts.  This does not invoke constructors
+  /// or do other non-trivial conversions.
+  ///
+  /// This produces an error and returns null on an invalid conversion.
+  AnyValue rebindValue(ASTExprAnd<AnyValue> value, Type destType);
+
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
