@@ -683,9 +683,7 @@ struct LoadStoreOutputTile[
 
         @unroll
         for row in range(tile_rows):
-            row_ptrs.store(
-                row, ptr if row == 0 else row_ptrs[row - 1].offset(stride)
-            )
+            row_ptrs[row] = ptr if row == 0 else (row_ptrs[row - 1] + stride)
 
         let instance = Self(
             output_tile,
@@ -1285,7 +1283,7 @@ struct MatmulInnerLoopBPacked[
             let a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
                 c_type
             ]()
-            a_vals.store(row, a_val)
+            a_vals[row] = a_val
 
         @unroll
         for lane in range(a_col_size):
@@ -2715,7 +2713,7 @@ fn gemv_kernel[
                 alias elementwise_lambda = elementwise_lambda_fn.value()
                 elementwise_lambda[c_type, 1](Index(warpId, 0), accum)
             else:
-                c.store(warpId, accum)
+                c[warpId] = accum
 
 
 # Row Vector-Matrix multiplication
@@ -2755,7 +2753,7 @@ fn gevm_kernel[
         val = shuffle_idx(val, 0)
         accum += val * b.load(row * n + col).cast[c_type]()
 
-    x_shared.store(int(lane_id()) * WARP_SIZE + warpId, accum)
+    x_shared[int(lane_id()) * WARP_SIZE + warpId] = accum
     barrier()
 
     @parameter
@@ -2776,7 +2774,7 @@ fn gevm_kernel[
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](Index(globalWarpId, 0), total)
         else:
-            c.store(globalWarpId, total)
+            c[globalWarpId] = total
 
 
 fn matmul_kernel[
@@ -2853,7 +2851,7 @@ fn matmul_kernel[
             ) else 0.0
         else:
             a_val = a[row, offset + localCol] if row < m else 0.0
-        a_shared.store(localRow * tile_size + localCol, a_val)
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         let b_val: SIMD[b_type, 1]
@@ -2865,14 +2863,14 @@ fn matmul_kernel[
             ) else 0.0
         else:
             b_val = b[offset + localRow, col] if col < n else 0.0
-        b_shared.store(localRow * tile_size + localCol, b_val)
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 
         for kk in range(tile_size):
             result += (
-                a_shared.load(localRow * tile_size + kk).cast[c_type]()
-                * b_shared.load(kk * tile_size + localCol).cast[c_type]()
+                a_shared[localRow * tile_size + kk].cast[c_type]()
+                * b_shared[kk * tile_size + localCol].cast[c_type]()
             )
 
         barrier()

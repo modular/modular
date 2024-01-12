@@ -323,7 +323,7 @@ fn _permute_data[
     for idx in range(size):
         let perm_axis = perms.load(idx)[0]
         let perm_data = input.load(perm_axis)
-        output.store(idx, perm_data)
+        output[idx] = perm_data
 
 
 fn _fill_strides[
