@@ -2622,13 +2622,20 @@ AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!lifetimePVal)
     return {};
 
+  // If an explicit address space was specified, emit its expression as a
+  // parameter value.
   PValue addrSpacePVal;
   auto indexType = IndexType::get(emitter.getContext());
-  if (addrSpace)
+  if (addrSpace) {
+    CValue mlirIndex = emitter.emitMLIRIndex(addrSpace, EC_LifetimeSpec);
+    if (!mlirIndex)
+      return {};
     addrSpacePVal =
-        emitter.emitExprPValue(addrSpace, EC_LifetimeSpec, indexType);
-  else
+        emitter.emitPValue({mlirIndex, addrSpace}, EC_LifetimeSpec, indexType);
+  } else {
+    auto indexType = IndexType::get(emitter.getContext());
     addrSpacePVal = PValue(IntegerAttr::get(indexType, 0));
+  }
   if (!addrSpacePVal)
     return {};
 
