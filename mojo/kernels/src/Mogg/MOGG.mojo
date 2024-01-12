@@ -3403,7 +3403,8 @@ fn pack_conv_filter_shape[
         dilations: Should be rank 1 size 2.
         paddings: Should be rank 1 size 4.
         num_groups: The number of groups in the convolution.
-        single_thread_blocking_override: Whether this function can block.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
 
     Args:
         filter_buf: The filter to be packed.
