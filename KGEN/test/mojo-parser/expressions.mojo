@@ -1257,7 +1257,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
                  cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
-  # CHECK-NEXT: [[MIV:%.*]] = kgen.rebind %a
+  # CHECK-NEXT: [[MIV:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = [[MIV]]
   let ref1 = __get_ref_from_value(a)
   # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = %b
@@ -1285,14 +1285,16 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
   # CHECK-NEXT:     hlcf.yield [[TMP]]
   # CHECK-NEXT:   } else {
-  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref2
+  # CHECK-NEXT:     [[IMMREF:%.*]] = lit.ref.immut %ref2
+  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind [[IMMREF]]
   # CHECK-NEXT:     hlcf.yield [[TMP]]{{.*}}>
   # CHECK-NEXT:   }
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c
+  # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %c
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[IMMREF]]
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
   # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]

@@ -835,36 +835,59 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
-/// Helper to rebind a value to a new type.
-static AnyValue rebindValue(AnyValue value, Type newType, const ExprNode *expr,
-                            ExprEmitter &emitter) {
+/// If needed, convert the specified value to the target destination type,
+/// with a noop cast.  This is used to adjust inconsequential details of the
+/// type or for simple things like upcasts.  This does not invoke constructors
+/// or do other non-trivial conversions.
+///
+/// This produces an error and returns null on an invalid conversion.
+AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
   // Materialize a parameter rebind.
-  if (auto pvalue = value.getIfPValue())
-    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), newType));
-  if (auto dlValue = value.getIfDLValue()) {
-    dlValue->elementType = newType;
+  if (auto pvalue = value.ir.getIfPValue())
+    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType));
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    dlValue->elementType = destType;
     return dlValue;
   }
 
   // Cannot perform value rebind if only parameters are allowed.
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(expr);
+  if (!builder)
+    return emitErrorForDynamicValueInParameter(value.expr);
 
   // Materialize a rebind operation.
   auto rebind = [&](Value v) -> Value {
-    return emitter.builder->create<RebindOp>(
-        emitter.translateLocation(expr->getLoc()), newType, v);
+    if (v.getType() == destType)
+      return v;
+
+    // Reference casts use a special op for IR clarity.
+    if (auto srcRefType = dyn_cast<RefType>(v.getType()))
+      if (auto dstRefType = dyn_cast<RefType>(destType)) {
+        // Make sure rebind isn't *introducing* reference mutability.
+        assert((srcRefType.getIsMutable() || !dstRefType.getIsMutable()) &&
+               "Rebind is introducing mutability");
+        // If it is stripping mutability, use lit.ref.immut.
+        if (srcRefType.getIsMutable() && !dstRefType.getIsMutable())
+          v = builder->create<RefImmutOp>(
+              translateLocation(value.expr->getLoc()), v);
+
+        // Proceed with a rebind if needed to change lifetime or element type.
+        if (v.getType() == destType)
+          return v;
+      }
+    return builder->create<RebindOp>(translateLocation(value.expr->getLoc()),
+                                     destType, v);
   };
-  if (auto refValue = value.getIfMLValue())
+
+  if (auto refValue = value.ir.getIfMLValue())
     return MLValue(rebind(refValue));
-  if (auto refValue = value.getIfMRValue())
+  if (auto refValue = value.ir.getIfMRValue())
     return MRValue(rebind(refValue));
-  if (auto refValue = value.getIfMBValue())
+  if (auto refValue = value.ir.getIfMBValue())
     return MBValue(rebind(refValue));
-  if (auto sbValue = value.getIfSBValue())
+  if (auto sbValue = value.ir.getIfSBValue())
     return SBValue(rebind(sbValue));
 
-  auto srValue = value.getIfSRValue();
+  auto srValue = value.ir.getIfSRValue();
   assert(srValue && "Unknown value kind");
   return SRValue(rebind(srValue));
 }
@@ -994,7 +1017,7 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
   if (refinedType == valueType)
     return value;
 
-  return rebindValue(value, refinedType, expr, emitter);
+  return emitter.rebindValue({value, expr}, refinedType);
 }
 
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
@@ -1048,7 +1071,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           requiredType =
               cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
-        value = rebindValue(value, requiredType, expr, *this);
+        value = rebindValue({value, expr}, requiredType);
         return emitCValue({value, expr}, dest);
       }
 

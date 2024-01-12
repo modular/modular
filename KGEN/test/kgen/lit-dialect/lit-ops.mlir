@@ -65,9 +65,17 @@ lit.func @attributesAndDecorators()
   lit.end_func
 }
 
+lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<mut @MyStruct, life>)
+ -> !lit.ref<@MyStruct, life> {
+  // CHECK: %0 = lit.ref.immut %ref1 : <mut @MyStruct, life>
+  %ref2 = lit.ref.immut %ref1: <mut @MyStruct, life>
+  // CHECK: kgen.return %0 : !lit.ref<@MyStruct, life>
+  kgen.return %ref2: !lit.ref<@MyStruct, life>
+}
+
 lit.func @ref_pointer<life: lifetime>(%ref1: !lit.ref<mut @MyStruct, life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <mut @MyStruct, life>
-  %ptr = lit.ref.to_pointer %ref1: !lit.ref<mut @MyStruct, *"life">
+  %ptr = lit.ref.to_pointer %ref1: <mut @MyStruct, *"life">
   // CHECK: %1 = lit.ref.from_pointer %0 : <@MyStruct, life>
   %ref2 = lit.ref.from_pointer %ptr: !lit.ref<@MyStruct, *"life">
 

@@ -251,6 +251,8 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
       value = structGER.getContainer();
     } else if (auto rebindOp = value.getDefiningOp<RebindOp>()) {
       value = rebindOp.getOperand();
+    } else if (auto immut = value.getDefiningOp<RefImmutOp>()) {
+      value = immut.getOperand();
     } else {
       break;
     }
@@ -295,7 +297,7 @@ LIT::getOperationValueEffects(Operation &op,
   }
 
   // These ops are handled specially.
-  if (isa<RefStructGEROp, RebindOp>(op)) {
+  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op)) {
     operands.push_back(OperandEffect::ignore);
     results.push_back(ResultEffect::ignore);
     return {};

@@ -642,6 +642,8 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
   // If this is a RebindOp get the underlying ref.
   if (auto rebind = value.getDefiningOp<RebindOp>())
     return getValueRef(rebind.getOperand(), /*isDeref=*/isDeref);
+  if (auto immut = value.getDefiningOp<RefImmutOp>())
+    return getValueRef(immut.getOperand(), /*isDeref=*/isDeref);
 
   // Otherwise, we don't know what this is.
   return ValueRef();
