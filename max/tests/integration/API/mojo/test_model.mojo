@@ -31,7 +31,7 @@ fn test_model_metadata() raises:
     let model_path = args[1]
 
     let session = InferenceSession()
-    let compiled_model = session.load_model(model_path)
+    let compiled_model = session.load_model(Path(model_path))
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -70,7 +70,7 @@ fn test_model() raises:
     let model_path = args[1]
 
     let session = InferenceSession()
-    let model = session.load_model(model_path)
+    let model = session.load_model(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
@@ -112,7 +112,7 @@ fn test_model_tuple_input() raises:
         input_tensor[i] = 1.0
 
     let session = InferenceSession()
-    let model = session.load_model(model_path)
+    let model = session.load_model(Path(model_path))
     let outputs = model.execute(("input", EngineTensorView(input_tensor)))
     _ = input_tensor ^
     let output_tensor = outputs.get[DType.float32]("output")
