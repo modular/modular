@@ -150,18 +150,21 @@ class MojoDebugConfigurationResolver implements
 
     initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
 
-    // Pull in the additional visualizers within the lldb-visualizers dir.
-    let visualizersDir = config.mojoLLDBVisualizersPath;
-    let visualizers = await vscode.workspace.fs.readDirectory(
-        vscode.Uri.file(visualizersDir));
-    let visualizerCommands = visualizers.map(
-        ([ name, _type ]) => `command script import ${visualizersDir}/${name}`);
-
     debugConfiguration.initCommands = [
       ...initCommands,
       ...(debugConfiguration.initCommands || []),
-      ...visualizerCommands,
     ];
+
+    // Pull in the additional visualizers within the lldb-visualizers dir.
+    if (await config.lldbHasPythonScriptingSupport()) {
+      let visualizersDir = config.mojoLLDBVisualizersPath;
+      let visualizers = await vscode.workspace.fs.readDirectory(
+          vscode.Uri.file(visualizersDir));
+      let visualizerCommands = visualizers.map(
+          ([ name, _type ]) =>
+              `command script import ${visualizersDir}/${name}`);
+      debugConfiguration.initCommands.push(...visualizerCommands);
+    }
 
     const env = [
       `LLDB_VSCODE_RIT_TIMEOUT_IN_MS=${

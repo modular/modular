@@ -6,7 +6,10 @@
 
 import * as ini from 'ini';
 import * as path from 'path';
+import * as util from 'util';
 import * as vscode from 'vscode';
+
+const execFile = util.promisify(require('child_process').execFile);
 
 import {LoggingService} from './logging';
 import * as config from './utils/config';
@@ -17,6 +20,15 @@ import {substituteVariables} from './utils/vscodeVariables';
  * for interacting with mojo.
  */
 export class MOJOSDKConfig {
+  /**
+   * A service that can be used to log message in the Mojo output channel.
+   */
+  private loggingService: LoggingService;
+
+  constructor(loggingService: LoggingService) {
+    this.loggingService = loggingService;
+  }
+
   /**
    * The MODULAR_HOME path containing the SDK.
    */
@@ -46,6 +58,54 @@ export class MOJOSDKConfig {
    * The path to the mojo LLDB plugin.
    */
   mojoLLDBPluginPath: string = "";
+
+  /**
+   * The path to the LLDB binary.
+   */
+  lldbPath: string = "";
+
+  private lldbHasPythonScriptingSupportResult?: Promise<boolean>;
+
+  /**
+   * @returns true if and only if the LLDB binary in this SDK has a working
+   *     python scripting feature.
+   */
+  public lldbHasPythonScriptingSupport(): Promise<boolean> {
+    // We cache this check because it's not a no-op.
+    if (this.lldbHasPythonScriptingSupportResult == undefined)
+      this.lldbHasPythonScriptingSupportResult =
+          this.doLLDBHasPythonScriptingSupport();
+    return this.lldbHasPythonScriptingSupportResult;
+  }
+
+  /**
+   * Actually determine whether python scripting is functional in LLDB. As there
+   * are many reasons why python scripting would fail (e.g. disabled in CMake,
+   * wrong SDK installation, etc.), it's more effective to just execute a
+   * minimal script to confirm it's operative.
+   */
+  private async doLLDBHasPythonScriptingSupport(): Promise<boolean> {
+    try {
+      let {stdout, stderr} =
+          await execFile(this.lldbPath, [ "-b", "-o", "script print(100+1)" ]);
+      stdout = (stdout || "") as string;
+      stderr = (stderr || "") as string;
+
+      if (stdout.indexOf("101") != -1) {
+        this.loggingService.logInfo("Python scripting support in LLDB found.");
+        return true;
+      } else {
+        this.loggingService.logInfo(
+            `Python scripting support in LLDB not found. The test script returned:\n${
+                stdout}\n${stderr}`);
+      }
+    } catch (e) {
+      this.loggingService.logError(
+          "Python scripting support in LLDB not found. The test script failed with",
+          e);
+    }
+    return false;
+  }
 }
 
 /**
@@ -152,7 +212,7 @@ export class MOJOSDK {
                                 modularConfig);
 
     // Extract out the pieces of the config that we care about.
-    mojoConfig = new MOJOSDKConfig();
+    mojoConfig = new MOJOSDKConfig(this.loggingService);
     mojoConfig.modularHomePath = modularPath;
     mojoConfig.mojoLLDBVSCodePath = modularConfig.mojo.lldb_vscode_path;
     mojoConfig.mojoLLDBVisualizersPath =
@@ -160,6 +220,7 @@ export class MOJOSDK {
     mojoConfig.mojoDriverPath = modularConfig.mojo.driver_path;
     mojoConfig.mojoLanguageServerPath = modularConfig.mojo.lsp_server_path;
     mojoConfig.mojoLLDBPluginPath = modularConfig.mojo.lldb_plugin_path;
+    mojoConfig.lldbPath = modularConfig.mojo.lldb_path;
 
     // Cache the config for the workspace.
     this.workspaceConfigs.set(key, mojoConfig);
