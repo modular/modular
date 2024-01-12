@@ -34,25 +34,17 @@ from gpu.memory import AddressSpace
 # COM: Checks if we can do parameterization on the triple_is_nvidia_cuda check.
 # COM: In this case the code that would run on CUDA would return 42 and the
 # COM: one that does not would return -1.
-@adaptive
-@always_inline
-fn parameterized_on_cuda_impl() -> Int:
-    constrained[triple_is_nvidia_cuda()]()
-    return 42
-
-
-@adaptive
-@always_inline
-fn parameterized_on_cuda_impl() -> Int:
-    constrained[not triple_is_nvidia_cuda()]()
-    return -1
 
 
 # CHECK-LABEL: parameterized_on_cuda()
 # CHECK: mov.u64 {{.*}}, 42;
 @export
 fn parameterized_on_cuda() -> Int:
-    return parameterized_on_cuda_impl()
+    @parameter
+    if triple_is_nvidia_cuda():
+        return 42
+    else:
+        return -1
 
 
 # ===----------------------------------------------------------------------===#
