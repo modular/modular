@@ -347,11 +347,7 @@ struct Tensor[
                 self.store(indices, out)
 
             # We vectorize over the innermost dimension.
-            vectorize_unroll[
-                simd_width,
-                1,
-                func_wrapper,
-            ](inner_loop)
+            vectorize_unroll[simd_width, 1, func_wrapper](inner_loop)
 
             # We have to extend the lifetime of the indices as the above parameter
             # capture and use does not extend the lifetime of the object.

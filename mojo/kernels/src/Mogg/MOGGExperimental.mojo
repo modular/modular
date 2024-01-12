@@ -23,7 +23,7 @@ fn empty_tensor[
 ]:
     let ptr = DTypePointer[type].alloc(shape.nelems())
     let ref_cnt = Pointer[SIMD[DType.index, 1]].alloc(1)
-    ref_cnt.store(0, SIMD[DType.index, 1](0))
+    ref_cnt[0] = 0
     return Tensor[type, shape.static_values, strides.static_values](
         ptr, shape, strides, ref_cnt
     )

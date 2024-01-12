@@ -56,7 +56,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.length = num_elements
             self.data = Pointer[Int].alloc(num_elements)
             for i in range(num_elements):
-                self.data.store(i, other[i])
+                self.data[i] = other[i]
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
     @always_inline
@@ -87,7 +87,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.length = num_elements
             self.data = Pointer[Int].alloc(num_elements)
             for i in range(num_elements):
-                self.data.store(i, elems_list[i])
+                self.data[i] = elems_list[i]
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
     @always_inline
@@ -107,7 +107,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         if not Self.has_static_length():
             self.data = Pointer[Int].alloc(self.length)
             for i in range(self.length):
-                self.data.store(i, existing[i])
+                self.data[i] = existing[i]
 
     @staticmethod
     @always_inline
@@ -179,7 +179,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         elif Self.has_static_length():
             self.stack_alloc_data[index] = value
         else:
-            self.data.store(index, value)
+            self.data[index] = value
 
     @staticmethod
     @always_inline
@@ -191,7 +191,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         if not Self.has_static_length():
             x.data = Pointer[Int].alloc(length)
             for i in range(length):
-                x.data.store(i, 0)
+                x.data[i] = 0
         return x ^
 
     fn print(self):
