@@ -209,7 +209,8 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
   op.erase();
 }
 
-/// When a coroutine completes, it invokes it completion callback:
+/// When a coroutine completes, it invokes its completion callback, passing
+/// itself and its opaque argument.
 ///
 /// ```
 /// llvm.func @__kgen_coro_end_fn(%opaqueCtxt: !llvm.ptr<i8>) {
@@ -218,7 +219,7 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
 ///   %clsArgPtr = llvm.getelementptr %ctxt[0, 2, 1]
 ///   %ctxtFn = llvm.load %ctxtFnPtr
 ///   %ctxtArg = llvm.load %ctxtArgPtr
-///   llvm.call %ctxtFn(%ctxtArg)
+///   llvm.call %ctxtFn(%opaqueCtxt, %ctxtArg)
 ///   llvm.return
 /// }
 /// ```
@@ -235,10 +236,11 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
       Linkage::Internal);
 
   b.setInsertionPointToStart(endFn.addEntryBlock());
+  Value ctxt = endFn.getArgument(0);
   Type closureType = LLVMStructType::getLiteral(
       b.getContext(), {cache.opaquePtr, cache.opaquePtr});
   Value closure = b.create<GEPOp>(
-      cache.opaquePtr, b.getI8Type(), endFn.getArgument(0),
+      cache.opaquePtr, b.getI8Type(), ctxt,
       GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 1),
       /*inbounds=*/true);
   auto ptrToAsyncFn =
@@ -249,7 +251,7 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
       b.create<GEPOp>(cache.opaquePtr, closureType, closure,
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
   Value closureArg = b.create<LoadOp>(cache.opaquePtr, ptrToClosureArg);
-  b.create<CallOp>(TypeRange(), ValueRange{closureFn, closureArg});
+  b.create<CallOp>(TypeRange(), ValueRange{closureFn, ctxt, closureArg});
   b.create<ReturnOp>(ValueRange());
   symtab.insert(endFn);
 
