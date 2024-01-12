@@ -59,7 +59,8 @@ fn if_examples(cond: __mlir_type.i1):
     pass
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   c.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
@@ -70,14 +71,16 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
   # CHECK: hlcf.if [[ONE]] {
   if True:
-    # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
+    # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
     d.noop()
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   d.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
@@ -98,7 +101,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
   # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   a.noop()  # ok
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
 
@@ -139,7 +143,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
   # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   c.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
@@ -164,7 +169,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%d)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   d.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
@@ -242,15 +248,18 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
     a = MemExample()
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   a.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
 
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%b)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   b.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
 
-  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}(%c)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
+  # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
   c.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
@@ -271,7 +280,8 @@ struct TestLoopWithWholeObjectBit:
         # CHECK-NEXT:     hlcf.break
         # CHECK-NEXT:   }
         while cond:
-          # CHECK-NEXT:   lit.call {{.*}}noop{{.*}}(%buf)
+          # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %buf
+          # CHECK-NEXT:   lit.call {{.*}}noop{{.*}}([[IMMREF]])
           # CHECK-NEXT:   hlcf.continue
           buf.noop()
         # CHECK-NEXT: }
@@ -295,7 +305,8 @@ fn testInfiniteloop():
   while True:
     # CHECK-NEXT:  %localThing = lit.varlet.decl
     # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
-    # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}(%localThing)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %localThing
+    # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])
     # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
     let localThing = MemExample()
     localThing.noop()

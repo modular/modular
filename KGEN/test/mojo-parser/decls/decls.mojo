@@ -395,7 +395,7 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<mut !StructWithInit, {{.*}}> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<mut !StructWithInit, {{.*}}> borrow_in_mem)
+# CHECK-SAME:  %b: !lit.ref<!StructWithInit, {{.*}}> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
@@ -516,7 +516,8 @@ fn callNonRegisterDefaultArg():
     # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !MemoryType, *"`anonymous*0">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
-    # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%anonymous2A)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
+    # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}([[IMMREF]])
     defaultArgumentNonRegisterType()
     # CHECK: lit.alias.decl {{.*}}none: none = <apply({{.*}}defaultArgumentNonRegisterType
     # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}value = 1}>
@@ -667,7 +668,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :(!kgen.variadic<!lit.ref<mut !MemStruct, #lit.lifetime>> borrow_in_mem) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, #lit.lifetime>> borrow_in_mem) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])]
     alias b = variadic_mem_only(x, y)
 
@@ -999,7 +1000,7 @@ struct TraitMember[T: Copyable]:
     # CHECK: lit.func @"__moveinit__
     # CHECK: call_param{{.*}}__copyinit__
 
-# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<mut !NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.func @"__init__{{.*}}isSynthetic
 # CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
@@ -1014,7 +1015,7 @@ struct NotSynthetic:
 @register_passable("trivial")
 struct VarArgInit:
     var a: Int
-    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<mut !ValueMem, {{.*}}>> borrow_in_mem) vararg -> !VarArgInit
+    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>> borrow_in_mem) vararg -> !VarArgInit
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}
@@ -1292,7 +1293,7 @@ fn refGlobals():
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
-    # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = kgen.rebind [[MEM_REF]]
+    # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = lit.ref.immut [[MEM_REF]]
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF_IMM]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)

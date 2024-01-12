@@ -865,14 +865,6 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
         // Make sure rebind isn't *introducing* reference mutability.
         assert((srcRefType.getIsMutable() || !dstRefType.getIsMutable()) &&
                "Rebind is introducing mutability");
-        // If it is stripping mutability, use lit.ref.immut.
-        if (srcRefType.getIsMutable() && !dstRefType.getIsMutable())
-          v = builder->create<RefImmutOp>(
-              translateLocation(value.expr->getLoc()), v);
-
-        // Proceed with a rebind if needed to change lifetime or element type.
-        if (v.getType() == destType)
-          return v;
       }
     return builder->create<RebindOp>(translateLocation(value.expr->getLoc()),
                                      destType, v);

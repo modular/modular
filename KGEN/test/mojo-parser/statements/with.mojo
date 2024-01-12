@@ -55,7 +55,8 @@ fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR, %a)
     # CHECK-NEXT: %val = lit.varlet.decl {{.*}} imp
-    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
     # CHECK-NEXT: lit.try
     with a as val:
@@ -63,20 +64,23 @@ fn testWithNonRaising(a: ExampleCM):
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
     # CHECK: finally
-    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[IMMREF]])
 
     # Test a with with no target.
 
     # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR_0, %a)
-    # CHECK: lit.call {{.*}}__enter__{{.*}}(%$CONTEXTMGR_0)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
+    # CHECK: lit.call {{.*}}__enter__{{.*}}([[IMMREF]]
     # CHECK-NEXT: lit.try
     with a:
         # CHECK-NEXT: kgen.param.constant: {{.*}}42
         # CHECK-NEXT: lit.call {{.*}}noop
         noop(42)
     # CHECK: finally
-    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%$CONTEXTMGR_0)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
+    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[IMMREF]])
 
     # CHECK: %$CONTEXTMGR_1 = lit.varlet.decl "$CONTEXTMGR"{{.*}}!MutatingCM
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%$CONTEXTMGR_1)
@@ -92,7 +96,8 @@ fn testWithNonRaising(a: ExampleCM):
 fn testWithRaising(a: ExampleCM) raises:
     # CHECK: %$CONTEXTMGR = lit.varlet.decl
     # CHECK: %val = lit.varlet.decl {{.*}} imp
-    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
     # CHECK: lit.ref.store %true, %__with_exc__
     # CHECK-NEXT: lit.try
@@ -115,7 +120,8 @@ fn testWithRaising(a: ExampleCM) raises:
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except (%arg0: !Error) {
     # CHECK:        lit.ref.store %false, %__with_exc__
-    # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}(%$CONTEXTMGR, %arg0)
+    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMMREF]], %arg0)
     # CHECK-NEXT:   [[SUCCESS:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[EXIT_RESULT]])
     # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
     # CHECK-NEXT:     hlcf.yield
@@ -130,7 +136,8 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK:    } finally {
     # CHECK-NEXT: %[[EXC:.*]] = lit.ref.load %__with_exc__
     # CHECK-NEXT: hlcf.if %[[EXC]]
-    # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT:   call {{.*}}__exit__{{.*}}([[IMMREF]])
 
 
 # CHECK-LABEL: lit.func @"testWithInTry
@@ -139,7 +146,8 @@ fn testWithInTry(a: ExampleCM):
     try:
         # CHECK: %$CONTEXTMGR = lit.varlet.decl
         # CHECK: %cm = lit.varlet.decl "cm"
-        # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%$CONTEXTMGR)
+        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
+        # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
         # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
         # CHECK: lit.ref.store %true, %__with_exc__
         # CHECK: lit.try {
@@ -218,7 +226,8 @@ fn testCMWithoutExit():
     # CHECK: %a = lit.varlet.decl
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
     # CHECK-NEXT: lit.try {
-    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}(%a)
+    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } except (%arg0: i1) {
     # CHECK-NEXT:   kgen.unreachable
@@ -236,7 +245,8 @@ fn testCMWithoutExit():
     # CHECK: %a_1 = lit.varlet.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a_1, %$CONTEXTMGR_0)
     # CHECK-NEXT: lit.try {
-    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}(%a_1)
+    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a_1
+    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } except (%arg0: i1) {
     # CHECK-NEXT:   kgen.unreachable
@@ -265,7 +275,8 @@ fn testCMWithoutExitEarlyReturn():
     # CHECK: %a = lit.varlet.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
     # CHECK-NEXT: lit.try {
-    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}(%a)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   kgen.param.constant: none
     # CHECK-NEXT:   lit.return
     # CHECK-NEXT:   lit.try.yield

@@ -173,6 +173,7 @@ fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: Float32, *b: Int): pass
+# expected-error @+2 {{mutable variadics aren't supported yet}}
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}

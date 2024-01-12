@@ -758,9 +758,8 @@ void DeclResolver::computeArgumentConventions(
           ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
       implicitLifetimeDecls.push_back(lifetimeDecl);
 
-      // TODO(references) / Mutability: Borrowed should be immutable.
-      // isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
-      bool isMutable = true;
+      // The reference is immutable when borrowing, mutable otherwise.
+      bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
       argType = RefType::get(
           isMutable, argType,
           ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));

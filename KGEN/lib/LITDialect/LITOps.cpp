@@ -1654,6 +1654,7 @@ void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
   auto lifetimeType = b.getType<LifetimeType>();
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
+  // Lets are mutable because they may be lazy initialized.
   auto resultType = RefType::get(
       /*isMutable=*/true, elementType,
       ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));

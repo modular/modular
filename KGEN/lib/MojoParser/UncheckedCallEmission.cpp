@@ -283,6 +283,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         LifetimeUnionAttr::get(expectedRefType.getContext(), refLifetimes);
     expectedRefType = expectedRefType.getWithLifetime(commonLifetime);
     for (auto &arg : args)
+      // Cast to common lifetime.
       if (arg.getType() != expectedRefType)
         arg = emitter.builder->create<RebindOp>(loc, expectedRefType, arg);
 
@@ -522,7 +523,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     arg = argValAndExpr.ir.getIfSBValue();
     assert(arg && "unknown BValue");
     break;
-  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
@@ -530,10 +531,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           argLoc, PointerType::get(sbValue.getType()), 1);
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       // Given a legacy pointer, get it to a reference.
-      // TODO(references) remove this, use something that produces a lifetime.
+      // TODO(references): RefFromPointerOp should take a novel lifetime.
       auto ref =
           emitter.builder->create<RefFromPointerOp>(argLoc,
-                                                    /*isMut=*/true, ptr,
+                                                    /*isMut=*/false, ptr,
                                                     /*startUninit=*/false,
                                                     /*endUninit=*/false);
       // Because the result of StackAllocationOp is not a lifetime trackable,
@@ -543,7 +544,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       return MBValue(ref);
     }
     // Promote PValue's if needed.
-    return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
+    Value result = emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
+    // Drop mutability for a MBValue.
+    if (result && cast<RefType>(result.getType()).getIsMutable())
+      result = emitter.builder->create<RefImmutOp>(
+          argValAndExpr.expr->getLocation(emitter), result);
+    return result;
+  }
   case ValueInputConvention::ByRefResult: {
     MLValue resultSlotRef = argValAndExpr.ir.getIfMLValue();
     assert(resultSlotRef && "byref_result value start in a temp slot");

@@ -33,7 +33,7 @@ struct MemType:
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %p: !Int borrow) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: kgen.param.declare *"`m": lifetime = <*"`self">
-# CHECK-NEXT: %[[W0CAST:.*]] = kgen.rebind %[[W0]] : !lit.ref<!MemType, *"`self"> to !lit.ref<mut !MemType, *"`m">
+# CHECK-NEXT: %[[W0CAST:.*]] = kgen.rebind %[[W0]] : !lit.ref<!MemType, *"`self"> to !lit.ref<!MemType, *"`m">
 # CHECK-NEXT: lit.call @{{.*}}::@"use{{.*}}(%[[W0CAST]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return

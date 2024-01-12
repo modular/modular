@@ -15,8 +15,7 @@ struct MemType:
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(m: MemType, w: Int):
     # CHECK: [[IMPL:%.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping
-    # CHECK-NEXT: [[IMM_M:%.*]] = kgen.rebind %m
-    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], [[IMM_M]])
+    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], %m)
     fn myclosure_with_mem_types(n: MemType) escaping -> MemType:
         return n + m
 

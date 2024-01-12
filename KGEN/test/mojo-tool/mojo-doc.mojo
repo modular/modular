@@ -319,7 +319,7 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
 # CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
 # CHECK:      "returns": "This is a by-ref return value.",
-# CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, inout *args: Self) -> Self",
+# CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
@@ -345,7 +345,7 @@ struct InMemoryStruct(Sized):
         return 0
 
     fn fn_with_by_conventions(
-        inout self, inout arg: InMemoryStruct, inout *args: InMemoryStruct
+        inout self, inout arg: InMemoryStruct, *args: InMemoryStruct
     ) -> InMemoryStruct:
         """This is a function summary.
 
