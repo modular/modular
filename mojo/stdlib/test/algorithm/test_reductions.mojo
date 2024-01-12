@@ -17,9 +17,11 @@ from algorithm import (
     sum,
     variance,
 )
+from math import max as _max, min as _min
+from math.limit import max_or_inf, min_or_neginf
 
 # TODO: Fold this import into the one above.
-from algorithm.reduction import _index_of_first_one, max, min
+from algorithm.reduction import _index_of_first_one, max, min, _reduce_generator
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import Runtime
 
@@ -48,6 +50,85 @@ fn test_reductions():
 
     # CHECK: 5050.0
     print(sum(vector))
+
+
+# CHECK-LABEL: test_fused_reductions
+fn test_fused_reductions() raises:
+    print("== test_fused_reductions")
+
+    alias size = 100
+    alias test_type = DType.float32
+    alias num_reductions = 3
+    let vector = Buffer[size, test_type].stack_allocation()
+
+    for i in range(size):
+        vector[i] = i + 1
+
+    @always_inline
+    @parameter
+    fn input_fn[
+        type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank]) -> SIMD[type, width]:
+        let loaded_val = vector.simd_load[width](indices[0])
+        return rebind[SIMD[type, width]](loaded_val)
+
+    var out = StaticTuple[num_reductions, Scalar[test_type]]()
+
+    @always_inline
+    @parameter
+    fn output_fn[
+        type: DType, width: Int, rank: Int
+    ](
+        indices: StaticIntTuple[rank],
+        val: StaticTuple[num_reductions, SIMD[type, width]],
+    ):
+        constrained[
+            width == 1,
+            "Cannot write output if width is not equal to 1",
+        ]()
+
+        out = rebind[StaticTuple[num_reductions, Scalar[test_type]]](val)
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        ty: DType,
+        width: Int,
+        reduction_idx: Int,
+    ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
+        constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+
+        @parameter
+        if reduction_idx == 0:
+            return _min(left, right)
+        elif reduction_idx == 1:
+            return _max(left, right)
+        else:
+            return left + right
+
+    let init_min = max_or_inf[test_type]()
+    let init_max = min_or_neginf[test_type]()
+    let init = StaticTuple[num_reductions, Scalar[test_type]](
+        init_min, init_max, 0
+    )
+    let shape = Index(size)
+
+    _reduce_generator[
+        num_reductions, test_type, input_fn, output_fn, reduce_fn
+    ](
+        shape,
+        init=init,
+        reduce_dim=0,
+    )
+
+    # CHECK: 1.0
+    print(out[0])
+
+    # CHECK: 100.0
+    print(out[1])
+
+    # CHECK: 5050.0
+    print(out[2])
 
 
 # We use a smaller vector so that we do not overflow
@@ -911,6 +992,7 @@ fn test_cumsum():
 
 fn main() raises:
     test_reductions()
+    test_fused_reductions()
     test_product()
     test_mean_variance()
     test_3d_reductions_axis_0()
