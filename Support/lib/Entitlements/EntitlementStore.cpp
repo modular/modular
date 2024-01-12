@@ -396,6 +396,17 @@ const mbedtls_x509_crt *Detail::CertificateChain::getLeafCertificate() const {
 }
 
 //===----------------------------------------------------------------------===//
+// M::defaultEntitlementRefreshPolicy
+//===----------------------------------------------------------------------===//
+
+bool M::defaultEntitlementRefreshPolicy(
+    std::chrono::system_clock::time_point from,
+    std::chrono::system_clock::time_point to) {
+  auto midpoint = (from - to) / 2;
+  return std::chrono::system_clock::now().time_since_epoch() > midpoint;
+}
+
+//===----------------------------------------------------------------------===//
 // requestDeviceCode
 //===----------------------------------------------------------------------===//
 
