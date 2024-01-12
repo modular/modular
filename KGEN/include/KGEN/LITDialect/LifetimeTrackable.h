@@ -53,16 +53,6 @@ struct LifetimeTrackable {
   /// __init__/__copyinit__ method.  These have magic behavior so they become
   /// fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
-
-  /// Return the type of the underlying value, looking through the pointer type
-  /// if this is an indirect reference.
-  Type getValueType(Value value) const {
-    return getTypeOrPointeeType(value.getType(), isIndirect);
-  }
-
-  /// When isIndirect is true, this strips off the top level PointerType
-  /// from the specified type, otherwise it returns it unmodified.
-  static Type getTypeOrPointeeType(Type type, bool isIndirect);
 };
 
 //===----------------------------------------------------------------------===//

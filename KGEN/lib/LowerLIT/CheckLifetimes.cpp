@@ -397,10 +397,13 @@ struct ValueRef {
       bits.reset(startBit, endBit);
   }
 
-  /// Return the type of the underlying value, looking through the pointer type
-  /// if this is an indirect reference.
+  /// Return the type of the underlying value, looking through the reference
+  /// type if indirect.
   Type getValueType(Value value) const {
-    return LifetimeTrackable::getTypeOrPointeeType(value.getType(), isIndirect);
+    // If this is a direct value, use the type directly.
+    if (!isIndirect)
+      return value.getType();
+    return cast<RefType>(value.getType()).getElementType();
   }
 
   /// Given a field ref with fields, return a sub-field that starts at the
@@ -443,26 +446,30 @@ struct ValueSet {
 
   /// Add a value to the set that we are tracking.  This includes:
   ///  * the MLIR representation for the value itself
-  ///  * whether the value is a by-ref pointer to the underlying logical value
-  ///  * the destructor for the value
+  ///  * whether the value is a by-ref to the underlying logical value
   ///  * whether the value starts out uninit or init at the function start
   ///  * whether the value is uninit or init at normal function return.
-  ///
-  void addValue(Value val, LifetimeTrackable trackable) {
-    // Figure out how many bits to track for this value.
+  void addValue(Value val, const LifetimeTrackable &trackable) {
+    // Figure out how many bits to track for this value at the lifetime if mem.
     unsigned numValueBits;
+    TypedAttr valueLifetime;
     if (!val) {
       numValueBits = 1; // Nothing to do for the sentinel.
     } else if (trackable.isIndirect) {
       // This should be an assertion, but check softly to help IR clients.
-      if (!isa<RefType>(val.getType())) {
+      auto refType = dyn_cast<RefType>(val.getType());
+      if (!refType) {
         mlir::emitError(val.getLoc())
             << "trackable IR value of type " << val.getType()
             << " should have type '!lit.ref': " << val;
         return;
       }
-      Type valType = trackable.getValueType(val);
+      Type valType = refType.getElementType();
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+
+      // Remember the lifetime if not immortal.
+      if (!isa<LifetimeAttr>(refType.getLifetime()))
+        valueLifetime = refType.getLifetime();
     } else {
       // We don't track trivial values of register type.
       if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
@@ -479,7 +486,11 @@ struct ValueSet {
         isLet = varLet.getKind() == VarLetDeclKind::Let;
     }
 
+    // Record this information in our tables.
     valueInfoIndex[val] = valueInfos.size();
+    if (valueLifetime)
+      lifetimeToValueIndex[valueLifetime] = valueInfos.size();
+
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                           trackable.startsUninit, trackable.endsUninit,
                           trackable.isIndirect,
@@ -495,13 +506,21 @@ struct ValueSet {
                     entry.isIndirect};
   }
 
-  /// Given a pointer or value that is being accessed by an operation, return
+  /// Given a lifetime attribute, return the value ref that defines it.
+  ValueRef getFullValueRefForLifetime(TypedAttr lifetime) const {
+    auto it = lifetimeToValueIndex.find(lifetime);
+    if (it == lifetimeToValueIndex.end())
+      return {};
+    return getFullValueRef(it->second);
+  }
+
+  /// Given a tracked value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
   ///
   /// 'isDeref' indicates that this is an indirect use of the specified value,
   /// which matters in the case of references.  When false, this is a use of a
   /// possibly-owned register value.
-  ValueRef getValueRef(Value value, bool isDeref) const;
+  ValueRef getDirectValueRef(Value value, bool isDeref) const;
 
   /// Return the total number of bits we need to track in the bitvector.
   unsigned getNumTotalBits() const {
@@ -522,9 +541,14 @@ struct ValueSet {
   Location getFuncLocation() { return func.getLoc(); }
 
 private:
-  SmallVector<ValueInfo> valueInfos;
-  DenseMap<Value, unsigned> valueInfoIndex;
+  /// This is the function we're analyzing.
   LIT::FuncOp func;
+  /// These are all of the value infos, indexed by ID #.
+  SmallVector<ValueInfo> valueInfos;
+  /// This is a lookup from SSA values to the thing they are referencing.
+  DenseMap<Value, unsigned> valueInfoIndex;
+  /// This is a mapping of lifetime attrs to the value index that defines them.
+  DenseMap<TypedAttr, unsigned> lifetimeToValueIndex;
 };
 } // namespace
 
@@ -597,7 +621,7 @@ void ValueSet::dump() const {
 /// 'isDeref' indicates that this is an indirect use of the specified value,
 /// which matters in the case of references.  When false, this is a use of a
 /// possibly-owned register value.
-ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
+ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   // If this is testing a reference value (not the dereference value) then it is
   // ignored: references can be passed around and used with the contents being
   // liveness tracked, the ultimate accesses are what matter.
@@ -611,7 +635,7 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
 
   // If this is a GER, check the base and focus in on a field of it.
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
-    ValueRef baseVal = getValueRef(structGER.getContainer(), isDeref);
+    ValueRef baseVal = getDirectValueRef(structGER.getContainer(), isDeref);
     if (!baseVal || !baseVal.isIndirect)
       return {};
 
@@ -627,7 +651,7 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
   }
 
   if (auto load = value.getDefiningOp<RefLoadOp>())
-    if (auto valueRef = getValueRef(load.getRef(), /*isDeref=*/true)) {
+    if (auto valueRef = getDirectValueRef(load.getRef(), /*isDeref=*/true)) {
       if (valueRef.isIndirect) {
         // The parser doesn't emit all the lifetime stuff for trivial types,
         // so don't track them either.
@@ -641,9 +665,9 @@ ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
 
   // If this is a RebindOp get the underlying ref.
   if (auto rebind = value.getDefiningOp<RebindOp>())
-    return getValueRef(rebind.getOperand(), /*isDeref=*/isDeref);
+    return getDirectValueRef(rebind.getOperand(), /*isDeref=*/isDeref);
   if (auto immut = value.getDefiningOp<RefImmutOp>())
-    return getValueRef(immut.getOperand(), /*isDeref=*/isDeref);
+    return getDirectValueRef(immut.getOperand(), /*isDeref=*/isDeref);
 
   // Otherwise, we don't know what this is.
   return ValueRef();
@@ -673,8 +697,10 @@ private:
   void checkTryOp(LIT::TryOp tryOp);
 
   void checkUse(Value value, Operation &op, bool isDeref);
+  void diagnoseUseError(ValueRef valueRef, Operation &op);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
+  void checkMarkDestroyed(Value value, Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -820,14 +846,18 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
 /// error at the specified operation if not.
 void UninitializedValueScan::checkUse(Value value, Operation &op,
                                       bool isDeref) {
-  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
+  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef)
     return;
 
-  // If the value is live then all is good.
-  if (valueRef.isAllPresent(liveValues))
-    return;
+  // The referenced value fields must be live.
+  if (!valueRef.isAllPresent(liveValues))
+    diagnoseUseError(valueRef, op);
+}
 
+/// One of the specified fields is missing, so emit an error about it.
+void UninitializedValueScan::diagnoseUseError(ValueRef valueRef,
+                                              Operation &op) {
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   if (valueEntry.hasErrorDiagnosed)
@@ -877,7 +907,7 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
-  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
+  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -911,7 +941,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
                                           bool isDeref) {
-  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
+  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -927,6 +957,28 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 
   // Mark the value as mutated.
   valueRef.markBits(everMutatedValues, true);
+}
+
+/// The lit.ownership.mark_destroyed op consumes the whole object bit of
+/// a value only, but not its fields.
+void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
+  auto valueRef = valueSet.getDirectValueRef(value, /*isDeref=*/true);
+
+  /// This op must be a direct reference to the underlying value (not indirected
+  /// through an opaque reference) because we don't do field sensitive tracking
+  /// of opaque references.
+  if (!valueRef) {
+    op.emitError(
+        "invalid use of 'lit.ownership.mark_destroyed' on indirect reference");
+    return;
+  }
+
+  // Check just that the consumed bit is live.
+  valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
+
+  // If not, then there is an error which we diagnose.
+  if (!valueRef.isAllPresent(liveValues))
+    diagnoseUseError(valueRef, op);
 }
 
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
@@ -996,18 +1048,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkConsume(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memMarkDestroyed:
-        // The lit.ownership.mark_destroyed op consumes the whole object bit of
-        // a value only, but not its fields.
-        if (auto valueRef = valueSet.getValueRef(operand, /*isDeref=*/true)) {
-          // Check just that the consumed bit is live.
-          valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
-          if (!valueRef.isAllPresent(liveValues)) {
-            // If not, then there is an error which we diagnose with 'checkUse'
-            // (note that it will generate a conservative warning because we're
-            // not passing the right bit down).
-            checkUse(operand, op, /*isDeref=*/true);
-          }
-        }
+        checkMarkDestroyed(operand, op);
         break;
       }
     }
@@ -1232,7 +1273,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // The live-ins to the except block are the exceptSet.
   for (Value arg : tryOp.getExceptRegion().getArguments())
-    if (ValueRef ref = valueSet.getValueRef(arg, /*isDeref=*/true))
+    if (ValueRef ref = valueSet.getDirectValueRef(arg, /*isDeref=*/true))
       ref.markBits(exceptSet, true);
   liveValues = std::move(exceptSet);
   everMutatedValues = std::move(exceptEverMutatedSet);
@@ -1505,7 +1546,10 @@ void DestructorInsertion::scanBlock(Block &block) {
         // a value only, but not its fields.  This ensures the sub-fields are
         // destroyed but the full object is not.  It is used in destructors
         // primarily.
-        if (auto valueRef = valueSet.getValueRef(operand, /*isDeref=*/true))
+        //
+        // This only works on direct references, the uninit pass requires this.
+        if (auto valueRef =
+                valueSet.getDirectValueRef(operand, /*isDeref=*/true))
           consumedValues.set(valueRef.endBit - 1);
         break;
       }
@@ -1590,7 +1634,7 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
       // values in the else block, we mark the exempt values in an expectation
       // bit vector.
       ValueRef uninitValueRef =
-          valueSet.getValueRef(maybeInitValue, /*isDeref=*/true);
+          valueSet.getDirectValueRef(maybeInitValue, /*isDeref=*/true);
       uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
     }
   }
@@ -1791,20 +1835,22 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
   exceptSets.scanBlock(exceptRegion.front());
   // The except block initializes its block arguments, so if these are tracked
   // we must mark them as consumed.
-  for (Value blockArg : exceptRegion.getArguments())
-    if (ValueRef valueRef = valueSet.getValueRef(blockArg, /*isDeref=*/false)) {
-      if (!exceptSets.consumedValues[valueRef.startBit]) {
-        // There were no references to the owned arguments, so generate a
-        // destructor at beginning of the block.
-        mlir::ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
-            exceptRegion.getLoc(), &exceptRegion.front());
-        destroyValueIfNeeded(blockArg, valueRef, builder,
-                             /*opWithUse=*/nullptr);
-        valueRef.markBits(consumedValues, false);
-      } else {
-        valueRef.markBits(exceptSets.consumedValues, false);
-      }
+  for (Value blockArg : exceptRegion.getArguments()) {
+    ValueRef valueRef = valueSet.getDirectValueRef(blockArg, /*isDeref=*/false);
+    if (!valueRef)
+      continue;
+    if (!exceptSets.consumedValues[valueRef.startBit]) {
+      // There were no references to the owned arguments, so generate a
+      // destructor at beginning of the block.
+      mlir::ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+          exceptRegion.getLoc(), &exceptRegion.front());
+      destroyValueIfNeeded(blockArg, valueRef, builder,
+                           /*opWithUse=*/nullptr);
+      valueRef.markBits(consumedValues, false);
+    } else {
+      valueRef.markBits(exceptSets.consumedValues, false);
     }
+  }
 
   // The normal flow finishes with the else block, process it to see what
   // the input consumedValues set to the else block is.
@@ -1820,7 +1866,7 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
 // to be destroyed above this point.
 void DestructorInsertion::checkConsume(Value value, Operation &op,
                                        bool isDeref) {
-  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
+  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -1885,7 +1931,7 @@ void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
 void DestructorInsertion::checkUse(Value value,
                                    mlir::ImplicitLocOpBuilder &builder,
                                    Operation *opWithUse, bool isDeref) {
-  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
+  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -1933,7 +1979,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.
-  valueSet.getValueRef(value, isDeref).markBits(consumedValues, false);
+  valueSet.getDirectValueRef(value, isDeref).markBits(consumedValues, false);
 }
 
 /// If the specified valueRef corresponds to a trivial value or subfield, clear

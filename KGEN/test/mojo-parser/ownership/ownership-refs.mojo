@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# Test more advanced reference cases.
+
 # RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
@@ -47,7 +49,7 @@ fn implicit_owned(owned a: MemExample):
 
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt: Lifetime, as1: __mlir_type.index]():
-  # CHECK: lit.varlet.decl "ref1" {{.*}} !lit.ref<mut !MemExample, _49x15_lt, _49x29_as1>
+  # CHECK: lit.varlet.decl "ref1" {{.*}} !lit.ref<mut !MemExample, {{.*}}_lt, {{.*}}_as1>
   let ref1 : mutref[lt, as1] MemExample
 
   # CHECK: lit.alias.decl {{.*}}_as2: !Int = <#lit.struct<{value = 42}>>

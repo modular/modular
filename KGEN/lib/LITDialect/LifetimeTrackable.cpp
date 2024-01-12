@@ -269,16 +269,6 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
   return value;
 }
 
-/// When isIndirect is true, this strips off the top level pointer from the
-/// specified type, otherwise it returns it unmodified.
-Type LifetimeTrackable::getTypeOrPointeeType(Type type, bool isIndirect) {
-  // If this is a direct value, use the type directly.
-  if (!isIndirect)
-    return type;
-
-  return cast<RefType>(type).getElementType();
-}
-
 //===----------------------------------------------------------------------===//
 // OperationValueEffects
 //===----------------------------------------------------------------------===//
