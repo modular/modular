@@ -391,11 +391,6 @@ public:
       ASTType functionType, ExprEmitter &emitter,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
-  /// Resolve the callee into either a single PValue callee (if there's only one
-  /// decl provided) or a variadic that contains all the possible adaptive
-  /// overloads.
-  PValue getAdaptiveSet();
-
 private:
   OverloadSet(const ExprNode *expr, CallSyntax syntax, ExprEmitter &emitter)
       : inputParamBindings(emitter), expr(expr), syntax(syntax) {}

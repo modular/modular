@@ -180,11 +180,9 @@ static bool matchesAnyPrefix(StringRef line, const Prefixes &prefixes) {
 
 static bool isFunctionOrStructDeclaration(StringRef code) {
   static constexpr auto kPrefixes = {
-      "fn ",       "def ",
-      "struct ",   "trait ",
-      "@adaptive", "@always_inline",
-      "@closure",  "@export",
-      "@value",    "@register_passable",
+      "fn ",     "def ",           "struct ",
+      "trait ",  "@always_inline", "@closure",
+      "@export", "@value",         "@register_passable",
   };
   return matchesAnyPrefix(code, kPrefixes);
 }

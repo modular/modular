@@ -277,17 +277,10 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     // Check that none of the decls are already in the set.
     auto canMergeDecl = [&](ASTDecl *decl) {
       LIT::FuncOp declOp = cast<LIT::FuncOp>(decl->getIfOperation());
-      bool isAdaptive = declOp.getIsAdaptive();
       return llvm::all_of(entries, [&](ASTDecl *existing) {
         if (failed(resolve(*existing, DeclResolvedness::signature, aliasLoc)))
           return false;
         LIT::FuncOp existingOp = cast<LIT::FuncOp>(existing->getIfOperation());
-
-        // If the decl is adaptive, we can merge it with another adaptive decl.
-        if (isAdaptive != existingOp.getIsAdaptive())
-          return false;
-        if (isAdaptive)
-          return true;
 
         LITSignatureType declSignature = declOp.getFullSignature();
         LITSignatureType existingSignature = existingOp.getFullSignature();

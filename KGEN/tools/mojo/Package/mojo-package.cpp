@@ -74,8 +74,7 @@ struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
 static bool canExternalize(LIT::FuncOp func) {
   // If the function is marked as always inline, we can't externalize it.
   if (func.getInlineLevel() == InlineLevel::Always ||
-      func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
-      func.getIsAdaptive())
+      func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
     return false;
 
   // Check for parameters.

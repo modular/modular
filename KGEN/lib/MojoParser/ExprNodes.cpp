@@ -805,11 +805,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!baseAnyVal)
     return {};
 
-  // Handle __adaptive_set.
-  if (auto overloads = baseAnyVal.getIfORValue())
-    if (spelling == "__adaptive_set")
-      return emitter.emitResult(overloads->getAdaptiveSet(), this, dest);
-
   // Otherwise must have a concrete type.
   CValue baseVal = emitter.emitCValue({baseAnyVal, this}, EC_AttributeRefBase);
   if (!baseVal)

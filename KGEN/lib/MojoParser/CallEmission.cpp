@@ -614,75 +614,15 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
   return ParamOperatorAttr::get(POC::BindSignature, operands);
 }
 
-/// Perform substitutions of the specified bindings into the symbol, returning
-/// the resultant bound symbols of each adaptive function overload as a
-/// variadic. On failure it produces an error message and returns null.
-static VariadicAttr getAdaptiveSet(ASTType baseType,
-                                   ArrayRef<ASTDecl *> fnDecls,
-                                   StringRef baseName,
-                                   const InputParamBindings &inputParamBindings,
-                                   const ExprNode *expr) {
-  SharedState &shared = inputParamBindings.shared;
-  SmallVector<TypedAttr> symConstAttrs;
-  for (ASTDecl *fnDecl : fnDecls) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
-    if (!funcOp.getIsAdaptive()) {
-      auto diag = shared.emitError(expr->getLoc(),
-                                   "cannot form a reference to non @adaptive "
-                                   "declaration of '")
-                  << baseName << "'" << expr->getRange();
-      diag.attachNote(funcOp.getLoc()) << "declared here";
-      return {};
-    }
-    TypedAttr symbolAttr = getBoundConstAttrFor(baseType, funcOp, baseName,
-                                                inputParamBindings, expr);
-    if (!symbolAttr)
-      return {};
-    symConstAttrs.push_back(symbolAttr);
-  }
-
-  auto varType = VariadicType::get(symConstAttrs.front().getType());
-  return VariadicAttr::get(shared.getContext(), symConstAttrs, varType);
-}
-
-/// Resolve the callee into either a single PValue callee (if there's only one
-/// decl provided) or a variadic that contains all the possible adaptive
-/// overloads. Because adaptive overloads must all have the same signature, this
-/// also returns the signature type that they all share.
+/// Resolve the callee into a single PValue callee.
 static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
                         StringRef baseName,
                         const InputParamBindings &inputParamBindings,
                         const ExprNode *expr, ExprEmitter &emitter) {
-  assert(!fnDecls.empty() &&
-         "cannot get the callee when no callees have been resolved");
-  if (fnDecls.size() == 1) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-    return getBoundConstAttrFor(baseType, funcOp, baseName, inputParamBindings,
-                                expr);
-  }
-
-  VariadicAttr variadicSetAttr =
-      ::getAdaptiveSet(baseType, fnDecls, baseName, inputParamBindings, expr);
-  if (!variadicSetAttr)
-    return {};
-
-  // If the callee is a list, create a param.fork op and create a
-  // CallParam on that. Mangle the declared parameter name with the line and
-  // column number to ensure uniqueness.
-  auto [line, col] = emitter.getSourceMgr().getLineAndColumn(expr->getLoc());
-
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(
-        expr, "TODO: cannot call adaptive function in parameter contexts");
-
-  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
-  StringAttr declName = emitter.builder->getStringAttr(
-      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
-  auto decl =
-      ParamDeclAttr::get(declName, variadicSetAttr.getType().getElementType());
-  emitter.builder->create<ParamForkOp>(
-      emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
-  return PValue(ParamDeclRefAttr::get(decl));
+  assert(fnDecls.size() == 1 && "expected a single resolved callee");
+  auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
+  return getBoundConstAttrFor(baseType, funcOp, baseName, inputParamBindings,
+                              expr);
 }
 
 /// Return if the given fitness is valid, and drop the diagnostics otherwise.
@@ -802,14 +742,8 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   if (!newFnDecls.empty())
     emitter.shared.notifyListenerOnRef(newFnDecls, baseName, expr, syntax);
 
-  // If we found exactly one viable candidate, or all the overloads are marked
-  // as adaptive, then we succeed.
-  auto allMarkedAdaptive = [&]() -> bool {
-    return llvm::all_of(newFnDecls, [](ASTDecl *decl) {
-      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
-    });
-  };
-  if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive())) {
+  // If we found exactly one viable candidate then we succeed.
+  if (newFnDecls.size() == 1) {
     // On success, wrap things up into one callee.
     InputParamBindings newBindings(emitter);
     for (TypedAttr bind : bestFitness->getParamBindings())
@@ -821,32 +755,14 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure) {
-    // We only want to suggest adding @adaptive if at least one in the set is
-    // marked adaptive.
-    bool anyMarkedAdaptive = llvm::any_of(newFnDecls, [](ASTDecl *decl) {
-      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
-    });
-    if (anyMarkedAdaptive) {
-      auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
-                  << baseName
-                  << "', multiple implementations detected but not all are "
-                     "marked adaptive, add @adaptive to all overloads"
-                  << expr->getRange();
-      for (LIT::FuncOp candidate : llvm::map_range(
-               newFnDecls, [](ASTDecl *d) { return cast<LIT::FuncOp>(*d); })) {
-        if (!candidate.getIsAdaptive())
-          diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
-      }
-    } else {
-      size_t minConversions = bestFitness->getNumImplicitConversions();
-      auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
-                  << baseName << "', each candidate requires " << minConversions
-                  << " implicit conversion" << plural(minConversions)
-                  << ", disambiguate with an explicit cast" << expr->getRange();
-      for (ASTDecl *candidate : newFnDecls)
-        diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
-            << "candidate declared here";
-    }
+    size_t minConversions = bestFitness->getNumImplicitConversions();
+    auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
+                << baseName << "', each candidate requires " << minConversions
+                << " implicit conversion" << plural(minConversions)
+                << ", disambiguate with an explicit cast" << expr->getRange();
+    for (ASTDecl *candidate : newFnDecls)
+      diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+          << "candidate declared here";
   }
   return {};
 }
@@ -938,15 +854,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     getShared().notifyListenerOnRef(validCandidates, baseName, expr, syntax);
 
   // If we have exactly one viable candidate, then we succeed.
-  auto allMarkedAdaptive = [&]() -> bool {
-    return llvm::all_of(validCandidates, [](ASTDecl *decl) {
-      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
-    });
-  };
-
-  // If we resolved to a single candidate or an adaptive set, then we succeed.
-  if (validCandidates.size() == 1 ||
-      (!validCandidates.empty() && allMarkedAdaptive())) {
+  if (validCandidates.size() == 1) {
     if (inputParamBindings.empty())
       return getCallee(baseType, validCandidates, baseName, inputParamBindings,
                        expr, emitter);
@@ -980,14 +888,6 @@ PValue OverloadSet::filterOverloadSetForValueType(
         << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
   }
   return {};
-}
-
-/// Resolve the callee into either a single PValue callee (if there's only one
-/// decl provided) or a variadic that contains all the possible adaptive
-/// overloads.
-PValue OverloadSet::getAdaptiveSet() {
-  return ::getAdaptiveSet(baseType, fnDecls, baseName, inputParamBindings,
-                          expr);
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning

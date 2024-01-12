@@ -52,9 +52,6 @@ def LIT_FuncOp : LITOp<"func", [
     level.
 
     @staticmethod decorators in Lit correspond to the attribute `isStatic`.
-    @adaptive is a decorator that the user can attach to an `fn` that tells
-    the parser to add the `isAdaptive` flag, and to treat multiple
-    implementations as an overload set.
   }];
 
   let arguments = (ins
@@ -67,7 +64,6 @@ def LIT_FuncOp : LITOp<"func", [
     ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
-    UnitAttr:$isAdaptive,
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     UnitAttr:$isInherited,
