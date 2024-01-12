@@ -19,12 +19,12 @@ from utils.list import DimList
 
 
 @always_inline
-fn _arange_get_numelems[
-    type: DType
-](start: SIMD[type, 1], stop: SIMD[type, 1], step: SIMD[type, 1]) -> Int:
+fn _arange_get_numelems(
+    start: Scalar, stop: Scalar[start.type], step: Scalar[start.type]
+) -> Int:
     @parameter
-    if type.is_integral():
-        return len(range(int(start), int(stop), int(step)))
+    if start.type.is_integral():
+        return len(range(start, stop, step))
     else:
         return int(ceil(abs(stop - start) / abs(step)))
 
