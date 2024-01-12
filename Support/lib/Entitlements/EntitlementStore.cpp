@@ -349,9 +349,14 @@ ErrorOr<bool> Detail::CertificateChain::applyToValidity(
                   /*tm_year=*/leaf->valid_from.year - 1900,
                   /*tm_wday=*/-1,
                   /*tm_yday=*/-1,
+#ifndef _WIN32
                   /*tm_isdst=*/-1,
                   /*tm_gmtoff=*/-1,
-                  /*tm_zone=*/nullptr};
+                  /*tm_zone=*/nullptr
+#else  // _WIN32
+                  /*tm_isdst=*/0 // Windows' gmtime always returns 0 for this.
+#endif // _WIN32
+  };
   time_t normalizedFrom = mktime(&validFrom);
   if (normalizedFrom == (time_t)-1)
     return Error("invalid validFrom date in certificate");
@@ -364,9 +369,14 @@ ErrorOr<bool> Detail::CertificateChain::applyToValidity(
                 /*tm_year=*/leaf->valid_to.year - 1900,
                 /*tm_wday=*/-1,
                 /*tm_yday=*/-1,
+#ifndef _WIN32
                 /*tm_isdst=*/-1,
                 /*tm_gmtoff=*/-1,
-                /*tm_zone=*/nullptr};
+                /*tm_zone=*/nullptr
+#else  // _WIN32
+                /*tm_isdst=*/0 // Windows' gmtime always returns 0 for this.
+#endif // _WIN32
+  };
   time_t normalizedTo = mktime(&validTo);
   if (normalizedTo == (time_t)-1)
     return Error("invalid validTo date in certificate");
