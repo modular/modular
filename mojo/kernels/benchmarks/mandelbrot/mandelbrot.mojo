@@ -14,12 +14,11 @@
 from builtin.io import _printf
 from utils.index import Index
 from tensor import Tensor
-from runtime.llcl import num_cores
 from algorithm import parallelize, vectorize
 from math import iota
 from complex import ComplexSIMD
 from benchmark import run, keep
-from sys.info import simdwidthof
+from sys.info import simdwidthof, num_physical_cores
 from math import abs
 
 alias float_type = DType.float64
@@ -263,7 +262,7 @@ fn mandelbrot[
             h,
             # Get the number of workers multiple.
             (step.value - BlogPost2Step.PARALLELIZE_FINE_2.value + 2)
-            * num_cores(),
+            * num_physical_cores(),
         )
     else:
         # The sequential non-parallel version.

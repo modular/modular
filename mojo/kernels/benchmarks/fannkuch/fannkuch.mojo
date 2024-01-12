@@ -40,7 +40,7 @@ fn perm(i0: Int) -> StaticIntTuple[n]:
 
 
 fn main():
-    let core_count = 8  # num_cores()
+    let core_count = 8  # num_physical_cores()
 
     let t0 = now()
 
