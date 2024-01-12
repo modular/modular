@@ -1241,24 +1241,6 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # between recursive calls of emitNextCmp calls to get this to work.
   var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
-# CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$int::Int](){{.*}} {isAdaptive
-@adaptive
-fn foo_adaptive[x: Int]() -> Int:
-   return 0
-
-# CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$int::Int]()_0{{.*}} {isAdaptive
-@adaptive
-fn foo_adaptive[x: Int]() -> Int:
-  return 1
-
-# CHECK-LABEL: lit.func @"test_adaptive_set
-fn test_adaptive_set():
-    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!lit.signature<<"x": !Int>() -> !Int>> =
-    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"]>
-    alias not_bound = foo_adaptive.__adaptive_set
-    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<!lit.signature<() -> !Int>> =
-    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()"<:!Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"<:!Int {{.*}}1{{.*}}>]>
-    alias bound = foo_adaptive[1].__adaptive_set
 
 fn lvalue_utilities(inout a: Int):
   # Get the address of the specified physical lvalue as a pop.pointer value.

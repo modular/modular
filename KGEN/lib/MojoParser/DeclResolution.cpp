@@ -488,7 +488,6 @@ struct FnDecorators : public SharedStateUser {
   LogicalResult apply(ExprNode *decorator, FnEffects &effects);
 
 private:
-  void applyAdaptive(const DeclRefNode &node);
   void applyMoveCapture(const CallNode &node);
   void applyLLVMMetadata(const CallNode &node);
 
@@ -511,8 +510,6 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
       funcOp.setInlineLevel(InlineLevel::Always);
     else if (declRef->spelling == "no_inline")
       funcOp.setInlineLevel(InlineLevel::Never);
-    else if (declRef->spelling == "adaptive")
-      applyAdaptive(*declRef);
     else if (declRef->spelling == "parameter")
       funcOp.setIsParametric(true);
     else if (declRef->spelling == "noncapturing")
@@ -545,14 +542,6 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
     }
   }
   return failure();
-}
-
-void FnDecorators::applyAdaptive(const DeclRefNode &node) {
-  if (funcOp.getIsAdaptive())
-    emitError(node.getLoc(), "only one '@adaptive' decorator is allowed")
-        << node.getRange();
-
-  funcOp.setIsAdaptive(true);
 }
 
 void FnDecorators::applyMoveCapture(const CallNode &node) {
@@ -1005,12 +994,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     auto resTy = ASTType(signature).getSignatureUserResultType();
     auto existingResTy =
         ASTType(existingFunc.getSignature()).getSignatureUserResultType();
-    if (!resTy.isEqualCanon(existingResTy)) {
+    if (!resTy.isEqualCanon(existingResTy))
       errorMessage = " cannot overload on return type only";
-    } else if (!existingFunc.getIsAdaptive()) {
-      // If the results match, we only error if the function is not adaptive.
+    else
       errorMessage = " with identical signature";
-    }
 
     // On redefinition this is an overload of the same name.
     if (errorMessage) {
@@ -1056,12 +1043,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
                                       [&](OpOperand *) { hasCapture = true; });
     if (hasCapture || signature.isEscaping()) {
-      if (funcOp.getIsAdaptive()) {
-        decl.hasReferenceError = true;
-        return emitError(
-            funcOp.getLoc(),
-            "nonparametric capturing closure cannot be marked @adaptive");
-      }
       if (!signature.isEscaping() &&
           (!inputParamDecls.empty() || !resultParamDecls.empty())) {
         return emitError(funcOp.getLoc(),

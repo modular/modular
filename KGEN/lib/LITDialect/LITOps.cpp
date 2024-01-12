@@ -908,21 +908,19 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         SignatureType signature,
                         SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
+  mlir::UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()),
         /*inputParams=*/ParamDeclArrayAttr::get(ctx, {}),
         /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
         ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        /*isStatic=*/mlir::UnitAttr(), /*isAdaptive=*/mlir::UnitAttr(),
-        /*isParametric=*/mlir::UnitAttr(), /*isDef=*/mlir::UnitAttr(),
-        /*isInherited=*/mlir::UnitAttr(),
-        /*isSynthetic=*/mlir::UnitAttr(),
+        /*isStatic=*/none, /*isParametric=*/none, /*isDef=*/none,
+        /*isInherited=*/none, /*isSynthetic=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), StringAttr(), sourceName, DocStringAttr(),
         DictionaryAttr::get(ctx));
-
   result.regions[0]->push_back(new Block());
 }
 

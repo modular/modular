@@ -441,20 +441,6 @@ fn invalid_getattr():
     obj.attr
 
 
-##===----------------------------------------------------------------------===##
-# __adaptive_set errors
-##===----------------------------------------------------------------------===##
-
-# expected-note @+1 {{declared here}}
-fn bar[x: __mlir_type.index]() -> Int:
-        return 1
-
-fn test_adaptive_set():
-    # expected-error @+1 {{cannot form a reference to non @adaptive declaration of 'bar'}}
-    alias bad = bar.__adaptive_set
-    # expected-error @+1 {{'IntLiteral' value has no attribute '__adaptive_set'}}
-    alias bad_int= (5).__adaptive_set
-
 struct GetSettable:
   fn __getitem__(self, x: Int) -> Int: pass
   fn __setitem__(self, x: Int, y: Int): pass

@@ -321,25 +321,6 @@ fn testInlineByRef(inout a: AlwaysInlineByRef):
     a.doByRef()
 
 
-# CHECK-LABEL: lit.func @"adaptiveNestedFns
-fn adaptiveNestedFns(a: Int, b: Int):
-    # CHECK: lit.func *"nestedFn{{.*}}"{{.*}}isAdaptive
-    @adaptive
-    @parameter
-    fn nestedFn(d: Int) -> Int:
-        return a + d
-
-    # CHECK: lit.func *"nestedFn{{.*}}_0"{{.*}}isAdaptive
-    @adaptive
-    @parameter
-    fn nestedFn(d: Int) -> Int:
-        return b + d
-
-    # CHECK: kgen.param.fork *"(adaptive)nestedFn{{.*}}": {{.*}} = <[*"nestedFn{{.*}}", *"nestedFn{{.*}}_0"]>
-    # CHECK: call_param[{{.*}}: *"(adaptive)nestedFn{{.*}}"]
-    let c = nestedFn(2)
-
-
 # CHECK-LABEL: lit.func @"nestedFnInLoop()"
 fn nestedFnInLoop():
     # CHECK: lit.loop

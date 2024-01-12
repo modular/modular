@@ -719,8 +719,6 @@ OverloadFitness::checkOneOperand(
     if (auto orValue = operand.ir.getIfORValue()) {
       if (!orValue->baseValue) { // Cannot merge base value.
         // Try to refine the ORValue into a PValue.
-        // FIXME: This will emit diagnostics and can generate IR because of
-        // param.fork with adaptive sets!
         argVal = orValue->getDirectSymbol(&emitter, expectedType);
         if (!argVal)
           return {kWrongType, expectedType};

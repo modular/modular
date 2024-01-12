@@ -81,11 +81,6 @@ fn testThingWithStaticMethod():
 
 
 def top_level_fn(a: Int):
-    # expected-error @+2 {{nonparametric capturing closure cannot be marked @adaptive}}
-    @adaptive
-    fn adaptive_capturing_closure() -> Int:
-        return a
-
     # expected-error @below {{nonparametric capturing closure cannot have input or result parameters}}
     fn bar[b: Int]() -> Int:
       return a
