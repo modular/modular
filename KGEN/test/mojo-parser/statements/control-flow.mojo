@@ -91,7 +91,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   [[I1:%.*]] = lit.call {{.*}}Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
+    # CHECK-NEXT:   [[I1:%.*]] = lit.call {{.*}}Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a" var
@@ -155,12 +155,12 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     var w: Int
 
 
-# CHECK-LABEL: lit.func @"param_if_and[$builtin::$bool::Bool,$builtin::$bool::Bool]()"<
+# CHECK-LABEL: lit.func @"param_if_and[{{.*}}$builtin::$bool::Bool,{{.*}}$builtin::$bool::Bool]()"<
 # CHECK-SAME: [[A:.*_a]][a]: !Bool, [[B:.*_b]][b]: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
-  # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", cond(
-  # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", cond(
+  # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v" var
@@ -207,7 +207,7 @@ fn if_try(p: Bool):
 # CHECK:       %inside_b = lit.varlet.decl "inside_b" var
 # CHECK:       %inside_else = lit.varlet.decl "inside_else" var
 # CHECK:       lit.loop cond {
-# CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
+# CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)"(%a)
 # CHECK:         lit.loop.condition [[V0]] : i1
 # CHECK:       } body {
 # CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value = 0}>>
@@ -243,7 +243,7 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_simple
 # CHECK:       lit.loop cond {
-# CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
+# CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)"(%a)
 # CHECK:         lit.loop.condition [[V0]] : i1
 # CHECK:       } body {
 # CHECK-NEXT:     lit.loop.continue
@@ -267,7 +267,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     if b:
         # CHECK: lit.loop cond {
         # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
-        # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"([[V0]])
+        # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)"([[V0]])
         # CHECK:   lit.loop.condition [[V1]] : i1
         # CHECK: } body {
         while a:
@@ -291,7 +291,7 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
 
     # CHECK: lit.loop cond {
     # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
-    # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"([[V0]])
+    # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)"([[V0]])
     # CHECK:   lit.loop.condition [[V1]] : i1
     # CHECK: } body {
     while a:
@@ -424,4 +424,3 @@ fn unroll_factor_parameter():
 #  var result = 0
 #  for i in iterable:
 #    result += i
-

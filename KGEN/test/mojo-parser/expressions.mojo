@@ -610,7 +610,7 @@ fn patterns():
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
-  # CHECK: {{%.*}} = lit.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: {{%.*}} = lit.call {{.*}}@"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 

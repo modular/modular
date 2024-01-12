@@ -25,9 +25,6 @@ add_modular_library(MojoLLDB SHARED
   TypeSystem/MojoTypeDataLayout.cpp
   TypeSystem/MojoTypeSystem.cpp
 
-  DEPENDS
-  mojo-python-interop
-
   LINK_COMPONENTS
   AllTargetsAsmParsers
   AllTargetsCodeGens

@@ -158,6 +158,9 @@ struct SharedState::Impl {
   /// The implicit builtin imports added to each module.
   SmallVector<StringAttr> implicitBuiltinImports;
 
+  /// The decl corresponding to the standard library package.
+  ModuleState *stdlibPackageState = nullptr;
+
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
 
@@ -413,6 +416,14 @@ struct SharedState::ModuleState {
       (void)bytecodeReader->finalize([](Operation *) { return false; });
   }
 
+  /// Insert a nested module state.
+  ModuleState &insertNestedModule(StringAttr name,
+                                  std::unique_ptr<ModuleState> module) {
+    nestedModuleAllocations.emplace_back(std::move(module));
+    nestedModules.insert({name, nestedModuleAllocations.back().get()});
+    return *nestedModuleAllocations.back();
+  }
+
   /// The decl associated with the module or package.
   ASTDecl *decl = nullptr;
   /// An optional bytecode reader, in the case where this decl was loaded from
@@ -461,7 +472,8 @@ struct SharedState::ModuleState {
   //===--------------------------------------------------------------------===//
 
   /// The set of nested modules.
-  DenseMap<StringAttr, std::unique_ptr<ModuleState>> nestedModules;
+  SmallVector<std::unique_ptr<ModuleState>> nestedModuleAllocations;
+  DenseMap<StringAttr, ModuleState *> nestedModules;
 };
 
 //===----------------------------------------------------------------------===//
@@ -818,6 +830,34 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
                                    parsingStandardLibrary);
   } else {
+    // If this is a top-level import, try to resolve a standard library module.
+    // We current bundle all of the standard library packages into one mega
+    // package, but still want to expose them separately.
+    if (impl->stdlibPackageState && name != "stdlib") {
+      // Check for an existing module for this name. If we find one, insert it
+      // into the parent state and return it.
+      auto it = impl->stdlibPackageState->nestedModules.find(mangledName);
+      if (it != impl->stdlibPackageState->nestedModules.end()) {
+        parentState->nestedModules.insert({mangledName, it->second});
+        return *it->second;
+      }
+
+      // Otherwise, if the standard library is a source package, check to see if
+      // we can resolve a path from it.
+      if (impl->stdlibPackageState->sourcePath) {
+        modulePath = resolveModulePath(*this, loc, name,
+                                       *impl->stdlibPackageState->sourcePath,
+                                       parsingStandardLibrary);
+        if (modulePath) {
+          ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
+                                                       impl->topLevelDecl, loc);
+          parentState->nestedModules.insert({mangledName, &moduleState});
+          return moduleState;
+        }
+      }
+    }
+
+    // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
   if (!modulePath) {
@@ -1161,8 +1201,17 @@ void SharedState::loadModulesFromCache(
 void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
+    // Import the main standard library package.
+    impl->stdlibPackageState =
+        &importModuleState("stdlib", impl->topLevelDecl, moduleDecl.getLoc());
+    if (failed(declResolver->resolveFully(*impl->stdlibPackageState->decl,
+                                          moduleDecl.getLoc())))
+      return;
+
+    // Import the builtin package.
     ASTDecl &builtinsPackageDecl =
-        *importModuleState("builtin", impl->topLevelDecl, moduleDecl.getLoc())
+        *importModuleState("stdlib.builtin", impl->topLevelDecl,
+                           moduleDecl.getLoc())
              .decl;
     if (failed(declResolver->resolveFully(builtinsPackageDecl,
                                           moduleDecl.getLoc())))
@@ -1244,11 +1293,10 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
-  auto it = parentState.nestedModules.insert(
-      {mangledName,
-       std::make_unique<ModuleState>(
-           &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching)});
-  ModuleState &moduleState = *it.first->second;
+  ModuleState &moduleState = parentState.insertNestedModule(
+      mangledName,
+      std::make_unique<ModuleState>(
+          &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching));
   impl->moduleStates[&moduleDecl] = &moduleState;
 
   // Auto-import the core language modules.
@@ -1300,9 +1348,8 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
                             parentState.decl->getCursor(), /*indentation=*/-1);
 
   // Insert the newly created module state.
-  auto it = parentState.nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>(&decl, packagePath)});
-  ModuleState &moduleState = *it.first->second;
+  ModuleState &moduleState = parentState.insertNestedModule(
+      mangledName, std::make_unique<ModuleState>(&decl, packagePath));
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
 
@@ -1354,9 +1401,8 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
   decl.resolvedness = DeclResolvedness::signature;
 
   // Initialize the module state.
-  auto it = parentState.nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>(&decl)});
-  ModuleState &moduleState = *it.first->second;
+  ModuleState &moduleState = parentState.insertNestedModule(
+      mangledName, std::make_unique<ModuleState>(&decl));
   impl->moduleStates[&decl] = &moduleState;
   moduleState.bytecodeReader = std::move(bytecodeReader);
   impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
@@ -1377,15 +1423,14 @@ SharedState::createErrorModuleState(SMLoc loc, StringAttr mangledName,
     emitError(loc, errorMsg);
 
   // Check if we already have an error decl with this name.
-  auto [it, inserted] = impl->topLevelModuleState->nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>()});
-  if (!inserted)
-    return *it->second;
-  ModuleState &state = *it->second;
+  if (auto *it = impl->topLevelModuleState->nestedModules.lookup(mangledName))
+    return *it;
 
   // Otherwise, create one.
-  state.decl =
+  ASTDecl *decl =
       &declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
+  ModuleState &state = impl->topLevelModuleState->insertNestedModule(
+      mangledName, std::make_unique<ModuleState>(decl));
   impl->moduleStates[state.decl] = &state;
   return state;
 }
@@ -1853,9 +1898,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                  {&decl}});
 
             // Record a nested module state for this decl.
-            auto it = packageState->nestedModules.insert(
-                {name, std::make_unique<ModuleState>(&decl)});
-            ModuleState &moduleState = *it.first->second;
+            ModuleState &moduleState = packageState->insertNestedModule(
+                name, std::make_unique<ModuleState>(&decl));
             moduleState.contentHash = packageState->contentHash;
 
             impl->moduleStates[&decl] = &moduleState;
