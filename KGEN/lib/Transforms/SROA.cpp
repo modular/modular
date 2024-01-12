@@ -110,23 +110,86 @@ struct Replacer {
   }
 };
 
-/// For a decomposed struct, create a local variable for each struct element.
-static DebugInfo::DILocalVariableAttr
-getStructElementVar(DebugInfo::DILocalVariableAttr var, Type type, unsigned i) {
-  return DebugInfo::DILocalVariableAttr::get(
-      // FIXME(11743): We can do better with field names on the structs.
-      var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
-      var.getFile(), var.getLine(), /*arg=*/0, /*alignInBits=*/0,
-      DebugInfo::DIUnresolvedMLIRType::get(type));
+class SROAStructLeafReplacer {
+public:
+  DebugInfo::DIExprParameterizedLeafReplacer<unsigned> direct;
+  DebugInfo::DIExprParameterizedLeafReplacer<unsigned> indirect;
+
+  SROAStructLeafReplacer()
+      : direct(directLeafConversion), indirect(indirectLeafConversion) {}
+
+private:
+  /// Attempt to wrap leaves of the DI expression with AggregatesInto.
+  /// Expects leaves to be of DIStructType.
+  static ErrorOr<DebugInfo::DIExprAttr>
+  directLeafConversion(DebugInfo::DIType irType, unsigned i) {
+    auto structType = dyn_cast<DebugInfo::DIStructType>(irType);
+    if (!structType)
+      return Error("expected ir type to be a pointer to a struct type");
+
+    // The element type of the struct is used directly.
+    auto newElementType = structType.getMembers()[i].getType();
+
+    // The leaf type is the struct element.
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newElementType);
+    // The expr is wrapped in an AggregatesInto expr to get back the
+    // struct.
+    auto aggregateExpr =
+        DebugInfo::DIAggregatesIntoExprAttr::get(newIrValue, i, structType);
+
+    return aggregateExpr;
+  };
+
+  /// Attempt to wrap leaves of the DI expression with AggregatesInto.
+  /// Expects leaves to be a pointer to a DIStructType.
+  static ErrorOr<DebugInfo::DIExprAttr>
+  indirectLeafConversion(DebugInfo::DIType irType, unsigned i) {
+    DebugInfo::DIType elementType;
+    if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(irType)) {
+      elementType = ptr.getElementType();
+    } else if (auto ptr = dyn_cast<DebugInfo::DITargetIndependentPointerType>(
+                   irType)) {
+      elementType = ptr.getElementType();
+    } else {
+      return Error("expected ir type to be a pointer type");
+    }
+
+    auto structType = dyn_cast<DebugInfo::DIStructType>(elementType);
+    if (!structType)
+      return Error("expected ir type to be a pointer to a struct type");
+
+    // The element of the struct is immediately allocated into memory,
+    // so we add a pointer type and wrap the expression with a deref.
+    auto newElementType = DebugInfo::DITargetIndependentPointerType::get(
+        structType.getMembers()[i].getType());
+
+    // The leaf type is a pointer to the struct element.
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newElementType);
+    // The struct element was allocated to memory, so need to deref.
+    auto derefExpr = DebugInfo::DIDerefExprAttr::get(newIrValue);
+    // The expr is wrapped in an AggregatesInto expr to get back the
+    // struct.
+    auto aggregateExpr =
+        DebugInfo::DIAggregatesIntoExprAttr::get(derefExpr, i, structType);
+    // The address to the struct is obtained as the struct was
+    // implicitly promoted.
+    auto refExpr = DebugInfo::DIRefOfExprAttr::get(aggregateExpr, irType);
+
+    return refExpr;
+  };
 };
 
 /// The extra helper class for structures.
 struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   using ContainerType = StructType;
 
+  SROAStructLeafReplacer &leafReplacer;
+
   ReplaceStructs(OpBuilder &builder, StackAllocationOp alloc,
-                 ContainerType container, uint32_t maxNumElements)
-      : Replacer(builder, alloc, container, maxNumElements) {}
+                 ContainerType container, uint32_t maxNumElements,
+                 SROAStructLeafReplacer &leafReplacer)
+      : Replacer(builder, alloc, container, maxNumElements),
+        leafReplacer(leafReplacer) {}
 
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
@@ -199,25 +262,35 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         } else {
           auto value = cast<DebugInfo::ValueOp>(loadUser);
           OpBuilder b(value);
-          DebugInfo::DILocalVariableAttr var = value.getValueInfo();
+          DebugInfo::DILocalVariableAttr valueInfo = value.getValueInfo();
+          DebugInfo::DIExprAttr conversionExpr = value.getConversionExprAttr();
           for (auto [i, alloc] : llvm::enumerate(newAllocas)) {
             Value load = getOrCreateLoad(i);
-            b.create<DebugInfo::ValueOp>(
-                value.getLoc(), load,
-                getStructElementVar(var, load.getType(), i));
+            ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
+                leafReplacer.direct.apply(conversionExpr, i);
+            if (failed(newConversionExpr)) {
+              user->emitOpError() << newConversionExpr.getError();
+              continue;
+            }
+            b.create<DebugInfo::ValueOp>(value.getLoc(), load, valueInfo,
+                                         newConversionExpr.get());
           }
           toDelete.push_back(value);
         }
       }
     } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
-      // TODO: DWARF has support for splitting up aggregates but they are not
-      // mapped into MLIR. Just generate separate variables for now.
       OpBuilder b(value);
-      DebugInfo::DILocalVariableAttr var = value.getValueInfo();
+      DebugInfo::DILocalVariableAttr valueInfo = value.getValueInfo();
+      DebugInfo::DIExprAttr conversionExpr = value.getConversionExprAttr();
       for (auto [i, alloc] : llvm::enumerate(newAllocas)) {
-        b.create<DebugInfo::ValueOp>(
-            value.getLoc(), alloc,
-            getStructElementVar(var, newAllocas[i].getType(), i));
+        ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
+            leafReplacer.indirect.apply(conversionExpr, i);
+        if (failed(newConversionExpr)) {
+          user->emitOpError() << newConversionExpr.getError();
+          continue;
+        }
+        b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, valueInfo,
+                                     newConversionExpr.get());
       }
     }
   }
@@ -472,6 +545,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 void SROAPass::runOnOperation() {
   OpBuilder builder{getOperation()->getContext()};
 
+  SROAStructLeafReplacer leafReplacer;
+
   // The loop limit is an arbritary value to provide an upperbound on compile
   // time. However from experimentation this pass does not take a significant
   // amount of time to run and is a net-postive on compile time.
@@ -510,7 +585,8 @@ void SROAPass::runOnOperation() {
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementType())) {
-        ReplaceStructs replacer{builder, alloc, structTy, maxNumElements};
+        ReplaceStructs replacer{builder, alloc, structTy, maxNumElements,
+                                leafReplacer};
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =
                      dyn_cast<POP::ArrayType>(ptrType.getElementType())) {
