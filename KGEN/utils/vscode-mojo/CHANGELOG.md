@@ -14,6 +14,9 @@
 - [#1299](https://github.com/modularml/mojo/issues/1299) - The `Run Mojo File`
   action now supports file paths with spaces.
 
+- The Python-based LLDB visualizers in the SDK are now only enabled if
+  Python-scripting support is enabled and fully functional in LLDB.
+
 ## 0.6.0
 
 ### Added
