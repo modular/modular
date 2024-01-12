@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
@@ -45,10 +45,16 @@ fn implicit_inout(inout a: MemExample):
 fn implicit_owned(owned a: MemExample):
   pass
 
-# CHECK-LABEL: lit.func @"addrSpace
-# CHECK: <{{.*}}lt[lt]: lifetime, {{.*}}_addr[addr]>(%a: !lit.ref<mut !MemExample, {{.*}}_lt, {{.*}}_addr> borrow)
-fn addrSpace[lt: Lifetime, addr: __mlir_type.index](a: mutref[lt, addr] MemExample):
-  pass
+# CHECK-LABEL: lit.func @"addrSpaces
+fn addrSpaces[lt: Lifetime, as1: __mlir_type.index]():
+  # CHECK: lit.varlet.decl "ref1" {{.*}} !lit.ref<mut !MemExample, _49x15_lt, _49x29_as1>
+  let ref1 : mutref[lt, as1] MemExample
+
+  # CHECK: lit.alias.decl {{.*}}_as2: !Int = <#lit.struct<{value = 42}>>
+  alias as2 : Int = 42
+
+  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, {{.*}}_lt, apply(:!lit.signature<("self": !Int borrow) -> index> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__mlir_index__($stdlib::$builtin::$int::Int)", apply(:!lit.signature<("self": !Int borrow) -> !Int> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__index__($stdlib::$builtin::$int::Int)", {{.*}}_as2))>
+  let ref2 : ref[lt, as2] MemExample
 
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
