@@ -34,6 +34,7 @@ fn reduce_inner_test[
     type: DType,
 ](shape: StaticIntTuple[rank], init: SIMD[type, 1]) raises:
     print("== run_inner_test")
+    alias num_reductions = 1
 
     let axis = rank - 1
     var out_shape = shape
@@ -65,9 +66,20 @@ fn reduce_inner_test[
 
     _copy_host_to_device(vec_device, vec_host.data(), in_size)
 
+    @always_inline
+    @parameter
+    fn reduce_wrapper[
+        type: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
+
+        return reduce_fn[type, width](lhs, rhs)
+
     @parameter
     fn input_fn[
-        type: DType, width: Int, _rank: Int
+        type: DType,
+        width: Int,
+        _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
             input_buf_device[rebind[StaticIntTuple[rank]](coords)]
@@ -76,14 +88,17 @@ fn reduce_inner_test[
     @parameter
     fn output_fn[
         _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[_type, width]):
+    ](
+        coords: StaticIntTuple[_rank],
+        val: StaticTuple[num_reductions, SIMD[_type, width]],
+    ):
         output_buf_device.__setitem__(
-            rebind[StaticIntTuple[rank]](coords), rebind[SIMD[type, 1]](val)
+            rebind[StaticIntTuple[rank]](coords), rebind[SIMD[type, 1]](val[0])
         )
 
-    reduce_launch[input_fn, output_fn, reduce_fn, rank, type](
-        shape, axis, init, stream
-    )
+    reduce_launch[
+        num_reductions, input_fn, output_fn, reduce_wrapper, rank, type
+    ](shape, axis, init, stream)
 
     stream.synchronize()
     _copy_device_to_host(res_host.data(), res_device, out_size)
