@@ -116,15 +116,15 @@ ErrorOr<Event::RangeID> Event::start() {
 
   return Event::RangeID((*nvtxRangeStartEx)(&attr));
 #else  // USE_NVTX_LIB
-  return Event::RangeID(-1);
+  return Event::RangeID{};
 #endif // USE_NVTX_LIB
 }
 
-Event::RangeID::~RangeID() {
 #ifdef USE_NVTX_LIB
+Event::RangeID::~RangeID() {
   static auto nvtxRangeEnd =
       fallibleGetNVMLSymbol<void (*)(uint64_t)>("nvtxRangeEnd");
   assert(nvtxRangeEnd && "unable to load NVML library symbol 'nvtxRangeEnd'");
   (*nvtxRangeEnd)(id);
-#endif
 }
+#endif
