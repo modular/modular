@@ -495,42 +495,38 @@ fn _mm[
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
     @unroll
-    for k in range(int(K)):
+    for k in range(K):
         # load a element starting from (row, k) or (k, row) if transposed.
         @parameter
         if transpose_a:
             # vector load
             @unroll
-            for offset in range(0, TM.to_int(), simd_size):
+            for offset in range(0, TM, simd_size):
                 reg_m.simd_store[simd_size](
                     offset,
                     a.aligned_simd_load[simd_size, alignment](
-                        int(k * M + row + offset)
+                        k * M + row + offset
                     ),
                 )
         else:
             # scalar load
             @unroll
-            for i in range(int(TM)):
-                reg_m.store(i, a.load(((row + i) * leading_dim_a + k).to_int()))
+            for i in range(TM):
+                reg_m[i] = a[(row + i) * leading_dim_a + k]
 
         @unroll
-        for offset in range(0, int(TN), simd_size):
+        for offset in range(0, TN, simd_size):
             let vec = b.aligned_simd_load[simd_size, alignment](
                 k * N + col + offset
             )
             reg_n.simd_store(offset, vec)
 
         @unroll
-        for i in range(TM.to_int()):
+        for i in range(TM):
 
             @unroll
-            for j in range(TN.to_int()):
-                reg_res.store(
-                    (i * TN + j).to_int(),
-                    reg_res.load((i * TN + j).to_int())
-                    + reg_m.load(i) * reg_n.load(j),
-                )
+            for j in range(TN):
+                reg_res[i * TN + j] = reg_res[i * TN + j] + reg_m[i] * reg_n[j]
 
 
 @always_inline
@@ -546,7 +542,7 @@ fn _fill[
 
     @unroll
     for i in range(vector_end, len, 1):
-        ptr.store(i, val)
+        ptr[i] = val
 
 
 @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
@@ -726,10 +722,8 @@ fn flash_attention_kernel[
                 # Transpose k tile.
                 @unroll
                 for j in range(4):
-                    kv_tile.store(
-                        ((loadk_col + j) * BN_padded + row_in_tile).to_int(),
-                        vec[j],
-                    )
+                    kv_tile[(loadk_col + j) * BN_padded + row_in_tile] = vec[j]
+
             # Gaurd write of q_tile and kv_tile.
             barrier()
 
@@ -751,13 +745,13 @@ fn flash_attention_kernel[
         ) * seq_len + kv_tile_start_row + mm_col
 
         @unroll
-        for i in range(TM.to_int()):
+        for i in range(TM):
 
             @unroll
-            for j in range(0, TN.to_int(), simd_size):
-                let idx = (i * TN + j).to_int()
+            for j in range(0, TN, simd_size):
+                let idx = int(i * TN + j)
                 let vec = reg_result.simd_load[simd_size](idx)
-                let mask_idx = (mask_offset + i * seq_len + j).to_int()
+                let mask_idx = int(mask_offset + i * seq_len + j)
                 let mask_vec = mask_ptr.aligned_simd_load[simd_size, alignment](
                     mask_idx
                 )
@@ -765,48 +759,43 @@ fn flash_attention_kernel[
 
         # Online Softmax
         @unroll
-        for i in range(TM.to_int()):
-            var curr_rowmax = rowmax.load(i)
+        for i in range(TM):
+            var curr_rowmax = rowmax[i]
 
             # Find thread register tile's max at i-th row.
             @unroll
-            for j in range(TN.to_int()):
-                curr_rowmax = max(
-                    reg_result.load((i * TN + j).to_int()),
-                    curr_rowmax,
-                )
+            for j in range(TN):
+                curr_rowmax = max(reg_result[i * TN + j], curr_rowmax)
             # Reduce the max of block tile's row.
             curr_rowmax = warp_reduce[shuffle_xor, _max_capturing](curr_rowmax)
 
-            correction.store(i, exp(rowmax.load(i) - curr_rowmax))
+            correction[i] = exp(rowmax[i] - curr_rowmax)
 
             @unroll
-            for j in range(TN.to_int()):
-                let idx = (i * TN + j).to_int()
-                reg_result.store(idx, exp(reg_result.load(idx) - curr_rowmax))
+            for j in range(TN):
+                reg_result[i * TN + j] = exp(
+                    reg_result[i * TN + j] - curr_rowmax
+                )
 
             var curr_rowsum = Float32(0.0)
 
             # Sum thread register tile at the i-th row.
             @unroll
-            for j in range(TN.to_int()):
-                curr_rowsum += reg_result.load((i * TN + j).to_int())
+            for j in range(TN):
+                curr_rowsum += reg_result[i * TN + j]
             # Reduce the sum of block tile's row.
             curr_rowsum = warp_reduce[shuffle_xor, _add_capturing](curr_rowsum)
 
-            rowmax.store(i, curr_rowmax)
-            rowsum.store(i, rowsum.load(i) * correction.load(i) + curr_rowsum)
+            rowmax[i] = curr_rowmax
+            rowsum[i] = rowsum[i] * correction[i] + curr_rowsum
 
         # Correct previous output.
         @unroll
-        for i in range(TM.to_int()):
+        for i in range(TM):
 
             @unroll
-            for j in range(TN.to_int()):
-                let idx = (i * TN + j).to_int()
-                o_thread_tile.store(
-                    idx, o_thread_tile.load(idx) * correction.load(i)
-                )
+            for j in range(TN):
+                o_thread_tile[i * TN + j] *= correction[i]
 
         # V tile has shape [BN, depth]. P tile has shape [BM, BN]. Each itertion
         # loads V sub-tile [BK, depth] from global memory to shared memory and
@@ -815,38 +804,33 @@ fn flash_attention_kernel[
         alias loadv_num_iters = BK // loadv_num_rows_per_iter
         alias loadv_iter_stride = loadv_num_rows_per_iter * row_stride
         var storep_col_start: _uint32 = 0
-        for subtile_start_row in range(0, BN.to_int(), BK.to_int()):
+        for subtile_start_row in range(0, BN, BK):
             # Store thread register tile to p sub-tile.
             if mm_col >= storep_col_start and mm_col < storep_col_start + BK:
 
                 @unroll
-                for i in range(TM.to_int()):
+                for i in range(TM):
 
                     @unroll
-                    for j in range(0, TN.to_int(), simd_size):
-                        let p_idx = int(
-                            (mm_row + i) * BK + mm_col - storep_col_start + j
-                        )
+                    for j in range(0, TN, simd_size):
                         p_tile.aligned_simd_store[simd_size, alignment](
-                            p_idx,
-                            reg_result.simd_load[simd_size](
-                                (i * TN + j).to_int()
-                            ),
+                            (mm_row + i) * BK + mm_col - storep_col_start + j,
+                            reg_result.simd_load[simd_size](i * TN + j),
                         )
             storep_col_start += BK
 
             # Load v sub-tile.
             @unroll
-            for i in range(loadv_num_iters.to_int()):
+            for i in range(loadv_num_iters):
                 let row_in_tile: _uint32 = loadv_row + i * loadv_num_rows_per_iter
                 let global_idx: _uint32 = global_kv_offset + (
                     subtile_start_row + row_in_tile
                 ) * row_stride + loadv_col
                 let vec = v_ptr.aligned_simd_load[simd_size, alignment](
-                    global_idx.to_int()
+                    global_idx
                 )
                 kv_tile.aligned_simd_store[simd_size, alignment](
-                    (row_in_tile * depth + loadv_col).to_int(), vec
+                    row_in_tile * depth + loadv_col, vec
                 )
             # Guard writing to p_tile and kv_tile.
             barrier()
@@ -1083,23 +1067,14 @@ fn flash_attention_kernel_flexible_seqlen[
                     # Transpose k tile.
                     @unroll
                     for j in range(4):
-                        kv_tile.store(
-                            (
-                                (loadk_col + j) * BN_padded + row_in_tile
-                            ).to_int(),
-                            vec[j],
-                        )
+                        kv_tile[
+                            (loadk_col + j) * BN_padded + row_in_tile
+                        ] = vec[j]
                 else:
 
                     @unroll
                     for j in range(4):
-                        kv_tile.store(
-                            (
-                                (loadk_col + j) * BN_padded + row_in_tile
-                            ).to_int(),
-                            0.0,
-                        )
-            ##
+                        kv_tile[(loadk_col + j) * BN_padded + row_in_tile] = 0
 
             # Gaurd write of q_tile and kv_tile.
             barrier()
@@ -1137,69 +1112,69 @@ fn flash_attention_kernel_flexible_seqlen[
                     @unroll
                     for j in range(int(TN)):
                         if mask_col + j < num_keys:
-                            let idx = (i * TN + j).to_int()
-                            let val = reg_result.load(idx)
+                            let idx = i * TN + j
+                            let val = reg_result[idx]
                             let mask_idx = global_mask_offset + (
                                 mask_row + i
                             ) * num_keys + mask_col + j
-                            let mask_val = mask_ptr.load(int(mask_idx))
-                            reg_result.store(idx, val * scale + mask_val)
+                            let mask_val = mask_ptr[mask_idx]
+                            reg_result[idx] = val * scale + mask_val
         ##
 
         # Online Softmax
         @unroll
-        for i in range(TM.to_int()):
-            var curr_rowmax = rowmax.load(i)
+        for i in range(TM):
+            var curr_rowmax = rowmax[i]
 
             # Reset result that exceeds num_keys
             let exceed = int(kv_tile_start_row + mm_col + TN) - int(num_keys)
             if exceed > 0:
-                for j in range(int(TN) - int(exceed), int(TN)):
-                    reg_result.store(int(i * TN + j), neginf[DType.float32]())
+                for j in range(TN - exceed, TN):
+                    reg_result[i * TN + j] = neginf[DType.float32]()
 
             # Shuffle TN elemnents per thread and choose the max among them.
             @unroll
-            for j in range(TN.to_int()):
+            for j in range(TN):
                 curr_rowmax = max(
                     warp_reduce[shuffle_xor, _max_capturing](
-                        reg_result.load((i * TN + j).to_int())
+                        reg_result[i * TN + j]
                     ),
                     curr_rowmax,
                 )
-            correction.store(i, exp(rowmax.load(i) - curr_rowmax))
+            correction[i] = exp(rowmax[i] - curr_rowmax)
 
             @unroll
-            for j in range(TN.to_int()):
-                let idx = (i * TN + j).to_int()
-                reg_result.store(idx, exp(reg_result.load(idx) - curr_rowmax))
+            for j in range(TN):
+                let idx = i * TN + j
+                reg_result[idx] = exp(reg_result[idx] - curr_rowmax)
 
             if exceed > 0:
-                for j in range(int(TN) - int(exceed), int(TN)):
-                    reg_result.store(int(i * TN + j), 0.0)
+                for j in range(int(TN) - int(exceed), TN):
+                    reg_result[i * TN + j] = 0.0
 
             var curr_rowsum = Float32(0.0)
 
             @unroll
-            for j in range(TN.to_int()):
+            for j in range(TN):
                 curr_rowsum += warp_reduce[shuffle_xor, _add_capturing](
-                    reg_result.load((i * TN + j).to_int())
+                    reg_result[i * TN + j]
                 )
 
-            rowmax.store(i, curr_rowmax)
-            rowsum.store(i, rowsum.load(i) * correction.load(i) + curr_rowsum)
+            rowmax[i] = curr_rowmax
+            rowsum[i] = rowsum[i] * correction[i] + curr_rowsum
 
         @unroll
-        for i in range(TM.to_int()):
+        for i in range(TM):
 
             @unroll
-            for j in range(0, TN.to_int(), simd_size):
+            for j in range(0, TN, simd_size):
                 p_tile.aligned_simd_store[simd_size, alignment](
-                    ((mm_row + i) * BN + mm_col + j).to_int(),
-                    reg_result.simd_load[simd_size]((i * TN + j).to_int()),
+                    ((mm_row + i) * BN + mm_col + j),
+                    reg_result.simd_load[simd_size]((i * TN + j)),
                 )
 
         # Clear thread register results for P * V.
-        _fill[(TM * TN).to_int()](reg_result, 0)
+        _fill[int(TM * TN)](reg_result, 0)
 
         # V tile has shape [BN, depth]. Load sub-tile [BK, depth] each time and
         # multiply with the corresponding P slice of shape [BM, BK].
@@ -1252,11 +1227,9 @@ fn flash_attention_kernel_flexible_seqlen[
 
             @unroll
             for j in range(TN.to_int()):
-                let idx = (i * TN + j).to_int()
-                o_thread_tile.store(
-                    idx,
-                    o_thread_tile.load(idx) * correction.load(i)
-                    + reg_result.load(idx),
+                let idx = i * TN + j
+                o_thread_tile[idx] = (
+                    o_thread_tile[idx] * correction[i] + reg_result[idx]
                 )
 
         # Point to  next tile
