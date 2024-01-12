@@ -82,7 +82,7 @@ size_t getNumPhysicalCores();
 
 /// Returns the number of hardware threads, including hyperthreads across all
 /// CPU sockets
-size_t getNumThreads();
+size_t getNumLogicalCores();
 
 /// Returns the number of physical performance cores across all CPU sockets. If
 /// not known, will return the total number of physical cores.

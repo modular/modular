@@ -17,21 +17,21 @@
 
 /// Returns the number of physical cores in the CPU, across all sockets
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
-KGEN_CompilerRT_CoreCount() {
+KGEN_CompilerRT_NumPhysicalCores() {
   return M::getNumPhysicalCores();
 }
 
 /// Returns the number of system threads, including hyperthreads across all
 /// sockets
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
-KGEN_CompilerRT_ThreadCount() {
-  return M::getNumThreads();
+KGEN_CompilerRT_NumLogicalCores() {
+  return M::getNumLogicalCores();
 }
 
 /// Returns the number of physical performance cores if the info is available,
 /// otherwise returns the total number of physical cores
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
-KGEN_CompilerRT_PerformanceCoreCount() {
+KGEN_CompilerRT_NumPerformanceCores() {
   return M::getNumPerformanceCores();
 }
 
@@ -100,10 +100,12 @@ COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_SetArgV(int argc,
 
 void M::KGEN::registerSystem(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back(
-      {"KGEN_CompilerRT_CoreCount", (void *)&KGEN_CompilerRT_CoreCount});
-  funcs.push_back(
-      {"KGEN_CompilerRT_ThreadCount", (void *)&KGEN_CompilerRT_ThreadCount});
+  funcs.push_back({"KGEN_CompilerRT_NumPhysicalCores",
+                   (void *)&KGEN_CompilerRT_NumPhysicalCores});
+  funcs.push_back({"KGEN_CompilerRT_NumLogicalCores",
+                   (void *)&KGEN_CompilerRT_NumLogicalCores});
+  funcs.push_back({"KGEN_CompilerRT_NumPerformanceCores",
+                   (void *)&KGEN_CompilerRT_NumPerformanceCores});
   funcs.push_back(
       {"KGEN_CompilerRT_GetArgV", (void *)&KGEN_CompilerRT_GetArgV});
   funcs.push_back(
