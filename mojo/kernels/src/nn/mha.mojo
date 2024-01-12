@@ -515,9 +515,9 @@ fn _mm[
                 reg_m.store(i, a.load(((row + i) * leading_dim_a + k).to_int()))
 
         @unroll
-        for offset in range(0, TN.to_int(), simd_size):
+        for offset in range(0, int(TN), simd_size):
             let vec = b.aligned_simd_load[simd_size, alignment](
-                (k * N + col + offset).to_int()
+                k * N + col + offset
             )
             reg_n.simd_store(offset, vec)
 

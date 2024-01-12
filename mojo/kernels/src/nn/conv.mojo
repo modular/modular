@@ -1315,7 +1315,7 @@ struct ConvDirectNHWC[
                 let input_vec = self.input.data.offset(
                     input_base_offsets[i].value + input_offset + offset
                 ).simd_load[num_lanes]()
-                input_vecs.store(i, input_vec)
+                input_vecs[i] = input_vec
 
             var filter_ptr: DTypePointer[filter_type]
 
@@ -1529,11 +1529,8 @@ struct ConvDirectNHWC[
             # Load vectors of size num_lanes from input.
             @unroll
             for i in range(micro_kernel_height):
-                input_vecs.store(
-                    i,
-                    input_base.offset(offset + i * input_stride).simd_load[
-                        num_lanes
-                    ](),
+                input_vecs[i] = input_base.simd_load[num_lanes](
+                    offset + i * input_stride
                 )
 
             var filter_ptr: DTypePointer[filter_type]
@@ -1556,18 +1553,18 @@ struct ConvDirectNHWC[
                     @unroll
                     for i in range(micro_kernel_height):
                         let input_vec = input_vecs[i]
-                        var output_vec = output_ptr.offset(
+                        var output_vec = output_ptr.simd_load[simd_size](
                             i * micro_kernel_f_size + j * simd_size
-                        ).simd_load[simd_size]()
+                        )
                         # Neon can broadcast from an element in simd vector.
                         output_vec = fma[output_type, simd_size](
                             input_vec[lane].cast[output_type](),
                             filter_vec.cast[output_type](),
                             output_vec,
                         )
-                        output_ptr.offset(
-                            i * micro_kernel_f_size + j * simd_size
-                        ).simd_store[simd_size](output_vec)
+                        output_ptr.simd_store(
+                            i * micro_kernel_f_size + j * simd_size, output_vec
+                        )
 
                 @parameter
                 if filter_packed:
