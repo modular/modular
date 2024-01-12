@@ -2152,6 +2152,29 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
   return true;
 }
 
+/// If this is a lit.ref.immut op that removes mutability, look through it.
+static Value stripImmutCast(Value value) {
+  if (auto cast = value.getDefiningOp<RefImmutOp>())
+    return cast.getOperand();
+  return value;
+}
+
+/// Given a value of reference type, this checks to see if it is immutable, and
+/// casts it back to a mutable reference.  This isn't a generally safe operation
+/// from a type system perspective, so should only be used for things like
+/// destructor insertion that happen after borrow checking.
+static Value getMutableRefForPossiblyImmutValue(Value value,
+                                                ImplicitLocOpBuilder &builder) {
+  value = stripImmutCast(value);
+
+  // Check to see if the reference is already mutable.
+  auto destType = cast<RefType>(value.getType()).getWithMutability(true);
+  if (value.getType() == destType)
+    return value;
+
+  return builder.create<RebindOp>(destType, value);
+}
+
 /// Given the need to destroy the specified value as a result of the specified
 /// operation using it, check to see if the use is a call to the copy ctor for
 /// the value.  If so, try to elide the copy+temporary.  This returns success
@@ -2204,8 +2227,16 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     return failure();
 
   // Make sure we're destroying the whole value, not a subvalue.
-  if (copyInitCall.getOperand(1) != value)
-    return failure();
+  if (copyInitCall.getOperand(1) != value) {
+    // The value being destroyed may be a mutable source, and the source of the
+    // copy is definition immutable.
+    if (stripImmutCast(copyInitCall.getOperand(1)) == value)
+      value = copyInitCall.getOperand(1);
+    else
+      return failure();
+  }
+
+  ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
 
   // We prefer to completely delete the copy if it is into a temporary location
   // that we can forward.
@@ -2224,7 +2255,6 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
 
       // The old reference type used a novel lifetime.  We need to declare it,
       // and coerce back to it.
-      ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
                                      builder.getAttr<LifetimeAttr>());
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
@@ -2253,13 +2283,18 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   auto valueEltType = refValue.getElementType();
   auto moveValueInputs = moveSig.getValueInputs();
   auto moveValue1Ref = cast<RefType>(moveValueInputs[1]);
+  // refValue is immutable here because it was passed to a copy.
   assert(cast<RefType>(moveValueInputs[0]).getElementType() == valueEltType &&
          moveValue1Ref.getElementType() == valueEltType &&
-         moveValue1Ref.getIsMutable() == refValue.getIsMutable());
+         moveValue1Ref.getIsMutable() && !refValue.getIsMutable());
 
   auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
   assert(destType.getElementType() == refValue.getElementType());
 #endif
+
+  // We know that the input is mutable (otherwise it wouldn't be tracked for
+  // destruction), get the reference to a mutable type.
+  value = getMutableRefForPossiblyImmutValue(value, builder);
 
   // Switch the source operand, and update the lifetime associated with it.
   copyInitCall.setOperand(1, value);
@@ -2318,6 +2353,8 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
     auto argRef = cast<RefType>(valueToDestroy.getType());
     implicitLifetimes.push_back(argRef.getLifetime());
     assert(delSelfTy.getElementType() == argRef.getElementType());
+    valueToDestroy =
+        getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
   } else {
     assert(signature.getValueInputs()[0] == valueToDestroy.getType());
   }

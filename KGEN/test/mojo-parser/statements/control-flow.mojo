@@ -353,10 +353,12 @@ fn for_range_loop():
     let my_list = MyList()
 
     # CHECK: %$RANGE = lit.varlet.decl "$RANGE" synth
-    # CHECK-NEXT: [[ITER:.*]] = lit.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %my_list
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%$RANGE, [[IMMREF]])
     for item in my_list:
         # CHECK: lit.loop cond {
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__len__{{.*}}(%$RANGE)
+        # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
+        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__len__{{.*}}([[IMMREF]])
         # CHECK:   [[INDEX:%.*]] = lit.call {{.*}}__index__{{.*}}([[LENGTH]])
         # CHECK:   [[MLIR_INDEX:%.*]] = lit.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
         # CHECK:   [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)

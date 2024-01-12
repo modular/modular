@@ -48,7 +48,7 @@
 # CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
 # CHECK-NEXT:  %2 = lit.ref.from_pointer [[V0]]
 # CHECK-NEXT:  %3 = lit.ref.from_pointer [[V1]]
-# CHECK-NEXT:  %4 = kgen.rebind %3
+# CHECK-NEXT:  %4 = lit.ref.immut %3
 # CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%2, %4)
 
 # Store the address of the heap allocated memory into the self.

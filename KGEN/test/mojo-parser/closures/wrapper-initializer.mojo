@@ -14,7 +14,7 @@
 # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<mut !wrapper, *"`self"> init_self,
 # CHECK-SAME: %impl: !lit.ref<mut !escaping0_, {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.struct.ger %self[dtor]
@@ -53,7 +53,7 @@
 
 # CHECK-LABEL: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}[*"`0_unnamed", *"`2_unnamed"]
 # CHECK-SAME: (%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result,
-# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n: !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n: !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
 # CHECK-NEXT: %[[A0REF:.*]] = lit.ref.from_pointer %[[A0]]
 # CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%[[RES]], %[[A0REF]], %n)

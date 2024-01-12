@@ -343,13 +343,14 @@ fn callMemoryValueParam():
     # CHECK: lit.ref.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
-    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}}, store_to_mem({{.*}}paramValue
+    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem({{.*}}paramValue
     alias copy = passMemoryValue(paramValue)
     # CHECK: lit.varlet.decl
     # CHECK: [[MVALUE:%.*]] = lit.varlet.decl "anonymous*"
     # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <{{.*}}copy>
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
-    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, %anonymous2A_0)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A_0
+    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, [[IMMREF]])
     _ = passMemoryValue(copy)
 
     # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType apply_result_slot({{.*}}__init__{{.*}}value = 22

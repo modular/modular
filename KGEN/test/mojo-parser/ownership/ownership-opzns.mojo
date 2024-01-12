@@ -177,9 +177,11 @@ fn optimizeCopyElision():
   # We need one copy of 'x' here, not two + dtor.
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %x)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
   # CHECK-NEXT: kgen.param.declare
-  # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind %x
+  # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
   # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
   takeTwo(x, x)
 
@@ -192,20 +194,25 @@ fn optimizeCopyToMove():
    # CHECK: %m1 = lit.varlet.decl
    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
    var m1 = MemExample()                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m1)
+   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
+   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
    m1.noop()
 
    # CHECK: %m2 = lit.varlet.decl
+   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
    var m2 = m1                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m2)
+   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
+   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
    m2.noop()
 
    # CHECK: %m3 = lit.varlet.decl
+   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
    var m3 = m2                   # expected-warning {{never mutated}}
 
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%m3)
+   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m3
+   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
    m3.noop()
    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
 

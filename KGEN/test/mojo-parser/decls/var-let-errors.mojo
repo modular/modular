@@ -23,8 +23,8 @@ alias `42` = __mlir_attr.`42 : index`
 # COM: Stubs to allow testing without builtins
 @register_passable("trivial")
 struct VariadicListMem[type: AnyRegType, life: Lifetime]:
-    alias MutableRefType = __mlir_type[`!lit.ref<mut `, type, `, `, life, `>`]
-    alias StorageType = __mlir_type[`!kgen.variadic<`, Self.MutableRefType, `>`]
+    alias RefType = __mlir_type[`!lit.ref<`, type, `, `, life, `>`]
+    alias StorageType = __mlir_type[`!kgen.variadic<`, Self.RefType, `>`]
 
     fn __init__(value: Self.StorageType) -> Self: pass
 

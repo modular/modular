@@ -44,7 +44,7 @@ struct MemoryOnlyPair:
   var y: Int
 
   # CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<mut !MemoryOnlyPair, {{.*}}> init_self,
-  # CHECK-SAME: %other: !lit.ref<mut !MemoryOnlyPair, {{.*}}> borrow_in_mem)
+  # CHECK-SAME: %other: !lit.ref<!MemoryOnlyPair, {{.*}}> borrow_in_mem)
   fn __copyinit__(inout self, other: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %self[x]
@@ -73,34 +73,41 @@ fn inferred_function_with_memory_result[
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} var : !lit.ref<mut !MemoryOnlyPair,
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, %a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[IMMREF]])
   var v1 = a
 
   # CHECK-NEXT: %v2 = lit.varlet.decl "v2" let
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, %a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, [[IMMREF]])
   let v2 : MemoryOnlyPair = a
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} synth
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
   # CHECK-NEXT: %regX = lit.varlet.decl {{.*}} let
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[AX]]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[IMMREF]])
   let regX = a.x
 
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[AX]], %regX)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[AX]], [[IMMREF]])
   a.x = regX
 
   # Pass memory only things by value as arguments.
 
   # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyPair
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPPAIR]], %a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPPAIR]], [[IMMREF]])
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyInt
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPINT]], %regX)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPINT]], [[IMMREF]])
   # CHECK-NEXT: lit.call @{{.*}}@"method{{.*}}([[TMPPAIR]], [[TMPINT]])
   a.method(regX)
 
@@ -114,7 +121,8 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # Implicit conversion between memory-only types.
   # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[V2X]]
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mpFloat, [[IMMREF]])
   let mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
@@ -127,13 +135,16 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
 
-  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%regX, %regX]
+  # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
+  # CHECK-NEXT: [[IMMREF2:%.*]] = lit.ref.immut %regX
+  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[IMMREF1]], [[IMMREF2]]]
   # CHECK-NEXT: lit.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use %regX
-  # CHECK-NEXT: lit.ownership.use %regX
+  # CHECK-NEXT: lit.ownership.use [[IMMREF1]]
+  # CHECK-NEXT: lit.ownership.use [[IMMREF2]]
 
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, %v2)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %v2
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, [[IMMREF]])
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: none = <#kgen.none>
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
@@ -156,7 +167,8 @@ fn implicit_func_conversion():
     var f: DummyFunc = take_int
     # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%anonymous2A, [[CLOSURE]])
-    # CHECK: call {{.*}}func_arg_conversion{{.*}}(%anonymous2A)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
+    # CHECK: call {{.*}}func_arg_conversion{{.*}}([[IMMREF]])
     func_arg_conversion(take_int)
 
 # CHECK-LABEL: lit.struct.decl @RegPassable
@@ -180,14 +192,14 @@ struct RegPassable:
 # CHECK-SAME: <"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
 struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self: !lit.ref<mut{{.*}}<:!lit.signature<<"T": regtype>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.signature<<"T": regtype>(!kgen.paramref<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
         # CHECK: call {{.*}}[*"`self"]<:!lit.signature<<"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
-        # CHECK-SAME: !lit.ref<mut{{.*}}<"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
 # CHECK-LABEL: lit.func @"simpleMath
@@ -426,7 +438,8 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.varlet.decl
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMPMEM]], %b)
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[TMPMEM]])
+  # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut [[TMPMEM]]
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   _ = d or b
@@ -1044,7 +1057,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self: !lit.ref<mut !MyInlineIntInit, {{.*}}> init_self, |, %value: !lit.ref<mut !MemoryOnlyInt, {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK-SAME: (%self: !lit.ref<mut !MyInlineIntInit, {{.*}}> init_self, |, %value: !lit.ref<!MemoryOnlyInt, {{.*}}> borrow_in_mem) -> !kgen.none
     fn __init__(inout self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
         # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%0, %value)
@@ -1079,7 +1092,8 @@ fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
   # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%anonymous2A_1, %[[C2]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %anonymous2A_1)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A_1
+  # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], [[IMMREF]])
   # CHECK-NEXT: lit.ref.store %[[V5]], %anonymous2A_0
   # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_0)
   # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl
@@ -1089,7 +1103,8 @@ fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %anonymous2A_0
   # CHECK-NEXT: %[[V10:.*]] = lit.call {{.*}}__setitem__{{.*}}(%anonymous2A_2, %[[C2]], %[[V9]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %anonymous2A_2)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A_2
+  # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], [[IMMREF]])
   takeInOutInt(b[1][2])
 
 
@@ -1134,12 +1149,14 @@ fn dynamic_attribute():
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
+    # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
-    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}(%obj, %[[KEY]])
+    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]], %[[KEY]])
     _ = obj.some_attr
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
     # CHECK: %[[VALUE:.*]] = kgen.param.constant{{.*}} 42
-    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}(%obj, %[[KEY]], %[[VALUE]])
+    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], %[[KEY]], %[[VALUE]])
     obj.some_attr = 42
 
 
@@ -1257,8 +1274,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
                  cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
-  # CHECK-NEXT: [[MIV:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = [[MIV]]
+  # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = %a
   let ref1 = __get_ref_from_value(a)
   # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = %b
   let ref2 = __get_ref_from_value(b)
@@ -1285,16 +1301,14 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
   # CHECK-NEXT:     hlcf.yield [[TMP]]
   # CHECK-NEXT:   } else {
-  # CHECK-NEXT:     [[IMMREF:%.*]] = lit.ref.immut %ref2
-  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind [[IMMREF]]
+  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref2
   # CHECK-NEXT:     hlcf.yield [[TMP]]{{.*}}>
   # CHECK-NEXT:   }
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %c
-  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[IMMREF]]
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
   # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]
@@ -1333,7 +1347,7 @@ struct MemType: pass
 
 # CHECK-LABEL: lit.func @"function_types
 # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
-# CHECK-SAME: %{{.*}}: {{.*}}("__result__": !lit.ref<mut !MemoryType, {{.*}}> byref_result, !lit.ref<mut !MemoryType, {{.*}}> borrow_in_mem, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}: {{.*}}("__result__": !lit.ref<mut !MemoryType, {{.*}}> byref_result, !lit.ref<!MemoryType, {{.*}}> borrow_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}: {{.*}}(!RegType, |) ownedresult -> !RegType
 # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<mut !MemoryType, *[0,0]> owned_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<mut !Int, *[0,0]> byref, |) -> !kgen.none
@@ -1345,7 +1359,7 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<regtype>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
-# CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<mut !MemType, {{.*}}> borrow_in_mem) -> !Int>
+# CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !Int>
 fn function_types(
   float0: fn(Int) -> Int,
   float1: fn(MemoryType) -> MemoryType,
@@ -1394,7 +1408,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 
 # CHECK-LABEL: lit.func @"variadic_memory_subscript
-# CHECK-SAME: variadic<!lit.ref<mut {{.*}}TwoParamsStruct<
+# CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct<
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
@@ -1442,7 +1456,8 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable,
   # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
-  # CHECK-NEXT: lit.call {{.*}}takeMemory{{.*}}(%anonymous2A)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
+  # CHECK-NEXT: lit.call {{.*}}takeMemory{{.*}}([[IMMREF]])
   takeMemory(a if cond else b)
 
   # CHECK-NEXT: hlcf.if %cond {
@@ -1621,9 +1636,10 @@ fn indirect_kw_args():
     callee(b=2, a=7)
 
     # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl {{.*}}: !lit.ref<mut !KwCallable
-    # CHECK-DAG: %[[MSG:.*]] = kgen.param.constant: {{.*}}value: string = "woof"
-    # CHECK-DAG: %[[N:.*]] = kgen.param.constant: {{.*}}value = 7
-    # CHECK: lit.call @{{.*}}@KwCallable::@"__call__{{.*}}(%[[CALLABLE]], %[[MSG]], %[[N]])
+    # CHECK: [[IMMREF:%.*]] = lit.ref.immut %[[CALLABLE]]
+    # CHECK-NEXT: %[[MSG:.*]] = kgen.param.constant: {{.*}}value: string = "woof"
+    # CHECK-NEXT: %[[N:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-NEXT: lit.call @{{.*}}@KwCallable::@"__call__{{.*}}([[IMMREF]], %[[MSG]], %[[N]])
     KwCallable()(n=7, msg="woof")
 
 ##===----------------------------------------------------------------------===##
