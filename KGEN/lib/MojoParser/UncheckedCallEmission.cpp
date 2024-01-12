@@ -651,7 +651,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // If the callee has implicit lifetimes, we need to bind them to immortal
   // references and rebind the callee.
   SignatureType boundSigType = calleeSig;
-  if (size_t numImplLifetimes = calleeSig.getNumImplicitLifetimeDecls()) {
+  if (calleeSig.getNumImplicitLifetimeDecls()) {
     boundSigType = calleeSig.getWithImplicitLifetimesBoundImmortal();
     operands[0] =
         ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
