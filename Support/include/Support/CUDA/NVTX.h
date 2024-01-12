@@ -22,11 +22,13 @@ struct Event {
       : category(category), message(message), color(color) {}
 
   struct RangeID {
+#ifdef USE_NVTX_LIB
     RangeID(uint64_t id) : id(id) {}
     ~RangeID();
 
   private:
     uint64_t id;
+#endif // USE_NVTX_LIB
   };
 
   ErrorOrSuccess mark();
