@@ -9,7 +9,7 @@ from math import div_ceil, min
 
 from algorithm import map, parallelize, sync_parallelize
 from memory.buffer import Buffer
-from runtime.llcl import Runtime, num_cores
+from runtime.llcl import Runtime, num_physical_cores
 
 
 # CHECK-LABEL: test_async_parallelize
@@ -88,7 +88,7 @@ fn test_sync_parallelize():
 fn test_parallelize():
     print("== test_parallelize")
 
-    let num_work_items = num_cores()
+    let num_work_items = num_physical_cores()
 
     let vector = Buffer[20, DType.index].stack_allocation()
 
