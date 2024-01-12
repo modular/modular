@@ -358,7 +358,7 @@ size_t M::getNumPhysicalCores() {
   return threadStrat.compute_thread_count();
 }
 
-size_t M::getNumThreads() {
+size_t M::getNumLogicalCores() {
   return llvm::hardware_concurrency().compute_thread_count();
 }
 
