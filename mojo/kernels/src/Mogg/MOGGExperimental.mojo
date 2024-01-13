@@ -78,7 +78,6 @@ fn to_tensor[
 
 
 @mogg_register_override("mo.add", 1000)
-@mogg_kgen_experiment_kernel()
 @export
 fn my_add_with_fusion(
     x: Tensor, y: Tensor
@@ -100,7 +99,6 @@ fn my_add_with_fusion(
 
 
 @mogg_register_override("mo.sub", 1000)
-@mogg_kgen_experiment_kernel()
 @export
 fn my_sub_without_fusion(
     x: Tensor, y: Tensor
@@ -118,7 +116,6 @@ fn my_sub_without_fusion(
 
 
 @mogg_register_override("mo.relu", 1000)
-@mogg_kgen_experiment_kernel()
 @export
 fn unary_op_with_fusion(
     x: Tensor,
@@ -138,7 +135,6 @@ fn unary_op_with_fusion(
 
 
 @mogg_register_override("mo.sqrt", 1000)
-@mogg_kgen_experiment_kernel()
 @export
 fn unary_op_without_fusion(
     x: Tensor,
