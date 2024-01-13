@@ -618,7 +618,7 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
 static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
                         StringRef baseName,
                         const InputParamBindings &inputParamBindings,
-                        const ExprNode *expr, ExprEmitter &emitter) {
+                        const ExprNode *expr) {
   assert(fnDecls.size() == 1 && "expected a single resolved callee");
   auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
   return getBoundConstAttrFor(baseType, funcOp, baseName, inputParamBindings,
@@ -748,8 +748,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     InputParamBindings newBindings(emitter);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(baseType, newFnDecls, baseName, newBindings, expr,
-                     emitter);
+    return getCallee(baseType, newFnDecls, baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -857,7 +856,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   if (validCandidates.size() == 1) {
     if (inputParamBindings.empty())
       return getCallee(baseType, validCandidates, baseName, inputParamBindings,
-                       expr, emitter);
+                       expr);
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
@@ -865,8 +864,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     InputParamBindings newBindings(emitter);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(baseType, validCandidates, baseName, newBindings, expr,
-                     emitter);
+    return getCallee(baseType, validCandidates, baseName, newBindings, expr);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
