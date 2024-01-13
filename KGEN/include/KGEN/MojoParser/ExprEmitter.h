@@ -394,6 +394,11 @@ public:
   bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                   ASTType requiredType,
                                   bool allowArgNameCheck = true);
+  static bool canImplicitlyConvertToType(ASTDecl &declScope,
+                                         SharedState &shared,
+                                         ASTExprAnd<CValue> value,
+                                         ASTType requiredType,
+                                         bool allowArgNameCheck = true);
 
   /// Emit a metatype conversion to a trait type by materializing the type's
   /// vtable for the trait.

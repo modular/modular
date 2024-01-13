@@ -2116,7 +2116,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
   ParameterEvaluator evaluator(params);
   auto bindings = InputParamBindings::getForDeclaredType(
-      structSelfType.getMetaType(), emitter);
+      emitter.declScope, emitter.shared, structSelfType.getMetaType());
   for (Type type : inputParamTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());

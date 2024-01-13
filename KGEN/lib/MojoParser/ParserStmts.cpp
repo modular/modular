@@ -1368,10 +1368,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
   // FIXME: Lookup doesn't need ExprEmitter!
-  auto tmpEmitter = getEmitter();
-  if (PValue enterMethod = OverloadSet::lookup(
-          contextRVType, "__enter__", CallOperands({{contextVal, contextExp}}),
-          contextExp, CallSyntax::kMethodCall, tmpEmitter)) {
+  if (PValue enterMethod =
+          OverloadSet::lookup(*curDeclScope, shared, contextRVType, "__enter__",
+                              CallOperands({{contextVal, contextExp}}),
+                              contextExp, CallSyntax::kMethodCall)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self byref.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());

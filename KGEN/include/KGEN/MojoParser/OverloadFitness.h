@@ -65,8 +65,7 @@ struct OverloadFitness {
   static OverloadFitness evaluate(LITSignatureType signature,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,
-                                  bool allowImplicitConversions,
-                                  ExprEmitter &emitter);
+                                  bool allowImplicitConversions);
 
   enum ArgTypeMismatchKind {
     kValidType,   //< No argument type mismatch.
@@ -114,7 +113,7 @@ private:
       ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
       ASTType expectedType, size_t &numImplicitConversions,
       size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
-      bool allowImplicitConversions, ExprEmitter &emitter, SMLoc loc,
+      bool allowImplicitConversions, SMLoc loc, ASTDecl &declScope,
       SharedState &shared);
 };
 

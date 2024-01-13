@@ -91,8 +91,8 @@ public:
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static InputParamBindings getForDeclaredType(ASTType type,
-                                               ExprEmitter &emitter);
+  static InputParamBindings
+  getForDeclaredType(ASTDecl &declScope, SharedState &shared, ASTType type);
 
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
@@ -322,19 +322,18 @@ public:
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
-  static OverloadSet lookup(ASTType type, StringRef methodName,
+  static OverloadSet lookup(ASTDecl &declScope, SharedState &shared,
+                            ASTType type, StringRef methodName,
                             const ExprNode *callExpr, CallSyntax syntax,
-                            ExprEmitter &emitter,
                             function_ref<void()> errorHandler = {});
 
   /// Lookup of a named method on the specified type, filtered to match a
   /// concrete operand set. If successful, this provides a non-null PValue for a
   /// single callee. If non-null, it invokes errorHandler if the lookup of the
   /// named method fails.
-  static PValue lookup(ASTType type, StringRef methodName,
-                       const CallOperands &callOperands,
+  static PValue lookup(ASTDecl &declScope, SharedState &shared, ASTType type,
+                       StringRef methodName, const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
-                       ExprEmitter &emitter,
                        function_ref<void()> errorHandler = {});
 
   bool isNull() const { return fnDecls.empty(); }
@@ -355,14 +354,13 @@ public:
   /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
   PValue filterOverloadSet(const CallOperands &operands,
                            bool allowImplicitConversions,
-                           bool emitDiagnosticOnFailure,
-                           ExprEmitter &emitter) const;
+                           bool emitDiagnosticOnFailure) const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
   /// provided.  This emits errors if 'emitter' is non-null, but does not if it
   /// is null.
-  PValue getDirectSymbol(ExprEmitter *emitter, ASTType expectedType) const;
+  PValue getDirectSymbol(ASTType expectedType) const;
 
   /// Try to emit the overload set as a PValue.
   PValue getIfPValue() const;
@@ -391,8 +389,9 @@ public:
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
 private:
-  OverloadSet(const ExprNode *expr, CallSyntax syntax, ExprEmitter &emitter)
-      : inputParamBindings(emitter), expr(expr), syntax(syntax) {}
+  OverloadSet(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
+              CallSyntax syntax)
+      : inputParamBindings(declScope, shared), expr(expr), syntax(syntax) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
