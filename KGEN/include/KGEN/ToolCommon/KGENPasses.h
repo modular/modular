@@ -137,6 +137,10 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
 std::unique_ptr<mlir::Pass>
 createResolveCompilerPromises(LLCL::Runtime &runtime);
 
+/// Create a DeadArgumentElimination pass with an LLCL runtime.
+std::unique_ptr<mlir::Pass>
+createDeadArgumentElimination(LLCL::Runtime &runtime);
+
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
