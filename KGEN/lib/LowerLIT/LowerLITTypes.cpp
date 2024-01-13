@@ -185,6 +185,9 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
         DebugInfo::DITargetIndependentPointerType::get(elementType);
     return resultType;
   });
+  debugTypeConverter.addConversion([&](RefType type) -> DebugInfo::DIType {
+    return debugTypeConverter.convertDebugType(type.getAsPointerType());
+  });
 }
 
 template <typename T, typename U>
