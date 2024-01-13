@@ -1085,33 +1085,6 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamReturnOp
-//===----------------------------------------------------------------------===//
-
-def LIT_ParamReturnOp : LITOp<"param_return"> {
-  let summary = "Bind result parameter values.";
-  let description = [{
-    The `lit.param_return` corresponds to a lexical `param_return` in Lit. It
-    binds values to the result parameters of the enclosing function. Like
-    `lit.return`, this operation is not a terminator.
-
-    Example:
-
-    ```mlir
-    lit.func @foo<() -> r0: dtype, r1>() {
-      lit.param_return<:dtype si32, 4>
-      lit.end_func
-    }
-    ```
-  }];
-
-  let arguments = (ins KGEN_ParameterExprArrayAttr:$parameters);
-  let assemblyFormat = "`` custom<ParameterValues>($parameters) attr-dict";
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // EndFuncOp
 //===----------------------------------------------------------------------===//
 

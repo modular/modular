@@ -78,28 +78,7 @@ def LowerSemanticCF
   let summary = "Lower lexical terminators and prune unreachable code.";
   let description = [{
     The `lower-semantic-cf` pass will replace lexical Lit terminators with
-    real terminators. It will prune any unreachable code (and warn about it),
-    and verify that return parameters are the same at all return sites.
-
-    Example:
-
-    ```mlir
-    lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
-      lit.param_return<2>
-      lit.return %arg0 : i32
-      lit.return %arg1 : i32
-      lit.end_func
-    }
-    ```
-
-    Becomes:
-
-    ```mlir
-    lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
-      kgen.param.result_bind<2>
-      kgen.return %arg0 : i32
-    }
-    ```
+    real terminators and prune any unreachable code (and warn about it).
   }];
 }
 

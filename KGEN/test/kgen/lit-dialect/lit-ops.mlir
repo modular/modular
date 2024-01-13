@@ -334,20 +334,6 @@ lit.func @async_execute() -> !pop.coroutine<() -> (i32, i64)> {
   kgen.return %coroHdl : !pop.coroutine<() -> (i32, i64)>
 }
 
-// CHECK-LABEL: lit.func @param_return
-lit.func @param_return<() -> r0: dtype, r1>() {
-  // CHECK-NEXT lit.param_return<:dtype si32, 2>
-  lit.param_return<:dtype si32, 2>
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.func @param_return_no_results
-lit.func @param_return_no_results<() -> ()>() {
-  // CHECK-NEXT: lit.param_return
-  lit.param_return
-  lit.end_func
-}
-
 lit.struct.decl @GiveMeDefault {
   lit.struct.field size : !kgen.pointer<scalar<index>>
 }
