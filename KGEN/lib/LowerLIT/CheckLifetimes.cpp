@@ -746,8 +746,8 @@ private:
   void checkLoopOp(HLCF::LoopOp loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
+  void diagnoseUsageError(ValueRef valueRef, Operation &op, bool isDef);
   void checkUse(Value value, Operation &op, bool isDeref);
-  void diagnoseUseError(ValueRef valueRef, Operation &op);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
@@ -902,13 +902,15 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   for (ValueRef access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
-      diagnoseUseError(access, op);
+      diagnoseUsageError(access, op, /*isDef=*/false);
   }
 }
 
-/// One of the specified fields is missing, so emit an error about it.
-void UninitializedValueScan::diagnoseUseError(ValueRef valueRef,
-                                              Operation &op) {
+/// One of the specified fields is missing, so emit an error about it.  This is
+/// largely to complain about incorrect 'uses' of a value, but When
+/// 'isDef' is true this is complaining about an indirect def of a value.
+void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
+                                                Operation &op, bool isDef) {
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   if (valueEntry.hasErrorDiagnosed)
@@ -946,7 +948,10 @@ void UninitializedValueScan::diagnoseUseError(ValueRef valueRef,
 
     diag << "return from this function";
   } else {
-    diag << "use of uninitialized value ";
+    if (!isDef)
+      diag << "use of uninitialized value ";
+    else
+      diag << "potential indirect mutation of uninitialized value ";
 
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.
@@ -958,19 +963,16 @@ void UninitializedValueScan::diagnoseUseError(ValueRef valueRef,
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
-  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
-  if (!valueRef)
-    return;
-
-  // If we are overwriting a value that has already been specified, then the
-  // underlying value must be declared a 'var' and not a 'let'.
-  if (!valueRef.isAllMissing(everMutatedValues)) {
-    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-
-    // FIXME(let-decl): This is wrong with indirect references, but instead of
-    // fixing this, we should just remove let's.
+  // Check that lets are not mutated after initialization and remember that
+  // var's are mutated so we don't suggest they convert to let.
+  auto checkLet = [&](ValueRef valueRef) {
+    // If we are overwriting a value that has already been specified, then the
+    // underlying value must be declared a 'var' and not a 'let'.
+    if (valueRef.isAllMissing(everMutatedValues))
+      return;
 
     // If this was declared as a let, then this is an error.
+    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.isLet && !info.hasErrorDiagnosed) {
       auto diag =
           mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
@@ -985,12 +987,32 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // If this is a var, then just notice the mutation so it doesn't get
     // suggested to promote to a let.
     info.isMutatedWhenInitialized = true;
+  };
+
+  // Direct accesses are handled in a field sensitive way, and this can count as
+  // an initialization.
+  if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
+    checkLet(valueRef);
+
+    // Finally, marks its value live so any use after this isn't treated as
+    // uninitialized.
+    valueRef.markBits(liveValues, true);
+    valueRef.markBits(everMutatedValues, true);
+    return;
   }
 
-  // Finally, marks its value live so any use after this isn't treated as
-  // uninitialized.
-  valueRef.markBits(liveValues, true);
-  valueRef.markBits(everMutatedValues, true);
+  // If this is an indirect reference then a mutation will require that all
+  // values being mutated are initialized, because we cannot perform field
+  // sensitive initialization, only overwrite/mutate.
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForAccess(value, isDeref);
+  for (auto access : accesses) {
+    // The referenced value fields must be live.
+    if (!access.isAllPresent(liveValues))
+      diagnoseUsageError(access, op, /*isDef=*/true);
+
+    checkLet(access);
+  }
 }
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
@@ -1010,7 +1032,7 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
   // The value must be completely live in order for us to consume it.  If not,
   // use "checkUse" to diagnose the problem.
   if (!valueRef.isAllPresent(liveValues))
-    diagnoseUseError(valueRef, op);
+    diagnoseUsageError(valueRef, op, /*isDef*/ false);
 
   // If tracked, marks its value as dead.
   if (!valueSet.isTrivial(value, isDeref))
@@ -1039,7 +1061,7 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 
   // If not, then there is an error which we diagnose.
   if (!valueRef.isAllPresent(liveValues))
-    diagnoseUseError(valueRef, op);
+    diagnoseUsageError(valueRef, op, /*isDef=*/false);
 }
 
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
@@ -1404,9 +1426,18 @@ private:
 
   LogicalResult elideCopyDestroyPair(Value value, Type destroyedType,
                                      Operation *opWithUse);
-  void emitDestructorCallAt(Value value, ValueRef valueRef,
+  void emitDestructorCallAt(Value value, bool isIndirect,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
+  void emitDestructorCallAt(Value value, ValueRef valueRef,
+                            mlir::ImplicitLocOpBuilder &builder,
+                            Operation *opWithUse) {
+    // We are going to emit a destructor for the specified ValueRef, so all none
+    // of the things we are about to destroy should already be destroyed.
+    assert(valueRef.isAllMissing(consumedValues) &&
+           "cannot have partially consumed object");
+    emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
+  }
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1931,6 +1962,8 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
 void DestructorInsertion::checkConsume(Value value, Operation &op,
                                        bool isDeref) {
   ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
+  // Uninitialized variable tracking already rejects consumes of indirect
+  // non-trivial values.
   if (!valueRef)
     return;
 
@@ -1994,39 +2027,44 @@ void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
 void DestructorInsertion::checkUse(Value value,
                                    mlir::ImplicitLocOpBuilder &builder,
                                    Operation *opWithUse, bool isDeref) {
-  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
-  if (!valueRef)
-    return;
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForAccess(value, isDeref);
 
-  ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
-  if (valueInfo.hasErrorDiagnosed)
-    return;
+  for (ValueRef valueRef : accesses) {
+    ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
+    if (valueInfo.hasErrorDiagnosed)
+      return;
 
-  // If this is the last use of some value that needs to be destroyed when
-  // dead, emit the whole object destructor for the overall value.
-  //
-  //   init(&aggregate)
-  //   use(aggregate.field1)
-  //   use(aggregate.field2)  <<-- We are here.
-  //
-  // Here we emit `dtor(&aggregate)` to destroy the overall value, which will
-  // also handle deleting the field in question.
-  if (value != valueInfo.value && !consumedValues[valueInfo.endValueBit - 1]) {
-    value = valueInfo.value;
-    valueRef = valueSet.getFullValueRef(valueRef.valueId);
+    // If this is the last use of some value that needs to be destroyed when
+    // dead, emit the whole object destructor for the overall value.
+    //
+    //   init(&aggregate)
+    //   use(aggregate.field1)
+    //   use(aggregate.field2)  <<-- We are here.
+    //
+    // Here we emit `dtor(&aggregate)` to destroy the overall value, which will
+    // also handle deleting the field in question.
+    //
+    // This also handles the case of indirect references, resetting to the
+    // correct value to destroy.
+    if (value != valueInfo.value &&
+        !consumedValues[valueInfo.endValueBit - 1]) {
+      value = valueInfo.value;
+      valueRef = valueSet.getFullValueRef(valueRef.valueId);
+    }
+
+    // Otherwise, it is possible that that ValueRef is live but the overall
+    // object will be consumed, this happens in scenarios like:
+    //
+    //   init(&aggregate)
+    //   use(&aggregate.field1)  <<-- We are here.
+    //   ... field1 is not consumed here...
+    //   aggregate.field1 = newValue  // overwrite field1.
+    //   consume(&aggregate)
+    //
+    // In this case, we need to destroy field1 after this use.
+    destroyValueIfNeeded(value, valueRef, builder, /*opWithUse=*/opWithUse);
   }
-
-  // Otherwise, it is possible that that ValueRef is live but the overall object
-  // will be consumed, this happens in scenarios like:
-  //
-  //   init(&aggregate)
-  //   use(&aggregate.field1)  <<-- We are here.
-  //   ... field1 is not consumed here...
-  //   aggregate.field1 = newValue  // overwrite field1.
-  //   consume(&aggregate)
-  //
-  // In this case, we need to destroy field1 after this use.
-  destroyValueIfNeeded(value, valueRef, builder, /*opWithUse=*/opWithUse);
 }
 
 /// This operation defines the specified value.  If the value is dead on
@@ -2041,8 +2079,29 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   checkUse(value, op, isDeref);
 
   // This call defines the result, so anything above it is either dead or
-  // needs a destructor if live.
-  valueSet.getDirectValueRef(value, isDeref).markBits(consumedValues, false);
+  // needs a destructor if live.  If this is a direct reference, we mark the
+  // target as being consumed.
+  if (auto direct = valueSet.getDirectValueRef(value, isDeref)) {
+    direct.markBits(consumedValues, false);
+    return;
+  }
+
+  // Otherwise, we need to direct-emit a destructor call of the reference
+  // itself since this operation will overwrite the value and we can't model it
+  // in a field sensitive way.  The uninitialized checker verified that the
+  // value is guaranteed live-in when nontrivial and indirect.
+  if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
+    // FIXME: we aren't tracking value sets completely right, so we end up with
+    // things like the __result__ slot in throwing functions that aren't
+    // tracked, but cannot be just destroyed here.  Refuse to do the right thing
+    // unless we see at least one thing that is indirect.  HACK HACK HACK.
+    if (valueSet.getValueRefsForAccess(value, isDeref).empty())
+      return;
+
+    // Destructor call goes ahead of the mutation.
+    mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+    emitDestructorCallAt(value, isDeref, builder, &op);
+  }
 }
 
 /// If the specified valueRef corresponds to a trivial value or subfield, clear
@@ -2421,16 +2480,13 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
 ///
 /// The 'opWithUse' value, if present, is the operation using the overall value
 /// being destroyed.  This allows us to perform copy ctor+temp elision.
-void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
+void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
                                                ImplicitLocOpBuilder &builder,
                                                Operation *opWithUse) {
-  // We are going to emit a destructor for the specified ValueRef, so all none
-  // of the things we are about to destroy should already be destroyed.
   assert(!dryRun && "this inserts!");
-  assert(valueRef.isAllMissing(consumedValues) &&
-         "cannot have partially consumed object");
 
-  Type destroyedType = valueRef.getValueType(value);
+  Type destroyedType =
+      ValueRef::getDereferencedType(value.getType(), isIndirect);
   TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
   if (!dtor) // Trivial types don't have destructors, so nothing to do.
     return;
