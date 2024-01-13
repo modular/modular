@@ -198,6 +198,36 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     if (convention == ValueInputConvention::OwnedInReg ||
         convention == ValueInputConvention::OwnedInMem)
       return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
+
+    // If this is a low-level !lit.ref passed by value, we can bind either to a
+    // !lit.ref SBValue of the same type, or an MValue of the element type.
+    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
+      if (auto cValue = operand.ir.getIfCValue())
+        if (convention == ValueInputConvention::BorrowedInReg &&
+            ASTType(cValue.getRValueType())
+                .isEqualCanon(expectedRef.getElementType())) {
+          // We don't currently support non-MValues.  We could dump them into
+          // memory with an MBValue conversion if there is a need to.
+          if (!cValue.isMValue()) {
+            emitter.emitError(
+                operand.expr->getLoc(),
+                "cannot pass non-memory value through implicit reference");
+            return {};
+          }
+          // Lifetimes must match, this is checked by OverloadFitness.
+          Value refValue = cValue.getMValueReference();
+          auto refValueType = cast<RefType>(refValue.getType());
+          assert(refValueType.getLifetime() == expectedRef.getLifetime());
+          // The destination may be less mutable.
+          if (refValueType.getIsMutable() && !expectedRef.getIsMutable())
+            refValue = emitter.builder->create<RefImmutOp>(
+                operand.expr->getLocation(emitter), refValue);
+          assert(refValue.getType() == expectedType &&
+                 "Should have exact match now");
+          return SBValue(refValue);
+        }
+    }
+
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
   case ValueInputConvention::None:

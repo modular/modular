@@ -391,13 +391,11 @@ public:
   /// to allow argument name mismatches when comparing signature types. This
   /// does not generate any IR.
   bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                  ASTType requiredType,
-                                  bool allowArgNameCheck = true);
+                                  ASTType requiredType);
   static bool canImplicitlyConvertToType(ASTDecl &declScope,
                                          SharedState &shared,
                                          ASTExprAnd<CValue> value,
-                                         ASTType requiredType,
-                                         bool allowArgNameCheck = true);
+                                         ASTType requiredType);
 
   /// Emit a metatype conversion to a trait type by materializing the type's
   /// vtable for the trait.

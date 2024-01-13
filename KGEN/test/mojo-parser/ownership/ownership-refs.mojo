@@ -10,13 +10,34 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
+# Reference type
 # ===----------------------------------------------------------------------=== #
 
-alias Lifetime = __mlir_type.`!lit.lifetime`
+# TODO: Move this to the standard library someday.
+
+## Immutable reference type.
+# TODO: Enable refitem
+@register_passable("trivial")
+struct Reference[element_type: AnyType, lifetime: Lifetime, addrSpace: Int = 0]:
+    alias reference_type = __mlir_type[
+        `!lit.ref<:`, AnyType, ` `, element_type, `, `, lifetime, `, `,
+                      addrSpace.value, `>`
+    ]
+    var value: Self.reference_type
+
+    fn __init__(ref_value: Self.reference_type) -> Self:
+        """Create a reference to the provided value."""
+        return Self{value: ref_value}
+
+    # @always_inline
+    # fn __refitem__(self) -> reference_type:
+    #     return self.value
+
+    fn __mlir_ref__(self) -> Self.reference_type:
+        return self.value
 
 # ===----------------------------------------------------------------------=== #
-# Actual tests
+# Parsing of references
 # ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.struct.decl @MemExample
@@ -127,3 +148,34 @@ fn testDefConditional(cond: __mlir_type.i1):
   # their lifetimes, but now we can say goodbye.
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+
+# ===----------------------------------------------------------------------=== #
+# Tests of the Reference type.
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: lit.func @"testUseConditionalReference
+
+fn testUseConditionalReference(cond: __mlir_type.i1):
+  # CHECK: %a = lit.varlet.decl {{.*}} : !lit.ref<mut !MemExample, *"`a0">
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
+
+  let a = MemExample()
+
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a : <mut !MemExample, *"`a0">
+  # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[IMMREF]])
+
+  # CHECK-NEXT: %aref = lit.letreg.decl "aref" = [[ARV]]
+  let aref = Reference(a)
+  # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime = <*"`a0">
+  alias aLifetime =  aref.lifetime
+
+  # TODO Need a refitem member.
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract %aref[value]
+  __get_value_from_ref(aref.value).noop()
+  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[LITREF]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+
+  # The reference being alive doesn't keep the underlying stuff alive, only
+  # accesses
+  # CHECK-NEXT: %aref2 = lit.letreg.decl "aref2" = %aref
+  let aref2 = aref
