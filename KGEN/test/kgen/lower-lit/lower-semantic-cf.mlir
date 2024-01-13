@@ -103,23 +103,6 @@ lit.file_module @FileModule {
   }
 }
 
-// CHECK-LABEL: lit.func @result_parameters
-lit.func @result_parameters<() -> r1: i32, r2: i64>(%c: i1) {
-  // CHECK: hlcf.if
-  hlcf.if %c {
-    // CHECK-NEXT: kgen.return
-    lit.param_return<:i32 1, :i64 2>
-    lit.return
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  // CHECK: kgen.param.result_bind<:i32 1, :i64 2>
-  lit.return
-  lit.end_func
-}
-
-
 // CHECK-LABEL: lit.func @no_return
 lit.func @no_return() -> !kgen.none {
   // CHECK: kgen.return
@@ -412,57 +395,6 @@ lit.func @coroutine2() async -> index {
   // CHECK: kgen.unreachable
   lit.end_func
 }
-
-// CHECK-LABEL: lit.func @bubble_result_params
-lit.func @bubble_result_params<cond: i1, cond2: i1 -> r0, r1: dtype>() {
-  // CHECK: kgen.param.if <0>
-  // CHECK-NEXT: kgen.unreachable
-  // CHECK-NEXT: } else {
-  // CHECK-NEXT: kgen.param.yield
-  kgen.param.if <0> {
-    kgen.param.yield
-  } else {
-    kgen.param.yield
-  }
-
-  // CHECK: kgen.param.if <cond ->
-  kgen.param.if <cond> {
-    // CHECK-NEXT: result_bind<1, :dtype si8>
-    lit.param_return<1, :dtype si8>
-    // CHECK-NEXT: kgen.return
-    kgen.return
-  // CHECK: else
-  } else {
-    // CHECK: kgen.param.if <cond2 -> *"(branch_result_0)", *"(branch_result_1)": dtype>
-    kgen.param.if <cond2> {
-      // CHECK-NEXT: result_bind<2, :dtype si16>
-      lit.param_return<2, :dtype si16>
-      kgen.param.yield
-    // CHECK: else
-    } else {
-      // CHECK-NEXT: result_bind<3, :dtype si32>
-      lit.param_return<3, :dtype si32>
-      kgen.param.yield
-    }
-    // CHECK: result_bind<*"(branch_result_0)", :dtype *"(branch_result_1)">
-    kgen.param.yield
-  }
-  // CHECK: result_bind<*"(branch_result_2)", :dtype *"(branch_result_3)">
-  lit.return
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.func @result_params_fallthrough
-lit.func @result_params_fallthrough<() -> r0>() -> !kgen.none {
-  // CHECK: %none = kgen.param.constant: none
-  // CHECK: kgen.param.result_bind<1>
-  // CHECK: kgen.return %none
-  lit.param_return<1>
-  %0 = kgen.param.constant: none = <#kgen.none>
-  lit.return %0 :  !kgen.none
-  lit.end_func
-}
-
 
 // CHECK-LABEL: lit.func @pointlessTry
 lit.func @pointlessTry() -> !kgen.none {

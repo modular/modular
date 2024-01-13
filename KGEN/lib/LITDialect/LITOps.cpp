@@ -1767,17 +1767,6 @@ ArrayRef<Type> AsyncExecuteOp::getResultTypes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamReturnOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ParamReturnOp::verify() {
-  auto func = (*this)->getParentOfType<LIT::FuncOp>();
-  if (!func)
-    return emitOpError("expected to be nested inside a `lit.func` operation");
-  return checkResultParameterTypes(*this, getParameters(), func);
-}
-
-//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 

@@ -268,14 +268,6 @@ lit.func @unbound_region() {
 
 // -----
 
-lit.func @bad_param_results<() -> r0: dtype>() {
-  // expected-error @below {{'lit.param_return' op parameter #0 has type 'index' but should be '!kgen.dtype'}}
-  lit.param_return<2>
-  lit.end_func
-}
-
-// -----
-
 lit.func @no_struct_decl(%a: index) {
   // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<:regtype index>>'}}
   %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<:regtype index>>
