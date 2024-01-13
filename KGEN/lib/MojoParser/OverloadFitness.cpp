@@ -240,18 +240,41 @@ LogicalResult ParameterInferenceState::checkOneOperand(
     expectedType = expectedType.getReferenceElementType();
     [[fallthrough]];
   case ValueInputConvention::OwnedInReg:
-  case ValueInputConvention::BorrowedInReg:
-    // Otherwise, we pass as an r-value if we know the type.
+  case ValueInputConvention::BorrowedInReg: {
+    Type actualType;
     // TODO: Consider implicit conversions?
-    if (CValue cValue = value.getIfCValue()) {
-      matchTypes(cValue.getRValueType(), expectedType);
-      return success();
-    }
-    // Consider the types of ORValues with single candidates.
-    if (ORValue orValue = value.getIfORValue())
+    if (CValue cValue = value.getIfCValue())
+      actualType = cValue.getRValueType();
+    else if (ORValue orValue = value.getIfORValue())
       if (PValue pValue = orValue->getIfPValue())
-        matchTypes(pValue.getType(), expectedType);
+        actualType = pValue.getType();
+
+    if (!actualType)
+      return success();
+
+    // If the argument is an explicit low-level reference type passed as a
+    // borrowed register value, then we allow matching it to its underlying
+    // element type.
+    if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
+      if (expectedConvention == ValueInputConvention::BorrowedInReg &&
+          !isa<RefType>(actualType)) {
+        // Infer element, addrspace, and lifetime.
+        if (value.isMValue()) {
+          matchTypes(value.getMValueReference().getType(), expectedRef);
+        } else {
+          // In the case of a SValue / PValue, we can do an MBValue conversion
+          // to expose the address, but we can't infer a lifetime or address
+          // space.
+          matchTypes(actualType, expectedRef.getElementType());
+        }
+        return success();
+      }
+    }
+
+    // Otherwise, we pass as an r-value if we know the type.
+    matchTypes(actualType, expectedType);
     return success();
+  }
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
@@ -755,17 +778,34 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (canZeroCostConvert(shared, argType, expectedType))
       break;
 
-    // If we lack an exact match and conversions are disabled, this
-    // candidate fails.
-    if (!allowImplicitConversions ||
-        !ExprEmitter::canImplicitlyConvertToType(
-            declScope, shared, {argVal, operand.expr}, expectedType,
-            /*allowArgNameCheck=*/false))
-      return {kWrongType, expectedType};
+    // If implicit conversions are possible and one will work, then we succeed
+    // with that conversion.
+    if (allowImplicitConversions &&
+        ExprEmitter::canImplicitlyConvertToType(
+            declScope, shared, {argVal, operand.expr}, expectedType)) {
+      // If we had one, this bumps our # implicit conversions.
+      ++numImplicitConversions;
+      break;
+    }
 
-    // If we had one, this bumps our # implicit conversions.
-    ++numImplicitConversions;
-    break;
+    // Check value -> reference conversion is allowed in an argument.  This can
+    // be performed by passing the existing address of dropping something into a
+    // memory box.
+    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
+      // Element types and lifetimes have to be exactly equal, and the
+      // mutability has to be compatible.
+      if (ASTType(argType).isEqualCanon(expectedRef.getElementType()) &&
+          // We don't currently support non-MValues.  We could dump them into
+          // memory with an MBValue conversion if there is a need to.
+          argVal.isMValue() &&
+          cast<RefType>(argVal.getMValueReference().getType()).getLifetime() ==
+              expectedRef.getLifetime()) {
+        break;
+      }
+    }
+
+    // Otherwise this is the wrong type for the argument.
+    return {kWrongType, expectedType};
   }
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");

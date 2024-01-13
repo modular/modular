@@ -784,23 +784,18 @@ static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
 }
 
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                             ASTType requiredType,
-                                             bool allowArgNameCheck) {
-  return canImplicitlyConvertToType(declScope, shared, value, requiredType,
-                                    allowArgNameCheck);
+                                             ASTType requiredType) {
+  return canImplicitlyConvertToType(declScope, shared, value, requiredType);
 }
 
 bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
                                              SharedState &shared,
                                              ASTExprAnd<CValue> value,
-                                             ASTType requiredType,
-                                             bool allowArgNameCheck) {
+                                             ASTType requiredType) {
   // If it already matches, then we're done.
   ASTType rvType = value.ir.getRValueType();
-  if (rvType.isEqualCanon(requiredType))
-    return true;
-
-  if (allowArgNameCheck && canZeroCostConvert(shared, rvType, requiredType))
+  if (rvType.isEqualCanon(requiredType) ||
+      canZeroCostConvert(shared, rvType, requiredType))
     return true;
 
   // Metatypes can implicitly convert to any trait type they implement.
