@@ -41,12 +41,12 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3(,T)"[{{.*}}](%__result__: !lit.ref<mut !object, {{.*}}> byref_result, |, %self: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> owned_in_mem) throws -> !kgen.variant<!Error, none>
+    # CHECK: lit.func @"f3(,T)"[{{.*}}](%__result__: !lit.ref<mut !object, {{.*}}> byref_result, |, %self: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> owned_in_mem)
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4(,T&)"[{{.*}}](%__result__: !lit.ref<mut !object, {{.*}}> byref_result, |, %self: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> byref) throws -> !kgen.variant<!Error, none>
+    # CHECK: lit.func @"f4(,T&)"[{{.*}}](%__result__: !lit.ref<mut !object, {{.*}}> byref_result, |, %self: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> byref)
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -271,7 +271,7 @@ struct RegTraitType(TraitForReg):
 
     # CHECK-LABEL: lit.func @"`thunk_may_throw
     # CHECK-SAME: %__result__: !lit.ref<mut !RegTraitType, {{.*}}> byref_result
-    # CHECK-SAME: throws -> !kgen.variant<!Error, none> always_inline
+    # CHECK-SAME: throws|ownedresult -> !kgen.variant<!Error, none> always_inline
     @staticmethod
     fn may_throw() raises -> Self:
         # CHECK: %0 = lit.call {{.*}}@RegTraitType::@"may_throw()"

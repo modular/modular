@@ -120,7 +120,7 @@ def propagateErrorInDef():
 fn propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.varlet.decl {{.*}} : !lit.ref<mut !Int,
     var a: Int
-    # CHECK:  %0 = lit.call {{.*}}::@"maybeRaises()"() : !lit.signature<() throws -> !kgen.variant<!Error, !Int>>
+    # CHECK:  %0 = lit.call {{.*}}::@"maybeRaises()"()
     # CHECK:  %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
     # CHECK:  {
     # CHECK:    [[ERR:%.*]] = kgen.variant.take %0

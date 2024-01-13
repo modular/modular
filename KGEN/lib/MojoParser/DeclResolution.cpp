@@ -910,6 +910,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
     resultType = VariantType::get({errorType, resultType},
                                   AnyRegTypeType::get(getContext()));
+    // The result is always owned because the function returns a variant
+    // containing an Error, which is nontrivial.
+    effects.setOwnedRegisterResult();
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
@@ -2103,6 +2106,10 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       resultType = VariantType::get(
           {ParamRefType::get(variant.getTypes().front()), selfType},
           AnyRegTypeType::get(variant.getContext()));
+
+      // The result is always owned because it includes a variant containing an
+      // error.
+      fnEffects.setOwnedRegisterResult();
       continue;
     }
 

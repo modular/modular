@@ -999,10 +999,8 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
   if (!valueRef) {
     // We cannot consume an indirect value (unless it is untracked).
     if (!valueSet.isTrivial(value, isDeref) &&
-        // FIXME: Other stuff isn't modeled correctly.
-        isDeref &&
-        // FIXME: Horrible hack frontend is broken, RE: arg conventions.
-        !isa<VariantType>(value.getType())) {
+        // FIXME(#29005): AnyRefType binds to non-trivial types
+        isDeref) {
       mlir::emitError(op.getLoc(),
                       "cannot consume indirect references to values");
     }
