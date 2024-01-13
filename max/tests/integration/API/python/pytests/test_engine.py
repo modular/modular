@@ -92,3 +92,16 @@ def test_custom_ops(
         output["output"],
         np.array([4.0]).astype(np.float32),
     )
+
+
+def test_dynamic_rank_spec():
+    input_spec = me.TensorSpec(None, me.DType.float64, "dynamic")
+    assert input_spec.shape is None
+    assert input_spec.dtype == me.DType.float64
+    assert input_spec.name == "dynamic"
+
+    assert (
+        repr(input_spec)
+        == "TensorSpec(shape=None, dtype=DType.float64, name=dynamic)"
+    )
+    assert str(input_spec) == "None x float64"
