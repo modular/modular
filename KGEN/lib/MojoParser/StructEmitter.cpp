@@ -34,8 +34,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects,
-    ArrayRef<ParamDeclAttr> resultParams, StringRef prefix) {
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef prefix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -97,8 +96,8 @@ LIT::FuncOp StructEmitter::createFunction(
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParams, resultParams, functionType, argConventions, fnEffects,
-      metadata, [&] { return mlir::emitError(location); });
+      inputParams, {}, functionType, argConventions, fnEffects, metadata,
+      [&] { return mlir::emitError(location); });
   // Strip off the named lifetime decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
@@ -117,12 +116,10 @@ LIT::FuncOp StructEmitter::createFunction(
   // Figure out the full set of parameter declarations, this is the implicit
   // lifetimes + explicit parameter declarations.
   fullInputParams.append(inputParams.begin(), inputParams.end());
-  if (!fullInputParams.empty())
+  if (!fullInputParams.empty()) {
     attrs.set(funcOp.getInputParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullInputParams));
-  if (!resultParams.empty())
-    attrs.set(funcOp.getResultParamsAttrName(),
-              builder.getAttr<ParamDeclArrayAttr>(resultParams));
+  }
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
@@ -146,7 +143,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   return synthesizeMethodInStruct(
       name, /*inputParams=*/{}, /*paramPassingKinds=*/{}, argTypes,
       argConventions, argNames, argPassingKinds, resultType, structDecl,
-      specialFnID, effects, /*resultParams=*/{}, prefix);
+      specialFnID, effects, prefix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
@@ -155,7 +152,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects effects, ArrayRef<ParamDeclAttr> resultParams, StringRef prefix) {
+    FnEffects effects, StringRef prefix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -164,7 +161,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
       argPassingKinds, resultType, specialFnID, structDecl.getLoc(), builder,
       effects.setParamVarArgs(effects.hasParamVarArgs() ||
                               structOp.getSignature().getParamVarArg()),
-      resultParams, prefix);
+      prefix);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").

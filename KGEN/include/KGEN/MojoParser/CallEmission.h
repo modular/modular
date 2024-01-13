@@ -301,10 +301,6 @@ public:
   /// Any bound input parameters.
   InputParamBindings inputParamBindings;
 
-  /// This is a list of result parameters that are to be bound to the returned
-  /// parameters from the call.
-  std::vector<std::pair<ASTDecl *, llvm::SMLoc>> resultParams;
-
   /// This is information about where this overload set was formed.
   const ExprNode *expr;
   CallSyntax syntax;

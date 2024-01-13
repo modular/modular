@@ -346,7 +346,6 @@ public:
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
   CValue emitCallUnchecked(CRValue callee, const CallOperands &operands,
-                           ArrayRef<ParamDeclAttr> resultParams,
                            ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and

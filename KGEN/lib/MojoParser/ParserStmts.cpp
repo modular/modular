@@ -90,7 +90,6 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_alias:
   case Token::kw___mlir_region:
   case Token::kw_return:
-  case Token::kw_param_return:
   case Token::kw_raise:
   case Token::kw_continue:
   case Token::kw_break:
@@ -222,7 +221,6 @@ struct StmtParser : public ParserBase {
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
-  ParseResult parseParamReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
   ParseResult parseBreakOrContinueStmt(Token::Kind kind, StringRef name,
                                        StringRef opName);
@@ -622,9 +620,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_return:
     rejectDecorator(); // Decorators not allowed.
     return parseReturnStmt(stmtIndent);
-  case Token::kw_param_return:
-    rejectDecorator(); // Decorators not allowed.
-    return parseParamReturnStmt(stmtIndent);
   case Token::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
@@ -723,56 +718,6 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
         b.create<VariantCreateOp>(decl.getMLIRResultType(), resultValue, 1);
 
   ExprEmitter::emitNormalReturn(b, resultValue, getParentDecl());
-  return success();
-}
-
-/// param_return_stmt ::= "param_return" "[" expression_list "]"
-ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
-  SMLoc loc = consumeToken(Token::kw_param_return).getLoc();
-  auto decl = dyn_cast<LIT::FuncOp>(getParentDecl());
-  if (!decl) {
-    emitError(loc, "invalid context for parameter return");
-    return success();
-  }
-
-  // Parse the result parameter list.
-  SMLoc startLoc, endLoc;
-  if (parseToken(Token::l_square, "expected '[' to begin parameter list",
-                 &startLoc))
-    return success();
-
-  ExprNode *expr = nullptr;
-  if (parseExpressionList(expr, returnIndent) ||
-      parseToken(Token::r_square, "expected ']' at end of parameter list",
-                 &endLoc))
-    return failure();
-
-  // We treat each comma separated value as a separate parameter, not the whole
-  // thing as a tuple value.
-  ArrayRef<ExprNode *> exprs = expr;
-  if (auto *tuple = dyn_cast<TupleNode>(expr))
-    exprs = tuple->exprs;
-
-  // Check the number of result parameters.
-  size_t numResultParams = decl.getResultParams().size();
-  if (exprs.size() != numResultParams) {
-    emitError(startLoc, "expected ")
-        << numResultParams << " result parameter" << plural(numResultParams)
-        << SourceRange(startLoc, endLoc);
-    return success();
-  }
-
-  // Emit the result parameters into PValues.
-  SmallVector<TypedAttr> paramValues;
-  for (auto [paramExpr, param] : llvm::zip(exprs, decl.getResultParams())) {
-    auto result = getEmitter().emitExprPValue(
-        paramExpr, EC_ReturnResultParamList, param.getType());
-    if (!result)
-      return success();
-    paramValues.push_back(result);
-  }
-
-  builder.create<LIT::ParamReturnOp>(translateLocation(loc), paramValues);
   return success();
 }
 

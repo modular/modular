@@ -1707,12 +1707,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     return emitResult(result.get(), expr, dest);
   }
 
-  // Use of forward alias references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
-    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
-    return emitResult(result, expr, dest);
-  }
-
   // If this is a type declaration, return it as a type.
   if (auto structOp = dyn_cast<StructDeclOp>(decl))
     return emitResult(structOp.bindReference(), expr, dest);

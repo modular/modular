@@ -302,31 +302,6 @@ struct SubscriptNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-/// This represents `A[i,j -> a, b]`.  In the case of slices (e.g. `A[i, ::]`),
-/// the slice will be represented with a subexpression.
-struct SubscriptArrowNode final : public ExprNode {
-  SubscriptArrowNode(ExprNode *base, SMLoc lsquareLoc,
-                     ArrayRef<Operand> operands, SMLoc arrowLoc,
-                     ArrayRef<ExprNode *> results, SMLoc rsquareLoc)
-      : ExprNode(kSubscriptArrow), base(base), lsquareLoc(lsquareLoc),
-        operands(operands), arrowLoc(arrowLoc), results(results),
-        rsquareLoc(rsquareLoc) {}
-
-  ExprNode *const base;
-  const SMLoc lsquareLoc;
-  const ArrayRef<Operand> operands;
-  const SMLoc arrowLoc;
-  ArrayRef<ExprNode *> results;
-  const SMLoc rsquareLoc;
-
-  static bool classof(const ExprNode *node) {
-    return node->kind == kSubscriptArrow;
-  }
-  SMLoc getLoc() const override { return lsquareLoc; }
-  SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-};
-
 /// This is an expression that produces a slice value in a SubscriptNode index
 /// expression.  These have at least one colon in them, and one, two, or three
 /// expressions, e.g. `:`, `: :`, `a:b`, `a::b` etc.
@@ -585,18 +560,15 @@ struct ChainedCmpOpNode final : public ExprNode {
 
 struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> inputParams,
-                   ArrayRef<ParsedArgument> resultParams,
                    ArrayRef<ParsedArgument> arguments,
                    const ExprNode *resultTypeExpr, FnEffects effects,
                    SMLoc endLoc, bool isDef, SMLoc resultLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), inputParams(inputParams),
-        resultParams(resultParams), arguments(arguments),
-        resultTypeExpr(resultTypeExpr), effects(effects), endLoc(endLoc),
-        isDef(isDef), resultLoc(resultLoc) {}
+        arguments(arguments), resultTypeExpr(resultTypeExpr), effects(effects),
+        endLoc(endLoc), isDef(isDef), resultLoc(resultLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> inputParams;
-  ArrayRef<ParsedArgument> resultParams;
   ArrayRef<ParsedArgument> arguments;
   const ExprNode *resultTypeExpr;
   FnEffects effects;

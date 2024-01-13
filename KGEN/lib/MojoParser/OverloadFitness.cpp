@@ -923,14 +923,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     return std::move(diag);
   diag.abandon();
 
-  // Check the result parameter count.
-  if (size_t expectedNumResultParams = signature.getNumResultParams(),
-      actualNumResultParams = callable.resultParams.size();
-      expectedNumResultParams != actualNumResultParams) {
-    return emitDiagFor.wrongParamCount(expectedNumResultParams,
-                                       actualNumResultParams, "result");
-  }
-
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
   std::tie(signature, newBindings) =

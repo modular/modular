@@ -36,7 +36,7 @@ TOK_MARKER(eof)
 TOK_MARKER(error)
 
 // Identifiers.
-TOK_IDENTIFIER(identifier) // foo
+TOK_IDENTIFIER(identifier)         // foo
 TOK_IDENTIFIER(escaped_identifier) // `!foo`
 
 // Literals
@@ -118,7 +118,7 @@ TOK_KEYWORD(del)
 TOK_KEYWORD(elif)
 TOK_KEYWORD(else)
 TOK_KEYWORD(except)
-TOK_KEYWORD(fn)  // Mojo extension.
+TOK_KEYWORD(fn) // Mojo extension.
 TOK_KEYWORD(False)
 TOK_KEYWORD(finally)
 TOK_KEYWORD(for)
@@ -135,10 +135,9 @@ TOK_KEYWORD(match)
 TOK_KEYWORD(mutref)
 TOK_KEYWORD(None)
 TOK_KEYWORD(nonlocal)
-TOK_KEYWORD(not)
+TOK_KEYWORD(not )
 TOK_KEYWORD(or)
-TOK_KEYWORD(owned)  // NOTE: Could be turned into soft keyword
-TOK_KEYWORD(param_return)
+TOK_KEYWORD(owned) // NOTE: Could be turned into soft keyword
 TOK_KEYWORD(pass)
 TOK_KEYWORD(raise)
 TOK_KEYWORD(ref)

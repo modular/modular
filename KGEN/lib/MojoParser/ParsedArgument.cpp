@@ -428,23 +428,12 @@ void ParsedArgument::processParameterInputArgs(
                        defaults, /*isResultParams=*/false, paramVarArg);
 }
 
-void ParsedArgument::processParameterResultArgs(
-    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-    SmallVectorImpl<ParamDeclAttr> &params, bool &paramVarArg) {
-  SmallVector<TypedAttr> defaults;
-  SmallVector<StringAttr> names;
-  SmallVector<PassingKind> passingKinds;
-  processParameterArgs(emitter, declScope, args, params, names, passingKinds,
-                       defaults, /*isResultParams=*/true, paramVarArg);
-}
-
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
 ParseResult LIT::impl::parseOptionalParameterSignature(
     ParserBase &p, ASTDecl &declScope,
     SmallVectorImpl<ParamDeclAttr> &inputParams,
-    SmallVectorImpl<ParamDeclAttr> &resultParams,
     SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<PassingKind> &passingKinds,
     SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
@@ -471,17 +460,6 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
   ParsedArgument::processParameterInputArgs(emitter, declScope, args,
                                             inputParams, names, passingKinds,
                                             defaults, paramVarArg);
-
-  // Parse the meta results if present.
-  if (p.consumeIf(Token::minus_greater)) {
-    args.clear();
-    // Parse a result parameter list.
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, args, ParsedArgument::ArgListKind::kParamList))
-      return failure();
-    ParsedArgument::processParameterResultArgs(emitter, declScope, args,
-                                               resultParams, paramVarArg);
-  }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
