@@ -32,8 +32,6 @@ constexpr StringLiteral willBecomeAsyncDecorator =
     "$stdlib::$utils::$_annotations::mogg_will_become_async";
 constexpr StringLiteral registerOverrideDecorator =
     "$stdlib::$utils::$_annotations::mogg_register_override";
-constexpr StringLiteral experimentalDecorator =
-    "$stdlib::$utils::$_annotations::mogg_kgen_experiment_kernel";
 
 constexpr StringLiteral tensorAllocDecorator =
     "$stdlib::$utils::$_annotations::mogg_tensor_allocator";
@@ -112,6 +110,51 @@ struct TensorInMojo {
   static constexpr size_t NUM_PARAMS = 6;
 };
 
+bool isTensor(KGEN::DeclRefType maybeTensor) {
+  // Look at the top level symbol name, it is structured like
+  // Folder::File::ClassName.
+  ArrayRef<FlatSymbolRefAttr> attr =
+      maybeTensor.getSymbol().getNestedReferences();
+  if (attr.size() == 0)
+    return false;
+
+  if (maybeTensor.getSymbol().getRootReference() != "$MOGGTensor")
+    return false;
+
+  StringRef className = attr[attr.size() - 1].getValue();
+  if (className == "Tensor")
+    return true;
+  return false;
+}
+
+// Returns true if there is at least one recognizable tensor on the signature.
+bool hasAtLeastOneTensor(GeneratorOp generator) {
+  std::optional<PreservedAttr> sig = generator.getSourceSignature();
+  if (!sig.has_value())
+    return false;
+  auto typeAttr = dyn_cast<TypeAttr>(sig.value().getValue());
+  if (!typeAttr)
+    return false;
+  auto litSig = dyn_cast<LIT::LITSignatureType>(typeAttr.getValue());
+  if (!litSig)
+    return false;
+
+  for (Type metadata : litSig.getValues().getInputs()) {
+    // Tensors are expected to be passed as references.
+    auto asLitRef = dyn_cast<LIT::RefType>(metadata);
+    if (!asLitRef)
+      continue;
+
+    auto asDeclRef = dyn_cast<KGEN::DeclRefType>(asLitRef.getElementType());
+    if (!asDeclRef)
+      continue;
+    if (isTensor(asDeclRef))
+      return true;
+  }
+
+  return false;
+}
+
 // Given a mojo function pull the tensor parameter information off of it. I.E
 // which parameter corresponds to which parameter in a given input.
 std::optional<TensorInMojo> getTensorRepFromFunctionInput(GeneratorOp generator,
@@ -132,7 +175,7 @@ std::optional<TensorInMojo> getTensorRepFromFunctionInput(GeneratorOp generator,
   auto asDeclRef = dyn_cast<KGEN::DeclRefType>(asLitRef.getElementType());
   if (!asDeclRef)
     return std::nullopt;
-  if (asDeclRef.getSymbol().getRootReference() != "$MOGGTensor")
+  if (!isTensor(asDeclRef))
     return std::nullopt;
 
   TensorInMojo tensor;
@@ -151,10 +194,6 @@ private:
   struct AnnotatedKernel {
     /// Every mogg kernel should have a registration hook mapping it onto an op.
     TypedAttr moggRegister;
-
-    /// Currently we only run on MOGG kernels with the experimental attribute
-    /// attached.
-    TypedAttr experimentalAttr;
 
     /// If true, indicates the kernel will be implemented by an 'async' Mojo
     /// function.
@@ -211,12 +250,8 @@ private:
     // Look for the mogg attributes on the kernels.
     auto lambda = [&](TypedAttr decorator, StringRef decoratorName,
                       SmallVector<TypedAttr> &attrsToCopy) {
-      if (decoratorName.startswith(experimentalDecorator)) {
-        metadata.experimentalAttr = decorator;
-        // Drop the mogg decorator.
-        attrsToCopy.pop_back();
-      } else if (decoratorName.startswith(registerDecorator) ||
-                 decoratorName.startswith(registerOverrideDecorator)) {
+      if (decoratorName.startswith(registerDecorator) ||
+          decoratorName.startswith(registerOverrideDecorator)) {
         metadata.moggRegister = decorator;
         // Drop the mogg decorator
         attrsToCopy.pop_back();
@@ -232,9 +267,8 @@ private:
     // Capture the decorators unrelated to mogg so they can be preserved.
     metadata.nonMOGGDecorators = forEachDecorator(userFunc, lambda);
 
-    // This is not a mogg kernel if it doesn't have a register and (for now) the
-    // experimental attribute.
-    if (!metadata.experimentalAttr || !metadata.moggRegister)
+    // This is not a mogg kernel if it doesn't have a register.
+    if (!metadata.moggRegister)
       return std::nullopt;
     return metadata;
   }
@@ -289,6 +323,12 @@ public:
       std::optional<AnnotatedKernel> kernelMetadata =
           checkForMOGGAttrs(userKernel);
       if (!kernelMetadata.has_value())
+        continue;
+
+      // If there are no tensors detected on the API then it's not a new API
+      // kernel.
+      // TODO: This should be removed when there's only one API.
+      if (!hasAtLeastOneTensor(userKernel))
         continue;
 
       // Slice out a new compute kernel. This replaces the old kernel as the
@@ -572,6 +612,9 @@ public:
         newAttrs.push_back(attr);
 
       OpBuilder b{ctx};
+
+      newAttrs.push_back(
+          NamedAttribute{b.getStringAttr("_sliced"), b.getUnitAttr()});
 
       // Attach the lambda metadata.
       SmallVector<StringRef> inNames;
