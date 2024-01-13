@@ -323,6 +323,8 @@ int main(int argc, char **argv) {
   mlir::registerPass([&] { return KGEN::createInlineParametric(*runtime); });
   mlir::registerPass([&] { return KGEN::createAutomaticInline(*runtime); });
   mlir::registerPass(
+      [&] { return KGEN::createDeadArgumentElimination(*runtime); });
+  mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(*runtime); });
 
   // Register passes that require other arguments.

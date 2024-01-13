@@ -955,11 +955,11 @@ def ExternalizePrecompiledFunctions:
 }
 
 //===----------------------------------------------------------------------===//
-// Inliner
+// AutomaticInliner
 //===----------------------------------------------------------------------===//
 
 def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
-  let summary = "KGEN automatic inliner pass`";
+  let summary = "KGEN automatic inliner pass";
   let description = [{
     The `automatic inliner` pass inlines functions with InlineLevel::Automatic
     automatically based on inline heuristics. This pass doesn't inline functions
@@ -998,4 +998,24 @@ def SCCP: Pass<"sccp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// DeadArgumentElimination
+//===----------------------------------------------------------------------===//
+
+def DeadArgumentElimination:
+    Pass<"dead-argument-elimination", "mlir::ModuleOp"> {
+  let summary = "KGEN dead argument elimination`";
+  let description = [{
+    The `dead argument elimination` pass eliminates dead function arguments and
+    results whose values are not being used in the program, and update function
+    callsites with fewer arguments and return values.
+  }];
+
+  let dependentDialects = [
+    "HLCF::HLCFDialect",
+    "KGENDialect",
+    "POP::POPDialect"
+  ];
 }
