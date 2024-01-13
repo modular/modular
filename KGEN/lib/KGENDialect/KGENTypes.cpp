@@ -883,6 +883,33 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
+static void printVariadicConvention(AsmPrinter &p, ValueInputConvention conv) {
+  // Default to borrowed_in_reg
+  if (conv != ValueInputConvention::BorrowedInReg)
+    p << ", " << stringifyValueInputConvention(conv);
+}
+
+static ParseResult parseVariadicConvention(AsmParser &p,
+                                           ValueInputConvention &conv) {
+  // Default to borrowed_in_reg
+  if (!succeeded(p.parseOptionalComma())) {
+    conv = ValueInputConvention::BorrowedInReg;
+    return success();
+  }
+
+  StringRef name;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (p.parseKeyword(&name))
+    return failure();
+  auto convVal = symbolizeValueInputConvention(name);
+  if (!convVal.has_value()) {
+    p.emitError(loc, "expected convention");
+    return failure();
+  }
+  conv = *convVal;
+  return success();
+}
+
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
 /// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same
@@ -1078,7 +1105,8 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
   auto anyRegTypeType = AnyRegTypeType::get(p.getContext());
-  Type type = VariadicType::get(anyRegTypeType);
+  Type type =
+      VariadicType::get(anyRegTypeType, ValueInputConvention::BorrowedInReg);
   if (succeeded(p.parseOptionalColon()))
     if (parseKGENType(p, type))
       return failure();

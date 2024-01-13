@@ -46,7 +46,8 @@ def DeclRefType : DialectType<(type
 )>;
 
 def VariadicType : DialectType<(type
-  Type:$elementType
+  Type:$elementType,
+  EnumAttr<"ValueInputConvention">:$convention
 )>;
 
 def NoneType : DialectType<(type)>;

@@ -46,13 +46,16 @@ fn test_func_type():
     alias float2: fn[a: Int]() -> MemType = test_func_type
     # expected-error @below {{fn[Int](owned Int, /) -> MemType}}
     alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
-    # expected-error @below {{fn[Int](inout *Int) -> None}}
+    # expected-error @below {{fn[Int](*Int) -> None}}
+    # expected-error @below {{'inout' arguments cannot be variadic}}
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type
-    # expected-error @below {{fn(owned *MemType) raises capturing -> None}}
+    # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{fn[*AnyRegType](owned * *$0) capt}}
+    # expected-error @below {{'owned' arguments cannot be variadic}}
+    # expected-error @below {{fn[*AnyRegType](* *$0) capt}}
     alias float6: fn[*Ts: AnyRegType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[AnyRegType](inout *$0) capturing -> None}}
+    # expected-error @below {{fn[AnyRegType](*$0) capturing -> None}}
+    # expected-error @below {{'inout' arguments cannot be variadic}}
     alias float7: fn[T: AnyRegType](inout *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}

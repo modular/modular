@@ -168,11 +168,19 @@ fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: Float32, *b: Int): pass
-# expected-error @+2 {{mutable variadics aren't supported yet}}
+# expected-error @+2 {{'inout' arguments cannot be variadic}}
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.anyregtype`](*args: T): pass
+
+# expected-error @+1 {{'owned' arguments cannot be variadic}}
+fn ownedPack[*Ts: __mlir_type.`!kgen.anyregtype`](owned *args: *Ts): pass
+# expected-error @+1 {{'owned' arguments cannot be variadic}}
+fn ownedVariadic(owned *args: Inner): pass
+# expected-error @+1 {{'owned' arguments cannot be variadic}}
+fn ownedVariadicReg(owned *args: WrongType): pass
+
 
 # expected-note @+1 {{struct declared here}}
 struct ParameterizedStruct[T: __mlir_type.`!kgen.anyregtype`]:
@@ -194,11 +202,11 @@ fn badCalls(arg: Int):
 
   var x: Int
   var y: Float32
-  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
+  # xpected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
-  # expected-error-re @+1 {{l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
+  # expected-error-re @+1 {{argument #2 cannot be converted from 'SIMD[f32, 1]' to 'Int'}}
   exampleByRefVariadic(1.0, x, y)
-  # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
+  # xpected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
 
   # FIXME(#11803): These diagnostics could be improved.

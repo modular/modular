@@ -372,7 +372,8 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
       emitter.emitError(arg.loc, "parameters may not be variadic packs");
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
-      type = VariadicType::get(type);
+      // TODO: What convention should we use for parameter varargs?
+      type = VariadicType::get(type, ValueInputConvention::BorrowedInReg);
       paramVarArg = true;
     }
 
@@ -584,6 +585,11 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     if (arg.convention == ParsedArgument::kConventionUnspec) {
       arg.convention = isDef ? ParsedArgument::kConventionOwned
                              : ParsedArgument::kConventionBorrowed;
+
+      // FIXME(owned varargs): we don't support owned varargs, so pass varargs
+      // as borrowed instead for def's for now to hackaround this.
+      if (isDef && arg.vararg != VarArgKind::None)
+        arg.convention = ParsedArgument::kConventionBorrowed;
     }
 
     // Emit default argument values.
@@ -682,6 +688,29 @@ void DeclResolver::computeArgumentConventions(
     SharedState &shared, MutableArrayRef<ParsedArgument> args,
     MutableArrayRef<Type> argTypes,
     SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls, ASTDecl &declScope) {
+  // This closure is called for argument conventions that don't allow
+  // variadics.
+  auto rejectVariadic = [&](size_t argNo, const char *kind) -> bool {
+    auto &arg = args[argNo];
+    // If the arg isn't variadic, then it's fine.
+    if (arg.vararg == VarArgKind::None)
+      return false;
+    // Emit an error and remember this error.
+    if (!arg.isErroneous) {
+      shared.emitError(arg.loc)
+          << "'" << kind << "' arguments cannot be variadic";
+      arg.isErroneous = true;
+    }
+
+    // Switch to a convention that is supportable.
+    arg.convention = ParsedArgument::kConventionBorrowed;
+    if (arg.kgenConvention == ValueInputConvention::OwnedInReg)
+      arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+    else
+      arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+    return true;
+  };
+
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
@@ -693,6 +722,7 @@ void DeclResolver::computeArgumentConventions(
         arg.kgenConvention = ValueInputConvention::OwnedInReg;
       else
         arg.kgenConvention = ValueInputConvention::OwnedInMem;
+      rejectVariadic(i, "owned");
       break;
     case ParsedArgument::kConventionBorrowed:
       // Memory-only owned argument are passed with a layer of indirection and
@@ -704,14 +734,17 @@ void DeclResolver::computeArgumentConventions(
       break;
     case ParsedArgument::kConventionInOut:
       arg.kgenConvention = ValueInputConvention::ByRef;
+      rejectVariadic(i, "inout");
       break;
     case ParsedArgument::kConventionInOutResult:
       arg.kgenConvention = ValueInputConvention::ByRefResult;
+      rejectVariadic(i, "inout");
       break;
     case ParsedArgument::kConventionInitSelfResult:
       // We also force the passing kind of self to positional-only.
       arg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       arg.kgenConvention = ValueInputConvention::InitSelf;
+      rejectVariadic(i, "inout self");
       break;
     }
 
@@ -742,7 +775,17 @@ void DeclResolver::computeArgumentConventions(
           isMutable, argType,
           ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
     }
-    if (arg.vararg == VarArgKind::VarArg)
-      argType = VariadicType::get(argType);
+
+    // If this is a valid vararg argument, then we pass it as a variadic type.
+    // The convention is to pass as a register value, in the case of a memory
+    // value, we're passing the array of pointers by value.
+    if (arg.vararg == VarArgKind::VarArg) {
+      argType = VariadicType::get(argType, arg.kgenConvention);
+      assert(arg.kgenConvention == ValueInputConvention::BorrowedInMem ||
+             arg.kgenConvention == ValueInputConvention::BorrowedInReg ||
+             // FIXME: Doesn't actually work.
+             arg.kgenConvention == ValueInputConvention::OwnedInReg);
+      arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+    }
   }
 }

@@ -163,9 +163,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ValueInputConvention::BorrowedInMem:
-    // TODO(#21861): support variadic arguments
-    // This is immutable and so can't be tracked, but also cannot be analyzed
-    // for aliases without lifetimes.
+    // This is actually a register value passed to VariadicListMem - it
+    // doesn't need to be tracked.
     if (isa<VariadicType>(bbArg.getType()))
       return;
 
@@ -178,26 +177,25 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     break;
 
   case ValueInputConvention::OwnedInReg:
+    // TODO(#21861): support variadic arguments
+    assert(!isa<VariadicType>(bbArg.getType()) &&
+           "variadic OwnedInMem not supported yet");
     isIndirect = false;
     startsUninit = false;
     endsUninit = true;
     break;
   case ValueInputConvention::OwnedInMem:
     // TODO(#21861): support variadic arguments
-    if (isa<VariadicType>(bbArg.getType())) {
-      mlir::emitError(
-          bbArg.getLoc(),
-          "passing variadic arguments of memory-only types as `owned` is not "
-          "supported yet (hint: pass as `borrowed` if possible)");
-      return;
-    }
+    assert(!isa<VariadicType>(bbArg.getType()) &&
+           "variadic OwnedInMem not supported yet");
     isIndirect = true;
     startsUninit = false;
     endsUninit = true;
     break;
   case ValueInputConvention::ByRefResult:
-    // FIXME(Issue#12196): __result__ slots in raising functions cannot properly
-    // model the behavior when an error is thrown, so we give up tracking them.
+    // __result__ slots in raising functions do not properly model the behavior
+    // when an error is thrown, so we don't track them here, they get special
+    // support in CheckLifetimes.
     if (signature.isThrows())
       return;
     isIndirect = true;
@@ -213,15 +211,9 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isFullObjectLiveOnEntry = true;
     break;
   case ValueInputConvention::ByRef:
-    // TODO(#21861): support variadic arguments
-    if (isa<VariadicType>(bbArg.getType())) {
-      mlir::emitError(bbArg.getLoc(),
-                      "passing variadic arguments by reference is not "
-                      "supported yet (hint: pass register-passable types as "
-                      "`owned` or `borrowed` and memory-only types as "
-                      "`borrowed` if possible)");
-      return;
-    }
+    // TODO(#21861): support variadic inout arguments
+    assert(!isa<VariadicType>(bbArg.getType()) &&
+           "variadic inout not supported yet");
     isIndirect = true;
     startsUninit = false;
     endsUninit = false;
@@ -310,7 +302,10 @@ LIT::getOperationValueEffects(Operation &op,
   }
 
   if (isa<OwnershipUseOp>(op)) {
-    operands.push_back(OperandEffect::memLoad);
+    if (isa<RefType>(op.getOperand(0).getType()))
+      operands.push_back(OperandEffect::memLoad);
+    else
+      operands.push_back(OperandEffect::regUse);
     return {};
   }
 

@@ -412,7 +412,9 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   let summary = "parameterized variadic type";
   let description = [{
     The `!kgen.variadic` type represents a homogeneously typed variadic sequence
-    of zero or more elements.
+    of zero or more elements.  It also includes the original argument convention
+    so clients know if the input argument is supposed to be owned, borrowed,
+    inout, etc.
 
     Example:
 
@@ -421,16 +423,21 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
     !kgen.variadic<scalar<f32>>
 
     // A parameterized variadic sequence.
-    !kgen.variadic<type>
+    !kgen.variadic<type, owned_in_mem>
     ```
   }];
 
-  let parameters = (ins "Type":$elementType);
-  let assemblyFormat = "`<` custom<ParamType>($elementType) `>`";
+  let parameters = (ins "Type":$elementType,
+                        "ValueInputConvention":$convention);
+  let assemblyFormat = [{
+    `<`custom<ParamType>($elementType)
+      `` custom<VariadicConvention>($convention) `>`
+  }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
-      return $_get(elementType.getContext(), elementType);
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        "ValueInputConvention":$convention), [{
+      return $_get(elementType.getContext(), elementType, convention);
     }]>,
   ];
 }
