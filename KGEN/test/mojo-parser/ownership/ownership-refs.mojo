@@ -22,8 +22,11 @@ alias Lifetime = __mlir_type.`!lit.lifetime`
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   fn __init__(inout self): pass
+  fn __moveinit__(inout self, owned existing: Self): pass
+  fn __copyinit__(inout self, existing: Self): pass
   fn __del__(owned self): pass
   fn noop(self): pass
+  fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<
 # CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a: !lit.ref<!MemExample, [[LT]]> borrow)
@@ -62,17 +65,15 @@ fn addrSpaces[lt: Lifetime, as1: __mlir_type.index]():
 # Conditional lifetimes
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"testConditional
-fn testConditional(cond: __mlir_type.i1):
+# CHECK-LABEL: lit.func @"testUseConditional
+fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NOT: __del__
 
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
   let a = MemExample()
-  # CHECK: lit.call @{{.*}}__del__{{.*}}(%a)
 
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   let b = MemExample()
-  # CHECK: lit.call @{{.*}}__del__{{.*}}(%b)
 
   let aref = __get_ref_from_value(a)
   let bref = __get_ref_from_value(b)
@@ -80,5 +81,49 @@ fn testConditional(cond: __mlir_type.i1):
   # CHECK: %cref = lit.letreg.decl "cref"
   let cref = aref if cond else bref
 
-  # TODO: __get_value_from_ref(cref).noop()
-  # TODO: HECK: lit.call @{{.*}}noop
+  # This uses both A and B, so it needs to extend both of their lifetimes.
+  __get_value_from_ref(cref).noop()
+  # CHECK-NEXT: lit.ref.immut %cref
+  # CHECK-NEXT: lit.call @{{.*}}noop
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
+
+# CHECK-LABEL: lit.func @"testDefConditional
+fn testDefConditional(cond: __mlir_type.i1):
+  # CHECK-NOT: __del__
+
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
+  var a = MemExample()
+
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
+  var b = MemExample()
+
+  let aref = __get_ref_from_value(a)
+  let bref = __get_ref_from_value(b)
+
+  # CHECK: %cref = lit.letreg.decl "cref"
+  let cref = aref if cond else bref
+
+  # Mutating either of these is fine - it doesn't matter which one is mutated,
+  # we know that both are live.
+  __get_value_from_ref(cref).mutate()
+  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}(%cref)
+
+  # Overwriting one means that we need to immediately destroy the same reference
+  # because we cannot know which one is being set.
+  __get_value_from_ref(cref) = MemExample()
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%cref)
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%cref)
+
+  # Overwriting is eligible for copy => move optimization as well.
+  let shouldBeMovedFrom = MemExample()
+  __get_value_from_ref(cref) = shouldBeMovedFrom
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
+  # CHECK-NEXT: lit.ref.immut
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%cref)
+  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}(%cref, %shouldBeMovedFrom)
+
+  # The mutation above could either of A or B, so we needed to extend both of
+  # their lifetimes, but now we can say goodbye.
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)

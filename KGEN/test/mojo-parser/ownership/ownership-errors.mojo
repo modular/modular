@@ -398,7 +398,7 @@ fn testWrapperNestedInt():
 # More complex references
 # ===----------------------------------------------------------------------=== #
 
-fn testConditional(cond: __mlir_type.i1):
+fn testConditionalImmut(cond: __mlir_type.i1):
   let a = MemExample()
   let b : MemExample # expected-note {{'b' declared here}}
 
@@ -411,3 +411,13 @@ fn testConditional(cond: __mlir_type.i1):
 
   # expected-error @+1 {{cannot consume indirect references to values}}
   __get_value_from_ref(cref)^.consume()
+
+
+fn testConditionalMut(cond: __mlir_type.i1):
+  var a = MemExample()
+  var b : MemExample # expected-note {{'b' declared here}}
+
+  let cref = __get_ref_from_value(a) if cond else __get_ref_from_value(b)
+
+  # expected-error @+1 {{potential indirect mutation of uninitialized value 'b'}}
+  __get_value_from_ref(cref) = MemExample()
