@@ -115,23 +115,15 @@ fn kw_only_param[a: Int, *,
                  c: Int](): # expected-error {{keyword-only parameters not supported yet}}
     pass
 
-# expected-error @+1 {{result parameters may not be variadic}}
-fn variadic_result_params[() -> *b: Int]():
-  pass
-
-# expected-error @+1 {{keyword-only parameters not supported yet}}
-fn variadic_kw_result_params[() -> **b: Int]():
-  pass
-
 # expected-error @+1 {{keyword-only parameters not supported yet}}
 fn variadic_kw_result_binding[**a: Int]():
-    variadic_kw_result_params[() -> **a] # expected-error {{result parameters cannot be unpacked}}
+    pass
 
 fn variadic_kw_binding[*a: Int]():
     variadic_kw_result_binding[**a]() # expected-error {{unpacked parameters not supported yet}}
 
 fn variadic_int_params[*a: Int]():
-  variadic_result_params[() -> *a] # expected-error {{result parameters cannot be unpacked}}
+    pass
 
 fn callVariadic():
   variadic_int_params() # OK
@@ -141,85 +133,6 @@ fn callVariadic():
   variadic_int_params[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
   variadic_int_params[*b] # expected-error {{unpacked parameters not supported yet}}
 
-
-##===----------------------------------------------------------------------===##
-# Result parameters
-##===----------------------------------------------------------------------===##
-
-# expected-error @+1 {{struct declarations do not support result parameters}}
-struct ResultParams[a: Int -> b: Int, c: Float32]:
-  pass
-
-# expected-note @+1 {{function declared here}}
-fn hasResultParam[a: Int -> b: Int]():
-  param_return[a]
-
-# expected-note @+1 {{function declared here}}
-fn hasInputParam[a: Int]():
-  pass
-
-fn useResultParams():
-  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter, but 0 were specified}}
-  hasResultParam[1]()
-
-  alias b: Int
-  hasResultParam[1 -> b]()  # expected-note {{previously defined here}}
-
-  # expected-error @+1 {{'b' alias was defined by another result}}
-  hasResultParam[1 -> b]()
-
-  alias c: Int
-  alias d: Int
-  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter, but 2 were specified}}
-  hasResultParam[1 -> c, d]()
-
-  # expected-error @+1 {{unable to find forward-declared alias named 'e'}}
-  hasResultParam[1 -> e]()
-
-  alias f: __mlir_type.f32 # expected-note {{alias forward declared here}}
-  # expected-error @+1 {{result parameter returns type 'Int' but forward declaration is of type 'f32'}}
-  hasResultParam[1 -> f]()
-
-  var varNotAlias : __mlir_type.f32 # expected-note {{'varNotAlias' declared here}}
-  # expected-error @+1 {{'varNotAlias' is not a forward declared alias}}
-  hasResultParam[1 -> varNotAlias]()
-
-  alias g: Int
-  # expected-error @+1 {{calls with result parameter bindings must be called directly}}
-  _ = hasResultParam[1 -> g]
-
-  # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
-  var float1 = hasInputParam
-
-  # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter, but 0 were specified}}
-  hasInputParam()
-
-  # Issue #6856: Cannot bind parameter results is parameter expressions
-  alias h: Int
-  # expected-error @+1 {{cannot call 'hasResultParam' in parameter expression because it has a parameter result}}
-  alias x = hasResultParam[1 -> h]()
-
-fn incorrectParameterReturnType[()-> a: Int]():
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in return parameter}}
-  param_return[4.0]
-
-# expected-note @below {{function declared here}}
-fn take_simd8(x: SIMD[DType.float32, 8]):
-    pass
-
-fn add_param_arg[x: Int](y: Int) -> Int:
-    return x + y
-
-fn pass_simd():
-    # expected-error-re @below {{cannot be converted from 'SIMD[f32, add_param_arg[{{.*}}$builtin::$int::Int][8](8)]' to 'SIMD[f32, 8]'}}
-    take_simd8(SIMD[DType.float32, add_param_arg[8](8)]())
-    alias bar = add_param_arg
-    # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
-    take_simd8(SIMD[DType.float32, bar[8](8)]())
-
-# expected-error @+1 {{unexpected default value for result parameter}}
-fn default_result_param[a: Int -> b: Int = 7]():
-    param_return[5]
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

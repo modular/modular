@@ -283,7 +283,7 @@ struct RegTraitType(TraitForReg):
 trait CrazyTrait:
     pass
 
-    fn foo[b: Int->d: Int](self, c: Int) -> Self:
+    fn foo[b: Int](self, c: Int) -> Self:
         ...
 
 
@@ -295,15 +295,13 @@ struct CrazyRegisterPassable[a: Int](CrazyTrait):
     pass
 
     # CHECK-LABEL: lit.func @"`thunk_foo
-    # CHECK-SAME: <b[b] -> o0>(%__result__: !lit.ref<mut {{.*}}@CrazyRegisterPassable<[[a]]>>{{.*}} byref_result, |,
+    # CHECK-SAME: <b[b]>(%__result__: !lit.ref<mut {{.*}}@CrazyRegisterPassable<[[a]]>>{{.*}} byref_result, |,
     # CHECK-SAME: %self: !lit.ref<{{.*}}@CrazyRegisterPassable<[[a]]>{{.*}} borrow_in_mem
     # CHECK-SAME: %c: index borrow) -> !kgen.none
-    fn foo[b: Int->d: Int](self, c: Int) -> Self:
+    fn foo[b: Int](self, c: Int) -> Self:
         # CHECK: %0 = lit.ref.load %self
-        # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<[[a]], b -> r0>(%0, %c)
+        # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<[[a]], b>(%0, %c)
         # CHECK: lit.ref.store %1, %__result__
-        # CHECK: lit.param_return<r0>
-        param_return[__mlir_attr.`2:index`]
         return self
 
 @register_passable

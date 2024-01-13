@@ -378,14 +378,6 @@ def doIsNot(a: Int, b: Int):
   if a is not b:
     pass
 
-def hasResultParam[() -> a: Int]():
-  pass
-
-def aliasCallNoBind():
-  alias callee = hasResultParam
-  # expected-error @below {{invalid indirect call: callee has 1 unbound result parameter}}
-  callee()
-
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts
 ##===----------------------------------------------------------------------===##
