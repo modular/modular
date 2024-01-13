@@ -968,7 +968,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
                      CallSyntax::kMethodCall);
       ov.baseType = ASTType(typeValue);
       PValue result = ov.filterOverloadSetForValueType(
-          sig, /*emitDiagnosticOnFailure=*/false, *this);
+          sig, /*emitDiagnosticOnFailure=*/false);
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.

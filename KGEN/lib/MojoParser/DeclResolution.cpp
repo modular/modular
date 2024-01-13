@@ -2525,12 +2525,12 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         OverloadSet ov(name, decls, std::move(bindings), &node,
                        CallSyntax::kMethodCall);
         PValue result = ov.filterOverloadSetForValueType(
-            newSignature, emitter,
-            emitError ? function_ref<InflightDiag &(SMLoc)>(
-                            [&](SMLoc loc) -> InflightDiag & {
-                              return diag.attachNote(decl->getLoc());
-                            })
-                      : nullptr);
+            newSignature, emitError
+                              ? function_ref<InflightDiag &(SMLoc)>(
+                                    [&](SMLoc loc) -> InflightDiag & {
+                                      return diag.attachNote(decl->getLoc());
+                                    })
+                              : nullptr);
         if (!result && emitError)
           allMatchFound = false;
         if (regPassable)

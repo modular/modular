@@ -766,23 +766,21 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   return {};
 }
 
-PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
-                                                  bool emitDiagnosticOnFailure,
-                                                  ExprEmitter &emitter) const {
-  if (!emitDiagnosticOnFailure) {
-    return filterOverloadSetForValueType(functionType, emitter,
-                                         /*emitError=*/{});
-  }
+PValue
+OverloadSet::filterOverloadSetForValueType(ASTType functionType,
+                                           bool emitDiagnosticOnFailure) const {
+  if (!emitDiagnosticOnFailure)
+    return filterOverloadSetForValueType(functionType, /*emitError=*/nullptr);
+
   std::optional<InflightDiag> diag;
   return filterOverloadSetForValueType(
-      functionType, emitter, [&](SMLoc loc) -> InflightDiag & {
+      functionType, [&](SMLoc loc) -> InflightDiag & {
         return diag.emplace(getShared().emitError(loc));
       });
 }
 
 PValue OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType, ExprEmitter &emitter,
-    function_ref<InflightDiag &(SMLoc)> emitError) const {
+    ASTType functionType, function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!isa<SignatureType>(functionType.mlirType)) {
@@ -831,7 +829,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
       // argument types are updated.
       if (!newBindings.empty())
         candidateType = candidateType.getSpecializedSignature(
-            newBindings, expr->getLocation(emitter));
+            newBindings, getShared().translateLocation(expr->getLoc()));
     }
 
     return functionType.isEqualCanon(candidateType) ||
@@ -861,7 +859,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
-    InputParamBindings newBindings(emitter);
+    InputParamBindings newBindings(inputParamBindings.declScope, getShared());
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
     return getCallee(baseType, validCandidates, baseName, newBindings, expr);
@@ -1034,8 +1032,8 @@ PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
   // With an emitter and an expected type, the overload set can definitely be
   // resolved to a single candidate or not.
   if (expectedType) {
-    return filterOverloadSetForValueType(
-        expectedType, /*emitDiagnosticOnFailure=*/true, *emitter);
+    return filterOverloadSetForValueType(expectedType,
+                                         /*emitDiagnosticOnFailure=*/true);
   }
   // Otherwise, emit the "cannot form a reference to overloaded decl" error.
   return getBoundConstantAttr();

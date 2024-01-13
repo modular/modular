@@ -385,10 +385,9 @@ public:
   /// to produce a function pointer with the specified type.  This returns a
   /// PValue for the callee if resolvable or null if not.
   PValue filterOverloadSetForValueType(ASTType functionType,
-                                       bool emitDiagnosticOnFailure,
-                                       ExprEmitter &emitter) const;
+                                       bool emitDiagnosticOnFailure) const;
   PValue filterOverloadSetForValueType(
-      ASTType functionType, ExprEmitter &emitter,
+      ASTType functionType,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
 private:
