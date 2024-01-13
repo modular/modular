@@ -397,13 +397,15 @@ struct ValueRef {
       bits.reset(startBit, endBit);
   }
 
+  static Type getDereferencedType(Type sourceTy, bool isIndirect) {
+    // If this is a direct value, use the type directly.
+    return isIndirect ? cast<RefType>(sourceTy).getElementType() : sourceTy;
+  }
+
   /// Return the type of the underlying value, looking through the reference
   /// type if indirect.
   Type getValueType(Value value) const {
-    // If this is a direct value, use the type directly.
-    if (!isIndirect)
-      return value.getType();
-    return cast<RefType>(value.getType()).getElementType();
+    return getDereferencedType(value.getType(), isIndirect);
   }
 
   /// Given a field ref with fields, return a sub-field that starts at the
@@ -514,6 +516,10 @@ struct ValueSet {
     return getFullValueRef(it->second);
   }
 
+  /// Look up all the value refs that an access with the specified Value and
+  /// dereference bit touch.
+  SmallVector<ValueRef> getValueRefsForAccess(Value val, bool isDeref);
+
   /// Given a tracked value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
   ///
@@ -525,6 +531,13 @@ struct ValueSet {
   /// Return the total number of bits we need to track in the bitvector.
   unsigned getNumTotalBits() const {
     return !valueInfos.empty() ? valueInfos.back().endValueBit : 0;
+  }
+
+  /// Return true if this reference is to a trivial value that is not tracked
+  /// for liveness.
+  bool isTrivial(Type type, bool isIndirect) const;
+  bool isTrivial(Value value, bool isIndirect) const {
+    return isTrivial(value.getType(), isIndirect);
   }
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
@@ -551,6 +564,11 @@ private:
   DenseMap<TypedAttr, unsigned> lifetimeToValueIndex;
 };
 } // namespace
+
+bool ValueSet::isTrivial(Type type, bool isIndirect) const {
+  auto eltType = ValueRef::getDereferencedType(type, isIndirect);
+  return typeDeclInfo.isRegisterPassableTrivial(eltType);
+}
 
 raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
   if (bv.size() != getNumTotalBits())
@@ -622,6 +640,10 @@ void ValueSet::dump() const {
 /// which matters in the case of references.  When false, this is a use of a
 /// possibly-owned register value.
 ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
+  // If the value is deref, it must have reference type.
+  assert((!isDeref || isa<RefType>(value.getType())) &&
+         "only references are dereferencable!");
+
   // If this is testing a reference value (not the dereference value) then it is
   // ignored: references can be passed around and used with the contents being
   // liveness tracked, the ultimate accesses are what matter.
@@ -655,7 +677,7 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
       if (valueRef.isIndirect) {
         // The parser doesn't emit all the lifetime stuff for trivial types,
         // so don't track them either.
-        if (typeDeclInfo.isRegisterPassableTrivial(load.getType()))
+        if (isTrivial(load, /*isDeref=*/false))
           return {};
 
         valueRef.isIndirect = false;
@@ -671,6 +693,34 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 
   // Otherwise, we don't know what this is.
   return ValueRef();
+}
+
+/// Look up all the value refs that an access with the specified Value and
+/// dereference bit touch.
+SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
+                                                      bool isDeref) {
+  SmallVector<ValueRef> result;
+
+  // If this is a direct reference to a value, return field sensitive info.
+  if (ValueRef valueRef = getDirectValueRef(value, isDeref)) {
+    result.push_back(valueRef);
+  } else if (isDeref) {
+    // Otherwise, if indirect, this is an reference to one or more
+    // lifetime-tracked values, figure out what they are.
+    TypedAttr lifetime = cast<RefType>(value.getType()).getLifetime();
+
+    // If the lifetime is a LifetimeUnionAttr then it will already be uniqued,
+    // inlined, and stripped of immortal references, so we can just return all
+    // the value refs for its elments.
+    if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
+      for (auto elt : unionAttr.getOperands())
+        if (auto valueRef = getFullValueRefForLifetime(elt))
+          result.push_back(valueRef);
+    } else if (auto valueRef = getFullValueRefForLifetime(lifetime))
+      result.push_back(valueRef);
+  }
+  // Otherwise it is a trivial or untracked value.
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -846,13 +896,14 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
 /// error at the specified operation if not.
 void UninitializedValueScan::checkUse(Value value, Operation &op,
                                       bool isDeref) {
-  ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
-  if (!valueRef)
-    return;
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForAccess(value, isDeref);
 
-  // The referenced value fields must be live.
-  if (!valueRef.isAllPresent(liveValues))
-    diagnoseUseError(valueRef, op);
+  for (ValueRef access : accesses) {
+    // The referenced value fields must be live.
+    if (!access.isAllPresent(liveValues))
+      diagnoseUseError(access, op);
+  }
 }
 
 /// One of the specified fields is missing, so emit an error about it.
@@ -916,6 +967,9 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
   if (!valueRef.isAllMissing(everMutatedValues)) {
     ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
 
+    // FIXME(let-decl): This is wrong with indirect references, but instead of
+    // fixing this, we should just remove let's.
+
     // If this was declared as a let, then this is an error.
     if (info.isLet && !info.hasErrorDiagnosed) {
       auto diag =
@@ -942,17 +996,26 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
                                           bool isDeref) {
   ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
-  if (!valueRef)
+  if (!valueRef) {
+    // We cannot consume an indirect value (unless it is untracked).
+    if (!valueSet.isTrivial(value, isDeref) &&
+        // FIXME: Other stuff isn't modeled correctly.
+        isDeref &&
+        // FIXME: Horrible hack frontend is broken, RE: arg conventions.
+        !isa<VariantType>(value.getType())) {
+      mlir::emitError(op.getLoc(),
+                      "cannot consume indirect references to values");
+    }
     return;
+  }
 
   // The value must be completely live in order for us to consume it.  If not,
   // use "checkUse" to diagnose the problem.
   if (!valueRef.isAllPresent(liveValues))
-    checkUse(value, op, isDeref);
+    diagnoseUseError(valueRef, op);
 
   // If tracked, marks its value as dead.
-  if (!valueSet.typeDeclInfo.isRegisterPassableTrivial(
-          valueRef.getValueType(value)))
+  if (!valueSet.isTrivial(value, isDeref))
     valueRef.markBits(liveValues, false);
 
   // Mark the value as mutated.
@@ -1272,9 +1335,12 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
   // The live-ins to the except block are the exceptSet.
-  for (Value arg : tryOp.getExceptRegion().getArguments())
-    if (ValueRef ref = valueSet.getDirectValueRef(arg, /*isDeref=*/true))
-      ref.markBits(exceptSet, true);
+  assert(tryOp.getExceptRegion().getArguments().size() == 1 &&
+         "Should have a error value as the only argument");
+  if (ValueRef ref = valueSet.getDirectValueRef(
+          tryOp.getExceptRegion().getArgument(0), /*isDeref=*/false))
+    ref.markBits(exceptSet, true);
+
   liveValues = std::move(exceptSet);
   everMutatedValues = std::move(exceptEverMutatedSet);
   scanBlock(tryOp.getExceptRegion().front());
@@ -1880,8 +1946,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
   if (!valueRef.isAllMissing(consumedValues)) {
     // Trivial types don't have __copyinit__ methods, and therefore cannot have
     // ownership tracked for them.
-    if (valueSet.typeDeclInfo.isRegisterPassableTrivial(
-            valueRef.getValueType(value)))
+    if (valueSet.isTrivial(value, isDeref))
       return;
 
     ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
@@ -1992,7 +2057,7 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     return;
 
   // If this value is trivial then clear the bits and we're done!
-  if (valueSet.typeDeclInfo.isRegisterPassableTrivial(valueType)) {
+  if (valueSet.isTrivial(valueType, /*isIndirect=*/false)) {
     valueRef.markBits(bits, false);
     return;
   }

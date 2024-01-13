@@ -1312,7 +1312,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  // FIXME: Lookup doesn't need ExprEmitter!
   if (PValue enterMethod =
           OverloadSet::lookup(*curDeclScope, shared, contextRVType, "__enter__",
                               CallOperands({{contextVal, contextExp}}),

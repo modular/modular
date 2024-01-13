@@ -26,9 +26,9 @@ struct MemExample:
     fn __copyinit__(inout self, existing: Self): # expected-note {{'self' declared here}}
         self.x = existing.x
 
-    fn __del__(owned self):
-        pass
-
+    fn noop(self): pass
+    fn consume(owned self): pass
+    fn __del__(owned self): pass
 
 fn use(x: MemExample): pass
 fn use_inout(inout x: MemExample): pass
@@ -392,3 +392,22 @@ fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
     for i in range(0, 1):
         w.x.y = 0
+
+
+# ===----------------------------------------------------------------------=== #
+# More complex references
+# ===----------------------------------------------------------------------=== #
+
+fn testConditional(cond: __mlir_type.i1):
+  let a = MemExample()
+  let b : MemExample # expected-note {{'b' declared here}}
+
+  let aref = __get_ref_from_value(a)
+  let bref = __get_ref_from_value(b)
+  let cref = aref if cond else bref
+
+  # expected-error @+1 {{use of uninitialized value 'b'}}
+  __get_value_from_ref(cref).noop()
+
+  # expected-error @+1 {{cannot consume indirect references to values}}
+  __get_value_from_ref(cref)^.consume()
