@@ -281,7 +281,9 @@ class TensorSpec:
 
     _impl: _TensorSpec
 
-    def __init__(self, shape: List[Optional[int]], dtype: DType, name: str):
+    def __init__(
+        self, shape: Optional[List[Optional[int]]], dtype: DType, name: str
+    ):
         self._impl = _TensorSpec(shape, dtype._to(), name)
 
     @classmethod
@@ -297,14 +299,17 @@ class TensorSpec:
         )
 
     def __str__(self) -> str:
-        mlir_shape = [
-            str(dim) if dim is not None else "-1" for dim in self.shape
-        ]
-        shape_str = "x".join(mlir_shape)
-        return f"{shape_str}x{self.dtype.name}"
+        if self.shape is not None:
+            mlir_shape = [
+                str(dim) if dim is not None else "-1" for dim in self.shape
+            ]
+            shape_str = "x".join(mlir_shape)
+            return f"{shape_str}x{self.dtype.name}"
+        else:
+            return f"None x {self.dtype.name}"
 
     @property
-    def shape(self) -> List[int]:
+    def shape(self) -> Optional[List[int]]:
         """The shape of the tensor as a list of integers.
 
         If a dimension size is unknown/dynamic (such as the batch size), its
