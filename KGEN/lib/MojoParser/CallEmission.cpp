@@ -402,7 +402,8 @@ InputParamBindings::verifyBindings(
     // all get packed up into a VariadicAttr.
     fitness.hasVariadicParams = true;
     SmallVector<TypedAttr> elements;
-    Type expectedType = ASTType(type).getVariadicElementType();
+    auto variadicType = cast<VariadicType>(type);
+    Type expectedType = variadicType.getElementType();
     do {
       const Binding &binding = posBindings[posBindingIdx++];
       PValue pValue = handlePosBinding(idx, binding, expectedType);
@@ -411,7 +412,8 @@ InputParamBindings::verifyBindings(
       elements.emplace_back(pValue);
     } while (posBindingIdx != numPosBindings);
 
-    auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
+    auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
+                                     variadicType.getConvention());
     setParamValue(VariadicAttr::get(elements, varType));
   }
 

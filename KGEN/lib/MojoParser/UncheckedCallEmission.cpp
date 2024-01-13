@@ -167,6 +167,19 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx,
                                     ValueInputConvention convention,
                                     Type expectedType, size_t sequenceIndex) {
+  if (calleeSig.isVarArg(argIdx)) {
+    auto variadic = cast<VariadicType>(expectedType);
+    // In the case of a variadic argument, we need to remove the
+    // !pop.variadic<> wrapper to get the type to convert to.
+    expectedType = variadic.getElementType();
+    convention = variadic.getConvention();
+  } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
+    // Operands being applied to a concrete pack type argument must be
+    // converted to the pack element type at that index.
+    expectedType =
+        ASTType(packType.getVariadicAttr().getValues()[sequenceIndex]);
+  }
+
   switch (convention) {
   case ValueInputConvention::ByRef:
   case ValueInputConvention::ByRefResult:
@@ -179,24 +192,13 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::BorrowedInMem: {
     // by-val arguments are converted to the expected r-value type.
-    ASTType expectedArgType = expectedType;
-    if (calleeSig.isVarArg(argIdx))
-      // In the case of a variadic argument, we need to remove the
-      // !pop.variadic<> wrapper to get the type to convert to.
-      expectedArgType = expectedArgType.getVariadicElementType();
-    else if (auto packType = getIfPackType(calleeSig, argIdx))
-      // Operands being applied to a concrete pack type argument must be
-      // converted to the pack element type at that index.
-      expectedArgType = packType.getVariadicAttr().getValues()[sequenceIndex];
-
-    if (convention == ValueInputConvention::OwnedInMem ||
-        convention == ValueInputConvention::BorrowedInMem)
-      expectedArgType = expectedArgType.getReferenceElementType();
+    if (SignatureType::hasAddress(convention))
+      expectedType = cast<RefType>(expectedType).getElementType();
 
     if (convention == ValueInputConvention::OwnedInReg ||
         convention == ValueInputConvention::OwnedInMem)
-      return emitter.emitRValue(operand, EC_CallArgValue, expectedArgType);
-    return emitter.emitBValue(operand, EC_CallArgValue, expectedArgType);
+      return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
+    return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");
@@ -218,7 +220,11 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     operand.ir = emittedArg;
   }
 
+  // If this is a variadic list, use the convention of the elements, not the
+  // convention of the list itself.
   bool isVarArg = calleeSig.isVarArg(argIdx);
+  if (isVarArg)
+    convention = cast<VariadicType>(expectedType).getConvention();
 
   // If all of the remaining operands are compile-time values, then we can
   // represent the sequence as a variadic or pack attribute.
@@ -235,10 +241,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       Type varElType = varType.getElementType();
 
       // If dealing with a memory-only type, remove the pointer.
-      if (convention == ValueInputConvention::OwnedInMem ||
-          convention == ValueInputConvention::BorrowedInMem)
+      if (SignatureType::hasAddress(convention))
         varElType = ASTType(varElType).getReferenceElementType();
-      auto newVarType = VariadicType::get(varElType);
+      auto newVarType = VariadicType::get(varElType, varType.getConvention());
       attr = VariadicAttr::get(args, newVarType);
     } else {
       attr = PackAttr::get(args, cast<PackType>(expectedType));
@@ -270,9 +275,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // If there are lifetimes on anything, create a uniform representation and
   // cast to a common reference type.
   if (isVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
+    auto expectedVararg = cast<VariadicType>(expectedType);
     // If one arg is a reference, then they all are.
-    auto expectedRefType =
-        cast<RefType>(ASTType(expectedType).getVariadicElementType().mlirType);
+    auto expectedRefType = cast<RefType>(expectedVararg.getElementType());
     SmallVector<TypedAttr> refLifetimes;
     for (auto arg : args)
       refLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
@@ -288,7 +293,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         arg = emitter.builder->create<RebindOp>(loc, expectedRefType, arg);
 
     // TODO(metatypes): preserve metatype?  These don't seem to do anything.
-    expectedType = VariadicType::get(expectedRefType);
+    expectedType =
+        VariadicType::get(expectedRefType, expectedVararg.getConvention());
   }
 
   Value argVal;
@@ -678,20 +684,20 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
     if (SignatureType::hasAddress(convention)) {
-      Type actualArgType = arg.getType();
-      if (boundSigType.isVarArg(argIdx)) {
-        // If dealing with a variadic argument, we put each element into memory.
-        auto varType = cast<VariadicType>(actualArgType);
-        auto varElType =
-            RefType::getImmortal(/*isMut=*/true, varType.getElementType());
+      arg = StoreToMemAttr::get(
+          arg, RefType::getImmortal(/*isMut=*/true, arg.getType()));
+    } else if (boundSigType.isVarArg(argIdx)) {
+      // If handling a variadic memory argument, put each element into memory.
+      auto varType = cast<VariadicType>(arg.getType());
+      if (SignatureType::hasAddress(varType.getConvention())) {
+        bool isMut =
+            varType.getConvention() != ValueInputConvention::BorrowedInMem;
+        auto varElType = RefType::getImmortal(isMut, varType.getElementType());
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
           storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
-        auto newVarType = VariadicType::get(varElType);
+        auto newVarType = VariadicType::get(varElType, varType.getConvention());
         arg = VariadicAttr::get(storedAttrs, newVarType);
-      } else {
-        arg = StoreToMemAttr::get(
-            arg, RefType::getImmortal(/*isMut=*/true, actualArgType));
       }
     }
     // Emit a rebind if the refined type does not match the callee arg type.

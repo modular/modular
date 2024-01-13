@@ -332,10 +332,11 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isVarArg(expectedArgIdx)) {
-      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
+      auto expectedVariadic = cast<VariadicType>(expectedType);
+      auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands)
         if (failed(checkOneOperand(posOperands[posOperandIdx++], varArgsEltType,
-                                   expectedConvention)))
+                                   expectedVariadic.getConvention())))
           return {};
       continue;
     }
@@ -1077,11 +1078,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     /// Check and process a single positional operand and advance the operand
     /// index.
     auto processPositionalOperand =
-        [&, expectedConvention = expectedConvention](
-            ASTType expectedType) -> std::optional<InflightDiag> {
+        [&](ASTType expectedType,
+            ValueInputConvention conv) -> std::optional<InflightDiag> {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
-      auto [kind, ty] =
-          checkAnOperand(operand, expectedConvention, expectedType);
+      auto [kind, ty] = checkAnOperand(operand, conv, expectedType);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
       ++posOperandIdx;
@@ -1091,9 +1091,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // If we have a varargs argument, then it will eat the rest of the
     // positional arguments, but we have to check each of them.
     if (signature.isVarArg(expectedArgIdx)) {
-      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
+      auto expectedVariadic = cast<VariadicType>(expectedType);
+      auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands) {
-        if (auto result = processPositionalOperand(varArgsEltType))
+        if (auto result = processPositionalOperand(
+                varArgsEltType, expectedVariadic.getConvention()))
           return std::move(*result);
         passesVarArgArgument = true;
       }
@@ -1104,7 +1106,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // consume exactly that many positional operands.
     if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
-        if (auto result = processPositionalOperand(ASTType(element)))
+        if (auto result =
+                processPositionalOperand(ASTType(element), expectedConvention))
           return std::move(*result);
         passesVarArgArgument = true;
       }
@@ -1119,7 +1122,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       if (callOperands.findKwArg(argName))
         return emitDiagFor.redundantArg(expectedArgIdx, argName);
     }
-    if (auto result = processPositionalOperand(expectedType))
+    if (auto result =
+            processPositionalOperand(expectedType, expectedConvention))
       return std::move(*result);
   }
 

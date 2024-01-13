@@ -79,9 +79,11 @@ static std::string generateTypeString(
   ASTType astType(type);
 
   // Handle variadic types.
-  if (isa<VariadicType>(type)) {
+  if (auto variadic = dyn_cast<VariadicType>(type)) {
     astType = astType.getVariadicElementType();
     os << "*";
+    if (convention)
+      convention = variadic.getConvention();
   }
 
   // Process the convention if present.

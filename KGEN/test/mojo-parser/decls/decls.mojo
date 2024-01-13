@@ -575,8 +575,8 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.anyregtype`]:
 
 
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<regtype>](__mlir_type.!kgen.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<regtype>>(%args: !kgen.pack<[[TS]]>)
-fn pack[*Ts: __mlir_type.`!kgen.anyregtype`](owned *args: *Ts):
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<regtype>>(%args: !kgen.pack<[[TS]]> borrow)
+fn pack[*Ts: __mlir_type.`!kgen.anyregtype`](*args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
@@ -649,7 +649,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, #lit.lifetime>> borrow_in_mem) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, #lit.lifetime>, borrow_in_mem> borrow) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])]
     alias b = variadic_mem_only(x, y)
 
@@ -996,7 +996,7 @@ struct NotSynthetic:
 @register_passable("trivial")
 struct VarArgInit:
     var a: Int
-    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>> borrow_in_mem) vararg -> !VarArgInit
+    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>, borrow_in_mem> borrow) vararg -> !VarArgInit
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}

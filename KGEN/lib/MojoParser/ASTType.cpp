@@ -518,12 +518,14 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         continue;
       }
       ASTType actualType = type;
-      if (sig.isVarArg(i))
-        actualType = cast<VariadicType>(actualType.mlirType).getElementType();
-      if (convention != ValueInputConvention::OwnedInReg &&
-          convention != ValueInputConvention::BorrowedInReg) {
-        actualType = actualType.getReferenceElementType();
+      auto actualConv = convention;
+      if (sig.isVarArg(i)) {
+        auto variadic = cast<VariadicType>(actualType.mlirType);
+        actualType = variadic.getElementType();
+        actualConv = variadic.getConvention();
       }
+      if (SignatureType::hasAddress(actualConv))
+        actualType = actualType.getReferenceElementType();
       actualType.print(os, forDiag);
 
       // Check if we are at the end; if so, we might still have to print a '/'.

@@ -24,7 +24,7 @@ alias `42` = __mlir_attr.`42 : index`
 @register_passable("trivial")
 struct VariadicListMem[type: AnyRegType, life: Lifetime]:
     alias RefType = __mlir_type[`!lit.ref<`, type, `, `, life, `>`]
-    alias StorageType = __mlir_type[`!kgen.variadic<`, Self.RefType, `>`]
+    alias StorageType = __mlir_type[`!kgen.variadic<`, Self.RefType, `, borrow_in_mem>`]
 
     fn __init__(value: Self.StorageType) -> Self: pass
 
