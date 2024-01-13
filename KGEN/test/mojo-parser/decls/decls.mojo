@@ -679,7 +679,7 @@ def implicit_return_obj(p: Bool):
 # raises specifier.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.variant<!Error, !Int> attributes {isDef
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int> attributes {isDef
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
     # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
@@ -687,7 +687,7 @@ def defAlwaysRaises() -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.variant<!Error, !Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int>
 fn fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
     # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
@@ -695,7 +695,7 @@ fn fnThatRaises() raises -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !kgen.variant<!Error, none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws|ownedresult -> !kgen.variant<!Error, none>
 fn raisesReturnsNone() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: %0 = kgen.variant.create %none
@@ -1022,7 +1022,7 @@ struct StructWithAsync:
         let a = coroutine()
 
 
-# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async -> !kgen.variant<!Error, !Int>
+# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async|ownedresult -> !kgen.variant<!Error, !Int>
 async fn throwing_coroutine() raises -> Int:
     raise Error("oh no!")
 

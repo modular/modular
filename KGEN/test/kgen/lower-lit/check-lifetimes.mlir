@@ -137,7 +137,7 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
   lit.try {
     %x = lit.varlet.decl "x" let : !lit.ref<mut @S, life>
     // CHECK: [[V:%.*]] = lit.call @foo(%x)
-    %1 = lit.call @foo(%x) : !lit.signature<(!lit.ref<mut @S, *"life"> byref_result) throws -> !kgen.variant<@Error, none>>
+    %1 = lit.call @foo(%x) : !lit.signature<(!lit.ref<mut @S, *"life"> byref_result) throws|ownedresult -> !kgen.variant<@Error, none>>
     // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], %x : (!kgen.variant<@Error, none>, !lit.ref<mut @S, life>) -> !kgen.none {
     // CHECK: [[VAR1:%.*]] = kgen.variant.take [[V]], 1 : <@Error, none>
     // CHECK: lit.yield [[VAR1]]
@@ -174,7 +174,7 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
   %2 = lit.call @S::@__init__(%s) : !lit.signature<(!lit.ref<mut @S, *"SLife"> init_self) -> !kgen.none>
   lit.try {
     hlcf.if %c {
-      %5 = lit.call @mightThrow() : !lit.signature<() throws -> !kgen.variant<@Error, none>>
+      %5 = lit.call @mightThrow() : !lit.signature<() throws|ownedresult -> !kgen.variant<@Error, none>>
   	  %6 = lit.handle_variant %5 : (!kgen.variant<@Error, none>) -> !kgen.none {
         %10 = kgen.variant.take %5, 1 : <@Error, none>
         lit.yield %10 : !kgen.none
@@ -235,7 +235,7 @@ lit.struct.decl @DestructSome attributes {
                      %y: !lit.ref<@S, #lit.lifetime> borrow_in_mem,
                      %takeMe: !lit.ref<mut @S, #lit.lifetime> owned_in_mem,
                      %reg: index borrow
-                     ) throws -> !kgen.variant<@Error, none> {
+                     ) throws|ownedresult -> !kgen.variant<@Error, none> {
     %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from @DestructSome
     %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<@S, #lit.lifetime> borrow_in_mem) -> !kgen.none>
 
@@ -288,7 +288,7 @@ lit.struct.decl @DestructNone attributes {
                      %y: !lit.ref<@S, #lit.lifetime> borrow_in_mem,
                      %takeMe: !lit.ref<mut @S, #lit.lifetime> owned_in_mem,
                      %reg: index
-                     ) throws -> !kgen.variant<@Error, none> {
+                     ) throws|ownedresult -> !kgen.variant<@Error, none> {
     // CHECK: hlcf.if %cond {
     // CHECK-NEXT: lit.call @S::@__del__[#lit.lifetime](%arg)
     // CHECK-NEXT: %[[VAR0:.*]] = lit.call @Error::@__init__()
@@ -333,7 +333,7 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
                      %y: !lit.ref<@S, #lit.lifetime> borrow_in_mem,
                      %takeMe: !lit.ref<mut @S, #lit.lifetime> owned_in_mem,
                      %reg: index
-                     ) throws -> !kgen.variant<@Error, none> {
+                     ) throws|ownedresult -> !kgen.variant<@Error, none> {
 
     %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from @DestructFull
     %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<@S, #lit.lifetime> borrow_in_mem) -> !kgen.none>
@@ -462,7 +462,7 @@ lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyR
 lit.globalvar.decl @y : !kgen.declref<@MyRegStruct> isVar {}, {}
 
 // CHECK-LABEL: lit.func @global_ref_reg_store
-lit.func @global_ref_reg_store(%x: !kgen.declref<@MyRegStruct> borrow) {
+lit.func @global_ref_reg_store(%x: !kgen.declref<@MyRegStruct> owned) {
   // CHECK-NEXT: %0 = lit.globalvar.ref @y
   %0 = lit.globalvar.ref @y : <mut @MyRegStruct, #lit.lifetime>
   // CHECK-NEXT: %1 = lit.ref.load %0
@@ -535,7 +535,7 @@ lit.func @doSomething(%e: !Error borrow) {
    kgen.return
 }
 
-lit.func @i_raise() throws -> !kgen.variant<!Error, index> {
+lit.func @i_raise() throws|ownedresult -> !kgen.variant<!Error, index> {
   %0 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !Error>
   %1 = kgen.variant.create %0, 0 : <!Error, index>
   lit.error_return %1 : <!Error, index>
@@ -544,7 +544,7 @@ lit.func @i_raise() throws -> !kgen.variant<!Error, index> {
 // CHECK-LABEL: lit.func @eatErrorNoRef
 lit.func @eatErrorNoRef() {
   lit.try {
-    %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
+    %3 = lit.call @i_raise() : !lit.signature<() throws|ownedresult -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
       %6 = kgen.variant.take %3, 1 : <!Error, index>
       lit.yield %6 : index
@@ -567,7 +567,7 @@ lit.func @eatErrorNoRef() {
 // CHECK-LABEL: lit.func @eatErrorRef
 lit.func @eatErrorRef() {
   lit.try {
-    %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
+    %3 = lit.call @i_raise() : !lit.signature<() throws|ownedresult -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
       %6 = kgen.variant.take %3, 1 : <!Error, index>
       lit.yield %6 : index
@@ -601,7 +601,8 @@ lit.struct.decl @Reg register_passable attributes {
   lit.func @__del__(%self: !Reg, |) {
     kgen.return
   }
-  lit.func @__copyinit__(%other: !Reg borrow) ownedresult -> !Reg attributes {specialFnKind = 7 : i8} {
+  // FIXME: Wrong copyinit signature.
+  lit.func @__copyinit__(%other: !Reg owned) ownedresult -> !Reg attributes {specialFnKind = 7 : i8} {
     kgen.return %other : !Reg
   }
 }
@@ -632,7 +633,7 @@ lit.struct.decl @Error register_passable attributes {
 
 lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType::@"__del__" > : !lit.signature<[1]("self": !lit.ref<mut !MemType, *[0,0]> owned_in_mem) -> !kgen.none>}  {
   // CHECK-NOT: kgen.call @MemType::@__del__
-  lit.func @i_raise(%self: !lit.ref<!MemType, #lit.lifetime> borrow_in_mem) throws -> !kgen.variant<!Error, index> {
+  lit.func @i_raise(%self: !lit.ref<!MemType, #lit.lifetime> borrow_in_mem) throws|ownedresult -> !kgen.variant<!Error, index> {
     %0 = kgen.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error, !lit.metatype<@Error>>>
     %1 = kgen.variant.create %0, 0 : <@Error : metatype<@Error>, index>
     lit.error_return %1 : <@Error : metatype<@Error>, index>

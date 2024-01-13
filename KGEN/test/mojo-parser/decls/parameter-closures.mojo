@@ -105,14 +105,14 @@ fn take_closure_raises(
     g: fn (borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !kgen.variant<!Error, index>>
+    # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing|ownedresult -> !kgen.variant<!Error, index>>
     let result = g(x)
 
 
 fn throws_main() raises:
     let x = `4`
 
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !kgen.variant<!Error, index>
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing|ownedresult -> !kgen.variant<!Error, index>
     @parameter
     fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x

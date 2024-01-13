@@ -2914,6 +2914,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     resultType = VariantType::get({errorType, resultType},
                                   AnyRegTypeType::get(emitter.getContext()));
+
+    // The result is always owned because the function returns a variant
+    // containing an Error, which is nontrivial.
+    effects.setOwnedRegisterResult();
   }
 
   // Compute the signature of the function.
