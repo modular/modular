@@ -177,7 +177,8 @@ add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 # docs will instead be generated in <build-dir>/docs/${DOCS_DIR}.
 # The visibility of the target can be specified as PUBLIC or PRIVATE, which
 # controls whether the documentation is generated as part of the public API
-# documentation.
+# documentation. Location of built mojopkg can be queried with the property
+# `PACKAGE_LOCATION`.
 #
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
@@ -198,6 +199,7 @@ function(add_mojo_package target visibility)
   if (NOT KGEN_OUTPUT_NAME)
     get_filename_component(KGEN_OUTPUT_NAME ${KGEN_PACKAGE_DIR} NAME_WE)
   endif ()
+
   if(NOT KGEN_DOCS_DIR)
     set(KGEN_DOCS_DIR "Kernels/docs")
   endif()
@@ -251,7 +253,10 @@ function(add_mojo_package target visibility)
     DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME}
   )
   add_custom_target(${target} DEPENDS ${package_file_name})
-  set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
+  set_target_properties(${target}
+    PROPERTIES
+    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+    PACKAGE_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
 
   # If this is a standard library package, then we need to add it to the
   # mojo-sdk and mojo-stdlib target.
