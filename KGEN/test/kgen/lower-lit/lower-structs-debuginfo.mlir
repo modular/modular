@@ -18,12 +18,17 @@ lit.struct.decl @ComplexStruct<A: regtype, B: regtype> {
 }
 !structTestComplex = !kgen.declref<@ComplexStruct<Int, :regtype !pop.simd<4, f32>>>
 
+// CHECK: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
+!structTestComplexRef = !lit.ref<!structTestComplex, *"`mystruct">
+
 // CHECK: "test.types"
 "test.types"() {
   // CHECK-SAME: structType = ![[FIELD]]
   structType = !debuginfo.unresolved<!structTest>,
   // CHECK-SAME: structTypeComplex = ![[COMPLEX_STRUCT]]
-  structTypeComplex = !debuginfo.unresolved<!structTestComplex>
+  structTypeComplex = !debuginfo.unresolved<!structTestComplex>,
+  // CHECK-SAME: structTypeComplexRef = ![[COMPLEX_STRUCT_REF]]
+  structTypeComplexRef = !debuginfo.unresolved<!structTestComplexRef>
 } : () -> ()
 
 // -----
