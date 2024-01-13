@@ -131,7 +131,7 @@ class OpConversionPattern;
 template <typename SourceOp>
 class OpInterfaceConversionPattern;
 template <typename SourceOp>
-class OpInterfaceRewritePattern;
+struct OpInterfaceRewritePattern;
 template <typename T>
 class OperationPass;
 template <typename SourceOp>
