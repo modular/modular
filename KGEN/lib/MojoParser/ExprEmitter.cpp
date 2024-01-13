@@ -786,6 +786,15 @@ static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                              ASTType requiredType,
                                              bool allowArgNameCheck) {
+  return canImplicitlyConvertToType(declScope, shared, value, requiredType,
+                                    allowArgNameCheck);
+}
+
+bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
+                                             SharedState &shared,
+                                             ASTExprAnd<CValue> value,
+                                             ASTType requiredType,
+                                             bool allowArgNameCheck) {
   // If it already matches, then we're done.
   ASTType rvType = value.ir.getRValueType();
   if (rvType.isEqualCanon(requiredType))
@@ -802,8 +811,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
-  auto callee = OverloadSet::lookup(requiredType, "__init__", value.expr,
-                                    CallSyntax::kImplicitConvert, *this,
+  auto callee = OverloadSet::lookup(declScope, shared, requiredType, "__init__",
+                                    value.expr, CallSyntax::kImplicitConvert,
                                     /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
@@ -828,7 +837,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // implicit conversions here.
   PValue calleeFn =
       callee.filterOverloadSet({args}, /*allowImplicitConversions=*/false,
-                               /*emitDiagnosticOnFailure=*/false, *this);
+                               /*emitDiagnosticOnFailure=*/false);
   return !calleeFn.isNull();
 }
 
@@ -953,8 +962,8 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
       SmallVector<TypedAttr> fnParams = selfParams;
       LITSignatureType sig = traitFn.getFullSignature();
       ParameterEvaluator evaluator(selfParams);
-      auto bindings =
-          InputParamBindings::getForDeclaredType(ASTType(typeValue), *this);
+      auto bindings = InputParamBindings::getForDeclaredType(
+          declScope, shared, ASTType(typeValue));
       for (Type type : sig.getInputParamTypes().drop_front(2)) {
         fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
         evaluator.addInputValue(fnParams.back());
@@ -1917,8 +1926,9 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   //   https://github.com/modularml/modular/issues/14946
   // For the dynamic case we'd use __get_item__.
   auto getDecl =
-      OverloadSet::lookup(elementType, "get", expr, CallSyntax::kTupleGetItem,
-                          emitter, /*errorHandler*/ {});
+      OverloadSet::lookup(emitter.declScope, emitter.shared, elementType, "get",
+                          expr, CallSyntax::kTupleGetItem,
+                          /*errorHandler*/ {});
 
   if (getDecl.isNull()) {
     emitError() << "expected Tuple to have one get method";

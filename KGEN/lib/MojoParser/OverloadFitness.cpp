@@ -410,11 +410,11 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
 
 namespace {
 /// Helper class to emit errors without cluttering the evaluation logic.
-struct DiagEmitter {
-  DiagEmitter(SMLoc callLoc, size_t numOperands, CallSyntax callSyntax,
-              ExprEmitter &emitter)
-      : callLoc(callLoc), numOperands(numOperands), callSyntax(callSyntax),
-        emitter(emitter) {}
+struct DiagEmitter : public SharedStateUser {
+  DiagEmitter(SharedState &shared, SMLoc callLoc, size_t numOperands,
+              CallSyntax callSyntax)
+      : SharedStateUser(shared), callLoc(callLoc), numOperands(numOperands),
+        callSyntax(callSyntax) {}
 
   InflightDiag unexpectedKwArgs(StringSet<> &unknownKwOperands) const;
   InflightDiag wrongParamType(const InputParamBindings::Binding &actualBinding,
@@ -438,12 +438,11 @@ private:
   SMLoc callLoc;
   size_t numOperands;
   CallSyntax callSyntax;
-  ExprEmitter &emitter;
 
   /// Wrapper around pretty printing logic for an argument given by index.
   void describeArgumentNo(InflightDiag &diag, size_t argIdx) const;
 
-  InflightDiag initDiag() const { return emitter.emitError(callLoc); }
+  InflightDiag initDiag() const { return shared.emitError(callLoc); }
 };
 } // namespace
 
@@ -673,12 +672,14 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
 }
 
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
-OverloadFitness::checkOneOperand(
-    ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
-    ASTType expectedType, size_t &numImplicitConversions,
-    size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
-    bool allowImplicitConversions, ExprEmitter &emitter, SMLoc loc,
-    SharedState &shared) {
+OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                 ValueInputConvention expectedConvention,
+                                 ASTType expectedType,
+                                 size_t &numImplicitConversions,
+                                 size_t &numMismatchedConventions,
+                                 bool &hasNonmaterializableConversion,
+                                 bool allowImplicitConversions, SMLoc loc,
+                                 ASTDecl &declScope, SharedState &shared) {
   switch (expectedConvention) {
   case ValueInputConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
@@ -719,7 +720,7 @@ OverloadFitness::checkOneOperand(
     if (auto orValue = operand.ir.getIfORValue()) {
       if (!orValue->baseValue) { // Cannot merge base value.
         // Try to refine the ORValue into a PValue.
-        argVal = orValue->getDirectSymbol(&emitter, expectedType);
+        argVal = orValue->getDirectSymbol(expectedType);
         if (!argVal)
           return {kWrongType, expectedType};
       }
@@ -734,7 +735,7 @@ OverloadFitness::checkOneOperand(
     if (argType.isEqualCanon(expectedType))
       break;
     if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(emitter.shared)) {
+            argType.getNonmaterializableTarget(shared)) {
       if (nonmaterializableTarget.isEqualCanon(expectedType)) {
         // Implicit conversion for nonmaterializable types to their target
         // type is allowed even if !allowImplicitConversions.  Even though
@@ -750,14 +751,15 @@ OverloadFitness::checkOneOperand(
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (canZeroCostConvert(emitter.shared, argType, expectedType))
+    if (canZeroCostConvert(shared, argType, expectedType))
       break;
 
     // If we lack an exact match and conversions are disabled, this
     // candidate fails.
     if (!allowImplicitConversions ||
-        !emitter.canImplicitlyConvertToType(
-            {argVal, operand.expr}, expectedType, /*allowArgNameCheck=*/false))
+        !ExprEmitter::canImplicitlyConvertToType(
+            declScope, shared, {argVal, operand.expr}, expectedType,
+            /*allowArgNameCheck=*/false))
       return {kWrongType, expectedType};
 
     // If we had one, this bumps our # implicit conversions.
@@ -808,8 +810,7 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
-                                          bool allowImplicitConversions,
-                                          ExprEmitter &emitter) {
+                                          bool allowImplicitConversions) {
   // Before we do anything, we check if there were any unexpected keyword
   // operands passed. This keeps the subsequent code much simpler.
 
@@ -840,14 +841,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   size_t numPosOperands = posOperands.size();
   size_t numOperands = numPosOperands + callOperands.getNumKwOperands();
   SMLoc callLoc = callable.expr->getLoc();
-  DiagEmitter emitDiagFor(callLoc, numOperands, callable.syntax, emitter);
+  SharedState &shared = callable.getShared();
+  DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
   if (!unknownKwOperands.empty())
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
-  InflightDiag diag = emitter.emitError(callLoc);
+  InflightDiag diag = shared.emitError(callLoc);
   InputParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
@@ -894,7 +896,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
       /*emitCtadFailure=*/
       [&](size_t paramIdx) {
-        ASTDecl &decl = *callable.baseType.getDecl(emitter.shared);
+        ASTDecl &decl = *callable.baseType.getDecl(shared);
         auto structOp = cast<StructDeclOp>(decl);
         diag << "could not deduce parameter #" << paramIdx << " ("
              << structOp.getSignature().getParamNames()[paramIdx]
@@ -906,9 +908,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto parameterInferenceHook =
       [&](size_t index, ArrayRef<TypedAttr> bindingsSoFar,
           TypedAttr defaultParam, ParserParamEvaluator &evaluator) -> PValue {
-    if (PValue inferred =
-            ParameterInferenceState(emitter.shared, index, evaluator)
-                .infer(signature, bindingsSoFar, callOperands))
+    if (PValue inferred = ParameterInferenceState(shared, index, evaluator)
+                              .infer(signature, bindingsSoFar, callOperands))
       return inferred;
     return PValue(defaultParam);
   };
@@ -938,7 +939,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
   for (Type outputType : signature.getValueResults()) {
-    if (!ASTType(outputType).isRegisterPassable(callLoc, emitter.shared))
+    if (!ASTType(outputType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.resultGenericMemType(outputType);
     // `!kgen.variant` is a special case.  We use it to wrap the result
     // type for functions that `raise`, and in the case of returning a
@@ -946,12 +947,12 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // type.  This came up in issue
     // https://github.com/modularml/mojo/issues/910.  So we need a deep check
     // to prevent memory-only types being used as parameters.
-    ASTDecl *decl = ASTType(outputType).getDecl(emitter.shared);
+    ASTDecl *decl = ASTType(outputType).getDecl(shared);
     if (!decl) {
       if (auto variant = dyn_cast<VariantType>(outputType)) {
         auto isMemoryOnly = [&](TypedAttr variant) {
-          return ASTType(variant).getRegisterPassability(
-                     callLoc, emitter.shared) == TypeConvention::MemoryOnly;
+          return ASTType(variant).getRegisterPassability(callLoc, shared) ==
+                 TypeConvention::MemoryOnly;
         };
         if (llvm::any_of(variant.getTypes(), isMemoryOnly))
           return emitDiagFor.resultGenericMemType(outputType);
@@ -1005,10 +1006,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto checkAnOperand = [&](ASTExprAnd<AnyValue> operand,
                             ValueInputConvention expectedConvention,
                             ASTType expectedType) {
-    return checkOneOperand(
-        operand, expectedConvention, expectedType, numImplicitConversions,
-        numMismatchedConventions, hasNonmaterializableConversion,
-        allowImplicitConversions, emitter, loc, emitter.shared);
+    return checkOneOperand(operand, expectedConvention, expectedType,
+                           numImplicitConversions, numMismatchedConventions,
+                           hasNonmaterializableConversion,
+                           allowImplicitConversions, loc,
+                           callable.inputParamBindings.declScope, shared);
   };
 
   // We collect missing arguments (in case the argument count check didn't catch
@@ -1017,7 +1019,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
-  ParserParamEvaluator evaluator(emitter.getDeclResolver());
+  ParserParamEvaluator evaluator(*shared.declResolver);
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
              passingKind] :
        llvm::enumerate(signature.getValueInputs(),
@@ -1031,7 +1033,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (expectedConvention == ValueInputConvention::ByRefResult) {
       numMismatchedConventions += ASTType(expectedType)
                                       .getReferenceElementType()
-                                      .isRegisterPassable(loc, emitter.shared);
+                                      .isRegisterPassable(loc, shared);
       continue;
     }
 
@@ -1039,7 +1041,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.  Note that the PointerType is considered a valid
     // register passable type, so things passed byref are ok.
-    if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
+    if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
     // Handle case when there are no more provided positional operands.

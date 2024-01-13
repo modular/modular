@@ -712,13 +712,15 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
                            SmallDenseMap<StringAttr, FuncOperand>()) {
   // If there is no getter at all, then this is not a subscriptable type.
-  auto getter = OverloadSet::lookup(baseType, getterName, node, syntax, emitter,
+  auto getter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
+                                    getterName, node, syntax,
                                     /*no error on failure*/ {});
 
   // Check for the presence of a setitem but don't provide index values because
   // we don't know what the ultimate element type is.  It may be overloaded and
   // we don't know which candidate to pick until it is actually invoked.
-  auto setter = OverloadSet::lookup(baseType, setterName, node, syntax, emitter,
+  auto setter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
+                                    setterName, node, syntax,
                                     /*no error on failure*/ {});
 
   if (getter.isNull() && setter.isNull()) {
@@ -738,7 +740,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     CallOperands callOperands(posOperands, &kwOperands);
     PValue getterCallee = getter.filterOverloadSet(
         callOperands, /*allowImplicitConversions=*/true,
-        /*emitDiagnosticOnFailure=*/true, emitter);
+        /*emitDiagnosticOnFailure=*/true);
     if (!getterCallee)
       return {};
 
@@ -923,10 +925,11 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
-    auto result = ORValue::create(
-        spelling, memberDecls,
-        InputParamBindings::getForDeclaredType(baseRVType, emitter), this,
-        CallSyntax::kDirectCall);
+    auto result =
+        ORValue::create(spelling, memberDecls,
+                        InputParamBindings::getForDeclaredType(
+                            emitter.declScope, emitter.shared, baseRVType),
+                        this, CallSyntax::kDirectCall);
     result->baseType = baseVal.getRValueType();
     if (auto pValue = baseVal.getIfPValue())
       if (LIT::isTypeExpr(pValue))
@@ -1312,8 +1315,9 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // Check to see if we can invoke an __init__ method to convert it.
     auto callee =
-        OverloadSet::lookup(calledType, "__init__", this, CallSyntax::kTypeCall,
-                            emitter, /*errorHandler=*/{});
+        OverloadSet::lookup(emitter.declScope, emitter.shared, calledType,
+                            "__init__", this, CallSyntax::kTypeCall,
+                            /*errorHandler=*/{});
     emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
     return emitter.emitConstructorCall(calledType, callee, operands, this,
                                        CallSyntax::kTypeCall, dest);
@@ -2064,8 +2068,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     CallOperands operands(argValues);
     if (PValue callee = OverloadSet::lookup(
-            lhsCV.getRValueType(), specialFnInfo.name, operands, callExpr,
-            CallSyntax::kOperator, emitter,
+            emitter.declScope, emitter.shared, lhsCV.getRValueType(),
+            specialFnInfo.name, operands, callExpr, CallSyntax::kOperator,
             /*no error*/ {}))
       return emitter.emitIndirectCall(callee, operands, dest, callExpr);
   }
@@ -2078,9 +2082,9 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       CallOperands operands(argValues);
       if (PValue callee = OverloadSet::lookup(
-              rhsCV.getRValueType(), reversedFnInfo.name, operands, callExpr,
-              CallSyntax::kReversedOperator, emitter,
-              /*no error*/ {}))
+              emitter.declScope, emitter.shared, rhsCV.getRValueType(),
+              reversedFnInfo.name, operands, callExpr,
+              CallSyntax::kReversedOperator, /*no error*/ {}))
         return emitter.emitIndirectCall(callee, operands, dest, callExpr);
     }
 
