@@ -139,21 +139,12 @@ fn callVariadic():
 ##===----------------------------------------------------------------------===##
 
 
-alias x : Int # expected-error {{parameter results may only be declared in a function}}
-
 fn testAliases(variable: Int):
-  # expected-error @+1 {{declaration must have either a type or an initializer}}
+  # expected-error @+1 {{expected '=' in alias declaration}}
   alias MissingInit
 
   # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
   alias NotConstant = variable*2
-
-  # TODO(Issue #5975): This isn't getting resolved before the end of body.
-  # xpected-error @+1 {{alias 'NotInitialized' was never defined by a result parameter}}
-  alias NotInitialized : __mlir_type.index
-
-struct BadAliasStruct:
-  alias x: Int # expected-error {{parameter results may only be declared in a function}}
 
 
 fn testConversionQoI():

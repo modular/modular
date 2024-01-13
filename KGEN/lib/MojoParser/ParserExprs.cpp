@@ -912,7 +912,7 @@ ParseResult ExprParser::parseExprOrSlice(ExprNode *&result) {
   return success();
 }
 
-/// subscription ::=  primary "[" expression_list ("->" expression_list)?"]"
+/// subscription ::=  primary "[" expression_list "]"
 ///
 /// slicing      ::=  primary "[" slice_list "]"  [TODO]
 /// slice_list   ::=  slice_item ("," slice_item)* [","]
@@ -970,50 +970,17 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     }
   }
 
-  // If we have no arrow, handle this as a normal subscript.
-  if (!consumeIf(Token::minus_greater)) {
-    if (parseToken(Token::r_square, "expected ']' in call argument list"))
-      return failure();
-    result = alloc<SubscriptNode>(result, lsquareLoc,
-                                  copyArrayRef<Operand>(operands), rsquareLoc);
-    return success();
-  }
-
-  // Otherwise, parse the results. We parse these as if they were ordinary
-  // operands, so that we can have better diagnostics. Then we unpack them into
-  // just an array of expressions so that it's easier to work with them later.
-  SMLoc arrowLoc = rsquareLoc;
-  SmallVector<Operand> parsedResults;
-  if (parseCommaSeparatedList(
-          [&]() { return parseSubscriptOperand(parsedResults); },
-          Token::r_square) ||
-      getLocation(rsquareLoc) ||
-      parseToken(Token::r_square, "expected ']' in call argument list"))
+  if (parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
-
-  // Inspect each parsed result.
-  for (const Operand &res : parsedResults) {
-    SMLoc loc = res.getLoc();
-    if (res.isKeyword())
-      return emitError(loc, "keyword result parameters not supported yet");
-    if (res.isUnpacked())
-      return emitError(loc, "result parameters cannot be unpacked");
-  }
-
-  SmallVector<ExprNode *> results = llvm::map_to_vector(
-      parsedResults, [](const Operand &operand) { return operand.value; });
-
-  result = alloc<SubscriptArrowNode>(
-      result, lsquareLoc, copyArrayRef<Operand>(operands), arrowLoc,
-      copyArrayRef<ExprNode *>(results), rsquareLoc);
+  result = alloc<SubscriptNode>(result, lsquareLoc,
+                                copyArrayRef<Operand>(operands), rsquareLoc);
   return success();
 }
 
 /// Parse the input and result parameters, if they are present.
 static ParseResult
 parseOptionalFunctionParameters(ParserBase &p,
-                                SmallVectorImpl<ParsedArgument> &inputParams,
-                                SmallVectorImpl<ParsedArgument> &resultParams) {
+                                SmallVectorImpl<ParsedArgument> &inputParams) {
   if (!p.consumeIf(Token::l_square))
     return success();
   // Handle '[]'.
@@ -1032,18 +999,12 @@ parseOptionalFunctionParameters(ParserBase &p,
       return failure();
   }
 
-  // Parse result parameters if present.
-  if (p.consumeIf(Token::minus_greater)) {
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, resultParams, ParsedArgument::ArgListKind::kFnTypeParamList))
-      return failure();
-  }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
-  SmallVector<ParsedArgument> inputParams, resultParams, arguments;
+  SmallVector<ParsedArgument> inputParams, arguments;
   ExprNode *resultTypeExpr = nullptr;
   FnEffects effects;
   bool isDef = false;
@@ -1056,7 +1017,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   // Parameter signature, argument list and the function effects next.
-  if (parseOptionalFunctionParameters(*this, inputParams, resultParams) ||
+  if (parseOptionalFunctionParameters(*this, inputParams) ||
       ParsedArgument::parseAndResolveParenthesizedArgumentList(
           *this, arguments, ParsedArgument::ArgListKind::kFnTypeArgList,
           effects))
@@ -1073,7 +1034,6 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(inputParams),
-      copyArrayRef<ParsedArgument>(resultParams),
       copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc,
       isDef, resultLoc);
   return success();
@@ -1083,11 +1043,11 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
-  SmallVector<ParsedArgument> inputParams, resultParams, arguments;
+  SmallVector<ParsedArgument> inputParams, arguments;
   FnEffects effects;
 
   // Parameter signature, argument list and the function effects next.
-  if (parseOptionalFunctionParameters(*this, inputParams, resultParams))
+  if (parseOptionalFunctionParameters(*this, inputParams))
     return failure();
 
   // Mojo supports naked parameters without type annotations for compatibility

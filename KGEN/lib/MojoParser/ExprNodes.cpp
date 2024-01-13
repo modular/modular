@@ -1683,88 +1683,6 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                 std::move(posOperands), std::move(kwOperands));
 }
 
-AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
-                                    ExprEmitter &emitter) const {
-  // Subscripting a generic function binds the parameter expressions.
-  RValue baseValue = emitter.emitExprRValue(base, EC_SubscriptBase);
-  if (!baseValue)
-    return {};
-
-  // If the baseValue has a bound callable symbol, then this is applying (more?)
-  // meta values to bind its parameters.
-  auto overloads = baseValue.getIfORValue();
-  if (!overloads) {
-    assert(baseValue.getIfCRValue() && "Must be CRValue if not ORValue");
-    emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << baseValue.getIfCRValue().getRValueType() << getRange();
-    return {};
-  }
-
-  // The only use of SubscriptArrow nodes right now is to bind parameter
-  // input values and results to a call.  Start by binding the input values.
-  overloads = bindParamValuesToDirectCall(overloads, operands, emitter);
-  if (!overloads)
-    return {};
-
-  // Next, bind the results.  The grammar allows any expression, but we only
-  // accept identifiers.
-  for (ExprNode *dest : results) {
-    auto *drn = dyn_cast<DeclRefNode>(dest);
-    if (!drn) {
-      emitter.emitError(drn->getLoc(),
-                        "expected identifier for parameter result")
-          << dest->getRange();
-      return {};
-    }
-    StringRef resultName = drn->spelling;
-
-    // Lookup the name.  We must find a forward declared alias that isn't
-    // already completed.
-    auto result = emitter.shared.lookupAndResolveDecl(
-        resultName, drn->getLoc(), emitter.declScope,
-        /*searchParentScopes=*/false);
-
-    // Reject the code if nothing was found.
-    ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
-    if (resultDecls.empty()) {
-      if (result.isFailure())
-        emitter.emitError(drn->getLoc(),
-                          "unable to find forward-declared alias named '")
-            << resultName << "'" << drn->getRange();
-      return {};
-    }
-
-    // Reject non-alias results.
-    auto aliasDecl = dyn_cast<AliasForwardDeclOp>(resultDecls[0]);
-    if (!aliasDecl || resultDecls.size() > 1) {
-      auto diag = emitter.emitError(drn->getLoc(), "'")
-                  << resultName << "' is not a forward declared alias"
-                  << drn->getRange();
-      for (auto *decl : resultDecls)
-        diag.attachNote(decl->getLoc())
-            << "'" << resultName << "' declared here";
-      return {};
-    }
-
-    // Verify the decl isn't already defined.
-    if (aliasDecl.getResultParamLoc().has_value()) {
-      auto diag = emitter.emitError(drn->getLoc(), "'")
-                  << resultName << "' alias was defined by another result"
-                  << drn->getRange();
-      diag.attachNote(*aliasDecl.getResultParamLoc())
-          << "previously defined here";
-      return {};
-    }
-
-    // Set the location for this definition so we can know it was defined
-    // correctly, and diagnose subsequent attempts to redefine it.
-    aliasDecl.setResultParamLocAttr(drn->getLocation(emitter));
-    overloads->resultParams.push_back({resultDecls[0], drn->getLoc()});
-  }
-
-  return emitter.emitResult(overloads, this, dest);
-}
-
 AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
@@ -2953,7 +2871,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
   bool paramVarArg = false;
-  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
@@ -2961,8 +2879,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
       paramPassingKinds, paramDefaults, paramVarArg);
 
-  ParsedArgument::processParameterResultArgs(
-      typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
   FnEffects effects = this->effects;
   if (paramVarArg)
     effects.setParamVarArgs();
@@ -3000,16 +2916,11 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                   AnyRegTypeType::get(emitter.getContext()));
   }
 
-  // Build the signature type.
-  auto inputParamsAttr = b.getAttr<ParamDeclArrayAttr>(inputParamDecls);
-  auto resultParamsAttr = b.getAttr<ParamDeclArrayAttr>(resultParamDecls);
+  // Compute the signature of the function.
   FunctionType functionType =
       b.getFunctionType(argTypes, {resultType.mlirType});
-
-  // Compute the signature of the function.
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects,
+      inputParamDecls, {}, functionType, inputConventions, effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, argDefaults, paramDefaults,
                           implicitLifetimeDecls.size()),

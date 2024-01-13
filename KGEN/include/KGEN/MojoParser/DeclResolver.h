@@ -24,7 +24,6 @@ class ParamDeclAttr;
 
 namespace M::KGEN::LIT {
 class AliasDeclOp;
-class AliasForwardDeclOp;
 class ASTDecl;
 class FileModuleOp;
 class FuncOp;
@@ -250,7 +249,6 @@ private:
   ParseResult resolveBody(GlobalVarDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(AliasForwardDeclOp op, Lexer &lexer, ASTDecl &decl);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
@@ -290,7 +288,6 @@ namespace impl {
 ParseResult
 parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
-                                SmallVectorImpl<ParamDeclAttr> &resultParams,
                                 SmallVectorImpl<StringAttr> &names,
                                 SmallVectorImpl<PassingKind> &passingKinds,
                                 SmallVectorImpl<TypedAttr> &defaults,

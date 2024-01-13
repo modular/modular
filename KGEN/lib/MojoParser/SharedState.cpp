@@ -1879,7 +1879,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                              demangleParameterName(
                                                  op.getParamDecl().getName())));
           })
-          .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp>([&](auto op) {
+          .Case<LetRegDeclOp, StructFieldOp>([&](auto op) {
             ASTDecl &varDecl = addDeclForOp(op, op.getNameAttr());
 
             // Variables normally get resolved fully during parse phase, so

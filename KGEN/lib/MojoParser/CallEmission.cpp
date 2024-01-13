@@ -992,16 +992,6 @@ PValue OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
 PValue OverloadSet::getDirectSymbol(ASTType expectedType) const {
-  // Verify that the target has no result parameters.  We have no way to bind
-  // these indirectly.
-  if (!resultParams.empty()) {
-    getShared().emitError(
-        expr->getLoc(),
-        "calls with result parameter bindings must be called directly")
-        << expr->getRange();
-    return {};
-  }
-
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
@@ -1157,52 +1147,7 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
                                     /*emitDiagnosticOnFailure=*/true);
   if (!callee)
     return {};
-
-  SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
-
-  // Check declarations for the result parameters and collect them here.
-  assert(calleeSig.getNumResultParams() == resultParams.size() &&
-         "We know that the callee is type checked");
-
-  // Verify completion of forward declared alias declarations.  We know the
-  // decl exists, but we don't know if the type is compatible or it has been
-  // multiply defined.
-  //
-  // TODO: We don't remap input parameters types into output parameter types.
-  // We surely handle this wrong: `fn x[a: type -> a]():` for example.
-  SmallVector<ParamDeclAttr> resultParamDecls;
-  for (auto [type, declAndLoc] :
-       llvm::zip(calleeSig.getResultParamTypes(), resultParams)) {
-    auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
-
-    // Verify the types match.
-    // TODO: Move this to overload resolution.
-    if (!ASTType(forwardDecl.getType()).isEqualCanon(type)) {
-      auto diag =
-          emitter.emitError(declAndLoc.second, "result parameter returns type ")
-          << type << " but forward declaration is of type "
-          << ASTType(forwardDecl.getType());
-      diag.attachNote(forwardDecl.getLoc()) << "alias forward declared here";
-      return {};
-    }
-    resultParamDecls.push_back(ParamDeclAttr::get(forwardDecl.getName(), type));
-  }
-
-  // Calls in parameter context cannot have result parameters.
-  if (!emitter.builder && !calleeSig.getResultParamTypes().empty()) {
-    auto diag =
-        emitter.emitError(expr->getLoc(), "cannot call '")
-        << baseName
-        << "' in parameter expression because it has a parameter result";
-    for (auto &resultParam : resultParams) {
-      diag << SourceRange(resultParam.second, resultParam.second);
-      resultParam.first->hasReferenceError = true;
-    }
-    return {};
-  }
-
-  return emitter.emitCallUnchecked(callee, operands, resultParamDecls, dest,
-                                   expr);
+  return emitter.emitCallUnchecked(callee, operands, dest, expr);
 }
 
 CValue ExprEmitter::emitIndirectCall(CValue callee,
@@ -1260,8 +1205,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
 
-  return emitCallUnchecked(calleeRV, callOperands,
-                           /*resultParams=*/{}, dest, callExpr);
+  return emitCallUnchecked(calleeRV, callOperands, dest, callExpr);
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
@@ -1501,10 +1445,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   // do it. Register-passable and parameter constructor calls do not require
   // result slot allocation.
   if (!isMemoryOnly)
-    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
+    return emitCallUnchecked(calleeFn, operands, dest, expr);
   if (!builder) {
     operands = callOperands;
-    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
+    return emitCallUnchecked(calleeFn, operands, dest, expr);
   }
 
   // We need to invoke memory-only constructors specially since the buffer is

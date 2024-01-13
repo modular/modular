@@ -817,14 +817,10 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
 
 CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       const CallOperands &callOperands,
-                                      ArrayRef<ParamDeclAttr> resultParams,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
-
   auto calleeSig = cast<LITSignatureType>(callee.getType());
-  assert(calleeSig.getNumResultParams() == resultParams.size() &&
-         "Type checking should be done");
 
   // We first emit all the arguments.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
@@ -935,8 +931,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       auto call = builder->create<AsyncCallOp>(
           loc,
           POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
-          target.get(), resultParams, /*lifetimeParams=*/implicitLifetimes,
-          callArgs);
+          // TODO(jeff): Remove result params from AsyncCallOp
+          target.get(), ArrayRef<ParamDeclAttr>(),
+          /*lifetimeParams=*/implicitLifetimes, callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultType);
       if (!coroType) {
@@ -951,9 +948,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
               .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
-      auto call = builder->create<CallOp>(loc, resultType, symbol,
-                                          /*lifetimeParams=*/implicitLifetimes,
-                                          resultParams, callArgs);
+      auto call = builder->create<CallOp>(
+          loc, resultType, symbol,
+          /*lifetimeParams=*/implicitLifetimes,
+          // TODO(jeff): Remove result params from CallOp
+          ArrayRef<ParamDeclAttr>(), callArgs);
       callResult = call.getResult(0);
 
       // If there are any callee-specific warnings to emit, do so after
@@ -961,7 +960,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       callEmitter.emitDirectCallWarnings(call, callOperands);
     } else {
       auto call = builder->create<CallParamOp>(
-          loc, resultType, target.get(), resultParams,
+          // TODO(jeff): Remove result params from CallParamOp
+          loc, resultType, target.get(), ArrayRef<ParamDeclAttr>(),
           /*lifetimeParams=*/implicitLifetimes, callArgs);
       callResult = call.getResult(0);
     }

@@ -87,7 +87,7 @@ public:
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects(),
-      ArrayRef<ParamDeclAttr> resultParams = {}, StringRef prefix = "");
+      StringRef prefix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -110,8 +110,7 @@ public:
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects effects = FnEffects(),
-      ArrayRef<ParamDeclAttr> resultParams = {}, StringRef prefix = "");
+      FnEffects effects = FnEffects(), StringRef prefix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ValueInputConvention> argConventions,

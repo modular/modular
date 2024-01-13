@@ -592,8 +592,7 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
 /// for the function is capturing.
 /// FIXME: The language modeling here is a mess. It needs more thought.
 static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
-                                 ArrayRef<ParamDeclAttr> inputParamDecls,
-                                 ArrayRef<ParamDeclAttr> resultParamDecls) {
+                                 ArrayRef<ParamDeclAttr> inputParamDecls) {
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<LIT::FuncOp>())
     return true;
@@ -606,9 +605,8 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
     return WalkResult::advance();
   });
   return llvm::any_of(
-      llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls,
-                                        parent ? parent.getInputParams()
-                                               : std::nullopt),
+      llvm::concat<const ParamDeclAttr>(
+          inputParamDecls, parent ? parent.getInputParams() : std::nullopt),
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
@@ -802,7 +800,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Parse declared meta parameters and add them to the current scope.
-  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParsedArgument> args;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
@@ -813,9 +811,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (impl::parseOptionalParameterSignature(
-          p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
-          paramPassingKinds, paramDefaults, paramVarArg))
+  if (impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
+                                            paramNames, paramPassingKinds,
+                                            paramDefaults, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -858,8 +856,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Process signature decorators in the same scope as signature resolution.
   auto processSignature = [&] {
-    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls,
-                             resultParamDecls) &&
+    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls) &&
         !effects.isEscaping())
       effects.setCapturing();
 
@@ -931,7 +928,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
   auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
-  auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
 
   // Compute the signature of the function.
   FunctionType functionType =
@@ -941,8 +937,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                           paramNames, paramPassingKinds, argDefaults,
                           paramDefaults, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects, metadata, silenceErrors(getContext()));
+      inputParamsAttr, {}, functionType, inputConventions, effects, metadata,
+      silenceErrors(getContext()));
   if (!signature)
     return failure();
 
@@ -963,7 +959,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
-  attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
+  attrs.set(funcOp.getResultParamsAttrName(),
+            ParamDeclArrayAttr::get(getContext(), {}));
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
@@ -1043,11 +1040,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
                                       [&](OpOperand *) { hasCapture = true; });
     if (hasCapture || signature.isEscaping()) {
-      if (!signature.isEscaping() &&
-          (!inputParamDecls.empty() || !resultParamDecls.empty())) {
-        return emitError(funcOp.getLoc(),
-                         "nonparametric capturing closure cannot have input or "
-                         "result parameters");
+      if (!signature.isEscaping() && !inputParamDecls.empty()) {
+        return emitError(
+            funcOp.getLoc(),
+            "nonparametric capturing closure cannot have input parameters");
       }
 
       OpBuilder b(funcOp.getContext());
@@ -1058,10 +1054,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       // Emit Closure structures necessary for instantiating an escaping
       // closure.
       if (signature.isEscaping()) {
-        if (!inputParamDecls.empty() || !resultParamDecls.empty())
+        if (!inputParamDecls.empty()) {
           return emitError(
               funcOp.getLoc(),
-              "escaping closures cannot have input or result parameters yet");
+              "escaping closures cannot have input parameters yet");
+        }
         if (auto closure =
                 emitClosureInstance(signature, shared, decl, decl.getLoc())) {
           decl.irValue = MRValue(closure);
@@ -1284,17 +1281,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   bool emptyBody =
       body->empty() || (lastOpIterBefore == &body->getOperations().back());
 
-  auto loc = funcOp.getLoc();
-
-  // Create a placeholder result bind op if the function has result parameters.
-  ArrayRef<ParamDeclAttr> resultParams = funcOp.getResultParams();
-  if (!resultParams.empty()) {
-    SmallVector<TypedAttr> placeholders;
-    for (ParamDeclAttr decl : resultParams)
-      placeholders.push_back(UnknownAttr::get(decl.getType()));
-    builder.create<ParamResultBindOp>(loc, placeholders);
-  }
-
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
 
@@ -1319,19 +1305,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   Decorators(decl, shared).applyBodyDecorators([](ExprNode *decorator) {
     return failure();
   });
-
-  // Check that any alias forward declarations have been completed.
-  if (!shared.diags.isErrorEmitted()) {
-    bodyBlock->walk([&](AliasForwardDeclOp aliasFwdDeclOp) {
-      // If the location for the resultParam was never set then this forward
-      // declaration was never defined.
-      if (!aliasFwdDeclOp.getResultParamLoc().has_value()) {
-        emitError(aliasFwdDeclOp.getLoc(), "alias ")
-            << aliasFwdDeclOp.getNameAttr()
-            << " was never defined by a result parameter";
-      }
-    });
-  }
 
   return success();
 }
@@ -1575,46 +1548,8 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
-
-  // Handle the case where there is no initializer.
-  if (!p.consumeIf(Token::equal)) {
-    // If there was neither a type or initializer, reject the var.
-    if (!type) {
-      p.emitError(aliasDeclOp.getLoc(),
-                  "declaration must have either a type or an initializer");
-      return failure();
-    }
-
-    // `alias x: Int` is a forward declaration of a return parameter from a
-    // function call, so it must occur in a function.
-    if (!aliasDeclOp->getParentOfType<LIT::FuncOp>()) {
-      p.emitError(aliasDeclOp.getLoc(),
-                  "parameter results may only be declared in a function");
-      return failure();
-    }
-
-    // Ok, things seem set up right, replace the ParamDeclOp with the right
-    // operation that will allow us to track things.
-    OpBuilder builder(aliasDeclOp);
-    Operation *forwardDecl = builder.create<AliasForwardDeclOp>(
-        aliasDeclOp.getLoc(), aliasDeclOp.getName(), TypeAttr::get(type),
-        mlir::LocationAttr(), DocStringAttr());
-    decl.setIRValue(forwardDecl);
-
-    // Remove the paramDeclOp from the IR, since we ended up changing our mind
-    // about how to represent this.
-    aliasDeclOp->erase();
-
-    // The check that the alias was specified is handled when the function body
-    // has been fully resolved.
-    rejectDecorators(decoratorExprs, decl, shared);
-
-    // Process the doc string of the alias.
-    p.parseDocString(decl);
-
-    shared.notifyListenerOnAliasDecl(decl, identifierLoc);
-    return success();
-  }
+  if (p.parseToken(Token::equal, "expected '=' in alias declaration"))
+    return failure();
 
   // Otherwise this is a normal `alias` declaration with an initializer.
   ExprNode *initExpr = nullptr;
@@ -1651,11 +1586,6 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
 ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
-                                      Lexer &lexer, ASTDecl &decl) {
   return success();
 }
 
@@ -1793,7 +1723,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
@@ -1805,9 +1735,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      impl::parseOptionalParameterSignature(
-          p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
-          paramPassingKinds, paramDefaults, paramVarArgs) ||
+      impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
+                                            paramNames, paramPassingKinds,
+                                            paramDefaults, paramVarArgs) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
@@ -1826,11 +1756,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
   structOp.setSignature(sig);
   structOp.setParentTypes(parentTypes);
-
-  // Reject result parameters.
-  if (!resultParamDecls.empty())
-    emitError(decl.getLoc(),
-              "struct declarations do not support result parameters");
 
   // Make every nominal type inherit from `AnyType`.
   if (ASTDecl *traitDecl =
@@ -2227,17 +2152,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
                                         TypedAttr callee,
                                         LITSignatureType memSig) {
   // Synthesize input and result parameter decls.
-  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<ParamDeclAttr> inputParamDecls;
   Builder b(shared.getContext());
   for (auto [i, type, name] :
        llvm::enumerate(memSig.getInputParamTypes(), memSig.getParamNames())) {
     // The input parameter names are derived from the decl name.
     inputParamDecls.push_back(ParamDeclAttr::get(
         name.empty() ? b.getStringAttr("i" + Twine(i)) : name, type));
-  }
-  for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
-    resultParamDecls.push_back(
-        ParamDeclAttr::get(b.getStringAttr("o" + Twine(i)), type));
   }
 
   // Synthesize the method inside the struct.
@@ -2246,7 +2167,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       memSig.getValueInputs(), memSig.getInputConventions(),
       memSig.getArgNames(), memSig.getArgPassingKinds(), memSig.getResultType(),
       structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      resultParamDecls, "`thunk_");
+      "`thunk_");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2305,13 +2226,6 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       posOperands.push_back({value, &node});
   }
 
-  // Declare result parameters for the call, if required.
-  SmallVector<ParamDeclAttr> callResultParams;
-  for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
-    callResultParams.push_back(
-        ParamDeclAttr::get(b.getStringAttr("r" + Twine(i)), type));
-  }
-
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
@@ -2319,21 +2233,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
 
   CValue callResult = emitter.emitCallUnchecked(
-      PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,
-      dest, &node);
+      PValue(callee), CallOperands(posOperands, &kwOperands), dest, &node);
   if (!callResult)
     return;
-
-  // Bind result parameters, if there are any.
-  ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
-                               *emitter.builder);
-  if (!callResultParams.empty()) {
-    SmallVector<TypedAttr> resultRefs;
-    for (ParamDeclAttr resultDecl : callResultParams)
-      resultRefs.push_back(ParamDeclRefAttr::get(resultDecl));
-    builder.create<LIT::ParamReturnOp>(
-        ParameterExprArrayAttr::get(b.getContext(), resultRefs));
-  }
 
   // If the callee is async, then await the result.
   if (memSig.isAsync()) {
@@ -2348,6 +2250,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Emit the function return. It's just a none return if the function has a
   // result slot.
   // FIXME: handle async
+  ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
+                               *emitter.builder);
   Value retVal;
   if (hasResultSlot) {
     retVal =
