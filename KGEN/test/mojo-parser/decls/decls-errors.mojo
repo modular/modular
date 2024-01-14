@@ -682,6 +682,17 @@ fn bad_metatype_access():
     var val = TypeGetItem
     val[1] # expected-error {{invalid call to '__getitem__': l-value of type 'TypeGetItem' cannot be converted to reference of type 'TypeGetItem}}
 
+
+struct BadRefItem:
+    fn __init__(inout self): pass
+    fn __refitem__(inout self, key: Int) -> Int:
+        return key
+
+fn access_BadRefItem():
+    var val = BadRefItem()
+    _ = val[1] # expected-error {{the '__refitem__' method on 'BadRefItem' returned a value of 'Int', expected a reference}}
+
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##

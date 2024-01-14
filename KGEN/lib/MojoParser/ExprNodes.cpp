@@ -697,20 +697,66 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   return emitter.emitCResult(SBValue(extractVal), expr, dest);
 }
 
-/// Given a base value, emit access to a base value element using getter and
-/// setter methods and the provided operands. If a getter is present on the base
-/// type but a setter is not, this method immediately emits a getter call.
+/// Given a base value, emit access to a base value element using either a
+/// reference-producing-method or getter-and-setter-methods using the provided
+/// operands.
+///
+/// This prefers the reference method if present.  If not, and if a getter is
+/// present on the base type but a setter is not, this method immediately emits
+/// a getter call.
+///
 /// Otherwise, it returns a SubscriptDLValue for later materializing calls to
-/// the getter or setter as appropriate. This functions takes ownership of the
-/// operands because it might move them to a SubscriptDLValue, if emitted.
+/// the getter or setter as appropriate. When doing this it  takes ownership of
+/// the operands because it might move them to a SubscriptDLValue, if emitted.
 static AnyValue
 emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        ValueDest &dest, ExprEmitter &emitter, ASTType baseType,
-                       StringRef getterName, StringRef setterName,
-                       CallSyntax syntax, function_ref<void()> lookupError,
+                       StringRef refferName, StringRef getterName,
+                       StringRef setterName, CallSyntax syntax,
+                       function_ref<void()> lookupError,
                        SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
                        SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
                            SmallDenseMap<StringAttr, FuncOperand>()) {
+  // If there is a ref method, prefer it.
+  CallOperands callOperands(posOperands, &kwOperands);
+  if (PValue reffer =
+          OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
+                              refferName, callOperands, node, syntax,
+                              /*no error on failure*/ {})) {
+    // If we have at least one getter implementation then filter it based on the
+    // subscriptArgs we have.  This will ensure we treat its presence of
+    // indication that the type was intended to be subscriptable, but whine
+    // about index values and base type if they aren't actually compatible at
+    // this usage site.
+    ValueDest refDest(dest.getContext());
+    CValue callResult =
+        emitter.emitIndirectCall(reffer, callOperands, refDest, node);
+    if (!callResult)
+      return {};
+
+    // We expected the refitem method to return a reference (or something we can
+    // achieve one by calling `__mlir_ref__`).  Depending on its mutability, it
+    // will be a MBValue or an MLValue.
+    // TODO: support __mlir_ref__
+    auto resultRefType = dyn_cast<RefType>(callResult.getRValueType());
+    if (!resultRefType) {
+      emitter.emitError(node->getLoc())
+          << "the '" << refferName << "' method on " << baseType
+          << " returned a value of " << callResult.getRValueType()
+          << ", expected a reference";
+      return {};
+    }
+    Value refVal = emitter.emitSRValue({callResult, node}, dest.getContext());
+    if (!refVal)
+      return {};
+
+    // The result of the subscript or attribute lookup is a borrowed reference
+    // or LValue, which can be directly used.
+    auto result = resultRefType.getIsMutable() ? AnyValue(MLValue(refVal))
+                                               : MBValue(refVal);
+    return emitter.emitResult(result, node, dest);
+  }
+
   // If there is no getter at all, then this is not a subscriptable type.
   auto getter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
                                     getterName, node, syntax,
@@ -737,7 +783,6 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     // indication that the type was intended to be subscriptable, but whine
     // about index values and base type if they aren't actually compatible at
     // this usage site.
-    CallOperands callOperands(posOperands, &kwOperands);
     PValue getterCallee = getter.filterOverloadSet(
         callOperands, /*allowImplicitConversions=*/true,
         /*emitDiagnosticOnFailure=*/true);
@@ -916,8 +961,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
 
     return emitGetterSetterAccess(
-        this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
-        CallSyntax::kAttribute, lookupError,
+        this, base, dest, emitter, baseRVType, "__refattr__", "__getattr__",
+        "__setattr__", CallSyntax::kAttribute, lookupError,
         SmallVector<ASTExprAnd<AnyValue>>{{baseVal, base}, {key, base}});
   }
   emitter.shared.notifyListenerOnRef(memberDecls, spelling, this);
@@ -1674,11 +1719,11 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.emitError(getLoc())
         << baseType
         << " is not subscriptable, it does not implement the "
-           "`__getitem__`/`__setitem__` methods"
+           "`__getitem__`/`__setitem__` or `__refitem__` methods"
         << base->getRange();
   };
   return emitGetterSetterAccess(this, base, dest, emitter, baseType,
-                                "__getitem__", "__setitem__",
+                                "__refitem__", "__getitem__", "__setitem__",
                                 CallSyntax::kSubscript, lookupError,
                                 std::move(posOperands), std::move(kwOperands));
 }
