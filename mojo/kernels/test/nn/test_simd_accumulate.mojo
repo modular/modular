@@ -10,7 +10,7 @@ from AccumulateSIMD import (
     _simd_load_maybe_partial,
     accumulate_x86_simd,
 )
-from sys.info import simdwidthof
+from sys.info import simdwidthof, has_avx2, has_avx512f
 from testing import *
 from memory import stack_allocation
 
@@ -74,10 +74,10 @@ def test_accumulate_avx2_avx512[
     )
 
     # C results:
-    # CHECK: [0.0, 0.0, 0.0, 0.0]
-    # CHECK: [0.0, 0.0, 0.0, 0.0]
-    # CHECK: [1.0, 1.0, 1.0, 1.0]
-    # CHECK: [1.0, 1.0, 1.0, 1.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [1.0, 1.0, 1.0, 1.0]
+    # [1.0, 1.0, 1.0, 1.0]
     assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
         c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
@@ -96,10 +96,10 @@ def test_accumulate_avx2_avx512[
     )
 
     # C results:
-    # CHECK: [0.0, 0.0, 0.0, 0.0]
-    # CHECK: [0.0, 0.0, 0.0, 0.0]
-    # CHECK: [7.0, 7.0, 7.0, 7.0]
-    # CHECK: [7.0, 7.0, 7.0, 7.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [7.0, 7.0, 7.0, 7.0]
+    # [7.0, 7.0, 7.0, 7.0]
     assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
         c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
@@ -118,10 +118,10 @@ def test_accumulate_avx2_avx512[
     )
 
     # C results:
-    # CHECK: [4.0, 4.0, 4.0, 4.0]
-    # CHECK: [4.0, 4.0, 4.0, 4.0]
-    # CHECK: [19.0, 19.0, 19.0, 19.0]
-    # CHECK: [19.0, 19.0, 19.0, 19.0]
+    # [4.0, 4.0, 4.0, 4.0]
+    # [4.0, 4.0, 4.0, 4.0]
+    # [19.0, 19.0, 19.0, 19.0]
+    # [19.0, 19.0, 19.0, 19.0]
     assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](4.0))
     assert_equal(
         c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
@@ -138,4 +138,7 @@ def test_accumulate_avx2_avx512[
 
 def main():
     test_maybe_partial_load()
-    test_accumulate_avx2_avx512()
+
+    @parameter
+    if has_avx2() or has_avx512f():
+        test_accumulate_avx2_avx512()
