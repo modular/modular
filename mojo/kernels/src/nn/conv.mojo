@@ -24,6 +24,7 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
+from AccumulateSIMD import accumulate_x86_simd
 from ConvUtils import (
     ConvInfo,
     ConvInfoStatic,
@@ -1412,89 +1413,6 @@ struct ConvDirectNHWC[
             )
 
     @always_inline
-    fn _accumulate_default[
-        micro_kernel_height: Int,
-        micro_kernel_width: Int,
-        simd_size: Int,
-        has_residual: Bool,
-        prefetch_offset: Int,
-    ](
-        self,
-        c_tile_size: Int,
-        input_stride: Int,
-        input_base: DTypePointer[input_type],
-        filter_base: DTypePointer[filter_type],
-        output_ptr: DTypePointer[output_type],
-    ):
-        """Accumulate with register tiling on SIMD ISAs other than NEON.
-        It has been optimized for AVX512 and AVX2.
-        """
-        constrained[not has_neon()]()
-
-        # Short circuit when the micro tile is in padding.
-        @parameter
-        if micro_kernel_height == 0:
-            return
-
-        var filter_ptr = filter_base
-
-        for c in range(c_tile_size):
-            alias micro_kernel_f_size = micro_kernel_width * simd_size
-
-            # prefetch
-            @parameter
-            if prefetch_offset > 0:
-
-                @unroll
-                for i in range(micro_kernel_width):
-                    filter_base.offset(
-                        prefetch_offset * micro_kernel_f_size + i * simd_size
-                    ).prefetch[
-                        PrefetchOptions()
-                        .for_read()
-                        .high_locality()
-                        .to_data_cache()
-                    ]()
-
-            alias alignment = alignof[SIMD[output_type, simd_size]]()
-
-            @unroll
-            for i in range(micro_kernel_height):
-
-                @unroll
-                for j in range(micro_kernel_width):
-                    # Broadcast an scalar from input to a simd vector.
-                    let input_val = input_base.offset(
-                        c + i * input_stride
-                    ).load()
-                    let input_vec = SIMD[input_type, simd_size](input_val)
-                    # Load a simd vector from filter.
-                    let filter_vec = self._load_filter_vec[
-                        has_residual, simd_size
-                    ](filter_ptr, j * simd_size)
-                    # The following should be lifted to registers and show up as
-                    # FMA instructions.
-                    var output_vec = output_ptr.offset(
-                        i * micro_kernel_f_size + j * simd_size
-                    ).aligned_simd_load[simd_size, alignment]()
-                    output_vec = fma[output_type, simd_size](
-                        input_vec.cast[output_type](),
-                        filter_vec.cast[output_type](),
-                        output_vec,
-                    )
-                    output_ptr.offset(
-                        i * micro_kernel_f_size + j * simd_size
-                    ).aligned_simd_store[simd_size, alignment](output_vec)
-
-            # FRSCf: micro f segments are packed continously.
-            @parameter
-            if filter_packed:
-                filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-            # RSCF: jump to the next row for the next f segement.
-            else:
-                filter_ptr = filter_ptr.offset(self.conv_shape.f)
-
-    @always_inline
     fn _accumulate_neon[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -1589,6 +1507,11 @@ struct ConvDirectNHWC[
         filter_base: DTypePointer[filter_type],
         output_ptr: DTypePointer[output_type],
     ):
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        let F = self.output.dim[3]()
+        let filter_stride = micro_kernel_f_size if filter_packed else F
+
         @parameter
         if has_neon():
             self._accumulate_neon[
@@ -1605,18 +1528,20 @@ struct ConvDirectNHWC[
                 output_ptr,
             )
         else:
-            self._accumulate_default[
+            accumulate_x86_simd[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
-                has_residual,
-                prefetch_offset,
+                prefetch_offset=prefetch_offset,
+                partial_load_b = has_residual and not filter_packed,
             ](
                 c_tile_size,
-                input_stride,
-                input_base,
-                filter_base,
                 output_ptr,
+                input_base,
+                input_stride,
+                filter_base,
+                filter_stride,
+                F % simd_size,
             )
 
     @always_inline
