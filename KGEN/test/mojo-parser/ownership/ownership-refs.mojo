@@ -16,7 +16,6 @@
 # TODO: Move this to the standard library someday.
 
 ## Immutable reference type.
-# TODO: Enable refitem
 @register_passable("trivial")
 struct Reference[element_type: AnyType, lifetime: Lifetime, addrSpace: Int = 0]:
     alias reference_type = __mlir_type[
@@ -29,9 +28,8 @@ struct Reference[element_type: AnyType, lifetime: Lifetime, addrSpace: Int = 0]:
         """Create a reference to the provided value."""
         return Self{value: ref_value}
 
-    # @always_inline
-    # fn __refitem__(self) -> reference_type:
-    #     return self.value
+    fn __refitem__(self) -> Self.reference_type:
+        return self.value
 
     fn __mlir_ref__(self) -> Self.reference_type:
         return self.value
@@ -169,11 +167,13 @@ fn testUseConditionalReference(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime = <*"`a0">
   alias aLifetime =  aref.lifetime
 
-  # TODO Need a refitem member.
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract %aref[value]
-  __get_value_from_ref(aref.value).noop()
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
+  aref[].noop()
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[LITREF]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+
+  # TODO: Add mutability to Reference.
+  #aref[] = MemExample()
 
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
