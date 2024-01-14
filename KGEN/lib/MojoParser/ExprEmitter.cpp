@@ -891,21 +891,20 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
   return SRValue(rebind(srValue));
 }
 
-AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
-                                             ASTExprAnd<CValue> value,
-                                             ValueDest &dest) {
+PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
+                                           TraitType trait) {
   // Only static vtables are supported right now.
   PValue typeValue = value.ir.getIfPValue();
   if (!typeValue) {
-    dest.resetForError();
     emitError(value.expr->getLoc(), "existentials are not supported yet!");
     return {};
   }
 
+  auto type = ASTType(typeValue.getRValueType());
+
   // Check that the struct implements the trait.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!metaTypeImplements(trait, typeDecl)) {
-    dest.resetForError();
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
@@ -984,7 +983,6 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
 
         // The struct does not conform to the trait. Just silently return, since
         // an error has already been emitted.
-        dest.resetForError();
         return {};
       }
       if (result.getType().mlirType != sig)
@@ -994,9 +992,8 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
   }
 
   // Create the new type value with the vtable and the trait metatype.
-  PValue result = TypeConstantAttr::get(selfType, trait,
-                                        VTableAttr::get(getContext(), vtable));
-  return emitResult(result, value.expr, dest);
+  return TypeConstantAttr::get(selfType, trait,
+                               VTableAttr::get(getContext(), vtable));
 }
 
 /// When emitting a result value, attempt to "refine" the value type by
@@ -1099,8 +1096,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       // specified trait.
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
         if (isa<MetaTypeType, TraitType>(rvalueType)) {
-          return emitMetaTypeConversion(trait, rvalueType, {cValue, expr},
-                                        dest);
+          PValue result = emitMetaTypeConversion({cValue, expr}, trait);
+          if (!result) {
+            dest.resetForError();
+            return {};
+          }
+          return emitResult(result, expr, dest);
         }
       }
 

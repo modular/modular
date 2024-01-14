@@ -406,8 +406,7 @@ public:
 
   /// Emit a metatype conversion to a trait type by materializing the type's
   /// vtable for the trait.
-  AnyValue emitMetaTypeConversion(TraitType trait, ASTType type,
-                                  ASTExprAnd<CValue> value, ValueDest &dest);
+  PValue emitMetaTypeConversion(ASTExprAnd<CValue> value, TraitType trait);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
