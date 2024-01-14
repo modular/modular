@@ -428,8 +428,7 @@ lit.call @calls[a, b]() : !lit.signature<[1]() -> ()>
 lit.call @calls[a]() : !lit.signature<[1](!lit.ref<mut index, *[0,1]>) -> ()>
 
 // -----
-lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<@MyStruct, life>) {
-  // expected-error @+1 {{expected mutable reference operand}}
-  %ref2 = lit.ref.immut %ref1: !lit.ref<@MyStruct, *"life">
-  kgen.return %ref2: !lit.ref<@MyStruct, *"life">
+lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<index, life>) ->  !lit.ref<index, life> {
+  %ref2 = lit.ref.immut %ref1: !lit.ref<index, life>
+  kgen.return %ref2: !lit.ref<index, life>
 }

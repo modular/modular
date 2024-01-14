@@ -124,6 +124,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // Handle RefType.
   if (auto actual = dyn_cast<RefType>(actualType))
     if (auto expected = dyn_cast<RefType>(expectedType)) {
+      matchParams(actual.getIsMutable(), expected.getIsMutable());
       matchTypes(actual.getElementType(), expected.getElementType());
       matchParams(actual.getLifetime(), expected.getLifetime());
       return;
@@ -260,7 +261,15 @@ LogicalResult ParameterInferenceState::checkOneOperand(
           !isa<RefType>(actualType)) {
         // Infer element, addrspace, and lifetime.
         if (value.isMValue()) {
-          matchTypes(value.getMValueReference().getType(), expectedRef);
+          auto valueRefType =
+              cast<RefType>(value.getMValueReference().getType());
+          // If the MValue is an MBValue specifically, make sure to strip off
+          // any mutability from the reference.  There are lots of things that
+          // are mutable that have borrowed references.
+          if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
+            valueRefType = valueRefType.getWithMutability(false);
+
+          matchTypes(valueRefType, expectedRef);
         } else {
           // In the case of a SValue / PValue, we can do an MBValue conversion
           // to expose the address, but we can't infer a lifetime or address

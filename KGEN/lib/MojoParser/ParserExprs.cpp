@@ -119,6 +119,7 @@ private:
                                   ExprNode::Kind kind, SMLoc loc);
   ParseResult parseFunctionType(ExprNode *&result);
   ParseResult parseLambda(ExprNode *&result);
+  ParseResult parseReferenceType(ExprNode *&result);
   ParseResult parseAddressConvert(ExprNode *&result);
 
   /// This specifies the indentation level of the start of the statement that
@@ -544,27 +545,10 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     return parseLambda(result);
 
   case Token::kw_ref:      // ref [lifetime] type
-  case Token::kw_mutref: { // mutref [lifetime] type
-    consumeToken();
-    // Parse the lifetime specifier.
-    ExprNode *lifetime = nullptr, *expr = nullptr, *addrSpace = nullptr;
-    if (parseToken(Token::l_square, "expected '[' before lifetime") ||
-        parseExpression(lifetime, Precedence::kAssignExpr))
+  case Token::kw_mutref:   // mutref [lifetime] type
+    if (failed(parseReferenceType(result)))
       return failure();
-
-    if (consumeIf(Token::comma)) {
-      if (parseExpression(addrSpace, Precedence::kAssignExpr))
-        return failure();
-    }
-
-    if (parseToken(Token::r_square, "expected ']' after lifetime") ||
-        parsePrimaryExpr(expr))
-      return failure();
-    bool isMutable = startTok.getKind() == Token::kw_mutref;
-    result = alloc<OwnershipOpNode>(startTok.getLoc(), isMutable, lifetime,
-                                    addrSpace, expr);
     break;
-  }
 
   case Token::kw___get_ref_from_value:
   case Token::kw___get_value_from_ref:
@@ -1075,6 +1059,43 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   // them yet.
   emitError(lambdaLoc, "Mojo doesn't support lambda expressions yet");
   return failure();
+}
+
+/// "mutref" "[" lifetime "," ["," addrspace] "]" type
+/// "ref"    "[" ["mut" "=" mutability] lifetime "," ["," addrspace] "]" type
+ParseResult ExprParser::parseReferenceType(ExprNode *&result) {
+  bool isMutRef = getToken().is(Token::kw_mutref);
+  auto loc = consumeToken().getLoc();
+
+  if (parseToken(Token::l_square, "expected '[' in reference"))
+    return failure();
+
+  // Check for "mut=" if this is 'ref'.
+  ExprNode *mutableExpr = nullptr;
+  if (!isMutRef && getToken().getSpelling() == "mut") {
+    (void)consumeIdentifier(); // The mut token.
+    if (parseToken(Token::equal, "expected '=' after 'mut' keyword") ||
+        parseExpression(mutableExpr, Precedence::kAssignExpr) ||
+        parseToken(Token::comma, "expected ',' after mutability specification"))
+      return failure();
+  }
+
+  // Parse the lifetime specifier.
+  ExprNode *lifetime = nullptr, *expr = nullptr, *addrSpace = nullptr;
+  if (parseExpression(lifetime, Precedence::kAssignExpr))
+    return failure();
+  // Parse the address space if present.
+  if (consumeIf(Token::comma)) {
+    if (parseExpression(addrSpace, Precedence::kAssignExpr))
+      return failure();
+  }
+
+  if (parseToken(Token::r_square, "expected ']' after lifetime") ||
+      parsePrimaryExpr(expr))
+    return failure();
+  result = alloc<RefTypeNode>(isMutRef ? ExprNode::kMutRef : ExprNode::kRef,
+                              loc, mutableExpr, lifetime, addrSpace, expr);
+  return success();
 }
 
 ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {

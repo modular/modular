@@ -82,9 +82,10 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       if (!ASTType(fromRef.getElementType())
                .isEqualCanon(toRef.getElementType()))
         return false;
-      // We can convert from mutable to immutable, but not the other way.
+      // We can convert from (mutable or parametric) to immutable, but nothing
+      // else.
       if (fromRef.getIsMutable() != toRef.getIsMutable() &&
-          toRef.getIsMutable())
+          !toRef.isMutableKnown(false))
         return false;
       // We can convert lifetimes to a superset of lifetimes.
       auto toLifetime = toRef.getLifetime();
@@ -153,9 +154,10 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
   // Check reference downcasting.
   if (auto type1Ref = dyn_cast<RefType>(type1))
     if (auto type2Ref = dyn_cast<RefType>(type2)) {
-      // Element types have to be exactly equal.
+      // Element types and addr spaces have to be exactly equal.
       auto eltType = type1Ref.getElementType();
-      if (!ASTType(eltType).isEqualCanon(type2Ref.getElementType()))
+      if (!ASTType(eltType).isEqualCanon(type2Ref.getElementType()) ||
+          type1Ref.getAddressSpace() != type2Ref.getAddressSpace())
         return {};
 
       // If so, we can form a common type with a subset of their mutability and
@@ -163,8 +165,10 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
       auto lifetime = LifetimeUnionAttr::get(
           type1Ref.getContext(),
           {type1Ref.getLifetime(), type2Ref.getLifetime()});
-      return RefType::get(type1Ref.getIsMutable() && type2Ref.getIsMutable(),
-                          eltType, lifetime);
+      auto isMutableAttr = ParamOperatorAttr::get(
+          POC::And, type1Ref.getIsMutable(), type2Ref.getIsMutable());
+      return RefType::get(isMutableAttr, eltType, lifetime,
+                          type1Ref.getAddressSpace());
     }
 
   // No common type found.

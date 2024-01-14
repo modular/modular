@@ -571,7 +571,14 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << "]";
   } else if (auto refType = dyn_cast<RefType>(type)) {
-    os << (refType.getIsMutable() ? "mutref[" : "ref[");
+    bool isKnownMut = refType.isMutableKnown(true);
+    os << (isKnownMut ? "mutref[" : "ref[");
+    if (!isKnownMut && !refType.isMutableKnown(false)) {
+      os << "mut=";
+      printParam(os, refType.getIsMutable(), forDiag, demangleParams);
+      os << ", ";
+    }
+
     printParam(os, refType.getLifetime(), forDiag, demangleParams);
     if (IntegerAttr addrSpaceInt =
             dyn_cast<IntegerAttr>(refType.getAddressSpace());

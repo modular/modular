@@ -17,10 +17,11 @@
 
 ## Immutable reference type.
 @register_passable("trivial")
-struct Reference[element_type: AnyType, lifetime: Lifetime, addrSpace: Int = 0]:
+struct Reference[element_type: AnyType, lifetime: Lifetime,
+                 isMutable: __mlir_type.i1, addrSpace: Int = 0]:
     alias reference_type = __mlir_type[
-        `!lit.ref<:`, AnyType, ` `, element_type, `, `, lifetime, `, `,
-                      addrSpace.value, `>`
+        `!lit.ref<mut=`, isMutable, `, :`, AnyType, ` `, element_type, `, `,
+                      lifetime, `, `, addrSpace.value, `>`
     ]
     var value: Self.reference_type
 
@@ -79,6 +80,27 @@ fn addrSpaces[lt: Lifetime, as1: __mlir_type.index]():
 
   # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, {{.*}}_lt, apply(:!lit.signature<("self": !Int borrow) -> index> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__mlir_index__($stdlib::$builtin::$int::Int)", apply(:!lit.signature<("self": !Int borrow) -> !Int> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__index__($stdlib::$builtin::$int::Int)", {{.*}}_as2))>
   let ref2 : ref[lt, as2] MemExample
+
+# This preserves reference mutability
+# CHECK-LABEL: lit.func @"parametricMut
+# CHECK-SAME: (%a: !lit.ref<mut={{.*}}isMut, !MemExample, {{.*}}x18_life> borrow)
+# CHECK-SAME: -> !lit.ref<mut=_{{.*}}x18_isMut, !MemExample, _{{.*}}x18_life>
+fn parametricMut[isMut: __mlir_type.i1,
+                 life: Lifetime](a: ref[mut=isMut, life] MemExample)
+   -> ref[mut=isMut, life] MemExample:
+  return a
+
+# CHECK-LABEL: lit.func @"testParametricMut
+fn testParametricMut(i: MemExample, inout m: MemExample):
+  # This infers an immutable reference.
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}parametricMut
+  # CHECK-NEXT: %iRef = lit.letreg.decl "iRef" = [[RES]] : !lit.ref<!MemExample, *"`i">
+  let iRef = parametricMut(__get_ref_from_value(i))
+
+  # This infers a mutable reference.
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}parametricMut
+  # CHECK: %mRef = lit.letreg.decl "mRef" = [[RES]] : !lit.ref<mut !MemExample, *"`m">
+  let mRef = parametricMut(__get_ref_from_value(m))
 
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
@@ -153,14 +175,13 @@ fn testDefConditional(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.func @"testUseConditionalReference
 
-fn testUseConditionalReference(cond: __mlir_type.i1):
+fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: %a = lit.varlet.decl {{.*}} : !lit.ref<mut !MemExample, *"`a0">
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
 
-  let a = MemExample()
+  var a = MemExample()
 
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a : <mut !MemExample, *"`a0">
-  # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[IMMREF]])
+  # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
 
   # CHECK-NEXT: %aref = lit.letreg.decl "aref" = [[ARV]]
   let aref = Reference(a)
@@ -169,13 +190,25 @@ fn testUseConditionalReference(cond: __mlir_type.i1):
 
   # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
   aref[].noop()
-  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[LITREF]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[LITREF]]
+  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
 
-  # TODO: Add mutability to Reference.
-  #aref[] = MemExample()
+  # This is a mutable reference so go head and store through it whynot?
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
+  aref[] = MemExample()
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[LITREF]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[LITREF]])
+
+  # Ok, this was the last use of A so it can go away.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
 
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
   # CHECK-NEXT: %aref2 = lit.letreg.decl "aref2" = %aref
   let aref2 = aref
+
+  # Reference can bind to immutable things as well, no problem.
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%imm)
+  # CHECK-NEXT: %immref = lit.letreg.decl "immref" = [[IMMRV]]
+  let immref = Reference(imm)
+  immref[].noop()
