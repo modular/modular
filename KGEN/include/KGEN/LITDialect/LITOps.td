@@ -1672,7 +1672,7 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
     ```
   }];
 
-  let hasVerifier = 1;
+  let hasFolder = 1;
   let arguments = (ins LIT_RefType:$ref);
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = "$ref `:` type($ref) attr-dict";

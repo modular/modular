@@ -112,6 +112,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in capture-by-copy";
   case EC_Decorator:
     return " in decorator";
+  case EC_MutabilitySpec:
+    return " in reference mutability specifier";
   case EC_LifetimeSpec:
     return " in lifetime specifier";
   case EC_Trait:
@@ -867,7 +869,8 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
     if (auto srcRefType = dyn_cast<RefType>(v.getType()))
       if (auto dstRefType = dyn_cast<RefType>(destType)) {
         // Make sure rebind isn't *introducing* reference mutability.
-        assert((srcRefType.getIsMutable() || !dstRefType.getIsMutable()) &&
+        assert(!(srcRefType.isMutableKnown(false) &&
+                 dstRefType.isMutableKnown(true)) &&
                "Rebind is introducing mutability");
       }
     return builder->create<RebindOp>(translateLocation(value.expr->getLoc()),

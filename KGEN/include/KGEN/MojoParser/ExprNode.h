@@ -126,7 +126,8 @@ public:
     // Ternary expressions.
     kIfElse,
     // Reference types
-    kRef, // ref[lifetime] x    |    mutref[lifetime] x
+    kMutRef, // mutref[lifetime] type
+    kRef,    // ref[lifetime] type | ref[mut=param, lifetime] type
 
     // Not a valid expression node.
     kInvalid,

@@ -2454,7 +2454,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // refValue is immutable here because it was passed to a copy.
   assert(cast<RefType>(moveValueInputs[0]).getElementType() == valueEltType &&
          moveValue1Ref.getElementType() == valueEltType &&
-         moveValue1Ref.getIsMutable() && !refValue.getIsMutable());
+         moveValue1Ref.isMutableKnown(true) && refValue.isMutableKnown(false));
 
   auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
   assert(destType.getElementType() == refValue.getElementType());

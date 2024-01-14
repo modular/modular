@@ -357,10 +357,17 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
 // RefType
 //===----------------------------------------------------------------------===//
 
-RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
+RefType RefType::get(TypedAttr isMutable, Type elementType, TypedAttr lifetime,
                      TypedAttr addrSpace) {
+  assert(isMutable.getType().isSignlessInteger(1) && "isMutable should be i1");
   return get(lifetime.getContext(), isMutable, elementType, lifetime,
              addrSpace);
+}
+
+RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
+                     TypedAttr addrSpace) {
+  return get(BoolAttr::get(elementType.getContext(), isMutable), elementType,
+             lifetime, addrSpace);
 }
 
 RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
@@ -368,8 +375,6 @@ RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
   auto *ctx = elementType.getContext();
   return get(isMutable, elementType, lifetime,
              IntegerAttr::get(IndexType::get(ctx), addrSpace));
-
-  // return get(isMutable, ParamRefType::get(elementType), lifetime, addrSpace);
 }
 
 /// Return the pointer type that corresponds to this reference type, ignoring
@@ -407,6 +412,14 @@ RefType RefType::getImmortal(bool isMut, Type elementType, unsigned addrSpace) {
       IntegerAttr::get(IndexType::get(elementType.getContext()), addrSpace));
 }
 
+/// Return true if the mutable attribute is known to be the specific
+/// constant.  This returns false if parametric or if the other value.
+bool RefType::isMutableKnown(bool value) {
+  if (auto cst = ::dyn_cast<BoolAttr>(getIsMutable()))
+    return cst.getValue() == value;
+  return false;
+}
+
 /// Print/Parse a parameter value that is known to have `lifetime` type.
 static void printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
@@ -417,12 +430,35 @@ static ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 /// Print/Parse the 'mut' keyword as 1, and its absence as 0.
-static void printMutFlag(AsmPrinter &p, bool value) {
-  if (value)
-    p << "mut ";
+static void printMutFlag(AsmPrinter &p, TypedAttr value) {
+  if (auto boolAttr = dyn_cast<BoolAttr>(value)) {
+    if (boolAttr.getValue())
+      p << "mut ";
+    return;
+  }
+
+  p << "mut=";
+  printParamValue(p, value);
+  p << ", ";
 }
-static ParseResult parseMutFlag(AsmParser &p, bool &value) {
-  value = succeeded(p.parseOptionalKeyword("mut"));
+
+static ParseResult parseMutFlag(AsmParser &p, TypedAttr &value) {
+  // !lit.ref<lifetime    ==> immmutable
+  if (failed(p.parseOptionalKeyword("mut"))) {
+    value = BoolAttr::get(p.getContext(), false);
+    return success();
+  }
+
+  // !lit.ref<mut lifetime    ==> mutable
+  if (failed(p.parseOptionalEqual())) {
+    value = BoolAttr::get(p.getContext(), true);
+    return success();
+  }
+
+  // !lit.ref<mut=expr, lifetime  ==> parametric
+  if (parseParamValue(p, value, p.getBuilder().getI1Type()) || p.parseComma())
+    return failure();
+
   return success();
 }
 

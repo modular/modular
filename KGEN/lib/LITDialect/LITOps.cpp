@@ -1425,10 +1425,11 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 // RefImmutOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult RefImmutOp::verify() {
-  if (!getRef().getType().getIsMutable())
-    return emitOpError("expected mutable reference operand");
-  return success();
+OpFoldResult RefImmutOp::fold(RefImmutOp::FoldAdaptor adaptor) {
+  // If the operand is already known to be immutable then this is a noop.
+  if (getRef().getType().isMutableKnown(false))
+    return getRef();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1618,7 +1619,7 @@ static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
   if (p.parseType(resultType))
     return failure();
   auto refType = dyn_cast<RefType>(resultType);
-  if (!refType || !refType.getIsMutable())
+  if (!refType || !refType.isMutableKnown(true))
     return p.emitError(p.getNameLoc(),
                        "expected a mutable !lit.ref<> result type");
   // The lifetime must be a simple name, which becomes the name we are

@@ -751,9 +751,10 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
       return {};
 
     // The result of the subscript or attribute lookup is a borrowed reference
-    // or LValue, which can be directly used.
-    auto result = resultRefType.getIsMutable() ? AnyValue(MLValue(refVal))
-                                               : MBValue(refVal);
+    // or LValue, which can be directly used.  Parametric mutability is always
+    // treated as immutable because some cases wouldn't allow mutation.
+    auto result = resultRefType.isMutableKnown(true) ? AnyValue(MLValue(refVal))
+                                                     : MBValue(refVal);
     return emitter.emitResult(result, node, dest);
   }
 
@@ -2571,10 +2572,25 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      dest, CallSyntax::kOperator, this);
 }
 
-AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue RefTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Complain if lifetimes are not enabled.
   if (!emitter.shared.useExperimentalLifetimes())
     emitter.emitError(getLoc(), "lifetimes are not enabled yet") << getRange();
+
+  // Get the mutability spec.
+  TypedAttr isMutablePVal;
+  if (mutableExpr) {
+    // If specified explicitly, convert it to an i1 parameter expression.
+    CRValue mutSpec = emitter.getParamEmitter(EC_MutabilitySpec)
+                          .emitExprI1(mutableExpr, EC_MutabilitySpec);
+    if (!mutSpec)
+      return {};
+    isMutablePVal = mutSpec.getIfPValue().get();
+    assert(isMutablePVal && "Param context emission should provide PValue");
+  } else {
+    // Otherwise, mutability is determined by 'mutref' vs 'ref' keywords.
+    isMutablePVal = BoolAttr::get(emitter.getContext(), kind == kMutRef);
+  }
 
   // Get the base type and lifetime specifier.
   PValue lifetimePVal = emitter.emitExprPValue(
@@ -2593,7 +2609,6 @@ AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     addrSpacePVal =
         emitter.emitPValue({mlirIndex, addrSpace}, EC_LifetimeSpec, indexType);
   } else {
-    auto indexType = IndexType::get(emitter.getContext());
     addrSpacePVal = PValue(IntegerAttr::get(indexType, 0));
   }
   if (!addrSpacePVal)
@@ -2603,8 +2618,8 @@ AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!subType)
     return {};
 
-  auto result =
-      RefType::get(isMutable, subType, lifetimePVal.get(), addrSpacePVal.get());
+  auto result = RefType::get(isMutablePVal, subType, lifetimePVal.get(),
+                             addrSpacePVal.get());
   return emitter.emitResult(result, this, dest);
 }
 
@@ -3064,7 +3079,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     // exposing it to the user.
     if (subExprValue.getIfMBValue()) {
       auto refType = cast<RefType>(refValue.getType());
-      if (refType.getIsMutable()) {
+      if (!refType.isMutableKnown(false)) {
         if (!emitter.builder) {
           emitter.emitErrorForDynamicValueInParameter(this);
           return {};
@@ -3091,8 +3106,10 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
           << ref.getType() << getRange();
       return {};
     }
+    // The result is an LValue if the reference is known to be mutable,
+    // immutable if non-mut or parametric.
     auto result =
-        refType.getIsMutable() ? AnyValue(MLValue(ref)) : MBValue(ref);
+        refType.isMutableKnown(true) ? AnyValue(MLValue(ref)) : MBValue(ref);
     return emitter.emitResult(result, this, dest);
   }
 

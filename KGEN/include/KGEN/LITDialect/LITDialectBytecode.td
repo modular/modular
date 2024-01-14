@@ -44,7 +44,7 @@ def TraitType : DialectType<(type
 def LifetimeType : DialectType<(type)>;
 
 def RefType : DialectType<(type
-  EnumAttr<"bool">:$isMutable,
+  TypedAttr:$isMutable,
   Type:$elementType,
   TypedAttr:$lifetime,
   TypedAttr:$addressSpace

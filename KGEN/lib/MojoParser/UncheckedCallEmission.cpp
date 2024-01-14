@@ -219,7 +219,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
           auto refValueType = cast<RefType>(refValue.getType());
           assert(refValueType.getLifetime() == expectedRef.getLifetime());
           // The destination may be less mutable.
-          if (refValueType.getIsMutable() && !expectedRef.getIsMutable())
+          if (!refValueType.isMutableKnown(false) &&
+              expectedRef.isMutableKnown(false))
             refValue = emitter.builder->create<RefImmutOp>(
                 operand.expr->getLocation(emitter), refValue);
           assert(refValue.getType() == expectedType &&
@@ -583,7 +584,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     Value result = emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
     // Drop mutability for a MBValue.
-    if (result && cast<RefType>(result.getType()).getIsMutable())
+    if (result && !cast<RefType>(result.getType()).isMutableKnown(false))
       result = emitter.builder->create<RefImmutOp>(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;

@@ -72,6 +72,7 @@ enum ExprContext {
   EC_Destructor,            // Looking up T's destructor for `var x : T`
   EC_CaptureCopy,           // def f(): use(x)
   EC_Decorator,             // @x
+  EC_MutabilitySpec,        // ref[mut=x, y] z
   EC_LifetimeSpec,          // ref[x] y
   EC_Trait,                 // trait conformance checking for `T`
   EC_ValueFromRef,          // __get_value_from_ref(x)
@@ -248,6 +249,12 @@ public:
   ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext)
       : SharedStateUser(shared), builder({}), paramContext(paramContext),
         declScope(declScope) {}
+
+  /// Get an emitter set up for parameter expressions only with the specified
+  /// context.
+  ExprEmitter getParamEmitter(ExprContext context) {
+    return ExprEmitter(shared, declScope, context);
+  }
 
   //===--------------------------------------------------------------------===//
   // Emitter State.

@@ -509,21 +509,23 @@ struct UnaryOpNode final : public ExprNode {
                         ExprEmitter &emitter) const;
 };
 
-/// `borrowed[lt, addrspace] Type` and related ownership type specifiers.
-struct OwnershipOpNode final : public ExprNode {
-  OwnershipOpNode(SMLoc keywordLoc, bool isMutable, ExprNode *lifetime,
-                  ExprNode *addrSpace, ExprNode *subExpr)
-      : ExprNode(kRef), isMutable(isMutable), keywordLoc(keywordLoc),
+/// `ref[lt, addrspace] Type` and related reference types.
+struct RefTypeNode final : public ExprNode {
+  RefTypeNode(Kind kind, SMLoc keywordLoc, ExprNode *mutableExpr,
+              ExprNode *lifetime, ExprNode *addrSpace, ExprNode *subExpr)
+      : ExprNode(kind), keywordLoc(keywordLoc), mutableExpr(mutableExpr),
         lifetime(lifetime), addrSpace(addrSpace), subExpr(subExpr) {}
 
-  bool isMutable;
   const SMLoc keywordLoc;
   // NOTE: We don't keep track of the [] locations.
+  ExprNode *const mutableExpr; // NOTE: null when kMutRef or missing from ref.
   ExprNode *const lifetime;
   ExprNode *const addrSpace; // NOTE: This is null if unspecified.
   ExprNode *const subExpr;
 
-  static bool classof(const ExprNode *node) { return node->kind == kRef; }
+  static bool classof(const ExprNode *node) {
+    return node->kind == kMutRef || node->kind == kRef;
+  }
   SMLoc getLoc() const override { return keywordLoc; }
   SourceRange getRange() const override {
     return {keywordLoc, subExpr->getRangeEnd()};

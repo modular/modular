@@ -1093,7 +1093,7 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
     elemType = refType.getElementType();
     lifetime = refType.getLifetime();
     elemInMem = true;
-    if (refType.getIsMutable()) {
+    if (!refType.isMutableKnown(false)) {
       emitError(loc, "mutable variadics aren't supported yet");
       return getTypeCheckErrorType();
     }

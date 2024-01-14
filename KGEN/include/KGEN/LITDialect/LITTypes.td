@@ -278,10 +278,13 @@ def LIT_RefType : LITType<"Ref", "ref",
     ```mlir
     // A reference to a scalar.
     !lit.ref<f32, some_lifetime>
+
+    // A reference with parametric mutability.
+    !lit.ref<mut=sometimes_mutable, f32, some_lifetime, 0>
     ```
   }];
 
-  let parameters = (ins "bool":$isMutable,
+  let parameters = (ins "TypedAttr":$isMutable,
                         "Type":$elementType,
                         "TypedAttr":$lifetime,
                         DefaultValuedParameter<"TypedAttr",
@@ -298,6 +301,10 @@ def LIT_RefType : LITType<"Ref", "ref",
                                         "TypedAttr":$lifetime,
                                         CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "bool":$isMutable,
+                                        "Type":$elementType,
+                                        "TypedAttr":$lifetime,
+                                        "TypedAttr":$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable,
                                         "Type":$elementType,
                                         "TypedAttr":$lifetime,
                                         "TypedAttr":$addressSpace)>,
@@ -320,6 +327,10 @@ def LIT_RefType : LITType<"Ref", "ref",
 
     /// Return this RefType but with a different mutability.
     RefType getWithMutability(bool isMut);
+
+    /// Return true if the mutable attribute is known to be the specific
+    /// constant.  This returns false if parametric or if the other value.
+    bool isMutableKnown(bool value);
 
     /// Return a reference to the specified element type and mutability with an
     /// immortal (#lit.lifetime) lifetime.
