@@ -655,12 +655,23 @@ fn variadic_mems(a: Int, *mems: MemExample):
 fn call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: %0 = kgen.rebind %a : !lit.ref<!MemExample, *"`a"> to !lit.ref<!MemExample, {*"`a", *"`b"}>
   # CHECK-NEXT: %1 = kgen.rebind %b : !lit.ref<!MemExample, *"`b"> to !lit.ref<!MemExample, {*"`a", *"`b"}>
-  # CHECK-NEXT: %2 = pop.variadic.create [%0, %1]
-  # CHECK-NEXT: %3 = kgen.param.constant:
-  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[{*"`a", *"`b"}](%3, %2)
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [%0, %1]
+  # CHECK-NEXT: [[INT:%.*]] = kgen.param.constant:
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[{*"`a", *"`b"}]([[INT]], [[VAR]])
   variadic_mems(1, a, b)
-  # CHECK-NEXT: lit.ownership.use %a
-  # CHECK-NEXT: lit.ownership.use %b
+
+  # Variadic use keeps the memory value alive.
+  # CHECK-NEXT: %c = lit.varlet.decl "c"
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%c, %a)
+  let c = a
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[IMMREF]]]
+  # CHECK-NEXT: [[INT:%.*]] = kgen.param.constant:
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`c0"]([[INT]], [[VAR]])
+  variadic_mems(1, c)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+
+
   # CHECK-NEXT: kgen.param.constant: none
 
 struct MemPair:

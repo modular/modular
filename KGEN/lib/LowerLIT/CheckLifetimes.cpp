@@ -519,6 +519,7 @@ struct ValueSet {
   /// Look up all the value refs that an access with the specified Value and
   /// dereference bit touch.
   SmallVector<ValueRef> getValueRefsForAccess(Value val, bool isDeref);
+  SmallVector<ValueRef> getValueRefsForLifetime(TypedAttr lifetime);
 
   /// Given a tracked value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
@@ -695,32 +696,42 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   return ValueRef();
 }
 
+/// Look up all the value refs that an access to the specified lifetime could
+/// touch.
+SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
+  SmallVector<ValueRef> result;
+
+  // If the lifetime is a LifetimeUnionAttr then it will already be uniqued,
+  // inlined, and stripped of immortal references, so we can just return all
+  // the value refs for its elments.
+  if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
+    for (auto elt : unionAttr.getOperands())
+      if (auto valueRef = getFullValueRefForLifetime(elt))
+        result.push_back(valueRef);
+  } else if (auto valueRef = getFullValueRefForLifetime(lifetime))
+    result.push_back(valueRef);
+  return result;
+}
+
 /// Look up all the value refs that an access with the specified Value and
 /// dereference bit touch.
 SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
                                                       bool isDeref) {
-  SmallVector<ValueRef> result;
-
   // If this is a direct reference to a value, return field sensitive info.
   if (ValueRef valueRef = getDirectValueRef(value, isDeref)) {
+    SmallVector<ValueRef> result;
     result.push_back(valueRef);
-  } else if (isDeref) {
-    // Otherwise, if indirect, this is an reference to one or more
-    // lifetime-tracked values, figure out what they are.
-    TypedAttr lifetime = cast<RefType>(value.getType()).getLifetime();
-
-    // If the lifetime is a LifetimeUnionAttr then it will already be uniqued,
-    // inlined, and stripped of immortal references, so we can just return all
-    // the value refs for its elments.
-    if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
-      for (auto elt : unionAttr.getOperands())
-        if (auto valueRef = getFullValueRefForLifetime(elt))
-          result.push_back(valueRef);
-    } else if (auto valueRef = getFullValueRefForLifetime(lifetime))
-      result.push_back(valueRef);
+    return result;
   }
+
+  // Otherwise, if indirect, this is an reference to one or more
+  // lifetime-tracked values, figure out what they are.
+  if (isDeref)
+    return getValueRefsForLifetime(
+        cast<RefType>(value.getType()).getLifetime());
+
   // Otherwise it is a trivial or untracked value.
-  return result;
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -749,8 +760,11 @@ private:
   void diagnoseUsageError(ValueRef valueRef, Operation &op, bool isDef);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
+  void checkDefForLetDiagnostics(ValueRef valueRef, Operation &op);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
+  void checkLifetimeEffect(LifetimeAccess accessKind, TypedAttr lifetime,
+                           Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -961,38 +975,39 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
       << "'" << valueEntry.getName().str() << "' declared here";
 }
 
+/// Check that lets are not mutated after initialization and remember that
+/// var's are mutated so we don't suggest they convert to let.
+void UninitializedValueScan::checkDefForLetDiagnostics(ValueRef valueRef,
+                                                       Operation &op) {
+  // If we are overwriting a value that has already been specified, then the
+  // underlying value must be declared a 'var' and not a 'let'.
+  if (valueRef.isAllMissing(everMutatedValues))
+    return;
+
+  // If this was declared as a let, then this is an error.
+  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+  if (info.isLet && !info.hasErrorDiagnosed) {
+    auto diag =
+        mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
+    BitVector mutatedBits(everMutatedValues.size(), true);
+    valueRef.markBits(mutatedBits, false);
+    addBadValueNameToDiag(valueRef, mutatedBits, valueSet, diag);
+    diag.attachNote(info.value.getLoc())
+        << "'" << info.getName().str() << "' declared here";
+    info.hasErrorDiagnosed = true;
+  }
+
+  // If this is a var, then just notice the mutation so it doesn't get
+  // suggested to promote to a let.
+  info.isMutatedWhenInitialized = true;
+}
+
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
-  // Check that lets are not mutated after initialization and remember that
-  // var's are mutated so we don't suggest they convert to let.
-  auto checkLet = [&](ValueRef valueRef) {
-    // If we are overwriting a value that has already been specified, then the
-    // underlying value must be declared a 'var' and not a 'let'.
-    if (valueRef.isAllMissing(everMutatedValues))
-      return;
-
-    // If this was declared as a let, then this is an error.
-    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-    if (info.isLet && !info.hasErrorDiagnosed) {
-      auto diag =
-          mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
-      BitVector mutatedBits(everMutatedValues.size(), true);
-      valueRef.markBits(mutatedBits, false);
-      addBadValueNameToDiag(valueRef, mutatedBits, valueSet, diag);
-      diag.attachNote(info.value.getLoc())
-          << "'" << info.getName().str() << "' declared here";
-      info.hasErrorDiagnosed = true;
-    }
-
-    // If this is a var, then just notice the mutation so it doesn't get
-    // suggested to promote to a let.
-    info.isMutatedWhenInitialized = true;
-  };
-
   // Direct accesses are handled in a field sensitive way, and this can count as
   // an initialization.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
-    checkLet(valueRef);
+    checkDefForLetDiagnostics(valueRef, op);
 
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
@@ -1011,7 +1026,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     if (!access.isAllPresent(liveValues))
       diagnoseUsageError(access, op, /*isDef=*/true);
 
-    checkLet(access);
+    checkDefForLetDiagnostics(access, op);
   }
 }
 
@@ -1064,6 +1079,22 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
     diagnoseUsageError(valueRef, op, /*isDef=*/false);
 }
 
+/// Check any unstructured lifetimes that are accessed by the operation.
+void UninitializedValueScan::checkLifetimeEffect(LifetimeAccess accessKind,
+                                                 TypedAttr lifetime,
+                                                 Operation &op) {
+  SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
+  bool isMutate = accessKind == LifetimeAccess::write;
+  for (auto access : accesses) {
+    // The referenced value fields must be live.
+    if (!access.isAllPresent(liveValues))
+      diagnoseUsageError(access, op, /*isDef=*/isMutate);
+
+    if (isMutate)
+      checkDefForLetDiagnostics(access, op);
+  }
+}
+
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
@@ -1091,10 +1122,13 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<OperandEffect> operandEffects;
   SmallVector<ResultEffect> resultEffects;
+  SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
-    auto overall = getOperationValueEffects(op, operandEffects, resultEffects);
+    lifetimeEffects.clear();
+    auto overall = getOperationValueEffects(op, operandEffects, resultEffects,
+                                            lifetimeEffects);
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -1190,6 +1224,10 @@ void UninitializedValueScan::scanBlock(Block &block) {
         break;
       }
     }
+
+    // Process any other indirect lifetimes accessed.
+    for (auto [accessKind, lifetime] : lifetimeEffects)
+      checkLifetimeEffect(accessKind, lifetime, op);
 
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
@@ -1418,6 +1456,8 @@ private:
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
+  void checkLifetimeEffect(LifetimeAccess accessKind, TypedAttr lifetime,
+                           Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
@@ -1548,10 +1588,13 @@ void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<OperandEffect> operandEffects;
   SmallVector<ResultEffect> resultEffects;
+  SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
-    auto overall = getOperationValueEffects(op, operandEffects, resultEffects);
+    lifetimeEffects.clear();
+    auto overall = getOperationValueEffects(op, operandEffects, resultEffects,
+                                            lifetimeEffects);
 
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
@@ -1649,6 +1692,10 @@ void DestructorInsertion::scanBlock(Block &block) {
         break;
       }
     }
+
+    // Process any other indirect lifetimes accessed.
+    for (auto [accessKind, lifetime] : lifetimeEffects)
+      checkLifetimeEffect(accessKind, lifetime, op);
   }
 }
 
@@ -2033,7 +2080,7 @@ void DestructorInsertion::checkUse(Value value,
   for (ValueRef valueRef : accesses) {
     ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
     if (valueInfo.hasErrorDiagnosed)
-      return;
+      continue;
 
     // If this is the last use of some value that needs to be destroyed when
     // dead, emit the whole object destructor for the overall value.
@@ -2101,6 +2148,26 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
     // Destructor call goes ahead of the mutation.
     mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDestructorCallAt(value, isDeref, builder, &op);
+  }
+}
+
+/// Check any unstructured lifetimes that are accessed by the operation.
+void DestructorInsertion::checkLifetimeEffect(LifetimeAccess accessKind,
+                                              TypedAttr lifetime,
+                                              Operation &op) {
+  // For destructor insertion, we don't care if this is a read or write.
+  // If needed, emit the destructor immediately after the specified operation.
+  auto insertPt = std::next(Block::iterator(&op));
+  mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
+
+  SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
+  for (auto access : accesses) {
+    // Iff this is the /last/ use of the value, emit a for the value.
+    ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
+    if (valueInfo.hasErrorDiagnosed)
+      continue;
+
+    destroyValueIfNeeded(valueInfo.value, access, builder, /*opWithUse=*/&op);
   }
 }
 

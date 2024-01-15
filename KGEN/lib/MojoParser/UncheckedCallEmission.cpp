@@ -293,12 +293,20 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       return failure();
     args.push_back(argVal);
 
-    // Make sure the values in the pack stay live across the entire call,
-    // not just the pop.variadic.create op.
+    // Make sure any register values in the pack stay live across the entire
+    // call, not just the pop.variadic.create op.  Memory values are kept alive
+    // by their lifetime.
     bool isTrivial = false;
     if (auto cv = operand.ir.getIfCValue())
       isTrivial =
           cv.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared);
+
+    // Memory values are kept alive by their lifetime so they don't need these
+    // ops.
+    // TODO: Expand this to packs as well.
+    if (isVarArg && SignatureType::hasAddress(convention))
+      isTrivial = true;
+
     if (!isTrivial)
       afterCallActions.valuesToKeepAlive.emplace_back(argVal);
   }
