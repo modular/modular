@@ -37,19 +37,27 @@ struct ParserConfig;
 
 class TargetInfoAttr;
 
-/// Parse the common compilation options for Mojo related to configuration,
-/// populating the provided `compilationOptions` argument. On success, `target`
-/// is populated with the selected compilation target.
+/// Parse the common configuration options for Mojo related to compilation,
+/// populating the provided `compilationOptions` argument. An error is returned
+/// if any of the provided option values are invalid.
 ErrorOrSuccess parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, TargetInfoAttr &target,
-    llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier tripleId,
-    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId, llvm::opt::OptSpecifier noOptimizationId,
+    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
+    llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier debugInfoLanguageId);
+
+/// Parse the common configuration options for Mojo related to target info,
+/// populating the provided `compilationOptions` argument. On success, `target`
+/// is populated with the selected compilation target.
+ErrorOrSuccess parseTargetOptions(
+    const State &state, const llvm::opt::InputArgList &args,
+    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
+    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
+    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
+    llvm::opt::OptSpecifier mtuneId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module

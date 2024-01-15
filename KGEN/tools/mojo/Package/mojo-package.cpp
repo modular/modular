@@ -412,13 +412,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   TargetInfoAttr targetInfo;
   if (auto err = parseCompilationOptions(
           state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          targetInfo, options::OPT_I,
-          /*tripleId=*/llvm::opt::OptSpecifier(),
-          /*cpuId=*/llvm::opt::OptSpecifier(),
-          /*featuresId=*/llvm::opt::OptSpecifier(),
-          /*marchId=*/llvm::opt::OptSpecifier(),
-          /*mcpuId=*/llvm::opt::OptSpecifier(),
-          /*mtuneId=*/llvm::opt::OptSpecifier(), options::OPT_no_optimization,
+          options::OPT_I, options::OPT_no_optimization,
           options::OPT_debug_level, options::OPT_sanitize,
           options::OPT_debug_info_language))
     return err.takeError();
