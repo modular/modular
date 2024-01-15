@@ -265,91 +265,197 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
 // OperationValueEffects
 //===----------------------------------------------------------------------===//
 
+/// This is a helper for LIT::getOperationEffects split out since calls are so
+/// interesting.
+static void getCallOpEffects(
+    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+    SmallVectorImpl<ResultEffect> &results,
+    SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes) {
+  SignatureType signature;
+  OperandRange callArguments = op.getOperands();
+  ArrayRef<ValueInputConvention> conventions;
+  if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
+    // These all have the callee as a parameter, not operand.
+    signature = directCall.getCalleeType();
+    conventions = signature.getInputConventions();
+
+    // CreateClosureOp has a subset of the operands of a call.
+    if (isa<CreateClosureOp>(op))
+      conventions = conventions.take_front(op.getNumOperands());
+
+    assert(conventions.size() == op.getNumOperands());
+  } else {
+    signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
+    conventions = signature.getInputConventions();
+
+    // We use the callee value, and process the rest as operands.
+    operands.push_back({op.getOperand(0), OperandEffect::regUse});
+    assert(signature.getInputConventions().size() == op.getNumOperands() - 1);
+    callArguments = callArguments.drop_front();
+  }
+
+  /// Argument conventions cause a direct use of the register of pointee.
+  auto getOperandEffectForConvention =
+      [](ValueInputConvention conv) -> OperandEffect {
+    switch (conv) {
+    case ValueInputConvention::OwnedInReg:
+      return OperandEffect::regConsume;
+    case ValueInputConvention::OwnedInMem:
+      return OperandEffect::memConsume;
+    case ValueInputConvention::BorrowedInReg:
+      return OperandEffect::regUse;
+    case ValueInputConvention::BorrowedInMem:
+      return OperandEffect::memLoad;
+    case ValueInputConvention::ByRef:
+      return OperandEffect::memInOut;
+    case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::InitSelf:
+      return OperandEffect::memStoreOwned;
+    case ValueInputConvention::None:
+      llvm_unreachable("none convention not permited in Mojo");
+    }
+  };
+
+  SmallVector<Type> typesAccessibleByCallee;
+  for (auto [convention, arg] : llvm::zip(conventions, callArguments)) {
+    // Get normal argument effect.
+    operands.push_back({arg, getOperandEffectForConvention(convention)});
+    bool isIndirect = SignatureType::hasAddress(convention);
+
+    // In addition to the direct (field-sensitive) effect of loading/storing
+    // the bits, the callee may do whatever it wants with lifetimes embedded
+    // in the type.  Collect all of these so we can process them.
+    Type argType = arg.getType();
+    if (isIndirect) // Strip off the memory convention wrapper.
+      argType = cast<RefType>(argType).getElementType();
+
+    typesAccessibleByCallee.push_back(argType);
+  }
+
+  // Look at the types accessible by the callee to see if there are any
+  // lifetime accesses.
+  //
+  // TODO: Generalize this beyond kgen.variadic.  We need to move the
+  // access kind from the !lit.ref onto the lifetime though!
+  for (auto argType : typesAccessibleByCallee) {
+    if (auto variadicType = dyn_cast<VariadicType>(argType)) {
+      if (auto refType = dyn_cast<RefType>(variadicType.getElementType())) {
+        // The callee is allowed to mutate the pointed-to value unless known
+        // to be non-mut.
+        auto accessType = refType.isMutableKnown(false) ? LifetimeAccess::read
+                                                        : LifetimeAccess::write;
+        lifetimes.push_back({accessType, refType.getLifetime()});
+      }
+    }
+  }
+
+  // If the result is defining an owned register value, then we treat this as
+  // a definition.
+  if (signature.hasOwnedRegisterResult()) {
+    results.push_back(ResultEffect::regDefine);
+  } else if (op.getNumResults()) {
+    assert(op.getNumResults() == 1);
+    results.push_back(ResultEffect::ignore);
+  }
+}
+
 /// This computes the effects that an operation has on any operands and result
 /// values. This information is used by both phases of CheckLifetimes.
-OverallOpValueEffect LIT::getOperationValueEffects(
-    Operation &op, SmallVectorImpl<OperandEffect> &operands,
+OverallOpValueEffect LIT::getOperationEffects(
+    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
     SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
-  // skip over them.
-  if (isa<DebugInfo::ValueOp>(op)) {
-    operands.push_back(OperandEffect::ignore);
+  // skip over them.  These indexing operations are handled specially.
+  if (isa<DebugInfo::ValueOp, RefStructGEROp, RebindOp, RefImmutOp>(op)) {
+    if (op.getNumResults() == 1)
+      results.push_back(ResultEffect::ignore);
     return {};
   }
 
-  // These ops are handled specially.
-  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op)) {
-    operands.push_back(OperandEffect::ignore);
-    results.push_back(ResultEffect::ignore);
-    return {};
-  }
+  /// When all of the operands of an instruction have an effect and they are
+  /// in a fixed order, this helper can help specify them.
+  auto setOperandEffects = [&](ArrayRef<OperandEffect> effects) {
+    assert(effects.size() == op.getNumOperands() && "operand count mismatch");
+    for (auto [operand, effect] : llvm::zip(op.getOperands(), effects))
+      operands.push_back({operand, effect});
+  };
 
   // RefStore consumes its operand and transfers it into the result.
   if (isa<LIT::RefStoreOp>(op)) {
-    operands.append({OperandEffect::regConsume, OperandEffect::memStoreOwned});
+    setOperandEffects(
+        {OperandEffect::regConsume, OperandEffect::memStoreOwned});
     return {};
   }
 
-  // A load is a use of whatever fields are being referenced.  If this is the
-  // /last/ use of a value, emit a destructor of that value.  LoadOps are used
-  // to model a /borrow/ of the underlying value, so they don't define a new
-  // value.
-  if (isa<RefLoadOp>(op)) {
-    operands.push_back(OperandEffect::memLoad);
+  // A load is a use of whatever fields are being referenced.  If this is
+  // the /last/ use of a value, emit a destructor of that value.  LoadOps
+  // are used to model a /borrow/ of the underlying value, so they don't
+  // define a new value.
+  if (auto load = dyn_cast<RefLoadOp>(op)) {
+    operands.push_back({load.getOperand(), OperandEffect::memLoad});
     results.push_back(ResultEffect::ignore);
     return {};
   }
-
-  if (isa<OwnershipUseOp>(op)) {
-    if (isa<RefType>(op.getOperand(0).getType()))
-      operands.push_back(OperandEffect::memLoad);
-    else
-      operands.push_back(OperandEffect::regUse);
-    return {};
-  }
-
-  // These operations consume their operands and define a result.
-  if (isa<LoadConsumeOp, LIT::StructCreateOp, ParamMaterializeOp>(op)) {
+  if (auto load = dyn_cast<LoadConsumeOp>(op)) {
+    operands.push_back({load.getOperand(), OperandEffect::memConsume});
     results.push_back(ResultEffect::regDefine);
-    if (isa<LoadConsumeOp>(op))
-      operands.push_back(OperandEffect::memConsume);
-    else
-      operands.resize(op.getNumOperands(), OperandEffect::regConsume);
     return {};
   }
 
-  // lit.ownership.deflvalue is like an inout use of the pointer.
-  if (isa<OwnershipDefLValueOp>(op)) {
-    operands.push_back(OperandEffect::memInOut);
+  if (auto use = dyn_cast<OwnershipUseOp>(op)) {
+    auto effect = isa<RefType>(op.getOperand(0).getType())
+                      ? OperandEffect::memLoad
+                      : OperandEffect::regUse;
+    operands.push_back({use.getOperand(), effect});
     return {};
   }
 
-  // lit.ownership.end_lifetime consumes its operand then defines its result.
+  // These ops consume their operands, struct.create and param.materialize
+  // define a result. A yield from a HandleVariantOp consumes the operand.
+  if (isa<LIT::StructCreateOp, ParamMaterializeOp, YieldOp>(op)) {
+    for (auto o : op.getOperands())
+      operands.push_back({o, OperandEffect::regConsume});
+    if (op.getNumResults()) // Not YieldOp.
+      results.push_back(ResultEffect::regDefine);
+    return {};
+  }
+
+  // lit.ownership.deflvalue is like an inout use of the ref.
+  if (auto deflvalue = dyn_cast<OwnershipDefLValueOp>(op)) {
+    operands.push_back({deflvalue.getOperand(), OperandEffect::memInOut});
+    return {};
+  }
+
+  // lit.ownership.end_lifetime consumes its operand then defines its
+  // result.
   if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
     bool isIndirect = !ownershipEnd.getIsReg();
-    operands.push_back(isIndirect ? OperandEffect::memConsume
-                                  : OperandEffect::regConsume);
+    auto operandEffect =
+        isIndirect ? OperandEffect::memConsume : OperandEffect::regConsume;
+    operands.push_back({ownershipEnd.getOperand(), operandEffect});
     results.push_back(isIndirect ? ResultEffect::memDefineInitToUninit
                                  : ResultEffect::regDefine);
     return {};
   }
 
   // lit.letreg.decl defines its own value after using its operand.
-  // kgen.variant.create/kgen.variant.take consumes and produces an owned value.
+  // kgen.variant.create/kgen.variant.take consumes and produces an owned
+  // value.
   if (isa<LetRegDeclOp, VariantCreateOp, VariantTakeOp>(op)) {
-    operands.push_back(OperandEffect::regConsume);
+    assert(op.getNumOperands() == 1);
+    operands.push_back({op.getOperand(0), OperandEffect::regConsume});
     results.push_back(ResultEffect::regDefine);
     return {};
   }
 
-  // RefFromPointerOp creates a new lifetime tracked value.  The 'startsUninit'
-  // field impacts the execution of the operation (now), not its modeling at
-  // start of the function.  We have to assume its liveness at start of function
-  // is the same as its liveness at end of function because not all control
-  // flow paths will execute the operation.
+  // RefFromPointerOp creates a new lifetime tracked value.  The
+  // 'startsUninit' field impacts the execution of the operation (now), not
+  // its modeling at start of the function.  We have to assume its liveness
+  // at start of function is the same as its liveness at end of function
+  // because not all control flow paths will execute the operation.
   if (auto refFromPtr = dyn_cast<RefFromPointerOp>(op)) {
-    operands.push_back(OperandEffect::ignore); // Ignore the pointer input.
+    // Ignore the pointer input.
     ResultEffect effect;
     if (refFromPtr.getStartUninit()) {
       effect = refFromPtr.getEndUninit() ? ResultEffect::memDefineUninitToUninit
@@ -359,12 +465,6 @@ OverallOpValueEffect LIT::getOperationValueEffects(
                                          : ResultEffect::memDefineInitToInit;
     }
     results.push_back(effect);
-    return {};
-  }
-
-  // A yield from a HandleVariantOp consumes the operand.
-  if (isa<YieldOp>(op)) {
-    operands.push_back(OperandEffect::regConsume);
     return {};
   }
 
@@ -383,92 +483,20 @@ OverallOpValueEffect LIT::getOperationValueEffects(
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
-    SignatureType signature;
-    OperandRange callArguments = op.getOperands();
-    ArrayRef<ValueInputConvention> conventions;
-    if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
-      // These all have the callee as a parameter, not operand.
-      signature = directCall.getCalleeType();
-      conventions = signature.getInputConventions();
-
-      // CreateClosureOp has a subset of the operands of a call.
-      if (isa<CreateClosureOp>(op))
-        conventions = conventions.take_front(op.getNumOperands());
-
-      assert(conventions.size() == op.getNumOperands());
-    } else {
-      signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
-      conventions = signature.getInputConventions();
-
-      // We use the callee value, and process the rest as operands.
-      operands.push_back(OperandEffect::regUse);
-      assert(signature.getInputConventions().size() == op.getNumOperands() - 1);
-      callArguments = callArguments.drop_front();
-    }
-
-    for (auto [convention, arg] : llvm::zip(conventions, callArguments)) {
-      bool isIndirect = SignatureType::hasAddress(convention);
-      switch (convention) {
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::OwnedInMem:
-        operands.push_back(isIndirect ? OperandEffect::memConsume
-                                      : OperandEffect::regConsume);
-        break;
-      case ValueInputConvention::BorrowedInReg:
-      case ValueInputConvention::BorrowedInMem:
-        operands.push_back(isIndirect ? OperandEffect::memLoad
-                                      : OperandEffect::regUse);
-        break;
-      case ValueInputConvention::ByRef:
-        operands.push_back(OperandEffect::memInOut);
-        break;
-      case ValueInputConvention::ByRefResult:
-      case ValueInputConvention::InitSelf:
-        operands.push_back(OperandEffect::memStoreOwned);
-        break;
-      case ValueInputConvention::None:
-        llvm_unreachable("none convention not permitted in lit");
-      }
-
-      // If the accessed value is a kgen.variadic<> of references, notice the
-      // extra lifetimes.
-      // TODO: Generalize this beyond kgen.variadic.  We need to move the
-      // access kind from the !lit.ref onto the lifetime though!
-      Type argType = arg.getType();
-      if (isIndirect) // Strip off the memory convention wrapper.
-        argType = cast<RefType>(argType).getElementType();
-      if (auto variadicType = dyn_cast<VariadicType>(argType)) {
-        if (auto refType = dyn_cast<RefType>(variadicType.getElementType())) {
-          // The callee is allowed to mutate the pointed-to value unless known
-          // to be non-mut.
-          auto accessType = refType.isMutableKnown(false)
-                                ? LifetimeAccess::read
-                                : LifetimeAccess::write;
-          lifetimes.push_back({accessType, refType.getLifetime()});
-        }
-      }
-    }
-
-    // If the result is defining an owned register value, then we treat this as
-    // a definition.
-    if (signature.hasOwnedRegisterResult()) {
-      results.push_back(ResultEffect::regDefine);
-    } else if (op.getNumResults()) {
-      assert(op.getNumResults() == 1);
-      results.push_back(ResultEffect::ignore);
-    }
+    getCallOpEffects(op, operands, results, lifetimes);
     return {};
   }
 
   // A return consumes all the live-out values from the function.
   if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp>(op)) {
     // We always consume the result register - even if it is often trivial.
-    operands.resize(op.getNumOperands(), OperandEffect::regConsume);
+    for (auto o : op.getOperands())
+      operands.push_back({o, OperandEffect::regConsume});
     return OverallOpValueEffect::terminatorOp;
   }
 
-  if (isa<OwnershipMarkDestroyedOp>(op)) {
-    operands.push_back(OperandEffect::memMarkDestroyed);
+  if (auto mark = dyn_cast<OwnershipMarkDestroyedOp>(op)) {
+    operands.push_back({mark.getOperand(), OperandEffect::memMarkDestroyed});
     return {};
   }
 
@@ -476,7 +504,8 @@ OverallOpValueEffect LIT::getOperationValueEffects(
   if (isa<HLCF::BreakOp, HLCF::ContinueOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
   if (isa<LIT::TryRaiseOp>(op)) {
-    operands.resize(op.getNumOperands(), OperandEffect::regConsume);
+    for (auto o : op.getOperands())
+      operands.push_back({o, OperandEffect::regConsume});
     return OverallOpValueEffect::localControlFlowOp;
   }
 
@@ -486,9 +515,6 @@ OverallOpValueEffect LIT::getOperationValueEffects(
   // that is because we need special processing in the dtor insertion pass.
   if (isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)) {
     // i1 value is never owned, and the markers are not used either.
-    if (size_t num = op.getNumOperands())
-      operands.append(num, OperandEffect::ignore);
-
     // TODO: IfOp could return an owned result.
     if (size_t num = op.getNumResults())
       results.resize(num, ResultEffect::ignore);

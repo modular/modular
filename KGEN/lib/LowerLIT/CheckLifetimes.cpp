@@ -1120,15 +1120,15 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
 void UninitializedValueScan::scanBlock(Block &block) {
-  SmallVector<OperandEffect> operandEffects;
+  SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
   SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
     lifetimeEffects.clear();
-    auto overall = getOperationValueEffects(op, operandEffects, resultEffects,
-                                            lifetimeEffects);
+    auto overall =
+        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects);
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -1136,15 +1136,12 @@ void UninitializedValueScan::scanBlock(Block &block) {
       continue;
     }
 
-    assert(operandEffects.size() == op.getNumOperands() &&
-           resultEffects.size() == op.getNumResults() &&
-           "getOperationValueEffects returned wrong # effects");
+    assert(resultEffects.size() == op.getNumResults() &&
+           "getOperationEffects returned wrong # effects");
 
     // Handle all the normal operand and result effects.
-    for (auto [operand, effect] : llvm::zip(op.getOperands(), operandEffects)) {
+    for (auto [operand, effect] : operandEffects) {
       switch (effect) {
-      case OperandEffect::ignore:
-        break;
       case OperandEffect::regUse:
         checkUse(operand, op, /*isDeref=*/false);
         break;
@@ -1586,15 +1583,15 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
 /// block.
 void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
-  SmallVector<OperandEffect> operandEffects;
+  SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
   SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
     lifetimeEffects.clear();
-    auto overall = getOperationValueEffects(op, operandEffects, resultEffects,
-                                            lifetimeEffects);
+    auto overall =
+        getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects);
 
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
@@ -1620,9 +1617,8 @@ void DestructorInsertion::scanBlock(Block &block) {
       break;
     }
 
-    assert(operandEffects.size() == op.getNumOperands() &&
-           resultEffects.size() == op.getNumResults() &&
-           "getOperationValueEffects returned wrong # effects");
+    assert(resultEffects.size() == op.getNumResults() &&
+           "getOperationEffects returned wrong # effects");
 
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
       // CheckUninit pass does all the paranoid checking, don't duplicate it.
@@ -1653,10 +1649,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Handle all the normal operand and result effects.
-    for (auto [operand, effect] : llvm::zip(op.getOperands(), operandEffects)) {
+    for (auto [operand, effect] : operandEffects) {
       switch (effect) {
-      case OperandEffect::ignore:
-        break;
       case OperandEffect::regUse:
         checkUse(operand, op, /*isDeref=*/false);
         break;

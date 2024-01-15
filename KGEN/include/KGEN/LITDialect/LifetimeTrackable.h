@@ -85,10 +85,6 @@ enum class ResultEffect {
 };
 
 enum class OperandEffect {
-  /// Uses of operands of trivial type, as well as things like DebugInfo,
-  /// StructGEROp, and RebindOp which are handled specially.
-  ignore,
-
   /// This reads a register value and uses it, but does not consume it, e.g.
   /// a borrowed_reg argument.
   regUse,
@@ -106,7 +102,8 @@ enum class OperandEffect {
   /// operands all do this.
   memStoreOwned,
 
-  /// inout arg
+  /// inout arg to a function call.  Value must be initialized before the
+  /// operation, may be mutated, but then is still live afterward.
   memInOut,
 
   /// This loads a value from the operand and takes ownership of the result, for
@@ -148,8 +145,8 @@ enum class LifetimeAccess { read, write };
 
 /// This computes the effects that an operation has on any operands and result
 /// values. This information is used by both phases of CheckLifetimes.
-OverallOpValueEffect getOperationValueEffects(
-    Operation &op, SmallVectorImpl<OperandEffect> &operands,
+OverallOpValueEffect getOperationEffects(
+    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
     SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes);
 
