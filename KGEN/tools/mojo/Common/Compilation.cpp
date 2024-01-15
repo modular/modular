@@ -27,38 +27,10 @@ using namespace LIT;
 ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, TargetInfoAttr &target,
-    llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier tripleId,
-    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId, llvm::opt::OptSpecifier noOptimizationId,
+    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
+    llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier debugInfoLanguageId) {
-  StringRef targetTriple = args.getLastArgValue(tripleId);
-  if (args.hasMultipleArgs(tripleId))
-    return Error("too many specified target triples, expected exactly one");
-
-  StringRef targetCpu = args.getLastArgValue(cpuId);
-  if (args.hasMultipleArgs(cpuId))
-    return Error("too many specified target CPUs, expected exactly one");
-
-  StringRef targetFeatures = args.getLastArgValue(featuresId);
-  if (args.hasMultipleArgs(featuresId))
-    return Error("too many specified target features, expected exactly one");
-
-  StringRef mArch = args.getLastArgValue(marchId);
-  if (args.hasMultipleArgs(marchId))
-    return Error(
-        "too many specified target architectures, expected exactly one");
-
-  StringRef mCpu = args.getLastArgValue(mcpuId);
-  if (args.hasMultipleArgs(mcpuId))
-    return Error("too many specified target cpus, expected exactly one");
-
-  StringRef mTune = args.getLastArgValue(mtuneId);
-  if (args.hasMultipleArgs(mtuneId))
-    return Error("too many specified tune cpus, expected exactly one");
-
   // Process the sanitizers.
   StringRef sanitizer = args.getLastArgValue(sanitizeId);
   if (args.hasMultipleArgs(sanitizeId))
@@ -87,15 +59,6 @@ ErrorOrSuccess M::parseCompilationOptions(
     if (debugInfoLanguage == "C")
       compilationOptions.debugInfoLanguage = CompilationOptions::kLangC;
   }
-
-  // If the user specified the triple, the target CPU, or the target feature
-  // set, use those to override the defaults.
-  if (!targetTriple.empty())
-    compilationOptions.targetTriple = targetTriple.str();
-  if (!targetCpu.empty())
-    compilationOptions.targetCpu = targetCpu.str();
-  if (!targetFeatures.empty())
-    compilationOptions.targetFeatures = targetFeatures.str();
 
   // Disabled optimizations.
   if (args.hasArg(noOptimizationId))
@@ -127,6 +90,50 @@ ErrorOrSuccess M::parseCompilationOptions(
   registerKGENToLLVMTranslation(registry);
   ctx.appendDialectRegistry(registry);
   ctx.loadDialect<MDialect>();
+
+  return success();
+}
+
+ErrorOrSuccess M::parseTargetOptions(
+    const State &state, const llvm::opt::InputArgList &args,
+    CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
+    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
+    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
+    llvm::opt::OptSpecifier mtuneId) {
+  StringRef targetTriple = args.getLastArgValue(tripleId);
+  if (args.hasMultipleArgs(tripleId))
+    return Error("too many specified target triples, expected exactly one");
+
+  StringRef targetCpu = args.getLastArgValue(cpuId);
+  if (args.hasMultipleArgs(cpuId))
+    return Error("too many specified target CPUs, expected exactly one");
+
+  StringRef targetFeatures = args.getLastArgValue(featuresId);
+  if (args.hasMultipleArgs(featuresId))
+    return Error("too many specified target features, expected exactly one");
+
+  StringRef mArch = args.getLastArgValue(marchId);
+  if (args.hasMultipleArgs(marchId))
+    return Error(
+        "too many specified target architectures, expected exactly one");
+
+  StringRef mCpu = args.getLastArgValue(mcpuId);
+  if (args.hasMultipleArgs(mcpuId))
+    return Error("too many specified target cpus, expected exactly one");
+
+  StringRef mTune = args.getLastArgValue(mtuneId);
+  if (args.hasMultipleArgs(mtuneId))
+    return Error("too many specified tune cpus, expected exactly one");
+
+  // If the user specified the triple, the target CPU, or the target feature
+  // set, use those to override the defaults.
+  if (!targetTriple.empty())
+    compilationOptions.targetTriple = targetTriple.str();
+  if (!targetCpu.empty())
+    compilationOptions.targetCpu = targetCpu.str();
+  if (!targetFeatures.empty())
+    compilationOptions.targetFeatures = targetFeatures.str();
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for
   // the ExecutionEngine.
