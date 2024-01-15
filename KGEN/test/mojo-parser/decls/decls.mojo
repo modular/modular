@@ -999,7 +999,7 @@ struct NotSynthetic:
 @register_passable("trivial")
 struct VarArgInit:
     var a: Int
-    # CHECK: lit.func @"__init__({{.*}}ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>, borrow_in_mem> borrow) vararg -> !VarArgInit
+    # CHECK: lit.func @"__init__($decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>, borrow_in_mem> borrow) vararg -> !VarArgInit
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}

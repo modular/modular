@@ -570,24 +570,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     llvm::interleaveComma(variantType.getParameterizedElementTypes(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << "]";
-  } else if (auto refType = dyn_cast<RefType>(type)) {
-    bool isKnownMut = refType.isMutableKnown(true);
-    os << (isKnownMut ? "mutref[" : "ref[");
-    if (!isKnownMut && !refType.isMutableKnown(false)) {
-      os << "mut=";
-      printParam(os, refType.getIsMutable(), forDiag, demangleParams);
-      os << ", ";
-    }
-
-    printParam(os, refType.getLifetime(), forDiag, demangleParams);
-    if (IntegerAttr addrSpaceInt =
-            dyn_cast<IntegerAttr>(refType.getAddressSpace());
-        !addrSpaceInt || addrSpaceInt.getInt() != 0) {
-      os << ", ";
-      printParam(os, refType.getAddressSpace(), forDiag, demangleParams);
-    }
-    os << "] ";
-    ASTType(refType.getElementType()).print(os, forDiag);
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)
