@@ -168,7 +168,6 @@ fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: Float32, *b: Int): pass
-# expected-error @+2 {{'inout' arguments cannot be variadic}}
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
@@ -202,11 +201,11 @@ fn badCalls(arg: Int):
 
   var x: Int
   var y: Float32
-  # xpected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
-  # expected-error-re @+1 {{argument #2 cannot be converted from 'SIMD[f32, 1]' to 'Int'}}
+  # expected-error-re @+1 {{invalid call to 'exampleByRefVariadic': l-value of type 'SIMD[f32, 1]' cannot be converted to reference of type 'Int'}}
   exampleByRefVariadic(1.0, x, y)
-  # xpected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
 
   # FIXME(#11803): These diagnostics could be improved.

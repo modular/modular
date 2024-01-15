@@ -409,7 +409,6 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  TargetInfoAttr targetInfo;
   if (auto err = parseCompilationOptions(
           state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
           options::OPT_I, options::OPT_no_optimization,
