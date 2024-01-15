@@ -394,10 +394,6 @@ public:
   /// installed.
   ASTType getBuiltinTupleInstantion(ASTDecl &context, llvm::SMLoc loc,
                                     ArrayRef<Type> elements);
-  /// This returns an instance of VariadicList[elemType] with the specified
-  /// element type installed.
-  ASTType getBuiltinVariadicListInstantiation(ASTDecl &context, llvm::SMLoc loc,
-                                              ASTType elemType);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

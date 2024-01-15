@@ -1079,40 +1079,60 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   return success();
 }
 
+/// Given a value of !kgen.variadic<..> construct a VariadicList and return
+/// it.
 static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
                                             StringAttr argName,
                                             ASTDecl &parentDecl,
-                                            OpBuilder &builder, SMLoc loc,
-                                            SharedState &shared) {
-  Location mloc = shared.translateLocation(loc);
-  ASTType varListType = shared.getBuiltinVariadicListInstantiation(
-      parentDecl, loc, argValue.getRValueType().getVariadicElementType());
-
-  // Emit the initializer expression into the slot.
-  ExprEmitter emitter(shared, parentDecl, builder);
-
+                                            ExprEmitter &emitter, SMLoc loc) {
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  SRValue val = emitter.emitSRValue({argValue, &srcExpr}, EC_DefArgumentShadow,
-                                    varListType);
-  if (!val)
+
+  // Determine if this is VariadicList or VariadicListMem, and get it.
+  auto variadicEltType =
+      cast<VariadicType>(argValue.getRValueType()).getElementType();
+  bool isMem = isa<RefType>(variadicEltType);
+  ASTType varListType =
+      emitter.shared.getBuiltinVariadicListType(parentDecl, loc, isMem);
+  if (varListType.isTypeCheckErrorType())
     return {};
-  return builder.create<LetRegDeclOp>(mloc, argName, val);
+
+  // Explicitly reject trait varargs until we can support them.
+  // https://github.com/modularml/mojo/issues/1443
+  if (isMem) {
+    auto eltType = cast<RefType>(variadicEltType).getElementType();
+    if (isa<TraitType>(ASTType(eltType).getMetaType())) {
+      emitter.emitError(loc, "unsupported variadic on trait-conforming type");
+      return {};
+    }
+  }
+
+  // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
+  // type checker will deduce all the parameters.
+  ValueDest ctorDest(EC_DefArgumentShadow);
+  ASTExprAnd<AnyValue> ctorArg = {argValue, &srcExpr};
+  CValue ctorResult = emitter.emitConstructorCall(
+      varListType, ctorArg, &srcExpr, CallSyntax::kTypeCall, ctorDest);
+  if (!ctorResult)
+    return {};
+
+  SRValue varListRegVal = ctorResult.getIfSRValue();
+  assert(varListRegVal && "variadic lists are register_only types");
+
+  // Create a LetRegDeclOp so we have the original name of the argument.
+  return emitter.builder->create<LetRegDeclOp>(emitter.translateLocation(loc),
+                                               argName, varListRegVal);
 }
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
 static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
                                          StringAttr argName,
-                                         ASTDecl &parentDecl,
-                                         OpBuilder &builder, SMLoc loc,
-                                         SharedState &shared) {
-  Location mloc = shared.translateLocation(loc);
-
+                                         ExprEmitter &emitter, SMLoc loc) {
   // Emit the initializer expression into the slot.
-  ExprEmitter emitter(shared, parentDecl, builder);
   VarLetDeclOp varDecl = emitter.emitVarLetDecl(
-      argName, argValue.getRValueType(), mloc, VarLetDeclKind::Implicit);
+      argName, argValue.getRValueType(), emitter.translateLocation(loc),
+      VarLetDeclKind::Implicit);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
@@ -1182,7 +1202,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Set up information about value arguments.
   Block *bodyBlock = funcOp.getBody();
-  auto builder = OpBuilder::atBlockEnd(bodyBlock);
+  ExprEmitter emitter(shared, decl, OpBuilder::atBlockEnd(bodyBlock));
 
   LITSignatureType funcSignature = funcOp.getSignature();
 
@@ -1219,12 +1239,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
     };
 
-    shared.buildArgDebugInfo(builder, bbArg, argName);
+    shared.buildArgDebugInfo(*emitter.builder, bbArg, argName);
 
     // VarArg arguments are projected into a VariadicList.
     if (funcSignature.isVarArg(bbArg.getArgNumber())) {
       auto declOp = makeVarArgLValueVarSlot(SRValue(bbArg), argName, decl,
-                                            builder, argDecl.getLoc(), shared);
+                                            emitter, argDecl.getLoc());
       if (!declOp)
         return failure();
       setDecl(DeclIRValue(declOp));
@@ -1249,8 +1269,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       argIRValue = MLValue(bbArg);
       break;
     case ValueInputConvention::OwnedInReg:
-      argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, decl, builder,
-                                        argDecl.getLoc(), shared);
+      argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, emitter,
+                                        argDecl.getLoc());
       break;
 
     case ValueInputConvention::BorrowedInReg:
@@ -1871,8 +1891,9 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // lit.ownership.mark_destroyed.
   if (convention == ValueInputConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);
-    (void)makeArgLValueVarSlot(SRValue(arg), selfName, funcDecl, builder,
-                               structDecl.getLoc(), resolver.shared);
+    ExprEmitter emitter(shared, funcDecl, builder);
+    (void)makeArgLValueVarSlot(SRValue(arg), selfName, emitter,
+                               structDecl.getLoc());
   }
 
   // Finish off the function with a return + lit.endfunc.
