@@ -1383,7 +1383,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%index3]
     let v1 = a[3]
-    # CHECK: lit.call {{.*}}__getitem__{{.*}}
+    # CHECK: lit.call {{.*}}__getitem__{{.*}}(%b_0,
     let v2 = b[idx]
 
 
@@ -1392,12 +1392,13 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
-    # CHECK: %[[V0:.*]] = {{.*}}__getitem__{{.*}}%b
-    # CHECK: lit.letreg.decl{{.*}} = %[[V0]]
+    # CHECK: %v0 = lit.varlet.decl
+    # CHECK: [[B1ADDR:%.*]] = {{.*}}__refitem__{{.*}}(%b_0,
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1ADDR]])
     let v0 = b[1]
-    # CHECK: %[[V1:.*]] = lit.varlet.decl
-    # CHECK: %[[B2:.*]] = {{.*}}__getitem__{{.*}}%b
-    # CHECK: lit.ref.store %[[B2]], %[[V1]]
+    # CHECK: %v1 = lit.varlet.decl
+    # CHECK: [[B2ADDR:%.*]] = {{.*}}__refitem__{{.*}}(%b_0,
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2ADDR]])
     var v1 = b[2]
 
 fn takeMemory(a: MemoryType): pass

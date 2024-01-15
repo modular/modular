@@ -127,6 +127,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
       matchParams(actual.getIsMutable(), expected.getIsMutable());
       matchTypes(actual.getElementType(), expected.getElementType());
       matchParams(actual.getLifetime(), expected.getLifetime());
+      matchParams(actual.getAddressSpace(), expected.getAddressSpace());
       return;
     }
 
