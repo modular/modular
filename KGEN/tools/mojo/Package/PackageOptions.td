@@ -7,6 +7,7 @@
 include "Package/PackageDescription.td"
 include "Support/Driver/CommonOptions.td"
 include "../Common/CompilationOptions.td"
+include "../Common/TargetOptions.td"
 
 //===----------------------------------------------------------------------===//
 // Output Options

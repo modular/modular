@@ -6,7 +6,8 @@
 //
 // This file defines a common set of compilation options for setting up the
 // compilation environment for Mojo programs. The index of the option groups is
-// set to 1 and 2, to allow options for output to be defined first.
+// set to multiples of 5, to allow other option groups to be inserted before or
+// after each.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,7 +20,7 @@ include "Support/Driver/DriverCommand.td"
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<1>;
+def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
 
 def no_optimization : Flag<["--", "-"], "no-optimization">,
   Group<CompilationOptionGroup>, Index<0>,
@@ -29,36 +30,12 @@ def no_optimization : Flag<["--", "-"], "no-optimization">,
 def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
   Alias<no_optimization>;
 
-defm target_triple : CommandOption<["--", "-"], "target-triple",
-  CompilationOptionGroup, Index<1>, MetaVarName<"TRIPLE">,
-  HelpText<"Sets the compilation target triple. Defaults to the host target.">>;
-
-defm target_cpu : CommandOption<["--", "-"], "target-cpu",
-  CompilationOptionGroup, Index<2>, MetaVarName<"CPU">,
-  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">>;
-
-defm target_features : CommandOption<["--", "-"], "target-features",
-  CompilationOptionGroup, Index<3>, MetaVarName<"FEATURES">,
-  HelpText<"Sets the compilation target CPU features. Defaults to the host "
-           "features.">>;
-
-defm march : CommandOption<["--", "-"], "march", CompilationOptionGroup,
-  Index<4>, MetaVarName<"ARCHITECTURE">,
-  HelpText<"Sets the architecture for which to generate code.">>;
-
-defm mcpu : CommandOption<["--", "-"], "mcpu", CompilationOptionGroup, Index<5>,
-  MetaVarName<"CPU">, HelpText<"Sets the CPU for which to generate code.">>;
-
-defm mtune : CommandOption<["--", "-"], "mtune", CompilationOptionGroup,
-  Index<6>, MetaVarName<"TUNE">,
-  HelpText<"Sets the CPU for which to tune code.">>;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
   MetaVarName<"PATH">,
   HelpText<"Appends the given path to the list of directories to search for "
            "imported Mojo files.">;
 
-def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<8>,
+def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<2>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "
@@ -66,7 +43,7 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<8>,
            "Mojo program, would yield the compile-time value `42`.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
-  Group<CompilationOptionGroup>, Index<9>, Flags<[HelpHidden]>,
+  Group<CompilationOptionGroup>, Index<3>, Flags<[HelpHidden]>,
   HelpText<"For internal use only; see `ParserConfig::parsingStandardLibrary` "
            "for details.">;
 
@@ -74,7 +51,7 @@ def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<2>;
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<10>;
 
 def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<DiagnosticOptionGroup>, Index<0>,
@@ -92,7 +69,7 @@ defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
 //===----------------------------------------------------------------------===//
 
 def ExperimentalCompilationOptionGroup :
-  OptionGroup<"Experimental compilation options">, Index<3>;
+  OptionGroup<"Experimental compilation options">, Index<15>;
 
 defm debug_level : CommandOption<["--", "-"], "debug-level",
   ExperimentalCompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
