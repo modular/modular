@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo -debug-level full -O0 --parsing-stdlib %s | FileCheck %s
+# RUN: mojo -debug-level full -O0 %s | FileCheck %s
 
 from gpu import ThreadIdx
 from gpu.host._compile import _compile_nvptx
