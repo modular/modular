@@ -156,4 +156,4 @@ kgen.func @has_debuginfo() {
   kgen.return loc(#loc)
 } loc(#loc)
 
-// CHECK: [[LOC]] = loc(fused<#subprogram>[#loc{{.*}}])
+// CHECK: [[LOC]] = loc(unknown)

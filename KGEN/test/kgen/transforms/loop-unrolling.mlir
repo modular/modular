@@ -23,8 +23,8 @@ kgen.func @zero_starting_range() {
 // CHECK-LABEL: @sequential_range
 kgen.func @sequential_range() {
   // CHECK: [[V2:%.*]] = index.constant 3
-  // CHECK-NEXT: [[V1:%.*]] = index.constant 2
   // CHECK-NEXT: [[V0:%.*]] = index.constant 1
+  // CHECK-NEXT: [[V1:%.*]] = index.constant 2
   // CHECK-NOT: hlcf.for
   // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
@@ -43,8 +43,8 @@ kgen.func @sequential_range() {
 // CHECK-LABEL: @strided_range
 kgen.func @strided_range() {
   // CHECK: [[V0:%.*]] = index.constant 5
-  // CHECK-NEXT: [[V1:%.*]] = index.constant 3
   // CHECK-NEXT: [[V2:%.*]] = index.constant 1
+  // CHECK-NEXT: [[V1:%.*]] = index.constant 3
   // CHECK-NOT: hlcf.for
   // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
@@ -65,8 +65,8 @@ kgen.func @strided_range() {
 kgen.func @nested_unroll_loops() {
   // CHECK:  [[V0:%.*]] = index.constant 7
   // CHECK-NEXT:  [[V1:%.*]] = index.constant 5
-  // CHECK-NEXT:  [[V2:%.*]] = index.constant 6
   // CHECK-NEXT:  [[V3:%.*]] = index.constant 1
+  // CHECK-NEXT:  [[V2:%.*]] = index.constant 6
   // CHECK-NEXT:  [[V4:%.*]] = index.constant 4
   // CHECK-NEXT:  [[V5:%.*]] = index.constant 0
   // CHECK-NOT: hlcf.for
@@ -101,8 +101,8 @@ kgen.func @nested_unroll_loops() {
 kgen.func @loop_carried_dependency() {
   // CHECK: [[V0:%.*]] = index.constant 40
   // CHECK-NEXT: [[V1:%.*]] = index.constant 13
-  // CHECK-NEXT: [[V2:%.*]] = index.constant 11
   // CHECK-NEXT: [[V3:%.*]] = index.constant 16
+  // CHECK-NEXT: [[V2:%.*]] = index.constant 11
   // CHECK-NEXT: [[V4:%.*]] = index.constant 9
   // CHECK-NEXT: [[V5:%.*]] = index.constant 7
   // CHECK-NEXT: [[V6:%.*]] = index.constant 5

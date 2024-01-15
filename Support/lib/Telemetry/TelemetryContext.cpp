@@ -64,7 +64,7 @@ static void configureInternalLogging(Config &cfg) {
   } else {
     if (internalLogConfig == "error") {
       logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Error;
-    } else if (internalLogConfig.startswith("warn")) {
+    } else if (internalLogConfig.starts_with("warn")) {
       logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Warning;
     } else if (internalLogConfig == "info") {
       logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Info;

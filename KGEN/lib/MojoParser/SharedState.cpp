@@ -526,7 +526,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       auto [loc, isFullImport] = locAndIsFullImport;
 
       // Don't try wildcard imports if we wouldn't import this name anyways.
-      if (!isFullImport && name.startswith("_")) {
+      if (!isFullImport && name.starts_with("_")) {
         ++i;
         continue;
       }

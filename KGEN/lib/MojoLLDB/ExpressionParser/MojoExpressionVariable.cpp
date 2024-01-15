@@ -108,7 +108,7 @@ MojoPersistentExpressionState::getNextExpressionModuleName() {
 
 bool MojoPersistentExpressionState::isExpressionModuleName(
     StringRef moduleName) {
-  return moduleName.contains("Expression [") && moduleName.endswith("]");
+  return moduleName.contains("Expression [") && moduleName.ends_with("]");
 }
 
 //===----------------------------------------------------------------------===//

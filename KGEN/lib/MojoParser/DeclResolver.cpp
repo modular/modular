@@ -410,7 +410,7 @@ DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
     // Emit an error with the module name without the leading `$` mangle.
     StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
     StringRef declType = isa<PackageOp>(module) ? "package" : "module";
-    assert(name.startswith("$") && "unexpected module/package name mangling");
+    assert(name.starts_with("$") && "unexpected module/package name mangling");
     emitError(loc, declType + " '" + name.drop_front() +
                        "' does not contain '" + sourceName.getValue() + "'");
     return failure();

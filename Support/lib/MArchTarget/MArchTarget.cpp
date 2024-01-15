@@ -133,7 +133,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
     while (!exts.empty()) {
       StringRef ext;
       std::tie(ext, exts) = exts.split("+");
-      if (ext.startswith("no"))
+      if (ext.starts_with("no"))
         opts->FeatureMap[ext.drop_front(2)] = false;
       else
         opts->FeatureMap[ext] = true;

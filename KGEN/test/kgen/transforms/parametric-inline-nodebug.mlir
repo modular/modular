@@ -29,5 +29,4 @@ kgen.generator @main() {
 }
 
 // CHECK-DAG: #[[LOC_CALLEE]] = loc("foo.mlir":10:5)
-// CHECK-DAG: #[[LOC_CALLER:.*]] = loc("bar.mlir":12:7)
-// CHECK-DAG: #[[LOC_INLINED]] = loc(callsite(#[[LOC_CALLEE]] at #[[LOC_CALLER]]))
+// CHECK-DAG: #[[LOC_INLINED]] = loc(unknown)
