@@ -118,9 +118,7 @@ namespace {
 ///   removed. For example, unresolved imports of nested package modules are
 ///   resolved before the package is serialized, so the import ops are removed.
 ///
-/// This class performs these transformations. It also provides helpers to lower
-/// an MLIR module op representing the package's contents to post-elaboration
-/// bytecode, or finally to machine code.
+/// This class performs these transformations.
 class PackageBuilder {
 public:
   /// Construct the builder from a parsed package op. This instantiates a new
@@ -136,18 +134,6 @@ public:
   /// bytecode of the pre-elaboration module.
   ErrorOrSuccess buildPreElaborationModule(ModuleOp theModule,
                                            const CompilationOptions &options);
-
-  /// Run elaboration passes on the given module for the given target, then
-  /// fully lower it to machine code for that target. The elaborated module and
-  /// object code are combined into a package archive attribute that is set on
-  /// the package op being built.
-  ///
-  /// This function also performs some transformations of the package op, which
-  /// are necessary in order for its elaborated bytecode and object code to be
-  /// deserialized and imported into other Mojo programs.
-  ErrorOrSuccess buildArchive(ModuleOp theModule,
-                              const CompilationOptions &options,
-                              TargetInfoAttr target);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -348,74 +334,6 @@ PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
   return success();
 }
 
-ErrorOrSuccess PackageBuilder::buildArchive(ModuleOp theModule,
-                                            const CompilationOptions &options,
-                                            TargetInfoAttr target) {
-  // Elaborate the module for the given target.
-  {
-    // Time the elaboration.
-    auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-    llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
-        {"filename", fileLine.getFilename().str()}};
-    [[maybe_unused]] auto timeScope =
-        runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
-            .createUInt64Timer<std::chrono::milliseconds>(
-                "mojo.kgen.elaboration.time", M::Telemetry::Level::L2, attrs);
-
-    mlir::PassManager elaboratePM(theModule.getContext());
-    populateElaborateModulePasses(elaboratePM, runtime, target, options);
-    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, regionCache.copy(), transformCache.copy(),
-        runtime.getReadyChain().copy(), elaboratePM,
-        /*deflateTarget=*/false);
-    LLCL::await(ready);
-    if (ready.isError())
-      return ready.takeDiagnostic().getMessage().copy();
-  }
-
-  // Construct the symbol table and export map.
-  SymbolTable symtab(theModule);
-  ExportMap exportedSymbols = getExportedSymbols(theModule);
-
-  // Serialize the elaborated module as bytecode.
-  auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
-  auto bytecodeOr = createElaboratedBytecodeAttr(symtab, packageName);
-  if (bytecodeOr.isError())
-    return bytecodeOr.takeError();
-  DenseResourceElementsAttr elaboratedBytecode = bytecodeOr.takeValue();
-
-  // Now that we've pre-compiled the package module, we can attach the
-  // elaborated bytecode as an attribute on functions in the package op being
-  // built.
-  for (auto [symName, exportSym] : exportedSymbols) {
-    auto [hlFunc, preElaborationName] = flattenedNameToFunc.lookup(symName);
-
-    // We only care about functions in the package.
-    if (!hlFunc)
-      continue;
-
-    // If the thing is parametric, then we don't care about it.
-    if (!isa_and_nonnull<LIT::ExternFuncOp>(hlFunc.getBody()->getTerminator()))
-      continue;
-    // Make sure we actually compiled this function.
-    if (!symtab.lookup<KGEN::FuncOp>(symName))
-      return Error("could not find kgen.func with name " + symName.getValue());
-
-    hlFunc.setPreCompiledModuleRefAttr(packageName);
-    hlFunc.setPreElaborationNameAttr(preElaborationName);
-    hlFunc.setLinkageName(symName);
-  }
-
-  // Finally, lower the module to object code, and set a package archive
-  // attribute on the package op being built.
-  auto archiveOr = createPackageArchive(symtab, exportedSymbols, target,
-                                        elaboratedBytecode, options, runtime);
-  if (archiveOr.isError())
-    return archiveOr.takeError();
-  thePackage.setArchives(archiveOr.takeValue());
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // parsePackageArgs
 //===----------------------------------------------------------------------===//
@@ -433,13 +351,8 @@ struct PackageArgs {
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
-  /// Whether to include elaborated bytecode and object code (a package archive)
-  /// in the output `.mojopkg`.
-  bool precompileArchive;
   /// The MLIR context used for compilation.
   mlir::MLIRContext ctx;
-  /// The target for which to compile.
-  TargetInfoAttr target;
   /// A set of `-D` compile-time parameter definition.
   EnvAttr env;
 };
@@ -496,23 +409,19 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
+  TargetInfoAttr targetInfo;
   if (auto err = parseCompilationOptions(
           state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          pkgArgs.target, options::OPT_I, options::OPT_target_triple,
-          options::OPT_target_cpu, options::OPT_target_features,
-          options::OPT_march, options::OPT_mcpu, options::OPT_mtune,
-          options::OPT_no_optimization, options::OPT_debug_level,
-          options::OPT_sanitize, options::OPT_debug_info_language))
+          targetInfo, options::OPT_I,
+          /*tripleId=*/llvm::opt::OptSpecifier(),
+          /*cpuId=*/llvm::opt::OptSpecifier(),
+          /*featuresId=*/llvm::opt::OptSpecifier(),
+          /*marchId=*/llvm::opt::OptSpecifier(),
+          /*mcpuId=*/llvm::opt::OptSpecifier(),
+          /*mtuneId=*/llvm::opt::OptSpecifier(), options::OPT_no_optimization,
+          options::OPT_debug_level, options::OPT_sanitize,
+          options::OPT_debug_info_language))
     return err.takeError();
-
-  /// If the user has explicitly specified any target information, then include
-  /// a pre-compiled package archive in the output package.
-  pkgArgs.precompileArchive = args.hasArg(options::OPT_target_triple) ||
-                              args.hasArg(options::OPT_target_cpu) ||
-                              args.hasArg(options::OPT_target_features) ||
-                              args.hasArg(options::OPT_march) ||
-                              args.hasArg(options::OPT_mcpu) ||
-                              args.hasArg(options::OPT_mtune);
 
   return success();
 }
@@ -552,18 +461,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   if (auto err = packageBuilder.buildPreElaborationModule(theModule,
                                                           compilationOptions))
     return Error(llvm::formatv("compilation failed: {0}", err.getError()));
-
-  // Next, if we're pre-compiling a package archive, fully lower the module to
-  // be packaged for the specified target architecture. This runs elaboration
-  // passes and serializes the module as a package archive attribute that's set
-  // on the package op.
-  if (packageArgs.precompileArchive) {
-    TargetInfoAttr target = packageArgs.target;
-    setTargetInfo(theModule, target);
-    if (auto err =
-            packageBuilder.buildArchive(theModule, compilationOptions, target))
-      return Error(llvm::formatv("compilation failed: {0}", err.getError()));
-  }
 
   return packageBuilder.finalize();
 }
