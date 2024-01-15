@@ -719,6 +719,7 @@ fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%mems_0, [[ZERO]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
   # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
