@@ -511,10 +511,10 @@ fn return_metatype_problem() -> CopyAndInitMemType:
   return CopyAndInitMemType
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
-  # expected-error @+1 {{cannot get a reference to a register value}}
-  _ = __get_ref_from_value(a)
+  # expected-error @+1 {{cannot construct 'Reference[?, ?, ?]' from 'Int' value in assignment}}
+  _ = Reference(a)
 
-  let bref = __get_ref_from_value(b) # ok
+  let bref = Reference(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'ref[*"`b"] CopyAndInitMemType' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, *"`b"]' to 'CopyAndInitMemType'}}
   _ = b <= bref

@@ -402,8 +402,8 @@ fn testConditionalImmut(cond: __mlir_type.i1):
   let a = MemExample()
   let b : MemExample # expected-note {{'b' declared here}}
 
-  let aref = __get_ref_from_value(a)
-  let bref = __get_ref_from_value(b)
+  let aref = Reference(a).value
+  let bref = Reference(b).value
   let cref = aref if cond else bref
 
   # expected-error @+1 {{use of uninitialized value 'b'}}
@@ -413,7 +413,7 @@ fn testConditionalMut(cond: __mlir_type.i1):
   var a = MemExample()
   var b : MemExample # expected-note {{'b' declared here}}
 
-  let cref = __get_ref_from_value(a) if cond else __get_ref_from_value(b)
+  let cref = Reference(a).value if cond else Reference(b).value
 
   # expected-error @+1 {{potential indirect mutation of uninitialized value 'b'}}
   Reference(cref)[] = MemExample()

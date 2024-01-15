@@ -70,14 +70,14 @@ fn parametricMut[isMut: __mlir_type.i1,
 # CHECK-LABEL: lit.func @"testParametricMut
 fn testParametricMut(i: MemExample, inout m: MemExample):
   # This infers an immutable reference.
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}parametricMut
+  # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
   # CHECK-NEXT: %iRef = lit.letreg.decl "iRef" = [[RES]] : !lit.ref<!MemExample, *"`i">
-  let iRef = parametricMut(__get_ref_from_value(i))
+  let iRef = parametricMut(Reference(i).value)
 
   # This infers a mutable reference.
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}parametricMut
+  # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
   # CHECK: %mRef = lit.letreg.decl "mRef" = [[RES]] : !lit.ref<mut !MemExample, *"`m">
-  let mRef = parametricMut(__get_ref_from_value(m))
+  let mRef = parametricMut(Reference(m).value)
 
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
@@ -93,8 +93,8 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   let b = MemExample()
 
-  let aref = __get_ref_from_value(a)
-  let bref = __get_ref_from_value(b)
+  let aref = Reference(a).value
+  let bref = Reference(b).value
 
   # CHECK: %cref = lit.letreg.decl "cref"
   let cref = aref if cond else bref
@@ -118,8 +118,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
-  let aref = __get_ref_from_value(a)
-  let bref = __get_ref_from_value(b)
+  let aref = Reference(a).value
+  let bref = Reference(b).value
 
   # CHECK: %cref = lit.letreg.decl "cref"
   let cref = aref if cond else bref
