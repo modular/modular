@@ -55,12 +55,12 @@ static bool compareDeclNames(StringRef lhs, StringRef rhs) {
 /// Return if a decl should be hidden given its name.
 static bool shouldHideName(StringRef name) {
   // Non-underscore names are never hidden.
-  if (!name.startswith("_"))
+  if (!name.starts_with("_"))
     return false;
 
   // Keep special language names, which have leading and trailing underscores,
   // even though they start with `_`.
-  return !(name.startswith("__") && name.endswith("__"));
+  return !(name.starts_with("__") && name.ends_with("__"));
 }
 
 /// Return the indentation level of the first line of the string.

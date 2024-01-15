@@ -100,8 +100,10 @@ Attribute MetadataConverter::convertAttrImpl(DIAttr attr) {
 LLVM::DICompileUnitAttr
 MetadataConverter::convertAttrImpl(DICompileUnitAttr attr) {
   return LLVM::DICompileUnitAttr::get(
-      attr.getContext(), attr.getSourceLanguage(), convertAttr(attr.getFile()),
-      attr.getProducer(), attr.getIsOptimized(),
+      attr.getContext(),
+      mlir::DistinctAttr::create(mlir::UnitAttr::get(attr.getContext())),
+      attr.getSourceLanguage(), convertAttr(attr.getFile()), attr.getProducer(),
+      attr.getIsOptimized(),
       static_cast<LLVM::DIEmissionKind>(attr.getEmissionKind()));
 }
 
@@ -128,10 +130,11 @@ MetadataConverter::convertAttrImpl(DILocalVariableAttr attr) {
 LLVM::DISubprogramAttr
 MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
   return LLVM::DISubprogramAttr::get(
-      attr.getContext(), convertAttr(attr.getCompileUnit()),
-      convertAttr(attr.getScope()), attr.getName().encode(),
-      attr.getLinkageName(), convertAttr(attr.getFile()), attr.getLine(),
-      attr.getScopeLine(),
+      attr.getContext(),
+      mlir::DistinctAttr::create(mlir::UnitAttr::get(attr.getContext())),
+      convertAttr(attr.getCompileUnit()), convertAttr(attr.getScope()),
+      attr.getName().encode(), attr.getLinkageName(),
+      convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
       convertType(attr.getType()));
 }

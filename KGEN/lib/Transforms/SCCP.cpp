@@ -210,7 +210,7 @@ void SCCPAnalysis::getValuesLattice(SmallVectorImpl<Attribute> &attributes,
 }
 
 void SCCPAnalysis::setToEntryState(ConstantState *state) {
-  state->join(ConstantValue::getUnknownConstant());
+  (void)state->join(ConstantValue::getUnknownConstant());
 }
 
 void SCCPAnalysis::setAllToEntryStates(ArrayRef<ConstantState *> states) {
@@ -257,11 +257,11 @@ void SCCPAnalysis::visitOperation(Operation *op, AnalysisStateType &state) {
     // Merge in the result of the fold, either a constant or a value.
     if (Attribute attr = llvm::dyn_cast_if_present<Attribute>(foldResult)) {
       LLVM_DEBUG(llvm::dbgs() << "Folded to constant: " << attr << "\n");
-      lattice->join(ConstantValue(attr, op->getDialect()));
+      (void)lattice->join(ConstantValue(attr, op->getDialect()));
     } else {
       LLVM_DEBUG(llvm::dbgs()
                  << "Folded to value: " << foldResult.get<Value>() << "\n");
-      lattice->join(*getLatticeElement(foldResult.get<Value>(), state));
+      (void)lattice->join(*getLatticeElement(foldResult.get<Value>(), state));
     }
   }
 }
@@ -320,7 +320,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       // running the rest of the operations in the parent region.
       shouldContinue[loopLevel] = false;
     }
-    mergeStates(state, getOrCreateCFState(node)->exitStates);
+    (void)mergeStates(state, getOrCreateCFState(node)->exitStates);
     controlFlowOperationStates.erase(node.getOperation());
     return success();
   }
@@ -350,7 +350,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       for (auto [inputValue, blockArg] :
            llvm::zip(inputValues, node->getRegions().front().getArguments())) {
         ConstantState *lattice = getLatticeElement(blockArg, nestedState);
-        lattice->join(ConstantValue(inputValue, node->getDialect()));
+        (void)lattice->join(ConstantValue(inputValue, node->getDialect()));
       }
 
       // Process loop body.
@@ -369,7 +369,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
 
     if (workList.empty()) {
       // Merge analysis states if analyze loop converges.
-      mergeStates(state, cfStates->exitStates);
+      (void)mergeStates(state, cfStates->exitStates);
     } else {
       // Mark loop results as Unknown.
       for (Value result : node.getOperation()->getResults())
@@ -389,7 +389,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       if (failed(processRegion(region, nestedState, hasEarlyExits,
                                shouldContinue, loopLevel)))
         return failure();
-      mergeStates(state, nestedState);
+      (void)mergeStates(state, nestedState);
     }
   }
 
@@ -406,7 +406,7 @@ void SCCPAnalysis::updateParentOpOutputState(
        llvm::zip(termValues, parentOp->getResults())) {
     ConstantState *lattice0 = getLatticeElement(operand, termState);
     ConstantState *lattice1 = getLatticeElement(opResult, parentOutputState);
-    lattice1->join(*lattice0);
+    (void)lattice1->join(*lattice0);
   }
 }
 
@@ -528,7 +528,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
         if (failed(processRegion(region, nestedState, hasEarlyExits,
                                  shouldContinue, loopLevel)))
           return failure();
-        mergeStates(state, nestedState);
+        (void)mergeStates(state, nestedState);
       }
       continue;
     } else {
@@ -562,7 +562,7 @@ LogicalResult SCCPAnalysis::replaceWithConstant(OpBuilder &builder,
   Dialect *dialect = latticeValue.getConstantDialect();
   Value constant = folder.getOrCreateConstant(
       builder.getInsertionBlock(), dialect, latticeValue.getConstantValue(),
-      value.getType(), value.getLoc());
+      value.getType());
   if (!constant)
     return failure();
 

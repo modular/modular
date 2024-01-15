@@ -131,7 +131,7 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return DType(bf16);
     return failure();
   case 'c':
-    if (str.startswith("complex<") && str.back() == '>') {
+    if (str.starts_with("complex<") && str.back() == '>') {
       auto elt = getFromString(str.drop_front(8).drop_back());
       if (failed(elt))
         return failure();

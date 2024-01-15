@@ -250,12 +250,12 @@ private:
     // Look for the mogg attributes on the kernels.
     auto lambda = [&](TypedAttr decorator, StringRef decoratorName,
                       SmallVector<TypedAttr> &attrsToCopy) {
-      if (decoratorName.startswith(registerDecorator) ||
-          decoratorName.startswith(registerOverrideDecorator)) {
+      if (decoratorName.starts_with(registerDecorator) ||
+          decoratorName.starts_with(registerOverrideDecorator)) {
         metadata.moggRegister = decorator;
         // Drop the mogg decorator
         attrsToCopy.pop_back();
-      } else if (decoratorName.startswith(willBecomeAsyncDecorator)) {
+      } else if (decoratorName.starts_with(willBecomeAsyncDecorator)) {
         // TODO(#27757): Temporary while transition to Mojo async/await.
         // Eventually this will be implied by the generator op's signature.
         metadata.isAsync = true;
@@ -309,9 +309,9 @@ public:
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
       auto lambda = [&](TypedAttr decorator, StringRef decoratorName,
                         SmallVector<TypedAttr> &attrsToCopy) {
-        if (decoratorName.startswith(tensorInputFusionHook))
+        if (decoratorName.starts_with(tensorInputFusionHook))
           inLambdaTemplate = LambdaTemplate{func};
-        else if (decoratorName.startswith(tensorOutputFusionHook))
+        else if (decoratorName.starts_with(tensorOutputFusionHook))
           outLambdaTemplate = LambdaTemplate{func};
       };
       forEachDecorator(func, lambda);
@@ -365,15 +365,15 @@ public:
 
         auto identifyCalls = [&](TypedAttr decorator, StringRef decoratorName,
                                  SmallVector<TypedAttr> &attrsToCopy) {
-          if (decoratorName.startswith(tensorAllocDecorator)) {
+          if (decoratorName.starts_with(tensorAllocDecorator)) {
             allocationFunc = call;
-          } else if (decoratorName.startswith(tensorCopyConstructDecorator)) {
+          } else if (decoratorName.starts_with(tensorCopyConstructDecorator)) {
             constructor = call;
-          } else if (decoratorName.startswith(tensorEnableFusion)) {
+          } else if (decoratorName.starts_with(tensorEnableFusion)) {
             enableFusionFuncs.push_back(call);
-          } else if (decoratorName.startswith(elementwiseHook)) {
+          } else if (decoratorName.starts_with(elementwiseHook)) {
             elementwiseOp = call;
-          } else if (decoratorName.startswith(tensorDeconstructDecorator)) {
+          } else if (decoratorName.starts_with(tensorDeconstructDecorator)) {
             deconstructors.push_back(call);
           }
         };

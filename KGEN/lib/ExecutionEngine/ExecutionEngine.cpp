@@ -390,7 +390,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
           [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
             return llvm::any_of(ArrayRef<StringRef>{"__asan", "__tsan"},
                                 [&](StringRef prefix) {
-                                  return (*symbolStringPtr).startswith(prefix);
+                                  return (*symbolStringPtr).starts_with(prefix);
                                 });
           })));
 

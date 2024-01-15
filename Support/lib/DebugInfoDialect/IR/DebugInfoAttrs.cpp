@@ -485,7 +485,9 @@ void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc,
       inlined.setCallLocAttr(mlir::CallSiteLoc::get(callLoc, callerLoc));
   } else if (!isa<DebugInfo::SubprogramScoped>(op)) {
     if (stripDebugInfo)
-      op->setLoc(callerLoc);
+      op->setLoc(op->hasTrait<OpTrait::ConstantLike>()
+                     ? UnknownLoc::get(op->getContext())
+                     : callerLoc);
     else
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callerLoc));
   }

@@ -82,18 +82,23 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
 
 /// Verify the location scope of ordinary op within a subprogram.
 static LogicalResult verifyScope(Operation *op, DISubprogramAttr funcScope) {
-  return verifyScope(getAndValidateScopeIn(op->getLoc()), funcScope, op);
+  Location loc = op->getLoc();
+  // Allow ops to not carry location (due to constant folding or inlining).
+  if (isa<UnknownLoc>(loc))
+    return success();
+  return verifyScope(getAndValidateScopeIn(loc), funcScope, op);
 }
 
 /// Verify the location scope of InlinedSubprogramScoped within a subprogram.
 static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
                                  DISubprogramAttr funcScope) {
-  auto getScope = [](auto op) -> ErrorOr<DIScopeAttr> {
-    if (mlir::LocationAttr callLoc = op.getCallLocAttr())
-      return getAndValidateScopeIn(callLoc);
-    return Error("must have callsite location");
-  };
-  return verifyScope(getScope(inlined), funcScope, inlined);
+  if (mlir::LocationAttr callLoc = inlined.getCallLocAttr()) {
+    // Allow ops to not carry location (due to constant folding or inlining).
+    if (isa<UnknownLoc>(callLoc))
+      return success();
+    return verifyScope(getAndValidateScopeIn(callLoc), funcScope, inlined);
+  }
+  return inlined->emitOpError("must have callsite location");
 }
 
 LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
