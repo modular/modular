@@ -267,10 +267,10 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
 
 /// This computes the effects that an operation has on any operands and result
 /// values. This information is used by both phases of CheckLifetimes.
-OverallOpValueEffect
-LIT::getOperationValueEffects(Operation &op,
-                              SmallVectorImpl<OperandEffect> &operands,
-                              SmallVectorImpl<ResultEffect> &results) {
+OverallOpValueEffect LIT::getOperationValueEffects(
+    Operation &op, SmallVectorImpl<OperandEffect> &operands,
+    SmallVectorImpl<ResultEffect> &results,
+    SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.
   if (isa<DebugInfo::ValueOp>(op)) {
@@ -384,22 +384,29 @@ LIT::getOperationValueEffects(Operation &op,
   // argument convention effects.
   if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
     SignatureType signature;
+    OperandRange callArguments = op.getOperands();
+    ArrayRef<ValueInputConvention> conventions;
     if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
-      signature = directCall.getCalleeType();
       // These all have the callee as a parameter, not operand.
-      assert(signature.getInputConventions().size() == op.getNumOperands() ||
-             // CreateClosureOp has a subset of the operands of a call, and
-             // binds those.
-             isa<CreateClosureOp>(op));
+      signature = directCall.getCalleeType();
+      conventions = signature.getInputConventions();
+
+      // CreateClosureOp has a subset of the operands of a call.
+      if (isa<CreateClosureOp>(op))
+        conventions = conventions.take_front(op.getNumOperands());
+
+      assert(conventions.size() == op.getNumOperands());
     } else {
       signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
+      conventions = signature.getInputConventions();
 
       // We use the callee value, and process the rest as operands.
       operands.push_back(OperandEffect::regUse);
       assert(signature.getInputConventions().size() == op.getNumOperands() - 1);
+      callArguments = callArguments.drop_front();
     }
 
-    for (auto convention : signature.getInputConventions()) {
+    for (auto [convention, arg] : llvm::zip(conventions, callArguments)) {
       bool isIndirect = SignatureType::hasAddress(convention);
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
@@ -407,8 +414,8 @@ LIT::getOperationValueEffects(Operation &op,
         operands.push_back(isIndirect ? OperandEffect::memConsume
                                       : OperandEffect::regConsume);
         break;
-      case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::BorrowedInReg:
+      case ValueInputConvention::BorrowedInMem:
         operands.push_back(isIndirect ? OperandEffect::memLoad
                                       : OperandEffect::regUse);
         break;
@@ -422,12 +429,24 @@ LIT::getOperationValueEffects(Operation &op,
       case ValueInputConvention::None:
         llvm_unreachable("none convention not permitted in lit");
       }
-    }
 
-    // CreateClosureOp only binds a few of the operands, not the full signature.
-    if (isa<CreateClosureOp>(op)) {
-      assert(op.getNumOperands() <= operands.size());
-      operands.resize(op.getNumOperands());
+      // If the accessed value is a kgen.variadic<> of references, notice the
+      // extra lifetimes.
+      // TODO: Generalize this beyond kgen.variadic.  We need to move the
+      // access kind from the !lit.ref onto the lifetime though!
+      Type argType = arg.getType();
+      if (isIndirect) // Strip off the memory convention wrapper.
+        argType = cast<RefType>(argType).getElementType();
+      if (auto variadicType = dyn_cast<VariadicType>(argType)) {
+        if (auto refType = dyn_cast<RefType>(variadicType.getElementType())) {
+          // The callee is allowed to mutate the pointed-to value unless known
+          // to be non-mut.
+          auto accessType = refType.isMutableKnown(false)
+                                ? LifetimeAccess::read
+                                : LifetimeAccess::write;
+          lifetimes.push_back({accessType, refType.getLifetime()});
+        }
+      }
     }
 
     // If the result is defining an owned register value, then we treat this as

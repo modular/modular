@@ -140,8 +140,6 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[IMMREF1]], [[IMMREF2]]]
   # CHECK-NEXT: lit.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use [[IMMREF1]]
-  # CHECK-NEXT: lit.ownership.use [[IMMREF2]]
 
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %v2
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, [[IMMREF]])
