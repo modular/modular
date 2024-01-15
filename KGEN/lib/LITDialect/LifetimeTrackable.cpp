@@ -13,6 +13,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 
 using namespace M;
@@ -317,10 +318,10 @@ static void getCallOpEffects(
   };
 
   SmallVector<Type> typesAccessibleByCallee;
-  for (auto [convention, arg] : llvm::zip(conventions, callArguments)) {
+  auto addArgument = [&](Value arg, ValueInputConvention conv) {
     // Get normal argument effect.
-    operands.push_back({arg, getOperandEffectForConvention(convention)});
-    bool isIndirect = SignatureType::hasAddress(convention);
+    operands.push_back({arg, getOperandEffectForConvention(conv)});
+    bool isIndirect = SignatureType::hasAddress(conv);
 
     // In addition to the direct (field-sensitive) effect of loading/storing
     // the bits, the callee may do whatever it wants with lifetimes embedded
@@ -330,6 +331,29 @@ static void getCallOpEffects(
       argType = cast<RefType>(argType).getElementType();
 
     typesAccessibleByCallee.push_back(argType);
+  };
+
+  for (auto [arg, convention] : llvm::zip(callArguments, conventions)) {
+    auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>();
+    if (!vararg) {
+      addArgument(arg, convention);
+      continue;
+    }
+
+    // As a special hack, we directly handle the effects and "see through" a
+    // pop.variadic.create, so we can model the effects of the variadic.create
+    // instead of seeing abstract uses of the lifetimes.  This provides two
+    // benefits:
+    //   1) it allows us to reason about the varargs uses field-sensitively,
+    //      e.g. you can pass `a.x` through varargs and `a.y` through an inout
+    //      without the compiler imagining a conflict on "a" just like other
+    //      arguments.
+    //   2) given "direct" access information, it allows us to model 'owned'
+    //      argument conventions which consume the operand, something lifetime
+    //      accesses cannot model (because it requires field sensitivity).
+    auto varargConvention = vararg.getType().getConvention();
+    for (auto varOperand : vararg.getOperands())
+      addArgument(varOperand, varargConvention);
   }
 
   // Look at the types accessible by the callee to see if there are any

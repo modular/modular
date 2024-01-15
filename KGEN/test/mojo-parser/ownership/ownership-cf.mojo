@@ -319,3 +319,25 @@ fn mojo98(n: Int):
     var a = MemExample()
     for i in range(n):
         a.x = i
+
+struct MyStringReturningCtx:
+    var s: String
+    fn __init__(inout self):
+        self.s = "hey"
+    fn __enter__(owned self) -> Self:
+        return self ^
+    fn __moveinit__(inout self, owned existing: Self):
+        self.s = existing.s
+    fn read(self) raises -> String:
+        return str(self.s)
+
+# CHECK: lit.func @"testErrorReturn
+fn testErrorReturn() raises:
+    let input: String
+    # CHECK: try
+    with MyStringReturningCtx() as ctx:
+        # CHECK-NOT: @MyStringReturningCtx::@"__del__
+        let x = ctx.read()
+        input = "hello"
+    # CHECK: except
+    print(input)
