@@ -147,18 +147,18 @@ kgen.generator @lifetime_lower<p: !lit.lifetime>(%a: !lit.lifetime) {
 kgen.generator @call_lifetime_lower() {
   // CHECK: %struct = kgen.param.constant: struct<()> = <{ }>
   %cst = kgen.param.constant: lifetime = <#lit.lifetime>
-  // CHECK: kgen.call @lifetime_lower(%struct) : (!kgen.struct<()>) -> ()
+  // CHECK: kgen.call @lifetime_lower<:struct<()> { }>(%struct) : (!kgen.struct<()>) -> ()
   kgen.call @lifetime_lower<:lifetime #lit.lifetime>(%cst) : (!lit.lifetime) -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @ref_type(
+// CHECK-LABEL: kgen.generator @ref_type<p: struct<()>>(
 // CHECK-SAME: %arg0: !kgen.pointer<struct<()>>
 // CHECK-SAME: %arg1: !kgen.pointer<struct<()>>)
 kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
                                            %b: !lit.ref<mut @Struct, p>) {
   // Random use of a parameter that goes away should be updated.
-  // CHECK: kgen.param.declare A: struct<()> = <{ }>
+  // CHECK: kgen.param.declare A: struct<()> = <p>
   kgen.param.declare A : !lit.lifetime = <p>
   kgen.return
 }
@@ -166,7 +166,7 @@ kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
 // CHECK-LABEL: kgen.generator @call_ref_type
 kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
                                                 %b: !lit.ref<mut @Struct, p>) {
-  // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1) : (!kgen.pointer<struct<()>>, !kgen.pointer<struct<()>>)
+  // CHECK-NEXT: kgen.call @ref_type<:struct<()> q>(%arg0, %arg1) : (!kgen.pointer<struct<()>>, !kgen.pointer<struct<()>>)
   kgen.call @ref_type<:lifetime q>(%a, %b): (!lit.ref<@Struct, p>, !lit.ref<mut @Struct, p>) -> ()
   kgen.return
 }
@@ -209,6 +209,12 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
   kgen.return %a : si32
 }
 
+// Issue #29038 - lower lit can't change positions of parameters.
+// CHECK-LABEL: kgen.generator @takes_val_after_lifetime
+// CHECK-SAME: <life: struct<()>, type: regtype>(%arg0: !kgen.pointer<type>)
+kgen.generator @takes_val_after_lifetime<life: lifetime, type: regtype>(%a: !lit.ref<mut type, life>) {
+  kgen.return
+}
 
 // -----
 

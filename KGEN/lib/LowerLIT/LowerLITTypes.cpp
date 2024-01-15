@@ -277,18 +277,6 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     return KGEN::StructExtractAttr::get(cast<TypedAttr>(structValue), fieldNo);
   };
 
-  auto processSymbolConstantAttr = [&](SymbolConstantAttr attr) -> Attribute {
-    // Strip out any lifetime parameters being bound.
-    SmallVector<TypedAttr> paramValues;
-    for (auto param : attr.getParamValues())
-      if (!isa<LIT::LifetimeType>(param.getType()))
-        paramValues.push_back(param);
-    if (paramValues.size() != attr.getParamValues().size())
-      attr = SymbolConstantAttr::get(attr.getSymbol(), paramValues,
-                                     attr.getType());
-    return replaceImpl<Attribute, Attribute>(attr);
-  };
-
   // Partially bound types never have uses in KGEN.
   // TODO: Need to codegen here when parametric traits are a thing.
   auto processBindType = [this](BindTypeAttr bind) {
@@ -299,45 +287,17 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
         anyRegTypeType);
   };
 
-  auto processParamOperatorAttr = [&](ParamOperatorAttr attr) -> Attribute {
-    Attribute result = attr;
-    if (attr.getOpcode() == POC::BindSignature) {
-
-      // Strip out any lifetime parameters being bound by a "bind" operator,
-      // KGEN will drop this entirely if all the operands are removed.
-      SmallVector<TypedAttr> operands;
-      for (auto param : attr.getOperands())
-        if (!isa<LIT::LifetimeType>(param.getType()))
-          operands.push_back(param);
-      if (operands.size() != attr.getOperands().size())
-        result = ParamOperatorAttr::get(POC::BindSignature, operands);
-    }
-    return replaceImpl<Attribute, Attribute>(result);
-  };
-
   Attribute result = attr;
   if (auto sattr = dyn_cast<LITStructAttr>(attr)) {
     result = processStructAttr(sattr);
   } else if (auto sattr = dyn_cast<LIT::StructExtractAttr>(attr)) {
     result = processStructExtractAttr(sattr);
-  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr)) {
-    result = processSymbolConstantAttr(symbolConstant);
   } else if (auto bind = dyn_cast<BindTypeAttr>(attr)) {
     result = processBindType(bind);
-  } else if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
-    result = processParamOperatorAttr(paramOperator);
   } else if (isa<LIT::LifetimeAttr>(attr)) {
     result = emptyStructAttr; // #lit.lifetime => #kgen.struct<>
   } else if (auto paramDRE = dyn_cast<ParamDeclRefAttr>(attr)) {
-    // References to parameters of lifetime type are folded to their singleton
-    // value, completely eliminating any use of them, allowing us to just delete
-    // them from signatures.
-    if (isa<LIT::LifetimeType>(paramDRE.getType())) {
-      // p => #kgen.struct<>
-      result = emptyStructAttr;
-    } else {
-      result = replaceImpl<Attribute, Attribute>(attr);
-    }
+    result = replaceImpl<Attribute, Attribute>(attr);
   } else {
     // Recursively replace attributes.
     result = replaceImpl<Attribute, Attribute>(attr);
@@ -420,24 +380,6 @@ Type StructOperationLowerer::replace(Type type) {
     return cast<KGEN::StructType>(result);
   };
 
-  // Signature processing checks to see if there are any lifetime parameters;
-  // if so, they are dropped.
-  auto processSignatureType = [&](SignatureType signature) -> Type {
-    // Just remove any lifetime parameters.
-    SmallVector<Type, 8> inputParamTypes;
-    for (auto type : signature.getInputParamTypes()) {
-      if (!isa<LIT::LifetimeType>(type))
-        inputParamTypes.push_back(type);
-    }
-    if (inputParamTypes.size() != signature.getNumInputParams())
-      signature = SignatureType::get(
-          signature.getValues(), inputParamTypes,
-          signature.getResultParamTypes(), signature.getInputConventions(),
-          signature.getFnEffects(), signature.getMetadata());
-
-    return replaceImpl(signature);
-  };
-
   Type result = type;
   if (auto ditype = dyn_cast<DebugInfo::DIType>(type)) {
     if (runDebugTypeConversion)
@@ -450,8 +392,6 @@ Type StructOperationLowerer::replace(Type type) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
     result = anyRegTypeType;
-  } else if (auto signature = dyn_cast<SignatureType>(type)) {
-    result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
     // !lit.lifetime => !kgen.struct<()>
     result = emptyStructAttr.getType();
@@ -750,22 +690,6 @@ void StructOperationLowerer::replaceElementsIn(Operation *op) {
   }
 }
 
-/// Do any lowerings needed for a function op.
-static LogicalResult lowerFuncOp(GeneratorOp func) {
-  // The only specific lowering we do here is to remove input parameters of
-  // lifetime type from the signature of the function.  This is because this
-  // pass strips the lifetime parameters out.
-  SmallVector<ParamDeclAttr, 8> inputParams;
-  for (ParamDeclAttr paramDecl : func.getInputParams()) {
-    if (!isa<LIT::LifetimeType>(paramDecl.getType()))
-      inputParams.push_back(paramDecl);
-  }
-  if (inputParams.size() != func.getInputParams().size())
-    func.setInputParams(inputParams);
-
-  return success();
-}
-
 /// Type references can be used in nested types. Walk through all the types and
 /// rewrite them in-place to use the lowered types. Walk pre-order, and while
 /// doing so, erase any trivial casts left over from the type conversion.
@@ -861,7 +785,6 @@ void LowerLITTypesPass::runOnOperation() {
               RefImmutOp, RefToPointerOp, RefFromPointerOp, RefStructGEROp,
               RefLoadOp, RefStoreOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
-        .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });
   });
   structLowerer.eraseRecursivePointerField = false;
