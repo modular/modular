@@ -733,17 +733,14 @@ void DeclResolver::computeArgumentConventions(
       break;
     case ParsedArgument::kConventionInOut:
       arg.kgenConvention = ValueInputConvention::ByRef;
-      rejectVariadic(i, "inout");
       break;
     case ParsedArgument::kConventionInOutResult:
       arg.kgenConvention = ValueInputConvention::ByRefResult;
-      rejectVariadic(i, "inout");
       break;
     case ParsedArgument::kConventionInitSelfResult:
       // We also force the passing kind of self to positional-only.
       arg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       arg.kgenConvention = ValueInputConvention::InitSelf;
-      rejectVariadic(i, "inout self");
       break;
     }
 
@@ -779,10 +776,6 @@ void DeclResolver::computeArgumentConventions(
     // value, we're passing the array of pointers by value.
     if (arg.vararg == VarArgKind::VarArg) {
       argType = VariadicType::get(argType, arg.kgenConvention);
-      assert(arg.kgenConvention == ValueInputConvention::BorrowedInMem ||
-             arg.kgenConvention == ValueInputConvention::BorrowedInReg ||
-             // FIXME: Doesn't actually work.
-             arg.kgenConvention == ValueInputConvention::OwnedInReg);
       arg.kgenConvention = ValueInputConvention::BorrowedInReg;
     }
   }

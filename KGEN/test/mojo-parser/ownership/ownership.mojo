@@ -660,7 +660,7 @@ fn test_or(a: MemExample) -> MemExample:
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, *"`mems">, borrow_in_mem> borrow)
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems">(%mems)
+  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 0>(%mems)
   # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
   pass
 
@@ -707,6 +707,43 @@ fn variadic_field_sensitivity():
   memPair.a = MemExample()
 
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%memPair)
+  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: lit.func @"variadic_inout_mems
+# CHECK-SAME: [*"`mems"](
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<mut !MemExample, *"`mems">, byref> borrow)
+fn variadic_inout_mems(inout *mems: MemExample):
+  # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 1>(%mems)
+  # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
+  # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
+  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%mems_0, [[ZERO]])
+  # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
+  # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
+  # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
+  mems[0].x += 1
+
+  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: lit.func @"call_variadic_inout_mems
+fn call_variadic_inout_mems():
+  var a = MemExample()
+  var b = MemExample()
+  # CHECK: [[AR:%.*]] = kgen.rebind %a : !lit.ref<mut !MemExample, *"`a0"> to !lit.ref<mut !MemExample, {*"`a0", *"`b1"}>
+  # CHECK-NEXT: [[BR:%.*]] = kgen.rebind %b : !lit.ref<mut !MemExample, *"`b1"> to !lit.ref<mut !MemExample, {*"`a0", *"`b1"}>
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[AR]], [[BR]]]
+  # CHECK-NEXT: lit.call {{.*}}variadic_inout_mems{{.*}}[{*"`a0", *"`b1"}]([[VAR]])
+  variadic_inout_mems(a, b)
+
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+
+  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK-NEXT: kgen.return
+
+
 
 # CHECK-LABEL: lit.func @"test_partial_overwrite
 fn test_partial_overwrite(cond: __mlir_type.i1):
