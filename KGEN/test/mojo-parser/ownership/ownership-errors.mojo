@@ -407,11 +407,7 @@ fn testConditionalImmut(cond: __mlir_type.i1):
   let cref = aref if cond else bref
 
   # expected-error @+1 {{use of uninitialized value 'b'}}
-  __get_value_from_ref(cref).noop()
-
-  # expected-error @+1 {{cannot consume indirect references to values}}
-  __get_value_from_ref(cref)^.consume()
-
+  Reference(cref)[].noop()
 
 fn testConditionalMut(cond: __mlir_type.i1):
   var a = MemExample()
@@ -420,4 +416,4 @@ fn testConditionalMut(cond: __mlir_type.i1):
   let cref = __get_ref_from_value(a) if cond else __get_ref_from_value(b)
 
   # expected-error @+1 {{potential indirect mutation of uninitialized value 'b'}}
-  __get_value_from_ref(cref) = MemExample()
+  Reference(cref)[] = MemExample()

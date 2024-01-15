@@ -1273,9 +1273,6 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK: %ref4 = lit.letreg.decl "ref4" = %localVar
   let ref4 = __get_ref_from_value(localVar)
 
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%ref2, %a)
-  __get_value_from_ref(ref2) = a
-
   # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}> {
   # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> {
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1

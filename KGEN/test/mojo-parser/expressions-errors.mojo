@@ -515,8 +515,6 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   _ = __get_ref_from_value(a)
 
   let bref = __get_ref_from_value(b) # ok
-  # expected-error @+1 {{expression must be mutable in assignment}}
-  __get_value_from_ref(bref) = CopyAndInitMemType()
 
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'ref[*"`b"] CopyAndInitMemType' to 'CopyAndInitMemType'}}
   _ = b <= bref

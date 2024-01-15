@@ -60,7 +60,6 @@ public:
 
     // Address conversions
     kGetRefFromValue,          // __get_ref_from_value(x): like `&x` in C.
-    kGetValueFromRef,          // __get_value_from_ref(x): like `*x` in C.
     kGetLValueAsAddress,       // __get_lvalue_as_address(x)
     kGetAddressAsLValue,       // __get_address_as_lvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)

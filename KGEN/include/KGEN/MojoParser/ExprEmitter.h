@@ -76,7 +76,6 @@ enum ExprContext {
   EC_MutabilitySpec,        // ref[mut=x, y] z
   EC_LifetimeSpec,          // ref[x] y
   EC_Trait,                 // trait conformance checking for `T`
-  EC_ValueFromRef,          // __get_value_from_ref(x)
 };
 const char *getContextMessage(ExprContext context);
 
