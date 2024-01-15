@@ -677,7 +677,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
     /// Get a bound reference to the Trait type.
-    Type bindReference();
+    TraitType bindReference();
   }];
 
   let builders = [

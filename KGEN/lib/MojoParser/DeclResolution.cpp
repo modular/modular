@@ -891,8 +891,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
-  computeArgumentConventions(shared, args, argTypes, implicitLifetimeDecls,
-                             decl);
+  computeArgumentConventions(args, argTypes, implicitLifetimeDecls, decl);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (missingColon)
@@ -1097,19 +1096,9 @@ static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
   if (varListType.isTypeCheckErrorType())
     return {};
 
-  // Explicitly reject trait varargs until we can support them.
-  // https://github.com/modularml/mojo/issues/1443
-  if (isMem) {
-    auto eltType = cast<RefType>(variadicEltType).getElementType();
-    if (isa<TraitType>(ASTType(eltType).getMetaType())) {
-      emitter.emitError(loc, "unsupported variadic on trait-conforming type");
-      return {};
-    }
-  }
-
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
-  ValueDest ctorDest(EC_DefArgumentShadow);
+  ValueDest ctorDest(EC_VarArgArgument);
   ASTExprAnd<AnyValue> ctorArg = {argValue, &srcExpr};
   CValue ctorResult = emitter.emitConstructorCall(
       varListType, ctorArg, &srcExpr, CallSyntax::kTypeCall, ctorDest);
@@ -1136,7 +1125,7 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  ValueDest dest(MLValue(varDecl), EC_DefArgumentShadow);
+  ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
 

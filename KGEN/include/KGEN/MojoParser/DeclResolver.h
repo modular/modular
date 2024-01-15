@@ -211,9 +211,8 @@ public:
   /// Given a fully resolved signature, compute the final types and KGEN input
   /// conventions of the arguments. This function also ensures that self
   /// arguments are marked as positional-only.
-  static void computeArgumentConventions(
-      SharedState &shared, MutableArrayRef<ParsedArgument> args,
-      MutableArrayRef<Type> argTypes,
+  void computeArgumentConventions(
+      MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
       SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls,
       ASTDecl &declScope);
 

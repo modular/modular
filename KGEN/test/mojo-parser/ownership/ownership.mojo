@@ -646,7 +646,8 @@ fn test_or(a: MemExample) -> MemExample:
 # CHECK-SAME: [*"`mems"](%a: !Int borrow,
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, *"`mems">, borrow_in_mem> borrow)
 fn variadic_mems(a: Int, *mems: MemExample):
-  # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__{{.*}}"<:regtype !MemExample, :lifetime *"`mems">(%mems)
+  # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems">(%mems)
   # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
   pass
 

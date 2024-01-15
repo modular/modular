@@ -720,11 +720,6 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 input parameter, but 0 were specified}}
 
-# https://github.com/modularml/mojo/issues/1443
-trait MyFancyTrait: pass
-# expected-error @+1 {{unsupported variadic on trait-conforming type}}
-fn take2[T: MyFancyTrait](*xs: T): pass
-
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
 ##===----------------------------------------------------------------------===##
