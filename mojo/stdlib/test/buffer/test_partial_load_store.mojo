@@ -75,13 +75,13 @@ fn test_partial_load_store():
     print[4, DType.index](partial_store_data)
 
     # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[
+    let read_nd_buffer = NDBuffer[
         2,
         DimList(8, 4),
         DType.index,
     ](read_data)
 
-    var write_nd_buffer = NDBuffer[
+    let write_nd_buffer = NDBuffer[
         2,
         DimList(8, 4),
         DType.index,
