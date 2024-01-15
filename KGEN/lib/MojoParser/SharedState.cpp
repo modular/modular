@@ -1084,46 +1084,6 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   return BindTypeAttr::get(PValue(tupleType), packAttr);
 }
 
-ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
-                                                         llvm::SMLoc loc,
-                                                         ASTType elemType) {
-  TypedAttr lifetime;
-  bool elemInMem = false;
-  if (auto refType = dyn_cast<RefType>(elemType)) {
-    elemType = refType.getElementType();
-    lifetime = refType.getLifetime();
-    elemInMem = true;
-    if (!refType.isMutableKnown(false)) {
-      emitError(loc, "mutable variadics aren't supported yet");
-      return getTypeCheckErrorType();
-    }
-  }
-
-  if (isa_and_nonnull<TraitType>(elemType.getMetaType())) {
-    emitError(loc, "unsupported variadic on trait-conforming type");
-    return getTypeCheckErrorType();
-  }
-
-  ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
-  if (varListType.isTypeCheckErrorType())
-    return varListType;
-
-  /// VariadicList takes an element type, VariadicListMem takes elt+lifetime.
-  SmallVector<TypedAttr> params;
-  params.push_back(
-      TypeConstantAttr::get(elemType, AnyRegTypeType::get(getContext())));
-  if (elemInMem)
-    params.push_back(lifetime);
-  TypedAttr typeType = PValue(varListType);
-  if (cast<MetaTypeType>(typeType.getType()).getParamValues().size() !=
-      params.size()) {
-    emitError(loc, "invalid VariadicList type found");
-    return getTypeCheckErrorType();
-  }
-
-  return BindTypeAttr::get(typeType, params);
-}
-
 void SharedState::loadModulesFromCache(
     MutableArrayRef<ModuleState *> moduleStates) {
   // If we don't have a valid cache, we can't do anything.
