@@ -703,10 +703,7 @@ void DeclResolver::computeArgumentConventions(
 
     // Switch to a convention that is supportable.
     arg.convention = ParsedArgument::kConventionBorrowed;
-    if (arg.kgenConvention == ValueInputConvention::OwnedInReg)
-      arg.kgenConvention = ValueInputConvention::BorrowedInReg;
-    else
-      arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+    arg.kgenConvention = ValueInputConvention::BorrowedInReg;
     return true;
   };
 
@@ -717,11 +714,12 @@ void DeclResolver::computeArgumentConventions(
     case ParsedArgument::kConventionOwned:
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+      if (ASTType(argType).isRegisterPassable(arg.loc, shared)) {
         arg.kgenConvention = ValueInputConvention::OwnedInReg;
-      else
+        rejectVariadic(i, "owned");
+      } else {
         arg.kgenConvention = ValueInputConvention::OwnedInMem;
-      rejectVariadic(i, "owned");
+      }
       break;
     case ParsedArgument::kConventionBorrowed:
       // Memory-only owned argument are passed with a layer of indirection and
