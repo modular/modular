@@ -1,0 +1,42 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
+#define KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
+
+include "Support/Driver/DriverCommand.td"
+
+//===----------------------------------------------------------------------===//
+// Target Options
+//===----------------------------------------------------------------------===//
+
+def TargetOptionGroup : OptionGroup<"Target options">, Index<6>;
+
+defm target_triple : CommandOption<["--", "-"], "target-triple",
+  TargetOptionGroup, Index<1>, MetaVarName<"TRIPLE">,
+  HelpText<"Sets the compilation target triple. Defaults to the host target.">>;
+
+defm target_cpu : CommandOption<["--", "-"], "target-cpu",
+  TargetOptionGroup, Index<2>, MetaVarName<"CPU">,
+  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">>;
+
+defm target_features : CommandOption<["--", "-"], "target-features",
+  TargetOptionGroup, Index<3>, MetaVarName<"FEATURES">,
+  HelpText<"Sets the compilation target CPU features. Defaults to the host "
+           "features.">>;
+
+defm march : CommandOption<["--", "-"], "march", TargetOptionGroup,
+  Index<4>, MetaVarName<"ARCHITECTURE">,
+  HelpText<"Sets the architecture for which to generate code.">>;
+
+defm mcpu : CommandOption<["--", "-"], "mcpu", TargetOptionGroup, Index<5>,
+  MetaVarName<"CPU">, HelpText<"Sets the CPU for which to generate code.">>;
+
+defm mtune : CommandOption<["--", "-"], "mtune", TargetOptionGroup,
+  Index<6>, MetaVarName<"TUNE">,
+  HelpText<"Sets the CPU for which to tune code.">>;
+
+#endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
