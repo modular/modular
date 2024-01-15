@@ -1087,48 +1087,53 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     if (attr.getName() == "_type") {
       // We expect either a single type, `None`, or a `ListLiteral` of types.
       if (isa<NoneAttr>(attr.getValue())) {
-      } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
-        auto pushTypeToState = [&](TypedAttr type,
-                                   const Twine &message) -> LogicalResult {
-          if (!LIT::isTypeExpr(type)) {
-            emitter.emitError(call.getLoc(), message);
-            return failure();
-          }
-          state.types.push_back(ASTType(type));
-          return success();
-        };
-        if (auto valueMetaType = dyn_cast<MetaTypeType>(value.getType())) {
-          ASTType tupleType = emitter.shared.getBuiltinTupleType(
-              emitter.declScope, call.getLoc());
-          // If the _type field is a Tuple of types, then the operation
-          // returns multiple results, with types specified in the list.  We
-          // need to take apart the ListLiteral parameter value to get the types
-          // from inside it.
-          if (valueMetaType.getSymbol() ==
-              cast<MetaTypeType>(tupleType.getMetaType()).getSymbol()) {
-            // Dig out the types from the tuple.  Tuple literals must always
-            // have this particular shape.
-            auto tca = cast<TypeConstantAttr>(value);
-            auto drt = cast<DeclRefType>(tca.getValue());
-            ArrayRef<TypedAttr> paramValues = drt.getParamValues();
-            assert(paramValues.size() == 1 &&
-                   "_types tuple ParamValues must be size 1");
-            auto variadic = cast<VariadicAttr>(paramValues[0]);
-            for (TypedAttr type : variadic.getValues()) {
-              if (pushTypeToState(type, "value in _type tuple is not a type")
-                      .failed())
-                return {};
-            }
-            hadTypeSpec = true;
-            continue;
-          }
-        }
-        if (pushTypeToState(value, "_type value is not a type").failed())
-          return {};
-      } else {
+        hadTypeSpec = true;
+        continue;
+      }
+
+      auto value = dyn_cast<TypedAttr>(attr.getValue());
+      if (!value) {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
+
+      auto pushTypeToState = [&](TypedAttr type,
+                                 const Twine &message) -> LogicalResult {
+        if (!LIT::isTypeExpr(type)) {
+          emitter.emitError(call.getLoc(), message);
+          return failure();
+        }
+        state.types.push_back(ASTType(type));
+        return success();
+      };
+      if (auto valueMetaType = dyn_cast<MetaTypeType>(value.getType())) {
+        ASTType tupleType = emitter.shared.getBuiltinTupleType(
+            emitter.declScope, call.getLoc());
+        // If the _type field is a Tuple of types, then the operation
+        // returns multiple results, with types specified in the list.  We
+        // need to take apart the ListLiteral parameter value to get the types
+        // from inside it.
+        if (valueMetaType.getSymbol() ==
+            cast<MetaTypeType>(tupleType.getMetaType()).getSymbol()) {
+          // Dig out the types from the tuple.  Tuple literals must always
+          // have this particular shape.
+          auto tca = cast<TypeConstantAttr>(value);
+          auto drt = cast<DeclRefType>(tca.getValue());
+          ArrayRef<TypedAttr> paramValues = drt.getParamValues();
+          assert(paramValues.size() == 1 &&
+                 "_types tuple ParamValues must be size 1");
+          auto variadic = cast<VariadicAttr>(paramValues[0]);
+          for (TypedAttr type : variadic.getValues()) {
+            if (pushTypeToState(type, "value in _type tuple is not a type")
+                    .failed())
+              return {};
+          }
+          hadTypeSpec = true;
+          continue;
+        }
+      }
+      if (pushTypeToState(value, "_type value is not a type").failed())
+        return {};
       hadTypeSpec = true;
       continue;
     }
@@ -1246,9 +1251,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // If we succeeded and have no types, then install a None type.
-  if (resultOp->getNumResults() == 0) {
+  if (resultOp->getNumResults() == 0)
     return PValue(emitter.shared.getNoneAttr());
-  } else if (resultOp->getNumResults() == 1) {
+
+  if (resultOp->getNumResults() == 1) {
     OpResult res = resultOp->getResult(0);
     ASTType resType = res.getType();
 
@@ -1289,19 +1295,19 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
     // If folding failed, return the operation normally.
     return SRValue(res);
-  } else {
-    // Pack results into a tuple and return it.
-    ValueDest tupleDest = ValueDest(EC_MLIRMagic);
-    ASTType tupleType = emitter.shared.getBuiltinTupleInstantion(
-        emitter.declScope, call.getLoc(), state.types);
-    SmallVector<ASTExprAnd<AnyValue>> posOperands;
-    for (OpResult opResult : resultOp->getResults())
-      posOperands.push_back({SRValue(opResult), &call});
-    AnyValue tupleVal = emitter.emitConstructorCall(
-        tupleType, posOperands, &call, CallSyntax::kImplicitConvert, tupleDest,
-        /*allowImplicitConversion=*/true);
-    return tupleVal;
   }
+
+  // Pack results into a tuple and return it.
+  ValueDest tupleDest = ValueDest(EC_MLIRMagic);
+  ASTType tupleType = emitter.shared.getBuiltinTupleInstantion(
+      emitter.declScope, call.getLoc(), state.types);
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
+  for (OpResult opResult : resultOp->getResults())
+    posOperands.push_back({SRValue(opResult), &call});
+  AnyValue tupleVal = emitter.emitConstructorCall(
+      tupleType, posOperands, &call, CallSyntax::kImplicitConvert, tupleDest,
+      /*allowImplicitConversion=*/true);
+  return tupleVal;
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

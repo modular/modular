@@ -1254,10 +1254,10 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
                  cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
-  # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = %a
-  let ref1 = __get_ref_from_value(a)
-  # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = %b
-  let ref2 = __get_ref_from_value(b)
+  # CHECK: %ref1 = lit.letreg.decl "ref1" =
+  let ref1 = Reference(a).value
+  # CHECK: %ref2 = lit.letreg.decl "ref2" =
+  let ref2 = Reference(b).value
 
   # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer %ref1
   # CHECK-NEXT: %ptr1 = lit.letreg.decl "ptr1" = [[MV]]
@@ -1265,13 +1265,13 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
 
   # CHECK-NEXT: %localLet = lit.varlet.decl "localLet"
   let localLet = MemoryOnlyInt()
-  # CHECK: %ref3 = lit.letreg.decl "ref3" = %localLet
-  let ref3 = __get_ref_from_value(localLet)
+  # CHECK: %ref3 = lit.letreg.decl "ref3" =
+  let ref3 = Reference(localLet).value
 
   # CHECK-NEXT: %localVar = lit.varlet.decl "localVar"
   var localVar = MemoryOnlyInt()
-  # CHECK: %ref4 = lit.letreg.decl "ref4" = %localVar
-  let ref4 = __get_ref_from_value(localVar)
+  # CHECK: %ref4 = lit.letreg.decl "ref4" =
+  let ref4 = Reference(localVar).value
 
   # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}> {
   # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> {
@@ -1285,11 +1285,12 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c
+  # CHECK:         [[TMP:%.*]] = kgen.rebind
+  # CHECK-SAME:             : !lit.ref<mut !MemoryOnlyInt, *"`c"> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
   # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]
-  let ref5 = ref1 if cond else ref2 if cond else __get_ref_from_value(c)
+  let ref5 = ref1 if cond else ref2 if cond else Reference(c).value
 
 struct CallableStruct:
     var value: Int
