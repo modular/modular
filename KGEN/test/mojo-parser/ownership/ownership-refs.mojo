@@ -100,8 +100,10 @@ fn testUseConditional(cond: __mlir_type.i1):
   let cref = aref if cond else bref
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
-  __get_value_from_ref(cref).noop()
-  # CHECK-NEXT: lit.ref.immut %cref
+  Reference(cref)[].noop()
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
+  # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
@@ -124,22 +126,28 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
-  __get_value_from_ref(cref).mutate()
-  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}(%cref)
+  Reference(cref)[].mutate()
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
+  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
-  __get_value_from_ref(cref) = MemExample()
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%cref)
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%cref)
+  Reference(cref)[] = MemExample()
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
 
   # Overwriting is eligible for copy => move optimization as well.
   let shouldBeMovedFrom = MemExample()
-  __get_value_from_ref(cref) = shouldBeMovedFrom
+  Reference(cref)[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%cref)
-  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}(%cref, %shouldBeMovedFrom)
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}([[MREF]], %shouldBeMovedFrom)
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their lifetimes, but now we can say goodbye.

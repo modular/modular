@@ -120,8 +120,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in lifetime specifier";
   case EC_Trait:
     return " in trait conformance checking";
-  case EC_ValueFromRef:
-    return " in '__get_value_from_ref' operand";
   }
   llvm_unreachable("invalid expr context");
 }
