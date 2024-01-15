@@ -685,8 +685,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 }
 
 void DeclResolver::computeArgumentConventions(
-    SharedState &shared, MutableArrayRef<ParsedArgument> args,
-    MutableArrayRef<Type> argTypes,
+    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
     SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls, ASTDecl &declScope) {
   // This closure is called for argument conventions that don't allow
   // variadics.
@@ -749,8 +748,7 @@ void DeclResolver::computeArgumentConventions(
     }
 
     // Values passed by memory need an associated lifetime parameter, and
-    // need to be passed by reference.  Fun fact: explicit ref/mutref
-    // arguments have register conventions, so they won't get these.
+    // need to be passed by reference.
     if (SignatureType::hasAddress(arg.kgenConvention)) {
       // Given a memory argument named "foo" we give the implicit lifetime a
       // name of "`foo".  We do this because of Rust precedent, but also

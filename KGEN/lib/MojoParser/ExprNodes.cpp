@@ -2953,8 +2953,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!resultType)
     return {};
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
-  DeclResolver::computeArgumentConventions(emitter.shared, args, argTypes,
-                                           implicitLifetimeDecls, dummyScope);
+  emitter.getDeclResolver().computeArgumentConventions(
+      args, argTypes, implicitLifetimeDecls, dummyScope);
 
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(

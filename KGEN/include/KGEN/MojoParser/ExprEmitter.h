@@ -50,7 +50,8 @@ enum ExprContext {
   EC_InplaceBinOpDest,      // x += 42
   EC_FieldInitValue,        // SomeType{value: x}
   EC_DefaultArgument,       // def f(arg = x):
-  EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slot.
+  EC_OwnedRegArgShadow,     // def f(x: Int):    -> var shadow slot.
+  EC_VarArgArgument,        // fn f(x: *Int):    -> creation of VariadicList.
   EC_DefaultParam,          // fn f[p: Int = x]():
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_CondExpr,              // x if a else y

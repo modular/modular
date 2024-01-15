@@ -71,6 +71,9 @@ fn packOverload():
 fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
     pass
 
+# Varargs + traits are a thing.
+# https://github.com/modularml/mojo/issues/1443
+fn variadic_trait_elt[T: Intable](*xs: T): pass
 
 # CHECK-LABEL: lit.func @"trait_pack
 # CHECK-SAME: <{{.*}}, [[TS:.*]][Ts]:
