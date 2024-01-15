@@ -646,7 +646,7 @@ struct MemStruct:
     alias t = 5
 
 fn variadic_mem_only(*values: MemStruct) -> Int:
-    return __get_value_from_ref(values[1]).t
+    return values[1].t
 
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()

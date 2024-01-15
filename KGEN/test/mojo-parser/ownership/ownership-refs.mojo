@@ -9,31 +9,8 @@
 # RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
-# ===----------------------------------------------------------------------=== #
-# Reference type
-# ===----------------------------------------------------------------------=== #
-
-# TODO: Move this to the standard library someday.
-
-## Immutable reference type.
-@register_passable("trivial")
-struct Reference[element_type: AnyType, lifetime: Lifetime,
-                 isMutable: __mlir_type.i1, addrSpace: Int = 0]:
-    alias reference_type = __mlir_type[
-        `!lit.ref<mut=`, isMutable, `, :`, AnyType, ` `, element_type, `, `,
-                      lifetime, `, `, addrSpace.value, `>`
-    ]
-    var value: Self.reference_type
-
-    fn __init__(ref_value: Self.reference_type) -> Self:
-        """Create a reference to the provided value."""
-        return Self{value: ref_value}
-
-    fn __refitem__(self) -> Self.reference_type:
-        return self.value
-
-    fn __mlir_ref__(self) -> Self.reference_type:
-        return self.value
+# TODO: should autoimport some day.
+from memory.unsafe import Reference
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
