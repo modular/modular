@@ -74,7 +74,7 @@ fn gemv[
         type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         return (
-            a_buf.simd_load[width](Index(idx[0], idx[1])).cast[type]()
+            a_buf.simd_load[width]((idx[0], idx[1])).cast[type]()
             * b_buf.simd_load[width](idx[1]).cast[type]()
         ).cast[type]()
 
@@ -88,9 +88,7 @@ fn gemv[
 
             @unroll
             for i in range(width):
-                elementwise_lambda_fn[out_type, 1](
-                    Index(idx[0] + i, 0), value[i]
-                )
+                elementwise_lambda_fn[out_type, 1]((idx[0] + i, 0), value[i])
         else:
             c_buf.simd_store[width](idx[0], value.cast[c_type]())
 

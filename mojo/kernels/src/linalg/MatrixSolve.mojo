@@ -8,7 +8,7 @@
 from memory.buffer import NDBuffer
 from runtime.tracing import TraceLevel, Trace
 
-from utils.index import Index, StaticIntTuple
+from utils.index import StaticIntTuple
 from utils.list import DimList
 
 
@@ -53,19 +53,19 @@ fn matrix_solve_tiny[
     let A_inv22 = A01 * A10 - A00 * A11
 
     # Rows in B.
-    let B0 = B.simd_load[N](Index(0, 0))
-    let B1 = B.simd_load[N](Index(1, 0))
-    let B2 = B.simd_load[N](Index(2, 0))
+    let B0 = B.simd_load[N]((0, 0))
+    let B1 = B.simd_load[N]((1, 0))
+    let B2 = B.simd_load[N]((2, 0))
 
     # Update solution.
     X.simd_store[N](
-        Index(0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
+        (0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
     )
     X.simd_store[N](
-        Index(1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
+        (1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
     )
     X.simd_store[N](
-        Index(2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
+        (2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
     )
 
 
@@ -116,13 +116,13 @@ fn matrix_solve[
         for batch in range(batch_size):
             # Get a 2D view of the Tensor.
             let x_view = NDBuffer[2, DimList(3, 2), type](
-                x.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
+                x.data.offset(batch * 3 * 2), (3, 2)
             )
             let a_view = NDBuffer[2, DimList(3, 3), type](
-                a.data.offset(batch * 3 * 3), StaticIntTuple[2](3, 3)
+                a.data.offset(batch * 3 * 3), (3, 3)
             )
             let b_view = NDBuffer[2, DimList(3, 2), type](
-                b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
+                b.data.offset(batch * 3 * 2), (3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
@@ -143,6 +143,8 @@ fn matrix_solve_shape[
     Parameters:
         rank: Rank of the input and output tensors.
         type: Type of the input and output tensors.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         a_buff: The input tensor A.

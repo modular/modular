@@ -92,7 +92,7 @@ fn elementwise_epilogue_c_tile[
         let n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             let m_coord = idx_m + offset.M
-            let c_coord = Index(m_coord, n_coord)
+            let c_coord = (m_coord, n_coord)
             let c_val = c.simd_load[col_chunk_size](c_coord)
             func[type, col_chunk_size](c_coord, c_val)
 
@@ -165,7 +165,7 @@ struct PackMatrixRows[
             global_offset,
             pack_tile_dim,
             valid_data_dim,
-            Index(
+            (
                 align_down(
                     min(
                         valid_data_dim[0],
@@ -227,7 +227,7 @@ struct PackMatrixRows[
             alias inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
-                let row_global_index = Index(
+                let row_global_index = (
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
@@ -250,12 +250,12 @@ struct PackMatrixRows[
                     )
 
                 transpose_buffer.simd_store[simd_size](
-                    Index(inner_row_idx, 0), row_data
+                    (inner_row_idx, 0), row_data
                 )
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
                 transpose_buffer.simd_store[simd_size](
-                    Index(inner_row_idx, 0), SIMD[type, simd_size](0)
+                    (inner_row_idx, 0), SIMD[type, simd_size](0)
                 )
 
         unroll[simd_size, body]()
@@ -269,7 +269,7 @@ struct PackMatrixRows[
         @parameter
         fn transposed_inner_row_body[idx: Int]():
             let transposed_data = transpose_buffer.simd_load[simd_size](
-                Index(idx, 0)
+                (idx, 0)
             )
             # compute the packed index
             let _row_outer = local_off_set[0] // row_inner_size
@@ -277,7 +277,7 @@ struct PackMatrixRows[
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.simd_store[simd_size](
-                    Index(
+                    (
                         _row_outer,
                         local_off_set[1] + idx,
                         _row_inner,
@@ -327,7 +327,7 @@ struct PackMatrixRows[
             ](
                 transpose_buffer,
                 # local offset
-                Index(row_idx, col_idx),
+                (row_idx, col_idx),
             )
 
         # Pack the whole matrices with the unit helper.
@@ -449,7 +449,7 @@ struct PackMatrixCols[
             let col_idx_outer = col_idx // column_inner_size
             let col_idx_inner = col_idx % column_inner_size
             self.packed_matrix.simd_store[simd_size](
-                Index(col_idx_outer, row_idx, col_idx_inner),
+                (col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
 
@@ -498,7 +498,7 @@ struct PackMatrixCols[
                             self.global_offset + local_idx
                         ]
                         self.packed_matrix.simd_store[1](
-                            Index(j, i // 4, 4 * p + l),
+                            (j, i // 4, 4 * p + l),
                             val,
                         )
 

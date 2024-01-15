@@ -27,7 +27,7 @@ from memory import memset_zero
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 
-from utils.index import Index, StaticIntTuple
+from utils.index import StaticIntTuple
 from utils.list import DimList
 from utils._optional import Optional
 
@@ -111,10 +111,10 @@ fn _small_batched_matmul[
             var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
 
             let a_view = NDBuffer[1, DimList.create_unknown[1](), a_type](
-                a_buf.data + batch * K, Index(K)
+                a_buf.data + batch * K, (K)
             )
             let b_view = NDBuffer[1, DimList.create_unknown[1](), b_type](
-                b_buf.data + batch * K, Index(K)
+                b_buf.data + batch * K, (K)
             )
 
             @always_inline
@@ -578,7 +578,7 @@ fn batched_matmul_kernel[
         nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val)
     else:
-        c_buff[Index(z, y, x)] = val
+        c_buff[(z, y, x)] = val
 
 
 @always_inline
@@ -704,6 +704,8 @@ fn batched_matmul_shape[
         rank: Rank of the input and output tensors.
         a_type: Type of the lhs input tensor.
         b_type: Type of the rhs input tensor.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
 
     Args:
         a_buff: The lhs input tensor.
