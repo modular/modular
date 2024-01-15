@@ -876,12 +876,14 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
     ASTType type = argType;
-    // FIXME(#13015, #13603): In general, we shouldn't be checking for variadic
-    // types specifically, but this is a quick stop-gap to address a crash.
-    if (signature.isVarArg(argNo) && isa<VariadicType>(type.mlirType))
-      type = type.getVariadicElementType();
-    if (convention != ValueInputConvention::OwnedInReg &&
-        convention != ValueInputConvention::BorrowedInReg)
+    if (signature.isVarArg(argNo)) {
+      if (auto variadic = dyn_cast<VariadicType>(type.mlirType)) {
+        type = variadic.getElementType();
+        if (SignatureType::hasAddress(variadic.getConvention()))
+          type = type.getReferenceElementType();
+      }
+    }
+    if (SignatureType::hasAddress(convention))
       type = type.getReferenceElementType();
     mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
 
