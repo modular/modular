@@ -19,7 +19,7 @@ fn test_cumsum_1d():
     alias reverse = False
     let axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix_data = DTypePointer[DType.float64].alloc(5)
     let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
@@ -47,7 +47,7 @@ fn test_cumsum_1d_exclusive():
     alias reverse = False
     let axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix_data = DTypePointer[DType.float64].alloc(5)
     let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
@@ -75,7 +75,7 @@ fn test_cumsum_1d_reverse():
     alias reverse = True
     let axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix_data = DTypePointer[DType.float64].alloc(5)
     let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
@@ -103,7 +103,7 @@ fn test_cumsum_1d_reverse_exclusive():
     alias reverse = True
     alias axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix_data = DTypePointer[DType.float64].alloc(5)
     let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
@@ -131,7 +131,7 @@ fn test_cumsum_2d_axis_0():
     alias reverse = False
     let axis = 0
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
         2,
         DimList(2, 3),
@@ -166,7 +166,7 @@ fn test_cumsum_2d_axis_1():
     alias reverse = False
     let axis = 1
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
         2,
         DimList(2, 3),
@@ -201,7 +201,7 @@ fn test_cumsum_2d_negative_axis():
     alias reverse = False
     let axis = -1
 
-    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
         2,
         DimList(2, 3),
