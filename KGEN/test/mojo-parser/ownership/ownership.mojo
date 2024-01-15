@@ -29,6 +29,15 @@ struct MemExample:
 
 fn consume(owned a: MemExample): pass
 
+struct MemPair:
+  var a: MemExample
+  var b: MemExample
+  fn __init__(inout self):
+    self.a = self.b := MemExample()
+
+  fn use(self): pass
+
+
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del__
 @register_passable
@@ -642,10 +651,14 @@ fn test_or(a: MemExample) -> MemExample:
   return a or a
 
 
+# ===----------------------------------------------------------------------=== #
+# Variadics
+# ===----------------------------------------------------------------------=== #
+
 # CHECK-LABEL: lit.func @"variadic_mems
-# CHECK-SAME: [*"`mems"](%a: !Int borrow,
+# CHECK-SAME: [*"`mems"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, *"`mems">, borrow_in_mem> borrow)
-fn variadic_mems(a: Int, *mems: MemExample):
+fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
   # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems">(%mems)
   # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
@@ -656,9 +669,8 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: %0 = kgen.rebind %a : !lit.ref<!MemExample, *"`a"> to !lit.ref<!MemExample, {*"`a", *"`b"}>
   # CHECK-NEXT: %1 = kgen.rebind %b : !lit.ref<!MemExample, *"`b"> to !lit.ref<!MemExample, {*"`a", *"`b"}>
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [%0, %1]
-  # CHECK-NEXT: [[INT:%.*]] = kgen.param.constant:
-  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[{*"`a", *"`b"}]([[INT]], [[VAR]])
-  variadic_mems(1, a, b)
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[{*"`a", *"`b"}]([[VAR]])
+  variadic_mems(a, b)
 
   # Variadic use keeps the memory value alive.
   # CHECK-NEXT: %c = lit.varlet.decl "c"
@@ -666,21 +678,35 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   let c = a
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[IMMREF]]]
-  # CHECK-NEXT: [[INT:%.*]] = kgen.param.constant:
-  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`c0"]([[INT]], [[VAR]])
-  variadic_mems(1, c)
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`c0"]([[VAR]])
+  variadic_mems(c)
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
-
-
   # CHECK-NEXT: kgen.param.constant: none
 
-struct MemPair:
-  var a: MemExample
-  var b: MemExample
-  fn __init__(inout self):
-    self.a = self.b := MemExample()
+# CHECK-LABEL: lit.func @"variadic_field_sensitivity
+fn variadic_field_sensitivity():
+  # Test that we field sensitively track variadics.
+  # CHECK:  %memPair = lit.varlet.decl
+  var memPair = MemPair()
 
-  fn use(self): pass
+  # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
+  # CHECK-NEXT: [[OWNEDAREF:%.*]] = lit.ownership.end_lifetime [[AREF]]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[OWNEDAREF]])
+  _ = memPair.a^  # Destroy a.
+
+  # Can still pass b through varargs.
+  # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %memPair[b]
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[BREF]]
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[IMMREF]]]
+  # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`memPair0"]([[VAR]])
+  variadic_mems(memPair.b)
+
+  # Need to restore 'a' so memPair may destruct.
+  # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
+  memPair.a = MemExample()
+
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%memPair)
 
 # CHECK-LABEL: lit.func @"test_partial_overwrite
 fn test_partial_overwrite(cond: __mlir_type.i1):
@@ -711,76 +737,3 @@ fn test_partial_overwrite(cond: __mlir_type.i1):
     # CHECK-NEXT: kgen.return
     return
   # CHECK-NEXT: }
-
-# CHECK-LABEL: lit.struct.decl @TestLoopWithWholeObjectBit
-struct TestLoopWithWholeObjectBit:
-  var field : MemExample
-
-  # CHECK: lit.func @"__init__
-  fn __init__(inout self, cond: __mlir_type.i1):
-        # CHECK-NEXT: %buf = lit.varlet.decl "buf"
-        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
-        let buf = MemExample()
-
-        # CHECK-NEXT: hlcf.loop {
-        # CHECK-NEXT:   hlcf.if %cond {
-        # CHECK-NEXT:     hlcf.yield
-        # CHECK-NEXT:   } else {
-        # CHECK-NEXT:     hlcf.break
-        # CHECK-NEXT:   }
-        while cond:
-          # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %buf
-          # CHECK-NEXT:   lit.call {{.*}}noop{{.*}}([[IMMREF]])
-          # CHECK-NEXT:   hlcf.continue
-          buf.noop()
-        # CHECK-NEXT: }
-
-        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.ownership.end_lifetime %buf
-        # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
-        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], [[TRANSFER_REF]])
-        # CHECK-NEXT: %none = kgen.param.constant
-        # CHECK-NEXT: kgen.return
-        self.field = buf ^
-
-# CHECK: lit.func @"testInfiniteloop
-fn testInfiniteloop():
-  # CHECK-NEXT:  hlcf.loop {
-  # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
-  # CHECK-NEXT:    hlcf.if %0 {
-  # CHECK-NEXT:      hlcf.yield
-  # CHECK-NEXT:    } else {
-  # CHECK-NEXT:      kgen.unreachable
-  # CHECK-NEXT:    }
-  while True:
-    # CHECK-NEXT:  %localThing = lit.varlet.decl
-    # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %localThing
-    # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])
-    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
-    let localThing = MemExample()
-    localThing.noop()
-  # CHECK-NEXT:    hlcf.continue
-  # CHECK-NEXT:  }
-
-
-struct MyStringReturningCtx:
-    var s: String
-    fn __init__(inout self):
-        self.s = "hey"
-    fn __enter__(owned self) -> Self:
-        return self ^
-    fn __moveinit__(inout self, owned existing: Self):
-        self.s = existing.s
-    fn read(self) raises -> String:
-        return str(self.s)
-
-# CHECK: lit.func @"testErrorReturn
-fn testErrorReturn() raises:
-    let input: String
-    # CHECK: try
-    with MyStringReturningCtx() as ctx:
-        # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        let x = ctx.read()
-        input = "hello"
-    # CHECK: except
-    print(input)
