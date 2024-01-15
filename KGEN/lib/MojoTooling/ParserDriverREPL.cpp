@@ -329,6 +329,15 @@ static void extractExpressionCode(StringRef exprText,
 // Expression Wrapping
 //===----------------------------------------------------------------------===//
 
+/// This code block represents a marker used to split the top-level code of an
+/// expression from the wrapped entry point functions.
+const char *kEntryPointEndMarker = "## End Wrapped Mojo REPL EntryPoint ##\n";
+
+/// Return a unique type name for a persistent variable.
+static std::string getPersistentVariableTypeName(StringRef name) {
+  return llvm::formatv("__mojo_repl_persistent_var_type_{0}", name).str();
+}
+
 /// Wrap the provided expression text in a function so that it can be executed.
 /// The generated function uses the provided name, and the provided variables
 /// are passed via fields to a generated struct that is used as the first
@@ -348,18 +357,6 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
            << "from python.python import Python as __mojo_repl_Python\n";
   }
 
-  // Build the input struct, which contains each of the persistent variables.
-  exprOS << "struct __mojo_repl_context__:\n";
-  for (auto &[name, type] : variables) {
-    exprOS << llvm::formatv(
-        "  var `{0}`: "
-        "__mojo_repl_Pointer[__mojo_repl_Pointer[__mlir_type.`{1}`]]\n",
-        name, type);
-  }
-  if (variables.empty())
-    exprOS << "  pass\n";
-  exprOS << "\n";
-
   // Extract out the top-level code from the expression code.
   SmallVector<StringRef> topLevelCode, mainBodyCode;
   extractExpressionCode(exprText, topLevelCode, mainBodyCode);
@@ -372,9 +369,16 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
     exprOS << code << "\n";
   };
 
-  // Splat out the top-level code.
-  for (StringRef code : topLevelCode)
-    emitAndMapCode(code);
+  // Build the input struct, which contains each of the persistent variables.
+  exprOS << "struct __mojo_repl_context__:\n";
+  for (auto &[name, type] : variables) {
+    exprOS << llvm::formatv("  var `{0}`: "
+                            "__mojo_repl_Pointer[__mojo_repl_Pointer[{1}]]\n",
+                            name, getPersistentVariableTypeName(name));
+  }
+  if (variables.empty())
+    exprOS << "  pass\n";
+  exprOS << "\n";
 
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
@@ -395,7 +399,8 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   exprOS << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
             "__mojo_repl_context__";
   for (auto &[name, type] : variables)
-    exprOS << llvm::formatv(", inout `{0}`: __mlir_type.`{1}`", name, type);
+    exprOS << llvm::formatv(", inout `{0}`: {1}", name,
+                            getPersistentVariableTypeName(name));
   exprOS << ") -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us
@@ -414,6 +419,14 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   // If the code succeeded, reset the failure flag.
   exprOS << "  __mojo_repl_expr_body__()\n"
             "  __mojo_repl_expr_failed = False\n";
+
+  // Emit a marker separating the top-level code from the forthcoming entry
+  // point logic.
+  exprOS << kEntryPointEndMarker;
+
+  // Splat out the top-level code.
+  for (StringRef code : topLevelCode)
+    emitAndMapCode(code);
 
   return exprOS.str();
 }
@@ -690,11 +703,26 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
 
 /// Build and resolve a REPL module for the given wrapped expression string.
 /// Returns the fully resolved REPL module decl.
-static ASTDecl &buildAndResolveREPLModule(const llvm::MemoryBuffer *sourceBuf,
-                                          StringRef moduleName,
-                                          SharedState &sharedState,
-                                          MojoASTDeclRef prevReplExpr) {
+static ASTDecl &buildAndResolveREPLModule(
+    const llvm::MemoryBuffer *sourceBuf, StringRef moduleName,
+    SharedState &sharedState, MojoASTDeclRef prevReplExpr,
+    ArrayRef<std::pair<StringRef, Type>> replVariables = {}) {
   ASTDecl &moduleDecl = buildREPLModule(sourceBuf, moduleName, sharedState);
+
+  // Generate aliases for the types of any persistent variables. We do this
+  // programmatically because we can't guarantee we can print the type in a way
+  // that the mojo parser will accept.
+  for (auto [name, type] : replVariables) {
+    std::string typeName = getPersistentVariableTypeName(name);
+    PValue typeValue(type);
+
+    OpBuilder builder = moduleDecl.getDeclEndBuilder();
+    AliasDeclOp typeDecl = builder.create<AliasDeclOp>(
+        builder.getUnknownLoc(),
+        ParamDeclAttr::get(typeName, typeValue.getType()), typeValue.get());
+    sharedState.declResolver->addFullyResolvedDecl(&*typeDecl, typeName,
+                                                   SMLoc(), &moduleDecl);
+  }
 
   // Before resolving everything in the REPL cell, resolve the body and import
   // as many of the previously defined REPL decls that we can.
@@ -804,8 +832,9 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   exprLocMapper.setWrappedExpr(sourceBuf->getBuffer());
 
   // Resolve a module decl for this REPL expression.
-  ASTDecl &moduleDecl = buildAndResolveREPLModule(
-      sourceBuf, replModuleName, impl->sharedState, prevReplExpr);
+  ASTDecl &moduleDecl =
+      buildAndResolveREPLModule(sourceBuf, replModuleName, impl->sharedState,
+                                prevReplExpr, replVariables);
   impl->prevReplModuleDecls.insert({&moduleDecl, &*prevReplExpr});
 
   // Clear up the error state so that we are still able to parse future cells,
@@ -896,9 +925,16 @@ static void parseCompletionImpl(
       const llvm::MemoryBuffer *moduleBuf =
           mainSourceMgr.getMemoryBuffer(bufferId);
 
+      // Split out the top-level code from the module, we don't want to process
+      // the entry point logic of imported cells.
+      StringRef moduleBufCode =
+          moduleBuf->getBuffer().split(kEntryPointEndMarker).second;
+      auto completionBuf = llvm::MemoryBuffer::getMemBuffer(
+          moduleBufCode, moduleBuf->getBufferIdentifier());
+
       // Add the copy of the decl and resolve its body.
       int completionBufferId = sourceMgr.AddNewSourceBuffer(
-          llvm::MemoryBuffer::getMemBuffer(*moduleBuf),
+          std::move(completionBuf),
           SMLoc::getFromPointer(sourceBuf->getBufferStart()));
       completionPrevReplDecl = &buildAndResolveREPLModule(
           sourceMgr.getMemoryBuffer(completionBufferId),
@@ -908,7 +944,8 @@ static void parseCompletionImpl(
 
     // Resolve a module decl for this REPL expression.
     buildAndResolveREPLModule(sourceBuf, sourceBuf->getBufferIdentifier(),
-                              ctx.getSharedState(), completionPrevReplDecl);
+                              ctx.getSharedState(), completionPrevReplDecl,
+                              variables);
   });
 }
 

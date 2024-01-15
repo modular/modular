@@ -95,18 +95,6 @@ let a_bool = True
 let another_bool = False
 
 
-# CHECK: (Tuple[Int, SIMD[si8, 4]]) a = {
-# CHECK:   (Int) [0] = 1
-# CHECK:   (SIMD[si8, 4]) [1] = {
-# CHECK:     (si8) [0] = 1
-# CHECK:     (si8) [1] = 2
-# CHECK:     (si8) [2] = 3
-# CHECK:     (si8) [3] = 0
-# CHECK:   }
-# CHECK: }
-a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
-
-
 # CHECK: (DynamicVector[Int]) z = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
@@ -117,3 +105,15 @@ var z = DynamicVector[Int](2)
 z.push_back(1)
 z.push_back(2)
 z.push_back(3)
+
+
+# CHECK: (Tuple[Int, SIMD[si8, 4]]) a = {
+# CHECK:   (Int) [0] = 1
+# CHECK:   (SIMD[si8, 4]) [1] = {
+# CHECK:     (si8) [0] = 1
+# CHECK:     (si8) [1] = 2
+# CHECK:     (si8) [2] = 3
+# CHECK:     (si8) [3] = 0
+# CHECK:   }
+# CHECK: }
+a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
