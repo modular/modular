@@ -339,18 +339,52 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
-    if (selfArgNumber >= ssize_t(argTypes.size())) {
-      // TODO('def' allows unused arguments): We can/should relax this for
-      // 'def' declarations in the future, they should be able to implicit
-      // ignore arguments like Python does.
-      emitError("self argument must be present in instance method");
-    } else if (!ASTType(argTypes[selfArgNumber]).isEqualCanon(selfType)) {
+    // Implement this as a lambda so we can early exit with 'return'.
+    auto checkSelf = [&]() {
+      Type selfArgType = argTypes[selfArgNumber];
+      ParsedArgument &selfArg = args[selfArgNumber];
+
+      // It ok if it exactly matches (typically with a specific convention).
+      if (selfType.isEqualCanon(selfArgType))
+        return;
+
+      // It is ok if it is an explicit !lit.ref to the underlying type.
+      // TODO: Users should not be exposed to this!
+      auto selfArgRefType = dyn_cast<RefType>(selfArgType);
+      if (selfArgRefType &&
+          selfType.isEqualCanon(selfArgRefType.getElementType())) {
+        if (selfArg.convention != ParsedArgument::kConventionUnspec &&
+            selfArg.convention != ParsedArgument::kConventionBorrowed) {
+          emitErrorLoc(
+              args[selfArgNumber].loc,
+              "!lit.ref 'self' must be passed with a borrowed convention");
+          return;
+        }
+        if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
+          emitErrorLoc(
+              args[selfArgNumber].loc,
+              "!lit.ref 'self' doesn't work for @register_passable types");
+          return;
+        }
+        return; // ok!
+      }
+
+      // Otherwise, this is an unrecognized self type.
       auto diag = emitErrorLoc(args[selfArgNumber].loc,
                                "'self' argument must have type ")
                   << selfType << " but actually has type "
                   << ASTType(argTypes[selfArgNumber]);
       if (args[selfArgNumber].typeExpr)
         diag << args[selfArgNumber].typeExpr->getRange();
+    };
+
+    if (selfArgNumber >= ssize_t(argTypes.size())) {
+      // TODO('def' allows unused arguments): We can/should relax this for
+      // 'def' declarations in the future, they should be able to implicit
+      // ignore arguments like Python does.
+      emitError("self argument must be present in instance method");
+    } else {
+      checkSelf();
     }
   }
 

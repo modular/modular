@@ -6,11 +6,32 @@
 
 # Test more advanced reference cases.
 
-# RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # TODO: should autoimport some day.
 from memory.unsafe import Reference
+
+# A helper to spell !lit.ref types.  Parametric aliases would be nice!
+struct _LITRef[
+    element_type: AnyType,
+    is_mutable: __mlir_type.i1,
+    lifetime: Lifetime,
+    addr_space: __mlir_type.index = Int(0).__mlir_index__()
+]:
+    alias type = __mlir_type[
+        `!lit.ref<mut=`,
+        is_mutable,
+        `, :`,
+        AnyType,
+        ` `,
+        element_type,
+        `, `,
+        lifetime,
+        `, `,
+        addr_space,
+        `>`,
+    ]
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
@@ -27,12 +48,12 @@ struct MemExample:
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<
 # CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a: !lit.ref<!MemExample, [[LT]]> borrow)
-fn borrow[lt: Lifetime](a: ref[lt] MemExample):
+fn borrow[lt: Lifetime](a: _LITRef[MemExample, False.__mlir_i1__(), lt].type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<
 # CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a: !lit.ref<mut !MemExample, [[LT]]> borrow)
-fn mutate[lt: Lifetime](a: mutref[lt] MemExample):
+fn mutate[lt: Lifetime](a: _LITRef[MemExample, True.__mlir_i1__(), lt].type):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_borrow
@@ -50,21 +71,21 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt: Lifetime, as1: __mlir_type.index]():
   # CHECK: lit.varlet.decl "ref1" {{.*}} !lit.ref<mut !MemExample, {{.*}}_lt, {{.*}}_as1>
-  let ref1 : mutref[lt, as1] MemExample
+  let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt, as1].type
 
   # CHECK: lit.alias.decl {{.*}}_as2: !Int = <#lit.struct<{value = 42}>>
   alias as2 : Int = 42
 
-  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, {{.*}}_lt, apply(:!lit.signature<("self": !Int borrow) -> index> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__mlir_index__($stdlib::$builtin::$int::Int)", apply(:!lit.signature<("self": !Int borrow) -> !Int> @"$stdlib"::@"$builtin"::@"$int"::@Int::@"__index__($stdlib::$builtin::$int::Int)", {{.*}}_as2))>
-  let ref2 : ref[lt, as2] MemExample
+  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, {{.*}}_lt, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, {{.*}}_as2)>
+  let ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt, as2.__mlir_index__()].type
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
 # CHECK-SAME: (%a: !lit.ref<mut={{.*}}isMut, !MemExample, {{.*}}x18_life> borrow)
 # CHECK-SAME: -> !lit.ref<mut=_{{.*}}x18_isMut, !MemExample, _{{.*}}x18_life>
 fn parametricMut[isMut: __mlir_type.i1,
-                 life: Lifetime](a: ref[mut=isMut, life] MemExample)
-   -> ref[mut=isMut, life] MemExample:
+                 life: Lifetime](a: _LITRef[MemExample, isMut, life].type)
+   -> _LITRef[MemExample, isMut, life].type:
   return a
 
 # CHECK-LABEL: lit.func @"testParametricMut
@@ -197,3 +218,29 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: %immref = lit.letreg.decl "immref" = [[IMMRV]]
   let immref = Reference(imm)
   immref[].noop()
+
+# ===----------------------------------------------------------------------=== #
+# Test that we can bind self lifetime.
+# ===----------------------------------------------------------------------=== #
+
+# Need a way to get a lifetime of Self.
+# https://github.com/modularml/modular/issues/29069
+
+struct SelfRefTest:
+  fn __init__(inout self): pass
+
+  # CHECK-LABEL: lit.func @"method
+  # CHECK-SAME: (%self: !lit.ref<mut={{.*}}x27_isMut, !SelfRefTest, {{.*}}x13_lt> borrow)
+  fn method[lt: Lifetime, isMut: __mlir_type.i1](
+     self: _LITRef[Self, isMut, lt].type) -> Reference[Self, isMut, lt]:
+      return Reference(self)
+
+# CHECK-LABEL: lit.func @"testSelfRef
+fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
+  # Bind immutably to a
+  # CHECK-NEXT: = lit.call {{.*}}method{{.*}}<:lifetime *"`a", :i1 0>(%a)
+  let r1 = a.method()
+
+  # Bind mutably to b
+  # CHECK: = lit.call {{.*}}method{{.*}}<:lifetime *"`b", :i1 1>(%b)
+  let r2 = b.method()
