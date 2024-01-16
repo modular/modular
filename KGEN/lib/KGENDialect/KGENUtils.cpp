@@ -1815,7 +1815,7 @@ ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
 }
 
 void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
-                                 ParamDeclArrayAttr paramDecls) {
+                                 ArrayRef<ParamDeclAttr> paramDecls) {
   p << "[";
   printKGENType(p, callee.getType());
   p << ": ";

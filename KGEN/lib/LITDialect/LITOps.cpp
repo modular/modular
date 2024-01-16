@@ -234,18 +234,24 @@ template <typename CalleeT>
 static void printCallOpTypes(AsmPrinter &, Operation *, TypeRange, TypeRange,
                              CalleeT, ArrayRef<TypedAttr>) {}
 
-static ParseResult parseCallOp(
-    OpAsmParser &p, SymbolConstantAttr &calleeCst,
-    ParameterExprArrayAttr &implicitLifetimes, ParamDeclArrayAttr &paramDecls,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-    SmallVectorImpl<Type> &operandTypes, SmallVectorImpl<Type> &resultTypes) {
+static ParseResult
+parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
+            ParameterExprArrayAttr &implicitLifetimes,
+            SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+            SmallVectorImpl<Type> &operandTypes,
+            SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
   ParameterExprArrayAttr paramValues;
+  ParamDeclArrayAttr paramDecls;
   if (p.parseAttribute(callee) || parseLifetimeParams(p, implicitLifetimes),
       parseCallOpParams(p, paramValues, paramDecls) ||
           p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
           p.parseColon())
     return failure();
+  if (!paramDecls.empty()) {
+    return p.emitError(p.getCurrentLocation(),
+                       "result parameters are not supported");
+  }
 
   SignatureType signature;
   FunctionType functionType;
@@ -261,11 +267,11 @@ static ParseResult parseCallOp(
 static void printCallOp(OpAsmPrinter &p, Operation *op,
                         SymbolConstantAttr calleeCst,
                         ParameterExprArrayAttr implicitLifetimes,
-                        ParamDeclArrayAttr paramDecls, ValueRange operands,
-                        TypeRange operandTypes, TypeRange resultTypes) {
+                        ValueRange operands, TypeRange operandTypes,
+                        TypeRange resultTypes) {
   p << calleeCst.getSymbol();
   printLifetimeParams(p, op, implicitLifetimes);
-  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
+  printCallOpParams(p, op, calleeCst.getParamValues(), /*resultDecls=*/{},
                     calleeCst.getType().getResultParamTypes());
   p << '(';
   p.printOperands(operands);
@@ -344,6 +350,21 @@ void LIT::CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
 //===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
+
+static ParseResult parseCallee(OpAsmParser &p, TypedAttr &callee) {
+  ParamDeclArrayAttr paramDecls;
+  if (parseParametricCallee(p, callee, paramDecls))
+    return failure();
+  if (!paramDecls.empty()) {
+    return p.emitError(p.getCurrentLocation(),
+                       "operation does not support result parameters");
+  }
+  return success();
+}
+
+static void printCallee(OpAsmPrinter &p, Operation *op, TypedAttr callee) {
+  printParametricCallee(p, op, callee, /*paramDecls=*/{});
+}
 
 LogicalResult LIT::CallParamOp::verify() {
   auto sig = cast<LITSignatureType>(getCallee().getType());
@@ -680,7 +701,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
   result.addAttribute(getDecoratorsAttrName(result.name), decorators);
   result.addAttribute(getInputParamsAttrName(result.name), inputParams);
-  result.addAttribute(getResultParamsAttrName(result.name), resultParams);
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(functionType));
   if (isParamDecl)
@@ -883,9 +903,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   auto signatureType = LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType},
                                              /*numImplicitLifetimeDecls=*/0);
 
-  auto emptyParamNames = StringArrayAttr::get(ctx, {});
-  auto emptyParamDecls = ParamDeclArrayAttr::get(ctx, {});
-
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
   // to set it during signature resolution phase of the parser.
@@ -897,7 +914,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // stuff to speed up attribute lookup.  That clever stuff requires that a slot
   // is filled in the attr dict, so we set this thing and remove it when the
   // real name is set.
-  result.addAttribute("sym_namex", emptyParamNames);
+  result.addAttribute("sym_namex", StringArrayAttr::get(ctx, {}));
 
   result.addAttribute(getExportKindAttrName(result.name),
                       ExportKindAttr::get(ctx, ExportKind::NotExported));
@@ -905,8 +922,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       TypeAttr::get(signatureType));
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(signatureType.getValues()));
-  result.addAttribute(getInputParamsAttrName(result.name), emptyParamDecls);
-  result.addAttribute(getResultParamsAttrName(result.name), emptyParamDecls);
+  result.addAttribute(getInputParamsAttrName(result.name),
+                      ParamDeclArrayAttr::get(ctx, {}));
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(ctx, {}));
   result.addAttribute(getDecoratorsAttrName(result.name),
@@ -931,7 +948,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()),
         /*inputParams=*/ParamDeclArrayAttr::get(ctx, {}),
-        /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
         ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isParametric=*/none, /*isDef=*/none,
         /*isInherited=*/none, /*isSynthetic=*/none,
@@ -1787,8 +1803,12 @@ LogicalResult AsyncCallOp::verify() {
 void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
                                    SymbolConstantAttr callee) {
   setCalleeAttr(callee);
-  setParamDecls({});
 }
+
+bool AsyncCallOp::isImplicitlyParametric() { return true; }
+
+void AsyncCallOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
 //===----------------------------------------------------------------------===//
 // AsyncExecuteOp

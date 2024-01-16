@@ -148,7 +148,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
       b.create<CallOp>(sig.getValueResults(),
                        SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
                                                symbol.getParamValues(), sig),
-                       std::nullopt, entry->getArguments());
+                       entry->getArguments());
   b.create<ReturnOp>(call.getResults());
 }
 

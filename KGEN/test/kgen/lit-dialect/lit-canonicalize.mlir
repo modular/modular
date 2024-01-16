@@ -5,9 +5,8 @@
 
 // CHECK-LABEL: lit.func @numeric_limits.digits.i32
 // CHECK-NEXT: constraints <[eq(:dtype type, si32), "this only works for si32", #
-lit.func @numeric_limits.digits.i32<type: dtype -> index>() {
+lit.func @numeric_limits.digits.i32<type: dtype>() {
   kgen.param.assert <eq(:dtype type, si32)>, "this only works for si32"
-  kgen.param.result_bind<31>
   kgen.return
 }
 

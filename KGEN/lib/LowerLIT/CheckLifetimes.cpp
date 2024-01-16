@@ -2591,7 +2591,6 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
                                 implicitLifetimes, valueToDestroy);
   } else {
     builder.create<LIT::CallParamOp>(signature.getValueResults()[0], dtor,
-                                     /*paramDecls=*/std::nullopt,
                                      implicitLifetimes, valueToDestroy);
   }
 }

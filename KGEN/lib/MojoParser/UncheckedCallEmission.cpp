@@ -976,9 +976,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       auto call = builder->create<AsyncCallOp>(
           loc,
           POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
-          // TODO(jeff): Remove result params from AsyncCallOp
-          target.get(), ArrayRef<ParamDeclAttr>(),
-          /*lifetimeParams=*/implicitLifetimes, callArgs);
+          target.get(), implicitLifetimes, callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultType);
       if (!coroType) {
@@ -993,21 +991,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
               .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
-      auto call = builder->create<CallOp>(
-          loc, resultType, symbol,
-          /*lifetimeParams=*/implicitLifetimes,
-          // TODO(jeff): Remove result params from CallOp
-          ArrayRef<ParamDeclAttr>(), callArgs);
+      auto call = builder->create<CallOp>(loc, resultType, symbol,
+                                          implicitLifetimes, callArgs);
       callResult = call.getResult(0);
 
       // If there are any callee-specific warnings to emit, do so after
       // successfully emitting the call.
       callEmitter.emitDirectCallWarnings(call, callOperands);
     } else {
-      auto call = builder->create<CallParamOp>(
-          // TODO(jeff): Remove result params from CallParamOp
-          loc, resultType, target.get(), ArrayRef<ParamDeclAttr>(),
-          /*lifetimeParams=*/implicitLifetimes, callArgs);
+      auto call = builder->create<CallParamOp>(loc, resultType, target.get(),
+                                               implicitLifetimes, callArgs);
       callResult = call.getResult(0);
     }
   } else {

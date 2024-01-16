@@ -313,7 +313,7 @@ void printCallOpParams(OpAsmPrinter &p, Operation *op,
 ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
                                   ParamDeclArrayAttr &paramDecls);
 void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
-                           ParamDeclArrayAttr paramDecls);
+                           ArrayRef<ParamDeclAttr> paramDecls);
 
 /// Parse an address space parameter if present.
 ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,

@@ -60,7 +60,6 @@ def LIT_FuncOp : LITOp<"func", [
     TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
@@ -86,6 +85,7 @@ def LIT_FuncOp : LITOp<"func", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
 
@@ -145,9 +145,7 @@ def LIT_FuncOp : LITOp<"func", [
 
 def LIT_CallOp : LITOp<"call", [
     DeclareOpInterfaceMethods<CallOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
-    CallLikeOperation {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "call a function";
   let description = [{
     The `lit.call` operation is a static call to a `lit.func`. It references its
@@ -164,24 +162,14 @@ def LIT_CallOp : LITOp<"call", [
   let arguments = (ins
     KGEN_SymbolConstantAttr:$callee,
     KGEN_ParameterExprArrayAttr:$implicitLifetimes,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<CallOp>($callee, $implicitLifetimes, $paramDecls, $operands,
+    custom<CallOp>($callee, $implicitLifetimes, $operands,
                    type($operands), type($results)) attr-dict
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypeRange":$results, "SymbolConstantAttr":$callee,
-                   "ArrayRef<TypedAttr>":$implicitLifetimesValues,
-                   "ValueRange":$operands), [{
-      build($_builder, $_state, results, callee, implicitLifetimesValues,
-            /*paramDecls=*/ArrayRef<ParamDeclAttr>(), operands);
-    }]>
-  ];
 
   let hasVerifier = 1;
 }
@@ -191,9 +179,7 @@ def LIT_CallOp : LITOp<"call", [
 //===----------------------------------------------------------------------===//
 
 def LIT_CallParamOp : LITOp<"call_param", [
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
-    CallLikeOperation {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "call a parameter expresion";
   let description = [{
     The `lit.call_param` operation is a static call to a signature-typed
@@ -216,14 +202,13 @@ def LIT_CallParamOp : LITOp<"call_param", [
 
   let arguments = (ins
     AttrOfType<LIT_SignatureType>:$callee,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
     KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee, $paramDecls) ``
+    `` custom<Callee>($callee) ``
     custom<LifetimeParams>($implicitLifetimes) ``
     custom<CallOpTypes>(type($operands), type($results), ref($callee),
                         ref($implicitLifetimes))
@@ -992,7 +977,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
-    CallLikeOperation {
+    NoParamDecls {
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It
@@ -1008,14 +993,13 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 
   let arguments = (ins
     AttrOfType<KGEN_SignatureType>:$callee,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
     KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
   );
   let results = (outs POP_CoroutineType:$coroutine);
 
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee, $paramDecls) ``
+    `` custom<Callee>($callee) ``
     custom<LifetimeParams>($implicitLifetimes) ``
     custom<AsyncCallOpTypes>(type($operands), type($coroutine), ref($callee),
                              ref($implicitLifetimes))
