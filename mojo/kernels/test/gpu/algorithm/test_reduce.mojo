@@ -25,6 +25,106 @@ from tensor import Tensor
 
 from utils.index import Index
 
+alias num_reductions = 2
+
+
+fn fused_reduce_inner_test[
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing -> SIMD[ty, width],
+    rank: Int,
+    type: DType,
+](
+    shape: StaticIntTuple[rank],
+    init: StaticTuple[num_reductions, SIMD[type, 1]],
+) raises:
+    print("== fused_reduce_inner_test")
+
+    let axis = rank - 1
+    var out_shape = shape
+    out_shape[axis] = 1
+
+    let in_size = shape.flattened_length()
+    let out_size = out_shape.flattened_length()
+
+    var stream = Stream()
+
+    var vec_host = Tensor[type](in_size)
+    var res_host0 = Tensor[type](out_size)
+    var res_host1 = Tensor[type](out_size)
+
+    for i in range(in_size):
+        vec_host[i] = i // shape[axis] + 1
+
+    let vec_device = _malloc[type](in_size)
+    let res_device0 = _malloc[type](out_size)
+    let res_device1 = _malloc[type](out_size)
+    let input_buf_device = NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        type,
+    ](vec_device, shape)
+    let output_buf_device0 = NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        type,
+    ](res_device0, out_shape)
+    let output_buf_device1 = NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        type,
+    ](res_device1, out_shape)
+
+    _copy_host_to_device(vec_device, vec_host.data(), in_size)
+
+    @parameter
+    fn input_fn[
+        type: DType,
+        width: Int,
+        _rank: Int,
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        return rebind[SIMD[type, width]](
+            input_buf_device[rebind[StaticIntTuple[rank]](coords)]
+        )
+
+    @parameter
+    fn output_fn[
+        _type: DType, width: Int, _rank: Int
+    ](
+        coords: StaticIntTuple[_rank],
+        val: StaticTuple[num_reductions, SIMD[_type, width]],
+    ):
+        output_buf_device0.__setitem__(
+            rebind[StaticIntTuple[rank]](coords), rebind[SIMD[type, 1]](val[0])
+        )
+        output_buf_device1.__setitem__(
+            rebind[StaticIntTuple[rank]](coords), rebind[SIMD[type, 1]](val[1])
+        )
+
+    reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, type](
+        shape, axis, init, stream
+    )
+
+    stream.synchronize()
+    _copy_device_to_host(res_host0.data(), res_device0, out_size)
+    _copy_device_to_host(res_host1.data(), res_device1, out_size)
+
+    print("REDUCTION = 0")
+    for i in range(out_shape.flattened_length()):
+        print("res =", res_host0[i])
+    print("REDUCTION = 1")
+    for i in range(out_shape.flattened_length()):
+        print("res =", res_host1[i])
+    _free(vec_device)
+    _free(res_device0)
+    _free(res_device1)
+
+    _ = vec_host
+    _ = res_host0
+    _ = res_host1
+
+    _ = stream ^
+
 
 fn reduce_inner_test[
     reduce_fn: fn[type: DType, width: Int] (
@@ -131,6 +231,17 @@ def main():
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return max(x, y)
 
+    @parameter
+    fn fused_reduce_add_max[
+        type: DType,
+        width: Int,
+        reduction_idx: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        constrained[reduction_idx < 2, "reduction idx OOB"]()
+
+        alias func = reduce_max if reduction_idx == 0 else reduce_add
+        return func(x, y)
+
     try:
         with Context() as ctx:
             # CHECK-LABEL: run_inner_test
@@ -174,6 +285,26 @@ def main():
             # CHECK: res = 5.0
             reduce_inner_test[reduce_max](
                 StaticIntTuple[2](5, 3), min_or_neginf[DType.float32]()
+            )
+
+            # CHECK-LABEL: fused_reduce_inner_test
+            # CHECK-NEXT: REDUCTION = 0
+            # CHECK-NEXT: res = 1.0
+            # CHECK-NEXT: res = 2.0
+            # CHECK-NEXT: res = 3.0
+            # CHECK-NEXT: res = 4.0
+            # CHECK-NEXT: res = 5.0
+            # CHECK-NEXT: REDUCTION = 1
+            # CHECK-NEXT: res = 3.0
+            # CHECK-NEXT: res = 6.0
+            # CHECK-NEXT: res = 9.0
+            # CHECK-NEXT: res = 12.0
+            # CHECK-NEXT: res = 15.0
+            fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
+                StaticIntTuple[2](5, 3),
+                StaticTuple[2, Scalar[DType.float32]](
+                    min_or_neginf[DType.float32](), 0.0
+                ),
             )
     except e:
         print("CUDA_ERROR:", e)
