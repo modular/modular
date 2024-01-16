@@ -82,8 +82,8 @@ fn init_matrices(
     let b2 = Buffer[1024, DType.int8].stack_allocation()
 
     for i in range(1024):
-        a[i] = SIMD[DType.int8, 1](i & 127)
-        b2[i] = SIMD[DType.int8, 1](i & 127)
+        a[i] = Int8(i & 127)
+        b2[i] = Int8(i & 127)
 
     memset_zero[DType.int32](c.data, 1024)
     memset_zero[DType.int32](c2.data, 1024)
@@ -117,15 +117,15 @@ fn setup_tile_config() -> tileconfig:
     let tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
-    let nrows: SIMD[DType.uint8, 1] = 16
-    let colb: SIMD[DType.uint16, 1] = 64
+    let nrows: UInt8 = 16
+    let colb: UInt16 = 64
 
     tc.palette_id = 1
 
     @always_inline
     fn tc_fill[idx: Int]():
-        tc.rows.__setitem__[idx](nrows.value)
-        tc.colb.__setitem__[idx](colb.value)
+        tc.rows[idx] = nrows.value
+        tc.colb[idx] = colb.value
 
     unroll[8, tc_fill]()
     return tc

@@ -116,8 +116,8 @@ fn init_intel_amx() -> Bool:
 #  uint8_t rows[16];
 # } tileconfig_t;
 struct tileconfig:
-    var palette_id: SIMD[DType.uint8, 1]
-    var start_row: SIMD[DType.uint8, 1]
+    var palette_id: UInt8
+    var start_row: UInt8
     var reserved: StaticTuple[14, __mlir_type.`!pop.scalar<ui8>`]
     var colb: StaticTuple[16, __mlir_type.`!pop.scalar<ui16>`]
     var rows: StaticTuple[16, __mlir_type.`!pop.scalar<ui8>`]
