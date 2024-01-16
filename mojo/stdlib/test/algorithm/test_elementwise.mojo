@@ -46,9 +46,9 @@ fn test_elementwise[
 
     var x: Float32 = 1.0
     for i in range(numelems):
-        buffer1.data.offset(i).store(2.0)
-        buffer2.data.offset(i).store(SIMD[DType.float32, 1](x.value))
-        out_buffer.data.offset(i).store(0.0)
+        buffer1.data[i] = 2.0
+        buffer2.data[i] = Float32(x.value)
+        out_buffer.data[i] = 0.0
         x += 1.0
 
     @always_inline
