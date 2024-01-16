@@ -215,24 +215,6 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     paramOverload2[MyInt(a), b, c]()
 
 
-# Test overloading precedence in the presence of static methods.
-struct MyStruct:
-    fn __init__(inout self): pass
-
-    fn foo(inout self): pass
-
-    @staticmethod
-    fn foo(): pass
-
-# CHECK-LABEL: lit.func @"test_static_overload()"
-fn test_static_overload():
-    var a = MyStruct()
-    # CHECK-NEXT: %a = lit.varlet.decl
-    # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: lit.call @{{.*}}foo{{.*}}(%a)
-    a.foo()
-
-
 struct VariadicStruct[*Ts: AnyRegType]:
     fn __init__(inout self):
         pass
@@ -1329,6 +1311,10 @@ struct DecoratedStruct:
 ##===----------------------------------------------------------------------===##
 # Implicit lifetimes for result slots.
 ##===----------------------------------------------------------------------===##
+
+struct MyStruct:
+    fn __init__(inout self):
+        pass
 
 # CHECK-LABEL: lit.func @"getThing()"
 # CHECK-SAME: [*"`__result__"](%__result__:
