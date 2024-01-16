@@ -350,7 +350,7 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
                                  SmallVectorImpl<ParamDeclAttr> &params,
                                  SmallVectorImpl<StringAttr> &names,
                                  SmallVectorImpl<PassingKind> &passingKinds,
-                                 SmallVectorImpl<TypedAttr> &defaults,
+                                 SmallVectorImpl<TypedAttr> &defaultPosParams,
                                  bool isResultParams, bool &paramVarArg) {
   bool seenInitExpr = false;
   for (const ParsedArgument &arg : args) {
@@ -384,7 +384,7 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
           emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
       if (!value)
         return;
-      defaults.push_back(value);
+      defaultPosParams.push_back(value);
       if (isResultParams) {
         emitter.emitError(arg.loc,
                           "unexpected default value for result parameter");
@@ -424,9 +424,9 @@ void ParsedArgument::processParameterInputArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
     SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg) {
   processParameterArgs(emitter, declScope, args, params, names, passingKinds,
-                       defaults, /*isResultParams=*/false, paramVarArg);
+                       defaultPosParams, /*isResultParams=*/false, paramVarArg);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -502,7 +502,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-    SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
+    SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
     ASTDecl *fnDecl, SpecialFunctionInfo fnInfo,
     function_ref<void()> processSignature) {
   SharedState &shared = typeEmitter.shared;
@@ -599,7 +599,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
           typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
       if (!value)
         return {};
-      defaults.push_back(value);
+      defaultPosArgs.push_back(value);
     } else if (seenInitExpr) {
       InflightDiag diag = typeEmitter.emitError(
           arg.loc, "non-default argument follows default argument");

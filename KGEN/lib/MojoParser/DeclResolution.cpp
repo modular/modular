@@ -838,7 +838,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<ParsedArgument> args;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> paramDefaults;
+  SmallVector<TypedAttr> defaultPosParams;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
@@ -847,7 +847,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // values.
   if (impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                             paramNames, paramPassingKinds,
-                                            paramDefaults, paramVarArg))
+                                            defaultPosParams, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -881,7 +881,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> argDefaults;
+  SmallVector<TypedAttr> defaultPosArgs;
   auto reportError = [&] {
     decl.hasReferenceError = true;
     return success();
@@ -906,8 +906,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
-      resultTypeExpr, effects, args, argTypes, argDefaults, funcOp.getIsDef(),
-      resultLoc, &decl, fnInfo, processSignature);
+      resultTypeExpr, effects, args, argTypes, defaultPosArgs,
+      funcOp.getIsDef(), resultLoc, &decl, fnInfo, processSignature);
   if (!resultType)
     return failure();
 
@@ -970,7 +970,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       builder.getFunctionType(argTypes, {resultType.mlirType});
   auto metadata = FnMetadataAttr::get(
       builder.getContext(), argNames, argPassingKinds, paramNames,
-      paramPassingKinds, argDefaults, paramDefaults,
+      paramPassingKinds, defaultPosArgs, defaultPosParams,
       // TODO: wire through kw-only args and params
       /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
       implicitLifetimeDecls.size());
