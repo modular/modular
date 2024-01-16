@@ -8,7 +8,7 @@ from LLDBTestBase import LLDBTestBase
 
 
 class TestDynamicVector(LLDBTestBase):
-    def test(self):
+    def test_dynamic_vector(self):
         """Tests that DynamicVector can be parsed correctly and its data
         formatter works correctly as well."""
 
@@ -19,10 +19,12 @@ class TestDynamicVector(LLDBTestBase):
             assert var.GetValueForExpressionPath("[1].y").GetValue() == "-2"
 
             ctx = ctx.resume()
+            assert ctx is not None
             var = ctx.frame.FindVariable("int_vec")
             assert var.GetSummary() == "(size 2)[1, 2]"
 
             ctx = ctx.resume()
+            assert ctx is not None
             var = ctx.frame.FindVariable("int_vec")
             assert (
                 var.GetSummary()

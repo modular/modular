@@ -8,7 +8,7 @@ from LLDBTestBase import LLDBTestBase
 
 
 class TestSample(LLDBTestBase):
-    def test_assignment(self):
+    def test_struct_assignment(self):
         """Make sure struct field offset calculation is correct by accessing
         struct members."""
 

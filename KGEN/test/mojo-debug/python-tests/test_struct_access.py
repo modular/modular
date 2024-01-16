@@ -19,7 +19,7 @@ class TestSample(LLDBTestBase):
         second_field = struct.GetChildAtIndex(1)
         assert second_field.GetValueAsSigned(second - 1) == second
 
-    def test_access(self):
+    def test_struct_access(self):
         """Make sure struct variable is tracked correctly."""
 
         with self.build_and_launch("struct_access.mojo") as ctx:

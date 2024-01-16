@@ -3148,7 +3148,7 @@ class SBFrame:
     def GetFrameBlock(self):
         ...
 
-    def GetLineEntry(self):
+    def GetLineEntry(self) -> "SBLineEntry":
         ...
 
     def GetThread(self):
@@ -3571,10 +3571,10 @@ class SBLineEntry:
     def GetFileSpec(self):
         ...
 
-    def GetLine(self):
+    def GetLine(self) -> int:
         ...
 
-    def GetColumn(self):
+    def GetColumn(self) -> int:
         ...
 
     def SetFileSpec(self, filespec):
@@ -7087,7 +7087,7 @@ class SBValue:
     def GetValueAsSigned(self, *args: Any) -> int:
         ...
 
-    def GetValueAsUnsigned(self, *args):
+    def GetValueAsUnsigned(self, *args: Any) -> int:
         ...
 
     def GetValueType(self):
@@ -7096,7 +7096,7 @@ class SBValue:
     def GetValueDidChange(self):
         ...
 
-    def GetSummary(self, *args):
+    def GetSummary(self, *args: Any) -> str:
         ...
 
     def GetObjectDescription(self):
@@ -7177,7 +7177,7 @@ class SBValue:
     def GetChildMemberWithName(self, *args):
         ...
 
-    def GetValueForExpressionPath(self, expr_path):
+    def GetValueForExpressionPath(self, expr_path: str) -> "SBValue":
         ...
 
     def AddressOf(self):
@@ -7228,7 +7228,7 @@ class SBValue:
     def GetFrame(self):
         ...
 
-    def Dereference(self):
+    def Dereference(self) -> "SBValue":
         ...
 
     def TypeIsPointerType(self):

@@ -8,7 +8,7 @@ from LLDBTestBase import LLDBTestBase
 
 
 class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
-    def test(self):
+    def test_stepping_into_lined_no_debug_info_issue(self):
         """FIXME(24731): There's an issue caused by inlined functions emitting
         line table entries pointing to the beginning of the caller function or
         to the file but without line information.
@@ -29,6 +29,7 @@ class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
         )
         with self.build_and_launch(source) as ctx:
             ctx = ctx.step_into()
+            assert ctx is not None
             expected_line = next(
                 source.find_lines_with_text("# expected after step-into")
             )
