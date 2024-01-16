@@ -632,7 +632,7 @@ fn keep(val: Int):
     Args:
       val: The value to not optimize away.
     """
-    keep(SIMD[DType.index, 1](val))
+    keep(Scalar[DType.index](val))
 
 
 @always_inline
