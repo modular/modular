@@ -31,7 +31,7 @@ fn SM80_16x8x8_F16F16F16F16_TN(
 @export
 fn SM80_m16n8k4_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 2],
-    b: SIMD[DType.float32, 1],
+    b: Float32,
     c: SIMD[DType.float32, 4],
 ) -> SIMD[DType.float32, 4]:
     var d = SIMD[DType.float32, 4]()
@@ -50,7 +50,7 @@ fn SM80_m16n8k4_F32TF32TF32F32_TN(
 @export
 fn SM80_m16n8k8_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 4],
-    b: SIMD[DType.float32, 1],
+    b: Float32,
     c: SIMD[DType.float32, 4],
 ) -> SIMD[DType.float32, 4]:
     var d = SIMD[DType.float32, 4]()

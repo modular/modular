@@ -86,7 +86,7 @@ fn matmul_sram(
     let localRow = ThreadIdx.y()
 
     # Result of current thread in C.
-    var result = SIMD[DType.float32, 1](0.0)
+    var result = Float32(0.0)
 
     let K_roundbytile = align_down(K, tile_size)
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
@@ -100,7 +100,7 @@ fn matmul_sram(
         # when loading elements into shared memory.
 
         # Load A tile into shared memory.
-        let a_val: SIMD[DType.float32, 1]
+        let a_val: Float32
 
         @parameter
         if not full_tile:
@@ -112,7 +112,7 @@ fn matmul_sram(
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
-        let b_val: SIMD[DType.float32, 1]
+        let b_val: Float32
 
         @parameter
         if not full_tile:

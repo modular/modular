@@ -292,7 +292,7 @@ fn test_case[
     indices_shape: TensorShape,
     updates_shape: TensorShape,
     data_vals: VariadicList[SIMD[type, 1]],
-    indices_vals: VariadicList[SIMD[DType.int64, 1]],
+    indices_vals: VariadicList[Int64],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ):

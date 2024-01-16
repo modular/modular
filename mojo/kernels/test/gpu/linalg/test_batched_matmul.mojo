@@ -74,9 +74,7 @@ fn test_batched_matmul() raises:
     fn elementwise_epilogue_empty_fn[
         c_type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
-        dst_buffer[Index(idx[0], idx[1], idx[2])] = (
-            rebind[SIMD[DType.float32, 1]](val) + 2.0
-        )
+        dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
     fn rowwise_epilogue_empty(
         a: Int,

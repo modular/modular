@@ -69,7 +69,7 @@ fn run_reduce() raises:
         n,
     )
 
-    var res = SIMD[DType.float32, 1](0)
+    var res = Float32(0)
     _copy_device_to_host(Pointer.address_of(res), res_device, 1)
 
     # CHECK: res =  1024.0
