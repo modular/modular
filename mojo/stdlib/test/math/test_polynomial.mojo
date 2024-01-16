@@ -6,8 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math.polynomial import (
-    _estrin_evaluate_2,
-    _estrin_evaluate_4,
+    _estrin_evaluate,
     _horner_evaluate,
     polynomial_evaluate,
 )
@@ -25,17 +24,17 @@ fn test_polynomial_evaluate_degree3():
     )
     # Evaluate 1000 + x + x^2
     var y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
     # CHECK: 1002.0
     print(y)
 
-    y = _estrin_evaluate_2[
-        simd_width,
+    y = _estrin_evaluate[
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -43,8 +42,8 @@ fn test_polynomial_evaluate_degree3():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -52,17 +51,17 @@ fn test_polynomial_evaluate_degree3():
     print(y)
 
     y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
     # CHECK: 1000.11
     print(y)
 
-    y = _estrin_evaluate_2[
-        simd_width,
+    y = _estrin_evaluate[
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
@@ -70,8 +69,8 @@ fn test_polynomial_evaluate_degree3():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
@@ -93,17 +92,17 @@ fn test_polynomial_evaluate_degree4():
     )
     # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
     var y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
     # CHECK: 1054.0
     print(y)
 
-    y = _estrin_evaluate_4[
-        simd_width,
+    y = _estrin_evaluate[
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -111,8 +110,8 @@ fn test_polynomial_evaluate_degree4():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -120,17 +119,17 @@ fn test_polynomial_evaluate_degree4():
     print(y)
 
     y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
     # CHECK: 1009.4806
     print(y)
 
-    y = _estrin_evaluate_4[
-        simd_width,
+    y = _estrin_evaluate[
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
@@ -138,8 +137,8 @@ fn test_polynomial_evaluate_degree4():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
@@ -170,8 +169,8 @@ fn test_polynomial_evaluate_degree10():
     # 20.0 + 9.0 x + 1.0 x^2 + 1.0 x^3 + 1.0 x^4 + 1.0 x^5 + 1.0 x^6 +
     # 1.0 x^7 + 1.0 x^8 + 43.0 x^9 + 10.0 x^10
     var y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -179,8 +178,8 @@ fn test_polynomial_evaluate_degree10():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](1.0)
 
@@ -188,8 +187,8 @@ fn test_polynomial_evaluate_degree10():
     print(y)
 
     y = _horner_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
@@ -197,8 +196,8 @@ fn test_polynomial_evaluate_degree10():
     print(y)
 
     y = polynomial_evaluate[
-        simd_width,
         DType.float64,
+        simd_width,
         coeefs,
     ](0.1)
 
