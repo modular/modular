@@ -37,7 +37,7 @@ fn test_pad_1d():
     let output = NDBuffer[1, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
-    let constant = SIMD[DType.index, 1](5)
+    let constant = Scalar[DType.index](5)
 
     # pad
     pad_constant(output, input, paddings.data, constant)
@@ -139,7 +139,7 @@ fn test_pad_2d():
     let output = NDBuffer[2, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
-    let constant = SIMD[DType.index, 1](6)
+    let constant = Scalar[DType.index](6)
 
     # pad
     pad_constant(output, input, paddings.data, constant)
@@ -294,7 +294,7 @@ fn test_pad_3d():
     let output = NDBuffer[3, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
-    let constant = SIMD[DType.index, 1](7)
+    let constant = Scalar[DType.index](7)
 
     # pad
     pad_constant(output, input, paddings.data, constant)
