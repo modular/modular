@@ -746,21 +746,17 @@ fn forward_ref(x: EmptyStruct):
   pass
 
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) register_passable {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) register_passable
 @register_passable
 struct EmptyStruct:
     pass
 
-
-# CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}[size]: !Int>
 struct OneLineStruct[size: Int]:
     pass
     pass
 
-
-# CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @StructWithInit
 struct StructWithInit:
@@ -1348,3 +1344,22 @@ fn getThing() -> MyStruct:
 # CHECK-SAME: [*"`__result__"](%__result__:
 fn callThing() -> MyStruct:
   return getThing()
+
+##===----------------------------------------------------------------------===##
+# Struct field with type of recursive parameter
+# https://github.com/modularml/modular/issues/28580
+##===----------------------------------------------------------------------===##
+trait BarTrait:
+    pass
+
+struct Bar[T: BarTrait]:
+    fn __init__(inout self: Self):
+        pass
+
+struct BarSelf(BarTrait):
+    var bar: Bar[Self]
+
+    fn __init__(inout self: Self):
+        # CHECK: [[V0:%.*]] = lit.ref.struct.ger %self
+        # CHECK: lit.call{{.*}}__init__{{.*}}([[V0]])
+        self.bar = Bar[Self]()

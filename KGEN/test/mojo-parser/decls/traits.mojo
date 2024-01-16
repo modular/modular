@@ -446,7 +446,7 @@ struct RegSpecial(AnyType, Copyable, Movable):
         return Self {}
 
     # CHECK: lit.func @"`thunk___del__
-    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK-SAME: {{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
     # CHECK: return %none
 
     # CHECK: lit.func @"`thunk___moveinit__
@@ -462,8 +462,8 @@ struct MemoryOnlySpecial(AnyType, Copyable, Movable):
     fn __moveinit__(inout self, owned existing: Self):
         pass
 
-    # CHECK: lit.func @"`thunk___del__
-    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK: lit.func @"__del__
+    # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
     # CHECK: return %none
 
 fn copy[T: Copyable](x: T):
@@ -614,14 +614,14 @@ struct TraitMember[T: Movable]:
 @value
 struct MyPointer[T: AnyType]:
     pass
+    # CHECK: lit.func @"__del__
     # CHECK: lit.func @"__init__
-    # CHECK: lit.func @"`thunk___del__
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
 struct HasMyPointerSelf(AnyType):
     # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:trait<{{.*}}@AnyType>
     var x: MyPointer[Self]
-    # CHECK: lit.func @"`thunk___del__
+    # CHECK: lit.func @"__del__
 
     fn __moveinit__(inout self, owned existing: Self, /):
         pass

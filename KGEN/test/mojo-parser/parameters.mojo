@@ -17,7 +17,7 @@ alias index_three = __mlir_attr.`3 : index`
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD
 # CHECK-SAMEL <[[SIMDSIZE:.*]]: !Int, [[SIMDDT:.*]]: !DType>
-# CHECK-SAME: register_passable {
+# CHECK-SAME: register_passable
 @register_passable
 struct OurSIMD[size: Int, dt: DType]:
   fn __copyinit__(self) -> Self: pass
