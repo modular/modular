@@ -315,6 +315,7 @@ static void getCallOpEffects(
     case ValueInputConvention::None:
       llvm_unreachable("none convention not permited in Mojo");
     }
+    llvm_unreachable("invalid input convention");
   };
 
   SmallVector<Type> typesAccessibleByCallee;
