@@ -616,11 +616,6 @@ struct RegisterNoDtor:
 struct MemoryNoDtor:
     pass
 
-# CHECK-LABEL: lit.func @"do_not_call_synth_dtors
-fn do_not_call_synth_dtors(owned x: RegisterNoDtor, owned y: MemoryNoDtor):
-    # CHECK-NOT: call {{.*}}@"__del__
-    # CHECK-LABEL: kgen.return
-    pass
 
 # CHECK-LABEL: lit.struct.decl @RegExampleValue({{.*}}) register_passable
 # Compiler crashes trying to insert a destructor call

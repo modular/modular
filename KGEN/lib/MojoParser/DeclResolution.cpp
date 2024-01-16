@@ -1875,9 +1875,9 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // We need to make a var box + store for register_passable values since that
-  // is what lifetime tracking expects.  It does not track the individual fields
-  // of register passable values since they cannot be transfered and cannot be
-  // lit.ownership.mark_destroyed.
+  // is what lifetime tracking expects.  It does not track the individual
+  // fields of register passable values since they cannot be transfered and
+  // cannot be lit.ownership.mark_destroyed.
   if (convention == ValueInputConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);
     ExprEmitter emitter(shared, funcDecl, builder);
@@ -1888,6 +1888,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // Finish off the function with a return + lit.endfunc.
   appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
 
+  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
   return funcOp.getBoundSymbolRef();
 }
 
@@ -2191,7 +2192,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Always inline the thunk. The calling convention conversion overhead is
   // guaranteed to be optimized away.
-  thunk.setInlineLevel(InlineLevel::Always);
+  thunk.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Now prepare to emit the call to the register-passable method.
   ExprEmitter emitter(shared, structDecl, EC_Trait);
@@ -2494,9 +2495,34 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
 
-  // Track whether any field needs destruction, if so, we need a __del__
-  // method.
-  bool needsDtorForFields = false;
+  // Check to see if there is a destructor and install it into the StructDeclOp
+  // if so.
+  if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
+    // Check to see if we have an explicitly declared destructor.
+    structOp.setDestructorAttr(dtorAttr);
+  } else if (!structOp.isRegisterPassableTrivial() &&
+             structDecl.getSelfType()) {
+    // Add an empty destructor if the struct is memory-only and does not have an
+    // explicit destructor. If one of the fields needs to be destroyed, then we
+    // synthesize an empty del function so that lifetime checking can handle
+    // field destruction.
+    if (structDecl
+            .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
+            .empty()) {
+      structOp.setDestructorAttr(
+          synthesizeEmptyDtor(shared, structOp, structDecl, *this));
+    }
+  }
+
+  // Look up move and copy constructors and record them.
+  if (!structOp.isRegisterPassable()) {
+    if (auto copyInitAttr = lookupCopyMoveInit(structDecl, shared,
+                                               SpecialFunctionKind::kCopyInit))
+      structOp.setCopyInitAttr(copyInitAttr);
+    if (auto moveInitAttr = lookupCopyMoveInit(structDecl, shared,
+                                               SpecialFunctionKind::kMoveInit))
+      structOp.setMoveInitAttr(moveInitAttr);
+  }
 
   /// This collects all the resolved struct fields.
   SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
@@ -2511,10 +2537,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
       continue;
 
-    // If any field of this struct has a destructor, then the struct needs
-    // one.
-    needsDtorForFields |=
-        ASTType(field.getType()).hasDestructor(fieldASTDecl.getLoc(), shared);
+    ASTType(field.getType()).hasDestructor(fieldASTDecl.getLoc(), shared);
 
     structFields.push_back({field, &fieldASTDecl});
   }
@@ -2537,27 +2560,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   if (structDecl.hasReferenceError)
     return success();
-
-  // Now that the struct body has been resolved, check to see if there is a
-  // destructor and install it into the StructDeclOp if so.
-  if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
-    // Check to see if we have an explicitly declared destructor.
-    structOp.setDestructorAttr(dtorAttr);
-  } else if (needsDtorForFields) {
-    // If one of the fields needs to be destroyed, then we synthesize an empty
-    // del function so that lifetime checking can handle field destruction.
-    structOp.setDestructorAttr(
-        synthesizeEmptyDtor(shared, structOp, structDecl, *this));
-  }
-  // Look up move and copy constructors and record them.
-  if (!structOp.isRegisterPassable()) {
-    if (auto copyInitAttr = lookupCopyMoveInit(structDecl, shared,
-                                               SpecialFunctionKind::kCopyInit))
-      structOp.setCopyInitAttr(copyInitAttr);
-    if (auto moveInitAttr = lookupCopyMoveInit(structDecl, shared,
-                                               SpecialFunctionKind::kMoveInit))
-      structOp.setMoveInitAttr(moveInitAttr);
-  }
 
   // Finally, verify conformance of inherited traits.
   return verifyConformance(structDecl, shared);
