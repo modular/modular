@@ -344,6 +344,10 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
       Type selfArgType = argTypes[selfArgNumber];
       ParsedArgument &selfArg = args[selfArgNumber];
 
+      // Don't check broken args, becaue we don't want redundant diagnostics.
+      if (selfArg.isErroneous)
+        return;
+
       // It ok if it exactly matches (typically with a specific convention).
       if (selfType.isEqualCanon(selfArgType))
         return;
@@ -356,26 +360,28 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
         if (selfArg.convention != ParsedArgument::kConventionUnspec &&
             selfArg.convention != ParsedArgument::kConventionBorrowed) {
           emitErrorLoc(
-              args[selfArgNumber].loc,
+              selfArg.loc,
               "!lit.ref 'self' must be passed with a borrowed convention");
+          selfArg.isErroneous = true;
           return;
         }
         if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
           emitErrorLoc(
-              args[selfArgNumber].loc,
+              selfArg.loc,
               "!lit.ref 'self' doesn't work for @register_passable types");
+          selfArg.isErroneous = true;
           return;
         }
         return; // ok!
       }
 
       // Otherwise, this is an unrecognized self type.
-      auto diag = emitErrorLoc(args[selfArgNumber].loc,
-                               "'self' argument must have type ")
+      auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ")
                   << selfType << " but actually has type "
                   << ASTType(argTypes[selfArgNumber]);
-      if (args[selfArgNumber].typeExpr)
-        diag << args[selfArgNumber].typeExpr->getRange();
+      selfArg.isErroneous = true;
+      if (selfArg.typeExpr)
+        diag << selfArg.typeExpr->getRange();
     };
 
     if (selfArgNumber >= ssize_t(argTypes.size())) {
@@ -1113,11 +1119,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 }
 
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
-/// it.
-static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
-                                            StringAttr argName,
-                                            ASTDecl &parentDecl,
-                                            ExprEmitter &emitter, SMLoc loc) {
+/// the variable declaration holding it.
+static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
+                                    ASTDecl &parentDecl, ExprEmitter &emitter,
+                                    SMLoc loc) {
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
 
@@ -1130,21 +1135,34 @@ static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
   if (varListType.isTypeCheckErrorType())
     return {};
 
+  // If this is a memory-only type, emit a VarLetDeclOp:  VaridicListMem needs a
+  // lifetime for its self accesses.  This also provides a user name for the
+  // argument.
+  auto mlirLoc = emitter.translateLocation(loc);
+  VarLetDeclOp varDecl =
+      emitter.emitVarLetDecl(argName, UnresolvedType::get(emitter.getContext()),
+                             mlirLoc, VarLetDeclKind::Implicit);
+
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
-  ValueDest ctorDest(EC_VarArgArgument);
+  ValueDest ctorDest(varDecl, EC_VarArgArgument);
   ASTExprAnd<AnyValue> ctorArg = {argValue, &srcExpr};
   CValue ctorResult = emitter.emitConstructorCall(
       varListType, ctorArg, &srcExpr, CallSyntax::kTypeCall, ctorDest);
-  if (!ctorResult)
+  if (!ctorResult) {
+    ctorDest.resetForError();
     return {};
+  }
 
-  SRValue varListRegVal = ctorResult.getIfSRValue();
-  assert(varListRegVal && "variadic lists are register_only types");
-
-  // Create a LetRegDeclOp so we have the original name of the argument.
-  return emitter.builder->create<LetRegDeclOp>(emitter.translateLocation(loc),
-                                               argName, varListRegVal);
+#if 0
+  if (!isMem) {
+    SRValue varListRegVal = ctorResult.getIfSRValue();
+    assert(varListRegVal && "variadic lists are register_only types");
+    return emitter.builder->create<LetRegDeclOp>(mlirLoc, argName,
+                                                 varListRegVal);
+  }
+#endif
+  return varDecl;
 }
 
 /// Create a mutable VarDecl for a function argument that captures its value.
@@ -1266,8 +1284,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // VarArg arguments are projected into a VariadicList.
     if (funcSignature.isVarArg(bbArg.getArgNumber())) {
-      auto declOp = makeVarArgLValueVarSlot(SRValue(bbArg), argName, decl,
-                                            emitter, argDecl.getLoc());
+      auto declOp = makeVarArgWrapper(SRValue(bbArg), argName, decl, emitter,
+                                      argDecl.getLoc());
       if (!declOp)
         return failure();
       setDecl(DeclIRValue(declOp));

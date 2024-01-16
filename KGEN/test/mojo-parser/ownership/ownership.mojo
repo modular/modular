@@ -654,9 +654,9 @@ fn test_or(a: MemExample) -> MemExample:
 # CHECK-SAME: [*"`mems"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, *"`mems">, borrow_in_mem> borrow)
 fn variadic_mems(*mems: MemExample):
-  # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 0>(%mems)
-  # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
+  # CHECK-NEXT: %mems_0 = lit.varlet.decl
+  # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 0>(%mems_0, %mems)
   pass
 
 # CHECK-LABEL: lit.func @"call_variadic_mems
@@ -709,11 +709,12 @@ fn variadic_field_sensitivity():
 # CHECK-SAME: [*"`mems"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<mut !MemExample, *"`mems">, byref> borrow)
 fn variadic_inout_mems(inout *mems: MemExample):
-  # CHECK-NEXT: %0 = lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 1>(%mems)
-  # CHECK-NEXT: %mems_0 = lit.letreg.decl "mems" = %0
+  # CHECK-NEXT: %mems_0 = lit.varlet.decl
+  # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 1>(%mems_0, %mems)
+  # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut %mems_0
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
-  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%mems_0, [[ZERO]])
+  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMM]], [[ZERO]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
@@ -735,6 +736,33 @@ fn call_variadic_inout_mems():
 
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+
+  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: lit.func @"variadic_inout_mems_iter
+fn variadic_inout_mems_iter(inout *mems: MemExample):
+  # Verify the iterator keeps the VariadicListMem alive.
+  # CHECK-NEXT: %mems_0 = lit.varlet.decl
+
+  # FIXME: This should not happen until after the element is dead.
+  # CHECK: lit.call {{.*}}__del__{{.*}}(%mems_0)
+
+  # CHECK: %iter = lit.varlet.decl
+  var iter = mems.__iter__()
+
+  # CHECK: %x = lit.varlet.decl
+  # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
+
+  # Iterator is destroyed as soon as we're done with it.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
+
+  # __next__ returns a Reference which needs to turn in to !lit.ref
+  # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[ELTREF]])
+  # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
+  let x : MemExample = iter.__next__()[]
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return

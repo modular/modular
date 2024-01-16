@@ -482,8 +482,7 @@ fn referencesDefaultArgumentFunction():
 
 # CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a: !kgen.variadic<!Int> borrow) vararg
 fn variadics(*a: Int):
-    # CHECK-NEXT: %[[LIST:.*]] = lit.call {{.*}}VariadicList{{.*}}__init__
-    # CHECK-NEXT: lit.letreg.decl "a" {{.*}}%[[LIST]]
+    # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     let size = len(a)
     let elt0 = a[0]
     let elt1 = a[1]
