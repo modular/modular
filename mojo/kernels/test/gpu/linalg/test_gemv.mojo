@@ -36,16 +36,16 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     var c_host_naive = Pointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host.store(i, i)
+        a_host[i] = i
 
     for i in range(K * N):
-        b_host.store(i, i + 1)
+        b_host[i] = i + 1
 
     for i in range(M * N):
-        c_host.store(i, 0)
+        c_host[i] = 0
 
     for i in range(M * N):
-        c_host_naive.store(i, 0)
+        c_host_naive[i] = 0
 
     let a_device = _malloc[Float32](M * K)
     let b_device = _malloc[Float32](K * N)

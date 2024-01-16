@@ -31,7 +31,7 @@ fn vec_func[
     let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if tid >= len:
         return
-    out.store(tid, op(in0.load(tid), in1.load(tid)))
+    out[tid] = op(in0[tid], in1[tid])
 
 
 # CHECK-LABEL: run_binary_add
@@ -49,8 +49,8 @@ fn run_binary_add(capture: Float32) raises:
     let out_host = Pointer[Float32].alloc(length)
 
     for i in range(length):
-        in0_host.store(i, i)
-        in1_host.store(i, 2)
+        in0_host[i] = i
+        in1_host[i] = 2
 
     let in0_device = _malloc[Float32](length)
     let in1_device = _malloc[Float32](length)

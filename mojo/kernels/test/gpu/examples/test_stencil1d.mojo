@@ -70,18 +70,18 @@ fn stencil1d_smem(
         BLOCK_DIM + 2, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    a_shared.store(lindex, a[tid])
+    a_shared[lindex] = a[tid]
     if ThreadIdx.x() == 0:
-        a_shared.store(lindex - 1, a[tid - 1])
-        a_shared.store(lindex + BLOCK_DIM, a[tid + BLOCK_DIM])
+        a_shared[lindex - 1] = a[tid - 1]
+        a_shared[lindex + BLOCK_DIM] = a[tid + BLOCK_DIM]
 
     barrier()
 
     if 0 < tid < arr_size - 1:
         b[tid] = (
-            coeff0 * a_shared.load(lindex - 1)
-            + coeff1 * a_shared.load(lindex)
-            + coeff2 * a_shared.load(lindex + 1)
+            coeff0 * a_shared[lindex - 1]
+            + coeff1 * a_shared[lindex]
+            + coeff2 * a_shared[lindex + 1]
         )
 
 

@@ -82,7 +82,7 @@ fn gelu_elementwise(buf: DTypePointer[DType.float32], len: Int):
         let offset = tid + idx[0]
         if offset >= len:
             return
-        buf.store(offset, gelu(buf.load(offset)))
+        buf[offset] = gelu(buf[offset])
 
     elementwise[1, simdwidthof[DType.float32](), func](
         StaticIntTuple[1](granularity)
@@ -105,7 +105,7 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
     if tid >= len:
         return
 
-    buf.store(tid, gelu(buf.load(tid)))
+    buf[tid] = gelu(buf[tid])
 
 
 # ===----------------------------------------------------------------------===#
@@ -178,7 +178,7 @@ fn gemm(
 
     @always_inline
     fn set_c(row: Int, col: Int, val: Float32):
-        c.store(row + col * m, val)
+        c[row + col * m] = val
 
     # Allocate B array into shared memory for tiling.
     let b_shared = stack_allocation[
@@ -207,7 +207,7 @@ fn gemm(
             b_val = get_b(tile_idx * TILE_SZ_RATIO + i, col + j)
         else:
             b_val = 0
-        b_shared.store(i * TILE_SZ_B + j, b_val)
+        b_shared[i * TILE_SZ_B + j] = b_val
 
         barrier()
 
@@ -222,10 +222,8 @@ fn gemm(
 
             # Compute the output element for each thread.
             for out_idx in range(TILE_SZ_B):
-                c_reg.store(
-                    out_idx,
-                    c_reg.load(out_idx)
-                    + a_reg * b_shared.load(idx * TILE_SZ_RATIO + out_idx),
+                c_reg[out_idx] += (
+                    a_reg * b_shared[idx * TILE_SZ_RATIO + out_idx]
                 )
         barrier()
 
@@ -313,7 +311,7 @@ fn block_reduce(val: Float32) -> Float32:
     let warp_sum = warp_sum_reduce(val)
 
     if lane == 0:
-        shared.store(warp, warp_sum)
+        shared[warp] = warp_sum
 
     barrier()
 

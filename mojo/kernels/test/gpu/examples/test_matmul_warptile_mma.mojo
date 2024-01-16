@@ -285,9 +285,7 @@ fn sgemm_warp_tiling_kernel[
                     )
                 ]
 
-                a_reg.offset(w_sub_row_idx).store(
-                    SIMD[a_type, 4](val0, val1, val2, val3)
-                )
+                a_reg[w_sub_row_idx] = SIMD[a_type, 4](val0, val1, val2, val3)
 
             # Populate registers for the whole warp tile (hence the for loop)
             # for A (loading values from shared memory).
@@ -316,7 +314,7 @@ fn sgemm_warp_tiling_kernel[
                     )
                 ]
 
-                b_reg.offset(w_sub_col_idx).store(SIMD[b_type, 2](val0, val1))
+                b_reg[w_sub_col_idx] = SIMD[b_type, 2](val0, val1)
 
             # Execute matmul at the warp tile level (sequentially loop over all
             # WMITER x WNITER sub-warp tiles of size MMA_M x MMA_N at the
@@ -371,25 +369,10 @@ fn sgemm_warp_tiling_kernel[
                 )
             else:
                 # Store result.
-                C_interim.store(
-                    row_cd0_cd1 * N + col_cd0,
-                    vec[0],
-                )
-
-                C_interim.store(
-                    row_cd0_cd1 * N + col_cd1,
-                    vec[1],
-                )
-
-                C_interim.store(
-                    row_cd2_cd3 * N + col_cd2,
-                    vec[2],
-                )
-
-                C_interim.store(
-                    row_cd2_cd3 * N + col_cd3,
-                    vec[3],
-                )
+                C_interim[row_cd0_cd1 * N + col_cd0] = vec[0]
+                C_interim[row_cd0_cd1 * N + col_cd1] = vec[1]
+                C_interim[row_cd2_cd3 * N + col_cd2] = vec[2]
+                C_interim[row_cd2_cd3 * N + col_cd3] = vec[3]
 
 
 # CHECK-LABEL: run_matmul_mma_warptiling
@@ -482,16 +465,16 @@ fn run_matmul_mma_warptiling() raises:
     var c_host_naive = Pointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host.store(i, i)
+        a_host[i] = i
 
     for i in range(K * N):
-        b_host.store(i, i + 1)
+        b_host[i] = i + 1
 
     for i in range(M * N):
-        c_host.store(i, 0)
+        c_host[i] = 0
 
     for i in range(M * N):
-        c_host_naive.store(i, 0)
+        c_host_naive[i] = 0
 
     let a_device = _malloc[Float32](M * K)
     let b_device = _malloc[Float32](K * N)

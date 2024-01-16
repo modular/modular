@@ -35,7 +35,7 @@ fn copy_via_shared(
     memory.async_copy_commit_group()
     memory.async_copy_wait_group(0)
 
-    dst.store(thread_id, mem_buff.load(thread_id))
+    dst[thread_id] = mem_buff[thread_id]
 
 
 # CHECK-LABEL: run_copy_via_shared
@@ -45,8 +45,8 @@ fn run_copy_via_shared() raises:
     let out_data = gpu_host.memory._malloc_managed[DType.float32](16)
 
     for i in range(16):
-        in_data.store(i, i + 1)
-        out_data.store(i, 0)
+        in_data[i] = i + 1
+        out_data[i] = 0
 
     let copy_via_shared_gpu = gpu_host.Function[
         fn (

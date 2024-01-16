@@ -109,7 +109,7 @@ fn matmul_sram(
             ) else 0.0
         else:
             a_val = a[row, offset + localCol] if row < M else 0.0
-        a_shared.store(localRow * tile_size + localCol, a_val)
+        a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         let b_val: SIMD[DType.float32, 1]
@@ -121,7 +121,7 @@ fn matmul_sram(
             ) else 0.0
         else:
             b_val = b[offset + localRow, col] if col < N else 0.0
-        b_shared.store(localRow * tile_size + localCol, b_val)
+        b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
 

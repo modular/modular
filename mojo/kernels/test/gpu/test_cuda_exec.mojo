@@ -53,8 +53,8 @@ fn run_vec_add() raises:
     let out_host = Pointer[Float32].alloc(length)
 
     for i in range(length):
-        in0_host.store(i, i)
-        in1_host.store(i, 2)
+        in0_host[i] = i
+        in1_host[i] = 2
 
     let in0_device = _malloc[Float32](length)
     let in1_device = _malloc[Float32](length)

@@ -87,7 +87,7 @@ fn scatter_nd_gpu[
 
     # Start copying appropriate amount of elements.
     for i in range(num_updates_elements):
-        output_data_base.store(i, updates_data_base.load(i))
+        output_data_base[i] = updates_data_base[i]
 
 
 # TODO: Extend for using reduce function if needed.

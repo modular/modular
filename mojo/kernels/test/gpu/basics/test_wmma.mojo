@@ -176,17 +176,17 @@ fn run_mma_fp32_tf32(
 
     for i in range(M * K):
         let val = random_si64(rand_min, rand_max)
-        a_host.store(i, val.cast[DType.float32]())
-        a_host_ref.store(i, val.cast[DType.float32]())
+        a_host[i] = val.cast[DType.float32]()
+        a_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(K * N):
         let val = random_si64(rand_min, rand_max)
-        b_host.store(i, val.cast[DType.float32]())
-        b_host_ref.store(i, val.cast[DType.float32]())
+        b_host[i] = val.cast[DType.float32]()
+        b_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(M * N):
-        c_host.store(i, 0)
-        c_host_ref.store(i, 0)
+        c_host[i] = 0
+        c_host_ref[i] = 0
 
     let a_device = _malloc[Float32](M * K)
     let b_device = _malloc[Float32](K * N)
@@ -350,17 +350,17 @@ fn run_mma_fp32_fp16(
 
     for i in range(M * K):
         let val = random_si64(rand_min, rand_max)
-        a_host.store(i, val.cast[DType.float16]())
-        a_host_ref.store(i, val.cast[DType.float32]())
+        a_host[i] = val.cast[DType.float16]()
+        a_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(K * N):
         let val = random_si64(rand_min, rand_max)
-        b_host.store(i, val.cast[DType.float16]())
-        b_host_ref.store(i, val.cast[DType.float32]())
+        b_host[i] = val.cast[DType.float16]()
+        b_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(M * N):
-        c_host.store(i, 0)
-        c_host_ref.store(i, 0)
+        c_host[i] = 0
+        c_host_ref[i] = 0
 
     let a_device = _malloc[Float16](M * K)
     let b_device = _malloc[Float16](K * N)
@@ -524,17 +524,17 @@ fn run_mma_fp16_fp16(
 
     for i in range(M * K):
         let val = random_si64(rand_min, rand_max)
-        a_host.store(i, val.cast[DType.float16]())
-        a_host_ref.store(i, val.cast[DType.float32]())
+        a_host[i] = val.cast[DType.float16]()
+        a_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(K * N):
         let val = random_si64(rand_min, rand_max)
-        b_host.store(i, val.cast[DType.float16]())
-        b_host_ref.store(i, val.cast[DType.float32]())
+        b_host[i] = val.cast[DType.float16]()
+        b_host_ref[i] = val.cast[DType.float32]()
 
     for i in range(M * N):
-        c_host.store(i, 0)
-        c_host_ref.store(i, 0)
+        c_host[i] = 0
+        c_host_ref[i] = 0
 
     let a_device = _malloc[Float16](M * K)
     let b_device = _malloc[Float16](K * N)
