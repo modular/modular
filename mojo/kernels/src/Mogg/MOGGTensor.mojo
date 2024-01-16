@@ -107,7 +107,7 @@ struct Tensor[
         ptr: DTypePointer[type],
         shape: IntList,
         strides: IntList,
-        ref_count_ptr: Pointer[SIMD[DType.index, 1]],
+        ref_count_ptr: Pointer[Scalar[DType.index]],
     ):
         self.data = ptr
         self.shape = IntList[static_shape](shape)
@@ -124,7 +124,7 @@ struct Tensor[
             _ = self.storage_ref_count.increment()
         else:
             self.storage_ref_count = UnsafeRefCounter[DType.index](
-                Pointer[SIMD[DType.index, 1]]()
+                Pointer[Scalar[DType.index]]()
             )
 
     @mogg_tensor_copy_constructor()
@@ -137,7 +137,7 @@ struct Tensor[
         else:
             # Create an empty refcount if the memory isn't owned.
             self.storage_ref_count = UnsafeRefCounter[DType.index](
-                Pointer[SIMD[DType.index, 1]]()
+                Pointer[Scalar[DType.index]]()
             )
 
         self.data = existing.data
