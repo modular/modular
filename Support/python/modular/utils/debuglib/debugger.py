@@ -43,33 +43,35 @@ def _load_lldb() -> Any:
     return lldb
 
 
+# We need this to ensure the lldb module is loaded automatically for all
+# consumers that want to easily access its `static` constructors.
+_load_lldb()
+
+
 def _setup_singleton_debugger() -> Optional[SBDebugger]:
     """Creates a working global debugger instance and caches it."""
     global _debugger
     if _debugger is None and lldb is not None:
         _debugger = lldb.SBDebugger.Create(False)  # source_init_files=False
 
-    if _debugger is not None:
-        # This sets up the debugger for running in the test environment.
-        if init_file := os.environ.get("LLDB_TEST_INIT_FILE", None):
-            _debugger.HandleCommand(f"command source {init_file}")
+        if _debugger is not None:
+            # This sets up the debugger for running in the test environment.
+            if init_file := os.environ.get("LLDB_TEST_INIT_FILE", None):
+                _debugger.HandleCommand(f"command source {init_file}")
 
-        # This is needed to ensure that we wait for the debugger to stop any
-        # time we issue stepping commands.
-        _debugger.SetAsync(False)
+            # This is needed to ensure that we wait for the debugger to stop any
+            # time we issue stepping commands.
+            _debugger.SetAsync(False)
 
-        cfg = configparser.ConfigParser()
-        cfg.read(
-            os.path.join(os.environ["MODULAR_DERIVED_PATH"], "modular.cfg")
-        )
-        plugin_path = cfg.get(section="mojo", option="lldb_plugin_path").strip(
-            ";"
-        )
-        _debugger.HandleCommand(f"plugin load {plugin_path}")
+            cfg = configparser.ConfigParser()
+            cfg.read(
+                os.path.join(os.environ["MODULAR_DERIVED_PATH"], "modular.cfg")
+            )
+            plugin_path = cfg.get(
+                section="mojo", option="lldb_plugin_path"
+            ).strip(";")
+            _debugger.HandleCommand(f"plugin load {plugin_path}")
     return _debugger
-
-
-_load_lldb()
 
 
 def get_debugger() -> SBDebugger:
