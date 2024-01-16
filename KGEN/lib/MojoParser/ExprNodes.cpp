@@ -2993,6 +2993,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       inputParamDecls, {}, functionType, inputConventions, effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, defaultPosArgs, defaultPosParams,
+                          // TODO: wire in kw-only args/params in mojo
+                          /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
                           implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {

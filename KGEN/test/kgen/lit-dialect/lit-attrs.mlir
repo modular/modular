@@ -1,11 +1,17 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw], [13 : index, 17 : i64], [3.140000e+00 : f32], 2>
-"some.op"() {metadata = #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw],  [13 : index, 17: i64], [3.14: f32], 2>} : () -> ()
+// CHECK: #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw], [13 : index], [3.140000e+00 : f32], [17 : i64], [], 2>
+"some.op"() {metadata = #lit.fn_metadata<
+  ["someRef", "v"], [pos, kw],
+  ["someParam", "paramWithDefault"], [pos, pos_or_kw],
+  [13 : index], [3.14: f32],
+  [17 : i64], [],
+  2
+>} : () -> ()
 
-// CHECK: #lit.fn_metadata<[], [], [], [], [], [], 0>
-"some.op"() {metadata = #lit.fn_metadata<[], [], [], [], [], [], 0>} : () -> ()
+// CHECK: #lit.fn_metadata<[], [], [], [], [], [], [], [], 0>
+"some.op"() {metadata = #lit.fn_metadata<[], [], [], [], [], [], [], [], 0>} : () -> ()
 
 // CHECK: #kgen.none : !kgen.none
 "a"() {a = #kgen.none : !kgen.none} : () -> ()

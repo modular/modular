@@ -473,13 +473,16 @@ static ParseResult parseLITFunctionSignature(
 
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<PassingKind> paramPassingKinds;
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
-                                 paramPassingKinds, defaultPosParams))
+                                 paramPassingKinds, defaultPosParams,
+                                 defaultKwOnlyParams))
     return failure();
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
+  SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ValueInputConvention> inputConventions;
 
   PassingKindParser passingKindParser(p);
@@ -519,8 +522,12 @@ static ParseResult parseLITFunctionSignature(
             p, defaultVal, arg.type,
             SignatureType::hasAddress(inputConventions.back()))))
       return failure();
-    if (defaultVal)
-      defaultPosArgs.emplace_back(defaultVal);
+    if (defaultVal) {
+      if (passingKindParser.isCurrentKwOnly())
+        defaultKwOnlyArgs.emplace_back(defaultVal);
+      else
+        defaultPosArgs.emplace_back(defaultVal);
+    }
 
     argTypes.push_back(arg.type);
     return success();
@@ -536,7 +543,8 @@ static ParseResult parseLITFunctionSignature(
 
   auto metadata = FnMetadataAttr::get(
       p.getContext(), argNames, argPassingKinds, paramNames, paramPassingKinds,
-      defaultPosArgs, defaultPosParams, lifetimeDecls.size());
+      defaultPosArgs, defaultPosParams, defaultKwOnlyArgs, defaultKwOnlyParams,
+      lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -573,7 +581,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printOptionalParameterSpec(p, inputParams.drop_front(lifetimeDecls.size()),
                              resultParams, signature.getParamNames(),
                              signature.getParamPassingKinds(),
-                             signature.getDefaultPosParams(), evaluator);
+                             signature.getDefaultPosParams(),
+                             signature.getDefaultKwOnlyParams(), evaluator);
 
   // Substitute input and result parameters when printing default arguments.
   ArrayRef<TypedAttr> defaultPosArgs = signature.getDefaultPosArgs();
@@ -581,6 +590,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   size_t numInputs = signature.getNumInputs();
   size_t defaultPosEnd = countNumPositional(argPassingKinds);
   size_t defaultPosStart = defaultPosEnd - defaultPosArgs.size();
+
+  ArrayRef<TypedAttr> defaultKwOnlyArgs = signature.getDefaultKwOnlyArgs();
+  size_t defaultKwOnlyEnd = numInputs - countNumImplicitKinds(argPassingKinds);
+  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyArgs.size();
 
   PassingKindPrinter passingKindPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
@@ -616,6 +629,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
                              defaultPosArgs[i - defaultPosStart])));
+    } else if (i >= defaultKwOnlyStart && i < defaultKwOnlyEnd) {
+      p << " = ";
+      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
+                             defaultKwOnlyArgs[i - defaultKwOnlyStart])));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -952,12 +969,14 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
-                                 paramPassingKinds, defaultPosParams))
+                                 paramPassingKinds, defaultPosParams,
+                                 defaultKwOnlyParams))
     return failure();
   if (!resultParams.empty())
     return p.emitError(loc, "expected no result parameters");
@@ -982,7 +1001,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 
   auto sig = TypeSignatureType::remapToSignature(
       [&] { return p.emitError(loc); }, inputParams, paramNames,
-      paramPassingKinds, defaultPosParams, paramVarArg);
+      paramPassingKinds, defaultPosParams, defaultKwOnlyParams, paramVarArg);
   if (!sig)
     return failure();
   signature = TypeAttr::get(sig);
@@ -995,9 +1014,9 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<TypeLineageAttr> parentTypes) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamNames(),
-                             sig.getParamPassingKinds(),
-                             sig.getDefaultPosParams(), evaluator);
+  printOptionalParameterSpec(
+      p, inputParamDecls, {}, sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(), evaluator);
   if (sig.getParamVarArg())
     p << " param_vararg";
   if (!parentTypes.empty()) {
@@ -1031,12 +1050,21 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   }
 
   // Compute the resultant signature.
-  size_t defaultIdx =
-      sig.getNumInputParams() - sig.getDefaultPosParams().size();
+  ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
+  ArrayRef<TypedAttr> defaultsPos = sig.getDefaultPosParams();
+  size_t numInputs = sig.getNumInputParams();
+  size_t defaultPosEnd = countNumPositional(passingKinds);
+  size_t defaultPosStart = defaultPosEnd - defaultsPos.size();
+
+  ArrayRef<TypedAttr> defaultsKwOnly = sig.getDefaultKwOnlyParams();
+  size_t defaultKwOnlyEnd = numInputs - countNumImplicitKinds(passingKinds);
+  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultsKwOnly.size();
+
   SmallVector<Type> newParamTypes;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
+  SmallVector<TypedAttr> newKwOnlyDefaults;
   bool paramVarArg = false;
   for (auto [i, value, type, name, kind] :
        llvm::enumerate(paramValues, sig.getInputParamTypes(),
@@ -1045,15 +1073,19 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       newParamTypes.push_back(type);
       newParamNames.push_back(name);
       newPassingKinds.push_back(kind);
-      if (i >= defaultIdx)
-        newPosDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
+
+      if (i >= defaultPosStart && i < defaultPosEnd)
+        newPosDefaults.push_back(defaultsPos[i - defaultPosStart]);
+      else if (i >= defaultKwOnlyStart && i < defaultKwOnlyEnd)
+        newKwOnlyDefaults.push_back(defaultsKwOnly[i - defaultKwOnlyStart]);
+
       if (sig.isVarArg(i))
         paramVarArg = true;
     }
   }
-  auto newSig =
-      TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
-                             newPassingKinds, newPosDefaults, paramVarArg);
+  auto newSig = TypeSignatureType::get(
+      getContext(), newParamTypes, newParamNames, newPassingKinds,
+      newPosDefaults, newKwOnlyDefaults, paramVarArg);
   return DeclRefType::get(symbol, paramValues,
                           MetaTypeType::get(symbol, paramValues, newSig));
 }

@@ -32,6 +32,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class ParameterEvaluator;
 class ParameterExprArrayAttr;
+enum class ValueInputConvention : uint32_t;
 
 namespace LIT {
 class PassingKindArrayAttr;
@@ -89,7 +90,8 @@ parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                            ParamDeclArrayAttr &resultParamDecls,
                            SmallVectorImpl<StringAttr> &paramNames,
                            SmallVectorImpl<PassingKind> &paramPassingKinds,
-                           SmallVectorImpl<TypedAttr> &defaultPosParams);
+                           SmallVectorImpl<TypedAttr> &defaultPosParams,
+                           SmallVectorImpl<TypedAttr> &defaultKwOnlyParams);
 
 /// Print a parameter specification in a lit op. A ParameterEvaluator is
 /// necessary to substitute parameters into parametric parameters.
@@ -99,6 +101,7 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<StringAttr> paramNames,
                                 ArrayRef<PassingKind> paramPassingKinds,
                                 ArrayRef<TypedAttr> defaultPosParams,
+                                ArrayRef<TypedAttr> defaultKwOnlyParams,
                                 ParameterEvaluator &evaluator);
 
 /// Parse a parameter signature (input/result types with optional default
@@ -109,7 +112,8 @@ parseOptionalParamSignature(AsmParser &p,
                             SmallVectorImpl<Type> &resultParamTypes,
                             SmallVectorImpl<StringAttr> &paramNames,
                             SmallVectorImpl<PassingKind> &paramPassingKinds,
-                            SmallVectorImpl<TypedAttr> &defaultPosParams);
+                            SmallVectorImpl<TypedAttr> &defaultPosParams,
+                            SmallVectorImpl<TypedAttr> &defaultKwOnlyParams);
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
@@ -117,7 +121,8 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
                                  ArrayRef<Type> resultParamTypes,
                                  ArrayRef<StringAttr> paramNames,
                                  ArrayRef<PassingKind> paramPassingKinds,
-                                 ArrayRef<TypedAttr> defaultPosParams);
+                                 ArrayRef<TypedAttr> defaultPosParams,
+                                 ArrayRef<TypedAttr> defaultKwOnlyParams);
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
@@ -151,6 +156,9 @@ public:
 
   /// Return true if the parser is currently parsing an implicit parameter.
   bool isCurrentImplicit() const { return foundImplicit; }
+
+  /// Return true if the parser is currently parsing a keyword-only parameter.
+  bool isCurrentKwOnly() const { return foundStar && !foundImplicit; }
 
 private:
   /// Return the number of positional-only, positional-or-keyword, keyword-only
@@ -228,6 +236,19 @@ struct MangledSymbol {
 
 /// Print a mangled symbol.
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
+
+//===----------------------------------------------------------------------===//
+// Verifier helpers
+//===----------------------------------------------------------------------===//
+
+/// Verify the number and types of parameter or argument defaults, taking into
+/// account their input conventions if applicable.
+LogicalResult verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
+                             ArrayRef<TypedAttr> defaultsPos,
+                             ArrayRef<TypedAttr> defaultsKwOnly,
+                             ArrayRef<PassingKind> passingKinds,
+                             ArrayRef<Type> types, StringRef argOrParam,
+                             ArrayRef<ValueInputConvention> convs = {});
 
 } // namespace LIT
 } // namespace KGEN

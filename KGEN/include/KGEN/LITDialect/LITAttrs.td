@@ -37,10 +37,9 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let summary = "Function metadata.";
   let description = [{
     The `#lit.fn_metadata` attribute contains additional information about a
-    function, such as its argument calling conventions (pass-by-value or
-    pass-by-reference), any default argument values, the argument names and
-    kinds (e.g. positional or keyword-only), parameter names, and the default
-    parameter values.
+    function, such as the argument/parameter names and kinds (e.g. positional or
+    keyword-only) and the default values for positional and keyword-only
+    arguments/parameters.
 
     Example:
 
@@ -63,15 +62,19 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPosArgs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPosParams,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnlyArgs,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnlyParams,
     "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($argNames^          `]`)? `,`
-        `[` (`]`) : ($argPassingKinds^   `]`)? `,`
-        `[` (`]`) : ($paramNames^        `]`)? `,`
-        `[` (`]`) : ($paramPassingKinds^ `]`)? `,`
-        `[` (`]`) : ($defaultPosArgs^    `]`)? `,`
-        `[` (`]`) : ($defaultPosParams^  `]`)? `,`
+    `<` `[` (`]`) : ($argNames^            `]`)? `,`
+        `[` (`]`) : ($argPassingKinds^     `]`)? `,`
+        `[` (`]`) : ($paramNames^          `]`)? `,`
+        `[` (`]`) : ($paramPassingKinds^   `]`)? `,`
+        `[` (`]`) : ($defaultPosArgs^      `]`)? `,`
+        `[` (`]`) : ($defaultPosParams^    `]`)? `,`
+        `[` (`]`) : ($defaultKwOnlyArgs^   `]`)? `,`
+        `[` (`]`) : ($defaultKwOnlyParams^ `]`)? `,`
         $numImplicitLifetimeDecls
     `>`
   }];

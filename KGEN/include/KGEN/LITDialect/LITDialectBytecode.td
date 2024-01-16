@@ -24,6 +24,7 @@ def TypeSignatureType : DialectType<(type
   StringAttrArray:$paramNames,
   EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultPosParams,
+  TypedAttrArray:$defaultKwOnlyParams,
   Bool:$paramVarArg
 )>;
 
@@ -89,6 +90,8 @@ def FnMetadataAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultPosArgs,
   TypedAttrArray:$defaultPosParams,
+  TypedAttrArray:$defaultKwOnlyArgs,
+  TypedAttrArray:$defaultKwOnlyParams,
   VarInt:$numImplicitLifetimeDecls
 )>;
 

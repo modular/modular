@@ -100,24 +100,26 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     ArrayRefParameter<"StringAttr">:$paramNames,
     ArrayRefParameter<"PassingKind">:$paramPassingKinds,
     ArrayRefParameter<"TypedAttr">:$defaultPosParams,
+    ArrayRefParameter<"TypedAttr">:$defaultKwOnlyParams,
     "bool":$paramVarArg
   );
 
   let assemblyFormat = [{
-    `` custom<TypeSignature>($paramTypes, $paramNames, $paramPassingKinds,
-                             $defaultPosParams, $paramVarArg)
+    `` custom<TypeSignature>(
+      $paramTypes, $paramNames, $paramPassingKinds,
+      $defaultPosParams, $defaultKwOnlyParams, $paramVarArg)
   }];
 
   let builders = [
     TypeBuilder<(ins), [{
       using std::nullopt;
-      return $_get($_ctxt, nullopt, nullopt, nullopt, nullopt, false);
+      return $_get($_ctxt, nullopt, nullopt, nullopt, nullopt, nullopt, false);
     }]>,
     TypeBuilder<(ins "ArrayRef<Type>":$inputParams,
                      "ArrayRef<StringAttr>":$paramNames,
                      "ArrayRef<PassingKind>":$passingKinds), [{
-      return $_get($_ctxt, inputParams, paramNames, passingKinds, std::nullopt,
-                   false);
+      return $_get($_ctxt, inputParams, paramNames, passingKinds,
+                   std::nullopt, std::nullopt, false);
     }]>
   ];
 
@@ -141,7 +143,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
       function_ref<InFlightDiagnostic()> emitError,
       ParamDeclArrayAttr paramDecls, ArrayRef<StringAttr> paramNames,
       ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPosParams,
-      bool paramVarArg);
+      ArrayRef<TypedAttr> defaultKwOnlyParams, bool paramVarArg);
   }];
 }
 

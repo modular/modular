@@ -136,8 +136,16 @@ lit.func @slashAfterStar(%a: index, *, |, %b: index) {
 
 // -----
 
-// expected-error @below {{'lit.func' expected parameter with default value}}
-lit.func @default_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
+// expected-error @below {{'lit.func' expected positional parameter with default value}}
+lit.func @default_pos_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
+  %0 = kgen.param.constant: none = <#kgen.none>
+  lit.end_func
+}
+
+// -----
+
+// expected-error @below {{'lit.func' expected keyword-only parameter with default value}}
+lit.func @default_kw_only_params<a: dtype, b: dtype = f32, *, b: dtype = f16, w: scalar<si32>>() attributes {isParametric} {
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.end_func
 }
