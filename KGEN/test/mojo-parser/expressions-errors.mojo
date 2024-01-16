@@ -82,6 +82,9 @@ fn test_func_type():
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
 
+fn mutArg(a: Int):
+  a = a  # expected-error {{expression must be mutable in assignment}}
+
 fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
