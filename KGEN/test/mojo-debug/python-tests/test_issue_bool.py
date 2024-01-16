@@ -7,8 +7,8 @@
 from LLDBTestBase import LLDBTestBase
 
 
-class TestIssueBool(LLDBTestBase):
-    def test(self):
+class TestBool(LLDBTestBase):
+    def test_bool(self):
         """
         There's no SB API for getting the bit size of a type, but the byte size
         should be 1.
