@@ -324,6 +324,12 @@ fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
+@mogg_register("uint64")
+@export
+fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint64.value
+
+
 @mogg_register("int64")
 @export
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
