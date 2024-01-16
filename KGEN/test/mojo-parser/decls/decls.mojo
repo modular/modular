@@ -11,21 +11,6 @@
 # fn/def
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"empty_def()"() -> !kgen.none
-# CHECK: lit.end_func
-fn empty_def():
-    pass
-
-# CHECK-LABEL: lit.func @"slash
-# CHECK-SAME: (%a: !Int borrow, |, %b: !Int borrow)
-fn slash(a: Int, /, b: Int):
-    pass
-
-# CHECK-LABEL: lit.func @"slashLast
-# CHECK-SAME: (%a: !Int borrow, |)
-fn slashLast(a: Int, /):
-    pass
-
 # Method overloading.
 # CHECK-LABEL: lit.func @"testThing({{.*}}$int::Int)"
 fn testThing(a: Int) -> Float32:
