@@ -997,8 +997,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
-  attrs.set(funcOp.getResultParamsAttrName(),
-            ParamDeclArrayAttr::get(getContext(), {}));
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Now that the FunctionType is set to the pretty type that includes implicit

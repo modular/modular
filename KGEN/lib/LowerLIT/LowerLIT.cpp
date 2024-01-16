@@ -174,15 +174,13 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       auto newOperands =
           castCallOperands(call.getOperands(), calleeType, call.getLoc(), b);
       b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(),
-                                         call.getCallee(),
-                                         call.getParamDeclsAttr(), newOperands);
+                                         call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::CallParamOp>(op)) {
       auto calleeType = cast<SignatureType>(call.getCallee().getType());
       auto newOperands =
           castCallOperands(call.getOperands(), calleeType, call.getLoc(), b);
-      b.replaceOpWithNewOp<KGEN::CallParamOp>(
-          call, call.getResultTypes(), call.getCallee(),
-          call.getParamDeclsAttr(), newOperands);
+      b.replaceOpWithNewOp<KGEN::CallParamOp>(call, call.getResultTypes(),
+                                              call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::CallSignatureOp>(op)) {
       auto calleeType = cast<SignatureType>(call.getCallee().getType());
       // Cast the arguments, but not the callee.
@@ -369,7 +367,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         gen.getLoc(), gen.getPreElaborationNameAttr(), TypeAttr::get(signature),
         newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
-        gen.getResultParamsAttr(), gen.getExportKindAttr(),
+        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getExportKindAttr(),
         gen.getPreCompiledModuleRefAttr(), gen.getLinkageNameAttr());
   } else {
     // If the function has an alias name, rename it.
@@ -383,7 +381,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
         newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
-        gen.getResultParamsAttr(), gen.getConstraintsAttr(),
+        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getConstraintsAttr(),
         gen.getDecoratorsAttr(), gen.getInlineLevelAttr(),
         gen.getExportKindAttr(), gen.getLLVMMetadata(),
         PreservedAttr::get(TypeAttr::get(signature)));

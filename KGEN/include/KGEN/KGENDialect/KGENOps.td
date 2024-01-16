@@ -332,6 +332,13 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   );
   let results = (outs Variadic<AnyType>:$results);
 
+  let builders = [
+    OpBuilder<(ins "TypeRange":$types, "SymbolConstantAttr":$callee,
+                   "ValueRange":$operands), [{
+      build($_builder, $_state, types, callee, std::nullopt, operands);
+    }]>
+  ];
+
   let assemblyFormat = [{
     custom<CallOp>($callee, $paramDecls, $operands, type($operands),
                    type($results)) attr-dict
@@ -376,6 +383,13 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
     KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$types, "TypedAttr":$callee,
+                   "ValueRange":$operands), [{
+      build($_builder, $_state, types, callee, std::nullopt, operands);
+    }]>
+  ];
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) `(` $operands `)`

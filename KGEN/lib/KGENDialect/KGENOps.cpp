@@ -770,8 +770,7 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 
 void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
                                    SymbolConstantAttr callee) {
-  b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee,
-                               ArrayRef<ParamDeclAttr>(), getOperands());
+  b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
 }
 
 //===----------------------------------------------------------------------===//

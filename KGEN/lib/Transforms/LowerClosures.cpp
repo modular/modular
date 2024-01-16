@@ -132,7 +132,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
     b.setLoc(callLoc);
   auto call = b.create<CallOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
-      ArrayRef<ParamDeclAttr>(), captures);
+      captures);
   op.replaceAllUsesWith(call);
   op.erase();
 
@@ -268,7 +268,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
           origSig.getInputConventions());
       auto newCall = b.create<CallOp>(
           call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
-          ArrayRef<ParamDeclAttr>(), call.getOperands());
+          call.getOperands());
       call.replaceAllUsesWith(newCall);
       call.erase();
 
