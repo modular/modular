@@ -1625,7 +1625,7 @@ struct NDBuffer[
 
         @unroll
         for i in range(m):
-            res.data.store(i, self.data.load(i) * rhs.data.load(i))
+            res[i] = self.data.load(i) * rhs.data.load(i)
 
         return res
 
@@ -1651,7 +1651,7 @@ struct NDBuffer[
 
         @unroll
         for i in range(m):
-            res.data.store(i, self.data.load(i) + rhs.data.load(i).cast[type]())
+            res[i] = self[i] + rhs[i].cast[type]()
 
         return res
 

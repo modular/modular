@@ -26,11 +26,9 @@ fn strsv[
 
     while True:
         for j in range(simd_width):
-            let x_j = x_ptr.load(j)
+            let x_j = x_ptr[j]
             for i in range(j + 1, simd_width):
-                x_ptr.store(
-                    i, x_j.fma(-L_ptr.load(i + j * size), x_ptr.load(i))
-                )
+                x_ptr[i] = x_j.fma(-L_ptr[i + j * size], x_ptr[i])
 
         n -= simd_width
         if n <= 0:
@@ -41,8 +39,8 @@ fn strsv[
         var x_vec: SIMD[DType.float32, simd_width] = 0.0
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
-            x_vec = x_ptr.load(i)
-            x_solved.simd_store[simd_width](i * simd_width, x_vec)
+            x_vec = x_ptr[i]
+            x_solved.simd_store(i * simd_width, x_vec)
 
         x_ptr += simd_width
         L_ptr += simd_width
