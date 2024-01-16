@@ -77,10 +77,20 @@ fn _get_start_indices_of_nth_subvolume[
     return out ^
 
 
+fn _static_strides_from_shape[static_shape: DimList]() -> DimList:
+    @parameter
+    if len(static_shape) == 0:
+        return DimList()
+    else:
+        # Just ensure it is using stack memory for now
+        # TODO: Calculate the static strides.
+        return DimList.create_unknown[len(static_shape)]()
+
+
 struct Tensor[
     type: DType,
     static_shape: DimList = DimList(),
-    static_strides: DimList = DimList(),
+    static_strides: DimList = _static_strides_from_shape[static_shape](),
     MOGG_input_lambda: Optional[
         fn[
             _w: Int, _t: DType, _v: DimList
@@ -100,6 +110,39 @@ struct Tensor[
     var strides: IntList[static_strides]
     var dyn_rank: Int
     var storage_ref_count: UnsafeRefCounter[DType.index]
+
+    # Empty strides...
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[type],
+        shape: IntList,
+        ref_count_ptr: Pointer[Scalar[DType.index]],
+    ):
+        self.data = ptr
+        self.shape = IntList[static_shape](shape)
+        self.strides = IntList[static_strides](shape)
+        self.dyn_rank = len(shape)
+
+        var stride = 1
+
+        # Walk backwards to compute the fully contiguous strides.
+        for i in range(len(self.shape) - 1, -1, -1):
+            self.strides._unsafe_set_dim(i, stride)
+            stride *= self.shape[i]
+
+        # Increment the refcount if we own the memory otherwise create an
+        # empty counter.
+        @parameter
+        if Self._OWNED_MEMORY:
+            self.storage_ref_count = UnsafeRefCounter[DType.index](
+                ref_count_ptr
+            )
+            _ = self.storage_ref_count.increment()
+        else:
+            self.storage_ref_count = UnsafeRefCounter[DType.index](
+                Pointer[Scalar[DType.index]]()
+            )
 
     @always_inline
     fn __init__(
@@ -264,8 +307,8 @@ struct Tensor[
         self._input_fusion_hook()
 
         @parameter
-        if MOGG_input_lambda:
-            alias func = MOGG_input_lambda.value()
+        if Self.MOGG_input_lambda:
+            alias func = Self.MOGG_input_lambda.value()
             return func[simd_width, type, index.static_values](index)
         else:
             return self._simd_load_internal[simd_width](index)

@@ -16,16 +16,26 @@ from MOGGTensor import Tensor
 @export
 fn empty_tensor[
     type: DType,
+](shape: IntList) -> Tensor[type, shape.static_values,]:
+    let ptr = DTypePointer[type].alloc(shape.nelems())
+    let ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    ref_cnt[0] = 0
+    return Tensor[type, shape.static_values](ptr, shape, ref_cnt)
+
+
+@mogg_tensor_allocator()
+@no_inline
+@export
+fn empty_strided_tensor[
+    type: DType,
 ](shape: IntList, strides: IntList) -> Tensor[
-    type,
-    shape.static_values,
-    strides.static_values,
+    type, shape.static_values, strides.static_values
 ]:
     let ptr = DTypePointer[type].alloc(shape.nelems())
     let ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values, strides.static_values](
-        ptr, shape, strides, ref_cnt
+        ptr, shape, ref_cnt
     )
 
 
@@ -79,10 +89,8 @@ fn to_tensor[
 
 @mogg_register_override("mo.add", 1000)
 @export
-fn my_add_with_fusion(
-    x: Tensor, y: Tensor
-) -> Tensor[x.type, x.static_shape, x.static_strides]:
-    var out = empty_tensor[x.type](x.shape, x.strides)
+fn my_add_with_fusion(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
 
     x.enable_fusion()
     y.enable_fusion()
@@ -102,8 +110,8 @@ fn my_add_with_fusion(
 @export
 fn my_sub_without_fusion(
     x: Tensor, y: Tensor
-) -> Tensor[x.type, x.static_shape, x.static_strides]:
-    var out = empty_tensor[x.type](x.shape, x.strides)
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
 
     @parameter
     @always_inline
@@ -119,8 +127,8 @@ fn my_sub_without_fusion(
 @export
 fn unary_op_with_fusion(
     x: Tensor,
-) -> Tensor[x.type, x.static_shape, x.static_strides]:
-    var out = empty_tensor[x.type](x.shape, x.strides)
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
 
     x.enable_fusion()
     out.enable_fusion()
@@ -138,8 +146,8 @@ fn unary_op_with_fusion(
 @export
 fn unary_op_without_fusion(
     x: Tensor,
-) -> Tensor[x.type, x.static_shape, x.static_strides]:
-    var out = empty_tensor[x.type](x.shape, x.strides)
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
 
     @parameter
     @always_inline
