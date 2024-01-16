@@ -2275,6 +2275,7 @@ struct ConvDirectNHWC[
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 fn pack_filter_shape_impl[
     filter_type: DType
 ](R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> StaticIntTuple[5]:
