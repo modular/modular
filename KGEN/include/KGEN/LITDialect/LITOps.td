@@ -821,33 +821,6 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// AliasForwardDeclOp
-//===----------------------------------------------------------------------===//
-
-// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
-
-def LIT_AliasForwardDeclOp : LITOp<"alias.fwd_decl", [ASTDeclInterface]> {
-  let summary = "`alias x: T` declaration for a callee return parameter";
-
-  let description = [{
-    This op represents an alias decl after its signature has been resolved and
-    it was found to have no initializer.  It is therefore a forward declaration
-    of a return parameter from a function call.
-
-    `resultParamLoc` is filled in with the location of the result parameter that
-    ultimately actually defines this.
-  }];
-
-  let arguments = (ins
-    StrAttr:$name, TypeAttr:$type,
-    OptionalAttr<Builtin_LocationAttr>:$resultParamLoc,
-    OptionalAttr<LIT_DocStringAttr>:$docString
-  );
-  let assemblyFormat = "$name `:` $type attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // LetRegDeclOp
 //===----------------------------------------------------------------------===//
 
@@ -1055,6 +1028,9 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 //===----------------------------------------------------------------------===//
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
+
+// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
+def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
 
 def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
     DeclareOpInterfaceMethods<FunctionLike>,
