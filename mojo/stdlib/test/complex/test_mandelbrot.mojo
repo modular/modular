@@ -56,8 +56,8 @@ fn test_mandelbrot_iter():
     # CHECK: 3
     print(mandelbrot_iter(100, 100))
 
-    let re = SIMD[DType.int32, 1].splat(3)
-    let im = SIMD[DType.int32, 1].splat(4)
+    let re = Int32(3)
+    let im = Int32(4)
     let z = ComplexSIMD[DType.int32, 1](re, im)
     # CHECK: 25
     print(z.squared_norm().value)
