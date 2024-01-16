@@ -46,8 +46,15 @@ lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7> {
   }
 }
 
-// CHECK-LABEL: lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32>
-lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32> {}
+// CHECK-LABEL: lit.struct.decl @struct_param_passing_kinds<
+// CHECK-SAME: _z[z]: dtype, |,
+// CHECK-SAME: _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
+// CHECK-SAME: _d[d]: dtype, _e[e]: dtype = f16, _f[f]: scalar<si16> = 2
+lit.struct.decl @struct_param_passing_kinds<
+  _z[z]: dtype, |,
+  _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
+  _d[d]: dtype, _e[e]: dtype = f16, _f[f]: scalar<si16> = 2
+> {}
 
 // CHECK-LABEL: lit.trait.decl @T {
 lit.trait.decl @T {

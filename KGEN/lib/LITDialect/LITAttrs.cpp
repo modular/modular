@@ -41,21 +41,21 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
                                    ArrayRef<StringAttr> argNames,
                                    ArrayRef<PassingKind> argPassingKinds,
                                    size_t numImplicitLifetimeDecls) {
-  return get(context, argNames, argPassingKinds,
-             /*paramNames=*/ArrayRef<StringAttr>(),
-             /*paramPassingKinds=*/ArrayRef<PassingKind>(),
-             /*defaultPosArgs=*/ArrayRef<TypedAttr>(),
-             /*defaultPosParams=*/ArrayRef<TypedAttr>(),
-             numImplicitLifetimeDecls);
+  return get(context, argNames, argPassingKinds, /*paramNames=*/{},
+             /*paramPassingKinds=*/{}, /*defaultPosArgs=*/{},
+             /*defaultPosParams=*/{}, /*defaultKwOnlyArgs=*/{},
+             /*defaultKwOnlyParams=*/{}, numImplicitLifetimeDecls);
 }
 
 FnMetadataAttr
 FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
                           ArrayRef<PassingKind> argPassingKinds) const {
   ArrayRef<TypedAttr> defaultPosArgs = getDefaultPosArgs();
-  assert(argNames.size() >= defaultPosArgs.size());
+  ArrayRef<TypedAttr> defaultKwOnlyArgs = getDefaultKwOnlyArgs();
+  assert(argNames.size() >= defaultPosArgs.size() + defaultKwOnlyArgs.size());
   return get(getContext(), argNames, argPassingKinds, getParamNames(),
              getParamPassingKinds(), defaultPosArgs, getDefaultPosParams(),
+             defaultKwOnlyArgs, getDefaultKwOnlyParams(),
              getNumImplicitLifetimeDecls());
 }
 
@@ -67,7 +67,8 @@ LogicalResult FnMetadataAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
     ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultPosArgs,
-    ArrayRef<TypedAttr> defaultPosParams, size_t numImplicitLifetimeDecls) {
+    ArrayRef<TypedAttr> defaultPosParams, ArrayRef<TypedAttr> defaultKwOnlyArgs,
+    ArrayRef<TypedAttr> defaultKwOnlyParams, size_t numImplicitLifetimeDecls) {
   if (argNames.size() != argPassingKinds.size()) {
     return emitError()
            << "number of argument names and passing kinds must match";
@@ -101,12 +102,14 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
 
   return get(getContext(), newArgNames, newArgPassingKind, getParamNames(),
              getParamPassingKinds(), newDefaultPosArgs, getDefaultPosParams(),
+             getDefaultKwOnlyArgs(), getDefaultKwOnlyParams(),
              getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttrInterface
 FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<TypedAttr> newDefaultPosParams;
+  SmallVector<TypedAttr> newDefaultKwOnlyParams;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newParamPassingKinds;
 
@@ -116,17 +119,26 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   size_t defaultPosStart = numPositional - defaultsPos.size();
 
   size_t numParams = boundParams.size();
+  ArrayRef<TypedAttr> defaultsKwOnly = getDefaultKwOnlyParams();
+  size_t kwOnlyEnd = numParams - countNumImplicitKinds(passingKinds);
+  size_t defaultKwOnlyStart = kwOnlyEnd - defaultsKwOnly.size();
+
   for (size_t idx = 0; idx < numParams; ++idx) {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);
       newParamPassingKinds.emplace_back(passingKinds[idx]);
-      if (defaultPosStart <= idx && idx < numPositional)
+      if (defaultPosStart <= idx && idx < numPositional) {
         newDefaultPosParams.emplace_back(defaultsPos[idx - defaultPosStart]);
+      } else if (defaultKwOnlyStart <= idx && idx < kwOnlyEnd) {
+        newDefaultKwOnlyParams.emplace_back(
+            defaultsKwOnly[idx - defaultKwOnlyStart]);
+      }
     }
   }
 
   return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
              newParamPassingKinds, getDefaultPosArgs(), newDefaultPosParams,
+             getDefaultKwOnlyArgs(), newDefaultKwOnlyParams,
              getNumImplicitLifetimeDecls());
 }
 
@@ -139,6 +151,7 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
   llvm::append_range(newPassingKinds, getParamPassingKinds());
   return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
              newPassingKinds, getDefaultPosArgs(), getDefaultPosParams(),
+             getDefaultKwOnlyArgs(), getDefaultKwOnlyParams(),
              getNumImplicitLifetimeDecls());
 }
 
@@ -186,45 +199,13 @@ LogicalResult FnMetadataAttr::verifySignature(
     }
   }
 
-  // Verify default arguments and parameters.
-  auto verifyDefaults =
-      [emitError](ArrayRef<TypedAttr> defaults, ArrayRef<Type> types,
-                  ArrayRef<ValueInputConvention> convs, StringRef kind,
-                  size_t numImplicit) -> LogicalResult {
-    if (defaults.size() > types.size()) {
-      return emitError() << "there are more default " << kind
-                         << "s than inputs : " << defaults.size() << " > "
-                         << types.size();
-    }
-    for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-      size_t index =
-          types.size() - defaults.size() + defaultsIndex - numImplicit;
-      Type expected = types[index];
-
-      // Memory-only arguments store their default values as pure values.
-      if (!convs.empty()) {
-        if (SignatureType::hasAddress(convs[index])) {
-          if (auto ptr = ::dyn_cast<PointerType>(expected))
-            expected = ptr.getElementType();
-          else
-            expected = ::cast<RefType>(expected).getElementType();
-        }
-      }
-
-      if (value.getType() != expected &&
-          !llvm::isa<TypeCheckErrorType>(expected)) {
-        return emitError() << kind << " #" << index << " has type " << expected
-                           << " but default " << kind << " has type "
-                           << value.getType();
-      }
-    }
-    return success();
-  };
-
-  if (failed(verifyDefaults(getDefaultPosArgs(), values.getInputs(),
-                            inputConventions, "argument", /*numImplicit=*/0)) ||
-      failed(verifyDefaults(getDefaultPosParams(), inputParamTypes, {},
-                            "parameter", getNumImplicitParams())))
+  if (failed(verifyDefaults(emitError, getDefaultPosArgs(),
+                            getDefaultKwOnlyArgs(), getArgPassingKinds(),
+                            values.getInputs(), "argument",
+                            inputConventions)) ||
+      failed(verifyDefaults(emitError, getDefaultPosParams(),
+                            getDefaultKwOnlyParams(), getParamPassingKinds(),
+                            inputParamTypes, "parameter")))
     return failure();
 
   return success();

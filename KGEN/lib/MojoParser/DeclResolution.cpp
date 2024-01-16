@@ -968,10 +968,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   FunctionType functionType =
       builder.getFunctionType(argTypes, {resultType.mlirType});
-  auto metadata =
-      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
-                          paramNames, paramPassingKinds, argDefaults,
-                          paramDefaults, implicitLifetimeDecls.size());
+  auto metadata = FnMetadataAttr::get(
+      builder.getContext(), argNames, argPassingKinds, paramNames,
+      paramPassingKinds, argDefaults, paramDefaults,
+      // TODO: wire through kw-only args and params
+      /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
+      implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, {}, functionType, inputConventions, effects, metadata,
       silenceErrors(getContext()));
@@ -1795,9 +1797,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   auto inputParams = ParamDeclArrayAttr::get(getContext(), inputParamDecls);
   structOp.setInputParamsAttr(inputParams);
+  // TODO: implement kw-only struct parameters
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      defaultPosParams, paramVarArgs);
+      defaultPosParams, /*defaultKwOnlyParams=*/{}, paramVarArgs);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
@@ -2191,6 +2194,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getArgPassingKinds().drop_front(replacedResult),
           traitSig.getParamNames(), traitSig.getParamPassingKinds(),
           traitSig.getDefaultPosArgs(), traitSig.getDefaultPosParams(),
+          // TODO: wire through kw-only args and params
+          /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
           numImplicitLifetimeDecls));
 }
 
@@ -2689,12 +2694,14 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
                                              PassingKind::Implicit};
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      defaultPosParams, /*paramVarArg=*/false);
+      defaultPosParams, defaultKwOnlyParams, /*paramVarArg=*/false);
   if (!sig)
     return failure();
-  assert(defaultPosParams.empty() && "trait op cannot have default parameters");
+  assert(defaultPosParams.empty() && defaultKwOnlyParams.empty() &&
+         "trait op cannot have default parameters");
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 

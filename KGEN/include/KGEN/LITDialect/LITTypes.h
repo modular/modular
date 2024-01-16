@@ -41,8 +41,14 @@ public:
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
 
+  /// Get the function's default keyword-only arguments.
+  ArrayRef<TypedAttr> getDefaultKwOnlyArgs();
+
   /// Get the function's default positional parameters.
   ArrayRef<TypedAttr> getDefaultPosParams();
+
+  /// Get the function's default keyword-only parameters.
+  ArrayRef<TypedAttr> getDefaultKwOnlyParams();
 
   /// Get the function's (unmangled) parameter names.
   ArrayRef<StringAttr> getParamNames();

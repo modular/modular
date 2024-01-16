@@ -87,11 +87,11 @@ LIT::FuncOp StructEmitter::createFunction(
         StringAttr::get(getContext(), demangleParameterName(p.getName())));
   }
 
-  auto metadata =
-      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
-                          parameterNames, paramPassingKinds,
-                          /*defaultArguments=*/{}, /*defaultParameters=*/{},
-                          numImplicitLifetimeDecls);
+  auto metadata = FnMetadataAttr::get(
+      builder.getContext(), argNames, argPassingKinds, parameterNames,
+      paramPassingKinds, /*defaultPosArgs=*/{}, /*defaultPosParams=*/{},
+      /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
+      numImplicitLifetimeDecls);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);

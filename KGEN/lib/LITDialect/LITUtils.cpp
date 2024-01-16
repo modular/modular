@@ -131,14 +131,15 @@ void LIT::printParamDecl(AsmPrinter &p, ParamDeclAttr decl, StringAttr name) {
 ///                        (`:` type (`=` expression)? )?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
-ParseResult
-LIT::parseOptionalParameterSpec(AsmParser &p,
-                                ParamDeclArrayAttr &inputParamDecls,
-                                ParamDeclArrayAttr &resultParamDecls,
-                                SmallVectorImpl<StringAttr> &paramNames,
-                                SmallVectorImpl<PassingKind> &paramPassingKinds,
-                                SmallVectorImpl<TypedAttr> &defaultPosParams) {
-  bool foundDefault = false;
+ParseResult LIT::parseOptionalParameterSpec(
+    AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
+    ParamDeclArrayAttr &resultParamDecls,
+    SmallVectorImpl<StringAttr> &paramNames,
+    SmallVectorImpl<PassingKind> &paramPassingKinds,
+    SmallVectorImpl<TypedAttr> &defaultPosParams,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams) {
+  bool foundPosDefault = false;
+  bool foundKwOnlyDefault = false;
 
   PassingKindParser passingKindParser(p);
   auto parseWithDefault =
@@ -155,14 +156,26 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
     decls.emplace_back(decl);
     paramNames.emplace_back(name);
 
-    TypedAttr defaultValue;
-    if (failed(parseOptionalDefaultValue(p, defaultValue, decl.getType())))
+    TypedAttr defaultVal;
+    if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
       return failure();
-    if (defaultValue) {
-      foundDefault = true;
-      defaultPosParams.emplace_back(defaultValue);
-    } else if (foundDefault && !passingKindParser.isCurrentImplicit()) {
-      return p.emitError(loc, "expected parameter with default value");
+    if (defaultVal) {
+      if (passingKindParser.isCurrentKwOnly()) {
+        defaultKwOnlyParams.emplace_back(defaultVal);
+        foundKwOnlyDefault = true;
+      } else {
+        defaultPosParams.emplace_back(defaultVal);
+        foundPosDefault = true;
+      }
+    } else if (!passingKindParser.isCurrentImplicit()) {
+      if (passingKindParser.isCurrentKwOnly() && foundKwOnlyDefault) {
+        return p.emitError(
+            loc, "expected keyword-only parameter with default value");
+      }
+      if (!passingKindParser.isCurrentKwOnly() && foundPosDefault) {
+        return p.emitError(loc,
+                           "expected positional parameter with default value");
+      }
     }
     return success();
   };
@@ -181,6 +194,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<StringAttr> paramNames,
                                      ArrayRef<PassingKind> paramPassingKinds,
                                      ArrayRef<TypedAttr> defaultPosParams,
+                                     ArrayRef<TypedAttr> defaultKwOnlyParams,
                                      ParameterEvaluator &evaluator) {
   // Substitute input and result parameters when printing default parameters.
   for (ParamDeclAttr param : inputParamDecls)
@@ -191,6 +205,9 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   size_t numParams = inputParamDecls.size();
   size_t defaultPosEnd = countNumPositional(paramPassingKinds);
   size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
+  size_t defaultKwOnlyEnd =
+      numParams - countNumImplicitKinds(paramPassingKinds);
+  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -202,6 +219,10 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
                              defaultPosParams[idx - defaultPosStart])));
+    } else if (idx >= defaultKwOnlyStart && idx < defaultKwOnlyEnd) {
+      p << " = ";
+      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
+                             defaultKwOnlyParams[idx - defaultKwOnlyStart])));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -216,7 +237,8 @@ ParseResult LIT::parseOptionalParamSignature(
     SmallVectorImpl<Type> &resultParamTypes,
     SmallVectorImpl<StringAttr> &paramNames,
     SmallVectorImpl<PassingKind> &paramPassingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams) {
   // Parse the input parameter types and optional default values.
   PassingKindParser passingKindParser(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
@@ -234,8 +256,12 @@ ParseResult LIT::parseOptionalParamSignature(
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
       return failure();
-    if (defaultVal)
-      defaultPosParams.emplace_back(defaultVal);
+    if (defaultVal) {
+      if (passingKindParser.isCurrentKwOnly())
+        defaultKwOnlyParams.emplace_back(defaultVal);
+      else
+        defaultPosParams.emplace_back(defaultVal);
+    }
     return success();
   };
 
@@ -252,10 +278,14 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> resultParamTypes,
                                       ArrayRef<StringAttr> paramNames,
                                       ArrayRef<PassingKind> paramPassingKinds,
-                                      ArrayRef<TypedAttr> defaultPosParams) {
+                                      ArrayRef<TypedAttr> defaultPosParams,
+                                      ArrayRef<TypedAttr> defaultKwOnlyParams) {
   size_t numParams = inputParamTypes.size();
   size_t defaultPosEnd = countNumPositional(paramPassingKinds);
   size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
+  size_t defaultKwOnlyEnd =
+      numParams - countNumImplicitKinds(paramPassingKinds);
+  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -270,6 +300,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     if (idx >= defaultPosStart && idx < defaultPosEnd) {
       p << " = ";
       printParamValue(p, defaultPosParams[idx - defaultPosStart]);
+    } else if (idx >= defaultKwOnlyStart && idx < defaultKwOnlyEnd) {
+      p << " = ";
+      printParamValue(p, defaultKwOnlyParams[idx - defaultKwOnlyStart]);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -620,4 +653,82 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
   else
     os << "(none)";
   return os;
+}
+
+//===----------------------------------------------------------------------===//
+// Verifier helpers
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<TypedAttr> defaultsPos,
+                                  ArrayRef<TypedAttr> defaultsKwOnly,
+                                  ArrayRef<PassingKind> passingKinds,
+                                  ArrayRef<Type> types, StringRef argOrParam,
+                                  ArrayRef<ValueInputConvention> convs) {
+  size_t numTypes = types.size();
+  size_t numPositional = countNumPositional(passingKinds);
+  size_t numPosDefaults = defaultsPos.size();
+  if (numPosDefaults > numPositional) {
+    return emitError() << "there are more default positional " << argOrParam
+                       << "s than positional parameters: " << numPosDefaults
+                       << " vs. " << numTypes;
+  }
+
+  size_t defaultPosStart = numPositional - numPosDefaults;
+  for (size_t idx = defaultPosStart; idx < numPositional; idx++) {
+    Type expectedType = types[idx];
+    Type defaultType = defaultsPos[idx - defaultPosStart].getType();
+
+    // Memory-only arguments store their default values as pure values.
+    if (!convs.empty()) {
+      if (SignatureType::hasAddress(convs[idx])) {
+        if (auto ptr = ::dyn_cast<PointerType>(expectedType))
+          expectedType = ptr.getElementType();
+        else
+          expectedType = ::cast<RefType>(expectedType).getElementType();
+      }
+    }
+
+    if (defaultType != expectedType &&
+        !llvm::isa<TypeCheckErrorType>(expectedType)) {
+      return emitError() << argOrParam << " #" << idx << " has type "
+                         << expectedType << " but the default " << argOrParam
+                         << " value has type " << defaultType;
+    }
+  }
+
+  size_t numImplicit = countNumImplicitKinds(passingKinds);
+  size_t numKwOnly = numTypes - numPositional - numImplicit;
+  size_t numKwOnlyDefaults = defaultsKwOnly.size();
+  if (numKwOnlyDefaults > numKwOnly) {
+    return emitError() << "there are more default keyword-only " << argOrParam
+                       << "s than keyword-only " << argOrParam
+                       << "s: " << numKwOnlyDefaults << " vs. " << numTypes;
+  }
+
+  size_t defaultKwOnlyStart = numTypes - numImplicit - numKwOnlyDefaults;
+  for (size_t idx = defaultKwOnlyStart; idx < numPositional + numKwOnly;
+       idx++) {
+    Type expectedType = types[idx];
+    Type defaultType = defaultsKwOnly[idx - defaultKwOnlyStart].getType();
+
+    // Memory-only arguments store their default values as pure values.
+    if (!convs.empty()) {
+      if (SignatureType::hasAddress(convs[idx])) {
+        if (auto ptr = ::dyn_cast<PointerType>(expectedType))
+          expectedType = ptr.getElementType();
+        else
+          expectedType = ::cast<RefType>(expectedType).getElementType();
+      }
+    }
+
+    if (defaultType != expectedType &&
+        !llvm::isa<TypeCheckErrorType>(expectedType)) {
+      return emitError() << argOrParam << " #" << idx << " has type "
+                         << expectedType << " but the default " << argOrParam
+                         << " value has type " << defaultType;
+    }
+  }
+
+  return success();
 }
