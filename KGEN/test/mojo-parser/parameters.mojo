@@ -111,8 +111,8 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.func @"testSIMD(
-fn testSIMD(a: SIMD[DType.float64, 1],
-            b: SIMD[DType.int32, 1],
+fn testSIMD(a: Float64,
+            b: Int32,
             inout reff: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.varlet.decl {{.*}} : !lit.ref<mut scalar<f64>,
   var field1 = a.value
