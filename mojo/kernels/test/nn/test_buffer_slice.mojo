@@ -82,19 +82,12 @@ fn test_slice[
     ](step_tensor_mem.address, StaticIntTuple[1](outer_rank))
 
     for dim in range(outer_rank):
-        let start_val = SIMD[DType.index, 1](starts[dim])
-        start_tensor.data.offset(dim).store(start_val)
+        start_tensor[dim] = starts[dim]
+        end_tensor[dim] = stops[dim]
+        step_tensor[dim] = steps[dim]
 
-        let stop_val = SIMD[DType.index, 1](stops[dim])
-        end_tensor.data.offset(dim).store(stop_val)
-
-        let step_val = SIMD[DType.index, 1](steps[dim])
-        step_tensor.data.offset(dim).store(step_val)
-
-    var x: SIMD[dtype, 1] = 0
     for i in range(numelems):
-        in_tensor.data.offset(i).store(SIMD[dtype, 1](x))
-        x += 1
+        in_tensor.data[i] = i
 
     # Perform the slice even if we are testing the copy so we get the target size.
     let sliced = slice_as_view(

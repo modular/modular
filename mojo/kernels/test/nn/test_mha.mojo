@@ -109,9 +109,9 @@ fn test() raises:
     # Mask is set for half of the sequence.
     for b in range(seq_len):
         for i in range(seq_len // 2):
-            mask_ptr.offset(b * seq_len + i).store(0.0)
+            mask_ptr[b * seq_len + i] = 0
         for i in range(seq_len // 2, seq_len):
-            mask_ptr.offset(b * seq_len + i).store(mask_val)
+            mask_ptr[b * seq_len + i] = mask_val
 
     # Contruct buffers.
     let q = NDBuffer[4, BHSD, type](q_ptr)
