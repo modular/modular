@@ -31,7 +31,7 @@ fn fill_buffer[
         s *= buf.dim(i)
 
     for j in range(s):
-        buf.flatten()[j] = SIMD[dtype, 1](j) + 1
+        buf.flatten()[j] = Scalar[dtype](j) + 1
 
 
 # TODO: Refactor tests
