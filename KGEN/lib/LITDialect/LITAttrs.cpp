@@ -59,10 +59,6 @@ FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
              getNumImplicitLifetimeDecls());
 }
 
-size_t FnMetadataAttr::getNumImplicitParams() const {
-  return countNumImplicitKinds(getParamPassingKinds());
-}
-
 LogicalResult FnMetadataAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
     ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
