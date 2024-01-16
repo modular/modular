@@ -27,11 +27,32 @@ trait Copyable:
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
+
+# COM: Test overloading precedence in the presence of static methods.
+struct StaticOverloadStruct:
+    fn __init__(inout self):
+        pass
+
+    fn foo(inout self):
+        pass
+
+    @staticmethod
+    fn foo():
+        pass
+
+
+# CHECK-LABEL: lit.func @"test_static_overload()"
+fn test_static_overload():
+    var a = StaticOverloadStruct()
+    # CHECK-NEXT: %a = lit.varlet.decl
+    # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: lit.call @{{.*}}foo{{.*}}(%a)
+    a.foo()
+
+
 # COM: Issue https://github.com/modularml/mojo/issues/1408
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
-
-
 @register_passable("trivial")
 struct MyElement(Copyable):
     pass
