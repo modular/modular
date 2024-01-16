@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.debugger import lldb
-from lib.LLDBTestBase import LLDBTestBase
+from LLDBTestBase import LLDBTestBase
+
+from modular.utils.debuglib.lldbtypes import SBValue
 
 
 class TestSample(LLDBTestBase):
     @staticmethod
-    def check_int_pair(struct, first, second):
+    def check_int_pair(struct: SBValue, first: int, second: int):
         assert struct.GetDisplayTypeName() == "MyPair"
         assert struct.GetNumChildren() == 2
         first_field = struct.GetChildAtIndex(0)

@@ -4,6 +4,9 @@ There are two main ways to test LLDB's ability to parse DWARF and other debug
 info sections and provide a nice debugging experience: llvm-lit tests and python
 SB tests.
 
+See `Support/python/modular/utils/debuglib/debugger.py` for some useful
+information regarding the underlying LLDB support.
+
 ## llvm-lit tests
 
 These tests assert on the LLDB CLI's output and should print variables using
