@@ -152,21 +152,6 @@ lit.func @topFunc() {
 }
 
 //===----------------------------------------------------------------------===//
-// Aliases
-//===----------------------------------------------------------------------===//
-
-// -----
-
-// CHECK-LABEL: kgen.generator @aliasDecls()
-// CHECK-NEXT: kgen.param.declare aliasDecl = <5>
-// CHECK-NEXT: kgen.return
-lit.func @aliasDecls() {
-  lit.alias.decl aliasDecl = <5>
-  lit.alias.fwd_decl "aliasFwdDecl" : index
-  kgen.return
-}
-
-//===----------------------------------------------------------------------===//
 // Structs
 //===----------------------------------------------------------------------===//
 

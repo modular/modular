@@ -157,9 +157,9 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
       b.replaceOpWithNewOp<ParamDeclareOp>(
           alias, TypeRange(), alias.getParamDecl(), alias.getValue());
-    } else if (isa<AliasForwardDeclOp, OwnershipUseOp, OwnershipMarkDestroyedOp,
+    } else if (isa<OwnershipUseOp, OwnershipMarkDestroyedOp,
                    OwnershipDefLValueOp>(op)) {
-      // lit.alias.fwd_decl and lit.ownership.* are used internally by the
+      // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
     } else if (isa<OwnershipEndLifetimeOp>(op)) {
