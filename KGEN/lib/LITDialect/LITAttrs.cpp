@@ -44,18 +44,18 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
   return get(context, argNames, argPassingKinds,
              /*paramNames=*/ArrayRef<StringAttr>(),
              /*paramPassingKinds=*/ArrayRef<PassingKind>(),
-             /*defaultArguments=*/ArrayRef<TypedAttr>(),
-             /*defaultParameters=*/ArrayRef<TypedAttr>(),
+             /*defaultPosArgs=*/ArrayRef<TypedAttr>(),
+             /*defaultPosParams=*/ArrayRef<TypedAttr>(),
              numImplicitLifetimeDecls);
 }
 
 FnMetadataAttr
 FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
                           ArrayRef<PassingKind> argPassingKinds) const {
-  ArrayRef<TypedAttr> defaultArgs = getDefaultPosArgs();
-  assert(argNames.size() >= defaultArgs.size());
+  ArrayRef<TypedAttr> defaultPosArgs = getDefaultPosArgs();
+  assert(argNames.size() >= defaultPosArgs.size());
   return get(getContext(), argNames, argPassingKinds, getParamNames(),
-             getParamPassingKinds(), defaultArgs, getDefaultPosParams(),
+             getParamPassingKinds(), defaultPosArgs, getDefaultPosParams(),
              getNumImplicitLifetimeDecls());
 }
 
@@ -66,9 +66,8 @@ size_t FnMetadataAttr::getNumImplicitParams() const {
 LogicalResult FnMetadataAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
     ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
-    ArrayRef<PassingKind> paramPassingKinds,
-    ArrayRef<TypedAttr> defaultArguments, ArrayRef<TypedAttr> defaultParameters,
-    size_t numLifetimeDecls) {
+    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultPosArgs,
+    ArrayRef<TypedAttr> defaultPosParams, size_t numImplicitLifetimeDecls) {
   if (argNames.size() != argPassingKinds.size()) {
     return emitError()
            << "number of argument names and passing kinds must match";
@@ -87,40 +86,47 @@ LogicalResult FnMetadataAttr::verify(
 }
 
 FnMetadataAttrInterface
-FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
-  size_t numArgs = getArgNames().size() - numBound;
+FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
+  ArrayRef<PassingKind> passingKinds = getArgPassingKinds();
+  size_t numPositional = countNumPositional(passingKinds);
+  assert(numBound <= numPositional && "only positional arguments can be bound");
 
   ArrayRef<StringAttr> newArgNames = getArgNames().drop_front(numBound);
-  ArrayRef<PassingKind> newArgPassingKind =
-      getArgPassingKinds().drop_front(numBound);
-  ArrayRef<TypedAttr> newDefaultArgs = getDefaultPosArgs();
-  if (numArgs < newDefaultArgs.size())
-    newDefaultArgs = newDefaultArgs.take_back(numArgs);
+  ArrayRef<PassingKind> newArgPassingKind = passingKinds.drop_front(numBound);
+
+  ArrayRef<TypedAttr> newDefaultPosArgs = getDefaultPosArgs();
+  size_t numArgs = numPositional - numBound;
+  if (numArgs < newDefaultPosArgs.size())
+    newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
   return get(getContext(), newArgNames, newArgPassingKind, getParamNames(),
-             getParamPassingKinds(), newDefaultArgs, getDefaultPosParams(),
+             getParamPassingKinds(), newDefaultPosArgs, getDefaultPosParams(),
              getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttrInterface
 FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
-  SmallVector<TypedAttr> newDefaultParams;
+  SmallVector<TypedAttr> newDefaultPosParams;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newParamPassingKinds;
 
+  ArrayRef<PassingKind> passingKinds = getParamPassingKinds();
+  size_t numPositional = countNumPositional(passingKinds);
+  ArrayRef<TypedAttr> defaultsPos = getDefaultPosParams();
+  size_t defaultPosStart = numPositional - defaultsPos.size();
+
   size_t numParams = boundParams.size();
-  ssize_t defaultIdx = getDefaultPosParams().size() - numParams;
-  for (size_t idx = 0; idx < numParams; ++idx, ++defaultIdx) {
+  for (size_t idx = 0; idx < numParams; ++idx) {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);
-      newParamPassingKinds.emplace_back(getParamPassingKinds()[idx]);
-      if (defaultIdx >= 0)
-        newDefaultParams.emplace_back(getDefaultPosParams()[defaultIdx]);
+      newParamPassingKinds.emplace_back(passingKinds[idx]);
+      if (defaultPosStart <= idx && idx < numPositional)
+        newDefaultPosParams.emplace_back(defaultsPos[idx - defaultPosStart]);
     }
   }
 
   return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
-             newParamPassingKinds, getDefaultPosArgs(), newDefaultParams,
+             newParamPassingKinds, getDefaultPosArgs(), newDefaultPosParams,
              getNumImplicitLifetimeDecls());
 }
 

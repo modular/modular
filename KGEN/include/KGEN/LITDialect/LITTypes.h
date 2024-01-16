@@ -38,10 +38,10 @@ public:
   /// Get the function argument passing kinds (e.g. keyword-only).
   ArrayRef<PassingKind> getArgPassingKinds();
 
-  /// Get the function default arguments.
+  /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
 
-  /// Get the function's default parameters.
+  /// Get the function's default positional parameters.
   ArrayRef<TypedAttr> getDefaultPosParams();
 
   /// Get the function's (unmangled) parameter names.

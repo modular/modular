@@ -125,6 +125,9 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 /// Count the number of positional-only passing kinds.
 size_t countNumPosOnly(ArrayRef<PassingKind> kinds);
 
+/// Count the number of positional (pos-only or pos-or-kw) passing kinds.
+size_t countNumPositional(ArrayRef<PassingKind> kinds);
+
 /// Count the number of implicit passing kinds.
 size_t countNumImplicitKinds(ArrayRef<PassingKind> kinds);
 
@@ -146,8 +149,7 @@ public:
   /// Populate the parameter passing kinds.
   void populatePassingKinds(SmallVectorImpl<PassingKind> &kinds) const;
 
-  /// Return true if an implicit parameter was seen. I.e., the parser is
-  /// currently parsing an implicit parameter.
+  /// Return true if the parser is currently parsing an implicit parameter.
   bool isCurrentImplicit() const { return foundImplicit; }
 
 private:

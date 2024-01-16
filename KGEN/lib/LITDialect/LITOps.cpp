@@ -479,12 +479,12 @@ static ParseResult parseLITFunctionSignature(
     return failure();
 
   SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaults;
+  SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<ValueInputConvention> inputConventions;
 
-  PassingKindParser ssParser(p);
+  PassingKindParser passingKindParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
+    if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 
@@ -520,7 +520,7 @@ static ParseResult parseLITFunctionSignature(
             SignatureType::hasAddress(inputConventions.back()))))
       return failure();
     if (defaultVal)
-      defaults.emplace_back(defaultVal);
+      defaultPosArgs.emplace_back(defaultVal);
 
     argTypes.push_back(arg.type);
     return success();
@@ -532,14 +532,14 @@ static ParseResult parseLITFunctionSignature(
     return failure();
 
   SmallVector<PassingKind> argPassingKinds;
-  ssParser.populatePassingKinds(argPassingKinds);
+  passingKindParser.populatePassingKinds(argPassingKinds);
 
+  auto metadata = FnMetadataAttr::get(
+      p.getContext(), argNames, argPassingKinds, paramNames, paramPassingKinds,
+      defaultPosArgs, defaultPosParams, lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
-      FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, defaults, defaultPosParams,
-                          lifetimeDecls.size()),
-      [&] { return p.emitError(startLoc); });
+      metadata, [&] { return p.emitError(startLoc); });
   if (!signature)
     return failure();
 
@@ -576,13 +576,15 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                              signature.getDefaultPosParams(), evaluator);
 
   // Substitute input and result parameters when printing default arguments.
-  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
+  ArrayRef<TypedAttr> defaultPosArgs = signature.getDefaultPosArgs();
+  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
   size_t numInputs = signature.getNumInputs();
-  size_t defaultStartIndex = numInputs - defaultArgs.size();
+  size_t defaultPosEnd = countNumPositional(argPassingKinds);
+  size_t defaultPosStart = defaultPosEnd - defaultPosArgs.size();
 
-  PassingKindPrinter ssPrinter(p, numInputs, '|');
+  PassingKindPrinter passingKindPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
-    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i], i);
+    passingKindPrinter.printOptionalStarSlash(argPassingKinds[i], i);
 
     // Print the SSA name first, which might have been automatically uniqued.
     BlockArgument arg = region->getArgument(i);
@@ -610,14 +612,14 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printInputConvention(p, signature.getInputConvention(i),
                          ValueInputConvention::OwnedInReg);
 
-    if (i >= defaultStartIndex) {
+    if (i >= defaultPosStart && i < defaultPosEnd) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultArgs[i - defaultStartIndex])));
+                             defaultPosArgs[i - defaultPosStart])));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
-    ssPrinter.printOptionalTrailingSlash(i);
+    passingKindPrinter.printOptionalTrailingSlash(i);
   };
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);
@@ -1034,7 +1036,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SmallVector<Type> newParamTypes;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
-  SmallVector<TypedAttr> newDefaults;
+  SmallVector<TypedAttr> newPosDefaults;
   bool paramVarArg = false;
   for (auto [i, value, type, name, kind] :
        llvm::enumerate(paramValues, sig.getInputParamTypes(),
@@ -1044,14 +1046,14 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       newParamNames.push_back(name);
       newPassingKinds.push_back(kind);
       if (i >= defaultIdx)
-        newDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
+        newPosDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
       if (sig.isVarArg(i))
         paramVarArg = true;
     }
   }
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
-                             newPassingKinds, newDefaults, paramVarArg);
+                             newPassingKinds, newPosDefaults, paramVarArg);
   return DeclRefType::get(symbol, paramValues,
                           MetaTypeType::get(symbol, paramValues, newSig));
 }

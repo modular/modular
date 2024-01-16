@@ -138,10 +138,10 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     /// helper is used to convert between a named signature structure to a
     /// nameless representation.
     static TypeSignatureType remapToSignature(
-        function_ref<InFlightDiagnostic()> emitError,
-        ParamDeclArrayAttr paramDecls, ArrayRef<StringAttr> paramNames,
-        ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaults,
-        bool paramVarArg);
+      function_ref<InFlightDiagnostic()> emitError,
+      ParamDeclArrayAttr paramDecls, ArrayRef<StringAttr> paramNames,
+      ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPosParams,
+      bool paramVarArg);
   }];
 }
 

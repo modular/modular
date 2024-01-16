@@ -189,8 +189,8 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     evaluator.addResultValue(ParamDeclRefAttr::get(param));
 
   size_t numParams = inputParamDecls.size();
-  size_t defaultEnd = numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultStart = defaultEnd - defaultPosParams.size();
+  size_t defaultPosEnd = countNumPositional(paramPassingKinds);
+  size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -198,10 +198,10 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     passingKindPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
 
     printParamDecl(p, decl, paramNames[idx]);
-    if (idx >= defaultStart && idx < defaultEnd) {
+    if (idx >= defaultPosStart && idx < defaultPosEnd) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultPosParams[idx - defaultStart])));
+                             defaultPosParams[idx - defaultPosStart])));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -218,9 +218,9 @@ ParseResult LIT::parseOptionalParamSignature(
     SmallVectorImpl<PassingKind> &paramPassingKinds,
     SmallVectorImpl<TypedAttr> &defaultPosParams) {
   // Parse the input parameter types and optional default values.
-  PassingKindParser passingKindPrinter(p);
+  PassingKindParser passingKindParser(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
-    if (OptionalParseResult res = passingKindPrinter.parseOptionalStarSlash();
+    if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 
@@ -243,7 +243,7 @@ ParseResult LIT::parseOptionalParamSignature(
           p, inputParamTypes, resultParamTypes, parseInputParam)))
     return failure();
 
-  passingKindPrinter.populatePassingKinds(paramPassingKinds);
+  passingKindParser.populatePassingKinds(paramPassingKinds);
   return success();
 }
 
@@ -254,8 +254,8 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<PassingKind> paramPassingKinds,
                                       ArrayRef<TypedAttr> defaultPosParams) {
   size_t numParams = inputParamTypes.size();
-  size_t defaultEnd = numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultStart = defaultEnd - defaultPosParams.size();
+  size_t defaultPosEnd = countNumPositional(paramPassingKinds);
+  size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
   size_t idx = 0;
 
   PassingKindPrinter passingKindPrinter(p, numParams, '|');
@@ -267,9 +267,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
-    if (idx >= defaultStart && idx < defaultEnd) {
+    if (idx >= defaultPosStart && idx < defaultPosEnd) {
       p << " = ";
-      printParamValue(p, defaultPosParams[idx - defaultStart]);
+      printParamValue(p, defaultPosParams[idx - defaultPosStart]);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -292,6 +292,13 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
 size_t LIT::countNumPosOnly(ArrayRef<PassingKind> kinds) {
   for (auto [idx, kind] : llvm::enumerate(kinds))
     if (kind != PassingKind::PosOnly)
+      return idx;
+  return kinds.size();
+}
+
+size_t LIT::countNumPositional(ArrayRef<PassingKind> kinds) {
+  for (auto [idx, kind] : llvm::enumerate(kinds))
+    if (kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
       return idx;
   return kinds.size();
 }

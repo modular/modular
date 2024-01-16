@@ -437,7 +437,7 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
     SmallVectorImpl<ParamDeclAttr> &inputParams,
     SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
@@ -460,7 +460,7 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
   ExprEmitter emitter(p.shared, declScope, EC_Type);
   ParsedArgument::processParameterInputArgs(emitter, declScope, args,
                                             inputParams, names, passingKinds,
-                                            defaults, paramVarArg);
+                                            defaultPosParams, paramVarArg);
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
