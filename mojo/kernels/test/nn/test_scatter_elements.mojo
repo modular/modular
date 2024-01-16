@@ -20,7 +20,7 @@ fn test_case[
     indices_shape: TensorShape,
     axis: Int,
     data_vals: VariadicList[SIMD[type, 1]],
-    indices_vals: VariadicList[SIMD[DType.int32, 1]],
+    indices_vals: VariadicList[Int32],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ) raises:
@@ -54,7 +54,7 @@ fn test_case[
     indices_shape: TensorShape,
     axis: Int,
     data_vals: VariadicList[SIMD[type, 1]],
-    indices_vals: VariadicList[SIMD[DType.int32, 1]],
+    indices_vals: VariadicList[Int32],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ) raises:

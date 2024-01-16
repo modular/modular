@@ -21,7 +21,7 @@ from tensor import Tensor
 
 fn fill_tensor[rank: Int](tensor: Tensor[DType.float32]):
     for j in range(tensor.num_elements()):
-        tensor._to_ndbuffer[rank]().flatten()[j] = SIMD[DType.float32, 1](j)
+        tensor._to_ndbuffer[rank]().flatten()[j] = Float32(j)
 
 
 fn fill_tensor[rank: Int](tensor: Tensor[DType.float32], val: Float32):

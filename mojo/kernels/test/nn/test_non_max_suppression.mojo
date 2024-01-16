@@ -133,9 +133,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
-            0.9, 0.75, 0.6, 0.95, 0.5, 0.3
-        )
+        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -151,9 +149,7 @@ fn main():
             BoxCoords[DType.float32](1.0, 11.1, 0.0, 10.1),
             BoxCoords[DType.float32](1.0, 101.0, 0.0, 100.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
-            0.9, 0.75, 0.6, 0.95, 0.5, 0.3
-        )
+        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -169,9 +165,7 @@ fn main():
             BoxCoords[DType.float32](-1.0, -11.1, 0.0, -10.1),
             BoxCoords[DType.float32](-1.0, -101.0, 0.0, -100.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
-            0.9, 0.75, 0.6, 0.95, 0.5, 0.3
-        )
+        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -187,9 +181,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
-            0.9, 0.75, 0.6, 0.95, 0.5, 0.3
-        )
+        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.4), 3, box_list, scores_list
@@ -205,9 +197,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
-            0.9, 0.75, 0.6, 0.95, 0.5, 0.3
-        )
+        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -218,7 +208,7 @@ fn main():
         let box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](0.9)
+        let scores_list = VariadicList[Float32](0.9)
 
         test_case[DType.float32](
             1, 1, 1, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -234,7 +224,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
+        let scores_list = VariadicList[Float32](
             0.9,
             0.75,
             0.6,
@@ -269,7 +259,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[SIMD[DType.float32, 1]](
+        let scores_list = VariadicList[Float32](
             0.9,
             0.75,
             0.6,
