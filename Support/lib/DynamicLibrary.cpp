@@ -40,7 +40,7 @@ M::permanentPluginLibrary(const std::filesystem::path &libFilepath) {
   std::string path = libFilepath.string();
   auto dylib = DynamicLibrary::getPermanentLibrary(path.c_str(), &errorMessage);
 #endif // defined(__linux__)
-  if (!errorMessage.empty())
+  if (!dylib.isValid())
     return Error(errorMessage);
 
   return dylib;
