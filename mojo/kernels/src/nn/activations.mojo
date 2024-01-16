@@ -200,8 +200,8 @@ fn _erf[
     let val_aux = t * exp(-x_abs * x_abs)
     # r = 1 - polynomial * t * exp(-x*x)
     let polynomial = polynomial_evaluate[
-        simd_width,
         type,
+        simd_width,
         VariadicList[SIMD[type, simd_width]](
             0.254829592,
             -0.284496736,
