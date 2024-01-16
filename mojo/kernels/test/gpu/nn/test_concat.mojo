@@ -54,7 +54,7 @@ fn _fill_buffer[
     rank: Int, dtype: DType
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), dtype],
-    val: SIMD[dtype, 1],
+    val: Scalar[dtype],
 ):
     for i in range(buffer.num_elements()):
         buffer.flatten()[i] = val
