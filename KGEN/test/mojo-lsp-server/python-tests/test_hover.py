@@ -354,7 +354,7 @@ An Int argument.
     await assert_decl(
         "init_kargs",
         """```mojo
-(variable) let init_kargs: VariadicList[Int]
+(variable) var init_kargs: VariadicList[Int]
 ```""",
     )
 

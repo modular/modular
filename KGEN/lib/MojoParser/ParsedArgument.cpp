@@ -547,6 +547,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         if (reportError())
           return {};
         type = shared.getTypeCheckErrorType();
+        arg.isErroneous = true;
       }
       type = addImplicitTypeParams(shared, type, arg, inputParamNames,
                                    inputParamPassingKinds, inputParamDecls);
@@ -560,6 +561,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         if (reportError())
           return {};
         type = shared.getTypeCheckErrorType();
+        arg.isErroneous = true;
       }
     } else {
       // In an 'fn' we report an error.
@@ -568,6 +570,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       if (reportError())
         return {};
       type = shared.getTypeCheckErrorType();
+      arg.isErroneous = true;
     }
     assert(type && "must have an argument type");
     argTypes.push_back(type);
