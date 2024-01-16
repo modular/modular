@@ -22,8 +22,8 @@ fn slash(a: Int, /, b: Int):
     pass
 
 # CHECK-LABEL: lit.func @"slashLast
-# CHECK-SAME: (%a: !Int borrow, |, %b: !Int borrow)
-fn slashLast(a: Int, /, b: Int):
+# CHECK-SAME: (%a: !Int borrow, |)
+fn slashLast(a: Int, /):
     pass
 
 # Method overloading.

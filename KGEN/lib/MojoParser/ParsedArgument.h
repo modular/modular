@@ -121,7 +121,7 @@ struct ParsedArgument {
       SmallVectorImpl<ParamDeclAttr> &params,
       SmallVectorImpl<StringAttr> &names,
       SmallVectorImpl<PassingKind> &passingKinds,
-      SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg);
+      SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg);
 
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
@@ -132,7 +132,7 @@ struct ParsedArgument {
       SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-      SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
+      SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
       ASTDecl *fnDecl = nullptr,
       SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
       function_ref<void()> processSignature = [] {});
