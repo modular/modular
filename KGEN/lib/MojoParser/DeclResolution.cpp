@@ -556,7 +556,7 @@ void FnDecorators::applyMoveCapture(const CallNode &node) {
 
     LookupResult lookup = shared.lookupAndResolveDecl(
         declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
-        /*searcInParentScopes=*/true);
+        /*searchParentScopes=*/true);
     if (ArrayRef<ASTDecl *> decls = lookup.getIfSuccess(); !decls.empty()) {
       ExprEmitter emitter(shared, decl, EC_CaptureCopy);
       ValueDest dest(EC_CaptureCopy);
@@ -1738,7 +1738,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> paramDefaults;
+  SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypeLineageAttr> parentTypes;
 
   bool paramVarArgs = false;
@@ -1749,7 +1749,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                         &identifierLoc) ||
       impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                             paramNames, paramPassingKinds,
-                                            paramDefaults, paramVarArgs) ||
+                                            defaultPosParams, paramVarArgs) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
@@ -1763,7 +1763,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setInputParamsAttr(inputParams);
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      paramDefaults, paramVarArgs);
+      defaultPosParams, paramVarArgs);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
@@ -2654,12 +2654,13 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                      StringAttr::get(decl.getContext(), "")};
   SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
                                              PassingKind::Implicit};
-  SmallVector<TypedAttr> paramDefaults;
+  SmallVector<TypedAttr> defaultPosParams;
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      paramDefaults, false);
+      defaultPosParams, /*paramVarArg=*/false);
   if (!sig)
     return failure();
+  assert(defaultPosParams.empty() && "trait op cannot have default parameters");
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 

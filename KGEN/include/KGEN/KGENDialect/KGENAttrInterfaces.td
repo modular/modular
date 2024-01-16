@@ -112,9 +112,9 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "const llvm::BitVector &":$boundParams)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a signature where the first `numBound`
-      arguments have been removed from the signature by being explicitly bound
-      to values, such as in closure formation.
-    }], "FnMetadataAttrInterface", "getWithBoundArgs", (ins
+      positional arguments have been removed from the signature by being
+      explicitly bound to values, such as in closure formation.
+    }], "FnMetadataAttrInterface", "getWithBoundPosArgs", (ins
       "size_t":$numBound)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a signature with the given number of

@@ -46,8 +46,8 @@ lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7> {
   }
 }
 
-// CHECK-LABEL: lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32, *, _1x9_w[w]: scalar<si32> = 1>
-lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32, *, _1x9_w[w]: scalar<si32> = 1> {}
+// CHECK-LABEL: lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32>
+lit.struct.decl @StarSlashStruct<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32> {}
 
 // CHECK-LABEL: lit.trait.decl @T {
 lit.trait.decl @T {

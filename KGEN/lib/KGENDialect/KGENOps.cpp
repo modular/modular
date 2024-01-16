@@ -1017,7 +1017,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
       sig.getInputParamTypes(), sig.getResultParamTypes(), newInputConvs,
       effects,
-      sig.getMetadata() ? sig.getMetadata().getWithBoundArgs(numCaptures)
+      sig.getMetadata() ? sig.getMetadata().getWithBoundPosArgs(numCaptures)
                         : nullptr));
   return mlir::success();
 }

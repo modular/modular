@@ -42,15 +42,16 @@ static ParseResult
 parseTypeSignature(AsmParser &p, SmallVectorImpl<Type> &paramTypes,
                    SmallVectorImpl<StringAttr> &paramNames,
                    SmallVectorImpl<PassingKind> &paramPassingKinds,
-                   SmallVectorImpl<TypedAttr> &defaultParameters,
+                   SmallVectorImpl<TypedAttr> &defaultPosParams,
                    bool &paramVarArg) {
   SmallVector<Type> resultParamTypes;
   if (parseOptionalParamSignature(p, paramTypes, resultParamTypes, paramNames,
-                                  paramPassingKinds, defaultParameters))
+                                  paramPassingKinds, defaultPosParams))
     return failure();
-  if (!resultParamTypes.empty())
+  if (!resultParamTypes.empty()) {
     return p.emitError(p.getCurrentLocation(),
                        "unexpected result parameters for type signature");
+  }
   paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
   return success();
 }
@@ -58,10 +59,10 @@ parseTypeSignature(AsmParser &p, SmallVectorImpl<Type> &paramTypes,
 static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
                                ArrayRef<StringAttr> paramNames,
                                ArrayRef<PassingKind> paramPassingKinds,
-                               ArrayRef<TypedAttr> defaultParameters,
+                               ArrayRef<TypedAttr> defaultPosParams,
                                bool paramVarArg) {
   printOptionalParamSignature(p, paramTypes, /*resultParamTypes=*/{},
-                              paramNames, paramPassingKinds, defaultParameters);
+                              paramNames, paramPassingKinds, defaultPosParams);
   if (paramVarArg)
     p << " param_vararg";
 }
@@ -69,7 +70,7 @@ static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
 LogicalResult TypeSignatureType::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<Type> paramTypes,
     ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
-    ArrayRef<TypedAttr> defaultParameters, bool paramVarArg) {
+    ArrayRef<TypedAttr> defaultPosParams, bool paramVarArg) {
   if (paramNames.size() != paramPassingKinds.size()) {
     return emitError()
            << "number of parameter names and passing kinds must match";
@@ -81,13 +82,13 @@ LogicalResult TypeSignatureType::verify(
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
   }
-  if (defaultParameters.size() > paramTypes.size()) {
+  if (defaultPosParams.size() > paramTypes.size()) {
     return emitError() << "there are more default parameters than parameters: "
-                       << defaultParameters.size() << " vs. "
+                       << defaultPosParams.size() << " vs. "
                        << paramTypes.size();
   }
-  for (auto [defaultsIndex, value] : llvm::enumerate(defaultParameters)) {
-    size_t index = paramTypes.size() - defaultParameters.size() + defaultsIndex;
+  for (auto [defaultsIndex, value] : llvm::enumerate(defaultPosParams)) {
+    size_t index = paramTypes.size() - defaultPosParams.size() + defaultsIndex;
     Type expected = paramTypes[index];
     if (value.getType() != expected &&
         !llvm::isa<TypeCheckErrorType>(expected)) {
@@ -112,7 +113,7 @@ LogicalResult TypeSignatureType::verify(
 TypeSignatureType TypeSignatureType::remapToSignature(
     function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
     ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> passingKinds,
-    ArrayRef<TypedAttr> defaults, bool paramVarArg) {
+    ArrayRef<TypedAttr> defaultPosParams, bool paramVarArg) {
   IndexRefRemapper remapper(paramDecls, {});
   SmallVector<Type> inputParamTypes =
       llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
@@ -120,7 +121,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
   return TypeSignatureType::getChecked(
       emitError, paramDecls.getContext(), inputParamTypes, paramNames,
-      passingKinds, remapper.replace(ArrayRef(defaults)), paramVarArg);
+      passingKinds, remapper.replace(ArrayRef(defaultPosParams)), paramVarArg);
 }
 
 //===----------------------------------------------------------------------===//
@@ -229,7 +230,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<Type> newParamTypes;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
-  SmallVector<TypedAttr> newDefaults;
+  SmallVector<TypedAttr> newPosDefaults;
   bool paramVarArg = false;
 
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
@@ -242,7 +243,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
         if (i >= defaultIdx)
-          newDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
+          newPosDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
         if (sig.isVarArg(i))
           paramVarArg = true;
       }
@@ -255,7 +256,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
-                             newPassingKinds, newDefaults, paramVarArg);
+                             newPassingKinds, newPosDefaults, paramVarArg);
   return MetaTypeType::get(getSymbol(), values, newSig);
 }
 
@@ -517,16 +518,16 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       return failure();
 
   SmallVector<Type> inputParamTypes, resultParamTypes;
-  SmallVector<TypedAttr> defaultParamValues;
+  SmallVector<TypedAttr> defaultPosParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
                                          paramNames, paramPassingKinds,
-                                         defaultParamValues)))
+                                         defaultPosParams)))
     return failure();
 
   SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> argDefaults;
+  SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<ValueInputConvention> inputConventions;
 
   PassingKindParser passingKindParser(p);
@@ -553,7 +554,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
             SignatureType::hasAddress(inputConventions.back()))))
       return failure();
     if (defaultVal)
-      argDefaults.emplace_back(defaultVal);
+      defaultPosArgs.emplace_back(defaultVal);
 
     return success();
   };
@@ -572,7 +573,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       resultParamTypes, inputConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, argDefaults, defaultParamValues,
+                          paramPassingKinds, defaultPosArgs, defaultPosParams,
                           numLifetimeDecls));
   return success(!!signature);
 }
@@ -612,16 +613,17 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   printOptionalParamSignature(
       p, signature.getInputParamTypes(), signature.getResultParamTypes(),
       signature.getParamNames(), signature.getParamPassingKinds(),
-      signature.getMetadata().getDefaultPosParams());
+      signature.getDefaultPosParams());
 
-  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
+  ArrayRef<TypedAttr> defaultPosArgs = signature.getDefaultPosArgs();
+  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
   size_t numInputs = signature.getNumInputs();
-  size_t defaultIndex = numInputs - defaultArgs.size();
+  size_t defaultPosEnd = countNumPositional(argPassingKinds);
+  size_t defaultPosStart = defaultPosEnd - defaultPosArgs.size();
 
   PassingKindPrinter passingKindPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
-    passingKindPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
-                                              i);
+    passingKindPrinter.printOptionalStarSlash(argPassingKinds[i], i);
 
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {
@@ -633,9 +635,10 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
 
     printInputConvention(p, signature.getInputConvention(i),
                          ValueInputConvention::OwnedInReg);
-    if (i >= defaultIndex) {
+
+    if (i >= defaultPosStart && i < defaultPosEnd) {
       p << " = ";
-      printParamValue(p, defaultArgs[i - defaultIndex]);
+      printParamValue(p, defaultPosArgs[i - defaultPosStart]);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -697,7 +700,7 @@ LITSignatureType LITSignatureType::dropParamValues() {
   auto metadata =
       FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
                           /*paramNames=*/{}, /*paramPassingKinds=*/{},
-                          getDefaultPosArgs(), /*defaultParameters=*/{},
+                          getDefaultPosArgs(), /*defaultPosParams=*/{},
                           /*numImplicitLifetimeDecls=*/0);
   return get(getValues(), /*inputParamTypes=*/{}, getResultParamTypes(),
              getInputConventions(), getFnEffects(), metadata);

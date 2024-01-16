@@ -2940,10 +2940,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> paramDefaults;
+  SmallVector<TypedAttr> defaultPosParams;
   ParsedArgument::processParameterInputArgs(
       typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
-      paramPassingKinds, paramDefaults, paramVarArg);
+      paramPassingKinds, defaultPosParams, paramVarArg);
 
   FnEffects effects = this->effects;
   if (paramVarArg)
@@ -2951,10 +2951,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> argDefaults;
+  SmallVector<TypedAttr> defaultPosArgs;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, typeEmitter, paramNames, paramPassingKinds,
-      inputParamDecls, resultTypeExpr, effects, args, argTypes, argDefaults,
+      inputParamDecls, resultTypeExpr, effects, args, argTypes, defaultPosArgs,
       isDef, resultLoc);
   if (!resultType)
     return {};
@@ -2992,7 +2992,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamDecls, {}, functionType, inputConventions, effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, argDefaults, paramDefaults,
+                          paramPassingKinds, defaultPosArgs, defaultPosParams,
                           implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
