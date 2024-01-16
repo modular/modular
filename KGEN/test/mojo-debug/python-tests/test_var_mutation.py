@@ -4,13 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.debugger import lldb
-from lib.LLDBTestBase import LLDBTestBase
+from LLDBTestBase import LLDBTestBase
+
+from modular.utils.debuglib.debugger import StopContext, lldb
 
 
 class TestSample(LLDBTestBase):
     @staticmethod
-    def assert_si64_int(ctx, name, expected):
+    def assert_si64_int(ctx: StopContext, name: str, expected: int):
         var = ctx.frame.FindVariable(name)
         assert var.GetValue() == str(expected)
         assert var.GetTypeName() == "si64"

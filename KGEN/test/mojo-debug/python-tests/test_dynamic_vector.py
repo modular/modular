@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase
+from LLDBTestBase import LLDBTestBase
 
 
-class TestDinamicVector(LLDBTestBase):
+class TestDynamicVector(LLDBTestBase):
     def test(self):
         """Tests that DynamicVector can be parsed correctly and its data
         formatter works correctly as well."""

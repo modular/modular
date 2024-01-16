@@ -4,19 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase
+from LLDBTestBase import LLDBTestBase
 
 
 class TestIssueBool(LLDBTestBase):
     def test(self):
-        """FIXME(23022):
-        Booleans are emitted wrong:
-          - They are reported to be of type `bool`, but `!pop.scalar<bool>`
-            would be the correct type.
-
-        Once these issues get fixed, the summary provider for bools should just
-        work.
-
+        """
         There's no SB API for getting the bit size of a type, but the byte size
         should be 1.
         """

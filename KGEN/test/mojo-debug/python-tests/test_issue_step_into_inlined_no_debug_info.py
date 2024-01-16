@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase, SourceFile
+from LLDBTestBase import LLDBTestBase
 
 
 class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
@@ -24,7 +24,9 @@ class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
         0x0000000100003820: KGEN/test/mojo-debug/python-tests/Inputs/step_into_inlined.mojo:13:10
         """
 
-        source = SourceFile("step_into_inlined_no_debug_info.mojo")
+        source = self.create_test_input_source(
+            "step_into_inlined_no_debug_info.mojo"
+        )
         with self.build_and_launch(source) as ctx:
             ctx = ctx.step_into()
             expected_line = next(

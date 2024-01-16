@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase
+from LLDBTestBase import LLDBTestBase
 
 
 class TestPointer(LLDBTestBase):
