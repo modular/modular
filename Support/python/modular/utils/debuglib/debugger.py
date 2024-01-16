@@ -8,9 +8,11 @@
 
 import configparser
 import importlib
+import io
 import os
 import subprocess
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -147,7 +149,8 @@ class StopContext:
 def run_target(target: Any) -> StopContext:
     # We use this command because it nicely uses all the defaults from
     # the lldb init file, unlike debugger.Launch.
-    assert handle_command_for_context("run", target)
+    with io.StringIO() as buf, redirect_stdout(buf):
+        assert handle_command_for_context("run", target)
 
     process = target.GetProcess()
     assert process.IsValid()

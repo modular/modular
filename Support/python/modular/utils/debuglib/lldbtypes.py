@@ -5483,7 +5483,7 @@ class SBTarget:
     def ReadMemory(self, addr, buf, error):
         ...
 
-    def BreakpointCreateByLocation(self, *args):
+    def BreakpointCreateByLocation(self, *args: Any) -> SBBreakpoint:
         ...
 
     def BreakpointCreateByName(self, *args):
