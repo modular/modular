@@ -104,7 +104,7 @@ fn test_nan():
     )
 
     # CHECK: False
-    print(isnan(SIMD[DType.float32, 1](1) / SIMD[DType.float32, 1](0)))
+    print(isnan(Float32(1) / Float32(0)))
 
     # CHECK: False
     print(isnan(inf[DType.float64]()))

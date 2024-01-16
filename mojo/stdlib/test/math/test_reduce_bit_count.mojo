@@ -10,11 +10,11 @@ from math import iota, reduce_bit_count
 
 fn test_reduce_bit_count():
     print("== test_reduce_bit_count")
-    let int_0xFFFF = SIMD[DType.int32, 1](0xFFFF)
+    let int_0xFFFF = Int32(0xFFFF)
     let int_iota8 = iota[DType.int32, 8]()
 
-    let bool_true = SIMD[DType.bool, 1].splat(True)
-    let bool_false = SIMD[DType.bool, 1].splat(False)
+    let bool_true = Scalar[DType.bool].splat(True)
+    let bool_false = Scalar[DType.bool].splat(False)
     let bool_true16 = SIMD[DType.bool, 16].splat(True)
 
     # CHECK: 16

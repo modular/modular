@@ -16,7 +16,7 @@ fn test_ldexp():
     print(ldexp(Float32(1.5), 4))
 
     # CHECK: 24.0
-    print(ldexp(Float64(1.5), SIMD[DType.int32, 1](4)))
+    print(ldexp(Float64(1.5), Int32(4)))
 
 
 fn main():
