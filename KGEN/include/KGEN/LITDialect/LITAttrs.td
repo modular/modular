@@ -91,9 +91,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     /// modified (e.g. because prepending a positional-only argument).
     FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames,
                              ArrayRef<PassingKind> argPassingKinds) const;
-
-    /// Return the number of parameters that are implicitly declared.
-    size_t getNumImplicitParams() const;
   }];
 
   let genVerifyDecl = 1;
