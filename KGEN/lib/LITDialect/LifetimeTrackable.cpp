@@ -502,13 +502,6 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  // FIXME: CaptureListCreateOp is a CallSignatureOp's but not really calls?
-  if (isa<CaptureListCreateOp>(op)) {
-    // FIXME: Unclear how to handle the result of this.
-    results.push_back(ResultEffect::ignore);
-    return {};
-  }
-
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
