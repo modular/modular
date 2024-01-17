@@ -1670,6 +1670,44 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
   }];
 
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicSplatOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicSplatOp : POPOp<"variadic.splat", [Pure,
+    VariadicElementType<"result", "operand">]> {
+  let summary = "create a value of variadic type from one replicated value";
+  let description = [{
+    The `pop.variadic.splat` operation creates a `!kgen.variadic` populated
+    with `numElements` copies of the given SSA value.  `numElements` may be a
+    parametric value computed by the elaborator.
+
+    Example:
+
+    ```mlir
+    // Create a variadic sequence of 16 scalar floats.
+    %0 = pop.variadic.splat %arg0, 16 : !kgen.variadic<scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$operand, AttrOfType<Index>:$numElements);
+  let results = (outs KGEN_VariadicType:$result);
+  let assemblyFormat = [{
+    ` ` $operand `,` custom<IndexParamValue>($numElements)
+    attr-dict `:` qualified(type($result))
+  }];
+
+  let hasFolder = 1;
+
+  let builders = [
+    /// Allow constructing with a size_t for # elements.
+    OpBuilder<(ins "Type":$resultType, "Value":$element,
+                   "size_t":$numElements)>,
+  ];
+
 }
 
 //===----------------------------------------------------------------------===//

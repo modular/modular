@@ -774,6 +774,61 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 ///    into the allocated space.
 /// 3. A struct that holds the pointer to allocated sequence, and the number of
 ///    elements.
+static LogicalResult convertVariadicCreate(VariadicType resultType,
+                                           ValueRange operands, Operation *op,
+                                           Block *body,
+                                           ConversionPatternRewriter &rewriter,
+                                           const TypeConverter *typeConverter,
+                                           TargetInfoAttr target) {
+
+  // 1. Allocate space for an array of elements.
+  Type opElementType = resultType.getElementType();
+  std::optional<int64_t> typeAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, opElementType);
+  std::optional<int64_t> typeABIAlign =
+      DataLayoutInterface::getTypeABIAlign(target, opElementType);
+  if (!typeAllocSize || !typeABIAlign)
+    return op->emitError("failed to get element type size and alignment");
+
+  Type elementType = typeConverter->convertType(opElementType);
+  if (!elementType)
+    return op->emitError("failed to convert element type");
+
+  size_t count = operands.size();
+  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, body, op,
+                                    *typeAllocSize, *typeABIAlign);
+
+  // 2. Store elements of the sequence into the allocated space.
+  Type indexType = typeConverter->convertType(rewriter.getIndexType());
+  auto opaquePtr = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+  for (auto [index, operand] : llvm::enumerate(operands)) {
+    Value indexConstant = rewriter.create<LLVM::ConstantOp>(
+        op->getLoc(), rewriter.getIntegerAttr(indexType, index));
+    auto destination = rewriter.create<LLVM::GEPOp>(
+        op->getLoc(), /*resultType=*/opaquePtr,
+        /*basePtrType=*/elementType, /*basePtr=*/ptr,
+        ArrayRef<LLVM::GEPArg>{indexConstant});
+    rewriter.create<LLVM::StoreOp>(op->getLoc(), operand, destination);
+  }
+
+  // 3. Replace the `pop.variadic.create` op with a struct containing the
+  //    pointer & the size of the sequence.
+  Type structType = typeConverter->convertType(resultType);
+  if (!structType)
+    return op->emitError("failed to convert variadic type");
+  ImplicitLocOpBuilder b(op->getLoc(), rewriter);
+
+  Value container = materializeLLVMStruct(
+      b, structType,
+      ValueRange{ptr,
+                 rewriter.create<LLVM::ConstantOp>(
+                     op->getLoc(), rewriter.getIntegerAttr(indexType, count))
+
+      });
+  rewriter.replaceOp(op, container);
+  return success();
+}
+
 class ConvertPOPVariadicCreate
     : public ConvertPOPToLLVMPattern<VariadicCreateOp> {
 public:
@@ -783,7 +838,11 @@ public:
 
   LogicalResult
   matchAndRewrite(VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override;
+                  ConversionPatternRewriter &rewriter) const override {
+
+    return convertVariadicCreate(op.getType(), adaptor.getOperands(), op, body,
+                                 rewriter, typeConverter, target);
+  }
 
 private:
   /// The enclosing function body.
@@ -792,55 +851,38 @@ private:
   TargetInfoAttr target;
 };
 
-LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
-    VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
-    ConversionPatternRewriter &rewriter) const {
-  // 1. Allocate space for an array of elements.
-  Type opElementType = op.getType().getElementType();
-  std::optional<int64_t> typeAllocSize =
-      DataLayoutInterface::getTypeAllocSize(target, opElementType);
-  std::optional<int64_t> typeABIAlign =
-      DataLayoutInterface::getTypeABIAlign(target, opElementType);
-  if (!typeAllocSize || !typeABIAlign)
-    return op.emitError("failed to get element type size and alignment");
+//===----------------------------------------------------------------------===//
+// ConvertPOPVariadicSplat
+//===----------------------------------------------------------------------===//
 
-  Type elementType = convertType(opElementType);
-  if (!elementType)
-    return op.emitError("failed to convert element type");
+/// Converts a `pop.variadic.splat` to the same machinery as
+/// `pop.variadic.create`.
+class ConvertPOPVariadicSplat
+    : public ConvertPOPToLLVMPattern<VariadicSplatOp> {
+public:
+  explicit ConvertPOPVariadicSplat(mlir::LLVMTypeConverter &typeConverter,
+                                   Block *body, TargetInfoAttr target)
+      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
 
-  size_t count = op.getOperands().size();
-  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, body, op,
-                                    *typeAllocSize, *typeABIAlign);
+  LogicalResult
+  matchAndRewrite(VariadicSplatOp op, VariadicSplatOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
 
-  // 2. Store elements of the sequence into the allocated space.
-  Type indexType = getTypeConverter()->getIndexType();
-  auto opaquePtr = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
-  for (auto [index, operand] : llvm::enumerate(adaptor.getOperands())) {
-    Value indexConstant = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getIntegerAttr(indexType, index));
-    auto destination = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), /*resultType=*/opaquePtr,
-        /*basePtrType=*/elementType, /*basePtr=*/ptr,
-        ArrayRef<LLVM::GEPArg>{indexConstant});
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), operand, destination);
+    auto numElements = dyn_cast<IntegerAttr>(adaptor.getNumElements());
+    if (!numElements)
+      return op.emitError("pop.variadic.splat has parametric # elements");
+
+    SmallVector<Value> operands(numElements.getInt(), adaptor.getOperand());
+    return convertVariadicCreate(op.getType(), operands, op, body, rewriter,
+                                 typeConverter, target);
   }
 
-  // 3. Replace the `pop.variadic.create` op with a struct containing the
-  //    pointer & the size of the sequence.
-  Type structType = convertType(op.getType());
-  if (!structType)
-    return op.emitError("failed to convert variadic type");
-  ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-  Value container = materializeLLVMStruct(
-      b, structType,
-      ValueRange{ptr,
-                 rewriter.create<LLVM::ConstantOp>(
-                     op.getLoc(), rewriter.getIntegerAttr(indexType, count))
-
-      });
-  rewriter.replaceOp(op, container);
-  return success();
-}
+private:
+  /// The enclosing function body.
+  Block *body;
+  /// The target info.
+  TargetInfoAttr target;
+};
 
 //===----------------------------------------------------------------------===//
 // ConvertPOPVariadicGet
@@ -1370,7 +1412,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
-  patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate>(
+  patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
+                  ConvertPOPVariadicSplat>(
       typeConverter, &func->getFunctionBody().front(), targetInfo);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter);

@@ -335,6 +335,10 @@ static void getCallOpEffects(
   };
 
   for (auto [arg, convention] : llvm::zip(callArguments, conventions)) {
+    if (auto splat = arg.getDefiningOp<POP::VariadicSplatOp>()) {
+      addArgument(splat.getOperand(), splat.getType().getConvention());
+      continue;
+    }
     auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>();
     if (!vararg) {
       addArgument(arg, convention);
