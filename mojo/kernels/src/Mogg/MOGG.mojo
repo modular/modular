@@ -55,7 +55,7 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import _elementwise_impl, _async_elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
@@ -79,7 +79,10 @@ from Conv import pack_conv_filter_shape as _pack_conv_filter_shape
 from ConvTranspose import conv_transpose as conv_transpose_impl
 from ConvTranspose import conv_transpose_shape
 from Cumsum import cumsum as _cumsum
-from GatherScatter import gather as _gather
+from GatherScatter import (
+    gather as _gather,
+    async_gather as _async_gather,
+)
 from GatherScatter import gather_nd as _gather_nd, gather_nd_shape
 from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
@@ -121,6 +124,8 @@ from Resize import resize_nearest_neighbor
 from ROIAlign import roi_align_nhwc
 from runtime.llcl import (
     MojoCallContextPtr,
+    MojoCallTask,
+    MojoCallRaisingTask,
     Runtime,
 )
 from runtime.tracing import Trace, TraceLevel
@@ -572,15 +577,29 @@ fn elementwise_wrapper[
         "mojo.elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-        _elementwise_impl[
-            rank,
-            simd_width,
-            single_thread_blocking_override,
-            func,
-            target=target,
-        ](
-            buffer.dynamic_shape,
-        )
+
+        @parameter
+        if single_thread_blocking_override:
+            _elementwise_impl[
+                rank,
+                simd_width,
+                single_thread_blocking_override,
+                func,
+                target=target,
+            ](
+                buffer.dynamic_shape,
+            )
+        else:
+            let coro = _async_elementwise_impl[
+                rank,
+                simd_width,
+                func,
+                target=target,
+            ](
+                buffer.dynamic_shape,
+            )
+            let task = MojoCallTask(coro ^, ctx)
+            (task ^)()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1988,15 +2007,39 @@ fn gather[
             rebind[StaticIntTuple[indices_rank]](coords)
         )
 
-    try:
-        _gather[
+    @parameter
+    if single_thread_blocking_override:
+        try:
+            _gather[
+                type,
+                in_rank,
+                indices_type,
+                indices_rank,
+                output_rank,
+                simd_width,
+                single_thread_blocking_override,
+                input_0_fn,
+                load_indices,
+                output_0_fn,
+                no_prefetch,
+                Dim(),
+                target,
+            ](
+                OptionalParamInt[Dim()](axis),
+                input_shape,
+                indices.dynamic_shape,
+                output_shape,
+            )
+        except e:
+            ctx.set_to_error(e)
+    else:
+        let coro = _async_gather[
             type,
             in_rank,
             indices_type,
             indices_rank,
             output_rank,
             simd_width,
-            single_thread_blocking_override,
             input_0_fn,
             load_indices,
             output_0_fn,
@@ -2009,8 +2052,8 @@ fn gather[
             indices.dynamic_shape,
             output_shape,
         )
-    except e:
-        ctx.set_to_error(e)
+        let task = MojoCallRaisingTask(coro ^, ctx)
+        (task ^)()
 
 
 # ===----------------------------------------------------------------------===#
@@ -2773,9 +2816,6 @@ fn non_maximum_suppression_shape_func[
 
 
 @mogg_register("mo.random.normal")
-# TODO(#27757): This kernel does not really need to be async, but we need
-#               something to test the temporary async simulation support.
-@mogg_will_become_async
 @export
 fn random_normal[
     type: DType,
