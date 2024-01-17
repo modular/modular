@@ -51,9 +51,13 @@ kgen.generator @variadic_constants<T: type, value: si32>() {
   kgen.return
 }
 
-// CHECK: f0 = #pop<fmf reassoc>
-// CHECK: f1 = #pop<fmf nnan|ninf|reassoc>
+// CHECK: f0 = #pop<fmf none>
+// CHECK: f1 = #pop<fmf reassoc>
+// CHECK: f2 = #pop<fmf nnan|ninf|reassoc>
+// CHECK: f3 = #pop<fmf fast>
 "enums.op"() {
-  f0 = #pop<fmf reassoc>,
-  f1 = #pop<fmf reassoc|ninf|nnan>
+  f0 = #pop<fmf none>,
+  f1 = #pop<fmf reassoc>,
+  f2 = #pop<fmf reassoc|ninf|nnan>,
+  f3 = #pop<fmf fast>
 } : () -> ()

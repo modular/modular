@@ -1592,7 +1592,7 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
-                      "FastmathFlags::NONE">:$fastmathFlags);
+                      "FastmathFlags::none">:$fastmathFlags);
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`

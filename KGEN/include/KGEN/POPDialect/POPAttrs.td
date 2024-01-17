@@ -86,18 +86,41 @@ def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
 // FastmathFlags
 //===----------------------------------------------------------------------===//
 
+
+def FASTMATH_NONE            : I32BitEnumAttrCaseNone<"none"      >;
+def FASTMATH_NO_NANS         : I32BitEnumAttrCaseBit<"nnan",     0>;
+def FASTMATH_NO_INFS         : I32BitEnumAttrCaseBit<"ninf",     1>;
+def FASTMATH_NO_SIGNED_ZEROS : I32BitEnumAttrCaseBit<"nsz",      2>;
+def FASTMATH_ALLOW_RECIP     : I32BitEnumAttrCaseBit<"arcp",     3>;
+def FASTMATH_ALLOW_CONTRACT  : I32BitEnumAttrCaseBit<"contract", 4>;
+def FASTMATH_APPROX_FUNC     : I32BitEnumAttrCaseBit<"afn",      5>;
+def FASTMATH_REASSOC         : I32BitEnumAttrCaseBit<"reassoc",  6>;
+def FASTMATH_FAST            : I32BitEnumAttrCaseGroup<
+    "fast",
+    [
+      FASTMATH_NO_NANS,
+      FASTMATH_NO_INFS,
+      FASTMATH_NO_SIGNED_ZEROS,
+      FASTMATH_ALLOW_RECIP,
+      FASTMATH_ALLOW_CONTRACT,
+      FASTMATH_APPROX_FUNC,
+      FASTMATH_REASSOC
+    ]>;
+
 def POP_FastmathFlags : I32BitEnumAttr<"FastmathFlags", "fastmath flags", [
-      I32BitEnumAttrCaseNone<"NONE", "none">,
-      I32BitEnumAttrCaseBit<"NNAN", 0, "nnan">,
-      I32BitEnumAttrCaseBit<"NINF", 1, "ninf">,
-      I32BitEnumAttrCaseBit<"NSZ", 2, "nsz">,
-      I32BitEnumAttrCaseBit<"ARCP", 3, "arcp">,
-      I32BitEnumAttrCaseBit<"CONTRACT", 4, "contract">,
-      I32BitEnumAttrCaseBit<"AFN", 5, "afn">,
-      I32BitEnumAttrCaseBit<"REASSOC", 6, "reassoc">
-    ]> {
+      FASTMATH_NONE,
+      FASTMATH_NO_NANS,
+      FASTMATH_NO_INFS,
+      FASTMATH_NO_SIGNED_ZEROS,
+      FASTMATH_ALLOW_RECIP,
+      FASTMATH_ALLOW_CONTRACT,
+      FASTMATH_APPROX_FUNC,
+      FASTMATH_REASSOC,
+      FASTMATH_FAST
+]> {
   let cppNamespace = "::M::KGEN::POP";
   let genSpecializedAttr = 0;
+  let printBitEnumPrimaryGroups = 1;
 }
 
 def POP_FastmathFlagsAttr : EnumAttr<POPDialect, POP_FastmathFlags, "fmf">;
