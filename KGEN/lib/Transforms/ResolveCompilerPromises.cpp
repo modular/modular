@@ -43,8 +43,39 @@ KGEN::createResolveCompilerPromises(LLCL::Runtime &runtime) {
 }
 
 namespace {
+/// Op-like wrapper for call operations and capture list operations that must
+/// behave as edges in the callgraph.
+class CallLikeOp {
+public:
+  // Required methods for LLVM-style RTTI.
+  CallLikeOp(Operation *op) : op(op) {
+    assert(!op || classof(op) && "not a call-like op");
+  }
+  static bool classof(Operation *op) {
+    return isa_and_nonnull<KGENCallOpInterface, CaptureListCreateOp,
+                           CaptureListExpandOp>(op);
+  }
+  operator bool() const { return op; }
+  operator Operation *() const { return op; }
+  Operation &operator*() { return *op; }
+
+  // Required CallGraph interface.
+  TypedAttr getCallee() {
+    // Micro-optimization: `isa` on operations is faster than interfaces.
+    if (auto create = dyn_cast<CaptureListCreateOp>(op))
+      return create.getResult().getType().getCapturingFunc();
+    if (auto expand = dyn_cast<CaptureListExpandOp>(op))
+      return expand.getCaptureList().getType().getCapturingFunc();
+    return cast<KGENCallOpInterface>(op).getCallee();
+  }
+
+private:
+  /// The underlying operation.
+  Operation *op;
+};
+
 struct CallGraphNode
-    : public CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
+    : public CallGraphNodeBase<CallGraphNode, FuncOp, CallLikeOp> {
   using CallGraphNodeBase::CallGraphNodeBase;
 
   std::vector<std::pair<StringAttr, Type>> requiredPromises;
@@ -75,6 +106,14 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   /// prepending arguments if necessary.
   void resolvePromises(CallGraphNode *node);
 
+  /// Lookup the call graph node for the given operation.
+  CallGraphNode *getCalleeNode(TypedAttr symbol) {
+    auto callee = symtab.lookup<FuncOp>(
+        cast<SymbolConstantAttr>(symbol).getSymbol().getRootReference());
+    assert(callee);
+    return &nodes.find(callee)->second;
+  }
+
   /// Initialize the worklist and run to completion.
   void run();
 
@@ -102,42 +141,11 @@ static void reversePostOrderWalk(Operation *op,
   walkFn(op);
 }
 
-static CallGraphNode *getClosureNode(Operation *op, CallGraph &cg) {
-  TypedAttr closureSymAttr;
-  if (auto captureListCreate = dyn_cast<CaptureListCreateOp>(op))
-    closureSymAttr = captureListCreate.getType().getCapturingFunc();
-  else if (auto captureListExpand = dyn_cast<CaptureListExpandOp>(op))
-    closureSymAttr =
-        captureListExpand.getCaptureList().getType().getCapturingFunc();
-  else if (auto captureListDestroy = dyn_cast<CaptureListDestroyOp>(op))
-    closureSymAttr =
-        captureListDestroy.getCaptureList().getType().getCapturingFunc();
-
-  if (!closureSymAttr)
-    return nullptr;
-  auto closure = cg.symtab.lookup<FuncOp>(
-      cast<SymbolConstantAttr>(closureSymAttr).getSymbol().getRootReference());
-
-  return &cg.nodes.find(closure)->second;
-}
-
-static void copyMember(ImplicitLocOpBuilder &builder, Value source,
-                       unsigned index, Value target) {
-  Value srcMember = builder.create<StructExtractOp>(source, index);
-  Value ptrToTargetSlot = builder.create<StructGEPOp>(target, index);
-  if (StructType structType = dyn_cast<StructType>(srcMember.getType())) {
-    for (unsigned i = 0; i < structType.getNumElements(); i++)
-      copyMember(builder, srcMember, i, ptrToTargetSlot);
-    return;
-  }
-  builder.create<POP::StoreOp>(srcMember, ptrToTargetSlot);
-}
-
 static void resolveCaptureListCreate(CaptureListCreateOp captureListCreate,
                                      CallGraphNode *closureNode,
                                      TargetInfoAttr targetInfo,
                                      ArrayRef<Value> captures) {
-  auto captureListType = closureNode->promisesStructType;
+  StructType captureListType = closureNode->promisesStructType;
   std::optional<int64_t> captureListTypeSize =
       captureListType.getTypeSize(targetInfo);
   assert(captureListTypeSize && "invalid KGEN::CaptureListCreateOp");
@@ -150,15 +158,9 @@ static void resolveCaptureListCreate(CaptureListCreateOp captureListCreate,
       b.create<mlir::index::ConstantOp>(
           targetInfo.getDataLayout().getPointerSize()),
       b.create<mlir::index::ConstantOp>(captureListTypeSize.value()));
+  for (auto [i, capture] : llvm::enumerate(captures))
+    b.create<POP::StoreOp>(capture, b.create<StructGEPOp>(alloc, i));
 
-  for (auto [j, capture] : llvm::enumerate(captures)) {
-    Value ptrToCapture = b.create<StructGEPOp>(alloc, j);
-    if (auto structType = dyn_cast<StructType>(capture.getType()))
-      for (unsigned i = 0; i < structType.getNumElements(); i++)
-        copyMember(b, capture, i, ptrToCapture);
-    else
-      b.create<POP::StoreOp>(capture, ptrToCapture);
-  }
   captureListCreate->replaceAllUsesWith(alloc);
   captureListCreate.erase();
 }
@@ -234,7 +236,20 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       return;
     }
 
-    CallGraphNode *closureNode = getClosureNode(op, *this);
+    auto computeRequiredCaptures =
+        [&requiredPromises](Operation *op, CallGraphNode *calleeNode) {
+          ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
+          // Create new loads to keep the state. Because the walk uses an early
+          // inc, it will not visit the loads twice.
+          SmallVector<Value> captures;
+          for (auto [name, type] : calleeNode->requiredPromises) {
+            auto load = b.create<POP::CompilerGlobalLoadOp>(type, name);
+            requiredPromises[name].push_back(load);
+            captures.push_back(load);
+          }
+          return captures;
+        };
+
     // When a call is encountered, look up the required promises of the
     // function it is calling. Rewrite the call to provide them.
     if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
@@ -251,33 +266,28 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       if (calleeNode->requiredPromises.empty())
         return;
 
-      ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call));
-      // Create new loads to keep the state. Because the walk uses an early
-      // inc, it will not visit the loads twice.
-      SmallVector<Value> captures;
-      for (auto [name, type] : calleeNode->requiredPromises) {
-        auto load = b.create<POP::CompilerGlobalLoadOp>(type, name);
-        requiredPromises[name].push_back(load);
-        captures.push_back(load);
-      }
-      if (auto captureListCreate = dyn_cast<CaptureListCreateOp>(op)) {
-        resolveCaptureListCreate(captureListCreate, closureNode, targetInfo,
-                                 captures);
-      } else {
-        // Prepend the captures and update the callee signature on the call. The
-        // function already has the updated signature. `kgen.create_closure`
-        // applies arguments from the front, so we cannot append.
-        call->insertOperands(0, captures);
-        call.setCalleeAttr(
-            SymbolConstantAttr::get(symbol.getSymbol(), callee.getSignature()));
-      }
+      SmallVector<Value> captures = computeRequiredCaptures(call, calleeNode);
+      // Prepend the captures and update the callee signature on the call. The
+      // function already has the updated signature. `kgen.create_closure`
+      // applies arguments from the front, so we cannot append.
+      call->insertOperands(0, captures);
+      call.setCalleeAttr(
+          SymbolConstantAttr::get(symbol.getSymbol(), callee.getSignature()));
       return;
     }
 
-    if (auto captureListExpand = dyn_cast<CaptureListExpandOp>(op)) {
-      resolveCaptureListExpand(captureListExpand, closureNode,
-                               requiredPromises);
+    if (auto create = dyn_cast<CaptureListCreateOp>(op)) {
+      CallGraphNode *closureNode =
+          getCalleeNode(create.getResult().getType().getCapturingFunc());
+      SmallVector<Value> captures = computeRequiredCaptures(op, closureNode);
+      resolveCaptureListCreate(create, closureNode, targetInfo, captures);
+      return;
+    }
 
+    if (auto expand = dyn_cast<CaptureListExpandOp>(op)) {
+      CallGraphNode *closureNode =
+          getCalleeNode(expand.getCaptureList().getType().getCapturingFunc());
+      resolveCaptureListExpand(expand, closureNode, requiredPromises);
       return;
     }
 

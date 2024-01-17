@@ -27,14 +27,10 @@ from sys import argv
 
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT:    [[STACK_FIELD_X:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(index)>
-# CHECK-NEXT:    [[HEAP_FIELD_ADD_X:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LIST_0]][0] : <struct<(index)>>
-# CHECK-NEXT:    pop.store [[STACK_FIELD_X]], [[HEAP_FIELD_ADD_X]] : !kgen.pointer<index>
+# CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<struct<(index)>>
 
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1] : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT:    [[STACK_FIELD_Y:%.*]] = kgen.struct.extract %arg1[0] : !kgen.struct<(index)>
-# CHECK-NEXT:    [[HEAP_FIELD_ADD_Y:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LIST_1]][0] : <struct<(index)>>
-# CHECK-NEXT:    pop.store [[STACK_FIELD_Y]], [[HEAP_FIELD_ADD_Y]] : !kgen.pointer<index>
+# CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]] : !kgen.pointer<struct<(index)>>
 
 # CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[1] : <struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>>
 # CHECK-NEXT:    pop.store [[HEAP_CAPTURE_LISTS_PTR]], [[MY_CAPTURE_FIELD_ADD]] : !kgen.pointer<pointer<struct<(struct<(index)>, struct<(index)>)>>>
