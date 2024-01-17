@@ -202,7 +202,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
                 return
     # CHECK: except
     except:
-        # CHECK: [[DEAD:%.*]] = lit.ownership.end_lifetime %x
+        # CHECK: [[DEAD:%.*]] = lit.transfer_mem_ownership %x
         # CHECK: __del__{{.*}}([[DEAD]])
         _ = x^
     # CHECK: else
@@ -286,7 +286,7 @@ struct TestLoopWithWholeObjectBit:
           buf.noop()
         # CHECK-NEXT: }
 
-        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.ownership.end_lifetime %buf
+        # CHECK-NEXT: [[TRANSFER_REF:%.*]] = lit.transfer_mem_ownership %buf
         # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
         # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}([[FIELD_REF]], [[TRANSFER_REF]])
         # CHECK-NEXT: %none = kgen.param.constant

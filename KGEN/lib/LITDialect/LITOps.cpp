@@ -1991,6 +1991,36 @@ LogicalResult LIT::TraitFuncOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// TransferMemOwnershipOp
+//===----------------------------------------------------------------------===//
+
+void TransferMemOwnershipOp::build(OpBuilder &b, OperationState &state,
+                                   Value srcValue, StringAttr lifetimeName) {
+  auto lifetimeType = b.getType<LifetimeType>();
+  auto lifetimeDecl = ParamDeclAttr::get(lifetimeName, lifetimeType);
+  // Lets are mutable because they may be lazy initialized.
+  auto resultType = cast<RefType>(srcValue.getType())
+                        .getWithLifetime(ParamDeclRefAttr::get(lifetimeDecl));
+  build(b, state, resultType, srcValue, lifetimeDecl);
+}
+
+void TransferMemOwnershipOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  // Set the name of the SSA value to follow the lifetime name since it
+  // indicates where the value came from.
+  StringRef name = getParamDecl().getName().strref();
+  if (!name.empty() && name[0] == '`')
+    name = name.drop_front();
+
+  setNameFn(getResult(), name);
+}
+
+void TransferMemOwnershipOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), ParamDefValue());
+}
+
+//===----------------------------------------------------------------------===//
 // UnresolvedImportOp
 //===----------------------------------------------------------------------===//
 

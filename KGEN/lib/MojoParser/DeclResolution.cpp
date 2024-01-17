@@ -1153,15 +1153,6 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
     ctorDest.resetForError();
     return {};
   }
-
-#if 0
-  if (!isMem) {
-    SRValue varListRegVal = ctorResult.getIfSRValue();
-    assert(varListRegVal && "variadic lists are register_only types");
-    return emitter.builder->create<LetRegDeclOp>(mlirLoc, argName,
-                                                 varListRegVal);
-  }
-#endif
   return varDecl;
 }
 

@@ -2464,11 +2464,17 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   }
 
   // Lifetime checking needs to understand this value or field.
-  if (!value || !LifetimeTrackable::findUnderlyingValueFromField(value)) {
+  Value trackableValue;
+  if (value)
+    trackableValue = LifetimeTrackable::findUnderlyingValueFromField(value);
+  if (!trackableValue) {
     emitter.emitError(getLoc(),
                       "expression does not designate a value with a lifetime");
     return {};
   }
+
+  LifetimeTrackable trackable(trackableValue);
+  assert(trackable && "we checked this would work above");
 
   // Since this a value we can track the lifetime of, we can end that value's
   // lifetime to make a new RValue.
@@ -2491,11 +2497,20 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(argValue, this, dest);
   }
 
+  // Register lifetimes are broken with TransferRegOwnershipOp.
   auto loc = getLocation(emitter);
-  auto newVal =
-      emitter.builder->create<OwnershipEndLifetimeOp>(loc, value, isRegister);
-  if (isRegister)
+  if (isRegister) {
+    auto newVal = emitter.builder->create<TransferRegOwnershipOp>(loc, value);
     return emitter.emitResult(SRValue(newVal), this, dest);
+  }
+
+  // For memory values, we create a new lifetime since this is a conceptually
+  // new thing and the old thing is dead.
+  StringAttr lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(
+      trackable.name.str() + "(transfer)");
+  auto destType = cast<RefType>(value.getType()).getWithLifetime(lifetimeAttr);
+  auto newVal =
+      emitter.builder->create<TransferMemOwnershipOp>(loc, value, lifetimeAttr);
   return emitter.emitResult(MRValue(newVal), this, dest);
 }
 
