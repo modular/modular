@@ -55,16 +55,14 @@ StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
                              ASTType(signatureType).getAsString() + "_wrapper");
 }
 
-static void addFieldsToStruct(StructDeclOp structDeclOp, ArrayRef<Type> fields,
-                              Location location) {
-  OpBuilder b(structDeclOp.getRegion());
-  b.setInsertionPointToStart(&structDeclOp.getFields().front());
+static void addFieldsToStruct(StructDeclOp structOp, ArrayRef<Type> fields) {
+  OpBuilder b(structOp.getRegion());
+  b.setInsertionPointToStart(&structOp.getFields().front());
   for (auto [i, type] : llvm::enumerate(fields))
-    b.create<StructFieldOp>(location, "field" + Twine(i), type);
+    b.create<StructFieldOp>(structOp.getLoc(), "field" + Twine(i), type);
 }
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
-                                 ArrayRef<Type> fields, Location location,
                                  ArrayRef<ParamDeclAttr> inputParams) {
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> inputParamNames(inputParams.size(),
@@ -73,9 +71,8 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
   SmallVector<PassingKind> passingKinds(inputParams.size(),
                                         PassingKind::PosOnly);
 
-  StructDeclOp declOp = b.create<StructDeclOp>(location, nameAttr);
+  StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), nameAttr);
   declOp.setIsSynthetic(true);
-  addFieldsToStruct(declOp, fields, location);
 
   // Set attributes in bulk.
   NamedAttrList attrs = declOp->getAttrDictionary();
@@ -170,8 +167,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     paramValues.push_back(ParamDeclRefAttr::get(wrapperDecls.back()));
     evaluator.addInputValue(paramValues.back());
   }
-  StructDeclOp declOp = createStruct(fileModuleOp, name, fieldTypes,
-                                     fileModuleOp.getLoc(), wrapperDecls);
+  StructDeclOp declOp = createStruct(fileModuleOp, name, wrapperDecls);
+  addFieldsToStruct(declOp, opaquePtrType);
   declOp.setClosureSignature(dependentSignatureType);
 
   StructFieldOp impl = *declOp.getFieldDecls().begin();
@@ -441,10 +438,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // parameters as parameter decls to the generated struct. This way, parameter
   // references within the body do not have to be renamed.
   StructDeclOp declOp =
-      createStruct(fileModuleOp, implName, fieldTypes, fileModuleOp.getLoc(),
+      createStruct(fileModuleOp, implName,
                    llvm::map_to_vector(paramCaptures, [](ParamDeclRefAttr ref) {
                      return ParamDeclAttr::get(ref);
                    }));
+  addFieldsToStruct(declOp, fieldTypes);
 
   // Register the struct and its fields as fully resolved decls.
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
