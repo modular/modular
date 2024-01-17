@@ -782,8 +782,8 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
   }
 
   // Bind the result type to the base coroutine type.
-  auto typeExpr = TypeConstantAttr::get(
-      resultType, AnyRegTypeType::get(shared.getContext()));
+  auto typeExpr =
+      TypeConstantAttr::get(resultType, TypeType::get(shared.getContext()));
   return BindTypeAttr::get(PValue(coroType), typeExpr);
 }
 

@@ -88,7 +88,7 @@ kgen.generator @dtype_params() {
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{'get_sizeof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32> : !kgen.anyregtype, #target> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
 
@@ -105,7 +105,7 @@ kgen.generator @dtype_params() {
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{'get_alignof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32> : !kgen.anyregtype, #target> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
 
@@ -418,9 +418,9 @@ kgen.generator @call_param() {
 
 // -----
 
-kgen.generator @call_param<fn: <regtype>()->()>() {
+kgen.generator @call_param<fn: <type>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[()->(): bind_signature(:<regtype>()->() fn, f32)]()
+  %0 = kgen.call_param[()->(): bind_signature(:<type>()->() fn, f32)]()
   kgen.return
 }
 

@@ -33,7 +33,7 @@ kgen.generator @loc_ref() {
 // CHECK-DAG: [[LOC2]] = loc(fused<[[SUBPROGRAM2]]>[{{.*}}])
 // CHECK-DAG: [[LOC3]] = loc(fused<[[SUBPROGRAM3]]>[{{.*}}])
 
-kgen.generator @fork_param<ty: regtype>(%x: !kgen.variadic<ty>) -> index {
+kgen.generator @fork_param<ty: type>(%x: !kgen.variadic<ty>) -> index {
   debuginfo.value #local_variable = %x : !kgen.variadic<ty> loc(#locX)
   kgen.param.if <0> {
     kgen.param.yield loc(#locVar)
@@ -49,7 +49,7 @@ kgen.generator @fork_param<ty: regtype>(%x: !kgen.variadic<ty>) -> index {
 kgen.generator @driver() -> index {
   %0 = kgen.param.constant: index = <0>
   %1 = pop.variadic.create [%0, %0] : !kgen.variadic<index>
-  %2 = kgen.call @fork_param<:regtype index>(%1) : (!kgen.variadic<index>) -> index
+  %2 = kgen.call @fork_param<:type index>(%1) : (!kgen.variadic<index>) -> index
   kgen.return %2 : index
 }
 

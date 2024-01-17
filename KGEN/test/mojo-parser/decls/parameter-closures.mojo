@@ -11,7 +11,7 @@
 # ===----------------------------------------------------------------------=== #
 
 alias Int = __mlir_type.index
-alias AnyRegType = __mlir_type.`!kgen.anyregtype`
+alias AnyRegType = __mlir_type.`!kgen.type`
 
 alias `1` = __mlir_attr.`1 : index`
 alias `2` = __mlir_attr.`2 : index`

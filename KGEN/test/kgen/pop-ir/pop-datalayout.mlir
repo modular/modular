@@ -4,7 +4,7 @@
 #i32_align8 = #kgen.target<triple="", arch="", features="", data_layout="i32:64:64", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: @pop_sizeof_alignof
-kgen.generator @pop_sizeof_alignof<N, T:regtype, DT:dtype>() {
+kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   // CHECK-NEXT: <1>
   kgen.param.constant = <get_sizeof(array<1, i8>, #target)>
   // CHECK-NEXT: <4>

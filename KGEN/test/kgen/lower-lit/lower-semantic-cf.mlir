@@ -603,7 +603,7 @@ lit.func @nested_try_finally() {
 }
 
 // CHECK-LABEL: lit.func @throwing_func
-lit.func @throwing_func<T: regtype>() throws -> !kgen.variant<@Error, T> {
+lit.func @throwing_func<T: type>() throws -> !kgen.variant<@Error, T> {
   %0 = lit.struct.create() : () -> !kgen.declref<@Error>
   // CHECK: %1 = kgen.variant.create %0, 0 : <@Error, T>
   // CHECK: lit.error_return %1 : <@Error, T>

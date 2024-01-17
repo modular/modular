@@ -921,7 +921,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
   Type selfType;
   SmallVector<TypedAttr> selfParams;
-  auto anyRegTypeType = AnyRegTypeType::get(getContext());
+  auto anyRegTypeType = TypeType::get(getContext());
   if (auto metatype = dyn_cast<MetaTypeType>(type)) {
     // When converting from a concrete type, construct the self type value as
     // a declref to the metatype.

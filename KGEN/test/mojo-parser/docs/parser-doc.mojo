@@ -30,7 +30,7 @@ from docs_package import documented_method_defined_in_init
 # CHECK: lit.package @"$docs_package"{{.*}}docString = #[[PACKAGE_DOC]]
 # CHECK: lit.func @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
 
-alias AliasType = __mlir_type.`!kgen.anyregtype`
+alias AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""
 
 let value = __mlir_attr.`10 : index`

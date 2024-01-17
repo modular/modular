@@ -154,14 +154,14 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   DebugInfo::DebugInfoTypeConverter debugTypeConverter;
 
   /// Cached anyRegTypeType so we don't need to recreate it.
-  AnyRegTypeType anyRegTypeType;
+  TypeType anyRegTypeType;
 };
 } // namespace
 
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls),
-      anyRegTypeType(AnyRegTypeType::get(ctx)) {
+      anyRegTypeType(TypeType::get(ctx)) {
 
   // Get the empty `#kgen.struct<>` attribute, which has empty struct type.
   auto emptyStructType = StructType::get(ctx, {});

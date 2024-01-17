@@ -106,9 +106,9 @@ fn testAttrConcatWithoutType[
 
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
-# CHECK-SAME: <[[ELTYPE:.*]][elType]: regtype>
+# CHECK-SAME: <[[ELTYPE:.*]][elType]: type>
 @register_passable
-struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
+struct MyPointer[elType: __mlir_type.`!kgen.type`]:
     alias StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
     # CHECK: lit.struct.field value : !kgen.pointer<[[ELTYPE]]>
     var value: Self.StorageTy
@@ -118,16 +118,14 @@ struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"[*"`arg"]<
-# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg: !lit.ref<mut [[T]], {{.*}}> byref)
-fn getAddressOf[
-    T: __mlir_type.`!kgen.anyregtype`
-](inout arg: T) -> MyPointer[T]:
+# CHECK-SAME: [[T:.*_T]][T]: type>(%arg: !lit.ref<mut [[T]], {{.*}}> byref)
+fn getAddressOf[T: __mlir_type.`!kgen.type`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def_lvalue %arg
     # CHECK-NEXT: %0 = lit.ref.to_pointer %arg
-    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:regtype [[T]]>(%0)
+    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%0)
     # CHECK-NEXT: lit.return %1
 
 

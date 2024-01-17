@@ -658,7 +658,7 @@ lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
 }
 
 lit.trait.decl @AnyType attributes {
-  dtorSig = !lit.signature<[1]<regtype, !kgen.paramref<*(0,0)>>(!lit.ref<mut :!kgen.paramref<*(0,0)> *(0,1), *[0,0]>) -> !kgen.none>
+  dtorSig = !lit.signature<[1]<type, !kgen.paramref<*(0,0)>>(!lit.ref<mut :!kgen.paramref<*(0,0)> *(0,1), *[0,0]>) -> !kgen.none>
 } {}
 
 // CHECK-LABEL: lit.func @destroy_generic

@@ -1,6 +1,6 @@
 // RUN: kgen-opt -elaborate-generators %s | FileCheck %s
 
-kgen.generator @generic_offset_load_store<ty: regtype>(%i: index, %p: !kgen.pointer<ty>) {
+kgen.generator @generic_offset_load_store<ty: type>(%i: index, %p: !kgen.pointer<ty>) {
   %0 = pop.offset %p[%i] : !kgen.pointer<ty>
   %1 = pop.load %0 : !kgen.pointer<ty>
   pop.store %1, %p : !kgen.pointer<ty>
@@ -17,7 +17,7 @@ kgen.generator @impl(
     %i: index,
     %p0: !kgen.pointer<simd<4, f32>>,
     %p1: !kgen.pointer<scalar<si32>>) {
-  kgen.call @generic_offset_load_store<:regtype !pop.simd<4, f32>>(%i, %p0) : (index, !kgen.pointer<simd<4, f32>>) -> ()
-  kgen.call @generic_offset_load_store<:regtype !pop.scalar<si32>>(%i, %p1) : (index, !kgen.pointer<scalar<si32>>) -> ()
+  kgen.call @generic_offset_load_store<:type !pop.simd<4, f32>>(%i, %p0) : (index, !kgen.pointer<simd<4, f32>>) -> ()
+  kgen.call @generic_offset_load_store<:type !pop.scalar<si32>>(%i, %p1) : (index, !kgen.pointer<scalar<si32>>) -> ()
   kgen.return
 }

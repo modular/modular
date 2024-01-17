@@ -139,7 +139,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       return "";
 
     // If this is a wrapper for a type, print it as such.
-    if (isa<AnyRegTypeType, MetaTypeType>(indexVal.getType()))
+    if (isa<TypeType, MetaTypeType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
@@ -2562,9 +2562,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         emitter.emitError(getLoc(), "only variadic types may be unpacked");
         return {};
       }
-      auto typeExpr =
-          TypeConstantAttr::get(PackType::get(pValue.get()),
-                                AnyRegTypeType::get(emitter.getContext()));
+      auto typeExpr = TypeConstantAttr::get(
+          PackType::get(pValue.get()), TypeType::get(emitter.getContext()));
       return emitter.emitResult(typeExpr, this, dest);
     }
   }
@@ -2979,7 +2978,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
 
     resultType = VariantType::get({errorType, resultType},
-                                  AnyRegTypeType::get(emitter.getContext()));
+                                  TypeType::get(emitter.getContext()));
 
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.

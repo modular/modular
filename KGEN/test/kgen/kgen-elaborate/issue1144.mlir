@@ -10,8 +10,8 @@ kgen.generator @err() {
   kgen.return
 }
 
-kgen.generator @"_mlirtype_is_eq"<t1: regtype, t2: regtype>() -> !pop.scalar<bool> {
-  %0 = kgen.param.constant: i1 = <eq(:regtype t1, t2)>
+kgen.generator @"_mlirtype_is_eq"<t1: type, t2: type>() -> !pop.scalar<bool> {
+  %0 = kgen.param.constant: i1 = <eq(:type t1, t2)>
   %1 = pop.cast_from_builtin %0 : i1 to !pop.scalar<bool>
   kgen.return %1 : !pop.scalar<bool>
 }
@@ -33,13 +33,13 @@ kgen.generator export @main() {
   %variant = kgen.param.constant: variant<struct<(pointer<scalar<si8>>, index)>, none> = <#kgen.variant<:none #kgen.none, 1>>
   %variant_0 = kgen.param.constant: variant<struct<()>, scalar<bool>, scalar<si64>, scalar<f64>, struct<(pointer<scalar<si8>>, index)>, pointer<none>, pointer<scalar<si16>>, pointer<scalar<si8>>> = <#kgen.variant<:struct<()> {  }, 0>>
   hlcf.loop "inlined_cf_scope" {
-      kgen.param.declare _19x17_T: regtype = <string>
-      kgen.param.apply *"(lifted)apply_0" = [() -> !pop.scalar<bool>: @"_mlirtype_is_eq"<:regtype _19x17_T, :regtype index>]()
+      kgen.param.declare _19x17_T: type = <string>
+      kgen.param.apply *"(lifted)apply_0" = [() -> !pop.scalar<bool>: @"_mlirtype_is_eq"<:type _19x17_T, :type index>]()
       kgen.param.apply *"(lifted)apply_1" = [(!pop.scalar<bool> borrow) -> i1: @"__mlir_i1__"](*"(lifted)apply_0")
       kgen.param.if <*"(lifted)apply_1"> {
         hlcf.break "inlined_cf_scope"
       } else {
-        kgen.param.apply *"(lifted)apply_2" = [() -> !pop.scalar<bool>: @"_mlirtype_is_eq"<:regtype _19x17_T, :regtype none>]()
+        kgen.param.apply *"(lifted)apply_2" = [() -> !pop.scalar<bool>: @"_mlirtype_is_eq"<:type _19x17_T, :type none>]()
         kgen.param.apply *"(lifted)apply_3" = [(!pop.scalar<bool> borrow) -> i1: @"__mlir_i1__"](*"(lifted)apply_2")
         // expected-note @below {{constraint failed: expected Int or NoneType}}
         kgen.param.assert <*"(lifted)apply_3">, "expected Int or NoneType"

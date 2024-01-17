@@ -184,8 +184,8 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
                                   .getDtorSig()
                                   .value_or(SignatureType());
       if (dtorSig) {
-        auto traitWithMD = TypeConstantAttr::get(
-            trait, AnyRegTypeType::get(type.getContext()));
+        auto traitWithMD =
+            TypeConstantAttr::get(trait, TypeType::get(type.getContext()));
         auto specSig = dtorSig.getSpecializedSignature(
             {traitWithMD, generic.getParam()}, []() -> InFlightDiagnostic {
               llvm_unreachable(

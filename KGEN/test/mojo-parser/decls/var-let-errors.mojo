@@ -11,7 +11,7 @@
 # ===----------------------------------------------------------------------=== #
 
 alias Lifetime = __mlir_type.`!lit.lifetime`
-alias AnyRegType = __mlir_type.`!kgen.anyregtype`
+alias AnyRegType = __mlir_type.`!kgen.type`
 alias Int = __mlir_type.index
 
 alias `42` = __mlir_attr.`42 : index`

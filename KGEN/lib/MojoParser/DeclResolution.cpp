@@ -947,8 +947,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     if (errorType.isTypeCheckErrorType())
       decl.hasReferenceError = true;
 
-    resultType = VariantType::get({errorType, resultType},
-                                  AnyRegTypeType::get(getContext()));
+    resultType =
+        VariantType::get({errorType, resultType}, TypeType::get(getContext()));
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.
     effects.setOwnedRegisterResult();
@@ -2102,7 +2102,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // Add trait's MT replacement.
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
   // just pass a generic metatype here.
-  auto anyRegTypeType = AnyRegTypeType::get(traitFn.getContext());
+  auto anyRegTypeType = TypeType::get(traitFn.getContext());
   params.push_back(TypeConstantAttr::get(anyRegTypeType, anyRegTypeType));
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
@@ -2169,7 +2169,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       auto variant = cast<VariantType>(resultType);
       resultType = VariantType::get(
           {ParamRefType::get(variant.getTypes().front()), selfType},
-          AnyRegTypeType::get(variant.getContext()));
+          TypeType::get(variant.getContext()));
 
       // The result is always owned because it includes a variant containing an
       // error.
@@ -2695,11 +2695,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Insert the implicit trait parameters:
-  // - MT: an AnyRegTypeType which points to the struct that implements this
+  // - MT: an TypeType which points to the struct that implements this
   // trait.
   // - T: a ParamRef to MT which is the type of MT.
   // TODO: build AnyType instead
-  auto mt = ParamDeclAttr::get("MT", AnyRegTypeType::get(decl.getContext()));
+  auto mt = ParamDeclAttr::get("MT", TypeType::get(decl.getContext()));
   auto mtRef = ParamDeclAttr::get(
       "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
 

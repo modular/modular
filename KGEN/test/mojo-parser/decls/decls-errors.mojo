@@ -136,17 +136,17 @@ fn exampleVariadic(a: Float32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn parameterizedVariadic[T: __mlir_type.`!kgen.anyregtype`](*args: T): pass
+fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
 # expected-error @+1 {{'owned' arguments cannot be variadic}}
-fn ownedPack[*Ts: __mlir_type.`!kgen.anyregtype`](owned *args: *Ts): pass
+fn ownedPack[*Ts: __mlir_type.`!kgen.type`](owned *args: *Ts): pass
 fn ownedVariadic(owned *args: Inner): pass
 # expected-error @+1 {{'owned' arguments cannot be variadic}}
 fn ownedVariadicReg(owned *args: WrongType): pass
 
 
 # expected-note @+1 {{struct declared here}}
-struct ParameterizedStruct[T: __mlir_type.`!kgen.anyregtype`]:
+struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
     def __init__(inout self, *args: T):
         pass
@@ -220,20 +220,20 @@ fn invalidStarExpression(*x: *): pass
 # expected-error @+1 {{only variadic types may be unpacked}}
 fn invalidPackType(*x: *Int): pass
 
-fn invalidParameterPack[*Ts: __mlir_type.`!kgen.anyregtype`]():
+fn invalidParameterPack[*Ts: __mlir_type.`!kgen.type`]():
   @parameter
   # expected-error @+1 {{parameters may not be variadic packs}}
   fn invalid[*Us: *Ts](): pass
 
 # expected-error @+2 {{only variadic arguments' types can be unpacked}}
 # expected-note @+1 {{'x' is not a variadic argument}}
-fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.anyregtype`](x: *Ts): pass
+fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.type`](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
 fn invalidOwned(owned inout x: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn examplePack[*Ts: __mlir_type.`!kgen.anyregtype`](*args: *Ts):
+fn examplePack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
   pass
 
 fn packArgOverload():
@@ -278,7 +278,7 @@ def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of
 # expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw7(*a: Int, *b: Int): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 # expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw8[*Ts: __mlir_type.`!kgen.anyregtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw8[*Ts: __mlir_type.`!kgen.type`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 fn kw9(*a: Int, b: Int): pass # expected-error {{keyword-only arguments not supported yet}}
 
 ##===----------------------------------------------------------------------===##

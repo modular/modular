@@ -156,7 +156,7 @@ static Type extractMetaType(Type type) {
   if (auto paramRef = dyn_cast<ParamRefType>(type))
     return paramRef.getParam().getType();
   // Otherwise, this is a generic MLIR type.
-  return AnyRegTypeType::get(type.getContext());
+  return TypeType::get(type.getContext());
 }
 
 PValue::PValue(Type value)

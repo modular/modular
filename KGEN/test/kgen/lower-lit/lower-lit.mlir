@@ -77,7 +77,7 @@ lit.func @decorated_fn()
 }
 
 // CHECK-LABEL: @generic_types_retain_convention
-lit.func @generic_types_retain_convention<T: regtype>(
+lit.func @generic_types_retain_convention<T: type>(
   // CHECK: %arg0: !kgen.paramref<T> borrow,
   // CHECK: %arg1: !kgen.pointer<T> byref,
   // CHECK: %arg2: !kgen.paramref<T> owned,
@@ -92,14 +92,14 @@ lit.func @generic_types_retain_convention<T: regtype>(
   kgen.return
 }
 
-lit.func @generic_callee<T: regtype>(%p: !kgen.paramref<T> borrow){
+lit.func @generic_callee<T: type>(%p: !kgen.paramref<T> borrow){
   kgen.return
 }
 
 // CHECK-LABEL: @call_generic
 lit.func @call_generic(%p: index borrow) {
-  // CHECK: kgen.call @generic_callee<:regtype index>({{.*}}) : (index borrow) -> ()
-  kgen.call @generic_callee<:regtype index>(%p) : !lit.signature<(index borrow) -> ()>
+  // CHECK: kgen.call @generic_callee<:type index>({{.*}}) : (index borrow) -> ()
+  kgen.call @generic_callee<:type index>(%p) : !lit.signature<(index borrow) -> ()>
   kgen.return
 }
 

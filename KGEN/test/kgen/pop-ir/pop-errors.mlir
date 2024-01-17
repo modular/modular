@@ -155,7 +155,7 @@ kgen.func @repeat_zero() {
 
 // -----
 
-kgen.generator @pack_create<Ts: variadic<!kgen.anyregtype>>(%arg0: f32, %arg1: si8) {
+kgen.generator @pack_create<Ts: variadic<!kgen.type>>(%arg0: f32, %arg1: si8) {
   // expected-error @below {{operand types cannot be inferred for resulting pack type '!kgen.pack<Ts>'}}
   %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<Ts>
   kgen.return
@@ -165,7 +165,7 @@ kgen.generator @pack_create<Ts: variadic<!kgen.anyregtype>>(%arg0: f32, %arg1: s
 
 // CHECK-LABEL: @pack_attr
 kgen.generator @pack_attr<Ts: variadic<i32>>() {
-  // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<regtype>}}
+  // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<type>}}
   %0 = kgen.param.constant: !kgen.pack<Ts> = <<>>
   kgen.return
 }

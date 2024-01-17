@@ -322,7 +322,7 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   impl->lifetimeType = LifetimeType::get(context);
 
   // Add an empty struct with the specified name to the resolver.
-  auto anyRegTypeType = AnyRegTypeType::get(getContext());
+  auto anyRegTypeType = TypeType::get(getContext());
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
     TypedAttr value = TypeConstantAttr::get(magicType, anyRegTypeType);
     resolver.addFullyResolvedDecl(PValue(value), name, builtinsDecl.getLoc(),
@@ -1074,7 +1074,7 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
 
   // Bind the correct element types for the tuple to the tuple type.
   SmallVector<TypedAttr> eltTypes;
-  auto anyRegTypeType = AnyRegTypeType::get(tupleLiteralStruct.getContext());
+  auto anyRegTypeType = TypeType::get(tupleLiteralStruct.getContext());
   for (auto elt : elements)
     eltTypes.push_back(TypeConstantAttr::get(elt, anyRegTypeType));
 
