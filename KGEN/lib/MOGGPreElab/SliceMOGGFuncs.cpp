@@ -599,7 +599,6 @@ public:
       // Slice out a new compute kernel. This replaces the old kernel as the
       // entry point for the thing we are going to execute.
       KGEN::GeneratorOp slicedComputeFunction = userKernel.clone();
-      Block *computeBlock = slicedComputeFunction.getBody();
 
       // Search for any function which allocates a new tensor and a move from
       // that into one of the input operands (meaning it is actually an output).
