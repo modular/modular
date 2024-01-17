@@ -8,6 +8,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
@@ -369,16 +370,24 @@ private:
   void attachMetadataToGenerator(GeneratorOp gen,
                                  SmallVector<std::string> &inputLambdaNames,
                                  SmallVector<std::string> &outputLambdaNames,
-                                 CallOp elementwiseOp) {
+                                 CallOp elementwiseOp, bool isView = false) {
     // The new attributes on the generator.
     SmallVector<NamedAttribute> newAttrs;
+
+    // Add all the old attributes.
     for (NamedAttribute attr : gen->getAttrs())
       newAttrs.push_back(attr);
 
     OpBuilder b{ctx};
 
+    // Mark this as a sliced function so MOGG lowering can identify it.
     newAttrs.push_back(
         NamedAttribute{b.getStringAttr("_sliced"), b.getUnitAttr()});
+
+    if (isView) {
+      newAttrs.push_back(
+          NamedAttribute{b.getStringAttr("_view_op"), b.getUnitAttr()});
+    }
 
     // Attach the lambda metadata.
     SmallVector<StringRef> inNames;
@@ -582,8 +591,13 @@ public:
       forEachDecorator(func, lambda);
     }
 
+    DenseSet<GeneratorOp> seenFuncs;
+
     for (GeneratorOp userKernel :
          llvm::make_early_inc_range(mod.getOps<GeneratorOp>())) {
+
+      if (seenFuncs.contains(userKernel))
+        continue;
 
       std::optional<AnnotatedKernel> kernelMetadata =
           checkForMOGGAttrs(userKernel);
@@ -644,33 +658,16 @@ public:
         forEachDecorator(func, identifyCalls);
       }
 
+      // Strip all debug info. Its too annoying to maintain and there is no way
+      // to actually debug the sliced kernel directly. Users would debug the
+      // base kernel.
+      slicedComputeFunction.walk(
+          [](DebugInfo::ValueOp debug) { debug.erase(); });
+
       // Clean up all the deconstructors. Not strictly needed as they will be
       // elaborated with the ref counting / allocation off.
       for (KGEN::CallOp deconstruct : deconstructors)
         deconstruct.erase();
-
-      // Exit and clean up if the kernel is not what we expect.
-      if (!constructor || !allocationFunc) {
-        slicedComputeFunction.erase();
-        continue;
-      }
-
-      // clang-format-off
-      // Functions with tensor allocation will follow the rough pattern.
-      // fn (*tensor):
-      //   tmp = allocate(...)
-      //   ...
-      //   copy_construct(tensor, tmp)
-      // clang-format-on
-      // We can use this to identify the output tensor and the the tensor which
-      // has been allocated. To us they are an alias.
-      Value outputTensor = constructor.getOperand(0);
-      Value tmpTensor = constructor.getOperand(1);
-      tmpTensor.replaceAllUsesWith(outputTensor);
-
-      // Remove the allocation and assignment from the sliced compute function.
-      constructor.erase();
-      allocationFunc.erase();
 
       // Resize the input and output lambda metadata to encapsulate all inputs
       // and outputs. Each one is marked off. As we detect in / out lambdas we
@@ -680,9 +677,46 @@ public:
                               "");
       outputLambdaNames.resize(1, "");
 
-      // Turn on fusion for any tensors which have set fusion.
-      enableFusion(slicedComputeFunction, outputTensor, inputLambdaNames,
-                   outputLambdaNames, enableFusionFuncs, symTab);
+      bool isView = false;
+
+      // Any MOGG annotated kernel which has no allocation should be treated as
+      // a view.
+      if (!allocationFunc) {
+        isView = true;
+
+        // Even if a view op calls this it should not appear as an elementwise
+        // kernel.
+        elementwiseOp = nullptr;
+      } else if (!constructor) {
+        // Exit and clean up if the kernel is not what we expect. Allocators and
+        // constructors are expected to appear as a pair.
+        slicedComputeFunction.erase();
+        continue;
+      } else {
+        // Otherwise we are dealing with a normal allocating op.
+
+        // clang-format-off
+        // Functions with tensor allocation will follow the rough pattern.
+        // fn (*tensor):
+        //   tmp = allocate(...)
+        //   ...
+        //   copy_construct(tensor, tmp)
+        // clang-format-on
+        // We can use this to identify the output tensor and the the tensor
+        // which has been allocated. To us they are an alias.
+        Value outputTensor = constructor.getOperand(0);
+        Value tmpTensor = constructor.getOperand(1);
+        tmpTensor.replaceAllUsesWith(outputTensor);
+
+        // Remove the allocation and assignment from the sliced compute
+        // function.
+        constructor.erase();
+        allocationFunc.erase();
+
+        // Turn on fusion for any tensors which have set fusion.
+        enableFusion(slicedComputeFunction, outputTensor, inputLambdaNames,
+                     outputLambdaNames, enableFusionFuncs, symTab);
+      }
 
       // Any `none` parameters need to be instantiated since MOGG can't provide
       // them. These are the lambdas which have now been turned off.
@@ -694,7 +728,7 @@ public:
 
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
-                                outputLambdaNames, elementwiseOp);
+                                outputLambdaNames, elementwiseOp, isView);
 
       // Add the sliced functions to the KGEN as well.
       symTab.insert(slicedComputeFunction);
@@ -703,6 +737,9 @@ public:
       // untouched for the user to use directly in their code.
       userKernel.setDecorators(
           KGEN::DecoratorsAttr::get(ctx, kernelMetadata->nonMOGGDecorators));
+
+      // Don't process the function we just added if we see it again.
+      seenFuncs.insert(slicedComputeFunction);
     }
   }
 };
