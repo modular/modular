@@ -247,13 +247,11 @@ fn batched_matmul[
             elementwise_epilogue_enabled, elementwise_epilogue_fn
         ](c_buf, a_buf, b_buf)
 
-    @closure
-    @always_inline
     fn null_rowwise_epilogue(
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    ):
+    ) escaping:
         pass
 
     @parameter
@@ -308,13 +306,11 @@ fn batched_matmul[
     ](out_coords: StaticIntTuple[rank], out_val: SIMD[c_type, width]):
         pass
 
-    @closure
-    @always_inline
     fn null_rowwise_epilogue(
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    ):
+    ) escaping:
         pass
 
     batched_matmul[
@@ -350,7 +346,7 @@ fn _batched_matmul_cpu[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
-    ) capturing -> None,
+    ) escaping -> None,
 ):
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
@@ -516,7 +512,7 @@ fn batched_matmul[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
-    ) capturing -> None,
+    ) escaping -> None,
 ):
     constrained[target == "cpu", "only valid on CPUs"]()
     batched_matmul[
@@ -599,7 +595,7 @@ fn _batched_matmul_gpu[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
-    ) capturing -> None,
+    ) escaping -> None,
 ):
     constrained[
         not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
@@ -668,7 +664,7 @@ fn batched_matmul[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
     rowwise_epilogue: fn (
         Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
-    ) capturing -> None,
+    ) escaping -> None,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
     alias func = _batched_matmul_cpu if target == "cpu" else _batched_matmul_gpu
