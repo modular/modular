@@ -356,44 +356,10 @@ struct DimList(Sized):
             A list of all dynamic dimension values.
         """
         constrained[length > 0, "length must be positive"]()
-        alias u = Dim()
 
-        @parameter
-        if length == 1:
-            return rebind[Self](DimList(u))
-        elif length == 2:
-            return rebind[Self](DimList(u, u))
-        elif length == 3:
-            return rebind[Self](DimList(u, u, u))
-        elif length == 4:
-            return rebind[Self](DimList(u, u, u, u))
-        elif length == 5:
-            return rebind[Self](DimList(u, u, u, u, u))
-        elif length == 6:
-            return rebind[Self](DimList(u, u, u, u, u, u))
-        elif length == 7:
-            return rebind[Self](DimList(u, u, u, u, u, u, u))
-        elif length == 8:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u))
-        elif length == 9:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u))
-        elif length == 10:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u))
-        elif length == 11:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u))
-        elif length == 12:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u, u))
-        elif length == 13:
-            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u, u, u))
-        elif length == 14:
-            return rebind[Self](
-                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u)
-            )
-        elif length == 15:
-            return rebind[Self](
-                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
-            )
-        else:
-            return rebind[Self](
-                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
-            )
+        return VariadicList[Dim](
+            __mlir_op.`pop.variadic.splat`[
+                numElements = length.value,
+                _type = __mlir_type[`!kgen.variadic<`, Dim, `>`],
+            ](Dim())
+        )
