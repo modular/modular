@@ -1674,14 +1674,16 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
       (ArrayRef<StringRef>(disallowedAttrNames)));
   if (op->getAttr("LLVMMetadata") == DictionaryAttr::get(op->getContext()))
     ignoredAttrs.push_back("LLVMMetadata");
-  p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
 
   printOptionalConstraints(p, op, cast<DeclInterface>(*op).getConstraints());
   printOptionalDecorators(p, op, op.getDecorators());
 
-  p << ' ';
-  if (!func.isExternal())
+  p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
+
+  if (!func.isExternal()) {
+    p << ' ';
     p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
+  }
 }
 
 ParseResult KGEN::parseParameterValues(AsmParser &p,
