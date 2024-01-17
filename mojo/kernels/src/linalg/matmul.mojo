@@ -3269,37 +3269,20 @@ fn _matmul_cpu[
             rebind[NDBuffer[2, c_shape, a_type]](c),
         )
 
-    @parameter
-    if single_thread_blocking_override:
-        matmul[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_a,
-            transpose_b,
-            b_packed,
-            elementwise_epilogue_enabled,
-            elementwise_lambda_fn,
-            saturated_vnni,
-        ](c, a, b, num_threads)
-    else:
-        matmul[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_a,
-            transpose_b,
-            b_packed,
-            elementwise_epilogue_enabled,
-            elementwise_lambda_fn,
-            saturated_vnni,
-        ](c, a, b, num_threads)
+    matmul[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_epilogue_enabled,
+        elementwise_lambda_fn,
+        saturated_vnni,
+    ](c, a, b, num_threads)
 
 
 @always_inline
@@ -3572,7 +3555,6 @@ fn matmul[
         # See issue 27734
         if use_i8mm and m < n:
             sync_parallelize[pack_task_func](num_tasks)
-            # Ensure that pack_chain is not destructed until sync_parallelize is finished.
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
