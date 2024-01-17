@@ -68,7 +68,7 @@ from memory.buffer import (
   DynamicRankBuffer
 )
 
-from runtime.llcl import OutputChainPtr
+from runtime.llcl import MojoCallContextPtr
 
 alias unary_fn_type = __mlir_type[
     `(`,
@@ -76,7 +76,7 @@ alias unary_fn_type = __mlir_type[
     `, `,
     DynamicRankBuffer,
     `, `,
-    OutputChainPtr,
+    MojoCallContextPtr,
     `) -> `,
     NoneType,
 ]
