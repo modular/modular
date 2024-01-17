@@ -155,7 +155,7 @@ def LIT_CallOp : LITOp<"call", [
     Example:
 
     ```mlir
-    lit.call @callee[*"`a"]<1, :dtype f32 -> out: regtype>(%arg0) : (!Int) -> ()
+    lit.call @callee[*"`a"]<1, :dtype f32 -> out: type>(%arg0) : (!Int) -> ()
     ```
   }];
 
@@ -631,7 +631,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     Example:
 
     ```mlir
-    lit.trait.decl @Trait<MT: regtype, T: !kgen.paramref<MT>> {
+    lit.trait.decl @Trait<MT: type, T: !kgen.paramref<MT>> {
       lit.func @f() -> !kgen.none {
         lit.trait_func
       }

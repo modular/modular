@@ -34,15 +34,15 @@ class TestStackTrace(LLDBTestBase):
             self.assertRegex(
                 frame_descs[1],
                 (
-                    r"stack-trace.Foo\[:regtype index, :regtype index\]"
-                    r".getParametrized\[:regtype scalar<f32>\]\(self=0x.*,"
+                    r"stack-trace.Foo\[index, index\]"
+                    r".getParametrized\[scalar<f32>\]\(self=0x.*,"
                     r" val=!pop.scalar<f32> @ 0x.*\) at stack-trace.mojo:17:31"
                 ),
             )
             self.assertRegex(
                 frame_descs[2],
                 (
-                    r"stack-trace.Foo\[:regtype index, :regtype index\]"
+                    r"stack-trace.Foo\[index, index\]"
                     r".getFloat\(self=0x.*, x=!pop.scalar<f32> @ 0x.*, y=100\)"
                     r" at stack-trace.mojo:20:45"
                 ),

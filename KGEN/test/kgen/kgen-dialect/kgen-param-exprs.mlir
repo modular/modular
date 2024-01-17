@@ -4,7 +4,7 @@
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: regtype, fn: (index) -> index>()  {
+kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
   // CHECK: "test.someop"() {
   "test.someop" () {
@@ -16,8 +16,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
     use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index,
 
     // Type folding.
-    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.anyregtype
-    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<:regtype mlirType>> : !kgen.anyregtype
+    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.type
+    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<:type mlirType>> : !kgen.type
 
 
   } : () -> ()
@@ -445,16 +445,16 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 }
 
 // MLIR TYPES
-// CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: regtype>()
-kgen.generator @type_params<dt: dtype, typeParam: regtype>()
-// CHECK: constraints <[eq(:regtype typeParam, scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
-   constraints <[eq(:regtype typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
+// CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
+kgen.generator @type_params<dt: dtype, typeParam: type>()
+// CHECK: constraints <[eq(:type typeParam, scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
+   constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
  {
-  // CHECK: kgen.param.declare ty1: regtype = <scalar<f32>>
-  kgen.param.declare ty1: regtype = <scalar<f32>>
+  // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
+  kgen.param.declare ty1: type = <scalar<f32>>
 
-  // CHECK: kgen.param.declare ty2: regtype = <scalar<dt>>
-  kgen.param.declare ty2: regtype = <scalar<dt>>
+  // CHECK: kgen.param.declare ty2: type = <scalar<dt>>
+  kgen.param.declare ty2: type = <scalar<dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
   // CHECK: "test.someop"() : () -> !kgen.paramref<ty2>
@@ -573,10 +573,10 @@ kgen.generator @testTargetInfo() {
 // COM: roundtrips as an escaped parameter name.
 
 // CHECK-LABEL: @mlir_builtin_types
-// CHECK-SAME: <index: regtype>
+// CHECK-SAME: <index: type>
 // CHECK-SAME: %[[ARG0:.*]]: !kgen.pointer<index>
 // CHECK-SAME: %[[ARG1:.*]]: !kgen.pointer<*"index">
-kgen.generator @mlir_builtin_types<*"index": regtype>(
+kgen.generator @mlir_builtin_types<*"index": type>(
   %arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<*"index">
 ) -> (index, !kgen.paramref<*"index">) {
   // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !kgen.pointer<index>
@@ -599,7 +599,7 @@ kgen.generator @symbol_exprs() {
   kgen.return
 }
 
-kgen.generator @takeFnContextualType<ty: regtype, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
   %0 = kgen.call_param[()->!kgen.paramref<ty>: fn]()
   kgen.return %0: !kgen.paramref<ty>
 }
@@ -610,20 +610,20 @@ kgen.func @sillyFn() -> index {
 }
 
 // CHECK-LABEL:  kgen.generator @elaborateFnWithContextualType() -> index {
-// CHECK:  kgen.call @takeFnContextualType<:regtype index, :() -> index @sillyFn>() : () -> index
+// CHECK:  kgen.call @takeFnContextualType<:type index, :() -> index @sillyFn>() : () -> index
 kgen.generator @elaborateFnWithContextualType() -> index {
-  %0 = kgen.call @takeFnContextualType<:regtype index, :()->index @sillyFn>() : () -> index
+  %0 = kgen.call @takeFnContextualType<:type index, :()->index @sillyFn>() : () -> index
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @elaborateFnWithContextualType2()
 kgen.generator @elaborateFnWithContextualType2() -> index {
-  kgen.param.declare fn: <regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare boundFn: () -> index =
-  // CHECK-SAME: <bind_signature(:<regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, @sillyFn)>
+  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, @sillyFn)>
   kgen.param.declare boundFn: () -> index =
-    <bind_signature(:<regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn,
+    <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn,
                     index, @sillyFn)>
   %0 = kgen.call_param[()->index: boundFn]()
 
@@ -632,13 +632,13 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
 
 // CHECK-LABEL: @partialBindSignature
 kgen.generator @partialBindSignature() -> index {
-  kgen.param.declare fn: <regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare partiallyBound: <() -> index>() -> index =
-  // CHECK-SAME: <bind_signature(:<regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
+  // CHECK-SAME: <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
   kgen.param.declare
     partiallyBound: <() -> index>() -> index =
-      <bind_signature(:<regtype, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
+      <bind_signature(:<type, () -> !kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn, index, ?)>
   // CHECK: kgen.call_param[() -> index: bind_signature(:<() -> index>() -> index partiallyBound, @sillyFn)]()
   %0 = kgen.call_param[() -> index: bind_signature(:<() -> index>() -> index partiallyBound, @sillyFn)]()
 
@@ -647,9 +647,9 @@ kgen.generator @partialBindSignature() -> index {
 
 // CHECK-LABEL: @partialBindSignature2
 kgen.generator @partialBindSignature2() -> index {
-  // CHECK: kgen.param.declare fn: <() -> index>() -> index = <@takeFnContextualType<:regtype index, :() -> index ?>>
+  // CHECK: kgen.param.declare fn: <() -> index>() -> index = <@takeFnContextualType<:type index, :() -> index ?>>
   kgen.param.declare fn: <()->index>() -> index =
-    <bind_signature(:<regtype, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> @takeFnContextualType, index, ?)>
+    <bind_signature(:<type, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> @takeFnContextualType, index, ?)>
   // CHECK: kgen.param.declare fullyBound: () -> index = <bind_signature(:<() -> index>() -> index fn, @sillyFn)>
   kgen.param.declare fullyBound: () -> index = <bind_signature(:<()->index>() -> index fn, @sillyFn)>
 
@@ -661,15 +661,15 @@ kgen.generator @partialBindSignature2() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @returnParam<T: regtype, I>(%arg : !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @returnParam<T: type, I>(%arg : !kgen.paramref<T>) -> !kgen.paramref<T> {
  kgen.return %arg : !kgen.paramref<T>
 }
 
 // CHECK-LABEL: @partialBindSignature3
-kgen.generator @partialBindSignature3<T: regtype>(%arg : !kgen.paramref<T>) {
-  // CHECK-NEXT: kgen.param.declare fn: <regtype>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> = <@returnParam<:regtype ?, 32>>
-  kgen.param.declare fn: <regtype>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> =
-    <bind_signature(:<regtype, index>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> @returnParam, ?, 32)>
+kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.paramref<T>) {
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> = <@returnParam<:type ?, 32>>
+  kgen.param.declare fn: <type>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> =
+    <bind_signature(:<type, index>(!kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> @returnParam, ?, 32)>
   kgen.return
 }
 
@@ -736,13 +736,13 @@ kgen.generator @indexParamRef<
 
 // CHECK-LABEL: kgen.generator @partial_bind_index
 kgen.generator @partial_bind_index<c>() {
-  kgen.param.declare.region fn = <a, b: regtype>(%arg0: !pop.array<a, b>) {
+  kgen.param.declare.region fn = <a, b: type>(%arg0: !pop.array<a, b>) {
     kgen.return
   }
-  kgen.param.declare callable: <index, regtype>(!pop.array<*(0,0), *(0,1)>) -> () = <fn>
-  // CHECK: declare partial_bound: <regtype>(!pop.array<c, *(0,0)>) -> ()
-  kgen.param.declare partial_bound: <regtype>(!pop.array<c, *(0,0)>) -> () =
-    <bind_signature(:<index, regtype>(!pop.array<*(0,0), *(0,1)>) -> () callable, c, ?)>
+  kgen.param.declare callable: <index, type>(!pop.array<*(0,0), *(0,1)>) -> () = <fn>
+  // CHECK: declare partial_bound: <type>(!pop.array<c, *(0,0)>) -> ()
+  kgen.param.declare partial_bound: <type>(!pop.array<c, *(0,0)>) -> () =
+    <bind_signature(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () callable, c, ?)>
   kgen.return
 }
 
@@ -788,8 +788,8 @@ kgen.generator @get_likage_name() {
 
 // CHECK-LABEL: @unification
 kgen.generator @unification() {
-  // CHECK: T0: regtype = <@unification : !metatype.type>
-  kgen.param.declare T0: regtype = <rebind(:!metatype.type #kgen.concretetype.constant<!kgen.declref<@unification, !metatype.type>>)>
+  // CHECK: T0: type = <@unification : !metatype.type>
+  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.concretetype.constant<!kgen.declref<@unification, !metatype.type>>)>
   kgen.return
 }
 

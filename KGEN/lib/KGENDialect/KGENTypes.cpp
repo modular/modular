@@ -43,8 +43,8 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
-      "regtype", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "regtype"; });
+      "type", &TypeType::parse, TypeID::get<TypeType>(),
+      +[](AsmPrinter &p, Type) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();
@@ -71,7 +71,7 @@ Type ParamRefType::get(TypedAttr param) {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyRegTypeType
+// TypeType
 //===----------------------------------------------------------------------===//
 
 /// Implementation of the parsing logic for sugar types (e.g. !kgen.anytype).
@@ -123,29 +123,26 @@ static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
   return success();
 }
 
-OptionalParseResult AnyRegTypeType::parseValue(AsmParser &p,
-                                               TypedAttr &value) const {
+OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this);
 }
 
-LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printSugaredTypeValue(p, value);
 }
 
-std::optional<int64_t>
-AnyRegTypeType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
   // TODO: Types don't have a runtime representation yet! But one can imagine it
   // would contain a type ID, and a pointer to the witness table.
   return target.getDataLayout().getPointerSize() * 2;
 }
 
-std::optional<int64_t>
-AnyRegTypeType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> TypeType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-ErrorOrSuccess AnyRegTypeType::writeTo(TypedAttr value, int64_t addr,
-                                       InterpreterState &state) const {
+ErrorOrSuccess TypeType::writeTo(TypedAttr value, int64_t addr,
+                                 InterpreterState &state) const {
   ErrorOr<void *> mem =
       state.getWritableMemory(addr, *getTypeSize(state.getTarget()));
   if (mem)
@@ -160,8 +157,8 @@ ErrorOrSuccess AnyRegTypeType::writeTo(TypedAttr value, int64_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> AnyRegTypeType::readFrom(int64_t addr,
-                                            InterpreterState &state) const {
+ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
+                                      InterpreterState &state) const {
   ErrorOr<const void *> mem =
       state.getReadableMemory(addr, *getTypeSize(state.getTarget()));
   if (mem)
@@ -1095,7 +1092,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 
 static void printPackType(AsmPrinter &p, TypedAttr value) {
   if (auto variadic = dyn_cast<VariadicType>(value.getType())) {
-    if (isa<AnyRegTypeType>(variadic.getElementType())) {
+    if (isa<TypeType>(variadic.getElementType())) {
       printParamValue(p, value);
       return;
     }
@@ -1104,7 +1101,7 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 }
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
-  auto anyRegTypeType = AnyRegTypeType::get(p.getContext());
+  auto anyRegTypeType = TypeType::get(p.getContext());
   Type type =
       VariadicType::get(anyRegTypeType, ValueInputConvention::BorrowedInReg);
   if (succeeded(p.parseOptionalColon()))

@@ -25,7 +25,7 @@ kgen.generator @find_even() {
 // COM: This is an example that tests using the generator interface replacement.
 
 /// This evaluator returns a constant index.
-kgen.generator @simpleEvaluator<N, FN: regtype>(%funcs: !kgen.pointer<FN>, %num: index) -> index {
+kgen.generator @simpleEvaluator<N, FN: type>(%funcs: !kgen.pointer<FN>, %num: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
 }
@@ -34,7 +34,7 @@ kgen.generator @simpleEvaluator<N, FN: regtype>(%funcs: !kgen.pointer<FN>, %num:
 // CHECK-LABEL: @pickFirst
 kgen.generator @pickFirst() {
   kgen.param.declare evaluator: (!kgen.pointer<!kgen.signature<() -> ()>>, index) -> index
-    = <bind_signature(:<index, regtype>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 0, !kgen.signature<()->()>)>
+    = <bind_signature(:<index, type>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 0, !kgen.signature<()->()>)>
   kgen.param.evaluate chosenImpl : () -> () = [@pickFirstA, @pickFirstB]
     with [(!kgen.pointer<!kgen.signature<() -> ()>>, index) -> index: evaluator]
   // CHECK-NEXT: kgen.call @pickFirstA
@@ -46,7 +46,7 @@ kgen.generator @pickFirst() {
 // CHECK-LABEL: @pickSecond()
 kgen.generator @pickSecond() {
   kgen.param.declare evaluator: (!kgen.pointer<!kgen.signature<() -> ()>>, index) -> index
-    = <bind_signature(:<index, regtype>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->()>)>
+    = <bind_signature(:<index, type>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->()>)>
   kgen.param.evaluate chosenImpl : () -> () = [@pickSecondA, @pickSecondB]
     with [(!kgen.pointer<!kgen.signature<() -> ()>>, index) -> index: evaluator]
   // CHECK-NEXT: kgen.call @pickSecondB
@@ -83,7 +83,7 @@ kgen.generator @test() {
 
 /// This evaluator returns a constant index.
 // CHECK-LABEL: @"simpleEvaluator,N=1,FN=() -> index"
-kgen.generator @simpleEvaluator<N, FN:regtype>(%funcs: !kgen.pointer<FN>, %num: index) -> index {
+kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !kgen.pointer<FN>, %num: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
 }
@@ -92,7 +92,7 @@ kgen.generator @simpleEvaluator<N, FN:regtype>(%funcs: !kgen.pointer<FN>, %num: 
 // CHECK-LABEL: @pickSecond()
 kgen.generator @pickSecond() -> index {
   kgen.param.declare evaluator: (!kgen.pointer<!kgen.signature<() -> index>>, index) -> index
-    = <bind_signature(:<index, regtype>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->index>)>
+    = <bind_signature(:<index, type>(!kgen.pointer<*(0,1)>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->index>)>
   kgen.param.evaluate chosenImpl : () -> index = [@pickSecondA, @pickSecondB]
     with [(!kgen.pointer<!kgen.signature<() -> index>>, index) -> index: evaluator]
   // COM: This is actually not one of the direct options, it's an expansion of one of them.

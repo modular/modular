@@ -80,12 +80,12 @@ kgen.generator @parent<A>() {
   // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
   // CHECK-NEXT: hlcf.break "[[LABEL]]" %[[R1]]
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<:regtype index>() : () -> index
+  %0 = kgen.call @callee<:type index>() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: regtype>() -> !kgen.paramref<T> always_inline {
+kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
@@ -801,16 +801,16 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
 #loc = loc(fused<#subprogram>[#fileLoc])
 
 // CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent<T: regtype>(%arg0: index) {
-  // CHECK: kgen.param.declare T0: regtype = <index> loc(#[[CALL_LOC:.*]])
+kgen.generator @parent<T: type>(%arg0: index) {
+  // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
   // CHECK-NEXT: kgen.return
-  kgen.call @nodebug_inline_me<:regtype index>(%arg0) : (index) -> () loc(#loc)
+  kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> () loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
-kgen.generator @nodebug_inline_me<T: regtype>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
+kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
   debuginfo.value #local_variable = %arg0 : !kgen.paramref<T> loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
@@ -1218,14 +1218,14 @@ kgen.generator @top() {
 
 // -----
 
-kgen.generator @trivial<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @trivial<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   kgen.return %arg0 : !kgen.paramref<T>
 }
 
 // CHECK-LABEL: kgen.generator @trivial_exprs
 kgen.generator @trivial_exprs() {
   // CHECK-NEXT: constant = <2>
-  kgen.param.constant = <apply(:(index) -> index @trivial<:regtype index>, 2)>
+  kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
   kgen.return
 }
 
@@ -1236,12 +1236,12 @@ kgen.generator @inline_heuristic<A>() {
   // CHECK: %[[V:.*]] = "some.producer"
   // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<:regtype index>() : () -> index
+  %0 = kgen.call @callee<:type index>() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: regtype>() -> !kgen.paramref<T> always_inline {
+kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   kgen.return %0 : !kgen.paramref<T>
 }

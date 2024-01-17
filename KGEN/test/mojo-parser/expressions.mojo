@@ -187,17 +187,17 @@ struct RegPassable:
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
 # CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
-# CHECK-SAME: <"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
+# CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
 struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.signature<<"T": regtype>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}[*"`self"]<:!lit.signature<<"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
-        # CHECK-SAME: !lit.ref<{{.*}}<"T": regtype>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK: call {{.*}}[*"`self"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
 # CHECK-LABEL: lit.func @"simpleMath
@@ -1334,7 +1334,7 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow) throws|vararg|ownedresult -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
-# CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<regtype>>(!kgen.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg|ownedresult -> !kgen.variant<!Error, none>
+# CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg|ownedresult -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !Int>
 fn function_types(
@@ -1354,8 +1354,8 @@ fn function_types(
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
-# CHECK-NEXT: lit.alias.decl _{{.*}}_x: regtype = <i8>
-# CHECK-NEXT: lit.alias.decl _{{.*}}_B: regtype = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
+# CHECK-NEXT: lit.alias.decl _{{.*}}_x: type = <i8>
+# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None
@@ -1551,37 +1551,37 @@ fn take_kw_param_infer[B: AnyRegType](a: StringLiteral, b: B):
 fn test_kw_args_param_infer():
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:regtype !Int, :regtype !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:regtype !Int, :regtype !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(a=1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:regtype !Int, :regtype !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer[Int, FloatLiteral](a=1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:regtype !Int, :regtype !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(b=3.14, a=1)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:regtype !Int, :regtype !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer[Int](b=3.14, a=1)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
-    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:regtype !Int>(%[[A]], %[[B]])
+    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer("hello", b=3)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
-    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:regtype !Int>(%[[A]], %[[B]])
+    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer(b=3, a="hello")
 
 
@@ -1629,22 +1629,22 @@ fn indirect_kw_args():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"type_function
-# CHECK-SAME: (%a: !Bool borrow) -> !kgen.anyregtype
+# CHECK-SAME: (%a: !Bool borrow) -> !kgen.type
 fn type_function(a: Bool) -> AnyRegType:
-    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.anyregtype
+    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.type
     # CHECK-NEXT: %metatype = kgen.param.constant: metatype<{{.*}}@Int> = <!Int>
     # CHECK-NEXT: [[COERCED:%.*]] = lit.call {{.*}}(%metatype)
     # CHECK-NEXT: yield [[COERCED]]
     # CHECK-NEXT: else
-    # CHECK-NEXT: %regtype = kgen.param.constant: regtype = <!Bool>
-    # CHECK-NEXT: yield %regtype
-    # CHECK: return [[TYPE]] : !kgen.anyregtype
+    # CHECK-NEXT: %type = kgen.param.constant: type = <!Bool>
+    # CHECK-NEXT: yield %type
+    # CHECK: return [[TYPE]] : !kgen.type
     return rebind[AnyRegType](Int) if a else Bool
 
 
 # CHECK-LABEL: lit.func @"static_type
 # CHECK-SAME: <[[PARAM:.*]][a]: !Bool>
-# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.anyregtype> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
+# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.type> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
 fn static_type[a: Bool](x: type_function(a)):
     pass
 

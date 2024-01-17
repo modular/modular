@@ -32,7 +32,7 @@ kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
 }
 
 // CHECK-LABEL: @array_constants
-kgen.generator @array_constants<T: regtype, A: !kgen.paramref<T>>() {
+kgen.generator @array_constants<T: type, A: !kgen.paramref<T>>() {
   // CHECK: array<2, index> = <[1, 2]>
   kgen.param.constant: array<2, index> = <[1, 2]>
   // CHECK: array<2, dtype> = <[ui4, si4]>
@@ -43,7 +43,7 @@ kgen.generator @array_constants<T: regtype, A: !kgen.paramref<T>>() {
 }
 
 // CHECK-LABEL: @variadic_constants
-kgen.generator @variadic_constants<T: regtype, value: si32>() {
+kgen.generator @variadic_constants<T: type, value: si32>() {
   // CHECK: variadic<si32> = <[1, value]>
   kgen.param.constant: variadic<si32> = <[1, value]>
   // CHECK: variadic<T> = <[]>

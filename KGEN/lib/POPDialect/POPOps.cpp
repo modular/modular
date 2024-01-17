@@ -423,7 +423,7 @@ static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
       p.parseGreater())
     return failure();
   resultType = PointerType::get(
-      TypeConstantAttr::get(elementType, AnyRegTypeType::get(p.getContext())));
+      TypeConstantAttr::get(elementType, TypeType::get(p.getContext())));
   return success();
 }
 

@@ -1061,7 +1061,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
     Example:
 
     ```mlir
-    kgen.generator @stack_memory<count, T: regtype>() {
+    kgen.generator @stack_memory<count, T: type>() {
       // This memory is allocated at the start of the function call and released
       // at the end.
       %0 = pop.stack_allocation count x T

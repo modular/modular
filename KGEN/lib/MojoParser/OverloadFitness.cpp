@@ -73,8 +73,8 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
                   expectedParamRef.getParam());
     } else {
       // Otherwise, this is an MLIR type.
-      matchParams(TypeConstantAttr::get(
-                      actualType, AnyRegTypeType::get(actualType.getContext())),
+      matchParams(TypeConstantAttr::get(actualType,
+                                        TypeType::get(actualType.getContext())),
                   expectedParamRef.getParam());
     }
     return;
@@ -398,8 +398,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
           toPush = nmTarget;
         Type metatype = toPush.getMetaType();
         TypedAttr actualAttr = TypeConstantAttr::get(
-            toPush,
-            metatype ? metatype : AnyRegTypeType::get(shared.getContext()));
+            toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         if (!emitter.canImplicitlyConvertToType({actualAttr, &node},
                                                 elementType))
           return {};

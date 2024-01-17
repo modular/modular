@@ -101,26 +101,26 @@ kgen.generator @raise2Closures() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @parametrizedClosure_Fn<T: regtype>() capturing -> !kgen.paramref<T>
+// CHECK-LABEL: kgen.generator @parametrizedClosure_Fn<T: type>() capturing -> !kgen.paramref<T>
 // CHECK-NEXT:    %0 = pop.compiler.global_load "parametrizedClosure_context_var_2" : !kgen.struct<(T)>
 // CHECK-NEXT:    %1 = kgen.struct.extract %0[0] : !kgen.struct<(T)>
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
-// CHECK-LABEL: kgen.generator @parametrizedClosure<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T>
+// CHECK-LABEL: kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T>
 // CHECK-NEXT:    %0 = kgen.struct.create(%arg0) : !kgen.struct<(T)>
 // CHECK-NEXT:    pop.compiler.global_store "parametrizedClosure_context_var_2", %0 : !kgen.struct<(T)>
-// CHECK-NEXT:    kgen.param.declare Fn: () capturing -> !kgen.paramref<T> = <@parametrizedClosure_Fn<:regtype T>>
+// CHECK-NEXT:    kgen.param.declare Fn: () capturing -> !kgen.paramref<T> = <@parametrizedClosure_Fn<:type T>>
 // CHECK-NEXT:    %1 = kgen.call_param[() -> !kgen.paramref<T>: Fn]()
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
 // CHECK-LABEL: kgen.generator @raiseParamClosure() -> f32
 // CHECK-NEXT:    %simd = kgen.param.constant: scalar<f32> = <"0">
 // CHECK-NEXT:    %0 = pop.cast_to_builtin %simd : !pop.scalar<f32> to f32
-// CHECK-NEXT:    %1 = kgen.call @parametrizedClosure<:regtype f32>(%0) : (f32) -> f32
+// CHECK-NEXT:    %1 = kgen.call @parametrizedClosure<:type f32>(%0) : (f32) -> f32
 // CHECK-NEXT:    kgen.return %1 : f32
 
 
-kgen.generator @parametrizedClosure<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   kgen.param.declare.region Fn = () capturing -> !kgen.paramref<T> {
     kgen.return %arg0 : !kgen.paramref<T>
   }
@@ -131,7 +131,7 @@ kgen.generator @parametrizedClosure<T: regtype>(%arg0: !kgen.paramref<T>) -> !kg
 kgen.generator @raiseParamClosure() -> f32 {
   %0 = kgen.param.constant : !pop.scalar<f32> = <<"0.000000e+00">>
   %1 = pop.cast_to_builtin %0 : !pop.scalar<f32> to f32
-  %2 = kgen.call @parametrizedClosure<:regtype f32>(%1) : (f32) -> (f32)
+  %2 = kgen.call @parametrizedClosure<:type f32>(%1) : (f32) -> (f32)
   kgen.return %2 : f32
 }
 
@@ -233,19 +233,19 @@ kgen.generator @nested2() -> index {
 }
 
 // CHECK-LABEL: kgen.generator @capture_crosses_parameter_domain
-kgen.generator @capture_crosses_parameter_domain<T: regtype>(%arg0: !kgen.paramref<T>) {
-  // CHECK: declare Fn: <index, regtype>
-  kgen.param.declare.region Fn = <A, S: regtype>() capturing -> !kgen.paramref<T> {
+kgen.generator @capture_crosses_parameter_domain<T: type>(%arg0: !kgen.paramref<T>) {
+  // CHECK: declare Fn: <index, type>
+  kgen.param.declare.region Fn = <A, S: type>() capturing -> !kgen.paramref<T> {
     kgen.return %arg0: !kgen.paramref<T>
   }
   kgen.return
 }
 
 // COM: We have to parametrize the wrapper on captured SSA values as well, check that this actually happens.
-// CHECK-LABEL: @parametrizedSSACapture_fn<T: regtype>
-kgen.generator @parametrizedSSACapture<T: regtype>(%arg0 : !kgen.paramref<T>) -> index {
+// CHECK-LABEL: @parametrizedSSACapture_fn<T: type>
+kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[() -> index: fn]()
-  // CHECK: kgen.param.declare fn: () capturing -> index = <@parametrizedSSACapture_fn<:regtype T>>
+  // CHECK: kgen.param.declare fn: () capturing -> index = <@parametrizedSSACapture_fn<:type T>>
   kgen.param.declare.region fn = () capturing -> index {
     "op.use"(%arg0) : (!kgen.paramref<T>) -> ()
     %1 = kgen.param.constant = <0>
@@ -255,10 +255,10 @@ kgen.generator @parametrizedSSACapture<T: regtype>(%arg0 : !kgen.paramref<T>) ->
 }
 
 // COM: We should not try and capture input parameters.
-// CHECK-LABEL: @dontBindInputParameters_fn<T: regtype, N>
-kgen.generator @dontBindInputParameters<T: regtype, I>(%arg0 : !kgen.paramref<T>) -> index {
+// CHECK-LABEL: @dontBindInputParameters_fn<T: type, N>
+kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index fn, I)]()
-  // CHECK: kgen.param.declare fn: <index>() capturing -> index = <@dontBindInputParameters_fn<:regtype T, ?>>
+  // CHECK: kgen.param.declare fn: <index>() capturing -> index = <@dontBindInputParameters_fn<:type T, ?>>
   kgen.param.declare.region fn = <N>() capturing -> index {
     %1 = kgen.param.constant = <N>
     "use.op"(%arg0) : (!kgen.paramref<T>) -> ()
@@ -296,14 +296,14 @@ kgen.generator @paramCaptureNestedInParamRefType<N, Vs: array<N, i32>>() {
 }
 
 // CHECK-LABEL: @left_to_right_dependency_CaptureThemAll
-// CHECK-SAME: <A, F: regtype, G: regtype, H: regtype, I: regtype, J: regtype,
-// CHECK-SAME:  L: array<A, struct<(F, G, H, I, J)>>, B: regtype,
+// CHECK-SAME: <A, F: type, G: type, H: type, I: type, J: type,
+// CHECK-SAME:  L: array<A, struct<(F, G, H, I, J)>>, B: type,
 // CHECK-SAME:  E: array<A, array<A, array<A, B>>>,
 // CHECK-SAME:  D: array<A, array<A, B>>, C: array<A, B>
 kgen.generator @left_to_right_dependency<
-    A, B: regtype, C: array<A, B>, D: array<A, array<A, B>>,
+    A, B: type, C: array<A, B>, D: array<A, array<A, B>>,
     E: array<A, array<A, array<A, B>>>,
-    F: regtype, G: regtype, H: regtype, I: regtype, J: regtype,
+    F: type, G: type, H: type, I: type, J: type,
     K: struct<(F, G, H, I, J)>, L: array<A, struct<(F, G, H, I, J)>>>() {
   kgen.param.declare.region CaptureThemAll = () {
     "use"() {
@@ -319,9 +319,9 @@ kgen.generator @left_to_right_dependency<
 
 // CHECK-LABEL: kgen.generator @dependent_outline<a>
 kgen.generator @dependent_outline<a>() {
-  // CHECK-NEXT: kgen.param.declare fn: <regtype>(!pop.array<a, *(0,0)>) -> () =
-  // CHECK-SAME: <@dependent_outline_fn<a, :regtype ?>>
-  kgen.param.declare.region fn = <b: regtype>(%arg0: !pop.array<a, b>) {
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!pop.array<a, *(0,0)>) -> () =
+  // CHECK-SAME: <@dependent_outline_fn<a, :type ?>>
+  kgen.param.declare.region fn = <b: type>(%arg0: !pop.array<a, b>) {
     kgen.return
   }
   kgen.return

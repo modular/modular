@@ -325,7 +325,7 @@ static void lowerInputConventions(Operation &op) {
       auto [newSig, _, __] = lowerSignature(sig);
       return newSig ? newSig : sig;
     });
-    auto anyRegTypeType = AnyRegTypeType::get(op.getContext());
+    auto anyRegTypeType = TypeType::get(op.getContext());
     replacer.addReplacement([&](TypeConstantAttr type) {
       // Canonicalize metatypes.
       return TypeConstantAttr::get(type.getValue(), anyRegTypeType);

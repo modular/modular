@@ -99,7 +99,7 @@ kgen.generator @ref_it() {
 
 // -----
 
-kgen.generator @pass_type<T: regtype> () -> !kgen.paramref<T> {
+kgen.generator @pass_type<T: type> () -> !kgen.paramref<T> {
   kgen.unreachable
 }
 
@@ -107,13 +107,13 @@ kgen.generator @use() {
   // COM: Construct a scenario where a signature with an escaped index reference
   // COM: is being passed as a type parameter to a function that references it
   // COM: in its result.
-  // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.signature<() -> !pop.simd<*(2,0), si8>> @pass_type<:regtype () -> !pop.simd<*(1,0), si8>>)
+  // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.signature<() -> !pop.simd<*(2,0), si8>> @pass_type<:type () -> !pop.simd<*(1,0), si8>>)
   kgen.param.declare use: <
     index,
     !kgen.paramref<rebind(:() -> !pop.simd<*(1,0), si8>
       apply(
         :() -> !kgen.signature<() -> !pop.simd<*(2,0), si8>>
-          @pass_type<:regtype () -> !pop.simd<*(1,0), si8>>))>
+          @pass_type<:type () -> !pop.simd<*(1,0), si8>>))>
   >() -> () = <?>
   kgen.return
 }

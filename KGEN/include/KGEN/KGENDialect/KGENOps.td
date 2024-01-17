@@ -1360,7 +1360,7 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>>(
+    kgen.generator @pack<Ts: variadic<!kgen.type>>(
       %arg0: f32, %arg1: si8
     ) {
       // Create a pack of two elements.
@@ -1405,7 +1405,7 @@ def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T: regtype, I: index>(
+    kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
       %arg0: !kgen.pack<i32, T>
       %arg1: Ts,
     ) {

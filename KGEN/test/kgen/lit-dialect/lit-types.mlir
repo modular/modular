@@ -2,11 +2,11 @@
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 lit.struct.decl @MyStruct {}
-lit.struct.decl @MyStructParams<a, b: dtype, c: regtype> {}
+lit.struct.decl @MyStructParams<a, b: dtype, c: type> {}
 
 // CHECK-LABEL: @UseStruct
-// CHECK-SAME: !kgen.declref<@MyStructParams<a, :dtype b, :regtype c>>
-kgen.generator @UseStruct<a, b: dtype, c: regtype>(%arg0: !kgen.declref<@MyStructParams<a, :dtype b, :regtype c>>) {
+// CHECK-SAME: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>
+kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>) {
   kgen.return
 }
 
@@ -22,8 +22,8 @@ kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@
   kgen.return
 }
 
-// CHECK-LABEL: lit.trait.decl @TParam<MT: regtype, T: !kgen.paramref<MT>>
-lit.trait.decl @TParam<MT: regtype, T: !kgen.paramref<MT>> {
+// CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>>
+lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>> {
   // CHECK-NEXT: lit.func @f(%self: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none
   lit.func @f(%self: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none {
     lit.trait_func
@@ -57,7 +57,7 @@ kgen.generator @nested_index<a>(%arg0: !lit.type_signature<index, index = *(0,0)
   kgen.return
 }
 
-kgen.generator @subst_type<T: regtype>(%arg0: !kgen.paramref<T>) {
+kgen.generator @subst_type<T: type>(%arg0: !kgen.paramref<T>) {
   kgen.return
 }
 
@@ -73,8 +73,8 @@ kgen.generator @return_sig() -> !lit.signature<<index, index = *(0,0)>() -> ()> 
 kgen.generator @bind_nested() {
   // CHECK: bound0: (!lit.type_signature<index, index = *(0,0)>) -> () = <@nested_index<1>>
   kgen.param.declare bound0: (!lit.type_signature<index, index = *(0,0)>) -> () = <@nested_index<1>>
-  // CHECK: bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:regtype !lit.type_signature<index, index = *(0,0)>>>
-  kgen.param.declare bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:regtype !lit.type_signature<index, index = *(0,0)>>>
+  // CHECK: bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:type !lit.type_signature<index, index = *(0,0)>>>
+  kgen.param.declare bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:type !lit.type_signature<index, index = *(0,0)>>>
   // CHECK: result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
   kgen.param.declare result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
   // CHECK: result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.signature<!lit.signature<<index, index = *(0,0)>() -> ()>> @return_sig)>
@@ -105,10 +105,10 @@ kgen.generator @method() {
 
 // CHECK-LABEL: kgen.generator @trait
 kgen.generator @trait() {
-  // CHECK-NEXT: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
-  kgen.param.declare type: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
-  // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :regtype i32>, {"method" : () -> () = @method}]>
-  kgen.param.declare vtable: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :regtype i32>, {"method" : () -> () = @method}]>
+  // CHECK-NEXT: trait<@Trait> = <@MyStructParams<1, :dtype f32, :type i32>>
+  kgen.param.declare type: trait<@Trait> = <@MyStructParams<1, :dtype f32, :type i32>>
+  // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, {"method" : () -> () = @method}]>
+  kgen.param.declare vtable: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, {"method" : () -> () = @method}]>
   kgen.return
 }
 

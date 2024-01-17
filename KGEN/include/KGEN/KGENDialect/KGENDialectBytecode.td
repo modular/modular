@@ -17,7 +17,7 @@ def ParamRefType : DialectType<(type
   TypedAttr:$param
 )>;
 
-def AnyRegTypeType : DialectType<(type)>;
+def TypeType : DialectType<(type)>;
 
 def DTypeType : DialectType<(type)>;
 
@@ -76,7 +76,7 @@ def CaptureListType : DialectType<(type
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     ParamRefType,
-    AnyRegTypeType,
+    TypeType,
     DTypeType,
     StringType,
     IntLiteralType,

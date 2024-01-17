@@ -193,7 +193,7 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
       if (parseKGENType(p, metatype))
         return failure();
     } else {
-      metatype = AnyRegTypeType::get(p.getContext());
+      metatype = TypeType::get(p.getContext());
     }
     type = DeclRefType::get(symbol, values, metatype);
     return LogicalResult::success();
@@ -241,7 +241,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     } else {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
-      if (auto type = ref.getMetaType(); !isa<AnyRegTypeType>(type)) {
+      if (auto type = ref.getMetaType(); !isa<TypeType>(type)) {
         p << " : ";
         printKGENType(p, type);
       }
@@ -312,7 +312,7 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
-  if (!isa<AnyRegTypeType>(value.getType()))
+  if (!isa<TypeType>(value.getType()))
     printColonTypeOrIndexPrefix(p, value.getType());
   printParamValue(p, value);
 }
@@ -323,7 +323,7 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
     if (parseKGENType(p, type))
       return failure();
   } else {
-    type = AnyRegTypeType::get(p.getContext());
+    type = TypeType::get(p.getContext());
   }
   return parseParamValue(p, value, type);
 }
@@ -338,7 +338,7 @@ ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
 
 void KGEN::printParamType(AsmPrinter &p, Type type) {
   printTypeParamValue(
-      p, TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext())));
+      p, TypeConstantAttr::get(type, TypeType::get(type.getContext())));
 }
 
 ParseResult KGEN::parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types) {
@@ -608,7 +608,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetSizeOf:
   case (uint32_t)POC::GetAlignOf:
     if (parseParamValue(p, operands.emplace_back(),
-                        AnyRegTypeType::get(p.getContext())) ||
+                        TypeType::get(p.getContext())) ||
         p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())))
@@ -724,7 +724,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   case (uint32_t)POC::GetTypeMethod:
     if (!type)
-      type = AnyRegTypeType::get(p.getContext());
+      type = TypeType::get(p.getContext());
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         StringType::get(p.getContext())))
@@ -1019,7 +1019,7 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::GetTypeMethod:
-    if (!isa<AnyRegTypeType>(operands[0].getType())) {
+    if (!isa<TypeType>(operands[0].getType())) {
       p << ':';
       printKGENType(p, operands[0].getType());
       p << ' ';
@@ -1147,7 +1147,7 @@ void KGEN::printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
   p << ">";
 }
 
-bool KGEN::isTypeExprType(Type type) { return isa<AnyRegTypeType>(type); }
+bool KGEN::isTypeExprType(Type type) { return isa<TypeType>(type); }
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 

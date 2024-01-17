@@ -476,7 +476,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // a new field into the persistent state struct. If the variable was
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
-  auto anyRegTypeType = structBuilder.getType<AnyRegTypeType>();
+  auto anyRegTypeType = structBuilder.getType<TypeType>();
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
                                       mlir::Type elementType,
                                       TypedAttr lifetimeAttr) -> MRValue {

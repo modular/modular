@@ -30,7 +30,7 @@ static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
   Type type = TypeT::parse(p);
   if (!type)
     return failure();
-  typeExpr = TypeConstantAttr::get(type, AnyRegTypeType::get(p.getContext()));
+  typeExpr = TypeConstantAttr::get(type, TypeType::get(p.getContext()));
   return success();
 }
 

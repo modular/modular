@@ -10,7 +10,7 @@ kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   kgen.return %3 : i32
 }
 
-kgen.generator @store_load<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @store_load<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   %0 = pop.stack_allocation 1 x T
   pop.store %arg0, %0 : !kgen.pointer<T>
   %1 = pop.load %0 : !kgen.pointer<T>
@@ -26,7 +26,7 @@ kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   kgen.return %3 : i64
 }
 
-kgen.generator @bitcast<I: regtype, O: regtype>(%arg0: !kgen.paramref<I>) -> !kgen.paramref<O> {
+kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.paramref<O> {
   %0 = pop.stack_allocation 1 x I
   pop.store %arg0, %0 : !kgen.pointer<I>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<I> to !kgen.pointer<O>
@@ -185,31 +185,31 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: [123, 456]
   kgen.param.constant: array<2, i24> = <apply(
-    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load<:regtype !pop.array<2, i24>>,
+    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load<:type !pop.array<2, i24>>,
     [123, 456])>
   // CHECK-NEXT: <"1.25", "2.25">
   kgen.param.constant: simd<2, f32> = <apply(
-    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<:regtype !pop.simd<2, f32>>,
+    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<:type !pop.simd<2, f32>>,
     <"1.25", "2.25">)>
   // CHECK-NEXT: <-7, 7>
   kgen.param.constant: simd<2, si4> = <apply(
-    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<:regtype !pop.simd<2, si4>>,
+    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<:type !pop.simd<2, si4>>,
     <-7, 7>)>
   // CHECK-NEXT: <0, 1, 2, 3, 3, 2>
   kgen.param.constant: simd<6, ui2> = <apply(
-    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<:regtype !pop.simd<6, ui2>>,
+    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<:type !pop.simd<6, ui2>>,
     <0, 1, 2, 3, 3, 2>)>
   // CHECK-NEXT: <-5>
   kgen.param.constant: scalar<index> = <apply(
-    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<:regtype !pop.scalar<index>>,
+    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<:type !pop.scalar<index>>,
     <-5>)>
   // CHECK-NEXT: { 120, 32112, 1.125{{0+}}e+00 }
   kgen.param.constant: struct<(i8, i16, f64)> = <apply(
-    :(!kgen.struct<(i8, i16, f64)>) -> !kgen.struct<(i8, i16, f64)> @store_load<:regtype !kgen.struct<(i8, i16, f64)>>,
+    :(!kgen.struct<(i8, i16, f64)>) -> !kgen.struct<(i8, i16, f64)> @store_load<:type !kgen.struct<(i8, i16, f64)>>,
     { 120, 32112, 1.125 })>
   // CHECK-NEXT: #kgen.variant<:i32 42, 0>
   kgen.param.constant: variant<i32, f64> = <apply(
-    :(!kgen.variant<i32, f64>) -> !kgen.variant<i32, f64> @store_load<:regtype !kgen.variant<i32, f64>>,
+    :(!kgen.variant<i32, f64>) -> !kgen.variant<i32, f64> @store_load<:type !kgen.variant<i32, f64>>,
     #kgen.variant<:i32 42, 0>)>
 
   // CHECK-NEXT: <1099511627792>
@@ -218,15 +218,15 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <8590983192>
   kgen.param.constant: i64 = <apply(
-    :(!kgen.struct<(i8, i16, i32)>) -> i64 @bitcast<:regtype !kgen.struct<(i8, i16, i32)>, :regtype i64>,
+    :(!kgen.struct<(i8, i16, i32)>) -> i64 @bitcast<:type !kgen.struct<(i8, i16, i32)>, :type i64>,
     { 24, 16, 2 })>
   // CHECK-NEXT: <1026>
   kgen.param.constant: i16 = <apply(
-    :(!pop.simd<2, si8>) -> i16 @bitcast<:regtype !pop.simd<2, si8>, :regtype i16>,
+    :(!pop.simd<2, si8>) -> i16 @bitcast<:type !pop.simd<2, si8>, :type i16>,
     <2, 4>)>
   // CHECK-NEXT: <229>
   kgen.param.constant: ui8 = <apply(
-    :(!pop.simd<4, ui2>) -> ui8 @bitcast<:regtype !pop.simd<4, ui2>, :regtype ui8>,
+    :(!pop.simd<4, ui2>) -> ui8 @bitcast<:type !pop.simd<4, ui2>, :type ui8>,
     <1, 1, 2, 3>)>
 
   // CHECK-NEXT: <0>
@@ -306,27 +306,27 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <tf32>
   kgen.param.constant: dtype = <apply(
-    :(!kgen.dtype) -> !kgen.dtype @store_load<:regtype dtype>, tf32)>
+    :(!kgen.dtype) -> !kgen.dtype @store_load<:type dtype>, tf32)>
 
   // CHECK-NEXT: <"hello world">
   kgen.param.constant: string = <apply(
-    :(!kgen.string) -> !kgen.string @store_load<:regtype string>, "hello world")>
+    :(!kgen.string) -> !kgen.string @store_load<:type string>, "hello world")>
 
   // CHECK-NEXT: <"">
   kgen.param.constant: string = <apply(
-    :(!kgen.string) -> !kgen.string @store_load<:regtype string>, "")>
+    :(!kgen.string) -> !kgen.string @store_load<:type string>, "")>
 
   // CHECK-NEXT: <[3, 4, 5]>
   kgen.param.constant: variadic<i32> = <apply(
-    :(!kgen.variadic<i32>) -> !kgen.variadic<i32> @store_load<:regtype variadic<i32>>, [3, 4, 5])>
+    :(!kgen.variadic<i32>) -> !kgen.variadic<i32> @store_load<:type variadic<i32>>, [3, 4, 5])>
 
   // CHECK-NEXT: <4>
   kgen.param.constant: i32 = <apply(
     :(!kgen.pointer<variadic<i32>>, index) -> i32 @borrowed_variadic, store_to_mem([3, 4, 5]), 1)>
 
   // CHECK-NEXT: <[index, {"f" : (i32) -> i32 = @store_load_pointer}]>
-  kgen.param.constant: regtype = <apply(
-    :(!kgen.anyregtype) -> !kgen.anyregtype @store_load<:regtype regtype>, [index, {"f" : (i32) -> (i32) = @store_load_pointer}])>
+  kgen.param.constant: type = <apply(
+    :(!kgen.type) -> !kgen.type @store_load<:type type>, [index, {"f" : (i32) -> (i32) = @store_load_pointer}])>
 
   // CHECK-NEXT: <7>
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @malloc_and_free, 7)>

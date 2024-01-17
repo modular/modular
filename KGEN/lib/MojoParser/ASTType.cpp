@@ -555,7 +555,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       os << '$' << indexRef.getIndex();
     else
       printParam(os, paramRef.getParam(), forDiag, demangleParams);
-  } else if (isa<AnyRegTypeType>(type)) {
+  } else if (isa<TypeType>(type)) {
     os << "AnyRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";

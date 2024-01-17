@@ -4,19 +4,19 @@
 
 // Single-field structs are flattened in debuginfo (until #23914).
 // CHECK-DAG: ![[FIELD:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
-lit.struct.decl @SmallVector<N, T: regtype> register_passable {
+lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
-!structTest = !kgen.declref<@SmallVector<2, :regtype !pop.simd<4, f32>>>
+!structTest = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[MEMBER_A:.*]] = !debuginfo.member<a: !kgen.paramref<Int>>
 // CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !pop.simd<4, f32>>
 // CHECK-DAG: ![[COMPLEX_STRUCT:.*]] = !debuginfo.struct<"ComplexStruct[A=Int, B=simd<4, f32>]"(![[MEMBER_A]], ![[MEMBER_B]])>
-lit.struct.decl @ComplexStruct<A: regtype, B: regtype> {
+lit.struct.decl @ComplexStruct<A: type, B: type> {
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
-!structTestComplex = !kgen.declref<@ComplexStruct<Int, :regtype !pop.simd<4, f32>>>
+!structTestComplex = !kgen.declref<@ComplexStruct<Int, :type !pop.simd<4, f32>>>
 
 // CHECK: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
 !structTestComplexRef = !lit.ref<!structTestComplex, *"`mystruct">

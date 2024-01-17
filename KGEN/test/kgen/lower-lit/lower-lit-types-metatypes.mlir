@@ -7,7 +7,7 @@ lit.struct.decl @Container<T: trait<@Trait>> {
 lit.struct.decl @Element {
 }
 
-// CHECK-LABEL: kgen.generator @func<T: regtype>
+// CHECK-LABEL: kgen.generator @func<T: type>
 // CHECK-SAME: (%arg0: !kgen.struct<(T) memoryOnly>
 kgen.generator @func<T: trait<@Trait>>(%arg0: !kgen.declref<@Container<:trait<@Trait> T>>) {
   kgen.return
@@ -19,7 +19,7 @@ kgen.generator @f() {
 
 // CHECK-LABEL: kgen.generator @top
 kgen.generator @top(%arg0: !kgen.declref<@Container<:trait<@Trait> [@Element, {"f": () -> () = @f}]>>) {
-  // CHECK-NEXT: call @func<:regtype [struct<() memoryOnly>, {{{.*}}}]>(%arg0) : (!kgen.struct<(struct<() memoryOnly>) memoryOnly>) -> ()
+  // CHECK-NEXT: call @func<:type [struct<() memoryOnly>, {{{.*}}}]>(%arg0) : (!kgen.struct<(struct<() memoryOnly>) memoryOnly>) -> ()
   kgen.call @func<:trait<@Trait> [@Element, {"f": () -> () = @f}]>(%arg0) : (!kgen.declref<@Container<:trait<@Trait> [@Element, {"f": () -> () = @f}]>>) -> ()
   kgen.return
 }

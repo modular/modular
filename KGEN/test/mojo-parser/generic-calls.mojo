@@ -9,7 +9,7 @@
 # Stubs to allow testing without builtins
 # ===----------------------------------------------------------------------=== #
 
-alias AnyRegType = __mlir_type.`!kgen.anyregtype`
+alias AnyRegType = __mlir_type.`!kgen.type`
 
 
 trait AnyType:
