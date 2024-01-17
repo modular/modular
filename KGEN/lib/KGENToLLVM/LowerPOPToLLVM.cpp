@@ -64,6 +64,7 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
       rewriter.replaceOpWithNewOp<FloatOp>(
           op, type, adaptor.getLhs(), adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
     }
+
     return success();
   }
 };
