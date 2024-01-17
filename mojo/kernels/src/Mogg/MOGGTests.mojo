@@ -7,7 +7,7 @@
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr
+from runtime.llcl import MojoCallContextPtr
 
 from utils._annotations import *
 from utils.index import StaticIntTuple
@@ -296,7 +296,7 @@ fn test_custom_identity_shape_func[
 @always_inline
 @export
 fn concat(
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
 ):
     pass

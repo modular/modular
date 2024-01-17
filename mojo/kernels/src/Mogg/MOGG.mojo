@@ -119,7 +119,10 @@ from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
 from Resize import resize_nearest_neighbor
 from ROIAlign import roi_align_nhwc
-from runtime.llcl import OutputChainPtr, Runtime
+from runtime.llcl import (
+    MojoCallContextPtr,
+    Runtime,
+)
 from runtime.tracing import Trace, TraceLevel
 from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
@@ -140,7 +143,7 @@ from collections.vector import InlinedFixedVector
 @export
 fn MOGGExport():
     alias _indices = TensorIndicesTypeDef
-    alias _out_chain = OutputChainPtrDef
+    alias _mojo_call_context = MojoCallContextDef
     alias _simd_typedef = SimdTypeDef
     alias _index_typedef = IndexTypeDef
     alias _to_buffer = to_buffer
@@ -219,7 +222,7 @@ fn MOGGExport():
     alias _slice_shape = slice_shape
     alias _transpose_shape = transpose_shape
     alias _trunc = trunc
-    alias _elementwise = elementwise_wrapper
+    alias _elementwise_wrapper = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
     alias _shape_to_tensor = shape_to_tensor
     alias _tensor_to_shape = tensor_to_shape
@@ -243,12 +246,10 @@ alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
 @always_inline
 fn _guard_against_gpu_target[
     target: StringLiteral
-](out_chain: OutputChainPtr) -> Bool:
+](ctx: MojoCallContextPtr) -> Bool:
     @parameter
     if MODULAR_RELEASE_PACKAGE_BUILD and target == "cuda":
-        out_chain._mark_error_old(
-            "GPU Support is not available in the current release"
-        )
+        ctx.set_to_error("GPU Support is not available in the current release")
         return True
     else:
         return False
@@ -360,10 +361,10 @@ fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@mogg_register("outChain")
+@mogg_register("mojoCallContext")
 @export
-fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
-    return ty
+fn MojoCallContextDef(ty: MojoCallContextPtr):
+    pass
 
 
 fn SimdTypeDef[
@@ -546,7 +547,7 @@ fn elementwise_wrapper[
     target: StringLiteral = "cpu",
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     @parameter
@@ -564,7 +565,7 @@ fn elementwise_wrapper[
             + single_thread_blocking_override
         )
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     with Trace[TraceLevel.OP](
@@ -708,7 +709,7 @@ fn broadcast_shape[
     lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
     rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
     out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     let lhs_size = lhs_buf.size()
     let rhs_size = rhs_buf.size()
@@ -941,12 +942,12 @@ fn argmax_wrapped[
     input: NDBuffer[rank, input_0_static_shape, type],
     axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
     output: NDBuffer[rank, input_2_static_shape, out_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         _argmax(input, axis_buf, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -970,12 +971,12 @@ fn argmin_wrapped[
     input: NDBuffer[rank, input_0_static_shape, type],
     axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
     output: NDBuffer[rank, input_2_static_shape, out_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         _argmin(input, axis_buf, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1014,14 +1015,14 @@ fn concat_from_list[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         _concat[rank, type, single_thread_blocking_override](
             output, normalize_neg_index(axis[0], rank), inputs
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.concat")
@@ -1037,10 +1038,10 @@ fn concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
     *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     let ins = variadic_list_to_vector(variadic_ins)
@@ -1051,7 +1052,7 @@ fn concat[
             ins,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
     ins._del_old()
 
 
@@ -1134,7 +1135,7 @@ fn avg_pool[
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[4, DimList.create_unknown[4](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     return _avg_pool[count_boundary=count_boundary](
         input, filter, strides, dilations, paddings, output
@@ -1159,7 +1160,7 @@ fn cumsum[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     _cumsum[rank, type, exclusive == 1, reverse == 1](
         output, input, normalize_neg_index(axis[0], rank)
@@ -1185,7 +1186,7 @@ fn split[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     split_sizes: NDBuffer[1, DimList.create_unknown[1](), split_sizes_type],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
     *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
     # NOTE: Synchronous, so stack allocated variadic list is safe
@@ -1194,7 +1195,7 @@ fn split[
             input, normalize_neg_index(axis[0], rank), variadic_outs
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1287,9 +1288,9 @@ fn mean[
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     let axis = buffer_to_scalar(axis_buffer)
@@ -1318,7 +1319,7 @@ fn mean[
                 output_shape,
             )
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1365,7 +1366,7 @@ fn pad_constant[
     paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
     constant_buf: NDBuffer[1, DimList.create_unknown[1](), constant_type],
     output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     let paddings_ptr = paddings_buf.data
     let constant_simd = constant_buf[0]
@@ -1385,7 +1386,7 @@ fn pad_reflect[
     input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
     output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     let paddings_ptr = paddings_buf.data
 
@@ -1416,9 +1417,9 @@ fn reduce_add[
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -1450,7 +1451,7 @@ fn reduce_add[
                 single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, Scalar[type](0), int(axis))
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 @mogg_register("mo.reduce.max")
@@ -1472,9 +1473,9 @@ fn reduce_max[
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -1506,7 +1507,7 @@ fn reduce_max[
                 single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, min_or_neginf[type](), int(axis))
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 @mogg_register("mo.reduce.min")
@@ -1528,9 +1529,9 @@ fn reduce_min[
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -1563,7 +1564,7 @@ fn reduce_min[
                 single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, max_or_inf[type](), int(axis))
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 @mogg_register("mo.reduce.mul")
@@ -1585,9 +1586,9 @@ fn reduce_mul[
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -1620,7 +1621,7 @@ fn reduce_mul[
                 single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, Scalar[type](1), int(axis))
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1646,9 +1647,9 @@ fn slice[
     starts: NDBuffer[1, DimList.create_unknown[1](), start_type],
     ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
     steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
-    out_chain: OutputChainPtr,  # remove (#24946)
+    ctx: MojoCallContextPtr,  # remove (#24946)
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return tensor
 
     return slice_as_view(tensor, starts, ends, steps)
@@ -1830,12 +1831,12 @@ fn transpose[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return input
 
     @always_inline
@@ -1880,7 +1881,7 @@ fn transpose_shape[
 
     # NOTE this assumes `transpose` can handle input with null data pointer
     let out = transpose[rank, type, int_type, single_thread_blocking_override](
-        input, perms, OutputChainPtr()
+        input, perms, MojoCallContextPtr()
     ).dynamic_shape
 
     # TODO(17512)
@@ -1913,7 +1914,7 @@ fn mogg_gather_sum[
         DType.int32,
     ],
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     gather_reduce[
         output_rank,
@@ -1959,9 +1960,9 @@ fn gather[
     ],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output_shape: StaticIntTuple[output_rank],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     let axis = normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank)
@@ -2009,7 +2010,7 @@ fn gather[
             output_shape,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2040,13 +2041,13 @@ fn matmul[
     a: NDBuffer[2, input_0_static_shape, a_type],
     b: NDBuffer[2, input_1_static_shape, b_type],
     c: NDBuffer[2, input_2_static_shape, c_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     constrained[
@@ -2131,12 +2132,12 @@ fn batched_matmul[
     a: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
     c: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     alias adj_a = False
     alias adj_b = transpose_in_1
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @parameter
@@ -2209,7 +2210,7 @@ fn scatter[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     fn reduce_func[
@@ -2226,7 +2227,7 @@ fn scatter[
             output,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter.add")
@@ -2251,7 +2252,7 @@ fn scatter_add[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     fn reduce_func[
@@ -2268,7 +2269,7 @@ fn scatter_add[
             output,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter.max")
@@ -2293,7 +2294,7 @@ fn scatter_max[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     fn reduce_func[
@@ -2310,7 +2311,7 @@ fn scatter_max[
             output,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter.min")
@@ -2335,7 +2336,7 @@ fn scatter_min[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     fn reduce_func[
@@ -2352,7 +2353,7 @@ fn scatter_min[
             output,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter.mul")
@@ -2377,7 +2378,7 @@ fn scatter_mul[
     ],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     fn reduce_func[
@@ -2394,7 +2395,7 @@ fn scatter_mul[
             output,
         )
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2428,9 +2429,9 @@ fn scatter_nd[
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
     ],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     try:
@@ -2444,7 +2445,7 @@ fn scatter_nd[
             target,
         ](input, indices, updates, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter_nd.add")
@@ -2473,9 +2474,9 @@ fn scatter_nd_add[
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
     ],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -2496,7 +2497,7 @@ fn scatter_nd_add[
             reduce_fn=reduce_fn,
         ](input, indices, updates, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter_nd.max")
@@ -2525,9 +2526,9 @@ fn scatter_nd_max[
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
     ],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -2548,7 +2549,7 @@ fn scatter_nd_max[
             reduce_fn=reduce_fn,
         ](input, indices, updates, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter_nd.min")
@@ -2577,9 +2578,9 @@ fn scatter_nd_min[
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
     ],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -2600,7 +2601,7 @@ fn scatter_nd_min[
             reduce_fn=reduce_fn,
         ](input, indices, updates, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("mo.scatter_nd.mul")
@@ -2629,9 +2630,9 @@ fn scatter_nd_mul[
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
     ],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     @always_inline
@@ -2652,7 +2653,7 @@ fn scatter_nd_mul[
             reduce_fn=reduce_fn,
         ](input, indices, updates, output)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -2669,9 +2670,9 @@ fn softmax[
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     try:
@@ -2684,7 +2685,7 @@ fn softmax[
             target,
         ](shape, output, rank - 1)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -2700,7 +2701,7 @@ fn logsoftmax[
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         _logsoftmax[
@@ -2711,7 +2712,7 @@ fn logsoftmax[
             input_0_fn,
         ](shape, output, rank - 1)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2728,7 +2729,7 @@ fn non_maximum_suppression[
     iou_threshold: NDBuffer[1, DimList(1), DType.float32],
     score_threshold: NDBuffer[1, DimList(1), DType.float32],
     output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     let max_output_boxes_int = int(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
@@ -2786,7 +2787,7 @@ fn random_normal[
     variance: NDBuffer[1, DimList(1), DType.float64],
     op_seed: NDBuffer[1, DimList(1), DType.int64],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     seed(op_seed[0].to_int())
     var num_elements = 1
@@ -2827,7 +2828,7 @@ fn resize_nearest[
     input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
     size: NDBuffer[1, DimList(rank), sizeType],
     output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     resize_nearest_neighbor[
         coordinate_transform_mode, round_mode, rank, inpType
@@ -2847,7 +2848,7 @@ fn resize_linear[
     input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
     size: NDBuffer[1, DimList(rank), sizeType],
     output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     resize_linear_kernel[coordinate_transform_mode, antialias, rank, inpType](
         input, output
@@ -2889,7 +2890,7 @@ fn roi_align[
     spatial_scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
     sampling_ratio: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
     output: NDBuffer[4, DimList.create_unknown[4](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     roi_align_nhwc[
         type,
@@ -3023,7 +3024,7 @@ fn conv[
     ],
     num_groups: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
     output: NDBuffer[4, DimList.create_unknown[4](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     """Including this function in MOGG.mojo since it is intended to be a temporary
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
@@ -3035,13 +3036,13 @@ fn conv[
     ]()
 
     if strides.size() != 2:
-        return out_chain._mark_error_old("2 values expected in strides input")
+        return ctx.set_to_error("2 values expected in strides input")
 
     if dilation.size() != 2:
-        return out_chain._mark_error_old("2 values expected in dilation input")
+        return ctx.set_to_error("2 values expected in dilation input")
 
     if paddings.size() != 4:
-        return out_chain._mark_error_old("4 values expected in paddings input")
+        return ctx.set_to_error("4 values expected in paddings input")
 
     let strides_flat = strides.flatten()
     let dilation_flat = dilation.flatten()
@@ -3050,9 +3051,7 @@ fn conv[
     let strides_tuple = Index(strides_flat[0], strides_flat[1])
     let dilation_tuple = Index(dilation_flat[0], dilation_flat[1])
     if dilation_tuple != Index(1, 1):
-        return out_chain._mark_error_old(
-            "Non-unit dilation is not supported yet."
-        )
+        return ctx.set_to_error("Non-unit dilation is not supported yet.")
 
     let pad_h_tuple = Index(paddings_flat[0], paddings_flat[1])
     let pad_w_tuple = Index(paddings_flat[2], paddings_flat[3])
@@ -3117,7 +3116,7 @@ fn conv[
                 epilogue_wrapper,
             ](input, filter, output, conv_info)
         except e:
-            out_chain._mark_error_old(e)
+            ctx.set_to_error(e)
 
 
 @mogg_register("mo.conv_transpose")
@@ -3139,7 +3138,7 @@ fn conv_transpose[
         1, DimList.create_unknown[1](), output_padding_type
     ],
     output: NDBuffer[4, DimList.create_unknown[4](), input_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     constrained[
         strides_type.is_integral()
@@ -3149,16 +3148,16 @@ fn conv_transpose[
     ]()
 
     if strides.size() != 2:
-        return out_chain._mark_error_old("2 values expected in strides input")
+        return ctx.set_to_error("2 values expected in strides input")
 
     if dilation.size() != 2:
-        return out_chain._mark_error_old("2 values expected in dilation input")
+        return ctx.set_to_error("2 values expected in dilation input")
 
     if output_paddings.size() != 2:
-        return out_chain._mark_error_old("2 values expected in output_paddings")
+        return ctx.set_to_error("2 values expected in output_paddings")
 
     if paddings.size() != 4:
-        return out_chain._mark_error_old("4 values expected in paddings input")
+        return ctx.set_to_error("4 values expected in paddings input")
 
     conv_transpose_impl[
         4,
@@ -3190,7 +3189,7 @@ fn mogg_layer_norm[
     beta: NDBuffer[1, DimList.create_unknown[1](), type],
     epsilon: NDBuffer[1, DimList.create_unknown[1](), type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     @always_inline
     @parameter
@@ -3275,9 +3274,9 @@ fn return_error[
     rank: Int,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    out_chain._mark_error_old("This is an error")
+    ctx.set_to_error("This is an error")
 
 
 # ===----------------------------------------------------------------------===#
@@ -3299,7 +3298,7 @@ fn bottom_k[
     sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     _top_k[rank, type](
         input,
@@ -3326,7 +3325,7 @@ fn top_k[
     sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     _top_k[rank, type](
         input,
@@ -3361,7 +3360,7 @@ fn gather_nd[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     _gather_nd[
         type, indices_type, data_rank, indices_rank, output_rank, batch_dims
@@ -3378,7 +3377,7 @@ fn pack_conv_filter[
 ](
     filter: NDBuffer[4, DimList.create_unknown[4](), filter_type],
     packed_filter: NDBuffer[5, DimList.create_unknown[5](), filter_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     _pack_conv_filter(filter, packed_filter, num_groups)
 
@@ -3457,9 +3456,9 @@ fn multi_head_flash_attention[
     mask: NDBuffer[3, input_3_static_shape, mask_type],
     scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
@@ -3481,7 +3480,7 @@ fn multi_head_flash_attention[
             target,
         ](output, q, k, v, mask, scale[0])
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("no_mask_fused_attention_cpu")
@@ -3507,7 +3506,7 @@ fn no_mask_fused_attention_cpu[
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[1, input_3_static_shape, scale_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     # TODO:
     # - no attention mask
@@ -3525,7 +3524,7 @@ fn no_mask_fused_attention_cpu[
     # v -- BHSD
     # output: BHSD
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     constrained[target == "cpu"]()
@@ -3555,7 +3554,7 @@ fn no_mask_fused_attention_cpu[
                 False,  # add_causal_mask
             ](output, q, k, v, mask, scale_f32, causal_mask)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register("with_mask_fused_attention_cpu")
@@ -3584,7 +3583,7 @@ fn with_mask_fused_attention_cpu[
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[1, input_4_static_shape, scale_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     # TODO:
     # - no attention mask
@@ -3602,7 +3601,7 @@ fn with_mask_fused_attention_cpu[
     # v -- BHSD
     # output: BHSD
 
-    if _guard_against_gpu_target[target](out_chain):
+    if _guard_against_gpu_target[target](ctx):
         return
 
     constrained[target == "cpu"]()
@@ -3629,7 +3628,7 @@ fn with_mask_fused_attention_cpu[
                 False,  # add_causal_mask
             ](output, q, k, v, attn_mask, scale_f32, causal_mask)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 # # ===----------------------------------------------------------------------===#
@@ -3650,7 +3649,7 @@ fn quantize_Q4sym_g8[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[8, input_type].quantize_and_write_to_tensor(
         input, output, input.dynamic_shape
@@ -3680,7 +3679,7 @@ fn dequantize_Q4sym_g8[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[8, output_type].dequantize_and_write_to_tensor(
         input, output, output.dynamic_shape
@@ -3698,7 +3697,7 @@ fn quantize_Q4sym_g16[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[16, input_type].quantize_and_write_to_tensor(
         input, output, input.dynamic_shape
@@ -3728,7 +3727,7 @@ fn dequantize_Q4sym_g16[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[16, output_type].dequantize_and_write_to_tensor(
         input, output, output.dynamic_shape
@@ -3746,7 +3745,7 @@ fn quantize_Q4sym_g32[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[32, input_type].quantize_and_write_to_tensor(
         input, output, input.dynamic_shape
@@ -3776,7 +3775,7 @@ fn dequantize_Q4sym_g32[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     Q4sym[32, output_type].dequantize_and_write_to_tensor(
         input, output, output.dynamic_shape
@@ -3792,12 +3791,12 @@ fn qmatmul_Af32_BTQ4symG32_Cf32[
     a: NDBuffer[2, DimList.create_unknown[2](), type],
     b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
     c: NDBuffer[2, DimList.create_unknown[2](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         matmul_int4[32](a, b, c)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
 
 
 @mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
@@ -3824,11 +3823,11 @@ fn mogg_matrix_solve[
     a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
     b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
     x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
-    out_chain: OutputChainPtr,
+    ctx: MojoCallContextPtr,
 ):
     try:
         matrix_solve[
             type, x_rank, a_rank, b_rank, single_thread_blocking_override
         ](a, b, x)
     except e:
-        out_chain._mark_error_old(e)
+        ctx.set_to_error(e)
