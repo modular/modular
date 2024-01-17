@@ -80,7 +80,7 @@ fn test_batched_matmul() raises:
         a: Int,
         b: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), DType.float32],
-    ) -> None:
+    ) escaping -> None:
         pass
 
     batched_matmul[
