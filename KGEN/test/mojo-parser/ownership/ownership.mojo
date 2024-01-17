@@ -672,7 +672,7 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%c, %a)
   let c = a
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
-  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[IMMREF]]]
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat [[IMMREF]], 1
   # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`c0"]([[VAR]])
   variadic_mems(c)
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
@@ -692,7 +692,7 @@ fn variadic_field_sensitivity():
   # Can still pass b through varargs.
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %memPair[b]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[BREF]]
-  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [[[IMMREF]]]
+  # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat [[IMMREF]], 1
   # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[*"`memPair0"]([[VAR]])
   variadic_mems(memPair.b)
 

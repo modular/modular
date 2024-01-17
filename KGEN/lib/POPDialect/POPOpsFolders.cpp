@@ -1293,6 +1293,8 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
+  // Check to see if all the inputs are constant, if so, convert to
+  // VariadicAttr.
   SmallVector<TypedAttr> values;
   values.reserve(adaptor.getOperands().size());
   for (Attribute operand : adaptor.getOperands()) {
@@ -1304,11 +1306,55 @@ OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
   return KGEN::VariadicAttr::get(values, getType());
 }
 
+/// Canonicalize `pop.variadic.create(x,x,x) -> `pop.variadic.splat(x)`. This
+/// notablly turns all 1 element creates into a splat.
+LogicalResult VariadicCreateOp::canonicalize(VariadicCreateOp op,
+                                             PatternRewriter &b) {
+  // Canonicalize a 1+ operand create into a splat if we can.
+  if (size_t numElements = op.getNumOperands()) {
+    Value splatValue = op.getOperand(0);
+    if (llvm::all_of(op.getOperands().drop_front(),
+                     [&](Value operand) { return operand == splatValue; })) {
+      b.replaceOpWithNewOp<VariadicSplatOp>(op, op.getType(), splatValue,
+                                            numElements);
+      return success();
+    }
+  }
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicSplatOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult VariadicSplatOp::fold(FoldAdaptor adaptor) {
+  // We can poke at this only if the result #elts is a known constant.
+  auto numEltsCst = dyn_cast<IntegerAttr>(getNumElements());
+  if (!numEltsCst)
+    return {};
+
+  // If the input is constant, splat to a VariadicAttr.
+  if (Attribute cst = adaptor.getOperand()) {
+    SmallVector<TypedAttr> values(numEltsCst.getInt(), cast<TypedAttr>(cst));
+    return KGEN::VariadicAttr::get(values, getType());
+  }
+
+  // Fold a splat to zero values to a constant.
+  if (numEltsCst.getValue().isZero())
+    return KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), getType());
+
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // VariadicGetOp
 //===----------------------------------------------------------------------===//
 
 OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
+  // Canonicalize `get(splat(x)) -> x`.
+  if (auto splat = getVariadic().getDefiningOp<VariadicSplatOp>())
+    return splat.getOperand();
+
   auto indexAttr = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
   if (!indexAttr)
     return {};

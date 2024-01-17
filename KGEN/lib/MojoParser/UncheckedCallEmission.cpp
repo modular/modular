@@ -338,8 +338,15 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   Value argVal;
   if (isVarArg) {
-    argVal =
-        emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
+    // Check for a splat.
+    if (!args.empty() &&
+        llvm::all_of(args, [&](Value operand) { return operand == args[0]; })) {
+      argVal = emitter.builder->create<POP::VariadicSplatOp>(
+          loc, expectedType, args[0], args.size());
+    } else {
+      argVal = emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType,
+                                                              args);
+    }
   } else
     argVal = emitter.builder->create<PackCreateOp>(loc, expectedType, args);
   argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
@@ -523,6 +530,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
             if (!ptrGuaranteedNoAlias(operand))
               return false;
           }
+          continue;
+        }
+        if (auto variadic = sr.getDefiningOp<POP::VariadicSplatOp>()) {
+          if (!ptrGuaranteedNoAlias(variadic.getOperand()))
+            return false;
           continue;
         }
       }

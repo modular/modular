@@ -414,7 +414,7 @@ fn callerFn(borrowed arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
-    # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
+    # CHECK: %1 = pop.variadic.splat %arg0, 2
     # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0, %1)
     arg0.borrowedVarArgs(arg0, arg0)
 
@@ -511,7 +511,7 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic_0 = kgen.param.constant: variadic<!Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%variadic_0)
     variadics(7, 11, 13)
-    # CHECK: %[[VAR:.*]] = pop.variadic.create [%x]
+    # CHECK: %[[VAR:.*]] = pop.variadic.splat %x, 1
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%[[VAR]])
     variadics(x)
     # CHECK: %[[CST:.*]] = kgen.param.constant: !Int
