@@ -669,11 +669,11 @@ void DeadArgumentElimination::run() {
   mlir::parallelForEach(context, llvm::make_second_range(callGraph.nodes),
                         std::move(rewriteCalleesFromFunctionWrapper));
 
-  // Remove old functions.
+  // Erase old functions.
   // callGraph.nodes map will be invalid after this.
   for (CallGraphNode &node : llvm::make_second_range(callGraph.nodes)) {
     if (node.newFunc)
-      node.func->remove();
+      node.func->erase();
   }
   callGraph.nodes.clear();
 }
