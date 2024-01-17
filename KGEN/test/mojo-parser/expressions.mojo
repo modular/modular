@@ -1695,10 +1695,10 @@ fn setitemParamToDLValue():
 fn reg_passable_trivial():
   var x : Int = 100
   x = 42
-  _ = x^  # Consume LValue ok
+  _ = x^  # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
 
   let y : Int = 100
-  # expected-warning @+1 {{transfer from a trivial register value has no effect and can be removed}}
+  # expected-warning @+1 {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
   _ = y^  # Consume RValue / BValue is not, this isn't tracked.
 
 
@@ -1711,7 +1711,7 @@ fn del_warnings():
   let r = RegPassable(1)
   r.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
 
-  # These is wierd/unneeded, but at least it does what it says.
+  # These is weird/unneeded, but at least it does what it says.
   MemoryOnlyInt().__del__()
   RegPassable(1).__del__()
 

@@ -97,8 +97,10 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem3)
   let mem3 = MemExample()
 
-  # Test pointless transfers from RValues.
+  # Test pointless transfers from RValues and trivial values.
+  # These should warn and not create IR transfers.
 
+  # First transfer is ok.
   # CHECK-NEXT: [[T1:%.*]] = lit.transfer_mem_ownership %mem3
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
   consume(mem3^^^)
@@ -107,6 +109,16 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%anonymous2A)
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}(%anonymous2A)
   consume(MemExample()^)
+
+  # CHECK-NEXT: %someInt = lit.varlet.decl
+  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}4
+  # CHECK-NEXT: lit.ref.store [[FOUR]], %someInt
+  # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}5
+  # CHECK-NEXT: lit.ref.store [[FIVE]], %someInt
+  var someInt = 4
+  someInt = 5  # silence let warning.
+  # CHECK-NEXT: = lit.ref.load %someInt
+  _ = someInt^
 
   # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[REG]])

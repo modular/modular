@@ -521,3 +521,25 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, *"`b"]' to 'CopyAndInitMemType'}}
   _ = b <= bref
+
+fn transfer_warnings():
+  let mem3 = CopyAndInitMemType()
+
+  # Test pointless transfers from RValues and trivial values.
+  # These should warn and not create IR transfers.
+
+  # First transfer is ok.
+  _ = mem3^
+  _ = mem3^^ # expected-warning {{transfer from an owned value has no effect and can be removed}}
+
+  # Already an rvalue.
+  _ = CopyAndInitMemType()^ # expected-warning {{transfer from an owned value has no effect and can be removed}}
+
+  let someInt = 4
+  _ = someInt^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
+
+  # Check lifetimes doesn't track trivial LValue's either.
+  # https://github.com/modularml/mojo/issues/1604
+  var someInt2 = 4
+  someInt2 = 4
+  _ = someInt2^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}

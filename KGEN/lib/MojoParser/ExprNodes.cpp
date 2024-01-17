@@ -2487,13 +2487,17 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
         << FixIt::remove(getLoc());
     return emitter.emitResult(argValue, this, dest);
   }
-  if (argValue.getIfSBValue() &&
-      ASTType(value.getType()).isTrivial(getLoc(), emitter.shared)) {
-    // We don't support transfering from register-passable trivial BValues,
-    // since this won't end the lifetime CheckLifetimes doesn't
-    emitter.emitWarning(getLoc()) << "transfer from a trivial register "
-                                     "value has no effect and can be removed"
-                                  << FixIt::remove(getLoc());
+  CValue argCValue = argValue.getIfCValue();
+  assert(argCValue && "MValue and SValue is always a CValue");
+  if (argCValue.getRValueType().isTrivial(getLoc(), emitter.shared)) {
+    // We don't support transfering from register-passable trivial values,
+    // since this won't end the lifetime. CheckLifetimes doesn't and can't track
+    // these things because they don't have consume operators, move operators,
+    // etc.
+    emitter.emitWarning(getLoc())
+        << "transfer from a value of trivial register type "
+        << argCValue.getRValueType() << " has no effect and can be removed"
+        << FixIt::remove(getLoc());
     return emitter.emitResult(argValue, this, dest);
   }
 
@@ -2508,7 +2512,6 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // new thing and the old thing is dead.
   StringAttr lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(
       trackable.name.str() + "(transfer)");
-  auto destType = cast<RefType>(value.getType()).getWithLifetime(lifetimeAttr);
   auto newVal =
       emitter.builder->create<TransferMemOwnershipOp>(loc, value, lifetimeAttr);
   return emitter.emitResult(MRValue(newVal), this, dest);
