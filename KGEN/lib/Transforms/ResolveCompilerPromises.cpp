@@ -104,12 +104,12 @@ static void reversePostOrderWalk(Operation *op,
 
 static CallGraphNode *getClosureNode(Operation *op, CallGraph &cg) {
   TypedAttr closureSymAttr;
-  if (auto captureListCreate = dyn_cast<CaptureListCreate>(op))
+  if (auto captureListCreate = dyn_cast<CaptureListCreateOp>(op))
     closureSymAttr = captureListCreate.getType().getCapturingFunc();
-  else if (auto captureListExpand = dyn_cast<CaptureListExpand>(op))
+  else if (auto captureListExpand = dyn_cast<CaptureListExpandOp>(op))
     closureSymAttr =
         captureListExpand.getCaptureList().getType().getCapturingFunc();
-  else if (auto captureListDestroy = dyn_cast<CaptureListDestroy>(op))
+  else if (auto captureListDestroy = dyn_cast<CaptureListDestroyOp>(op))
     closureSymAttr =
         captureListDestroy.getCaptureList().getType().getCapturingFunc();
 
@@ -133,14 +133,14 @@ static void copyMember(ImplicitLocOpBuilder &builder, Value source,
   builder.create<POP::StoreOp>(srcMember, ptrToTargetSlot);
 }
 
-static void resolveCaptureListCreate(CaptureListCreate captureListCreate,
+static void resolveCaptureListCreate(CaptureListCreateOp captureListCreate,
                                      CallGraphNode *closureNode,
                                      TargetInfoAttr targetInfo,
                                      ArrayRef<Value> captures) {
   auto captureListType = closureNode->promisesStructType;
   std::optional<int64_t> captureListTypeSize =
       captureListType.getTypeSize(targetInfo);
-  assert(captureListTypeSize && "invalid KGEN::CaptureListCreate");
+  assert(captureListTypeSize && "invalid KGEN::CaptureListCreateOp");
 
   ImplicitLocOpBuilder b(captureListCreate->getLoc(),
                          OpBuilder(captureListCreate));
@@ -164,7 +164,7 @@ static void resolveCaptureListCreate(CaptureListCreate captureListCreate,
 }
 
 static void resolveCaptureListExpand(
-    CaptureListExpand captureListExpand, CallGraphNode *closureNode,
+    CaptureListExpandOp captureListExpand, CallGraphNode *closureNode,
     llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
         &requiredPromises) {
   ImplicitLocOpBuilder b(captureListExpand->getLoc(),
@@ -260,7 +260,7 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
         requiredPromises[name].push_back(load);
         captures.push_back(load);
       }
-      if (auto captureListCreate = dyn_cast<CaptureListCreate>(op)) {
+      if (auto captureListCreate = dyn_cast<CaptureListCreateOp>(op)) {
         resolveCaptureListCreate(captureListCreate, closureNode, targetInfo,
                                  captures);
       } else {
@@ -274,14 +274,14 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       return;
     }
 
-    if (auto captureListExpand = dyn_cast<CaptureListExpand>(op)) {
+    if (auto captureListExpand = dyn_cast<CaptureListExpandOp>(op)) {
       resolveCaptureListExpand(captureListExpand, closureNode,
                                requiredPromises);
 
       return;
     }
 
-    if (auto captureListDestroy = dyn_cast<CaptureListDestroy>(op)) {
+    if (auto captureListDestroy = dyn_cast<CaptureListDestroyOp>(op)) {
       ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
       // Free the memory of the capture state.
       b.create<POP::AlignedFreeOp>(captureListDestroy.getOperand());

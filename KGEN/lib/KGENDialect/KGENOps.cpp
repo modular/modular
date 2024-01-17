@@ -1684,19 +1684,19 @@ VariantTakeOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
 }
 
 //===----------------------------------------------------------------------===//
-// CaptureListCreate
+// CaptureListCreateOp
 //===----------------------------------------------------------------------===//
 
-void CaptureListCreate::concretizeCallee(mlir::IRRewriter &b,
-                                         SymbolConstantAttr callee) {
+void CaptureListCreateOp::concretizeCallee(mlir::IRRewriter &b,
+                                           SymbolConstantAttr callee) {
   // Do nothing.
 }
 
-void CaptureListCreate::setCalleeAttr(mlir::TypedAttr) {
+void CaptureListCreateOp::setCalleeAttr(mlir::TypedAttr) {
   // Do nothing.
 }
 
-TypedAttr CaptureListCreate::getCallee() {
+TypedAttr CaptureListCreateOp::getCallee() {
   return getType().getCapturingFunc();
 }
 

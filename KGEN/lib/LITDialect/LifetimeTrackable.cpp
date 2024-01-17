@@ -498,8 +498,8 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  // FIXME: CaptureListCreate is a CallSignatureOp's but not really calls?
-  if (isa<CaptureListCreate>(op)) {
+  // FIXME: CaptureListCreateOp is a CallSignatureOp's but not really calls?
+  if (isa<CaptureListCreateOp>(op)) {
     // FIXME: Unclear how to handle the result of this.
     results.push_back(ResultEffect::ignore);
     return {};

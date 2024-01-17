@@ -1709,10 +1709,10 @@ def KGEN_VariantTakeOp : KGENOp<"variant.take", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// CaptureListCreate
+// CaptureListCreateOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureListCreate : KGEN_CallOpBase<"capture_list.create"> {
+def KGEN_CaptureListCreateOp : KGEN_CallOpBase<"capture_list.create"> {
   let summary = "Create a capture list for a capturing closure.";
   let description = [{
     The `kgen.capture_list.create` operation creates a capture list
@@ -1737,10 +1737,10 @@ def KGEN_CaptureListCreate : KGEN_CallOpBase<"capture_list.create"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CaptureListExpand
+// CaptureListExpandOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureListExpand : KGENOp<"capture_list.expand"> {
+def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
   let summary = "Expand the capture list from a capturing closure.";
   let description = [{
     The `kgen.capture_list.expand` operation allocates heap memory and
@@ -1758,10 +1758,10 @@ def KGEN_CaptureListExpand : KGENOp<"capture_list.expand"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CaptureListDestroy
+// CaptureListDestroyOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureListDestroy : KGENOp<"capture_list.destroy"> {
+def KGEN_CaptureListDestroyOp : KGENOp<"capture_list.destroy"> {
   let summary = "Destroy the capture list from a capturing closure.";
   let description = [{
     The `kgen.capture_list.destroy` operation frees the heap memory

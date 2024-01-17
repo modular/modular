@@ -513,7 +513,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   for (auto [clType, fieldDecl] :
        llvm::zip(paramCaptureListTypes, paramClosureCaptureFieldDecls)) {
     auto selfArg = initFunc.getArgument(0);
-    auto captureList = builder.create<CaptureListCreate>(clType);
+    auto captureList = builder.create<CaptureListCreateOp>(clType);
     Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
     builder.create<RefStoreOp>(captureList, target);
   }
@@ -546,7 +546,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     for (auto fieldDecl : paramClosureCaptureFieldDecls) {
       Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
       target = builder.create<RefLoadOp>(target);
-      builder.create<CaptureListDestroy>(target);
+      builder.create<CaptureListDestroyOp>(target);
     }
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
   }
@@ -646,7 +646,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   for (auto fieldDecl : paramClosureCaptureFieldDecls) {
     Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
     target = builder.create<RefLoadOp>(target);
-    builder.create<CaptureListExpand>(target);
+    builder.create<CaptureListExpandOp>(target);
   }
   for (auto [declAndCapture, fieldOp] :
        llvm::zip(captures, normalCaptureFieldDecls)) {
