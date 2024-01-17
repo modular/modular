@@ -13,7 +13,7 @@ set(SOURCES
   Initialize.cpp
   LLCL.cpp
   Memory.cpp
-  OutputChain.cpp
+  MojoCallContext.cpp
   Python.cpp
   Random.cpp
   System.cpp

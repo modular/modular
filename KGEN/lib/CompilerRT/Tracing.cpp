@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/OutputChain.h"
+#include "KGEN/CompilerRT/MojoCallContext.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/SymbolExport.h"

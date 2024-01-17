@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CUDASupport/Globals/Globals.h"
-#include "KGEN/CompilerRT/OutputChain.h"
+#include "KGEN/CompilerRT/MojoCallContext.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -40,7 +40,7 @@ LLCLWrapper<T> wrap(T *ptr) {
 }
 
 using LLCLRuntimeRef = LLCLWrapper<Runtime>;
-using LLCLOutputChainRef = LLCLWrapper<OutputChain>;
+using LLCLMojoCallContextRef = LLCLWrapper<MojoCallContext>;
 using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
 
 /// Dummy entry point to force loading.
@@ -49,11 +49,10 @@ using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
 COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Dummy() {}
 
 //===----------------------------------------------------------------------===//
-// Initialization
+// Chains
 //===----------------------------------------------------------------------===//
 
-/// Given the async context of a coroutine, initialize its token value. The
-/// runtime pointer must have already been set.
+/// Creates a new AsyncValueRef<Chain> and assigns it to chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
                                      LLCLAsyncChainRef chain) {
@@ -62,10 +61,25 @@ KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
 }
 
-/// Given the async context of a coroutine, destroy its token value.
+/// Destroys the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_DestroyChain(LLCLAsyncChainRef chain) {
   unwrap(chain).~AsyncValueRef<Chain>();
+}
+
+/// Emplaces the given chain.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
+#if MODULAR_PARANOID
+  unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
+#endif
+  unwrap(chain).copy().emplace();
+}
+
+/// Blocks until the given chain is ready.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
+  await(unwrap(chain));
 }
 
 //===----------------------------------------------------------------------===//
@@ -103,12 +117,6 @@ KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *), LLCLAsyncChainRef chain,
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
-/// Block until the coroutine is done.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
-  await(unwrap(chain));
-}
-
 /// Execute a coroutine and block the current routine until it is complete.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
@@ -128,16 +136,6 @@ KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
-}
-
-/// Given the async context of a coroutine, indicate that it is complete by
-/// setting its token value.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
-#if MODULAR_PARANOID
-  unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
-#endif
-  unwrap(chain).copy().emplace();
 }
 
 //===----------------------------------------------------------------------===//
@@ -196,16 +194,23 @@ KGEN_CompilerRT_LLCL_GetCurrentStream() {
 }
 
 //===----------------------------------------------------------------------===//
-// OutputChainPtr
+// MojoCallContext
 //===----------------------------------------------------------------------===//
 
-/// Sets an error message on outChain.
+/// Emplaces the chain in the given call context.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(LLCLOutputChainRef outChain,
-                                              const char *messagePtr,
-                                              ssize_t messageLen) {
-  std::string message(messagePtr, messageLen);
-  unwrap(outChain).markError(message);
+KGEN_CompilerRT_LLCL_MojoCallContext_Complete(
+    LLCLMojoCallContextRef callContext) {
+  unwrap(callContext).complete();
+}
+
+/// Sets the chain in the given call context to be an error.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
+    LLCLMojoCallContextRef callContext, const char *messagePtr,
+    ssize_t messageLen) {
+  StringRef message(messagePtr, messageLen);
+  unwrap(callContext).setToError(message);
 }
 
 void M::KGEN::registerLLCL(
@@ -214,18 +219,20 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_InitializeChain});
   funcs.push_back({"KGEN_CompilerRT_LLCL_DestroyChain",
                    (void *)&KGEN_CompilerRT_LLCL_DestroyChain});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_Complete",
+                   (void *)&KGEN_CompilerRT_LLCL_Complete});
+  funcs.push_back(
+      {"KGEN_CompilerRT_LLCL_Wait", (void *)&KGEN_CompilerRT_LLCL_Wait});
+
   funcs.push_back(
       {"KGEN_CompilerRT_LLCL_Execute", (void *)&KGEN_CompilerRT_LLCL_Execute});
   funcs.push_back(
       {"KGEN_CompilerRT_LLCL_AndThen", (void *)&KGEN_CompilerRT_LLCL_AndThen});
-  funcs.push_back(
-      {"KGEN_CompilerRT_LLCL_Wait", (void *)&KGEN_CompilerRT_LLCL_Wait});
   funcs.push_back({"KGEN_CompilerRT_LLCL_ExecuteAndWait",
                    (void *)&KGEN_CompilerRT_LLCL_ExecuteAndWait});
   funcs.push_back({"KGEN_CompilerRT_LLCL_ExecuteAndResume",
                    (void *)&KGEN_CompilerRT_LLCL_ExecuteAndResume});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_Complete",
-                   (void *)&KGEN_CompilerRT_LLCL_Complete});
+
   funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentRuntime",
                    (void *)&KGEN_CompilerRT_LLCL_GetCurrentRuntime});
   funcs.push_back({"KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile",
@@ -236,8 +243,12 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_DestroyRuntime});
   funcs.push_back({"KGEN_CompilerRT_LLCL_ParallelismLevel",
                    (void *)&KGEN_CompilerRT_LLCL_ParallelismLevel});
+
   funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentStream",
                    (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError});
+
+  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
+                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",
+                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_SetToError});
 }
