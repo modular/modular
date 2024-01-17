@@ -9,6 +9,11 @@
   A current limitation is that references outside of the current document are
   not supported, which will be addressed in the future.
 
+### Changed
+
+- The initialization messages of every debug session are now suppressed in the
+  Debug Console unless they fail.
+
 ### Fixed
 
 - [#1299](https://github.com/modularml/mojo/issues/1299) - The `Run Mojo File`

@@ -62,12 +62,8 @@ class MojoDebugAdapterDescriptorFactory implements
     // that.
     if (!config)
       return undefined;
-    // The --repl-mode set to `auto` indicates LLDB to distinguish automatically
-    // if the text passed in the debug console is an expression or a command and
-    // handle it accordingly. In case of ambiguity, the user can use the `:`
-    // prefix to force it being a regular command, just like the REPL.
     return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath,
-                                             [ "--repl-mode", "auto" ]);
+                                             [ "--repl-mode", "variable" ]);
   }
 }
 
@@ -143,12 +139,12 @@ class MojoDebugConfigurationResolver implements
 
     // This setting shortens the length of address strings.
     const initCommands = [
-      "settings set target.show-hex-variable-values-with-leading-zeroes false",
+      "?settings set target.show-hex-variable-values-with-leading-zeroes false",
       // FIXME(#23274): remove this when we properly emit the opt flag.
-      "settings set target.process.optimization-warnings false",
+      "?settings set target.process.optimization-warnings false",
     ];
 
-    initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
+    initCommands.push(`?!plugin load '${config.mojoLLDBPluginPath}'`);
 
     debugConfiguration.initCommands = [
       ...initCommands,
@@ -162,7 +158,7 @@ class MojoDebugConfigurationResolver implements
           vscode.Uri.file(visualizersDir));
       let visualizerCommands = visualizers.map(
           ([ name, _type ]) =>
-              `command script import ${visualizersDir}/${name}`);
+              `?command script import ${visualizersDir}/${name}`);
       debugConfiguration.initCommands.push(...visualizerCommands);
     }
 
@@ -314,12 +310,14 @@ export class MojoDebugContext extends DisposableContext {
     this.pushSubscription(vscode.debug.registerDebugAdapterDescriptorFactory(
         DEBUG_TYPE, new MojoDebugAdapterDescriptorFactory(context)));
 
-    this.pushSubscription(vscode.debug.onDidStartDebugSession(listener => {
-      if (listener.configuration.type != DEBUG_TYPE)
-        return;
-      if (!listener.configuration.runInTerminal)
-        vscode.commands.executeCommand("workbench.debug.action.focusRepl");
-    }));
+    this.pushSubscription(
+        vscode.debug.onDidStartDebugSession(async (listener) => {
+          if (listener.configuration.type != DEBUG_TYPE)
+            return;
+          if (!listener.configuration.runInTerminal)
+            await vscode.commands.executeCommand(
+                "workbench.debug.action.focusRepl");
+        }));
 
     this.pushSubscription(initializeInlineLocalVariablesProvider(context));
 
