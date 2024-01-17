@@ -296,14 +296,279 @@ private:
     KGEN::CallOp callUsingLambda;
   };
 
+  MLIRContext *ctx;
+
+  // The reference input and output lambdas we should use for materializing the
+  // input/output fusion.
+  LambdaTemplate inLambdaTemplate, outLambdaTemplate;
+
+  // Each tensor carries a parameter which when set will turn off or on
+  // refcounting. It defaults to refcounting so the user code remains legal.
+  // Since we own the tensors force them all to false and disable refcounting /
+  // memory deallocation in the kernel.
+  void markAllTensorsAsOwned(GeneratorOp gen, SymbolTable &symTab) {
+    auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
+    auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
+                                        POP::SIMDType::get(1, boolType));
+    gen.walk([&](CallOp call) {
+      auto paramUpdate = [&](const TensorInMojo &tensor,
+                             SmallVector<TypedAttr> &newParams) {
+        if (KGEN::ParamIndexRefAttr param = tensor.ownedMemoryAsRef())
+          newParams[param.getIndex()] = boolFalse;
+      };
+
+      rewriteCallWithNewParams(call, symTab, paramUpdate);
+    });
+  }
+
+  /// Instantiate all input/output lambdas which have NOT been toggled on to a
+  /// None value. This will cause the tensor internally to fallback on its non
+  /// lambda fusion path for load / store.
+  void instantiateNoneParamLambdas(GeneratorOp gen) {
+    Block *computeBlock = gen.getBody();
+
+    int num_params = 0;
+    // For now assume all variant parameters are referring to a lambda. Each
+    // variant parameter will be initalized as a None type to represent no
+    // fusion.
+    for (auto param : gen.getInputParams()) {
+      if (auto asVariant = dyn_cast<KGEN::VariantType>(param.getType())) {
+        OpBuilder b{computeBlock, computeBlock->begin()};
+
+        auto lambdaNoneTy = KGEN::VariantAttr::get(
+            b.getIntegerAttr(b.getI1Type(), 0), 1, asVariant);
+
+        std::string newalias = "_none_lambda_" + std::to_string(num_params++);
+        b.create<ParamDeclareOp>(gen.getLoc(),
+                                 ParamDeclAttr::get(newalias, param.getType()),
+                                 lambdaNoneTy);
+
+        ParamDeclRefAttr newRef =
+            ParamDeclRefAttr::get(newalias, param.getType());
+        ParamDeclRefAttr oldRef =
+            ParamDeclRefAttr::get(param.getName(), param.getType());
+        mlir::AttrTypeReplacer walker;
+        walker.addReplacement(
+            [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
+              if (attr == oldRef)
+                return newRef;
+              return std::nullopt;
+            });
+
+        gen.walk([&](Operation *op) {
+          if (op == gen) {
+            walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                                /*replaceLocs=*/false,
+                                                /*replaceTypes=*/true);
+          }
+        });
+      }
+    }
+  }
+
+  void attachMetadataToGenerator(GeneratorOp gen,
+                                 SmallVector<std::string> &inputLambdaNames,
+                                 SmallVector<std::string> &outputLambdaNames,
+                                 CallOp elementwiseOp) {
+    // The new attributes on the generator.
+    SmallVector<NamedAttribute> newAttrs;
+    for (NamedAttribute attr : gen->getAttrs())
+      newAttrs.push_back(attr);
+
+    OpBuilder b{ctx};
+
+    newAttrs.push_back(
+        NamedAttribute{b.getStringAttr("_sliced"), b.getUnitAttr()});
+
+    // Attach the lambda metadata.
+    SmallVector<StringRef> inNames;
+    for (const std::string &name : inputLambdaNames)
+      inNames.push_back(name);
+    newAttrs.push_back(NamedAttribute{b.getStringAttr("_in_lambdas"),
+                                      b.getStrArrayAttr(inNames)});
+
+    SmallVector<StringRef> outNames;
+    for (const std::string &name : outputLambdaNames)
+      outNames.push_back(name);
+    newAttrs.push_back(NamedAttribute{b.getStringAttr("_out_lambdas"),
+                                      b.getStrArrayAttr(outNames)});
+
+    if (elementwiseOp) {
+      // Last parameter is known to be the lambda...
+      auto elemwiseLambda =
+          elementwiseOp
+              .getParamValues()[elementwiseOp.getParamValues().size() - 1];
+      auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
+      newAttrs.push_back(NamedAttribute{b.getStringAttr("_elementwise_lambda"),
+                                        asParam.getName()});
+    }
+
+    gen->setAttrs(newAttrs);
+  }
+
+  // By checking which tensors have called the `enableFusion` function we can
+  // use this information to enable fusion for those which have opted in.
+  // Enabling fusion involves materializing a call to the input/output lambda
+  // within the body of the function and replacing all previous parameter uses
+  // with that value.
+  void enableFusion(GeneratorOp gen, Value outputTensor,
+                    SmallVector<std::string> &inputLambdaNames,
+                    SmallVector<std::string> &outputLambdaNames,
+                    SmallVector<KGEN::CallOp> &enableFusionFuncs,
+                    SymbolTable &symTab) {
+    Block *computeBlock = gen.getBody();
+
+    for (KGEN::CallOp enableFusionFunc : enableFusionFuncs) {
+      std::string newLambdaName;
+      Value tensorFusionEnabledOn = enableFusionFunc.getOperand(0);
+
+      bool isInput = true;
+      LambdaTemplate *lambda;
+
+      if (tensorFusionEnabledOn == gen.getBody()->getArgument(0)) {
+        newLambdaName = "output_0_fn";
+        outputLambdaNames[0] = newLambdaName;
+        lambda = &outLambdaTemplate;
+        isInput = false;
+      } else {
+        lambda = &inLambdaTemplate;
+
+        // We are dealing with an input.
+        for (auto [index, value] :
+             llvm::enumerate(gen.getBody()->getArguments())) {
+          if (value == tensorFusionEnabledOn) {
+            // -1 to account for the first "input" being an output.
+            newLambdaName = "input_" + std::to_string(index - 1) + "_fn";
+            inputLambdaNames[index - 1] = newLambdaName;
+            break;
+          }
+        }
+      }
+
+      // Instead of referring to the `self` argument of the wrapper function
+      // which contains the canonical lambda we remap onto the argument of
+      // this function which invoked the enable fusion method.
+      mlir::IRMapping mapper;
+      mapper.map(lambda->templateOp.getBody()->getArgument(0),
+                 tensorFusionEnabledOn);
+      OpBuilder b{computeBlock, computeBlock->begin()};
+
+      // Copy the param region into the body.
+      auto newLambda = cast<KGEN::ParamDeclareRegionOp>(
+          b.clone(*lambda->canonicalLambda, mapper));
+
+      // Rebind the parameters of the lambda from the `self` argument in the
+      // method onto the specific parameters of the tensor being used at the
+      // callsite.
+      DenseMap<ParamDeclRefAttr, TypedAttr> paramRebinds;
+
+      for (auto [localParamRef, methodParamDecl] :
+           llvm::zip(enableFusionFunc.getCallee().getParamValues(),
+                     lambda->templateOp.getInputParams())) {
+        auto methodDeclRef = ParamDeclRefAttr::get(methodParamDecl.getName(),
+                                                   methodParamDecl.getType());
+        paramRebinds[methodDeclRef] = localParamRef;
+      }
+
+      // Update the parameter attributes.
+      mlir::AttrTypeReplacer walker;
+      walker.addReplacement(
+          [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
+            auto itr = paramRebinds.find(attr);
+            if (itr != paramRebinds.end())
+              return itr->second;
+            return std::nullopt;
+          });
+      walker.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/false,
+                                          /*replaceTypes=*/true);
+      newLambda.setParamDeclAttr(ParamDeclAttr::get(
+          newLambdaName, newLambda.getParamDecl().getType()));
+
+      // The parameter reference of the lambda.
+      auto refToLambda =
+          ParamDeclRefAttr::get(newLambda.getParamDecl().getName(),
+                                newLambda.getParamDecl().getType());
+
+      // Any call to the original lambda.
+      paramRebinds[ParamDeclRefAttr::get(
+          lambda->canonicalLambda.getParamDecl().getName(),
+          lambda->canonicalLambda.getParamDecl().getType())] = refToLambda;
+
+      // Clone the call in the mojo template function which tells us how to
+      // rebind the tensor type and remap it onto the new type.
+      OwningOpRef<CallOp> newSampleCall = lambda->callUsingLambda.clone();
+      walker.recursivelyReplaceElementsIn(*newSampleCall,
+                                          /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/false,
+                                          /*replaceTypes=*/true);
+
+      size_t lambdaIndex = isInput ? TensorInMojo::INPUT_LAMBDA_IDX
+                                   : TensorInMojo::OUTPUT_LAMBDA_IDX;
+      auto newLambdaBinding =
+          newSampleCall->getCallee().getParamValues()[lambdaIndex];
+
+      // We now have the old binding to None for the output and the new
+      // binding to the the input lambda we just cloned. We now need to
+      // replace all uses of the old one with the new.
+      if (isInput) {
+        ParamDeclRefAttr oldLambdaBinding = cast<ParamDeclRefAttr>(
+            enableFusionFunc.getCallee()
+                .getParamValues()[TensorInMojo::INPUT_LAMBDA_IDX]);
+
+        paramRebinds[oldLambdaBinding] = newLambdaBinding;
+        for (Operation &topLevelOp : gen.getOps()) {
+          if (&topLevelOp != newLambda) {
+            topLevelOp.walk([&](Operation *op) {
+              walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                                  /*replaceLocs=*/false,
+                                                  /*replaceTypes=*/true);
+            });
+          }
+        }
+      } else {
+        // Update all the call sites which use the output tensor to reflect
+        // the new lambda.
+        for (Operation *user : outputTensor.getUsers()) {
+          if (auto call = dyn_cast<CallOp>(user)) {
+
+            // Don't include any within the lambda itself.
+            bool inLambda = false;
+            Operation *parent = call->getParentOp();
+            while (parent) {
+              if (parent == newLambda) {
+                inLambda = true;
+                break;
+              }
+              parent = parent->getParentOp();
+            }
+            if (inLambda)
+              continue;
+
+            auto paramUpdate = [&](const TensorInMojo &tensor,
+                                   SmallVector<TypedAttr> &newParams) {
+              if (KGEN::ParamIndexRefAttr param = tensor.outputLambdaAsRef())
+                newParams[param.getIndex()] = newLambdaBinding;
+            };
+            rewriteCallWithNewParams(call, symTab, paramUpdate);
+          }
+        }
+      }
+    }
+
+    // Clean up the enable fusion calls
+    for (auto call : enableFusionFuncs) {
+      // Theoretically the user could reference the none return...
+      if (call.getResult(0).use_empty())
+        call->erase();
+    }
+  }
+
 public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
-    MLIRContext *ctx = mod.getContext();
+    ctx = mod.getContext();
     SymbolTable symTab{mod};
-
-    LambdaTemplate inLambdaTemplate, outLambdaTemplate;
-
     // Scan the generators to find the global helper functions we will need to
     // call or inspect.
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
@@ -380,16 +645,26 @@ public:
         forEachDecorator(func, identifyCalls);
       }
 
+      // Clean up all the deconstructors. Not strictly needed as they will be
+      // elaborated with the ref counting / allocation off.
+      for (KGEN::CallOp deconstruct : deconstructors)
+        deconstruct.erase();
+
       // Exit and clean up if the kernel is not what we expect.
       if (!constructor || !allocationFunc) {
         slicedComputeFunction.erase();
         continue;
       }
 
-      // Clean up all the deconstructors.
-      for (KGEN::CallOp deconstruct : deconstructors)
-        deconstruct.erase();
-
+      // clang-format-off
+      // Functions with tensor allocation will follow the rough pattern.
+      // fn (*tensor):
+      //   tmp = allocate(...)
+      //   ...
+      //   copy_construct(tensor, tmp)
+      // clang-format-on
+      // We can use this to identify the output tensor and the the tensor which
+      // has been allocated. To us they are an alias.
       Value outputTensor = constructor.getOperand(0);
       Value tmpTensor = constructor.getOperand(1);
       tmpTensor.replaceAllUsesWith(outputTensor);
@@ -406,243 +681,21 @@ public:
                               "");
       outputLambdaNames.resize(1, "");
 
-      for (KGEN::CallOp enableFusionFunc : enableFusionFuncs) {
-        std::string newLambdaName;
-        Value tensorFusionEnabledOn = enableFusionFunc.getOperand(0);
+      // Turn on fusion for any tensors which have set fusion.
+      enableFusion(slicedComputeFunction, outputTensor, inputLambdaNames,
+                   outputLambdaNames, enableFusionFuncs, symTab);
 
-        bool isInput = true;
-        LambdaTemplate *lambda;
+      // Any `none` parameters need to be instantiated since MOGG can't provide
+      // them. These are the lambdas which have now been turned off.
+      instantiateNoneParamLambdas(slicedComputeFunction);
 
-        if (tensorFusionEnabledOn ==
-            slicedComputeFunction.getBody()->getArgument(0)) {
-          newLambdaName = "output_0_fn";
-          outputLambdaNames[0] = newLambdaName;
-          lambda = &outLambdaTemplate;
-          isInput = false;
-        } else {
-          lambda = &inLambdaTemplate;
+      // Override the ref counting so all tensors are owned by the graph
+      // compiler.
+      markAllTensorsAsOwned(slicedComputeFunction, symTab);
 
-          // We are dealing with an input.
-          for (auto [index, value] : llvm::enumerate(
-                   slicedComputeFunction.getBody()->getArguments())) {
-            if (value == tensorFusionEnabledOn) {
-              // -1 to account for the first "input" being an output.
-              newLambdaName = "input_" + std::to_string(index - 1) + "_fn";
-              inputLambdaNames[index - 1] = newLambdaName;
-              break;
-            }
-          }
-        }
-
-        // Instead of referring to the `self` argument of the wrapper function
-        // which contains the canonical lambda we remap onto the argument of
-        // this function which invoked the enable fusion method.
-        mlir::IRMapping mapper;
-        mapper.map(lambda->templateOp.getBody()->getArgument(0),
-                   tensorFusionEnabledOn);
-        OpBuilder b{computeBlock, computeBlock->begin()};
-
-        // Copy the param region into the body.
-        auto newLambda = cast<KGEN::ParamDeclareRegionOp>(
-            b.clone(*lambda->canonicalLambda, mapper));
-
-        // Rebind the parameters of the lambda from the `self` argument in the
-        // method onto the specific parameters of the tensor being used at the
-        // callsite.
-        DenseMap<ParamDeclRefAttr, TypedAttr> paramRebinds;
-
-        for (auto [localParamRef, methodParamDecl] :
-             llvm::zip(enableFusionFunc.getCallee().getParamValues(),
-                       lambda->templateOp.getInputParams())) {
-          auto methodDeclRef = ParamDeclRefAttr::get(methodParamDecl.getName(),
-                                                     methodParamDecl.getType());
-          paramRebinds[methodDeclRef] = localParamRef;
-        }
-
-        // Update the parameter attributes.
-        mlir::AttrTypeReplacer walker;
-        walker.addReplacement(
-            [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
-              auto itr = paramRebinds.find(attr);
-              if (itr != paramRebinds.end())
-                return itr->second;
-              return std::nullopt;
-            });
-        walker.recursivelyReplaceElementsIn(newLambda, /*replaceAttrs=*/true,
-                                            /*replaceLocs=*/false,
-                                            /*replaceTypes=*/true);
-        newLambda.setParamDeclAttr(ParamDeclAttr::get(
-            newLambdaName, newLambda.getParamDecl().getType()));
-
-        // The parameter reference of the lambda.
-        auto refToLambda =
-            ParamDeclRefAttr::get(newLambda.getParamDecl().getName(),
-                                  newLambda.getParamDecl().getType());
-
-        // Any call to the original lambda.
-        paramRebinds[ParamDeclRefAttr::get(
-            lambda->canonicalLambda.getParamDecl().getName(),
-            lambda->canonicalLambda.getParamDecl().getType())] = refToLambda;
-
-        // Clone the call in the mojo template function which tells us how to
-        // rebind the tensor type and remap it onto the new type.
-        OwningOpRef<CallOp> newSampleCall = lambda->callUsingLambda.clone();
-        walker.recursivelyReplaceElementsIn(*newSampleCall,
-                                            /*replaceAttrs=*/true,
-                                            /*replaceLocs=*/false,
-                                            /*replaceTypes=*/true);
-
-        size_t lambdaIndex = isInput ? TensorInMojo::INPUT_LAMBDA_IDX
-                                     : TensorInMojo::OUTPUT_LAMBDA_IDX;
-        auto newLambdaBinding =
-            newSampleCall->getCallee().getParamValues()[lambdaIndex];
-
-        // We now have the old binding to None for the output and the new
-        // binding to the the input lambda we just cloned. We now need to
-        // replace all uses of the old one with the new.
-        if (isInput) {
-          ParamDeclRefAttr oldLambdaBinding = cast<ParamDeclRefAttr>(
-              enableFusionFunc.getCallee()
-                  .getParamValues()[TensorInMojo::INPUT_LAMBDA_IDX]);
-
-          paramRebinds[oldLambdaBinding] = newLambdaBinding;
-          for (Operation &topLevelOp : slicedComputeFunction.getOps()) {
-            if (&topLevelOp != newLambda) {
-              topLevelOp.walk([&](Operation *op) {
-                walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                                    /*replaceLocs=*/false,
-                                                    /*replaceTypes=*/true);
-              });
-            }
-          }
-        } else {
-          // Update all the call sites which use the output tensor to reflect
-          // the new lambda.
-          for (Operation *user : outputTensor.getUsers()) {
-            if (auto call = dyn_cast<CallOp>(user)) {
-
-              // Don't include any within the lambda itself.
-              bool inLambda = false;
-              Operation *parent = call->getParentOp();
-              while (parent) {
-                if (parent == newLambda) {
-                  inLambda = true;
-                  break;
-                }
-                parent = parent->getParentOp();
-              }
-              if (inLambda)
-                continue;
-
-              auto paramUpdate = [&](const TensorInMojo &tensor,
-                                     SmallVector<TypedAttr> &newParams) {
-                if (KGEN::ParamIndexRefAttr param = tensor.outputLambdaAsRef())
-                  newParams[param.getIndex()] = newLambdaBinding;
-              };
-              rewriteCallWithNewParams(call, symTab, paramUpdate);
-            }
-          }
-        }
-      }
-
-      int num_params = 0;
-      // For now assume all variant parameters are referring to a lambda. Each
-      // variant parameter will be initalized as a None type to represent no
-      // fusion.
-      for (auto param : slicedComputeFunction.getInputParams()) {
-        if (auto asVariant = dyn_cast<KGEN::VariantType>(param.getType())) {
-          OpBuilder b{computeBlock, computeBlock->begin()};
-
-          auto lambdaNoneTy = KGEN::VariantAttr::get(
-              b.getIntegerAttr(b.getI1Type(), 0), 1, asVariant);
-
-          std::string newalias = "_none_lambda_" + std::to_string(num_params++);
-          b.create<ParamDeclareOp>(
-              slicedComputeFunction.getLoc(),
-              ParamDeclAttr::get(newalias, param.getType()), lambdaNoneTy);
-
-          ParamDeclRefAttr newRef =
-              ParamDeclRefAttr::get(newalias, param.getType());
-          ParamDeclRefAttr oldRef =
-              ParamDeclRefAttr::get(param.getName(), param.getType());
-          mlir::AttrTypeReplacer walker;
-          walker.addReplacement(
-              [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
-                if (attr == oldRef)
-                  return newRef;
-                return std::nullopt;
-              });
-
-          slicedComputeFunction.walk([&](Operation *op) {
-            if (op == slicedComputeFunction) {
-              walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                                  /*replaceLocs=*/false,
-                                                  /*replaceTypes=*/true);
-            }
-          });
-        }
-      }
-
-      // Clean up the enable fusion calls
-      for (auto call : enableFusionFuncs) {
-        // Theoretically the user could reference the none return...
-        if (call.getResult(0).use_empty())
-          call->erase();
-      }
-
-      // Update all calls which reference a tensor to override the memory user
-      // parameter disable reference counting.
-      auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
-      auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
-                                          POP::SIMDType::get(1, boolType));
-
-      slicedComputeFunction.walk([&](CallOp call) {
-        auto paramUpdate = [&](const TensorInMojo &tensor,
-                               SmallVector<TypedAttr> &newParams) {
-          if (KGEN::ParamIndexRefAttr param = tensor.ownedMemoryAsRef())
-            newParams[param.getIndex()] = boolFalse;
-        };
-
-        rewriteCallWithNewParams(call, symTab, paramUpdate);
-      });
-
-      // The new attributes on the generator.
-      SmallVector<NamedAttribute> newAttrs;
-      for (NamedAttribute attr : slicedComputeFunction->getAttrs())
-        newAttrs.push_back(attr);
-
-      OpBuilder b{ctx};
-
-      newAttrs.push_back(
-          NamedAttribute{b.getStringAttr("_sliced"), b.getUnitAttr()});
-
-      // Attach the lambda metadata.
-      SmallVector<StringRef> inNames;
-      for (const std::string &name : inputLambdaNames)
-        inNames.push_back(name);
-      newAttrs.push_back(NamedAttribute{b.getStringAttr("_in_lambdas"),
-                                        b.getStrArrayAttr(inNames)});
-
-      SmallVector<StringRef> outNames;
-      for (const std::string &name : outputLambdaNames)
-        outNames.push_back(name);
-      newAttrs.push_back(NamedAttribute{b.getStringAttr("_out_lambdas"),
-                                        b.getStrArrayAttr(outNames)});
-
-      if (elementwiseOp) {
-        // Last parameter is known to be the lambda...
-        auto elemwiseLambda =
-            elementwiseOp
-                .getParamValues()[elementwiseOp.getParamValues().size() - 1];
-        auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
-        newAttrs.push_back(NamedAttribute{
-            b.getStringAttr("_elementwise_lambda"), asParam.getName()});
-      }
-
-      slicedComputeFunction->setAttrs(newAttrs);
-
-      // Shape function.
-      mlir::IRMapping mapper;
+      // Add info for mogg to read off the kernel.
+      attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
+                                outputLambdaNames, elementwiseOp);
 
       // Add the sliced functions to the KGEN as well.
       symTab.insert(slicedComputeFunction);
