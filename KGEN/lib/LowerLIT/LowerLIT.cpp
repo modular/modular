@@ -162,9 +162,15 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
-    } else if (isa<OwnershipEndLifetimeOp>(op)) {
+    } else if (isa<TransferRegOwnershipOp>(op)) {
       op->getResult(0).replaceAllUsesWith(op->getOperand(0));
       op->erase();
+    } else if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
+      // Declare the lifetime used in the result type.
+      b.create<ParamDeclareOp>(transfer.getLoc(), transfer.getParamDecl(),
+                               b.getAttr<LifetimeAttr>());
+      b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
+          transfer, ArrayRef<Type>(transfer.getType()), transfer.getOperand());
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {

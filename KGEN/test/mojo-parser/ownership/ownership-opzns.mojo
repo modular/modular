@@ -43,9 +43,9 @@ struct MemoryUniqueMovable:
     # Mercilessly steal 'other's state which could be interesting.
 
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
-    # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
-    # CHECK-NEXT: %2 = lit.ref.struct.ger %self[state]
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%2, %1)
+    # CHECK-NEXT: %other28transfer290 = lit.transfer_mem_ownership %0
+    # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %other28transfer290)
     self.state = other.state^
 
     # CHECK-NEXT: kgen.param.constant: none
@@ -69,16 +69,16 @@ struct MemoryMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
-  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
+  # CHECK-NEXT: %a28transfer290 = lit.transfer_mem_ownership %a
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer290)
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
 
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
-  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
+  # CHECK-NEXT: %a28transfer290 = lit.transfer_mem_ownership %a
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer290){{.*}}init_self{{.*}} owned_in_mem
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
@@ -98,7 +98,7 @@ struct RegMovableCopyable:
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime %a
+  # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
   # CHECK-NEXT: kgen.return [[AVAL]]
   return a^
@@ -115,7 +115,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a_0
+  # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
   # CHECK-NEXT: kgen.return [[A]]
   return a^
@@ -125,12 +125,12 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
 
-  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a
+  # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
   # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
   let x = a^
 
-  # CHECK-NEXT: [[X:%.*]] = lit.ownership.end_lifetime %x
+  # CHECK-NEXT: [[X:%.*]] = lit.transfer_reg_ownership %x
   # CHECK-NEXT: kgen.return [[X]]
   return x^
 

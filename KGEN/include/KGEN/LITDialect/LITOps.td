@@ -1478,26 +1478,57 @@ def LIT_OwnershipDefLValueOp : LITOp<"ownership.def_lvalue"> {
 }
 
 //===----------------------------------------------------------------------===//
-// OwnershipEndLifetimeOp
+// TransferRegOwnershipOp
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end_lifetime",
-                                       [AllTypesMatch<["value", "newValue"]>]> {
+def LIT_TransferRegOwnershipOp
+   : LITOp<"transfer_reg_ownership", [AllTypesMatch<["value", "result"]>]> {
   let summary = "End the lifetime of a tracked value and start a new lifetime";
   let description = [{
-    This op is spelled `x^` when `x` is a lifetime-tracked value.  It indicates
-    that the lifetime of `x` ends here and a new value is created.
+    This op is spelled `x^` when `x` is a lifetime-tracked register value.  It
+    indicates that the lifetime of `x` ends here and a new value is created.
 
-    This works with both register and memory values.
+    This works with both register values.
 
     ```mlir
-    %1 = lit.ownership.end_lifetime %0 : !somestring
+    %1 = lit.transfer_reg_ownership %0 : !object
     ```
   }];
 
-  let arguments = (ins AnyType:$value, BoolAttr:$isReg);
-  let results = (outs AnyType:$newValue);
+  let arguments = (ins AnyType:$value);
+  let results = (outs AnyType:$result);
   let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// TransferMemOwnershipOp
+//===----------------------------------------------------------------------===//
+
+def LIT_TransferMemOwnershipOp : LITOp<"transfer_mem_ownership", [
+          DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+          DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+  let summary = "End the lifetime of a tracked value and start a new lifetime";
+  let description = [{
+    This op is spelled `x^` when `x` is a lifetime-tracked memory value.  It
+    indicates that the lifetime of `x` ends here and a new value with a new
+    lifetime is created.  This also defines the new lifetime used in the
+    result reference.
+
+    This works with both memory values.
+
+    ```mlir
+    %1 = lit.transfer_mem_ownership %0 : !lit.ref<T, lt1>, !lit.ref<T, lt2>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$value, KGEN_ParamDeclAttr:$paramDecl);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = "$value `:` type($value) `->` type($result) attr-dict";
+
+  let builders = [
+    /// Create a TransferMem that has a lifetime with the specified name.
+    OpBuilder<(ins "Value":$srcValue, "StringAttr":$lifetimeName)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

@@ -66,11 +66,21 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  // The lit.ownership.end_lifetime op ends a register/mem lifetime and creates
-  // a new one.  This defines the properties of its new lifetime.
-  if (auto endLifetime = v.getDefiningOp<OwnershipEndLifetimeOp>()) {
+  // The lit.transfer_reg_ownership op ends a register lifetime and creates
+  // a new one.
+  if (auto endLifetime = v.getDefiningOp<TransferRegOwnershipOp>()) {
     name = StringAttr::get(v.getContext(), "(transferred value)");
-    isIndirect = !endLifetime.getIsReg();
+    isIndirect = false;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
+  // The lit.transfer_mem_ownership op ends a memory lifetime and creates
+  // a new one.
+  if (auto endLifetime = v.getDefiningOp<TransferMemOwnershipOp>()) {
+    name = endLifetime.getParamDecl().getName();
+    isIndirect = true;
     startsUninit = true;
     endsUninit = true;
     return;
@@ -456,15 +466,17 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  // lit.ownership.end_lifetime consumes its operand then defines its
-  // result.
-  if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
-    bool isIndirect = !ownershipEnd.getIsReg();
-    auto operandEffect =
-        isIndirect ? OperandEffect::memConsume : OperandEffect::regConsume;
-    operands.push_back({ownershipEnd.getOperand(), operandEffect});
-    results.push_back(isIndirect ? ResultEffect::memDefineInitToUninit
-                                 : ResultEffect::regDefine);
+  // lit.transfer_reg_ownership consumes its operand then defines its result.
+  if (auto transfer = dyn_cast<TransferRegOwnershipOp>(op)) {
+    operands.push_back({transfer.getOperand(), OperandEffect::regConsume});
+    results.push_back(ResultEffect::regDefine);
+    return {};
+  }
+
+  // lit.transfer_mem_ownership consumes its operand then defines its result.
+  if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
+    operands.push_back({transfer.getOperand(), OperandEffect::memConsume});
+    results.push_back(ResultEffect::memDefineInitToUninit);
     return {};
   }
 

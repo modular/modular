@@ -99,7 +99,7 @@ fn destructors(owned arg0: MemExample):
 
   # Test pointless transfers from RValues.
 
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %mem3
+  # CHECK-NEXT: [[T1:%.*]] = lit.transfer_mem_ownership %mem3
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
   consume(mem3^^^)
 
@@ -373,7 +373,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     # Transferring ownership to the result means the copy ctor/dtor isn't
     # invoked.
 
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime %example1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.transfer_reg_ownership %example1
     # CHECK-NEXT: kgen.return [[TMP]]
     return example1^
 
@@ -396,7 +396,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # CHECK-NEXT: hlcf.if %cond
   if (cond):
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime %example2
+    # CHECK-NEXT: [[TMP:%.*]] = lit.transfer_mem_ownership %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
@@ -425,7 +425,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   consumeMem(example)
 
   # This does consume example, so no copy needed.
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.transfer_mem_ownership %example
   # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[CONSUME]])
   consumeMem(example^)
 
@@ -433,7 +433,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example2)
   let example2 = MemExample()
 
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example2
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.transfer_mem_ownership %example2
   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
@@ -485,7 +485,7 @@ fn bigreg_test():
   var varThing = BigRegExample()
 
   # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %varThing[a]
-  # CHECK-NEXT: [[LIFEEND:%.*]] = lit.ownership.end_lifetime [[FIELD]]
+  # CHECK-NEXT: [[LIFEEND:%.*]] = lit.transfer_mem_ownership [[FIELD]]
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[LIFEEND]]
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[AVAL]])
   consume(varThing.a^)
@@ -530,7 +530,7 @@ struct ExoticDelExample:
       # This side we manually consume for c.
 
       # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self_0[c]
-      # CHECK-NEXT: [[CREF2:%.*]] = lit.ownership.end_lifetime [[CREF]]
+      # CHECK-NEXT: [[CREF2:%.*]] = lit.transfer_mem_ownership [[CREF]]
       # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CREF2]]
       # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[CVAL]])
       # CHECK-NEXT: hlcf.yield
@@ -685,7 +685,7 @@ fn variadic_field_sensitivity():
   var memPair = MemPair()
 
   # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
-  # CHECK-NEXT: [[OWNEDAREF:%.*]] = lit.ownership.end_lifetime [[AREF]]
+  # CHECK-NEXT: [[OWNEDAREF:%.*]] = lit.transfer_mem_ownership [[AREF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[OWNEDAREF]])
   _ = memPair.a^  # Destroy a.
 

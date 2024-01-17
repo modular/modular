@@ -51,7 +51,7 @@ fn test_owned(owned x: RegPassable):
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XVAR2]])
     owned_generic(x)
 
-    # CHECK: [[XMOVED:%.*]] = lit.ownership.end_lifetime [[XVAR]]
+    # CHECK: [[XMOVED:%.*]] = lit.transfer_mem_ownership [[XVAR]]
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XMOVED]])
     owned_generic(x ^)
 
