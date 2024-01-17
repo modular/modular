@@ -15,7 +15,11 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from algorithm.functional import _elementwise_impl, tile
+from algorithm.functional import (
+    _elementwise_impl,
+    _async_elementwise_impl,
+    tile,
+)
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from Reshape import reshape
@@ -445,6 +449,146 @@ fn gather[
                 output_rank,
                 simd_width,
                 single_thread_blocking_override,
+                gather_lambda,
+                target,
+            ](
+                output_shape,
+            )
+
+
+@always_inline
+async fn async_gather[
+    type: DType,
+    input_rank: Int,
+    indices_type: DType,
+    indices_rank: Int,
+    output_rank: Int,
+    simd_width: Int,
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    indices_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[indices_type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    prefetch_fn: fn[input_rank: Int, indices_rank: Int] (
+        StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
+    ) capturing -> None,
+    axis_static: Dim,
+    target: StringLiteral = "cpu",
+](
+    axis: OptionalParamInt[axis_static],
+    input_shape: StaticIntTuple[input_rank],
+    indices_shape: StaticIntTuple[indices_rank],
+    output_shape: StaticIntTuple[output_rank],
+) raises:
+    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
+
+    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
+    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+    """
+
+    # Disable error checking in trivial kernels.
+    if axis.get() < 0:
+        raise Error("gather kernel does not support negative axis")
+
+    # The output shape has the same shape as the input, with the indexed-axis
+    # replaced by the shape of the indices
+    for i in range(axis.get()):
+        if output_shape[i] != input_shape[i]:
+            raise Error(
+                "gather: output_shape[0:axis] does not match"
+                " input_shape[0:axis]"
+            )
+    for i in range(axis.get(), axis.get() + indices_rank):
+        if output_shape[i] != indices_shape[i - axis.get()]:
+            raise Error(
+                "gather: output_shape[axis:axis+indices_rank] does not"
+                " match indices_shape"
+            )
+    for i in range(axis.get() + indices_rank, output_rank):
+        if output_shape[i] != input_shape[i - indices_rank + 1]:
+            raise Error(
+                "gather: output_shape[axis + indices_rank:] does not match"
+                " input_shape[axis:]"
+            )
+
+    if axis.get() >= input_rank:
+        raise Error("gather: axis must be less than input rank")
+
+    with Trace[TraceLevel.OP]("mojo.gather") as t:
+        # Short-circuit for trivial cases, and to avoid divide-by-zero
+        let indices_len = indices_shape.flattened_length()
+        if input_shape.flattened_length() == 0 or indices_len == 0:
+            return
+
+        @parameter
+        @always_inline
+        fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+            # out_coords consists of 3 chunks:
+            #   out_coords[0:axis] = input coords[0:axis]
+            #   out_coords[axis:axis+indices_rank] = indices_coords
+            #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+            # and input_coords[axis] = indices[indices_coords]
+            # Get the gather indices.
+            var indices_index = StaticIntTuple[indices_rank]()
+
+            # Get the indices of the index.
+            @always_inline
+            @parameter
+            fn indices_get[unrolled_i: Int]():
+                indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+
+            unroll[indices_rank, indices_get]()
+
+            # The index we are gathering.
+            let data_index = indices_fn[1, indices_rank](indices_index)
+
+            # Update the indices with the new data index.
+            var data_indices = StaticIntTuple[input_rank]()
+
+            let skip_factor = indices_rank - 1
+
+            # Build the indices for the input. We have replaced in index in 'axis'
+            # with an index from the indices tensor.
+            @always_inline
+            @parameter
+            fn input_indices_get[unrolled_i: Int]():
+                if unrolled_i == axis.get():
+                    data_indices[unrolled_i] = normalize_neg_index(
+                        data_index, input_shape[axis.get()]
+                    )
+                elif unrolled_i > axis.get():
+                    # Skip over any extra indices dimensions. These are essentially new dimensions.
+                    data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
+                else:
+                    data_indices[unrolled_i] = idx[unrolled_i]
+
+            unroll[input_rank, input_indices_get]()
+
+            # Load the the data.
+            prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
+            let data = input_fn[simd_width, input_rank](data_indices)
+
+            # Store it to the original index.
+            output_fn[simd_width, rank](idx, data)
+
+        # If we are gathering on the last dimension then we have to be scalar.
+        if axis.get() == input_rank - 1:
+            await _async_elementwise_impl[
+                output_rank,
+                1,
+                gather_lambda,
+                target,
+            ](
+                output_shape,
+            )
+        else:
+            await _async_elementwise_impl[
+                output_rank,
+                simd_width,
                 gather_lambda,
                 target,
             ](
