@@ -156,3 +156,26 @@ fn unary_op_without_fusion(
 
     out.for_each[1, func]()
     return out
+
+
+@mogg_register_override("mo.transpose", 1000)
+@export
+fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
+    alias rank = x.static_rank
+
+    var new_shape = IntList[x.same_rank_param()]()
+    var new_stride = IntList[x.same_rank_param()]()
+
+    @always_inline
+    @parameter
+    fn body[i: Int]():
+        let index = IntList[DimList(i)](i)
+        let dim = int(perm.simd_load[1](index))
+        new_shape._unsafe_set_dim(i, x.shape[dim])
+        new_stride._unsafe_set_dim(i, x.strides[dim])
+
+    unroll[rank, body]()
+
+    return Tensor[x.type, x.same_rank_param()](
+        x.data, new_shape, new_stride, x.refcount()
+    )

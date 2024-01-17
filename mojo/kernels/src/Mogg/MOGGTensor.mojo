@@ -188,6 +188,14 @@ struct Tensor[
         self.strides = existing.strides
         self.dyn_rank = existing.dyn_rank
 
+    @staticmethod
+    fn same_rank_param() -> DimList:
+        return DimList.create_unknown[len(Self.static_shape)]()
+
+    @always_inline
+    fn refcount(self) -> Pointer[SIMD[DType.index, 1]]:
+        return self.storage_ref_count._underlying_value
+
     @mogg_tensor_deconstructor()
     fn __del__(owned self):
         @parameter
