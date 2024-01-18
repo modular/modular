@@ -320,12 +320,6 @@ struct ValueInfo {
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
 
-  /// This bit gets set to true when an already-initialized var gets
-  /// overwritten.  At the end of the uninit analysis, vars that are not mutated
-  /// get a warning that indicate they should be written as 'let's.  This is
-  /// also used to implement late initialization for lets.
-  bool isMutatedWhenInitialized;
-
   /// Return true if this value contains the specified bit.
   bool contains(unsigned bitNo) const {
     return startValueBit <= bitNo && bitNo < endValueBit;
@@ -497,8 +491,7 @@ struct ValueSet {
                           trackable.startsUninit, trackable.endsUninit,
                           trackable.isIndirect,
                           trackable.isFullObjectLiveOnEntry, isLet,
-                          /*hasErrorDiagnosed=*/false,
-                          /*isMutatedWhenInitialized=*/false});
+                          /*hasErrorDiagnosed=*/false});
   }
 
   /// Return a reference to the entire value with the specified ID.
@@ -996,10 +989,6 @@ void UninitializedValueScan::checkDefForLetDiagnostics(ValueRef valueRef,
         << "'" << info.getName().str() << "' declared here";
     info.hasErrorDiagnosed = true;
   }
-
-  // If this is a var, then just notice the mutation so it doesn't get
-  // suggested to promote to a let.
-  info.isMutatedWhenInitialized = true;
 }
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
@@ -2721,32 +2710,6 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // materialized by LowerSemanticCF before this pass?
   SmallVector<Operation *> opsToRemove;
   DestructorInsertion(valueSet, opsToRemove).scanFunction(func);
-
-  // Now that we've looked at all the uses and definitions in the function,
-  // diagnose any 'var's that should be written as 'let's with a warning.
-  //
-  // FIXME: Our analysis is not safe in the presence of closures, so disable
-  // this check for now if we see any.
-  if (!hasClosures)
-    for (const ValueInfo &info : valueSet.getValueInfos()) {
-      if (info.hasErrorDiagnosed || info.isMutatedWhenInitialized ||
-          !info.value)
-        continue;
-
-      auto checkVarLet = [&](VarLetDeclOp varLet) {
-        if (varLet.getKind() != VarLetDeclKind::Var)
-          return;
-        if (!varLet.isSynthetic()) {
-          mlir::emitWarning(varLet.getLoc())
-              << "'" << varLet.getName()
-              << "' was declared as a 'var' but never mutated, consider "
-                 "switching to a 'let'";
-        }
-      };
-
-      if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())
-        checkVarLet(varLet);
-    }
 
   // Remove copy ctors and allocations that have been elided.
   for (Operation *op : opsToRemove)
