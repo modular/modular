@@ -24,7 +24,7 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from AccumulateSIMD import accumulate_x86_simd
+from AccumulateSIMD import accumulate_x86_simd, accumulate_neon
 from ConvUtils import (
     ConvInfo,
     ConvInfoStatic,
@@ -1413,86 +1413,6 @@ struct ConvDirectNHWC[
             )
 
     @always_inline
-    fn _accumulate_neon[
-        micro_kernel_height: Int,
-        micro_kernel_width: Int,
-        simd_size: Int,
-        has_residual: Bool,
-        prefetch_offset: Int,
-    ](
-        self,
-        c_tile_size: Int,
-        input_stride: Int,
-        input_base: DTypePointer[input_type],
-        filter_base: DTypePointer[filter_type],
-        output_ptr: DTypePointer[output_type],
-    ):
-        """Accumulate with register tiling on NEON architectures."""
-        constrained[has_neon()]()
-
-        # Short circuit when the micro tile is in padding.
-        @parameter
-        if micro_kernel_height == 0:
-            return
-
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
-
-        @parameter
-        @always_inline
-        fn micro_kernel[num_lanes: Int](offset: Int):
-            let input_vecs = stack_allocation[
-                micro_kernel_height, SIMD[input_type, num_lanes]
-            ]()
-
-            # Load vectors of size num_lanes from input.
-            @unroll
-            for i in range(micro_kernel_height):
-                input_vecs[i] = input_base.simd_load[num_lanes](
-                    offset + i * input_stride
-                )
-
-            var filter_ptr: DTypePointer[filter_type]
-
-            @parameter
-            if filter_packed:
-                filter_ptr = filter_base.offset(offset * micro_kernel_f_size)
-            else:
-                filter_ptr = filter_base.offset(offset * self.conv_shape.f)
-
-            @unroll
-            for lane in range(num_lanes):
-
-                @unroll
-                for j in range(micro_kernel_width):
-                    let filter_vec = self._load_filter_vec[
-                        has_residual, simd_size
-                    ](filter_ptr, j * simd_size)
-
-                    @unroll
-                    for i in range(micro_kernel_height):
-                        let input_vec = input_vecs[i]
-                        var output_vec = output_ptr.simd_load[simd_size](
-                            i * micro_kernel_f_size + j * simd_size
-                        )
-                        # Neon can broadcast from an element in simd vector.
-                        output_vec = fma[output_type, simd_size](
-                            input_vec[lane].cast[output_type](),
-                            filter_vec.cast[output_type](),
-                            output_vec,
-                        )
-                        output_ptr.simd_store(
-                            i * micro_kernel_f_size + j * simd_size, output_vec
-                        )
-
-                @parameter
-                if filter_packed:
-                    filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-                else:
-                    filter_ptr = filter_ptr.offset(self.conv_shape.f)
-
-        tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
-
-    @always_inline
     fn _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -1514,18 +1434,20 @@ struct ConvDirectNHWC[
 
         @parameter
         if has_neon():
-            self._accumulate_neon[
+            accumulate_neon[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
-                has_residual,
-                prefetch_offset,
+                prefetch_offset= -1,  # Don't prefetch with neon.
+                partial_load_b = has_residual and not filter_packed,
             ](
                 c_tile_size,
-                input_stride,
-                input_base,
-                filter_base,
                 output_ptr,
+                input_base,
+                input_stride,
+                filter_base,
+                filter_stride,
+                F % simd_size,
             )
         else:
             accumulate_x86_simd[
@@ -1637,7 +1559,12 @@ struct ConvDirectNHWC[
 
                 for wo in range(self.conv_shape.out_w):
                     self._inner_loops_padding[
-                        1, micro_kernel_width, True, has_residual, last_c_tile
+                        1,
+                        micro_kernel_width,
+                        simd_size,
+                        True,
+                        has_residual,
+                        last_c_tile,
                     ](
                         input_base,
                         filter_base,
@@ -1675,7 +1602,12 @@ struct ConvDirectNHWC[
             # region effected by left padding, [0, left_pad_impact_end)
             for wo in range(left_pad_impact_end):
                 self._inner_loops_padding[
-                    1, micro_kernel_width, True, has_residual, last_c_tile
+                    1,
+                    micro_kernel_width,
+                    simd_size,
+                    True,
+                    has_residual,
+                    last_c_tile,
                 ](
                     input_base,
                     filter_base,
@@ -1699,7 +1631,12 @@ struct ConvDirectNHWC[
             @parameter
             fn update_middle[height: Int](wo: Int):
                 self._inner_loops_padding[
-                    height, micro_kernel_width, False, has_residual, last_c_tile
+                    height,
+                    micro_kernel_width,
+                    simd_size,
+                    False,
+                    has_residual,
+                    last_c_tile,
                 ](
                     input_base,
                     filter_base,
@@ -1725,7 +1662,12 @@ struct ConvDirectNHWC[
             # region effected by right padding, [right_pad_impact_start, WO)
             for wo in range(right_pad_impact_start, self.conv_shape.out_w):
                 self._inner_loops_padding[
-                    1, micro_kernel_width, True, has_residual, last_c_tile
+                    1,
+                    micro_kernel_width,
+                    simd_size,
+                    True,
+                    has_residual,
+                    last_c_tile,
                 ](
                     input_base,
                     filter_base,
@@ -1747,6 +1689,7 @@ struct ConvDirectNHWC[
     fn _inner_loops_padding[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
+        simd_size: Int,
         w_padding_impact: Bool,
         has_residual: Bool,
         last_c_tile: Bool,
@@ -1779,7 +1722,6 @@ struct ConvDirectNHWC[
             "USE 1 x width kernel on boundary",
         ]()
 
-        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Shift in input when shifting 1 in filter S dimension.

@@ -9,8 +9,9 @@ from algorithm.functional import vectorize
 from AccumulateSIMD import (
     _simd_load_maybe_partial,
     accumulate_x86_simd,
+    accumulate_neon,
 )
-from sys.info import simdwidthof, has_avx2, has_avx512f
+from sys.info import simdwidthof, has_neon
 from testing import *
 from memory import stack_allocation
 
@@ -31,7 +32,7 @@ def test_maybe_partial_load():
     assert_equal(vec, SIMD[DType.float32, simd_size](1.0, 0.0, 0.0, 0.0))
 
 
-def test_accumulate_avx2_avx512[
+def test_accumulate[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
     alias type = DType.float32
@@ -69,9 +70,15 @@ def test_accumulate_avx2_avx512[
 
     vectorize[simd_size, fill_c](c_size)
 
-    accumulate_x86_simd[num_rows, num_cols, simd_size](
-        length, c, a, length, b, kernel_width
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length, c, a, length, b, kernel_width
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length, c, a, length, b, kernel_width
+        )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -91,9 +98,15 @@ def test_accumulate_avx2_avx512[
         SIMD[DType.float32, simd_size](1.0),
     )
 
-    accumulate_x86_simd[num_rows, num_cols, simd_size](
-        length, c, a, 2 * length, b + kernel_width, kernel_width
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length, c, a, 2 * length, b + kernel_width, kernel_width
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length, c, a, 2 * length, b + kernel_width, kernel_width
+        )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -113,9 +126,25 @@ def test_accumulate_avx2_avx512[
         SIMD[DType.float32, simd_size](7.0),
     )
 
-    accumulate_x86_simd[num_rows, num_cols, simd_size](
-        length, c, a + length, 2 * length, b + kernel_width, 2 * kernel_width
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length,
+            c,
+            a + length,
+            2 * length,
+            b + kernel_width,
+            2 * kernel_width,
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length,
+            c,
+            a + length,
+            2 * length,
+            b + kernel_width,
+            2 * kernel_width,
+        )
 
     # C results:
     # [4.0, 4.0, 4.0, 4.0]
@@ -138,7 +167,4 @@ def test_accumulate_avx2_avx512[
 
 def main():
     test_maybe_partial_load()
-
-    @parameter
-    if has_avx2() or has_avx512f():
-        test_accumulate_avx2_avx512()
+    test_accumulate()
