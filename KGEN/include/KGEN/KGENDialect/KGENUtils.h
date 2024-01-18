@@ -159,6 +159,10 @@ ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
 /// Parse a index-or-colon-type and then a parameter value of that type.
 ParseResult parseColonTypeParamValue(AsmParser &p, TypedAttr &value);
 void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
+inline void printColonTypeParamValue(AsmPrinter &p, Operation *,
+                                     TypedAttr value) {
+  printColonTypeParamValue(p, value);
+}
 
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);

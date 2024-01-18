@@ -212,8 +212,7 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    std::optional<ArrayRef<StructFieldOp>> injectedFields) {
+    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
   bool isMemoryOnly = !structOp.isRegisterPassable();
@@ -248,18 +247,12 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   if (isMemoryOnly) {
     BlockArgument selfArg = body->getArgument(0);
     assert(selfArg.getType().isa<RefType>());
-    size_t idx = 1;
-    SmallVector<StructFieldOp> fields =
-        injectedFields.has_value()
-            ? llvm::map_to_vector(injectedFields.value(),
-                                  [](auto v) { return v; })
-            : llvm::map_to_vector(structOp.getFieldDecls(),
-                                  [](auto v) { return v; });
-    for (StructFieldOp field : fields) {
-      // Add the block argument, get it as an RValue since it is owned.
-      BlockArgument arg = body->getArgument(idx);
+    for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
+      // Add the block argument, get it as an RValue since it is owned. Skip the
+      // self argument.
+      BlockArgument arg = body->getArgument(idx + 1);
       CValue argVal;
-      switch (argConventions[idx]) {
+      switch (argConventions[idx + 1]) {
       default:
         llvm_unreachable("unknown convention");
       case ValueInputConvention::OwnedInReg:
@@ -281,7 +274,6 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       SyntheticNode srcExpr(structDecl.getLoc());
       emitter.emitStoreToLValue({argVal, &srcExpr}, MLValue(fieldRef),
                                 EC_AttributeRefBase);
-      ++idx;
     }
 
     // Finish off the function with a return + lit.endfunc.
@@ -572,7 +564,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argPassingKinds.push_back(PassingKind::PosOrKw);
     }
     init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
-                                    argNames, argPassingKinds, {});
+                                    argNames, argPassingKinds);
   }
 
   if (!valueInfo.hasDestructor()) {

@@ -74,7 +74,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab)
       : symtab(symtab) {}
 
-  bool shouldAddToGraph(CallGraphNode *node) {
+  bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
     return !node->func.isExternal();
   }
 
