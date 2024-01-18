@@ -1,0 +1,18 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+from ._engine_impl import _get_engine_path, _EngineImpl
+
+
+fn get_version() raises -> String:
+    """Returns version of modular AI engine.
+
+    Returns:
+        Version as string.
+    """
+    let path = _get_engine_path()
+    let version = _EngineImpl(path._strref_dangerous()).get_version()
+    path._strref_keepalive()
+    return version

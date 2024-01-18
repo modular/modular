@@ -1,0 +1,162 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from memory.unsafe import DTypePointer
+from sys.ffi import DLHandle
+from ._utils import *
+from ._status import *
+from ._compilation import CCompiledModel
+
+
+@value
+@register_passable("trivial")
+struct CTensorNameArray:
+    """Mojo representation of Engine's TensorArray pointer.
+    This doesn't free the memory on destruction.
+    """
+
+    var ptr: DTypePointer[DType.invalid]
+
+    alias FreeTensorNameArrayFnName = "M_freeTensorNameArray"
+    alias GetTensorNameAtFnName = "M_getTensorNameAt"
+
+    fn get_name_at(self, idx: Int, lib: DLHandle) raises -> String:
+        if not self.ptr:
+            raise "failed to get tensor name"
+        let name = call_dylib_func[CString](
+            lib, Self.GetTensorNameAtFnName, self, idx
+        )
+        return name.__str__()
+
+    fn free(self, borrowed lib: DLHandle):
+        call_dylib_func(lib, Self.FreeTensorNameArrayFnName, self)
+
+
+struct TensorNamesIterator(Sized):
+    var ptr: CTensorNameArray
+    var current: Int
+    var length: Int
+    var lib: DLHandle
+
+    fn __init__(
+        inout self, ptr: CTensorNameArray, length: Int, borrowed lib: DLHandle
+    ):
+        self.ptr = ptr
+        self.current = 0
+        self.length = length
+        self.lib = lib
+
+    fn __next__(inout self) raises -> String:
+        let next = self.ptr.get_name_at(self.current, self.lib)
+        self.current += 1
+        return next
+
+    fn __len__(self) -> Int:
+        if self.current == self.length:
+            return 0
+        return 1
+
+
+struct TensorNames(Sized):
+    var ptr: CTensorNameArray
+    var lib: DLHandle
+    var length: Int
+
+    fn __init__(
+        inout self,
+        fn_name: StringRef,
+        ptr: CCompiledModel,
+        length: Int,
+        lib: DLHandle,
+    ):
+        let status = Status(lib)
+        self.ptr = call_dylib_func[CTensorNameArray](
+            lib, fn_name, ptr, status.borrow_ptr()
+        )
+        if status:
+            print(status.__str__())
+            self.ptr = DTypePointer[DType.invalid]()
+        self.length = length
+        self.lib = lib
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ptr = exchange[CTensorNameArray](
+            existing.ptr, DTypePointer[DType.invalid].get_null()
+        )
+        self.length = existing.length
+        self.lib = existing.lib
+
+    fn __getitem__(self, idx: Int) raises -> String:
+        return self.ptr.get_name_at(idx, self.lib)
+
+    fn __iter__(self) -> TensorNamesIterator:
+        return TensorNamesIterator(self.ptr, self.length, self.lib)
+
+    fn __len__(self) -> Int:
+        return self.length
+
+    fn __del__(owned self):
+        self.ptr.free(self.lib)
+
+
+struct InputTensorNames(Sized):
+    """Collection of model input names."""
+
+    var names: TensorNames
+
+    alias GetInputTensorNamesFnName = "M_getInputNames"
+
+    fn __init__(
+        inout self,
+        ptr: CCompiledModel,
+        length: Int,
+        lib: DLHandle,
+    ):
+        self.names = TensorNames(
+            Self.GetInputTensorNamesFnName, ptr, length, lib
+        )
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.names = existing.names ^
+
+    fn __getitem__(self, idx: Int) raises -> String:
+        return self.names[idx]
+
+    fn __iter__(self) -> TensorNamesIterator:
+        return self.names.__iter__()
+
+    fn __len__(self) -> Int:
+        return len(self.names)
+
+
+struct OutputTensorNames(Sized):
+    """Collection of model output names."""
+
+    var names: TensorNames
+
+    alias GetOutputTensorNamesFnName = "M_getOutputNames"
+
+    fn __init__(
+        inout self,
+        ptr: CCompiledModel,
+        length: Int,
+        lib: DLHandle,
+    ):
+        self.names = TensorNames(
+            Self.GetOutputTensorNamesFnName, ptr, length, lib
+        )
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.names = existing.names ^
+
+    fn __getitem__(self, idx: Int) raises -> String:
+        return self.names[idx]
+
+    fn __iter__(self) -> TensorNamesIterator:
+        return self.names.__iter__()
+
+    fn __len__(self) -> Int:
+        return len(self.names)
