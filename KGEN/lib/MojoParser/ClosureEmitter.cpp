@@ -396,9 +396,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFnDecl,
     ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig) {
-  // FIXME: Add another counter for closures?
-  auto implName = moduleDecl.getAnonymousLifetimeFor(
-      "_CI_" + fileModuleOp.getSymName() + "_escaping");
+  auto implName =
+      StringAttr::get(ctx, "`_CI_" + fileModuleOp.getSymName() + "_escaping" +
+                               Twine(moduleDecl.getNextUniqueID()));
 
   // Create map from the parent name to the index of the parameter in the
   // closure struct.

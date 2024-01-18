@@ -203,6 +203,11 @@ public:
   /// children will be inherited later by a decl being resolved.
   void takeDecls(ASTDecl &src);
 
+  /// Anonymous lifetimes, closure impl structs, and potentially other names are
+  /// uniqued to avoid collisions. This returns an ID that is unique to this
+  /// ASTDecl instance and help generate such names.
+  unsigned getNextUniqueID() { return counter++; }
+
 private:
   /// This is set to true if there is an entry for body-decorators in a backing
   /// hashtable.  Clients should use "getBodyDecorators().
@@ -214,17 +219,15 @@ private:
   /// decls.
   bool loadedFromBytecode = false;
 
-  /// Anonymous lifetimes are given unique names so their parameters don't
-  /// collide.  This is the next ID number to assign.
-  unsigned anonymousLifetimeCounter = 0;
+  /// The counter to allow the generation of unique IDs for this ASTDecl.
+  unsigned counter = 0;
 
   friend class DeclResolver;
   friend class SharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
           LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
-      : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
-        cursor(cursor), endCursorState(endCursor.getState()),
-        indentation(indentation) {}
+      : irValue(irValue), loc(loc), parentDecl(parentDecl), cursor(cursor),
+        endCursorState(endCursor.getState()), indentation(indentation) {}
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 

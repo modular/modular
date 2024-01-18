@@ -82,9 +82,9 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
   if (innermostFuncScope == outermostFuncScope && dontRenameOutermost)
     return StringAttr::get(outermostFuncScope->getContext(), "`" + valueName);
 
-  return StringAttr::get(
-      outermostFuncScope->getContext(),
-      "`" + valueName + Twine(outermostFuncScope->anonymousLifetimeCounter++));
+  return StringAttr::get(outermostFuncScope->getContext(),
+                         "`" + valueName +
+                             Twine(outermostFuncScope->getNextUniqueID()));
 }
 
 void ASTDecl::dump() const {
