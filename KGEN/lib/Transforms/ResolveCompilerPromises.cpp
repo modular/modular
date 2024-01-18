@@ -49,7 +49,7 @@ class CallLikeOp {
 public:
   // Required methods for LLVM-style RTTI.
   CallLikeOp(Operation *op) : op(op) {
-    assert(!op || classof(op) && "not a call-like op");
+    assert((!op || classof(op)) && "not a call-like op");
   }
   static bool classof(Operation *op) {
     return isa_and_nonnull<KGENCallOpInterface, CaptureListCreateOp,
