@@ -24,6 +24,7 @@ add_modular_library(MSupport
   JSON.cpp
   MicroBenchmark.cpp
   Process.cpp
+  Progress.cpp
   Random.cpp
   ReferenceCounted.cpp
   Stats.cpp

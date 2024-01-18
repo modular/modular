@@ -9,6 +9,7 @@
 
 #include "Cache/BlobCache.h"
 #include "Support/HTTP/HTTPClient.h"
+#include "Support/Progress.h"
 
 /// Forward-declaration for the LLCL::Runtime.
 namespace M::LLCL {
@@ -21,8 +22,10 @@ namespace M::Cache {
 /// upstream.
 class HTTPCacheBackend : public BlobCacheBackend {
 public:
-  HTTPCacheBackend(HTTPContextRef c, std::string url, LLCL::Runtime &runtime)
-      : BlobCacheBackend(runtime), ctx(std::move(c)), url(std::move(url)) {}
+  HTTPCacheBackend(HTTPContextRef c, std::string url, LLCL::Runtime &runtime,
+                   Progress *progress)
+      : BlobCacheBackend(runtime), ctx(std::move(c)), url(std::move(url)),
+        progress(progress) {}
 
   /// Insert a binary blob with a PUT request.
   // TODO: Currently unsupported
@@ -40,6 +43,12 @@ public:
   findImpl(StringRef keyHash,
            std::optional<WriteableBufferRef> buf) const override;
 
+  /// Underlying implementation for both containsImpl and findImpl. There is a
+  /// need to distinguish the full request from simple the HEAD.
+  ErrorOr<std::optional<BufferRef>>
+  requestImpl(StringRef keyHash, std::optional<WriteableBufferRef> buf,
+              bool headOnly) const;
+
   /// We do not support clear for this backend impl.
   ErrorOrSuccess clearImpl() override;
 
@@ -48,6 +57,8 @@ private:
   HTTPContextRef ctx;
   /// The base URL for requests.
   std::string url;
+  /// Optional progress used for constructing requests.
+  Progress *progress;
 
   /// Store a buffer in our local in-memory cache. We can't always rely on the
   /// backends ahead of us for this, because our `containsImpl` just runs
@@ -71,7 +82,8 @@ using HTTPCacheBackendRef = RCRef<HTTPCacheBackend>;
 /// Get the HTTP CAS backend. The backend will use `url` as the base, and append
 /// the url-safe base-64 encoded key hash as the resource path.
 HTTPCacheBackendRef getHTTPCacheBackend(HTTPContextRef ctx, std::string url,
-                                        LLCL::Runtime &runtime);
+                                        LLCL::Runtime &runtime,
+                                        Progress *progress);
 } // namespace M::Cache
 
 #endif // CACHE_HTTPCACHEBACKEND_H

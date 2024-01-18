@@ -9,6 +9,7 @@
 
 #include "Cache/BlobCache.h"
 #include "Support/ErrorOr.h"
+#include "Support/Progress.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/Threading/Shared.h"
@@ -69,6 +70,7 @@ struct HTTPRequest {
     POST,
     PUT,
     GET,
+    HEAD,
   };
   Method method = Method::GET;
 
@@ -84,6 +86,8 @@ struct HTTPRequest {
   /// If you know exactly how many bytes you want to send up front, set this
   /// field. This allows libcurl to avoid some length checking.
   std::optional<size_t> bodyLen = std::nullopt;
+  /// Potential progress callbacks.
+  Progress *progress = nullptr;
 };
 
 /// This struct provides a libcurl-compatible read adaptor for a container that
