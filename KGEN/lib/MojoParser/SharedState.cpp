@@ -1744,6 +1744,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               typeWalker.walk<mlir::WalkOrder::PreOrder>(aliasDecl.getValue());
               return mlir::success();
             })
+            .Case([&](StructFieldOp field) {
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(field.getType());
+              return mlir::success();
+            })
             .Default([](auto) { return mlir::success(); });
     if (failed(result))
       return failure();
@@ -1846,13 +1850,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                              demangleParameterName(
                                                  op.getParamDecl().getName())));
           })
-          .Case<LetRegDeclOp, StructFieldOp>([&](auto op) {
-            ASTDecl &varDecl = addDeclForOp(op, op.getNameAttr());
-
-            // Variables normally get resolved fully during parse phase, so
-            // resolve them as soon as we encounter them in bytecode.
-            (void)declResolver->resolveFully(varDecl, varDecl.getLoc());
-          })
+          .Case([&](StructFieldOp op) { addDeclForOp(op, op.getNameAttr()); })
           .Case([&](GlobalVarDeclOp op) {
             addDeclForOp(op, op.getSymNameAttr());
           })

@@ -534,20 +534,19 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              TraitDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp>(
-            [&](auto op) {
-              // Parse the body of the declaration from the correct point.
-              Lexer lexer(shared.diags, decl.getCursor());
+              TraitDeclOp, GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
+          Lexer lexer(shared.diags, decl.getCursor());
 
-              // Generate pretty stack traces if a crash happens in this scope.
-              LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                               "resolving decl body");
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl body");
 
-              if (resolveBody(op, lexer, decl))
-                return;
+          if (resolveBody(op, lexer, decl))
+            return;
 
-              checkEndOfBodyCursor(lexer);
-            })
+          checkEndOfBodyCursor(lexer);
+        })
         .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
