@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from algorithm.functional import tile
 from memory.unsafe import DTypePointer
 from memory.buffer import partial_simd_load
+from memory import stack_allocation
 from sys.info import has_neon
 from sys.intrinsics import PrefetchOptions
 from math import fma
@@ -143,12 +145,13 @@ fn accumulate_x86_simd[
             @unroll
             for j in range(num_cols):
                 # Broadcast an scalar from A to a simd vector.
-                let a_scalar = (a + l + i * a_stride).load()
-                let a_splat_vec = SIMD[a.type, simd_size](a_scalar)
+                let a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
+
                 # Load a simd vector from B.
                 let b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
                     b_ptr, j * simd_size, partial_load_b_size
                 )
+
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
                 let c_ptr = c + i * kernel_width + j * simd_size
@@ -161,3 +164,132 @@ fn accumulate_x86_simd[
                 )
 
         b_ptr = b_ptr + b_stride
+
+
+# ===----------------------------------------------------------------------===#
+# Accumulation optimized for AVX2 and AVX512
+# ===----------------------------------------------------------------------===#
+
+
+# An example of accumulation with register tiling.
+#
+# B vector 0-3 -->                  reg6     reg7     reg6     reg7
+#                                |========|========|========|========|
+# A point  0   --> reg0, reg0[i] |  reg8  |  reg9  |  reg10 |  reg11 |
+#                                |--------|--------|--------|--------|
+# A point  1   --> reg1, reg1[i] |  reg12 |  reg13 |  reg14 |  reg15 |
+#                                |--------|--------|--------|--------|
+# A point  2   --> reg2, reg2[i] |  reg16 |  reg17 |  reg18 |  reg19 |
+#                                |--------|--------|--------|--------|
+# A point  3   --> reg3, reg3[i] |  reg20 |  reg21 |  reg22 |  reg23 |
+#                                |--------|--------|--------|--------|
+# A point  4   --> reg4, reg4[i] |  reg24 |  reg25 |  reg26 |  reg27 |
+#                                |--------|--------|--------|--------|
+# A point  5   --> reg5, reg5[i] |  reg28 |  reg29 |  reg30 |  reg31 |
+#                                |--------|--------|--------|--------|
+#
+#    -->      :         Load a SIMD vector from memory.
+# simd_size   :         |--------|
+# kernel_width:         |-----------------------------------|
+#
+#
+# The accumulation proceeds as:
+#   for i in range(lanes):
+#     for l in range(length):
+#         reg5 += reg0[i] * reg1
+#         reg6 += reg0[i] * reg2
+#         ...
+#
+# Neon FMA can take a lane of a register (reg0[i]). It's more efficient to load
+# A vectors first, then perform `num_lanes x num_rows x num_cols` FMA ops.
+#
+# We can reuse reg6, reg7 for different B vectors on Graviton3. This may spill
+# registers on Graviton2.
+
+
+@always_inline
+fn accumulate_neon[
+    num_rows: Int,
+    num_cols: Int,
+    simd_size: Int,
+    prefetch_offset: Int = -1,
+    partial_load_b: Bool = False,
+](
+    length: Int,
+    c: DTypePointer,
+    a: DTypePointer,
+    a_stride: Int,
+    b: DTypePointer,
+    b_stride: Int,
+    partial_load_b_size: Int = UNUSED_INT,
+):
+    """Compute c += a * b with register tiling on SIMD ISAs other than NEON.
+    It has been optimized for AVX512 and AVX2.
+
+    Parameters:
+        num_rows: Number of rows in resigter tiling.
+        num_cols: Number of columns in resigter tiling.
+        simd_size: Number of lanes of a SIMD vector.
+        prefetch_offset: The distance to  prefetch ahead.
+        partial_load_b: Whether use partial load for B.
+
+    Args:
+        length: Number of elements in accumulation.
+        a: The input buffer A.
+        b: The input buffer B.
+        c: The output buffer, should have num_rows x num_cols x simd_size.
+        a_stride: A's stride between each `length` segment.
+        b_stride: B's stride between each `num_cols x simd_size` segment.
+        b_end: B's end in it's contiguous dimension, i.e. last dim, row-majored.
+
+    Don't use prefetch on Arm hardware for now.
+    """
+    constrained[has_neon()]()
+
+    @parameter
+    if num_rows == 0 or num_cols == 0:
+        return
+
+    alias kernel_width = num_cols * simd_size
+
+    var b_ptr = b
+
+    @parameter
+    @always_inline
+    fn micro_kernel[num_lanes: Int](offset: Int):
+        let a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
+
+        # Load vectors of size num_lanes from input.
+        @unroll
+        for i in range(num_rows):
+            a_vecs[i] = a.simd_load[num_lanes](offset + i * a_stride)
+
+        var b_ptr = b + offset * b_stride
+
+        @unroll
+        for lane in range(num_lanes):
+
+            @unroll
+            for j in range(num_cols):
+                # Load a simd vector from B.
+                let b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
+                    b_ptr, j * simd_size, partial_load_b_size
+                )
+
+                @unroll
+                for i in range(num_rows):
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    let c_ptr = c + i * kernel_width + j * simd_size
+                    c_ptr.simd_store(
+                        fma[c.type, simd_size](
+                            a_vecs[i][lane].cast[c.type](),
+                            b_vec.cast[c.type](),
+                            c_ptr.simd_load[simd_size](),
+                        )
+                    )
+
+            b_ptr = b_ptr + b_stride
+
+    # Load vectors from A first. The remainder is handled one element at a time.
+    tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, length)
