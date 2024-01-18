@@ -5,7 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from algorithm import tile, tile_and_unswitch, unswitch
+from algorithm import (
+    tile,
+    tile_and_unswitch,
+    unswitch,
+    tile_middle_unswitch_boundaries,
+)
 
 from utils.index import Index, StaticIntTuple
 
@@ -219,6 +224,46 @@ fn test_tile_and_unswitch():
     ](1, 6)
 
 
+fn test_tile_middle_unswitch_boundaries():
+    print("test_tile_middle_unswitch_boundaries")
+
+    @parameter
+    @always_inline
+    fn print_wrapper[tile_size: Int, switch: Bool](offset: Int):
+        print(offset, tile_size, switch)
+
+    # CHECK: 0 1 True
+    # CHECK: 1 4 False
+    # CHECK: 5 2 False
+    # CHECK: 7 1 True
+    tile_middle_unswitch_boundaries[
+        print_wrapper,
+        VariadicList[Int](4, 3, 2, 1),
+    ](0, 1, 7, 8)
+
+    # CHECK: 1 1 True
+    # CHECK: 2 1 True
+    # CHECK: 3 3 False
+    # CHECK: 6 1 True
+    # CHECK: 7 1 True
+    tile_middle_unswitch_boundaries[
+        print_wrapper,
+        VariadicList[Int](4, 3, 1),
+    ](1, 3, 6, 8)
+
+    # CHECK: 0 2 True
+    # CHECK: 2 6 False
+    # CHECK: 8 2 False
+    # CHECK: 10 2 True
+    # CHECK: 12 2 True
+    tile_middle_unswitch_boundaries[
+        print_wrapper,
+        VariadicList[Int](6, 4, 2, 1),
+        left_tile_size=2,
+        right_tile_size=2,
+    ](0, 2, 10, 14)
+
+
 fn main():
     test_static_tile()
     test_static_tile2d()
@@ -226,3 +271,4 @@ fn main():
     test_unswitched_tile()
     test_unswitched_2d_tile()
     test_tile_and_unswitch()
+    test_tile_middle_unswitch_boundaries()
