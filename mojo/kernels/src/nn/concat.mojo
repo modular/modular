@@ -32,7 +32,7 @@ from gpu.host.memory import (
     _memset_async,
 )
 from gpu.host import Stream, Context, Function, synchronize
-from gpu.memory import _malloc_async, _free_async
+from gpu.host.memory import _malloc_async, _free_async
 
 from gpu import ThreadIdx, BlockIdx
 
