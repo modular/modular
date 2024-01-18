@@ -3,23 +3,24 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from memory.buffer import NDBuffer
 from ROIAlign import roi_align_nhwc
+from testing import *
 
 
 # CHECK-LABEL: test_roi_align_avg
-fn test_roi_align_avg():
+def test_roi_align_avg():
     print("=== test_roi_align_avg")
 
     alias in_shape = DimList(1, 10, 10, 1)
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    var input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-    var output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
-    var rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
+    let input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
+    let output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
+    let rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
 
     for i in range(10):
         for j in range(10):
@@ -40,29 +41,49 @@ fn test_roi_align_avg():
         1.0,
         2.0,
     )
-    # CHECK: 4.4000000953674316, 5.2000002861022949, 6.0000004768371582, 6.8000006675720215, 7.6000008583068848,
-    # CHECK: 12.399999618530273, 13.200000762939453, 14.0, 14.80000114440918, 15.600000381469727,
-    # CHECK: 20.400001525878906, 21.19999885559082, 22.000001907348633, 22.80000114440918, 23.599998474121094,
-    # CHECK: 28.399999618530273, 29.200002670288086, 30.0, 30.799999237060547, 31.600000381469727,
-    # CHECK: 36.400001525878906, 37.200000762939453, 38.0, 38.799999237060547, 39.600006103515625,
-    for i in range(5):
-        for j in range(5):
-            print_no_newline(output[StaticIntTuple[4](0, i, j, 0)])
-            print_no_newline(", ")
-        print("")
+
+    assert_almost_equal(output[(0, 0, 0, 0)], 4.4000000953674316)
+    assert_almost_equal(output[(0, 0, 1, 0)], 5.2000002861022949)
+    assert_almost_equal(output[(0, 0, 2, 0)], 6.0000004768371582)
+    assert_almost_equal(output[(0, 0, 3, 0)], 6.8000006675720215)
+    assert_almost_equal(output[(0, 0, 4, 0)], 7.6000008583068848)
+
+    assert_almost_equal(output[(0, 1, 0, 0)], 12.399999618530273)
+    assert_almost_equal(output[(0, 1, 1, 0)], 13.200000762939453)
+    assert_almost_equal(output[(0, 1, 2, 0)], 14.0)
+    assert_almost_equal(output[(0, 1, 3, 0)], 14.80000114440918)
+    assert_almost_equal(output[(0, 1, 4, 0)], 15.600000381469727)
+
+    assert_almost_equal(output[(0, 2, 0, 0)], 20.400001525878906)
+    assert_almost_equal(output[(0, 2, 1, 0)], 21.19999885559082)
+    assert_almost_equal(output[(0, 2, 2, 0)], 22.000001907348633)
+    assert_almost_equal(output[(0, 2, 3, 0)], 22.80000114440918)
+    assert_almost_equal(output[(0, 2, 4, 0)], 23.599998474121094)
+
+    assert_almost_equal(output[(0, 3, 0, 0)], 28.399999618530273)
+    assert_almost_equal(output[(0, 3, 1, 0)], 29.200002670288086)
+    assert_almost_equal(output[(0, 3, 2, 0)], 30.0)
+    assert_almost_equal(output[(0, 3, 3, 0)], 30.799999237060547)
+    assert_almost_equal(output[(0, 3, 4, 0)], 31.600000381469727)
+
+    assert_almost_equal(output[(0, 4, 0, 0)], 36.400001525878906)
+    assert_almost_equal(output[(0, 4, 1, 0)], 37.200000762939453)
+    assert_almost_equal(output[(0, 4, 2, 0)], 38.0)
+    assert_almost_equal(output[(0, 4, 3, 0)], 38.799999237060547)
+    assert_almost_equal(output[(0, 4, 4, 0)], 39.600006103515625)
 
 
 # CHECK-LABEL: test_roi_align_max
-fn test_roi_align_max():
+def test_roi_align_max():
     print("=== test_roi_align_max")
 
     alias in_shape = DimList(1, 10, 10, 1)
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    var input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-    var output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
-    var rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
+    let input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
+    let output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
+    let rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
 
     for i in range(10):
         for j in range(10):
@@ -84,18 +105,37 @@ fn test_roi_align_max():
         2.0,
     )
 
-    # CHECK: 4.8000001907348633, 6.6000003814697266, 5.7600007057189941, 7.8000001907348633, 6.7200021743774414,
-    # CHECK: 8.0, 11.0, 9.6000003814697266, 13.0, 11.200002670288086,
-    # CHECK: 12.80000114440918, 16.80000114440918, 14.080001831054688, 18.400001525878906, 15.360005378723145,
-    # CHECK: 24.0, 31.0, 25.600002288818359, 33.0, 27.200006484985352,
-    # CHECK: 25.600006103515625, 32.800006866455078, 26.880008697509766, 34.400009155273438, 28.160013198852539,
-    for i in range(5):
-        for j in range(5):
-            print_no_newline(output[StaticIntTuple[4](0, i, j, 0)])
-            print_no_newline(", ")
-        print("")
+    assert_almost_equal(output[(0, 0, 0, 0)], 4.8000001907348633)
+    assert_almost_equal(output[(0, 0, 1, 0)], 6.6000003814697266)
+    assert_almost_equal(output[(0, 0, 2, 0)], 5.7600007057189941)
+    assert_almost_equal(output[(0, 0, 3, 0)], 7.8000001907348633)
+    assert_almost_equal(output[(0, 0, 4, 0)], 6.7200021743774414)
+
+    assert_almost_equal(output[(0, 1, 0, 0)], 8.0)
+    assert_almost_equal(output[(0, 1, 1, 0)], 11.0)
+    assert_almost_equal(output[(0, 1, 2, 0)], 9.6000003814697266)
+    assert_almost_equal(output[(0, 1, 3, 0)], 13.0)
+    assert_almost_equal(output[(0, 1, 4, 0)], 11.200002670288086)
+
+    assert_almost_equal(output[(0, 2, 0, 0)], 12.80000114440918)
+    assert_almost_equal(output[(0, 2, 1, 0)], 16.80000114440918)
+    assert_almost_equal(output[(0, 2, 2, 0)], 14.080001831054688)
+    assert_almost_equal(output[(0, 2, 3, 0)], 18.400001525878906)
+    assert_almost_equal(output[(0, 2, 4, 0)], 15.360005378723145)
+
+    assert_almost_equal(output[(0, 3, 0, 0)], 24.0)
+    assert_almost_equal(output[(0, 3, 1, 0)], 31.0)
+    assert_almost_equal(output[(0, 3, 2, 0)], 25.600002288818359)
+    assert_almost_equal(output[(0, 3, 3, 0)], 33.0)
+    assert_almost_equal(output[(0, 3, 4, 0)], 27.200006484985352)
+
+    assert_almost_equal(output[(0, 4, 0, 0)], 25.600006103515625)
+    assert_almost_equal(output[(0, 4, 1, 0)], 32.800006866455078)
+    assert_almost_equal(output[(0, 4, 2, 0)], 26.880008697509766)
+    assert_almost_equal(output[(0, 4, 3, 0)], 34.400009155273438)
+    assert_almost_equal(output[(0, 4, 4, 0)], 28.160013198852539)
 
 
-fn main():
+def main():
     test_roi_align_avg()
     test_roi_align_max()
