@@ -661,26 +661,4 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// CaptureList
-//===----------------------------------------------------------------------===//
-
-def KGEN_CaptureListType : KGENType<"CaptureList", "capture_list",[
-  DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
-  let summary = "A type for a capture list for a capturing closure.";
-  let description = [{
-    A `!kgen.capture_list` is the type of a closure capture list for
-    instantiating the closure state on the heap.
-
-    Example:
-    ```mlir
-    !kgen.capture_list<() capturing -> index : @capturingClosure>
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$capturingFunc);
-
-  let assemblyFormat = "`<` custom<CaptureListType>($capturingFunc) `>`";
-}
-
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

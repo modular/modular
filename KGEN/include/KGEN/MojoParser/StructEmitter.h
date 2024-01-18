@@ -95,11 +95,11 @@ public:
   /// method for memory-only types where not all fields are initialized, though
   /// this requires manual modification of the returned FuncOp to initialize any
   /// omitted fields.
-  LIT::FuncOp synthesizeMemberwiseInit(
-      ASTDecl &structDecl, ArrayRef<Type> argTypes,
-      ArrayRef<ValueInputConvention> argConventions,
-      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-      std::optional<ArrayRef<StructFieldOp>> injectedFields);
+  LIT::FuncOp
+  synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
+                           ArrayRef<ValueInputConvention> argConventions,
+                           ArrayRef<StringAttr> argNames,
+                           ArrayRef<PassingKind> argPassingKinds);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `prefix` is prepended to the mangled function name.

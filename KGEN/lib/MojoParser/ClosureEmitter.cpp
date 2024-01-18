@@ -419,20 +419,16 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         return capture.getValue().getRValueType().mlirType;
       });
 
-  SmallVector<Type> paramCaptureListTypes;
-  for (ParamDeclRefAttr pc : paramCaptures) {
-    // Check for parameter closure captures.
-    // TODO - To do this properly, we need to be able to recursively check types
-    // for SignatureTypes, eg. they could be inside an option or a list or
-    // struct or whatnot at arbitrary depth.  For now, we just do the case of an
-    // unwrapped SignatureType.
-    if (auto sig = dyn_cast<SignatureType>(pc.getType());
-        sig && sig.isCapturing()) {
-      auto type = CaptureListType::get(pc.getContext(), pc);
-      paramCaptureListTypes.push_back(type);
-      fieldTypes.push_back(type);
-    }
-  }
+  // Check for parameter closure captures.
+  bool hasParamClosureCaptures = false;
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([](SignatureType sig) {
+    if (sig.isCapturing())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  for (ParamDeclRefAttr pc : paramCaptures)
+    hasParamClosureCaptures |= walker.walk(pc.getType()).wasInterrupted();
 
   // Create the closure impl struct with the field types. Add the capture
   // parameters as parameter decls to the generated struct. This way, parameter
@@ -501,22 +497,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       callInputTypes, callConventions, callNames, callPassingKinds,
       closureResultType, SpecialFunctionKind::kNormal, location, builder,
       wrapperSig.getFnEffects().setEscaping(false));
-  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
 
   // Add and register its fields as fully resolved decls.
   addFieldsToStruct(declOp, fieldTypes);
   for (StructFieldOp field : declOp.getFieldDecls()) {
     shared.declResolver->addFullyResolvedDecl(&*field, field.getNameAttr(),
                                               structDecl.getLoc(), &structDecl);
-  }
-
-  SmallVector<StructFieldOp> paramClosureCaptureFieldDecls;
-  SmallVector<StructFieldOp> normalCaptureFieldDecls;
-  for (auto [i, fieldDecl] : llvm::enumerate(declOp.getFieldDecls())) {
-    if (i < captures.size())
-      normalCaptureFieldDecls.push_back(fieldDecl);
-    else
-      paramClosureCaptureFieldDecls.push_back(fieldDecl);
   }
 
   // Build the init method. This only needs the captured arguments. Populate the
@@ -549,25 +535,33 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
-      /*forceGenerateDestructor=*/!paramCaptureListTypes.empty());
-  LIT::FuncOp initFunc = synthesizeMemberwiseInit(
-      structDecl, initSigTypes, initSigConventions, initSigNames,
-      initSigPassingKinds, normalCaptureFieldDecls);
-  if (!paramCaptureListTypes.empty()) {
-    LITSignatureType oldSig = initFunc.getSignature();
-    LITSignatureType capturingInitSymbol = LITSignatureType::get(
-        oldSig.getValues(), oldSig.getInputParamTypes(),
-        oldSig.getResultParamTypes(), oldSig.getInputConventions(),
-        oldSig.getFnEffects().setCapturing(true), oldSig.getMetadata());
-    initFunc.setSignature(capturingInitSymbol);
-  }
+      /*forceGenerateDestructor=*/hasParamClosureCaptures);
+  LIT::FuncOp initFunc =
+      synthesizeMemberwiseInit(structDecl, initSigTypes, initSigConventions,
+                               initSigNames, initSigPassingKinds);
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
-  for (auto [clType, fieldDecl] :
-       llvm::zip(paramCaptureListTypes, paramClosureCaptureFieldDecls)) {
+
+  StructFieldOp paramField;
+  if (hasParamClosureCaptures) {
+    // Propagate the 'capturing' bit to the init function.
+    LITSignatureType oldSig = initFunc.getSignature();
+    initFunc.setSignature(
+        oldSig.getWithFnEffects(oldSig.getFnEffects().setCapturing(true)));
+
+    // Declare an extra field to carry the parametric closure captures.
+    auto b = OpBuilder::atBlockBegin(declOp.getBody());
+    paramField = b.create<StructFieldOp>(
+        initFunc.getLoc(), "param_capture",
+        PointerType::get(KGEN::NoneType::get(getContext())));
+
+    // Emit IR to generate the capture list and store it into self. Bind the
+    // call function reference to itself.
     auto selfArg = initFunc.getArgument(0);
-    auto captureList = builder.create<CaptureListCreateOp>(clType);
-    Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+    auto captureList = builder.create<CaptureListCreateOp>(
+        callFunc.getBoundReference(ParameterExprArrayAttr::get(
+            getContext(), cast<DeclRefType>(structSelfType).getParamValues())));
+    Value target = builder.create<RefStructGEROp>(selfArg, paramField);
     builder.create<RefStoreOp>(captureList, target);
   }
 
@@ -596,15 +590,18 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     auto builder =
         ImplicitLocOpBuilder::atBlockBegin(dtor.getLoc(), dtor.getBody());
     auto selfArg = dtor.getArgument(0);
-    for (auto fieldDecl : paramClosureCaptureFieldDecls) {
-      Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+    if (paramField) {
+      // If there is a parameter capture list, destroy it. We guarantee a
+      // destructor is generated if capturing parameter closures are present.
+      Value target = builder.create<RefStructGEROp>(selfArg, paramField);
       target = builder.create<RefLoadOp>(target);
-      builder.create<CaptureListDestroyOp>(target);
+      builder.create<POP::AlignedFreeOp>(target);
     }
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
   }
 
   // Populate the body of the call op.
+  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = callFunc.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -642,13 +639,15 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       hasByRefReturn, callFunc.getFunctionType().getInput(hasByRefReturn),
       callFuncLocation);
 
-  for (auto fieldDecl : paramClosureCaptureFieldDecls) {
-    Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+  if (paramField) {
+    // Emit the `kgen.capture_list.expand` into the call if required.
+    Value target = builder.create<RefStructGEROp>(selfArg, paramField);
     target = builder.create<RefLoadOp>(target);
     builder.create<CaptureListExpandOp>(target);
   }
   for (auto [declAndCapture, fieldOp] :
-       llvm::zip(captures, normalCaptureFieldDecls)) {
+       llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),
+                                            hasParamClosureCaptures))) {
     auto [decl, capture] = declAndCapture;
     Value target = builder.create<RefStructGEROp>(selfArg, fieldOp);
     // If the capture is an SValue then it lives in register.

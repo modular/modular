@@ -750,7 +750,7 @@ struct ParametricInliningGraph
   }
 
   /// CallGraphBase interface for whether to add the node to the graph.
-  bool shouldAddToGraph(ParametricInliningGraphNode *node) {
+  bool shouldAddToGraph(CallOp call, ParametricInliningGraphNode *node) {
     return shouldInline(node);
   }
 
@@ -1014,7 +1014,9 @@ struct InliningGraph
   }
 
   /// CallGraphBase interface for whether to add the node to the graph.
-  bool shouldAddToGraph(InliningGraphNode *node) { return shouldInline(node); }
+  bool shouldAddToGraph(KGENCallOpInterface call, InliningGraphNode *node) {
+    return shouldInline(node);
+  }
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {

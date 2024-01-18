@@ -69,10 +69,6 @@ def VariantType : DialectType<(type
   TypedAttrArray:$types
 )>;
 
-def CaptureListType : DialectType<(type
-  TypedAttr:$capturingFunc
-)>;
-
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     ParamRefType,
@@ -89,8 +85,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     BuildInfoType,
     StructType,
     PackType,
-    VariantType,
-    CaptureListType
+    VariantType
   ];
 }
 

@@ -1712,22 +1712,24 @@ def KGEN_VariantTakeOp : KGENOp<"variant.take", [Pure,
 // CaptureListCreateOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create"> {
+def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create",
+    [DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
   let summary = "Create a capture list for a capturing closure.";
   let description = [{
-    The `kgen.capture_list.create` operation creates a capture list
-    for use in instantiating closure state on the heap.
+    The `kgen.capture_list.create` operation allocates heap memory and
+    initializes the capture list for a closure.
 
     Example:
 
     ```mlir
-    %cl = kgen.capture_list.create : <() capturing -> index : @cap_closure>
+    %cl = kgen.capture_list.create :() capturing -> index @cap_closure
     ```
   }];
 
-  let results = (outs KGEN_CaptureListType:$result);
+  let arguments = (ins AttrOfType<KGEN_SignatureType>:$symbiont);
+  let results = (outs PointerOf<KGEN_NoneType>:$result);
 
-  let assemblyFormat = "attr-dict `:` type($result)";
+  let assemblyFormat = "attr-dict custom<ColonTypeParamValue>($symbiont)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1737,39 +1739,18 @@ def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create"> {
 def KGEN_CaptureListExpandOp : KGENOp<"capture_list.expand"> {
   let summary = "Expand the capture list from a capturing closure.";
   let description = [{
-    The `kgen.capture_list.expand` operation allocates heap memory and
-    initializes the capture list for a closure.
+    The `kgen.capture_list.expand` operation unpacks the capture list of the
+    enclosing function.
 
     Example:
 
     ```mlir
-    kgen.capture_list.expand %cl : <() capturing -> index : @cap_closure>
+    kgen.capture_list.expand %cl
     ```
   }];
 
-  let arguments = (ins KGEN_CaptureListType:$captureList);
-  let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// CaptureListDestroyOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_CaptureListDestroyOp : KGENOp<"capture_list.destroy"> {
-  let summary = "Destroy the capture list from a capturing closure.";
-  let description = [{
-    The `kgen.capture_list.destroy` operation frees the heap memory
-    allocated by the `kgen.capture_list.expand` op.
-
-    Example:
-
-    ```mlir
-    kgen.capture_list.destroy %cl : <() capturing -> index : @cap_closure>
-    ```
-  }];
-
-  let arguments = (ins KGEN_CaptureListType:$captureList);
-  let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
+  let arguments = (ins PointerOf<KGEN_NoneType>:$captureList);
+  let assemblyFormat = "$captureList attr-dict";
 }
 
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

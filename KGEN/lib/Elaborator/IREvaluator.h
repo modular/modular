@@ -38,7 +38,7 @@ public:
   IREvaluator(Elaborator &elaborator,
               DenseMap<StringAttr, Attribute> paramValues =
                   DenseMap<StringAttr, Attribute>());
-  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx), parent(nullptr) {}
+  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx) {}
   IREvaluator(const IREvaluator &other)
       : ParameterEvaluator(other), InterpreterState(other.getTarget()),
         elaborator(other.elaborator), parent(other.parent) {}
@@ -67,12 +67,8 @@ public:
   ErrorTreeOr<TypedAttr>
   evaluateFunctionWithResultSlot(FuncOp func, ArrayRef<TypedAttr> inputs);
 
-  /// If the given typed attribute is a symbol that needs concretization, return
-  /// the concretized symbol or null if the function needs to be concretized.
-  ErrorTreeOr<SymbolConstantAttr>
-  concretizeFunctionSymbol(TypedAttr symbolMaybe, Location location);
-
-  void setParent(ImplNode *impl);
+  /// Set the contextual node.
+  void setParent(ImplNode *parent) { this->parent = parent; }
 
 private:
   /// Evaluate an apply-like operator.
@@ -99,7 +95,7 @@ private:
   Elaborator *elaborator;
 
   /// The contextual node being elaborated.
-  ImplNode *parent;
+  ImplNode *parent = nullptr;
   /// The contextual location of an error.
   std::optional<Location> errorLoc;
   /// The function to use to emit an error.
@@ -127,7 +123,11 @@ evaluateConstraints(ImplNode *parent, ArrayRef<ConstraintAttr> constraints,
 struct ImplNode {
   /// Create a new generator implementation node.
   ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName, IREvaluator evaluator);
+           std::string &&baseName, IREvaluator evaluator)
+      : func(func), parent(parent), paramGraph(std::move(graph)),
+        baseName(std::move(baseName)), evaluator(std::move(evaluator)) {
+    this->evaluator.setParent(this);
+  }
 
   /// Create a special root node. Root nodes can be identified with a null
   /// function.

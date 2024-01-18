@@ -5,23 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
-# CHECK: lit.struct.decl{{.*}}<[[PARAMNAME:.*]]: !lit.signature<() capturing -> !Int>
+# CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
+# CHECK-NEXT: lit.struct.field param_capture : !kgen.pointer<none>
 # CHECK-NEXT: lit.struct.field field0 : !Int
-# CHECK-NEXT: lit.struct.field field1 : !kgen.capture_list<!lit.signature<() capturing -> !Int> : [[PARAMNAME]]>
 
 # CHECK: lit.func @"__call__
-# CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[field1]
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[param_capture]
 # CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
 # CHECK: kgen.capture_list.expand [[CLIST]]
 
 # CHECK: lit.func @"__del__
-# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[field1]
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
 # CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
-# CHECK: kgen.capture_list.destroy [[CLIST]]
+# CHECK: pop.aligned_free [[CLIST]]
 
 # CHECK: lit.func @"__init__
-# CHECK: [[CLIST:%.*]] = kgen.capture_list.create : <!lit.signature<() capturing -> !Int> : [[PARAMNAME]]>
-# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[field1]
+# CHECK: [[CLIST:%.*]] = kgen.capture_list.create
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
 # CHECK: lit.ref.store [[CLIST]], [[GEP]]
 
 

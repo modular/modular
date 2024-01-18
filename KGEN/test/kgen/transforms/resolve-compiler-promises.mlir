@@ -133,45 +133,79 @@ kgen.func @call_external() {
 
 // -----
 
-!capture_list_type = !kgen.capture_list<() capturing -> (): @my_capture>
-!capture_data_type = !kgen.struct<(index)>
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+
+// CHECK-LABEL: kgen.func @call_fn
+// CHECK-SAME: (%arg0: !kgen.pointer<none>)
+kgen.func @call_fn(%arg0: !kgen.pointer<none>) -> index {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index)>>
+  // CHECK-NEXT: %1 = kgen.struct.gep %0[0]
+  // CHECK-NEXT: %2 = pop.load %1
+  kgen.capture_list.expand %arg0
+  %0 = pop.compiler.global_load "foo" : index
+  // CHECK-NEXT: return %2
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @init_fn
+// CHECK-SAME: (%arg0: index)
+kgen.func @init_fn() capturing -> !kgen.pointer<none> {
+  // CHECK: %0 = pop.aligned_alloc %idx8, %idx8
+  // CHECK-NEXT: %1 = kgen.struct.gep %0[0] : <struct<(index)>>
+  // CHECK-NEXT: store %arg0, %1
+  // CHECK-NEXT: %2 = pop.pointer.bitcast
+  %cl = kgen.capture_list.create :(!kgen.pointer<none>) -> index @call_fn
+  // CHECK-NEXT: return %2
+  kgen.return %cl : !kgen.pointer<none>
+}
+
+// CHECK-LABEL: kgen.func @call_it
+// CHECK-SAME: (%arg0: !kgen.pointer<none>)
+kgen.func @call_it(%arg0: !kgen.pointer<none>) {
+  // CHECK-NEXT: call @call_fn(%arg0)
+  kgen.call @call_fn(%arg0) : (!kgen.pointer<none>) -> index
+  kgen.return
+}
+
+}
+
+// -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
-// CHECK-LABEL: kgen.func @my_capture(%arg0: index) capturing
-kgen.func @my_capture() capturing {
-  // CHECK-NOT: pop.compiler.global_load
-  %0 = pop.compiler.global_load "var0" : index
+
+// CHECK-LABEL: kgen.func @init_fn
+kgen.func @init_fn(%arg0: i64, %arg1: i32) capturing -> !kgen.pointer<none> {
+  // CHECK: store %arg0
+  // CHECK: store %arg1
+  // CHECK: bitcast %{{.*}} : !kgen.pointer<struct<(i64, i32)>>
+  %cl = kgen.capture_list.create :(!kgen.pointer<none>) -> () @call_fn
+  kgen.return %cl : !kgen.pointer<none>
+}
+
+kgen.func @closure1() capturing {
+  %0 = pop.compiler.global_load "cap1" : i32
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @capture_list_create(%arg0: index) -> !kgen.pointer<struct<(index)>>
-kgen.func @capture_list_create() -> !capture_list_type {
-  // CHECK-NOT: kgen.capture_list.create
-  // CHECK:      [[IDX8:%.*]] = index.constant 8
-  // CHECK: [[V0:%.*]] = pop.aligned_alloc{{.*}}[[IDX8]]
-  // CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[V0]][0] : <struct<(index)>>
-  // CHECK-NEXT: pop.store %arg0, [[V1]] : !kgen.pointer<index>
-  %capture_list = kgen.capture_list.create : !capture_list_type
-  kgen.return %capture_list: !capture_list_type
-}
-
-// CHECK-LABEL: kgen.func @capture_list_expand(%arg0: !kgen.pointer<struct<(index)>>) {
-kgen.func @capture_list_expand(%capture_list: !capture_list_type) {
-  // CHECK-NOT: kgen.capture_list.expand
-  // CHECK-NEXT: [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(index)>>
-  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<index>
-  // CHECK-NEXT: kgen.call @my_capture([[V1]]) : (index) capturing -> ()
-
-  kgen.capture_list.expand %capture_list: !capture_list_type
-  kgen.call @my_capture(): () capturing -> ()
+kgen.func @closure2() capturing {
+  %0 = pop.compiler.global_load "cap2" : i64
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @capture_list_destroy(%arg0: !kgen.pointer<struct<(index)>>) {
-kgen.func @capture_list_destroy(%capture_list: !capture_list_type) {
-  // CHECK-NOT: kgen.capture_list.destroy
-  // CHECK-NEXT: pop.aligned_free %arg0 : <struct<(index)>>
-  kgen.capture_list.destroy %capture_list: !capture_list_type
+kgen.func @join() capturing {
+  kgen.call @closure1() : () capturing -> ()
+  kgen.call @closure2() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @call_fn
+// CHECK-SAME: (%arg0: !kgen.pointer<none>)
+kgen.func @call_fn(%cl: !kgen.pointer<none>) {
+  // CHECK: [[C0:%.*]] = pop.load
+  // CHECK: [[C1:%.*]] = pop.load
+  kgen.capture_list.expand %cl
+  // CHECK: call @join([[C0]], [[C1]])
+  kgen.call @join() : () capturing -> ()
   kgen.return
 }
 

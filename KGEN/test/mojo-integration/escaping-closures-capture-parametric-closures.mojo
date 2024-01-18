@@ -10,16 +10,14 @@ from sys import argv
 # COM: Verify that the Closure Impl defined in `main` copies the captures x, y on the heap in the init and frees in the del.
 
 # CHECK: kgen.func @"${{.*}}::`_CI_${{.*}}::__del__{{.*}}"
-# CHECK-SAME: (%arg0: !kgen.pointer<struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>> owned_in_mem) -> !kgen.none {
-# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT: [[CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg0[1] : <struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>>
-# CHECK-NEXT: [[CAPTURE_FIELD_PTR:%.*]] = pop.load [[CAPTURE_FIELD_ADD]] : !kgen.pointer<pointer<struct<(struct<(index)>, struct<(index)>)>>>
-# CHECK-NEXT: pop.aligned_free [[CAPTURE_FIELD_PTR]] : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT: kgen.return %none : !kgen.none
+# CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> owned_in_mem) -> !kgen.none {
+# CHECK:      [[CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg0[0]
+# CHECK-NEXT: [[CAPTURE_FIELD_PTR:%.*]] = pop.load [[CAPTURE_FIELD_ADD]]
+# CHECK-NEXT: pop.aligned_free [[CAPTURE_FIELD_PTR]]
 
 # CHECK:  kgen.func @"${{.*}}::`_CI_${{.*}}::__init__{{.*}}"
 # CHECK-SAME: (%arg0: !kgen.struct<(index)>, %arg1: !kgen.struct<(index)>,
-# CHECK-SAME: %arg2: !kgen.pointer<struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>> init_self,
+# CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
 # CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {
 # CHECK-NEXT:    %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:    %idx8 = index.constant 8
@@ -32,9 +30,10 @@ from sys import argv
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1] : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]] : !kgen.pointer<struct<(index)>>
 
-# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[1] : <struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>>
-# CHECK-NEXT:    pop.store [[HEAP_CAPTURE_LISTS_PTR]], [[MY_CAPTURE_FIELD_ADD]] : !kgen.pointer<pointer<struct<(struct<(index)>, struct<(index)>)>>>
-# CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep %arg2[0] : <struct<(index, pointer<struct<(struct<(index)>, struct<(index)>)>>) memoryOnly>>
+# CHECK-NEXT:    [[OPAQUE_CAPTURE_LIST:%.*]] = pop.pointer.bitcast [[HEAP_CAPTURE_LISTS_PTR]]
+# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
+# CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
+# CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep %arg2[1]
 # CHECK-NEXT:    pop.store %arg3, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>
 # CHECK-NEXT:    kgen.return %none : !kgen.none
 
@@ -46,10 +45,10 @@ fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
 
 @no_inline
 fn makeEscapingClosure[
-    parametricClosure: fn (v: Int) capturing -> Int
+    parametricClosure: fn[x: Int] (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
     fn formatter(v: Int) escaping -> Int:
-        return parametricClosure(x + v)
+        return parametricClosure[2](x + v)
 
     return formatter
 
@@ -66,7 +65,7 @@ fn main():
 
         @no_inline
         @parameter
-        fn formatter2(v: Int) -> Int:
+        fn formatter2[x: Int](v: Int) -> Int:
             return y + formatter(v)
 
         let f = makeEscapingClosure[formatter2](y)
