@@ -108,12 +108,12 @@ fn accumulate_x86_simd[
 
     Args:
         length: Number of elements in accumulation.
-        a: The input buffer A.
-        b: The input buffer B.
         c: The output buffer, should have num_rows x num_cols x simd_size.
+        a: The input buffer A.
         a_stride: A's stride between each `length` segment.
+        b: The input buffer B.
         b_stride: B's stride between each `num_cols x simd_size` segment.
-        b_end: B's end in it's contiguous dimension, i.e. last dim, row-majored.
+        partial_load_b_size: The partial load B size.
 
     """
     constrained[not has_neon()]()
