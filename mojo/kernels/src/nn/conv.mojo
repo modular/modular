@@ -1139,7 +1139,7 @@ struct ConvDirectNHWC[
                     let residual = align_down_residual(
                         self.conv_shape.f_per_group(), simd_size
                     )
-                    partial_simd_store[output_type, simd_size](
+                    partial_simd_store[simd_size](
                         output_ptr.offset(j * simd_size),
                         0,
                         residual,

@@ -10,6 +10,8 @@ from AccumulateSIMD import (
     _simd_load_maybe_partial,
     accumulate_x86_simd,
     accumulate_neon,
+    load_register_tile,
+    store_register_tile,
 )
 from sys.info import simdwidthof, has_neon
 from testing import *
@@ -165,6 +167,91 @@ def test_accumulate[
     )
 
 
+def test_load_store_register_tile[
+    simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
+]():
+    alias type = DType.float32
+    alias size = simd_size + 1
+    alias residual = 1
+    alias row_size = num_cols * simd_size + residual
+    alias one_vec = SIMD[type, simd_size](1.0)
+    alias residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
+
+    let a = stack_allocation[num_rows * row_size, type]()
+
+    # A: [[ 4x0.0, 4x1.0, -1.0],
+    #     [ 4x1.0, 4x2.0, -1.0],]
+    @unroll
+    for i in range(num_rows):
+
+        @unroll
+        for j in range(num_cols):
+            a.simd_store(
+                i * row_size + j * simd_size,
+                SIMD[type, simd_size](i + j),
+            )
+
+        a.simd_store(
+            i * row_size + num_cols * simd_size,
+            SIMD[type, residual](-1.0),
+        )
+
+    let tile0 = stack_allocation[num_rows * num_cols * simd_size, type]()
+
+    load_register_tile[num_rows, num_cols, simd_size](tile0, a, row_size)
+
+    assert_equal(
+        tile0.simd_load[simd_size](),
+        SIMD[type, simd_size](0.0),
+    )
+    assert_equal(
+        tile0.simd_load[simd_size](simd_size),
+        SIMD[type, simd_size](1.0),
+    )
+    assert_equal(
+        tile0.simd_load[simd_size](2 * simd_size),
+        SIMD[type, simd_size](1.0),
+    )
+    assert_equal(
+        tile0.simd_load[simd_size](3 * simd_size),
+        SIMD[type, simd_size](2.0),
+    )
+
+    # Update A: [[ 4x1.0, 4x1.0, -1.0],
+    #            [ 4x1.0, 4x1.0, -1.0],]
+    tile0.simd_store(one_vec)
+    tile0.simd_store(3 * simd_size, one_vec)
+    store_register_tile[num_rows, num_cols, simd_size](a, row_size, tile0)
+
+    let tile1 = stack_allocation[num_rows * (num_cols + 1) * simd_size, type]()
+
+    load_register_tile[num_rows, num_cols + 1, simd_size, partial_load=True](
+        tile1, a, row_size, residual
+    )
+
+    assert_equal(tile1.simd_load[simd_size](), one_vec)
+    assert_equal(tile1.simd_load[simd_size](simd_size), one_vec)
+    assert_equal(tile1.simd_load[simd_size](2 * simd_size), residual_vec)
+    assert_equal(tile1.simd_load[simd_size](3 * simd_size), one_vec)
+    assert_equal(tile1.simd_load[simd_size](4 * simd_size), one_vec)
+    assert_equal(tile1.simd_load[simd_size](5 * simd_size), residual_vec)
+
+    alias residual_vec1 = SIMD[type, residual](-2.0)
+
+    tile1.simd_store(num_cols * simd_size, residual_vec1)
+    tile1.simd_store((2 * num_cols + 1) * simd_size, residual_vec1)
+
+    # Update A: [[ 4x1.0, 4x1.0, -2.0],
+    #            [ 4x1.0, 4x1.0, -2.0],]
+    store_register_tile[num_rows, num_cols + 1, simd_size, partial_store=True](
+        a, row_size, tile1, residual
+    )
+
+    assert_equal(a.simd_load[residual](row_size - residual), residual_vec1)
+    assert_equal(a.simd_load[residual](2 * row_size - residual), residual_vec1)
+
+
 def main():
     test_maybe_partial_load()
     test_accumulate()
+    test_load_store_register_tile()
