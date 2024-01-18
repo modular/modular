@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Driver/DriverSupport.h"
-#include "KGEN/MojoParser/EntryPoint.h"
 #include "Support/ErrorOr.h"
 
 #include "Support/Filesystem/Paths.h"
