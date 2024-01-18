@@ -44,7 +44,7 @@ public:
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
-      SMLoc loc, ASTDecl &nestedFunctionDecl,
+      SMLoc loc, ASTDecl &nestedFnDecl,
       ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
