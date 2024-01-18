@@ -8,6 +8,7 @@
 #define SUPPORT_MATHEXTRAS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
@@ -154,6 +155,37 @@ void fillWithRandomFloats(MutableArrayRef<EltType> buffer, EltType lb,
   }
   fillWithRandomDistribution(buffer,
                              std::uniform_real_distribution<EltType>(lb, ub));
+}
+
+/// Fill the provided buffer with random floating point values. This function
+/// accepts a lower and upper bound on the random values and supports arbitrary
+/// floating point types, even those without native c++ types (e.g. FP24, BF16),
+/// just use the proper semantic e.g. BFloat(), IEEESingle()...
+template <typename storageType>
+void fillWithRandomSpecialFloats(MutableArrayRef<storageType> buffer, float lb,
+                                 float ub, const llvm::fltSemantics &semantic) {
+  static_assert(std::is_integral_v<storageType> &&
+                    std::is_unsigned_v<storageType>,
+                "Please use uintXX_t as a storage type.");
+  assert(llvm::APFloat::getSizeInBits(semantic) ==
+             sizeof(storageType) * CHAR_BIT &&
+         "Semantic and storage type bit width do not match up.");
+  assert(llvm::APFloat::getSizeInBits(semantic) <= 32 &&
+         "Backing number generator supports precision up to a "
+         "IEEESingle (aka float32). Change it to double if need more bits.");
+
+  std::uniform_real_distribution<float> distribution(lb, ub);
+  fillWithRandomDistribution(
+      buffer, [&](std::default_random_engine &engine) -> storageType {
+        float result = distribution(engine);
+        APFloat converter(result);
+
+        bool losesInfo; // guaranteed to lose info for things less than float
+        converter.convert(semantic, llvm::RoundingMode::NearestTiesToEven,
+                          &losesInfo);
+        storageType finalBits = converter.bitcastToAPInt().getZExtValue();
+        return finalBits;
+      });
 }
 
 /// Fill the provided buffer with random integer values. This function accepts a
