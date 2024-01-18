@@ -824,20 +824,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  // Add meta parameters from an enclosing declaration to the symbol table.
-  // These are /in/ our current scope because we do not want name conflicts with
-  // them and they are instance (not type-level) values.
-  // TODO: Generalize this to support nested structs and functions.
+  // If the parent struct has param varargs, any member functions will too.
   bool paramVarArg = false;
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
-  if (structDecl) {
-    for (ParamDeclAttr param : structDecl.getInputParams()) {
-      auto paramRef = ParamDeclRefAttr::get(param);
-      addFullyResolvedDecl(PValue(paramRef), param.getName(), decl.getLoc(),
-                           &sigDecl);
-    }
+  if (structDecl)
     paramVarArg = structDecl.getSignature().getParamVarArg();
-  }
 
   // Parse declared meta parameters and add them to the current scope.
   SmallVector<ParamDeclAttr> inputParamDecls;
