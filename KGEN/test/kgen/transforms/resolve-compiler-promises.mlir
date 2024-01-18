@@ -167,6 +167,19 @@ kgen.func @call_it(%arg0: !kgen.pointer<none>) {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @copy_fn
+// CHECK-SAME: (%arg0: !kgen.pointer<none>)
+kgen.func @copy_fn(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK: %0 = pop.aligned_alloc %idx8, %idx8
+  // CHECK-NEXT: %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<struct<(index)>>
+  // CHECK-NEXT: %2 = pop.load %1
+  // CHECK-NEXT: pop.store %2, %0
+  // CHECK-NEXT: %3 = pop.pointer.bitcast %0
+  %ptr = kgen.capture_list.copy %arg0 :(!kgen.pointer<none>) -> index @call_fn
+  // CHECK-NEXT: return %3
+  kgen.return %ptr : !kgen.pointer<none>
+}
+
 }
 
 // -----

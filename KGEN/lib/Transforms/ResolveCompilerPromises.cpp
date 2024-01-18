@@ -52,7 +52,8 @@ public:
     assert(!op || classof(op) && "not a call-like op");
   }
   static bool classof(Operation *op) {
-    return isa_and_nonnull<KGENCallOpInterface, CaptureListCreateOp>(op);
+    return isa_and_nonnull<KGENCallOpInterface, CaptureListCreateOp,
+                           CaptureListCopyOp>(op);
   }
   operator bool() const { return op; }
   operator Operation *() const { return op; }
@@ -63,6 +64,8 @@ public:
     // Micro-optimization: `isa` on operations is faster than interfaces.
     if (auto create = dyn_cast<CaptureListCreateOp>(op))
       return create.getSymbiont();
+    if (auto copy = dyn_cast<CaptureListCopyOp>(op))
+      return copy.getSymbiont();
     return cast<KGENCallOpInterface>(op).getCallee();
   }
 
@@ -94,7 +97,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   /// to be processed, circumventing the issue with cycles.
   bool shouldAddToGraph(CallLikeOp call, CallGraphNode *node) {
     return node->func.getSignature().isCapturing() ||
-           isa<CaptureListCreateOp>(*call);
+           isa<CaptureListCreateOp, CaptureListCopyOp>(*call);
   }
 
   /// Process a single function. Resolve all the promises in the function by
@@ -155,6 +158,30 @@ static void resolveCaptureListCreate(CaptureListCreateOp op,
       b.create<mlir::index::ConstantOp>(*clType.getTypeSize(target)));
   for (auto [i, capture] : llvm::enumerate(captures))
     b.create<POP::StoreOp>(capture, b.create<StructGEPOp>(alloc, i));
+
+  Value opaque = b.create<POP::PointerBitcastOp>(
+      PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
+  op->replaceAllUsesWith(ValueRange(opaque));
+  op.erase();
+}
+
+/// Using knowledge of the required promises, emit IR for a copy of the capture
+/// list for a particular closure.
+static void resolveCaptureListCopy(CaptureListCopyOp op, TargetInfoAttr target,
+                                   ArrayRef<Type> captures) {
+  auto clType = StructType::get(op.getContext(), captures);
+
+  ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
+  // Allocate the memory for the copy.
+  Value alloc = b.create<POP::AlignedAllocOp>(
+      PointerType::get(clType),
+      b.create<mlir::index::ConstantOp>(*clType.getTypeAlign(target)),
+      b.create<mlir::index::ConstantOp>(*clType.getTypeSize(target)));
+
+  // Emit the memcpy.
+  Value orig =
+      b.create<POP::PointerBitcastOp>(PointerType::get(clType), op.getOrig());
+  b.create<POP::StoreOp>(b.create<POP::LoadOp>(orig), alloc);
 
   Value opaque = b.create<POP::PointerBitcastOp>(
       PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
@@ -290,6 +317,14 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       CallGraphNode *closureNode = getCalleeNode(create.getSymbiont());
       SmallVector<Value> captures = computeRequiredCaptures(op, closureNode);
       resolveCaptureListCreate(create, targetInfo, captures);
+      return;
+    }
+
+    if (auto copy = dyn_cast<CaptureListCopyOp>(op)) {
+      CallGraphNode *closureNode = getCalleeNode(copy.getSymbiont());
+      SmallVector<Type> captures = llvm::to_vector(
+          llvm::make_second_range(closureNode->requiredPromises));
+      resolveCaptureListCopy(copy, targetInfo, captures);
       return;
     }
 

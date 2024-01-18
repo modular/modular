@@ -1694,6 +1694,13 @@ void CaptureListCreateOp::concretizeCallee(mlir::IRRewriter &b,
   setSymbiontAttr(callee);
 }
 
+TypedAttr CaptureListCopyOp::getCallee() { return getSymbiont(); }
+
+void CaptureListCopyOp::concretizeCallee(mlir::IRRewriter &b,
+                                         SymbolConstantAttr callee) {
+  setSymbiontAttr(callee);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
