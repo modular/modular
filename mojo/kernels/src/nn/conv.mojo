@@ -44,7 +44,6 @@ from Matmul import (
     MatmulInnerLoopBPacked,
     PackMatrixCols,
     PackMatrixRows,
-    _null_elementwise_epilogue,
     calculate_tile_n_k,
 )
 from MatmulUtils import (
