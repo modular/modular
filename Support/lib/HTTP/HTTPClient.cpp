@@ -184,6 +184,51 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   return executeRequestImpl(request, os, timeout, maxLength);
 }
 
+class ProgressWrapper {
+public:
+  ProgressWrapper(Progress *underlying) : progress(underlying) {}
+  ~ProgressWrapper() {
+    if (total > finished)
+      progress->skippedBytes(total - finished);
+  }
+  void callback(curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal,
+                curl_off_t ulnow) {
+    // It's possible that the total will change over time (if e.g. no length is
+    // provided and we have a chunked encoding), so we need to use the grow
+    // call appropriately here.
+    size_t cur_total =
+        static_cast<size_t>(dltotal) + static_cast<size_t>(ultotal);
+    if (cur_total > total) {
+      progress->addBytes(cur_total - total);
+      total = cur_total;
+    }
+    size_t new_finished =
+        static_cast<size_t>(dlnow) + static_cast<size_t>(ulnow);
+    if (new_finished > finished) {
+      if (new_finished > total) {
+        progress->addBytes(new_finished - total);
+        total = new_finished;
+      }
+      progress->finishedBytes(new_finished - finished);
+      finished = new_finished;
+    }
+  }
+
+private:
+  Progress *progress;
+  size_t total = 0;
+  size_t finished = 0;
+};
+
+static size_t progressCallback(void *clientp, curl_off_t dltotal,
+                               curl_off_t dlnow, curl_off_t ultotal,
+                               curl_off_t ulnow) {
+  ProgressWrapper *wrapper = static_cast<ProgressWrapper *>(clientp);
+  assert(wrapper);
+  wrapper->callback(dltotal, dlnow, ultotal, ulnow);
+  return 0;
+}
+
 HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
                                             raw_ostream &os,
                                             std::chrono::milliseconds timeout,
@@ -221,6 +266,21 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
     break;
   case HTTPRequest::POST:
     curl_easy_setopt(curl, CURLOPT_POST, 1);
+    break;
+  case HTTPRequest::HEAD:
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
+    break;
+  }
+
+  // If there is a progress function, set up the callback appropriately. We
+  // pass the progress object itself as the callback data.
+  ProgressWrapper progress(request.progress);
+  if (request.progress) {
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA,
+                     static_cast<void *>(&progress));
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progressCallback);
   }
 
   // We can set the read data as a callback.
