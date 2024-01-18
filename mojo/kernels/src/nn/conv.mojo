@@ -19,6 +19,7 @@ from algorithm import (
     sync_parallelize,
     sync_parallelize,
     tile,
+    tile_middle_unswitch_boundaries,
     unroll,
     unswitch,
     vectorize,
@@ -1594,47 +1595,19 @@ struct ConvDirectNHWC[
                 + self.conv_shape.c
                 * (-self.conv_shape.pad_w[0] + self.conv_shape.w * h)
             )
-            # Point to (n, 0, ho, f_tile_offset) mapped in input
+            # Point to (n, 0, ho, f_tile_offset) in output
             var output_base = output_curr_image.offset(
                 f_tile_offset + self.conv_shape.f * self.conv_shape.out_w * ho
             )
 
-            # region effected by left padding, [0, left_pad_impact_end)
-            for wo in range(left_pad_impact_end):
-                self._inner_loops_padding[
-                    1,
-                    micro_kernel_width,
-                    simd_size,
-                    True,
-                    has_residual,
-                    last_c_tile,
-                ](
-                    input_base,
-                    filter_base,
-                    output_base,
-                    f_tile_offset,
-                    f_tile_size,
-                    c_tile_offset,
-                    c_tile_size,
-                    n,
-                    ho,
-                    wo,
-                )
-                input_base = input_base.offset(
-                    self.conv_shape.stride[1] * self.conv_shape.c
-                )
-                output_base = output_base.offset(self.conv_shape.f)
-
-            # Region not effected by padding, [left_pad_impact_end, right_pad_impact_start)
-            # Tile the middle points with default micro kernel.
-            @always_inline
             @parameter
-            fn update_middle[height: Int](wo: Int):
+            @always_inline
+            fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                 self._inner_loops_padding[
                     height,
                     micro_kernel_width,
                     simd_size,
-                    False,
+                    effected_by_padding,
                     has_residual,
                     last_c_tile,
                 ](
@@ -1654,36 +1627,14 @@ struct ConvDirectNHWC[
                 )
                 output_base = output_base.offset(height * self.conv_shape.f)
 
-            tile[
-                update_middle,
-                VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
-            ](left_pad_impact_end, right_pad_impact_start)
-
-            # region effected by right padding, [right_pad_impact_start, WO)
-            for wo in range(right_pad_impact_start, self.conv_shape.out_w):
-                self._inner_loops_padding[
-                    1,
-                    micro_kernel_width,
-                    simd_size,
-                    True,
-                    has_residual,
-                    last_c_tile,
-                ](
-                    input_base,
-                    filter_base,
-                    output_base,
-                    f_tile_offset,
-                    f_tile_size,
-                    c_tile_offset,
-                    c_tile_size,
-                    n,
-                    ho,
-                    wo,
-                )
-                input_base = input_base.offset(
-                    self.conv_shape.stride[1] * self.conv_shape.c
-                )
-                output_base = output_base.offset(self.conv_shape.f)
+            tile_middle_unswitch_boundaries[
+                work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+            ](
+                0,
+                left_pad_impact_end,
+                right_pad_impact_start,
+                self.conv_shape.out_w,
+            )
 
     @always_inline
     fn _inner_loops_padding[
