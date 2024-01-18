@@ -64,7 +64,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ParamDeclAttr decl;
     if (isa<ImplicitLifetimeRefAttr>(lifetimeAttr)) {
       auto lifetimeName = StringAttr::get(
-          shared.getContext(), "`" + llvm::utostr(argNo) + "_unnamed");
+          shared.getContext(), llvm::utostr(argNo) + "_unnamed" + "`");
       decl = ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
 
       // Replace the argument type with a named reference.

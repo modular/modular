@@ -2009,8 +2009,8 @@ void TransferMemOwnershipOp::getAsmResultNames(
   // Set the name of the SSA value to follow the lifetime name since it
   // indicates where the value came from.
   StringRef name = getParamDecl().getName().strref();
-  if (!name.empty() && name[0] == '`')
-    name = name.drop_front();
+  if (!name.empty())
+    name = name.take_front(name.find('`'));
 
   setNameFn(getResult(), name);
 }

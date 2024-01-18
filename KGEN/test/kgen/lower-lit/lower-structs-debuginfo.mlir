@@ -19,7 +19,7 @@ lit.struct.decl @ComplexStruct<A: type, B: type> {
 !structTestComplex = !kgen.declref<@ComplexStruct<Int, :type !pop.simd<4, f32>>>
 
 // CHECK: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
-!structTestComplexRef = !lit.ref<!structTestComplex, *"`mystruct">
+!structTestComplexRef = !lit.ref<!structTestComplex, *"mystruct`">
 
 // CHECK: "test.types"
 "test.types"() {

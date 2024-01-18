@@ -196,7 +196,7 @@ struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}[*"`self"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK: call {{.*}}[*"self`"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
@@ -656,7 +656,7 @@ fn mvalueStructField():
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.varlet.decl "a" imp
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.varlet.decl "b" imp : !lit.ref<mut !Int, *"`b1">
+  # CHECK: %b_1 = lit.varlet.decl "b" imp : !lit.ref<mut !Int, *"b`1">
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: [[B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store [[B]], %a_0
@@ -1005,8 +1005,8 @@ struct MemoryOnlyIntArray:
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
 fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
-  # CHECK: %moi28transfer290 = lit.transfer_mem_ownership %moi
-  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi28transfer290)
+  # CHECK: %moi28transfer29 = lit.transfer_mem_ownership %moi
+  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi28transfer29)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%anonymous2A, %arr, %x)
@@ -1014,7 +1014,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   arr[x] = arr[x]
 
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__"
-  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"__store_tmp__`
   # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
   # CHECK: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
@@ -1029,7 +1029,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   arr[x] = MemoryOnlyInt(42)
 
   # CHECK: [[STORETMP:%.*]] = lit.varlet.decl "__store_tmp__"
-  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"__store_tmp__`
   # CHECK: lit.call {{.*}}__getitem__{{.*}}([[STORETMP]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.store {{.*}}, [[XP]]
@@ -1273,8 +1273,8 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK: %ref4 = lit.letreg.decl "ref4" =
   let ref4 = Reference(localVar).value
 
-  # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}> {
-  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> {
+  # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"a`", *"b`", *"c`"}> {
+  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"a`", *"b`"}> {
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
   # CHECK-NEXT:     hlcf.yield [[TMP]]
   # CHECK-NEXT:   } else {
@@ -1282,11 +1282,11 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT:     hlcf.yield [[TMP]]{{.*}}>
   # CHECK-NEXT:   }
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
-  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, {*"`a", *"`b"}> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
+  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, {*"a`", *"b`"}> to !lit.ref<!MemoryOnlyInt, {*"a`", *"b`", *"c`"}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
   # CHECK:         [[TMP:%.*]] = kgen.rebind
-  # CHECK-SAME:             : !lit.ref<mut !MemoryOnlyInt, *"`c"> to !lit.ref<!MemoryOnlyInt, {*"`a", *"`b", *"`c"}>
+  # CHECK-SAME:             : !lit.ref<mut !MemoryOnlyInt, *"c`"> to !lit.ref<!MemoryOnlyInt, {*"a`", *"b`", *"c`"}>
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
   # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]

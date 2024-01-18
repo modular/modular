@@ -5,7 +5,7 @@
 lit.func @lifetimes() {
   // CHECK: partial: !lit.signature<[1]<index>(!lit.ref<mut index, *[0,0]>) -> ()>
   lit.alias.decl partial: !lit.signature<[1]<index>(!lit.ref<mut index, *[0,0]>) -> ()> = <?>
-  lit.varlet.decl "x" var : !lit.ref<mut index, *"`a">
+  lit.varlet.decl "x" var : !lit.ref<mut index, *"a`">
   kgen.return
 }
 
