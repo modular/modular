@@ -178,7 +178,7 @@ void CLIProgress::emit(
   details << "[bytes " << std::setw(16) << bytes.str() << " @ " << std::setw(8)
           << prettyBytes(static_cast<size_t>(rate)) << "/s]";
 
-  double percentage = percentage = std::min(
+  double percentage = std::min(
       static_cast<double>(doneFiles) / static_cast<double>(totalFiles),
       static_cast<double>(doneBytes) / static_cast<double>(totalBytes));
   std::stringstream perstr;
