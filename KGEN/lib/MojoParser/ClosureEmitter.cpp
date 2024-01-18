@@ -492,10 +492,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   Type closureResultType = wrapperSig.getValueResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
-  LIT::FuncOp callFunc = createFunction(
-      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
-      callInputTypes, callConventions, callNames, callPassingKinds,
-      closureResultType, SpecialFunctionKind::kNormal, location, builder,
+  auto [callFunc, _] = synthesizeMethodInStruct(
+      "__call__", callInputTypes, callConventions, callNames, callPassingKinds,
+      closureResultType, structDecl, SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
 
   // Add and register its fields as fully resolved decls.

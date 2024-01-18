@@ -8,7 +8,12 @@
 # RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s -o /dev/null
 # RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s | FileCheck %s
 
-from imported_cached_module import StringLiteralAlias, global_variable, Trait
+from imported_cached_module import (
+    StringLiteralAlias,
+    global_variable,
+    Trait,
+    FuncRefField,
+)
 
 
 # CHECK-LABEL: lit.func @"assign_from()"
@@ -21,4 +26,10 @@ fn assign_from():
 
 # CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>, trait<{{.*}}@AnyType>[{{.*}}])
 struct Struct(Trait):
+    pass
+
+
+# CHECK-LABEL: lit.file_module @"$imported_cached_module"
+# CHECK: lit.struct.field func_ref : {{.*}}@FuncRefField::@"foo()"
+fn pull_symbol(x: FuncRefField):
     pass

@@ -1470,15 +1470,6 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDecl implementation
-//===----------------------------------------------------------------------===//
-
-ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
-                                      ASTDecl &decl) {
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // GlobalVarDecl implementation
 //===----------------------------------------------------------------------===//
 

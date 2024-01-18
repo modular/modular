@@ -242,7 +242,6 @@ private:
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(LetRegDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(GlobalVarDeclOp op, Lexer &lexer, ASTDecl &decl);
