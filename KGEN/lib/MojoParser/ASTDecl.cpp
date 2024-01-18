@@ -48,8 +48,8 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   declsInScope = std::move(src.declsInScope);
 }
 
-StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
-                                            bool dontRenameOutermost) {
+StringAttr ASTDecl::getUniqueParamName(const Twine &name, bool isLifetime,
+                                       bool dontRenameOutermost) {
   // Find the enclosing isolated from above decl that will scope parameter
   // names.
   ASTDecl *outermostFuncScope = nullptr;
@@ -58,18 +58,21 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
   while (scope) {
     // If we see a function scope, remember it but see if we are nested in some
     // other function.
-    if (isa<LIT::FuncOp>(*scope)) {
+    if (isa<LIT::FuncOp>(*scope) ||
+        (!isLifetime && isa<StructDeclOp>(*scope))) {
       if (!innermostFuncScope)
         innermostFuncScope = scope;
       outermostFuncScope = scope;
     }
 
-    // If we found the file module, then we're at the top level, just use it.
+    // If we found the file module, then we're at the top level.
     if (isa<FileModuleOp>(*scope)) {
-      // If we have a function scope, make sure to use it, otherwise we really
-      // are at the top level.
+      // If we haven't found the either the inner- or outermost scope yet, we
+      // need to set them. This can happen, for example, with top level aliases.
       if (!outermostFuncScope)
         outermostFuncScope = scope;
+      if (!innermostFuncScope)
+        innermostFuncScope = scope;
       break;
     }
 
@@ -79,12 +82,18 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
 
   // If this is a declaration in the outermost function, then we don't need to
   // unique it - there are no other names it could conflict with.
+  MLIRContext *ctx = outermostFuncScope->getContext();
   if (innermostFuncScope == outermostFuncScope && dontRenameOutermost)
-    return StringAttr::get(outermostFuncScope->getContext(), "`" + valueName);
+    return StringAttr::get(ctx, name + (isLifetime ? "`" : ""));
 
-  return StringAttr::get(outermostFuncScope->getContext(),
-                         "`" + valueName +
-                             Twine(outermostFuncScope->getNextUniqueID()));
+  return StringAttr::get(ctx, name + "`" +
+                                  Twine(outermostFuncScope->getNextUniqueID()));
+}
+
+StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
+                                            bool dontRenameOutermost) {
+  return getUniqueParamName(valueName, /*isLifetime=*/true,
+                            dontRenameOutermost);
 }
 
 void ASTDecl::dump() const {

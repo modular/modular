@@ -19,11 +19,11 @@ struct MemType:
 
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
-# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping3"<[[A:.*]]: !Int, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping1"<[[A:.*]]: !Int, |>
 
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
-# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping2"<[[A]]: !Int, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<[[A]]: !Int, |>
 fn makes_escaping_closure[
     A: Int
 ](m: MemType) -> fn (n: MemType) escaping -> MemType:

@@ -122,8 +122,8 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @CrazyParams<*"`m": lifetime> {
-lit.struct.decl @CrazyParams<*"`m": lifetime> {
+// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": lifetime> {
+lit.struct.decl @CrazyParams<*"m`": lifetime> {
 }
 
 lit.struct.decl @LifetimeRef<b: lifetime> {

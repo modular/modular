@@ -13,139 +13,185 @@
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  var x : Int
-  fn __init__(inout self): self.x = 42; pass
-  fn noop(self): pass
-  fn __moveinit__(inout self, owned existing: Self): self.x = existing.x
-  fn __copyinit__(inout self, existing: Self): self.x = existing.x
-  fn __bool__(self) -> Bool: return True
-  fn __del__(owned self): pass
+    var x: Int
+
+    fn __init__(inout self):
+        self.x = 42
+        pass
+
+    fn noop(self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.x = existing.x
+
+    fn __copyinit__(inout self, existing: Self):
+        self.x = existing.x
+
+    fn __bool__(self) -> Bool:
+        return True
+
+    fn __del__(owned self):
+        pass
+
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
 struct RegExample:
-  fn __init__() -> Self: return RegExample{}
-  fn __copyinit__(self) -> Self: return RegExample{}
-  fn noop(self): pass
-  fn __del__(owned self): pass
-  fn mutate(inout self): pass
+    fn __init__() -> Self:
+        return RegExample {}
+
+    fn __copyinit__(self) -> Self:
+        return RegExample {}
+
+    fn noop(self):
+        pass
+
+    fn __del__(owned self):
+        pass
+
+    fn mutate(inout self):
+        pass
 
 
 # This type is a unique value that cannot be moved without ending lifetime.
 # CHECK-LABEL: lit.struct.decl @MemoryUniqueMovable
 struct MemoryUniqueMovable:
-  var state: MemExample
+    var state: MemExample
 
-  fn __init__(inout self): self.state = MemExample()
+    fn __init__(inout self):
+        self.state = MemExample()
 
-  # CHECK: lit.func @"__moveinit__
-  fn __moveinit__(inout self, owned other: Self):
-    # Mercilessly steal 'other's state which could be interesting.
+    # CHECK: lit.func @"__moveinit__
+    fn __moveinit__(inout self, owned other: Self):
+        # Mercilessly steal 'other's state which could be interesting.
 
-    # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
-    # CHECK-NEXT: %other28transfer290 = lit.transfer_mem_ownership %0
-    # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %other28transfer290)
-    self.state = other.state^
+        # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
+        # CHECK-NEXT: %other28transfer29 = lit.transfer_mem_ownership %0
+        # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %other28transfer29)
+        self.state = other.state ^
 
-    # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: lit.ownership.mark_destroyed %other
-    # CHECK-NEXT: kgen.return
+        # CHECK-NEXT: kgen.param.constant: none
+        # CHECK-NEXT: lit.ownership.mark_destroyed %other
+        # CHECK-NEXT: kgen.return
 
 
 # This type is copyable/moveable.
 # CHECK-LABEL: lit.struct.decl @MemoryMovableCopyable
 struct MemoryMovableCopyable:
-  var state: MemExample
+    var state: MemExample
 
-  fn __init__(inout self): self.state = MemExample()
+    fn __init__(inout self):
+        self.state = MemExample()
 
-  fn __moveinit__(inout self, owned existing: Self):
-    # Mercilessly steal 'existing's state which could be interesting.
-    self.state = existing.state^
+    fn __moveinit__(inout self, owned existing: Self):
+        # Mercilessly steal 'existing's state which could be interesting.
+        self.state = existing.state ^
 
-  fn __copyinit__(inout self, existing: Self): self.state = existing.state
-  fn __del__(owned self): pass
+    fn __copyinit__(inout self, existing: Self):
+        self.state = existing.state
+
+    fn __del__(owned self):
+        pass
+
 
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
-  # CHECK-NEXT: %a28transfer290 = lit.transfer_mem_ownership %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer290)
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-  return a^
+    # CHECK-NEXT: %a28transfer29 = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29)
+    # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: kgen.return
+    return a ^
+
 
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
-  # CHECK-NEXT: %a28transfer290 = lit.transfer_mem_ownership %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer290){{.*}}init_self{{.*}} owned_in_mem
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-  return a^
+    # CHECK-NEXT: %a28transfer29 = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29){{.*}}init_self{{.*}} owned_in_mem
+    # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: kgen.return
+    return a ^
+
 
 @register_passable
 struct RegUniqueMovable:
-  fn __init__() -> Self: return Self{}
-  fn __del__(owned self): pass
+    fn __init__() -> Self:
+        return Self {}
+
+    fn __del__(owned self):
+        pass
+
 
 @register_passable
 struct RegMovableCopyable:
-  fn __init__() -> Self: return Self{}
-  fn __copyinit__(existing: Self) -> Self: return Self{}
-  fn __del__(owned self): pass
+    fn __init__() -> Self:
+        return Self {}
+
+    fn __copyinit__(existing: Self) -> Self:
+        return Self {}
+
+    fn __del__(owned self):
+        pass
+
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
-  # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
-  # CHECK-NEXT: kgen.return [[AVAL]]
-  return a^
+    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: lit.ref.store %a, %a_0
+    # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
+    # CHECK-NEXT: kgen.return [[AVAL]]
+    return a ^
+
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
-  # CHECK-NEXT: kgen.return [[A]]
-  return a
+    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: lit.ref.store %a, %a_0
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
+    # CHECK-NEXT: kgen.return [[A]]
+    return a
+
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
-  # CHECK-NEXT: kgen.return [[A]]
-  return a^
+    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: lit.ref.store %a, %a_0
+    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: kgen.return [[A]]
+    return a ^
+
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
-  # CHECK-NEXT: lit.ref.store %a, %a_0
+    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: lit.ref.store %a, %a_0
 
-  # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
-  # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
-  let x = a^
+    # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
+    # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
+    let x = a ^
 
-  # CHECK-NEXT: [[X:%.*]] = lit.transfer_reg_ownership %x
-  # CHECK-NEXT: kgen.return [[X]]
-  return x^
+    # CHECK-NEXT: [[X:%.*]] = lit.transfer_reg_ownership %x
+    # CHECK-NEXT: kgen.return [[X]]
+    return x ^
 
 
-fn takeOwnedInt(owned x: Int): pass
+fn takeOwnedInt(owned x: Int):
+    pass
+
 
 # CHECK-LABEL: lit.func @"passFieldToOwnedInt
 fn passFieldToOwnedInt(owned a: MemExample):
-  # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
-  # CHECK-NEXT: %1 = lit.ref.load %0
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}(%1)
-  takeOwnedInt(a.x)
+    # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
+    # CHECK-NEXT: %1 = lit.ref.load %0
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}(%1)
+    takeOwnedInt(a.x)
 
-  # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: kgen.param.constant: none
 
 
 # Generic type: Issue #14018
@@ -155,111 +201,116 @@ struct MyGenericType[Type: AnyRegType]:
     fn __init__(inout self, v: Type):
         self.value = v
 
-fn takeTwo(owned x: RegExample, owned y: RegExample): pass
-fn takeTwo(owned x: MemExample, owned y: MemExample): pass
+
+fn takeTwo(owned x: RegExample, owned y: RegExample):
+    pass
+
+
+fn takeTwo(owned x: MemExample, owned y: MemExample):
+    pass
 
 
 # Check that copies that are immediately destroyed are elided.
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
-  # CHECK: %a = lit.letreg.decl "a"
-  let a = RegExample()
+    # CHECK: %a = lit.letreg.decl "a"
+    let a = RegExample()
 
-  # We need one copy of 'a' here, not two + dtor.
-  # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], %a)
-  takeTwo(a, a)
+    # We need one copy of 'a' here, not two + dtor.
+    # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], %a)
+    takeTwo(a, a)
 
-  # CHECK-NEXT: %x = lit.varlet.decl "x"
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
-  let x = MemExample()
+    # CHECK-NEXT: %x = lit.varlet.decl "x"
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
+    let x = MemExample()
 
-  # We need one copy of 'x' here, not two + dtor.
+    # We need one copy of 'x' here, not two + dtor.
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
-  # CHECK-NEXT: kgen.param.declare
-  # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
-  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
-  takeTwo(x, x)
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: kgen.param.declare
+    # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
+    takeTwo(x, x)
 
-  # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: kgen.param.constant: none
+
 
 # CHECK-LABEL: lit.func @"optimizeCopyToMove
 fn optimizeCopyToMove():
-   # All the copy ctors should be eliminated in favor of moves.
+    # All the copy ctors should be eliminated in favor of moves.
 
-   # CHECK: %m1 = lit.varlet.decl
-   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
-   var m1 = MemExample()                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
-   m1.noop()
+    # CHECK: %m1 = lit.varlet.decl
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
+    var m1 = MemExample()  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
+    m1.noop()
 
-   # CHECK: %m2 = lit.varlet.decl
-   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
-   var m2 = m1                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
-   m2.noop()
+    # CHECK: %m2 = lit.varlet.decl
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
+    var m2 = m1  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
+    m2.noop()
 
-   # CHECK: %m3 = lit.varlet.decl
-   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
-   var m3 = m2                   # expected-warning {{never mutated}}
+    # CHECK: %m3 = lit.varlet.decl
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
+    var m3 = m2  # expected-warning {{never mutated}}
 
-   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m3
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
-   m3.noop()
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m3
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
+    m3.noop()
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
 
-   # All the copyinit's should be removed.
+    # All the copyinit's should be removed.
 
-   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-   # CHECK-NEXT: %r1 = lit.letreg.decl "r1" = [[TMP]]
-   let r1 = RegExample()
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r1)
-   r1.noop()
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %r1 = lit.letreg.decl "r1" = [[TMP]]
+    let r1 = RegExample()
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r1)
+    r1.noop()
 
-   # CHECK-NEXT: %r2 = lit.letreg.decl "r2" = %r1
-   let r2 = r1
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r2)
-   r2.noop()
+    # CHECK-NEXT: %r2 = lit.letreg.decl "r2" = %r1
+    let r2 = r1
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r2)
+    r2.noop()
 
-   # CHECK-NEXT: %r3 = lit.letreg.decl "r3" = %r2
-   let r3 = r2
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r3)
-   r3.noop()
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
+    # CHECK-NEXT: %r3 = lit.letreg.decl "r3" = %r2
+    let r3 = r2
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r3)
+    r3.noop()
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
 
+    # CHECK-NEXT: %v1 = lit.varlet.decl
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %v1
+    var v1 = RegExample()  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
+    v1.noop()
 
-   # CHECK-NEXT: %v1 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v1
-   var v1 = RegExample()                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v1.noop()
+    # CHECK-NEXT: %v2 = lit.varlet.decl
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
+    # CHECK-NEXT: lit.ref.store [[TMP]], %v2
+    var v2 = v1  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
+    v2.noop()
 
-   # CHECK-NEXT: %v2 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v2
-   var v2 = v1                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v2.noop()
+    # CHECK-NEXT: %v3 = lit.varlet.decl
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
+    # CHECK-NEXT: lit.ref.store [[TMP]], %v3
+    var v3 = v2  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
+    v3.noop()
 
-   # CHECK-NEXT: %v3 = lit.varlet.decl
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-   # CHECK-NEXT: lit.ref.store [[TMP]], %v3
-   var v3 = v2                   # expected-warning {{never mutated}}
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
-   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-   v3.noop()
-
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
-   # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
+    # CHECK-NEXT: kgen.param.constant: none

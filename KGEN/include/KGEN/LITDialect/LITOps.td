@@ -155,7 +155,7 @@ def LIT_CallOp : LITOp<"call", [
     Example:
 
     ```mlir
-    lit.call @callee[*"`a"]<1, :dtype f32 -> out: type>(%arg0) : (!Int) -> ()
+    lit.call @callee[*"a`"]<1, :dtype f32 -> out: type>(%arg0) : (!Int) -> ()
     ```
   }];
 
@@ -196,7 +196,7 @@ def LIT_CallParamOp : LITOp<"call_param", [
       // Callee expresion:
       calleeFn
     // Implicit lifetime and result parameter bindings.
-    ]<() -> out>[*"`x"](%x)
+    ]<() -> out>[*"x`"](%x)
     ```
   }];
 
@@ -232,7 +232,7 @@ def LIT_CallSignatureOp : LITOp<"call_signature"> {
     Example:
 
     ```mlir
-    lit.call_signature %callee[*"`x"](%x) : (!lit.ref<mut index, *"`x">) -> ()
+    lit.call_signature %callee[*"x`"](%x) : (!lit.ref<mut index, *"x`">) -> ()
     ```
   }];
 

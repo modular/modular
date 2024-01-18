@@ -92,12 +92,12 @@ fn parametricMut[isMut: __mlir_type.i1,
 fn testParametricMut(i: MemExample, inout m: MemExample):
   # This infers an immutable reference.
   # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
-  # CHECK-NEXT: %iRef = lit.letreg.decl "iRef" = [[RES]] : !lit.ref<!MemExample, *"`i">
+  # CHECK-NEXT: %iRef = lit.letreg.decl "iRef" = [[RES]] : !lit.ref<!MemExample, *"i`">
   let iRef = parametricMut(Reference(i).value)
 
   # This infers a mutable reference.
   # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
-  # CHECK: %mRef = lit.letreg.decl "mRef" = [[RES]] : !lit.ref<mut !MemExample, *"`m">
+  # CHECK: %mRef = lit.letreg.decl "mRef" = [[RES]] : !lit.ref<mut !MemExample, *"m`">
   let mRef = parametricMut(Reference(m).value)
 
 ##===----------------------------------------------------------------------===##
@@ -182,7 +182,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"testUseConditionalReference
 
 fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
-  # CHECK: %a = lit.varlet.decl {{.*}} : !lit.ref<mut !MemExample, *"`a0">
+  # CHECK: %a = lit.varlet.decl {{.*}} : !lit.ref<mut !MemExample, *"a`0">
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
 
   var a = MemExample()
@@ -191,7 +191,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # CHECK-NEXT: %aref = lit.letreg.decl "aref" = [[ARV]]
   let aref = Reference(a)
-  # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime = <*"`a0">
+  # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime = <*"a`0">
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
@@ -238,9 +238,9 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK-NEXT: = lit.call {{.*}}method{{.*}}<:lifetime *"`a", :i1 0>(%a)
+  # CHECK-NEXT: = lit.call {{.*}}method{{.*}}<:lifetime *"a`", :i1 0>(%a)
   let r1 = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:lifetime *"`b", :i1 1>(%b)
+  # CHECK: = lit.call {{.*}}method{{.*}}<:lifetime *"b`", :i1 1>(%b)
   let r2 = b.method()

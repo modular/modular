@@ -519,7 +519,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   let bref = Reference(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, *"`b"]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, *"b`"]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_warnings():

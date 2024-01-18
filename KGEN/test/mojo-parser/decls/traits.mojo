@@ -234,8 +234,8 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: @Movable> [[T]], {{.*}}> byref_result
 # CHECK-SAME: @Movable> [[T]], {{.*}}> owned_in_mem
 fn move_me[T: Movable](owned value: T) -> T:
-    # CHECK-NEXT: %value28transfer290 = lit.transfer_mem_ownership %value
-    # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")]{{.*}}(%__result__, %value28transfer290)
+    # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership %value
+    # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
     return value ^
 
 # COM: Just check that conformance checking succeeds.

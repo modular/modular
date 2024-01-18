@@ -190,11 +190,22 @@ public:
   /// to persist until body resolution.
   void setBodyDecorators(ArrayRef<ExprNode *> decorators, SharedState &state);
 
-  /// Create an anonymous lifetime name for the specified value name that cannot
-  /// collide with any other parameters.  This is done by prepending a ` and
-  /// postpending a unique ID.
+  /// Create a unique parameter name from the given name that cannot collide
+  /// with any other parameters. This is done by postpending a backtick ("`")
+  /// and followed by a unique ID.
   ///
-  /// If `dontRenameOutermost` is true, this only renames for nested functions.
+  /// By default, the name will not be modified if the declaration is on the top
+  /// level, but this behavior can be overridden by passing false for
+  /// `dontRenameOutermost`. If this is for a lifetime parameter, scopes
+  /// introduced by structs are ignored, and a backtick is _always_ postpended
+  /// (even if `dontRenameOutermost` is true).
+  StringAttr getUniqueParamName(const Twine &name, bool isLifetime = false,
+                                bool dontRenameOutermost = true);
+
+  /// Create an anonymous (and unique) lifetime parameter name for the specified
+  /// value name that cannot collide with any other parameters. This uses the
+  /// same uniquing scheme as `getUniqueParamName`, but ignores non-function
+  /// scopes.
   StringAttr getAnonymousLifetimeFor(const Twine &valueName,
                                      bool dontRenameOutermost = false);
 
