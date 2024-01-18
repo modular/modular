@@ -12,7 +12,6 @@ cc_library(
         "lib/BuildInfo.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
-        "lib/FileSystemExtras.cpp",
         "lib/Process.cpp",
         "lib/Random.cpp",
         "lib/ReferenceCounted.cpp",
@@ -25,7 +24,6 @@ cc_library(
         "include/Support/CommandLine.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
-        "include/Support/FileSystemExtras.h",
         "include/Support/ForwardDecls.h",
         "include/Support/FunctionExtras.h",
         "include/Support/LLVMCompilerForwardDecls.h",
@@ -56,7 +54,6 @@ cc_test(
         "unittests/AlignedAllocTest.cpp",
         "unittests/ErrorOrTest.cpp",
         "unittests/ErrorTest.cpp",
-        "unittests/FileSystemExtrasTest.cpp",
         "unittests/FunctionExtrasTest.cpp",
         "unittests/MathExtras.cpp",
         "unittests/RandomTest.cpp",
@@ -92,6 +89,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":Base",
+        ":Filesystem",
 
         # Needed for the type definitions, and the reason that this is split
         # into a separate library when required.
@@ -178,7 +176,10 @@ cc_library(
     srcs = glob(["lib/Driver/*.cpp"]),
     hdrs = glob(["include/Support/Driver/*.h"]),
     strip_include_prefix = "include",
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        ":Filesystem",
+    ],
 )
 
 cc_library(
@@ -243,6 +244,7 @@ cc_library(
     deps = [
         ":ADT",
         ":Base",
+        ":Filesystem",
     ],
 )
 
@@ -348,6 +350,29 @@ cc_test(
     srcs = glob(["unittests/Entitlements/*.cpp"]),
     deps = [
         ":Entitlements",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "Filesystem",
+    srcs = glob([
+        "lib/FileSystemExtras.cpp",
+        "lib/Filesystem/*.cpp",
+    ]),
+    hdrs = glob([
+        "include/Support/Filesystem/*.h",
+        "include/Support/FileSystemExtras.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [":Base"],
+)
+
+cc_test(
+    name = "FilesystemTest",
+    srcs = glob(["unittests/FileSystemExtrasTest.cpp"]),
+    deps = [
+        ":Filesystem",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -736,6 +761,7 @@ cc_library(
         # packages in an apparent set of ordering violations. These create
         # loops in the logical package structure. Just encode these explicit
         # exceptions for now.
+        "include/Support/Compiler/MLIRDenseAttr.h",
         "include/Support/Compiler/MLIRDenseAttrStorage.h",
         "include/Support/MArchTarget/Host.h",
     ]),
