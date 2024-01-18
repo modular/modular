@@ -12,6 +12,7 @@
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -285,6 +286,7 @@ static void getCallOpEffects(
   SignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ValueInputConvention> conventions;
+
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
     signature = directCall.getCalleeType();
@@ -296,7 +298,8 @@ static void getCallOpEffects(
 
     assert(conventions.size() == op.getNumOperands());
   } else {
-    signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
+    auto call = cast<LIT::CallSignatureOp>(op);
+    signature = call.getCallee().getType();
     conventions = signature.getInputConventions();
 
     // We use the callee value, and process the rest as operands.
@@ -305,7 +308,9 @@ static void getCallOpEffects(
     callArguments = callArguments.drop_front();
   }
 
-  /// Argument conventions cause a direct use of the register of pointee.
+  /// Argument conventions cause a direct use of the register of pointee, and
+  /// handling them specifically allows us to be field sensitive in cases where
+  /// the access is directly attributable to a Value.
   auto getOperandEffectForConvention =
       [](ValueInputConvention conv) -> OperandEffect {
     switch (conv) {
@@ -331,16 +336,34 @@ static void getCallOpEffects(
   SmallVector<Type> typesAccessibleByCallee;
   auto addArgument = [&](Value arg, ValueInputConvention conv) {
     // Get normal argument effect.
-    operands.push_back({arg, getOperandEffectForConvention(conv)});
+    auto effect = getOperandEffectForConvention(conv);
+    Type argType = arg.getType();
+
+    // If this is a borrowed register of a !lit.ref, then we know that this is
+    // an explicitly declared low-level reference.
+    // TODO(references): This is a hack because we can't get lifetime of self.
     bool isIndirect = SignatureType::hasAddress(conv);
+    if (conv == ValueInputConvention::BorrowedInReg)
+      if (auto ref = dyn_cast<RefType>(argType)) {
+        effect = ref.isMutableKnown(false) ? OperandEffect::memLoad
+                                           : OperandEffect::memInOut;
+        isIndirect = true;
+      }
+
+    // If this is a normal register use, and if the value is a reference
+    // (whether the argument convention is fancy or if it is an explicitly
+    // passed reference) treat this as a field sensitive access so we can
+    operands.push_back({arg, effect});
+
+    // If this is a memConsume or memStoreOwned, then the lifetime of the
+    // reference is handled directly, strip it off.  Otherwise handle borrowed,
+    // inout, etc operands as just any-old reference use.
+    if (isIndirect)
+      argType = cast<RefType>(argType).getElementType();
 
     // In addition to the direct (field-sensitive) effect of loading/storing
     // the bits, the callee may do whatever it wants with lifetimes embedded
     // in the type.  Collect all of these so we can process them.
-    Type argType = arg.getType();
-    if (isIndirect) // Strip off the memory convention wrapper.
-      argType = cast<RefType>(argType).getElementType();
-
     typesAccessibleByCallee.push_back(argType);
   };
 
@@ -373,10 +396,9 @@ static void getCallOpEffects(
 
   // Look at the types accessible by the callee to see if there are any
   // lifetime accesses.
-  //
-  // TODO: Generalize this beyond kgen.variadic.  We need to move the
-  // access kind from the !lit.ref onto the lifetime though!
   for (auto argType : typesAccessibleByCallee) {
+    // TODO: move the access kind from the !lit.ref onto the lifetime.  We
+    // shouldn't need to know about RefType or VariadicType at all.
     if (auto variadicType = dyn_cast<VariadicType>(argType)) {
       if (auto refType = dyn_cast<RefType>(variadicType.getElementType())) {
         // The callee is allowed to mutate the pointed-to value unless known

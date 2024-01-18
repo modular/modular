@@ -1392,13 +1392,11 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %b_0 = lit.varlet.decl
     # CHECK: %v0 = lit.varlet.decl
-    # CHECK: [[IMMUT:%.*]] = lit.ref.immut %b_0
-    # CHECK: [[B1ADDR:%.*]] = {{.*}}__refitem__{{.*}}([[IMMUT]],
+    # CHECK: [[B1ADDR:%.*]] = {{.*}}__refitem__{{.*}}(%b_0,
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1ADDR]])
     let v0 = b[1]
     # CHECK: %v1 = lit.varlet.decl
-    # CHECK: [[IMMUT:%.*]] = lit.ref.immut %b_0
-    # CHECK: [[B2ADDR:%.*]] = {{.*}}__refitem__{{.*}}([[IMMUT]],
+    # CHECK: [[B2ADDR:%.*]] = {{.*}}__refitem__{{.*}}(%b_0,
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2ADDR]])
     var v1 = b[2]
 
