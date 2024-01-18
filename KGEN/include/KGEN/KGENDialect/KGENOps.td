@@ -1733,6 +1733,31 @@ def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create",
 }
 
 //===----------------------------------------------------------------------===//
+// CaptureListCopyOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CaptureListCopyOp : KGENOp<"capture_list.copy",
+    [DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
+  let summary = "Copy a capture list for a capturing closure.";
+  let description = [{
+    The `kgen.capture_list.copy` operation allocates heap memory and
+    copies the capture list for a closure.
+
+    Example:
+
+    ```mlir
+    %cl = kgen.capture_list.copy %orig :() capturing -> index @cap_closure
+    ```
+  }];
+
+  let arguments = (ins PointerOf<KGEN_NoneType>:$orig,
+                       AttrOfType<KGEN_SignatureType>:$symbiont);
+  let results = (outs PointerOf<KGEN_NoneType>:$result);
+
+  let assemblyFormat = "$orig attr-dict custom<ColonTypeParamValue>($symbiont)";
+}
+
+//===----------------------------------------------------------------------===//
 // CaptureListExpandOp
 //===----------------------------------------------------------------------===//
 
