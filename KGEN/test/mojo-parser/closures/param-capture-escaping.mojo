@@ -6,22 +6,17 @@
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 # CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
-# CHECK-NEXT: lit.struct.field param_capture : !kgen.pointer<none>
+# CHECK-NEXT: lit.struct.field param_capture : !kgen.declref<{{.*}}__ParameterClosureCaptureList{{.*}}__call__
 # CHECK-NEXT: lit.struct.field field0 : !Int
 
 # CHECK: lit.func @"__call__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[param_capture]
 # CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
-# CHECK: kgen.capture_list.expand [[CLIST]]
-
-# CHECK: lit.func @"__del__
-# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
-# CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
-# CHECK: pop.aligned_free [[CLIST]]
+# CHECK: call {{.*}}expand{{.*}}([[CLIST]])
 
 # CHECK: lit.func @"__init__
-# CHECK: [[CLIST:%.*]] = kgen.capture_list.create
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
+# CHECK: [[CLIST:%.*]] = lit.call {{.*}}@__ParameterClosureCaptureList::@"__init__
 # CHECK: lit.ref.store [[CLIST]], [[GEP]]
 
 
