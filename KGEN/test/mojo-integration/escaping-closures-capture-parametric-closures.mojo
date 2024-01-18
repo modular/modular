@@ -15,14 +15,18 @@ from sys import argv
 # CHECK-NEXT: [[CAPTURE_FIELD_PTR:%.*]] = pop.load [[CAPTURE_FIELD_ADD]]
 # CHECK-NEXT: pop.aligned_free [[CAPTURE_FIELD_PTR]]
 
+# CHECK:  kgen.func @"${{.*}}::`_CI_${{.*}}::__copyinit__{{.*}}"
+# CHECK: pop.aligned_alloc
+
 # CHECK:  kgen.func @"${{.*}}::`_CI_${{.*}}::__init__{{.*}}"
 # CHECK-SAME: (%arg0: !kgen.struct<(index)>, %arg1: !kgen.struct<(index)>,
 # CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
 # CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {
 # CHECK-NEXT:    %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:    %idx8 = index.constant 8
 # CHECK-NEXT:    %idx16 = index.constant 16
+# CHECK-NEXT:    %idx8 = index.constant 8
 
+# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<struct<(index)>>
@@ -31,7 +35,6 @@ from sys import argv
 # CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]] : !kgen.pointer<struct<(index)>>
 
 # CHECK-NEXT:    [[OPAQUE_CAPTURE_LIST:%.*]] = pop.pointer.bitcast [[HEAP_CAPTURE_LISTS_PTR]]
-# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
 # CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
 # CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep %arg2[1]
 # CHECK-NEXT:    pop.store %arg3, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>

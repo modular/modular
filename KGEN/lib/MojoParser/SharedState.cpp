@@ -1057,6 +1057,13 @@ ASTType SharedState::getBuiltinRaisingCoroutineType(ASTDecl &context,
   return resolveBuiltinModuleType(context, loc, "RaisingCoroutine", *this);
 }
 
+ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
+  ASTDecl &closureModule =
+      importModule("builtin._closure", /*currentPackage=*/nullptr, loc);
+  return resolveBuiltinModuleType(closureModule, loc,
+                                  "__ParameterClosureCaptureList", *this);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
