@@ -60,10 +60,16 @@ OpFoldResult PackSizeOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
-  auto value = llvm::cast_if_present<TypedAttr>(adaptor.getOperand());
-  if (!value)
-    return {};
-  return VariantAttr::get(value, getIndex(), getType());
+  if (auto value = llvm::cast_if_present<TypedAttr>(adaptor.getOperand()))
+    return VariantAttr::get(value, getIndex(), getType());
+
+  // Canonicalize `kgen.variant.create(kgen.variant.take(x, n), n) -> x`
+  auto takeOp = getOperand().getDefiningOp<VariantTakeOp>();
+  if (takeOp && takeOp.getIndex() == getIndex() &&
+      takeOp.getOperand().getType() == getType())
+    return takeOp.getOperand();
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -92,7 +98,8 @@ OpFoldResult VariantTakeOp::fold(FoldAdaptor adaptor) {
 
   // Canonicalize `kgen.variant.take(kgen.variant.create(x)) -> x`.
   auto create = getVariant().getDefiningOp<VariantCreateOp>();
-  if (!create || create.getOperand().getType() != getType())
+  if (!create || create.getOperand().getType() != getType() ||
+      create.getIndex() != getIndex())
     return {};
   return create.getOperand();
 }
