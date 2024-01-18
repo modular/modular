@@ -122,7 +122,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
 
   // Set the client certificate on the context.
   curl_blob blob = {};
-  blob.data = (void *)(*certBufOr)->getBufferStart();
+  blob.data = const_cast<void *>((const void *)(*certBufOr)->getBufferStart());
   blob.len = (*certBufOr)->getBufferSize();
   blob.flags = CURL_BLOB_COPY;
   curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
@@ -137,7 +137,8 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
     return clientKeyBufOr.takeError();
 
   // Now set the client key on the request - used to sign the request.
-  blob.data = (void *)(*clientKeyBufOr)->getBufferStart();
+  blob.data =
+      const_cast<void *>((const void *)(*clientKeyBufOr)->getBufferStart());
   blob.len = (*clientKeyBufOr)->getBufferSize();
   curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, &blob);
   curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
