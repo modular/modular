@@ -399,21 +399,22 @@ fn testWrapperNestedInt():
 # ===----------------------------------------------------------------------=== #
 
 fn testConditionalImmut(cond: __mlir_type.i1):
-  let a = MemExample()
-  let b : MemExample # expected-note {{'b' declared here}}
+  var a = MemExample()
+  var b : MemExample # expected-note {{'b' declared here}}
 
   let aref = Reference(a).value
+  # expected-error @+1 {{use of uninitialized value 'b'}}
   let bref = Reference(b).value
   let cref = aref if cond else bref
 
-  # expected-error @+1 {{use of uninitialized value 'b'}}
+
   Reference(cref)[].noop()
 
 fn testConditionalMut(cond: __mlir_type.i1):
   var a = MemExample()
   var b : MemExample # expected-note {{'b' declared here}}
 
+  # expected-error @+1 {{use of uninitialized value 'b'}}
   let cref = Reference(a).value if cond else Reference(b).value
 
-  # expected-error @+1 {{potential indirect mutation of uninitialized value 'b'}}
   Reference(cref)[] = MemExample()

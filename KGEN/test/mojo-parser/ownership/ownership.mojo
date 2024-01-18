@@ -724,13 +724,13 @@ fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
   # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"`mems", :i1 1>(%mems_0, %mems)
-  # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut %mems_0
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
-  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMM]], [[ZERO]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
+  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%mems_0, [[ZERO]])
+
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
   # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
   mems[0].x += 1
 
   # CHECK-NEXT: kgen.param.constant: none
@@ -757,13 +757,14 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # Verify the iterator keeps the VariadicListMem alive.
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
 
-  # FIXME: This should not happen until after the element is dead.
-  # CHECK: lit.call {{.*}}__del__{{.*}}(%mems_0)
-
   # CHECK: %iter = lit.varlet.decl
+  # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}(%iter, %mems_0)
   var iter = mems.__iter__()
 
-  # CHECK: %x = lit.varlet.decl
+  ## FIXME: This is destroyed too early.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
+
+  # CHECK-NEXT: %x = lit.varlet.decl
   # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
 
   # Iterator is destroyed as soon as we're done with it.

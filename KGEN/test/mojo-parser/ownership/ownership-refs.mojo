@@ -109,10 +109,10 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NOT: __del__
 
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
-  let a = MemExample()
+  var a = MemExample()
 
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
-  let b = MemExample()
+  var b = MemExample()
 
   let aref = Reference(a).value
   let bref = Reference(b).value
