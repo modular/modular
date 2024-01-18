@@ -1760,12 +1760,12 @@ fn partial_simd_load[
 
 @always_inline
 fn partial_simd_store[
-    type: DType, width: Int
+    width: Int
 ](
-    storage: DTypePointer[type],
+    storage: DTypePointer,
     lbound: Int,
     rbound: Int,
-    data: SIMD[type, width],
+    data: SIMD[storage.type, width],
 ):
     """Stores a vector with dynamic bound.
 
@@ -1779,7 +1779,6 @@ fn partial_simd_store[
         partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
 
     Parameters:
-        type: The underlying dtype of computation.
         width: The system simd vector size.
 
     Args:
@@ -1794,7 +1793,11 @@ fn partial_simd_store[
     let incr = iota[DType.int32, width]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_store(data, storage, mask)
+    # Rebind for the inconsistency between (1) `ptr: DTypePointer` deduces
+    # address_space as ptr1 and (2) `DTypePointer[type]` sets address_space to
+    # generic by default. The `masked_store` takes (2) to enforce the same type
+    # between data and storage. #28834.
+    return masked_store(data, rebind[DTypePointer[storage.type]](storage), mask)
 
 
 # ===----------------------------------------------------------------------===#

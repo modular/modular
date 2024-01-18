@@ -64,7 +64,7 @@ fn test_partial_load_store():
     print[4, DType.index](partial_load_data)
 
     # Test partial store:
-    partial_simd_store[DType.index, 4](
+    partial_simd_store[4](
         write_buffer.data.offset(1),
         2,
         4,
@@ -98,7 +98,7 @@ fn test_partial_load_store():
     print[4, DType.index](nd_partial_load_data)
 
     # Test partial store
-    partial_simd_store[DType.index, 4](
+    partial_simd_store[4](
         write_nd_buffer._offset(StaticIntTuple[2](3, 1)),
         0,  # lbound
         3,  # rbound
