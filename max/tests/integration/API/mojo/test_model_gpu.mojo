@@ -7,7 +7,7 @@
 # REQUIRES: cuda
 # RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model | FileCheck %s
 
-from aiengine import (
+from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
