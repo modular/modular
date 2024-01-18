@@ -53,7 +53,6 @@ lit.func @useDtor(
 
 
   // var c = Struct()
-  // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   %c = lit.varlet.decl "c" var : !lit.ref<mut @Struct, *"life">
   %0 = lit.call @Struct::@__init__[life](%c) : !lit.signature<[1](!lit.ref<mut @Struct, *[0,0]> init_self) -> !kgen.none>
 
@@ -677,7 +676,6 @@ lit.func @y(%arg1: !kgen.declref<@Int> borrow) {
 }
 // expected-note @+1 {{'arg0' declared here}}
 lit.func @x(%arg0: !kgen.declref<@Int> owned) {
-  // expected-warning @+1 {{'x' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   %x = lit.varlet.decl "x"  var : !lit.ref<mut @Int, a>
   lit.ref.store %arg0, %x : !lit.ref<mut @Int, a>
   %1 = lit.ref.load %x : <mut @Int, a>

@@ -63,12 +63,12 @@ fn use_of_empty() -> Empty:
 
 
 fn use_of_init() -> RegExample:
-    var a = RegExample()  # expected-warning {{never mutated}}
+    var a = RegExample()
     return a  # OK!
 
 
 fn use_of_init2() -> MemExample:
-    var a = MemExample()  # expected-warning {{never mutated}}
+    var a = MemExample()
     return a  # OK!
 
 
@@ -131,7 +131,7 @@ fn return_error2(inout a: RegExample): # expected-note {{'a' declared here}}
 
 
 fn use_of_uninit_if(cond: Bool):
-    var a: MemExample  # expected-warning {{never mutated}}
+    var a: MemExample
     if cond:
         a = MemExample()
     else:
@@ -143,14 +143,14 @@ fn use_of_uninit_if(cond: Bool):
         b = MemExample()
     use(b)  # expected-error {{use of uninitialized value 'b'}}
 
-    var c: MemExample  # expected-warning {{never mutated}}
+    var c: MemExample
     if True:
         c = MemExample()
     use(c)  # Ok.
 
 
 fn use_of_uninit_while(cond: Bool):
-    var a: MemExample  # expected-warning {{never mutated}}
+    var a: MemExample
     if cond:
         # Infinite loop never returns
         while True:
@@ -167,7 +167,7 @@ fn use_of_uninit_while(cond: Bool):
 
 
 fn use_of_uninit_raise(cond: Bool, err: Error):
-    var a: MemExample  # expected-warning {{'a' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+    var a: MemExample
     try:
         raise err
     except:
@@ -175,7 +175,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
         pass
     use(a)  # ok
 
-    var b: MemExample  # expected-warning {{'b' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+    var b: MemExample
     try:
         b = MemExample()
         raise err
@@ -194,7 +194,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
         pass
     use(c)  # expected-error {{use of uninitialized value 'c'}}
 
-    var d: MemExample  # expected-warning {{'d' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+    var d: MemExample
     try:
         if cond:
             raise err
@@ -331,14 +331,14 @@ fn use(a: Int):
 
 
 fn testVarToLet(cond: Bool):
-    var a: Int  # expected-warning {{'a' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+    var a: Int
     if cond:
         a = 1
     else:
         a = 2
     use(a)
 
-    var b: Int  # expected-warning {{consider switching to a 'let'}}
+    var b: Int
     if cond:
         b = 1
         use(b)
