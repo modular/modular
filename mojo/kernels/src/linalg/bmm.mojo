@@ -452,9 +452,7 @@ fn _batched_matmul_cpu[
 
                 elementwise_epilogue_fn[c_type, width, rank](coords, out_val)
 
-            @parameter
-            @always_inline
-            fn rowwise_closure(start_row: Int, num_rows: Int):
+            fn rowwise_closure(start_row: Int, num_rows: Int) escaping:
                 rowwise_epilogue(start_row, num_rows, c_view)
 
             let sub_matmul_config = get_partitioned_matmul[

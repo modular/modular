@@ -68,16 +68,6 @@ from algorithm.functional import tile_and_unswitch
 from Gemv import gemv
 
 
-@closure
-fn _null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
-    pass
-
-
-@closure
-fn _null_rowwise_epilogue(offset: Int, num_rows: Int):
-    pass
-
-
 fn elementwise_epilogue_c_tile[
     simd_width: Int,
     type: DType,
@@ -1463,9 +1453,9 @@ struct TiledMatmul[
 
     var b_tile_generator: BTileGenerator[config, b_type, transpose_b, b_packed]
 
-    var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
+    var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
 
-    var rowwise_epilogue_fn: fn (Int, Int) capturing -> None
+    var rowwise_epilogue_fn: fn (Int, Int) escaping -> None
 
     # Interface method
     @staticmethod
@@ -1476,12 +1466,20 @@ struct TiledMatmul[
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
     ):
+        fn null_elementwise_epilogue(
+            offset: GemmShape, tile_len: GemmShape
+        ) escaping:
+            pass
+
+        fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+            pass
+
         Self.run(
             c,
             a,
             b,
-            _null_elementwise_epilogue,
-            _null_rowwise_epilogue,
+            null_elementwise_epilogue,
+            null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1491,16 +1489,19 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, c_type],
         a: NDBuffer[2, config.shape_a, a_type],
         b: NDBuffer[2, config.shape_b, b_type],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
+        fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+            pass
+
         Self.run(
             c,
             a,
             b,
             elementwise_epilogue_fn,
-            _null_rowwise_epilogue,
+            null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1511,8 +1512,8 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, c_type],
         a: NDBuffer[2, config.shape_a, a_type],
         b: NDBuffer[2, config.shape_b, b_type],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
-        rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
+        rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
@@ -3582,7 +3583,7 @@ fn _submatmul_sequential_sync[
     b: NDBuffer[2, b_shape, b_type],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
-    rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
+    rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
@@ -3595,7 +3596,7 @@ fn _submatmul_sequential_sync[
             a_type, b_type, c_type, b_packed, critical_stride, saturated_vnni
         ]()
 
-        fn elementwise_closure(offset: GemmShape, shape: GemmShape):
+        fn elementwise_closure(offset: GemmShape, shape: GemmShape) escaping:
             elementwise_epilogue_c_tile[
                 mm_config.simd_size,
                 c_type,
@@ -3691,6 +3692,9 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
+    fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+        pass
+
     _submatmul_sequential_sync[
         a_type,
         a_shape,
@@ -3705,4 +3709,4 @@ fn _submatmul_sequential_sync[
         elementwise_lambda_fn,
         False,
         saturated_vnni,
-    ](c, a, b, sub_matrix_shape, sub_matrix_offset, _null_rowwise_epilogue)
+    ](c, a, b, sub_matrix_shape, sub_matrix_offset, null_rowwise_epilogue)
