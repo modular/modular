@@ -442,11 +442,69 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                    llvm::map_to_vector(paramCaptures, [](ParamDeclRefAttr ref) {
                      return ParamDeclAttr::get(ref);
                    }));
-  addFieldsToStruct(declOp, fieldTypes);
-
-  // Register the struct and its fields as fully resolved decls.
+  // Register the struct as a fully resolved decl.
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
       declOp.getOperation(), implName, moduleDecl.getLoc(), &moduleDecl);
+
+  // Generate the __call__ method.
+
+  // Build the call signature from the closure signature. This means inserting
+  // the self argument in the correct location.
+  unsigned callArgCount = wrapperSig.getNumInputs() + 1;
+  SmallVector<Type> callInputTypes;
+  callInputTypes.reserve(callArgCount);
+  SmallVector<ValueInputConvention> callConventions;
+  callConventions.reserve(callArgCount);
+  SmallVector<StringAttr> callNames;
+  callNames.reserve(callArgCount);
+  SmallVector<PassingKind> callPassingKinds;
+  callPassingKinds.reserve(callArgCount);
+
+  // Move by ref result argument to front before self argument.
+  bool hasByRefReturn = wrapperSig.hasMemoryOnlyResult();
+  if (hasByRefReturn) {
+    assert(wrapperSig.getInputConvention(0) ==
+           ValueInputConvention::ByRefResult);
+    callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
+    callConventions.push_back(ValueInputConvention::ByRefResult);
+    callNames.push_back(StringAttr::get(ctx));
+    callPassingKinds.push_back(PassingKind::PosOnly);
+  }
+
+  // Currently Closure Impls are not register passable, so use BorrowedInMem
+  // convention.
+  auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  RefType implRefType =
+      ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false);
+  callInputTypes.push_back(implRefType);
+  callConventions.push_back(ValueInputConvention::BorrowedInMem);
+  callNames.push_back(StringAttr::get(ctx));
+  callPassingKinds.push_back(PassingKind::PosOnly);
+
+  llvm::append_range(
+      callInputTypes,
+      nestedFn.getFunctionType().getInputs().drop_front(hasByRefReturn));
+  llvm::append_range(
+      callConventions,
+      wrapperSig.getInputConventions().drop_front(hasByRefReturn));
+  llvm::append_range(callNames,
+                     wrapperSig.getArgNames().drop_front(hasByRefReturn));
+  llvm::append_range(
+      callPassingKinds,
+      wrapperSig.getArgPassingKinds().drop_front(hasByRefReturn));
+
+  Type closureResultType = wrapperSig.getValueResults().front();
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
+                                                  &declOp.getFields().front());
+  LIT::FuncOp callFunc = createFunction(
+      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
+      callInputTypes, callConventions, callNames, callPassingKinds,
+      closureResultType, SpecialFunctionKind::kNormal, location, builder,
+      wrapperSig.getFnEffects().setEscaping(false));
+  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
+
+  // Add and register its fields as fully resolved decls.
+  addFieldsToStruct(declOp, fieldTypes);
   for (StructFieldOp field : declOp.getFieldDecls()) {
     shared.declResolver->addFullyResolvedDecl(&*field, field.getNameAttr(),
                                               structDecl.getLoc(), &structDecl);
@@ -463,16 +521,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Build the init method. This only needs the captured arguments. Populate the
   // function argument information.
-  auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
-  RefType implRefType =
-      ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true);
 
   // All arguments as positional-only.
   SmallVector<PassingKind> initSigPassingKinds(1 + captures.size(),
                                                PassingKind::PosOnly);
   // Fill the types and conventions based on the register-passabilities.
   SmallVector<StringAttr> initSigNames{selfName};
-  SmallVector<Type> initSigTypes{implRefType};
+  SmallVector<Type> initSigTypes{implRefType.getWithMutability(true)};
   SmallVector<ValueInputConvention> initSigConventions{
       ValueInputConvention::InitSelf};
   unsigned fieldNameIdx = 0;
@@ -506,7 +561,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         oldSig.getFnEffects().setCapturing(true), oldSig.getMetadata());
     initFunc.setSignature(capturingInitSymbol);
   }
-  auto builder =
+  builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
   for (auto [clType, fieldDecl] :
        llvm::zip(paramCaptureListTypes, paramClosureCaptureFieldDecls)) {
@@ -549,60 +604,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
   }
 
-  // Generate the __call__ method.
-
-  // Build the call signature from the closure signature. This means inserting
-  // the self argument in the correct location.
-  unsigned callArgCount = wrapperSig.getNumInputs() + 1;
-  SmallVector<Type> callInputTypes;
-  callInputTypes.reserve(callArgCount);
-  SmallVector<ValueInputConvention> callConventions;
-  callConventions.reserve(callArgCount);
-  SmallVector<StringAttr> callNames;
-  callNames.reserve(callArgCount);
-  SmallVector<PassingKind> callPassingKinds;
-  callPassingKinds.reserve(callArgCount);
-
-  // Move by ref result argument to front before self argument.
-  bool hasByRefReturn = wrapperSig.hasMemoryOnlyResult();
-  if (hasByRefReturn) {
-    assert(wrapperSig.getInputConvention(0) ==
-           ValueInputConvention::ByRefResult);
-    callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
-    callConventions.push_back(ValueInputConvention::ByRefResult);
-    callNames.push_back(StringAttr::get(ctx));
-    callPassingKinds.push_back(PassingKind::PosOnly);
-  }
-
-  // Currently Closure Impls are not register passable, so use BorrowedInMem
-  // convention.
-  implRefType = implRefType.getWithMutability(/*isMut=*/false);
-  callInputTypes.push_back(implRefType);
-  callConventions.push_back(ValueInputConvention::BorrowedInMem);
-  callNames.push_back(StringAttr::get(ctx));
-  callPassingKinds.push_back(PassingKind::PosOnly);
-
-  llvm::append_range(
-      callInputTypes,
-      nestedFn.getFunctionType().getInputs().drop_front(hasByRefReturn));
-  llvm::append_range(
-      callConventions,
-      wrapperSig.getInputConventions().drop_front(hasByRefReturn));
-  llvm::append_range(callNames,
-                     wrapperSig.getArgNames().drop_front(hasByRefReturn));
-  llvm::append_range(
-      callPassingKinds,
-      wrapperSig.getArgPassingKinds().drop_front(hasByRefReturn));
-
-  Type closureResultType = wrapperSig.getValueResults().front();
-  builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
-                                             &declOp.getFields().front());
-  LIT::FuncOp callFunc = createFunction(
-      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
-      callInputTypes, callConventions, callNames, callPassingKinds,
-      closureResultType, SpecialFunctionKind::kNormal, location, builder,
-      wrapperSig.getFnEffects().setEscaping(false));
-  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   // Populate the body of the call op.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = callFunc.getLocScope())

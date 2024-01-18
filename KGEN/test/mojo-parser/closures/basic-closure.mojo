@@ -24,7 +24,8 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT: lit.struct.field field0 : !MemType
 # CHECK-NEXT: lit.struct.field field1 : !Int
 # CHECK-NEXT: lit.struct.field field2 : index
-# CHECK-NEXT: lit.func @"__del__
+
+# CHECK:      lit.func @"__del__
 # CHECK-NEXT:    [[VAR0:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:    lit.ownership.mark_destroyed %self
 # CHECK-NEXT:    lit.return [[VAR0]] : !kgen.none
