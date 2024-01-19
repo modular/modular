@@ -113,7 +113,10 @@ public:
                                 modularRootCertificate.size() + 1);
     EXPECT_EQ(rc, 0) << "mbedtls_x509_crt_parse failed";
   }
-  ~Firechicken() { mbedtls_pk_free(&keyCtx); }
+  ~Firechicken() {
+    mbedtls_pk_free(&keyCtx);
+    mbedtls_x509_crt_free(&rootCert);
+  }
 
 private:
   HTTPResponse executeRequestImpl(
@@ -220,6 +223,8 @@ private:
 
     mbedtls_x509_csr csr;
     mbedtls_x509_csr_init(&csr);
+    auto freeCsr =
+        llvm::make_scope_exit([&]() { mbedtls_x509_csr_free(&csr); });
 
     // PEM encoded stuff needs the +1 in the length since mbedTLS wants us to
     // include the null terminator.
@@ -245,9 +250,10 @@ private:
     mbedtls_x509write_crt_set_md_alg(&cert, MBEDTLS_MD_SHA256);
     mbedtls_mpi serno;
     mbedtls_mpi_init(&serno);
+    auto freeMpi = llvm::make_scope_exit([&]() { mbedtls_mpi_free(&serno); });
+
     mbedtls_mpi_lset(&serno, 1);
     EXPECT_EQ(mbedtls_x509write_crt_set_serial(&cert, &serno), 0);
-    mbedtls_mpi_free(&serno);
 
     mbedtls_x509write_crt_set_basic_constraints(&cert, /*is_ca=*/0,
                                                 /*max_pathlen=*/-1);
