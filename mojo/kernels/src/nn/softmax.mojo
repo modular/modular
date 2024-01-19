@@ -344,6 +344,7 @@ fn _softmax_3_pass_base[
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
     @always_inline
+    @parameter
     fn reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -700,7 +701,6 @@ fn softmax_kernel[
 
     @parameter
     @always_inline
-    @closure
     fn _max[
         type: DType, width: Int
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
@@ -708,7 +708,6 @@ fn softmax_kernel[
 
     @parameter
     @always_inline
-    @closure
     fn _sum[
         type: DType, width: Int
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
@@ -779,6 +778,7 @@ fn _softmax_gpu[
         raise Error("softmax not supported on non-inner axis yet")
 
     @always_inline
+    @parameter
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:

@@ -46,7 +46,6 @@ from gpu.memory import AddressSpace
 
 
 @parameter
-@closure
 fn null_bmm_lambda[
     type: DType, width: Int, rank: Int
 ](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width]):
@@ -446,7 +445,6 @@ fn flash_attention[
 
 
 @parameter
-@closure
 @always_inline
 fn _add_capturing[
     type: DType,
@@ -456,7 +454,6 @@ fn _add_capturing[
 
 
 @parameter
-@closure
 @always_inline
 fn _max_capturing[
     type: DType,

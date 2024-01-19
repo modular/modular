@@ -158,6 +158,7 @@ fn main() raises:
         let output_ref = VariadicList[Float32](1.0, 2.1, 3.0, 4.0, 5.0)
 
         @always_inline
+        @parameter
         fn _max[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:

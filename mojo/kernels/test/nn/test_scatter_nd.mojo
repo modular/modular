@@ -453,6 +453,7 @@ fn main() raises:
         )
 
         @always_inline
+        @parameter
         fn _add[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -646,6 +647,7 @@ fn main() raises:
         )
 
         @always_inline
+        @parameter
         fn _max[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -839,6 +841,7 @@ fn main() raises:
         )
 
         @always_inline
+        @parameter
         fn _min[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1032,6 +1035,7 @@ fn main() raises:
         )
 
         @always_inline
+        @parameter
         fn _mul[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
