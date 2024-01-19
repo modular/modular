@@ -17,7 +17,7 @@ from utils.index import Index, StaticIntTuple
 
 # Helper workgroup function to test dynamic workgroup tiling.
 @always_inline
-@closure
+@parameter
 fn print_number_dynamic(data_idx: Int, tile_size: Int):
     # Print out the range of workload that this launched instance is
     #  processing, in (begin, end).
@@ -26,14 +26,14 @@ fn print_number_dynamic(data_idx: Int, tile_size: Int):
 
 # Helper workgroup function to test static workgroup tiling.
 @always_inline
-@closure
+@parameter
 fn print_number_static[tile_size: Int](data_idx: Int):
     print_number_dynamic(data_idx, tile_size)
 
 
 # Helper workgroup function to test static workgroup tiling.
 @always_inline
-@closure
+@parameter
 fn print_tile2d_static[
     tile_size_x: Int, tile_size_y: Int
 ](offset_x: Int, offset_y: Int):
