@@ -143,6 +143,7 @@ fn _small_batched_matmul[
                     c_buf.simd_store[width](indices, value.cast[c_type]())
 
             @always_inline
+            @parameter
             fn reduce_impl[
                 ty: DType, width: Int
             ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
