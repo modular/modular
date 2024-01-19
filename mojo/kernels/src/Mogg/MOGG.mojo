@@ -1443,18 +1443,21 @@ fn reduce_add[
         return
 
     @always_inline
+    @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
+    @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
+    @parameter
     fn reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1499,18 +1502,21 @@ fn reduce_max[
         return
 
     @always_inline
+    @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
+    @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
+    @parameter
     fn reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1555,18 +1561,21 @@ fn reduce_min[
         return
 
     @always_inline
+    @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
+    @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
+    @parameter
     fn reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1612,18 +1621,21 @@ fn reduce_mul[
         return
 
     @always_inline
+    @parameter
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
     @always_inline
+    @parameter
     fn output_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
         output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
+    @parameter
     fn reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -2257,6 +2269,7 @@ fn scatter[
     ctx: MojoCallContextPtr,
 ):
     @always_inline
+    @parameter
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2299,6 +2312,7 @@ fn scatter_add[
     ctx: MojoCallContextPtr,
 ):
     @always_inline
+    @parameter
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2341,6 +2355,7 @@ fn scatter_max[
     ctx: MojoCallContextPtr,
 ):
     @always_inline
+    @parameter
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2383,6 +2398,7 @@ fn scatter_min[
     ctx: MojoCallContextPtr,
 ):
     @always_inline
+    @parameter
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2425,6 +2441,7 @@ fn scatter_mul[
     ctx: MojoCallContextPtr,
 ):
     @always_inline
+    @parameter
     fn reduce_func[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2524,6 +2541,7 @@ fn scatter_nd_add[
         return
 
     @always_inline
+    @parameter
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2576,6 +2594,7 @@ fn scatter_nd_max[
         return
 
     @always_inline
+    @parameter
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2628,6 +2647,7 @@ fn scatter_nd_min[
         return
 
     @always_inline
+    @parameter
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
@@ -2680,6 +2700,7 @@ fn scatter_nd_mul[
         return
 
     @always_inline
+    @parameter
     fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
