@@ -297,7 +297,6 @@ fn paramRefFunc[T: AnyRegType](x: T):
 
 # CHECK-LABEL: lit.func @"orvalueInferType()"
 fn orvalueInferType():
-    @noncapturing
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
@@ -757,7 +756,7 @@ struct StructExample:
     fn __init__() -> Self:
         return Self {}
 
-    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}} isStatic
+    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}}isStatic
     @staticmethod
     fn static(x: Int):
         # CHECK: %0 = {{.*}}#lit.struct<{value = 4}>
@@ -929,7 +928,7 @@ struct TraitMember[T: Copyable]:
     # CHECK: lit.func @"__moveinit__
     # CHECK: call_param{{.*}}__copyinit__
 
-# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.func @"__init__{{.*}}isSynthetic
 # CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
@@ -1050,7 +1049,6 @@ fn closureParameter[
 # CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<{{.*}}[a_param]>
 fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<{{.*}}[b_param]>
-    @noncapturing
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
@@ -1073,7 +1071,6 @@ struct SomeParamStruct[c_param: Int]:
     # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]{{.*}}<{{.*}}[a_param]
     fn topLevelParamFn[a_param: Int](self):
         # CHECK: lit.func *"nestedFunction[{{.*}}$int::Int]()"<{{.*}}[b_param]
-        @noncapturing
         fn nestedFunction[b_param: Int]():
             return
 

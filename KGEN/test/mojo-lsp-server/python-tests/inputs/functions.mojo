@@ -42,7 +42,6 @@ struct SomeStruct[size: Int, other_param: Bool]:
         return 420
 
     fn bar(inout self):
-        @noncapturing
         fn non_capturing_nested_function():
             pass
 

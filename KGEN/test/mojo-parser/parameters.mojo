@@ -156,7 +156,7 @@ struct Pair[dt: DType]:
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}@Pair<:!DType [[DT]]>{{.*}}> attributes {{.*}} isStatic
+  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}@Pair<:!DType [[DT]]>{{.*}}> attributes {{.*}}isStatic
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: !Int {{.*}} 4

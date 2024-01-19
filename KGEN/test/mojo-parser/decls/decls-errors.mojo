@@ -46,7 +46,7 @@ fn testThingWithStaticMethod():
 
 
 def top_level_fn(a: Int):
-    # expected-error @below {{nonparametric capturing closure cannot have input parameters}}
+    # expected-error @below {{TODO: closures cannot have input parameters}}
     fn bar[b: Int]() -> Int:
       return a
 
