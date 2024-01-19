@@ -326,6 +326,22 @@ kgen.func @variant_is() -> i1 {
   kgen.return %1 : i1
 }
 
+// CHECK-LABEL: @variant_create_is_true
+kgen.func @variant_create_is_true(%a: i32) -> i1 {
+  // CHECK-NEXT: constant: i1 = <1>
+  %0 = kgen.variant.create %a, 0 : <i32, f32>
+  %1 = kgen.variant.is %0, 0 : <i32, f32>
+  kgen.return %1 : i1
+}
+
+// CHECK-LABEL: @variant_create_is_false
+kgen.func @variant_create_is_false(%a: i32) -> i1 {
+  // CHECK-NEXT: constant: i1 = <0>
+  %0 = kgen.variant.create %a, 0 : <i32, f32>
+  %1 = kgen.variant.is %0, 1 : <i32, f32>
+  kgen.return %1 : i1
+}
+
 // CHECK-LABEL: @variant_get
 kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
