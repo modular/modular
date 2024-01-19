@@ -12,7 +12,7 @@ from sys.info import (
     simdwidthof,
     has_neon_int8_dotprod,
 )
-from sys.intrinsics import PrefetchOptions, external_call
+from sys.intrinsics import PrefetchOptions
 
 from algorithm import (
     sync_parallelize,
