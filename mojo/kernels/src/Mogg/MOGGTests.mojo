@@ -324,3 +324,55 @@ fn reduce_shape_no_explicit_inline[
     var output_shape = input_buf.get_shape()
     output_shape[axis] = 1
     return output_shape
+
+
+@mogg_register("custom_op_that_raises")
+@export
+fn custom_op_that_raises[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    single_thread_blocking_override: Bool,
+](input_shape: StaticIntTuple[rank], output_shape: StaticIntTuple[rank]) raises:
+    if input_shape[0] == 10:
+        raise ("input_shape[0] == 10")
+
+    @parameter
+    @always_inline
+    fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let x = input_0_fn[simd_width, rank](idx)
+        output_0_fn[simd_width, rank](idx, x)
+
+    _elementwise_impl[
+        rank,
+        simd_width,
+        single_thread_blocking_override,
+        identity,
+        target="cpu",
+    ](
+        input_shape,
+    )
+
+
+@mogg_register_shape_func("custom_op_that_raises")
+@always_inline
+@export
+fn custom_shape_func_that_raises[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) raises -> StaticIntTuple[rank]:
+    # This print ensures we won't symbolicize this shape function call, so we
+    # can test its runtime execution.
+    print("Hello")
+
+    let out_shape = data.get_shape()
+    if out_shape[0] == 20:
+        raise ("data.get_shape()[0] == 20")
+    return out_shape

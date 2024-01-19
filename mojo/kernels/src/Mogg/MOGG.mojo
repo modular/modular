@@ -3871,3 +3871,16 @@ fn mogg_matrix_solve[
         ](a, b, x)
     except e:
         ctx.set_to_error(e)
+
+
+# NOTE we don't inline this because `SymbolicizeFallbackShapeFunctions` pass
+# needs to pattern match for this call to figure out where mojo raises happen
+# inside the shape functions.
+@mogg_register("set_ctx_error_and_destruct_error")
+@no_inline
+@export
+fn set_ctx_error_and_destruct_error(
+    ctx: MojoCallContextPtr, owned error: Error
+):
+    ctx.set_to_error(error)
+    error.__del__()
