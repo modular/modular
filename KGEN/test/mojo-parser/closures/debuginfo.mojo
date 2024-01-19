@@ -15,9 +15,9 @@
 # CHECK-NEXT:    debuginfo.value #[[VAR1:.*]] = %z : index
 # CHECK-NEXT:    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
-# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !wrapper
-# CHECK-NEXT:    %1 = lit.call {{.*}}CW{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
-# CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0)
+# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !index
+# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0)
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 

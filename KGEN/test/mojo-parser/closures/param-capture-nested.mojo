@@ -21,7 +21,7 @@ fn use(a: Int):
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[C_TYPE:.*]]: !DType, |>
 
 # COM: Ensure the captured parameter is added to the Closure Wrapper
-# CHECK: lit.struct.decl @"_CW_{{.*}}"<p0: !DType, |>
+# CHECK: lit.struct.decl @"fn{{.*}}"<p0: !DType, |>
 
 
 fn make_closure[

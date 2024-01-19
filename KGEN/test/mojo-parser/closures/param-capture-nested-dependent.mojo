@@ -9,7 +9,7 @@
 # CHECK: lit.struct.decl @"`_CI_
 # CHECK-SAME: <[[B:.*]]: !Int, [[A:.*]]: !Int, |>
 
-# CHECK: lit.struct.decl @"_CW_
+# CHECK: lit.struct.decl @"fn
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 
 # Check that the closure impl parameter is bound to the struct parameter:
@@ -20,8 +20,8 @@
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT:  %anonymous2A_0 = lit.varlet.decl
-# CHECK-NEXT: lit.call @"${{.*}}"::@"_CW_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A_0, %anonymous2A)
-# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<mut @"${{.*}}"::@"_CW_{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
+# CHECK-NEXT: lit.call @"${{.*}}"::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A_0, %anonymous2A)
+# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<mut @"${{.*}}"::@"fn{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
 
 
 @value

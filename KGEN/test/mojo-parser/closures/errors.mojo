@@ -22,3 +22,6 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
     fn myclosure() escaping -> StringNoCopy:
         # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
         return m
+
+    # expected-error @below {{cannot implicitly convert 'fn() escaping -> StringNoCopy' value to 'fn() escaping -> None' in 'var' initializer}}
+    var y: fn () escaping -> None = myclosure

@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<mut !wrapper, {{.*}}> init_self,
-# CHECK-SAME: %other: {{.*}}!wrapper{{.*}}borrow_in_mem, |)
+# CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<mut !MemType1, {{.*}}> init_self,
+# CHECK-SAME: %other: {{.*}}!MemType1{{.*}}borrow_in_mem, |)
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
@@ -38,7 +38,7 @@
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK: lit.func @"_CW_{{.*}}_copyinit_`_CI_{{.*}}(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow,
+# CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow,
 # CHECK-SAME: %other: !kgen.pointer<none> borrow, |)
 
 # Allocate memory on the heap for impl and copy existing contents into it.

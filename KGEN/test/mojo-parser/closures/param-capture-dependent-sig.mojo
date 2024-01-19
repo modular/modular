@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | kgen-opt -verify-parameters | FileCheck %s
 
-# CHECK: lit.struct.decl @"_CW_{{.*}}"<p0, |>
+# CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
 alias Int = __mlir_type.index
 

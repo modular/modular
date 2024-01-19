@@ -56,11 +56,6 @@ public:
       SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
       SMLoc location);
 
-  /// Generate a unique name for a closure class.
-  static StringAttr getClosureNameFromType(StringRef prefix,
-                                           FileModuleOp fileModuleOp,
-                                           SignatureType signatureType);
-
 private:
   MLIRContext *ctx;
   /// The decl of the surrounding module where code should be synthesized.
