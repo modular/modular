@@ -604,6 +604,12 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
   // Materialize signatures as closures.
   if (auto sig = dyn_cast<SignatureType>(attr.getType())) {
+    if (sig.isCapturing()) {
+      emitError(
+          expr->getLoc(),
+          "TODO: capturing closures cannot be materialized as runtime values");
+      return {};
+    }
     return SRValue(
         builder->create<CreateClosureOp>(location, sig, attr, ValueRange()));
   }
