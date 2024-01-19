@@ -77,10 +77,13 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
-  auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant());
-  if (!variant)
-    return {};
-  return BoolAttr::get(getContext(), variant.getIndex() == getIndex());
+  if (auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant()))
+    return BoolAttr::get(getContext(), variant.getIndex() == getIndex());
+
+  if (auto createOp = getOperand().getDefiningOp<VariantCreateOp>())
+    return BoolAttr::get(getContext(), createOp.getIndex() == getIndex());
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
