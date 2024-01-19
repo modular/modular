@@ -1108,11 +1108,11 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   assert(firstArgIRType == firstArgValue.getType() &&
          "base types should always structurally line up");
 
-  // Partial apply wants to know what operands to bind, we always bind the first
-  // one.
-  auto result = SRValue(emitter.builder->create<CreateClosureOp>(
-      expr->getLocation(emitter), directSymbolAttr, firstArgValue));
-  return emitter.emitCResult(result, expr, dest);
+  // TODO: Need to emit a closure instance that partially applies the 'self'
+  // argument here.
+  emitter.emitError(
+      loc, "TODO: partial application of member methods is not yet supported");
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

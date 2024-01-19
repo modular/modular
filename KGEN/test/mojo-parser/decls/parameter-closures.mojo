@@ -44,17 +44,6 @@ struct BoxedInt:
         return __mlir_op.`index.add`(self.value, rhs)
 
 
-fn member_method_reference():
-    let x = BoxedInt(`3`)
-    # CHECK: %[[SELF:.*]] = lit.call {{.*}}__copyinit__
-    # CHECK: %[[C:.*]] = kgen.create_closure[{{.*}}boxedAdd{{.*}}](%[[SELF]])
-    # CHECK: lit.letreg.decl "closure" = %[[C]]
-    let closure = x.boxedAdd
-    # CHECK: %[[CST:.*]] = kgen.param.constant
-    # CHECK: call_signature %closure(%[[CST]])
-    _ = closure(`2`)
-
-
 struct Param[T: AnyRegType]:
     pass
 
