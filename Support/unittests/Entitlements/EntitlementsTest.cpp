@@ -391,3 +391,19 @@ TEST(TestEntitlementStore, Refresh) {
   e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 }
+
+/// Currently the refresh policy is to return `true` at the midpoint of `to` and
+/// `from`. This test checks this behavior, but will need to be changed if the
+/// default policy also changes.
+TEST(TestRefreshPolicy, CheckMidpoint) {
+  using namespace std::chrono_literals;
+  std::chrono::system_clock::time_point from =
+      std::chrono::system_clock::now() - 1min;
+  std::chrono::system_clock::time_point to3Min =
+      std::chrono::system_clock::now() + 3min;
+  std::chrono::system_clock::time_point to1Min =
+      std::chrono::system_clock::now() + 1min;
+
+  EXPECT_FALSE(defaultEntitlementRefreshPolicy(from, to3Min));
+  EXPECT_TRUE(defaultEntitlementRefreshPolicy(from, to1Min));
+}
