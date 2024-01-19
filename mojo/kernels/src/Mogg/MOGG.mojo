@@ -534,7 +534,8 @@ fn destruct_buffer_list[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ]
 ):
-    list._del_old()
+    # mojo lowering will insert destructor call for `list`
+    pass
 
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
@@ -3883,4 +3884,4 @@ fn set_ctx_error_and_destruct_error(
     ctx: MojoCallContextPtr, owned error: Error
 ):
     ctx.set_to_error(error)
-    error.__del__()
+    # mojo lowering will insert destructor call for `error`
