@@ -357,19 +357,9 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
   setParamDeclAttr(decls.front());
 }
 
-void ParamApplyOp::concretizeCallee(mlir::IRRewriter &b,
-                                    SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
-
 //===----------------------------------------------------------------------===//
 // CostOfOp
 //===----------------------------------------------------------------------===//
-
-void CostOfOp::concretizeCallee(mlir::IRRewriter &b,
-                                SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
 
 ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
@@ -965,11 +955,6 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
-
-void CreateClosureOp::concretizeCallee(mlir::IRRewriter &b,
-                                       SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
 
 void CreateClosureOp::build(OpBuilder &b, OperationState &state,
                             TypedAttr callee, ValueRange captures) {
@@ -1683,21 +1668,7 @@ VariantTakeOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
   return success();
 }
 
-//===----------------------------------------------------------------------===//
-// CaptureListCreateOp
-//===----------------------------------------------------------------------===//
-
-void CaptureListCreateOp::concretizeCallee(mlir::IRRewriter &b,
-                                           SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
-
-void CaptureListCopyOp::concretizeCallee(mlir::IRRewriter &b,
-                                         SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
-
-//===----------------------------------------------------------------------===//
+///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
