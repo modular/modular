@@ -300,3 +300,27 @@ fn concat(
     *variadic_ins: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
 ):
     pass
+
+
+@mogg_register_shape_func("test_custom_op_inline")
+@export
+fn reduce_shape_no_explicit_inline[
+    input_rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[input_rank]:
+    # extract hyper parameter
+    var axis = int(axis_buf[0])
+    if axis < 0:
+        axis += input_rank
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_shape()
+    output_shape[axis] = 1
+    return output_shape
