@@ -12,7 +12,8 @@ import {DisposableContext} from '../utils/disposableContext';
 import {DEBUG_TYPE} from './constants';
 
 /**
- *  Variables grouped by evaluate name.
+ *  Variables grouped by evaluate name. Multiple entries per key represent
+ * shadowed variables.
  */
 type VariablesGroups = Map<VariableEvaluateName, Variable[]>;
 
@@ -32,9 +33,7 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
   private currentFrameId: FrameId = -1;
   /**
    * A mapping from frameId to a grouped list of variables. These groups
-   * represent shadowed variables and they are sorted by declaration. Higher
-   * columns come first in the group, whereas variables without declaration line
-   * come last.
+   * represent shadowed variables.
    */
   public frameToVariables = new Map<FrameId, VariablesGroups>();
   /**
@@ -92,23 +91,9 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
         variablesMap.get(variable.evaluateName)!.push(variable);
       }
 
-      for (const variables of variablesMap.values()) {
-        variables.sort((v1: Variable, v2: Variable): number => {
-          // If v1 has no decl, it comes last.
-          if (v1.declaration === undefined || v1.declaration.line === undefined)
-            return 1;
-
-          // If v2 has no decl, it comes last.
-          if (v2.declaration === undefined || v2.declaration.line === undefined)
-            return -1;
-
-          // The one with the largest line number comes first.
-          return v2.declaration.line - v1.declaration.line;
-        });
-      }
       const frameId =
-          this.variablesRequestIdToFrameId.get(response.request_seq)!
-          this.frameToVariables.set(frameId, variablesMap);
+          this.variablesRequestIdToFrameId.get(response.request_seq)!;
+      this.frameToVariables.set(frameId, variablesMap);
       this.onFrameGotVariables.fire([ frameId, variablesMap ]);
     }
   }
@@ -132,19 +117,94 @@ export class InlineLocalVariablesProvider implements
    * Create the inline text to show for the given variable.
    */
   private createInlineVariableValue(line: number, column: number,
-                                    variable: Variable,
-                                    shadowed: boolean): vscode.InlineValueText {
+                                    variable: Variable):
+      vscode.InlineValueText {
     let displayName = variable.evaluateName;
-    if (shadowed) {
-      if (variable?.declaration?.line !== undefined)
-        displayName += ` @ ${variable.declaration.line}`;
-      else
-        displayName = variable.name;
-    }
     const range = new vscode.Range(line, column, line,
                                    column + variable.evaluateName.length);
     return new vscode.InlineValueText(range,
                                       `${displayName} = ${variable.value}`);
+  }
+
+  /**
+   * Find the column in the document where the given variable is declared.
+   * Currently DWARF doesn't have columns (#29230), so we have to look for the
+   * declaration column using text search in the document.
+   */
+  private findDeclColumn(document: vscode.TextDocument, line: number,
+                         variable: Variable): number|undefined {
+    const text = document.lineAt(line).text;
+    let index = -1;
+
+    // This is used to verify that a candidate declaration for our variable
+    // cannot be expanded into a larger variable name.
+    const forbiddenBoundary = (char?: string) =>
+        char !== undefined && /^[a-zA-Z0-9_]$/.test(char);
+
+    do {
+      index = text.indexOf(variable.evaluateName, index + 1);
+      if (index == -1)
+        break;
+
+      const prev = text[index - 1];
+      const next = text[index + variable.evaluateName.length];
+      if (!forbiddenBoundary(prev) && !forbiddenBoundary(next))
+        return index;
+    } while (true);
+
+    return undefined;
+  }
+
+  /**
+   * Create the list of inline values for a given variable using the LSP's index
+   * of references.
+   */
+  async getInlineValuesForVariable(document: vscode.TextDocument,
+                                   stoppedLocation: vscode.Range,
+                                   variable: Variable):
+      Promise<vscode.InlineValue[]> {
+    const decl = variable.$__lldb_extensions.declaration;
+    const error = variable.$__lldb_extensions.error || "";
+    const path = decl?.path || "";
+    if (decl?.line === undefined || path.length == 0 || error.length > 0)
+      return [];
+    const line = decl.line - 1;
+    // If the decl line is where we are stopped or later, we don't inline the
+    // variable to prevent printing dirty memory.
+    if (line >= stoppedLocation.start.line)
+      return [];
+    let column = this.findDeclColumn(document, line, variable);
+
+    // If there's no column information, we can at least show the variable in
+    // the decl line.
+    if (column === undefined) {
+      return [ this.createInlineVariableValue(line, 0, variable) ];
+    }
+
+    const uri = vscode.Uri.file(path);
+    const lspServer = await this.context.getOrActivateLanguageClient(
+        uri, /*launchLanguageServerSuspended=*/ false);
+    if (lspServer === undefined)
+      return [];
+
+    const references: undefined|any[] =
+        await lspServer.sendRequest("textDocument/references", {
+          textDocument : {
+            uri : uri.toString(),
+          },
+          context : {includeDeclaration : true},
+          position : {
+            line : line,
+            character : column,
+          }
+        });
+    return (references || [])
+        .map(ref => this.createInlineVariableValue(
+                 ref.range.start.line, ref.range.start.character, variable))
+        .filter(
+            // We only keep the references that are on the stop line or above.
+            inlineVar =>
+                inlineVar.range.start.line <= stoppedLocation.start.line);
   }
 
   async provideInlineValues(document: vscode.TextDocument,
@@ -167,32 +227,9 @@ export class InlineLocalVariablesProvider implements
 
     const allValues: vscode.InlineValue[] = [];
     for (const variables of variableGroups.values()) {
-      const shadowed = variables.length > 1;
-      let prevBeginLine = Number.MAX_SAFE_INTEGER;
-
-      // This list is sorted decrementally in terms of line number
       for (const variable of variables) {
-        if (variable.declaration?.line === undefined ||
-            variable.failedValueError !== undefined)
-          continue;
-        // We perform a text search of the variable name within a range that
-        // goes from the declaration line up to where the previous shadowed
-        // variable was declared, or the current breakpoint stop.
-
-        const searchBeginLine = variable.declaration.line - 1;
-        const searchEndLine =
-            Math.min(prevBeginLine - 1, context.stoppedLocation.end.line);
-        for (let line = searchBeginLine; line <= searchEndLine; line++) {
-          const text = document.lineAt(line).text;
-          const re = RegExp(variable.evaluateName, "g");
-          do {
-            var match = re.exec(text);
-            if (match)
-              allValues.push(this.createInlineVariableValue(
-                  line, match.index, variable, shadowed));
-          } while (match);
-        }
-        prevBeginLine = searchBeginLine;
+        allValues.push(...await this.getInlineValuesForVariable(
+            document, context.stoppedLocation, variable));
       }
     }
     return allValues;
