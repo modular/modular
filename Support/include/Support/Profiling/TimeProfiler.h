@@ -567,9 +567,8 @@ struct TimeTraceThreadProfiler {
     end(stack.pop_back_val());
   }
 
-  /// Returns the id of the BeginEvent on the top of the stack of currently
-  /// running entries. Returns 0 if the stack is empty.
-  ProfilerEventId currentId() const { return stack.empty() ? 0 : stack.back(); }
+  ProfilerEventId getCurrentId() const { return currentId; }
+  void setCurrentId(ProfilerEventId id) { currentId = id; }
 
   /// Record a sampling entry.
   template <typename... Args>
@@ -615,8 +614,14 @@ struct TimeTraceThreadProfiler {
   SampleEventList sampleEvents;
   DebugEventList debugEvents;
 
-  // String arena.
+  /// String arena.
   StringArena stringArena;
+
+  /// The 'current' active event id. This can be used to implicitly propagate
+  /// a 'parent' event id into a child event. However, great care must be
+  /// taken to reset this value to prevent erroneous association of parents
+  /// to unrelated children which just happen to run on the same thread.
+  ProfilerEventId currentId = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -843,7 +848,9 @@ struct ProfilerEntry<false> {
 
   static void endAndPop() {}
 
-  static ProfilerEventId currentId() { return 0; }
+  static ProfilerEventId getCurrentId() { return 0; }
+  void setAsCurrentId() {}
+  static void clearCurrentId() {}
 
   template <typename... Args>
   static void sample(uint64_t value, Args &&...args) {}
@@ -862,6 +869,8 @@ struct ProfilerEntry<false> {
 /// Enabled profiling entry. Entries are created only if the profiler is active.
 template <>
 struct ProfilerEntry<true> {
+  ProfilerEntry(ProfilerEventId id) : id(id) {}
+
   // No copy, only move.
   ProfilerEntry(const ProfilerEntry &) = delete;
   ProfilerEntry &operator=(const ProfilerEntry &) = delete;
@@ -921,10 +930,32 @@ struct ProfilerEntry<true> {
       ctx->endAndPop();
   }
 
-  static ProfilerEventId currentId() {
+  /// Returns the event id of the 'current' event for the callers thread.
+  /// May be 0 to indicate no parent.
+  ///
+  /// This is a convenience to convey the notion of 'parent' event into
+  /// child events created by a subroutine. However, since events may be
+  /// begun on one thread and finished on another, care must be taken to
+  /// keep this notion of 'parent' event accurate. See clearCurrentId().
+  static ProfilerEventId getCurrentId() {
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
-      return ctx->currentId();
+      return ctx->getCurrentId();
     return 0;
+  }
+
+  /// Records this profiling entry as the 'current' event for the caller's
+  /// thread. See also clearCurrentId().
+  void setAsCurrentId() {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      ctx->setCurrentId(id);
+  }
+
+  /// Clears the 'current' event for the caller's thread. This should be called
+  /// before execution returns out of the logical scope of a parent profiling
+  /// entry.
+  static void clearCurrentId() {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      ctx->setCurrentId(0);
   }
 
   template <typename... Args>
@@ -949,8 +980,6 @@ struct ProfilerEntry<true> {
   }
 
 private:
-  ProfilerEntry(ProfilerEventId id) : id(id) {}
-
   ProfilerEventId id = 0;
 };
 
