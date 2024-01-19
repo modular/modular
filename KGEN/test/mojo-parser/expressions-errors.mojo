@@ -204,7 +204,7 @@ fn dynamic_used_as_param_2() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   return func_with_static_param[w.x]()
 
-fn higher_order_int_func[func: fn (Int) capturing -> Int]() -> Int:
+fn higher_order_int_func[func: fn (Int) escaping -> Int]() -> Int:
   return func(3)
 
 fn use_non_parameter_func() -> Int:
