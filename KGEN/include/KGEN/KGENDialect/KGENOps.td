@@ -345,6 +345,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let extraClassDeclaration = [{
+    void concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee);
     /// Return the symbol reference to the callee.
     SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
     /// Return the bound input parameter values.
@@ -397,6 +398,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let extraClassDeclaration = [{
+    void concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee);
     bool isAllowedInFunc() { return false; }
   }];
 

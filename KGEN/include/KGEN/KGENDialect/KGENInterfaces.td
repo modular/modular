@@ -187,7 +187,9 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.
     }], "void", "concretizeCallee", (ins "mlir::IRRewriter &":$b,
-      "SymbolConstantAttr":$callee)>
+                                         "SymbolConstantAttr":$callee), [{}], [{
+      $_op.setCalleeAttr(callee);
+    }]>
   ];
 
   let extraSharedClassDeclaration = [{

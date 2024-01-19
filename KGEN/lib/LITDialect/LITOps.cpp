@@ -1800,11 +1800,6 @@ LogicalResult AsyncCallOp::verify() {
   return success();
 }
 
-void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
-                                   SymbolConstantAttr callee) {
-  setCalleeAttr(callee);
-}
-
 bool AsyncCallOp::isImplicitlyParametric() { return true; }
 
 void AsyncCallOp::walkDefinitions(
