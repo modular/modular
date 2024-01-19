@@ -121,7 +121,7 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn MOBI_func[T: AnyRegType](name: StringRef) -> T:
+fn cfunc[T: AnyRegType](name: StringRef) -> T:
     var f = _get_dylib_function["MOF_LIB", _init_dylib, _destroy_dylib, T](name)
     let ptr = Pointer.address_of(f).bitcast[Pointer[NoneType]]().load()
     if not ptr:
@@ -130,7 +130,7 @@ fn MOBI_func[T: AnyRegType](name: StringRef) -> T:
     return f
 
 
-# Note: Keep sections below in sync with mobicc.mojo, including order, grouping
+# Note: Keep sections below in sync with capi.mojo, including order, grouping
 # and naming.
 
 # Note: Please keep the following naming convention: conept_function. For
@@ -151,9 +151,9 @@ fn attr_new_tensor[
     type: TypePtr,
     is_owned: Bool,
 ) -> AttrPtr:
-    return MOBI_func[
+    return cfunc[
         fn (ModulePtr, StringRef, AnyPointer[T], TypePtr, Bool) -> AttrPtr
-    ]("MOBI_attrNewTensor")(module, name, data.data, type, is_owned)
+    ]("MAXG_attrNewTensor")(module, name, data.data, type, is_owned)
 
 
 fn attr_new_tensor(
@@ -163,11 +163,11 @@ fn attr_new_tensor(
     type: TypePtr,
     is_owned: Bool,
 ) -> AttrPtr:
-    return MOBI_func[
+    return cfunc[
         fn (
             ModulePtr, StringRef, DTypePointer[DType.invalid], TypePtr, Bool
         ) -> AttrPtr
-    ]("MOBI_attrNewTensor")(module, name, data, type, is_owned)
+    ]("MAXG_attrNewTensor")(module, name, data, type, is_owned)
 
 
 fn attr_new_tensor_from_file(
@@ -176,8 +176,8 @@ fn attr_new_tensor_from_file(
     file_name: StringRef,
     type: TypePtr,
 ) -> AttrPtr:
-    return MOBI_func[fn (ModulePtr, StringRef, StringRef, TypePtr) -> AttrPtr](
-        "MOBI_attrNewTensorFromFile"
+    return cfunc[fn (ModulePtr, StringRef, StringRef, TypePtr) -> AttrPtr](
+        "MAXG_attrNewTensorFromFile"
     )(module, name, file_name, type)
 
 
@@ -186,8 +186,8 @@ fn attr_new_string(
     name: StringRef,
     value: StringRef,
 ) -> AttrPtr:
-    return MOBI_func[fn (ModulePtr, StringRef, StringRef) -> AttrPtr](
-        "MOBI_attrNewString"
+    return cfunc[fn (ModulePtr, StringRef, StringRef) -> AttrPtr](
+        "MAXG_attrNewString"
     )(module, name, value)
 
 
@@ -197,17 +197,17 @@ fn attr_new_string(
 
 
 fn attr_map_new() -> AttrMapPtr:
-    return MOBI_func[fn () -> AttrMapPtr]("MOBI_attrMapNew")()
+    return cfunc[fn () -> AttrMapPtr]("MAXG_attrMapNew")()
 
 
 fn attr_map_add_attr(inout m: AttrMapPtr, a: AttrPtr):
-    return MOBI_func[fn (AttrMapPtr, AttrPtr) -> NoneType](
-        "MOBI_attrMapAddAttr"
-    )(m, a)
+    return cfunc[fn (AttrMapPtr, AttrPtr) -> NoneType]("MAXG_attrMapAddAttr")(
+        m, a
+    )
 
 
 fn attr_map_size(m: AttrMapPtr) -> Int:
-    return MOBI_func[fn (AttrMapPtr) -> Int]("MOBI_attrMapSize")(m)
+    return cfunc[fn (AttrMapPtr) -> Int]("MAXG_attrMapSize")(m)
 
 
 # ===----------------------------------------------------------------------===#
@@ -222,20 +222,20 @@ fn graph_new(
     inTypes: ArityPtr,
     outTypes: ArityPtr,
 ) -> GraphPtr:
-    return MOBI_func[
+    return cfunc[
         fn (ModulePtr, LocPtr, StringRef, ArityPtr, ArityPtr) -> GraphPtr
-    ]("MOBI_graphNew")(module, loc, name, inTypes, outTypes)
+    ]("MAXG_graphNew")(module, loc, name, inTypes, outTypes)
 
 
 fn graph_get_module(graph: GraphPtr) -> ModulePtr:
-    return MOBI_func[fn (GraphPtr) -> ModulePtr]("MOBI_graphGetModule")(graph)
+    return cfunc[fn (GraphPtr) -> ModulePtr]("MAXG_graphGetModule")(graph)
 
 
 fn graph_get_arg(
     graph: GraphPtr,
     pos: UInt32,
 ) -> SymbolPtr:
-    return MOBI_func[fn (GraphPtr, UInt32) -> SymbolPtr]("MOBI_graphGetArg")(
+    return cfunc[fn (GraphPtr, UInt32) -> SymbolPtr]("MAXG_graphGetArg")(
         graph, pos
     )
 
@@ -248,11 +248,11 @@ fn graph_new_op(
     outTypes: ArityPtr,
     attrs: AttrMapPtr,
 ) -> TuplePtr:
-    return MOBI_func[
+    return cfunc[
         fn (
             GraphPtr, LocPtr, StringRef, TuplePtr, ArityPtr, AttrMapPtr
         ) -> TuplePtr
-    ]("MOBI_graphNewOp")(graph, loc, name, inputs, outTypes, attrs)
+    ]("MAXG_graphNewOp")(graph, loc, name, inputs, outTypes, attrs)
 
 
 # ===----------------------------------------------------------------------===#
@@ -261,7 +261,7 @@ fn graph_new_op(
 
 
 fn loc_new_unknown(module: ModulePtr) -> LocPtr:
-    return MOBI_func[fn (ModulePtr) -> LocPtr]("MOBI_locNewUnknown")(module)
+    return cfunc[fn (ModulePtr) -> LocPtr]("MAXG_locNewUnknown")(module)
 
 
 # ===----------------------------------------------------------------------===#
@@ -270,17 +270,17 @@ fn loc_new_unknown(module: ModulePtr) -> LocPtr:
 
 
 fn module_new() -> ModulePtr:
-    return MOBI_func[fn () -> ModulePtr]("MOBI_moduleNew")()
+    return cfunc[fn () -> ModulePtr]("MAXG_moduleNew")()
 
 
 fn module_verify(module: ModulePtr) -> Bool:
-    return MOBI_func[fn (ModulePtr) -> Bool]("MOBI_moduleVerify")(module)
+    return cfunc[fn (ModulePtr) -> Bool]("MAXG_moduleVerify")(module)
 
 
 fn module_to_string(module: ModulePtr) -> String:
     var len: Int64 = 0
-    let ret = MOBI_func[fn (ModulePtr, Pointer[Int64]) -> Pointer[Int8]](
-        "MOBI_moduleToString"
+    let ret = cfunc[fn (ModulePtr, Pointer[Int64]) -> Pointer[Int8]](
+        "MAXG_moduleToString"
     )(module, Pointer[Int64].address_of(len))
     debug_assert(
         ret[len.to_int()] == 0, "String expects null-terminated buffers"
@@ -289,9 +289,9 @@ fn module_to_string(module: ModulePtr) -> String:
 
 
 fn module_to_bytecode(module: ModulePtr, file_name: String) -> Bool:
-    return MOBI_func[fn (ModulePtr, StringRef) -> Bool](
-        "MOBI_moduleToBytecode"
-    )(module, file_name._strref_dangerous())
+    return cfunc[fn (ModulePtr, StringRef) -> Bool]("MAXG_moduleToBytecode")(
+        module, file_name._strref_dangerous()
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -300,35 +300,33 @@ fn module_to_bytecode(module: ModulePtr, file_name: String) -> Bool:
 
 
 fn symbol_get_graph(symbol: SymbolPtr) -> GraphPtr:
-    return MOBI_func[fn (SymbolPtr) -> GraphPtr]("MOBI_symbolGetGraph")(symbol)
+    return cfunc[fn (SymbolPtr) -> GraphPtr]("MAXG_symbolGetGraph")(symbol)
 
 
 fn symbol_to_string(symbol: SymbolPtr) -> String:
     var len: Int64 = 0
-    let ret = MOBI_func[fn (SymbolPtr, Pointer[Int64]) -> Pointer[Int8]](
-        "MOBI_symbolToString"
+    let ret = cfunc[fn (SymbolPtr, Pointer[Int64]) -> Pointer[Int8]](
+        "MAXG_symbolToString"
     )(symbol, Pointer[Int64].address_of(len))
     return String(ret, len.to_int())
 
 
 fn tuple_new() -> TuplePtr:
-    return MOBI_func[fn () -> TuplePtr]("MOBI_tupleNew")()
+    return cfunc[fn () -> TuplePtr]("MAXG_tupleNew")()
 
 
 fn tuple_size(tup: TuplePtr) -> Int:
-    return MOBI_func[fn (TuplePtr) -> Int]("MOBI_tupleSize")(tup)
+    return cfunc[fn (TuplePtr) -> Int]("MAXG_tupleSize")(tup)
 
 
 fn tuple_add_symbol(inout tup: TuplePtr, symbol: SymbolPtr):
-    return MOBI_func[fn (TuplePtr, SymbolPtr) -> NoneType](
-        "MOBI_tupleAddSymbol"
-    )(tup, symbol)
+    return cfunc[fn (TuplePtr, SymbolPtr) -> NoneType]("MAXG_tupleAddSymbol")(
+        tup, symbol
+    )
 
 
 fn tuple_get_symbol(tup: TuplePtr, pos: UInt32) -> SymbolPtr:
-    return MOBI_func[fn (TuplePtr, UInt32) -> SymbolPtr]("MOBI_getSymbol")(
-        tup, pos
-    )
+    return cfunc[fn (TuplePtr, UInt32) -> SymbolPtr]("MAXG_getSymbol")(tup, pos)
 
 
 # ===----------------------------------------------------------------------===#
@@ -337,34 +335,34 @@ fn tuple_get_symbol(tup: TuplePtr, pos: UInt32) -> SymbolPtr:
 
 
 fn dtype_new(m: ModulePtr, dtype: DType) -> TypePtr:
-    return MOBI_func[fn (ModulePtr, UInt8) -> TypePtr]("MOBI_dTypeNew")(
+    return cfunc[fn (ModulePtr, UInt8) -> TypePtr]("MAXG_dTypeNew")(
         m, dtype._as_i8()
     )
 
 
 fn dim_type_new_dynamic() -> Int64:
-    return MOBI_func[fn () -> Int64]("MOBI_dimTypeNewDynamic")()
+    return cfunc[fn () -> Int64]("MAXG_dimTypeNewDynamic")()
 
 
 fn tensor_type_new(
     m: ModulePtr, dtype: TypePtr, dims: DynamicVector[Int64], ranked: Bool
 ) -> TypePtr:
-    return MOBI_func[
+    return cfunc[
         fn (ModulePtr, TypePtr, Bool, Pointer[Int64], Int32) -> TypePtr
-    ]("MOBI_tensorTypeNew")(
+    ]("MAXG_tensorTypeNew")(
         m, dtype, ranked, Pointer[Int64](dims.data.value), len(dims)
     )
 
 
 fn tensor_type_get_dtype(s: SymbolPtr) -> DType:
-    let dtype = MOBI_func[fn (SymbolPtr) -> UInt8]("MOBI_tensorTypeGetDType")(s)
+    let dtype = cfunc[fn (SymbolPtr) -> UInt8]("MAXG_tensorTypeGetDType")(s)
     return DType._from_ui8(dtype.value)
 
 
 fn tensor_type_get_shape(s: SymbolPtr) -> DynamicVector[Int64]:
     var rank: Int32 = 0
-    let dims = MOBI_func[fn (SymbolPtr, Pointer[Int32]) -> Pointer[Int64]](
-        "MOBI_tensorTypeGetShape"
+    let dims = cfunc[fn (SymbolPtr, Pointer[Int32]) -> Pointer[Int64]](
+        "MAXG_tensorTypeGetShape"
     )(s, Pointer.address_of(rank))
     var dimsVec = DynamicVector[Int64]()
     for i in range(rank):
@@ -373,26 +371,26 @@ fn tensor_type_get_shape(s: SymbolPtr) -> DynamicVector[Int64]:
 
 
 fn tensor_type_is_ranked(s: SymbolPtr) -> Bool:
-    return MOBI_func[fn (SymbolPtr) -> Bool]("MOBI_tensorTypeIsRanked")(s)
+    return cfunc[fn (SymbolPtr) -> Bool]("MAXG_tensorTypeIsRanked")(s)
 
 
 fn type_to_string(type: TypePtr) -> String:
     var len: Int64 = 0
-    let ret = MOBI_func[fn (TypePtr, Pointer[Int64]) -> Pointer[Int8]](
-        "MOBI_typeToString"
+    let ret = cfunc[fn (TypePtr, Pointer[Int64]) -> Pointer[Int8]](
+        "MAXG_typeToString"
     )(type, Pointer[Int64].address_of(len))
     return String(ret, len.to_int())
 
 
 fn arity_new() -> ArityPtr:
-    return MOBI_func[fn () -> ArityPtr]("MOBI_arityNew")()
+    return cfunc[fn () -> ArityPtr]("MAXG_arityNew")()
 
 
 fn arity_size(tup: ArityPtr) -> Int:
-    return MOBI_func[fn (ArityPtr) -> Int]("MOBI_aritySize")(tup)
+    return cfunc[fn (ArityPtr) -> Int]("MAXG_aritySize")(tup)
 
 
 fn arity_add_type(inout arity: ArityPtr, t: TypePtr):
-    return MOBI_func[fn (ArityPtr, TypePtr) -> NoneType]("MOBI_arityAddType")(
+    return cfunc[fn (ArityPtr, TypePtr) -> NoneType]("MAXG_arityAddType")(
         arity, t
     )

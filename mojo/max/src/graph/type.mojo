@@ -7,12 +7,12 @@
 from tensor import TensorSpec
 
 from .module import Module
-from .mobicc import ArityPtr, TypePtr
+from .capi import ArityPtr, TypePtr
 
 
 # TODO: Don't use magic value, return a proper type.
 fn dyn() -> Int64:
-    return mobicc.dim_type_new_dynamic()
+    return capi.dim_type_new_dynamic()
 
 
 trait MOType:
@@ -29,10 +29,10 @@ struct ElementType(MOType):
     var dtype: DType
 
     fn to_mlir(self, m: Module) -> TypePtr:
-        return mobicc.dtype_new(m.m, self.dtype)
+        return capi.dtype_new(m.m, self.dtype)
 
     fn to_string(self, m: Module) -> String:
-        return mobicc.type_to_string(self.to_mlir(m))
+        return capi.type_to_string(self.to_mlir(m))
 
 
 @value
@@ -95,12 +95,12 @@ struct MOTensor(MOType):
     # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> TypePtr:
-        return mobicc.tensor_type_new(
+        return capi.tensor_type_new(
             m.m, self.dtype.to_mlir(m), self.dims, self.ranked
         )
 
     fn to_string(self, m: Module) -> String:
-        return mobicc.type_to_string(self.to_mlir(m))
+        return capi.type_to_string(self.to_mlir(m))
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -162,12 +162,12 @@ struct Arity:
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *types: TypePtr):
-        self.a = mobicc.arity_new()
+        self.a = capi.arity_new()
         for t in types:
-            mobicc.arity_add_type(self.a, t)
+            capi.arity_add_type(self.a, t)
 
     fn __len__(self) -> Int:
-        return mobicc.arity_size(self.a)
+        return capi.arity_size(self.a)
 
     fn to_mlir(self, m: Module) -> ArityPtr:
         return self.a

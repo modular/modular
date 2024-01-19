@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attr import AttrMap
-from .mobicc import AttrPtr, GraphPtr, SymbolPtr, TuplePtr, TypePtr
+from .capi import AttrPtr, GraphPtr, SymbolPtr, TuplePtr, TypePtr
 from .module import Module
 from .symbol import Symbol, Tup
 from .type import dyn, MOType, MOTensor, Arity
@@ -28,10 +28,10 @@ struct Graph:
 
     fn __init__(inout self, g: GraphPtr):
         self.g = g
-        self.m = Module(mobicc.graph_get_module(g))
+        self.m = Module(capi.graph_get_module(g))
 
     fn __getitem__(self, pos: UInt32) -> Symbol:
-        return Symbol(mobicc.graph_get_arg(self.g, pos))
+        return Symbol(capi.graph_get_arg(self.g, pos))
 
     # ===------------------------------------------------------------------=== #
     # nvop - the most generic op builder
@@ -56,7 +56,7 @@ struct Graph:
         attrs: AttrMap,
     ) -> Tup:
         let loc = self.m.unknown_loc()
-        let outputs = mobicc.graph_new_op(
+        let outputs = capi.graph_new_op(
             self.g, loc, name, inputs.t, out_types.to_mlir(self.m), attrs.m
         )
         return Tup(outputs)

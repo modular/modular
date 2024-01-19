@@ -7,7 +7,7 @@
 from tensor import Tensor, TensorSpec, TensorShape
 
 from .type import Arity
-from .mobicc import AttrPtr, LocPtr, ModulePtr, TypePtr
+from .capi import AttrPtr, LocPtr, ModulePtr, TypePtr
 from .symbol import Symbol
 from .type import MOTensor, MOType
 
@@ -21,21 +21,21 @@ struct Module:
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self):
-        self.__init__(mobicc.module_new())
+        self.__init__(capi.module_new())
 
     fn __str__(self) -> String:
-        return mobicc.module_to_string(self.m)
+        return capi.module_to_string(self.m)
 
     # ===------------------------------------------------------------------=== #
     # High level utilities
     # ===------------------------------------------------------------------=== #
 
     fn verify(self) raises:
-        if not mobicc.module_verify(self.m):
+        if not capi.module_verify(self.m):
             raise "Module did not verify"
 
     fn save_to_file(self, path: Path) raises:
-        if not mobicc.module_to_bytecode(self.m, path.__str__()):
+        if not capi.module_to_bytecode(self.m, path.__str__()):
             raise "Error writing to file"
 
     # ===------------------------------------------------------------------=== #
@@ -43,7 +43,7 @@ struct Module:
     # ===------------------------------------------------------------------=== #
 
     fn unknown_loc(self) -> LocPtr:
-        return mobicc.loc_new_unknown(self.m)
+        return capi.loc_new_unknown(self.m)
 
     # ===------------------------------------------------------------------=== #
     # Attribute factories
@@ -53,7 +53,7 @@ struct Module:
         dtype: DType
     ](self, name: StringRef, owned value: Tensor[dtype]) -> AttrPtr:
         let t = MOTensor(value.spec()).to_mlir(self)
-        return mobicc.attr_new_tensor(
+        return capi.attr_new_tensor(
             self.m,
             name,
             value._steal_ptr().bitcast[DType.invalid](),
@@ -64,14 +64,14 @@ struct Module:
     fn tensor_resource_attr(
         self, name: StringRef, file_name: StringRef, type: MOTensor
     ) -> AttrPtr:
-        return mobicc.attr_new_tensor_from_file(
+        return capi.attr_new_tensor_from_file(
             self.m, name, file_name, type.to_mlir(self)
         )
 
     fn vector_attr[
         dtype: DType
     ](self, name: StringRef, values: DynamicVector[Scalar[dtype]]) -> AttrPtr:
-        return mobicc.attr_new_tensor(
+        return capi.attr_new_tensor(
             self.m,
             name,
             values,
@@ -92,7 +92,7 @@ struct Module:
         return self.tensor_attr[dtype](name, Tensor(shape, value))
 
     fn string_attr(self, name: StringRef, value: StringRef) -> AttrPtr:
-        return mobicc.attr_new_string(self.m, name, value)
+        return capi.attr_new_string(self.m, name, value)
 
     # ===------------------------------------------------------------------=== #
     # Graph factories
@@ -104,8 +104,8 @@ struct Module:
         in_types: Arity,
         out_types: Arity,
     ) -> Graph:
-        let unknown = mobicc.loc_new_unknown(self.m)
-        let g = mobicc.graph_new(self.m, unknown, name, in_types.a, out_types.a)
+        let unknown = capi.loc_new_unknown(self.m)
+        let g = capi.graph_new(self.m, unknown, name, in_types.a, out_types.a)
         return Graph(g, self)
 
     # ===------------------------------------------------------------------=== #

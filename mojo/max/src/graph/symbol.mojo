@@ -6,7 +6,7 @@
 
 from .attr import AttrMap
 from .graph import Graph
-from .mobicc import SymbolPtr, TuplePtr
+from .capi import SymbolPtr, TuplePtr
 from .type import *
 from .ops import *
 
@@ -38,7 +38,7 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        return Graph(mobicc.symbol_get_graph(self.s))
+        return Graph(capi.symbol_get_graph(self.s))
 
     # ===------------------------------------------------------------------=== #
     # Type accessors
@@ -46,9 +46,9 @@ struct Symbol(CollectionElement, Stringable):
 
     fn tensor_type(self) -> MOTensor:
         # TODO: Assert that this is an actual Tensor type, raise otherwise.
-        let ranked = mobicc.tensor_type_is_ranked(self.s)
-        let dims = mobicc.tensor_type_get_shape(self.s)
-        let dtype = mobicc.tensor_type_get_dtype(self.s)
+        let ranked = capi.tensor_type_is_ranked(self.s)
+        let dims = capi.tensor_type_get_shape(self.s)
+        let dtype = capi.tensor_type_get_dtype(self.s)
         return MOTensor(ElementType(dtype), dims, ranked)
 
     # ===------------------------------------------------------------------=== #
@@ -56,7 +56,7 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn __str__(self) -> String:
-        return mobicc.symbol_to_string(self.s)
+        return capi.symbol_to_string(self.s)
 
     # ===------------------------------------------------------------------=== #
     # ... to tidy up ...
@@ -291,14 +291,14 @@ struct Tup:
         self.__init__(symbols)
 
     fn __init__(inout self, symbols: VariadicList[Symbol]):
-        self.t = mobicc.tuple_new()
+        self.t = capi.tuple_new()
         for symbol in symbols:
-            mobicc.tuple_add_symbol(self.t, symbol.s)
+            capi.tuple_add_symbol(self.t, symbol.s)
 
     fn __init__(inout self, symbols: DynamicVector[Symbol]):
-        self.t = mobicc.tuple_new()
+        self.t = capi.tuple_new()
         for i in range(len(symbols)):
-            mobicc.tuple_add_symbol(self.t, symbols[i].s)
+            capi.tuple_add_symbol(self.t, symbols[i].s)
 
     # ===------------------------------------------------------------------=== #
     # Convenience tuple adapters
@@ -327,7 +327,7 @@ struct Tup:
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return mobicc.tuple_size(self.t)
+        return capi.tuple_size(self.t)
 
     fn __getitem__(self, pos: UInt32) -> Symbol:
-        return Symbol(mobicc.tuple_get_symbol(self.t, pos))
+        return Symbol(capi.tuple_get_symbol(self.t, pos))
