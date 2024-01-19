@@ -529,12 +529,12 @@ static void convertDbgValueToAddr(ModuleOp module) {
 
       // Build a new allocation to store the intermediate value.
       OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
-      Location prologueLoc = UnknownLoc::get(op->getContext());
+      Location erasedLoc = UnknownLoc::get(op->getContext());
       auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-          prologueLoc, allocBuilder.getI32Type(), 1);
+          erasedLoc, allocBuilder.getI32Type(), 1);
 
       auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
-          prologueLoc, LLVM::LLVMPointerType::get(value.getContext()),
+          erasedLoc, LLVM::LLVMPointerType::get(value.getContext()),
           value.getType(), allocSize, 0);
 
       // Replace the old dbg.value with a dbg.declare.
@@ -565,11 +565,9 @@ static void convertDbgValueToAddr(ModuleOp module) {
           ++insertPt;
 
         // Block arguments might not contain debuginfo scope (which can trip up
-        // verifiers later), so to keep it simple, we can just use the location
-        // of containing op.
+        // verifiers later), so to keep it simple, we also use erasedLoc.
         OpBuilder storeBuilder(&*insertPt);
-        storeBuilder.create<LLVM::StoreOp>(
-            value.getParentRegion()->getParentOp()->getLoc(), value, allocaOp);
+        storeBuilder.create<LLVM::StoreOp>(erasedLoc, value, allocaOp);
       }
     }
   }
