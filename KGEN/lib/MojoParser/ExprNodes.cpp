@@ -497,7 +497,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Find the nearest escaping closure, if there is one.
   ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
-  while (funcDecl && !cast<LIT::FuncOp>(funcDecl).getSignature().isEscaping())
+  while (funcDecl && cast<LIT::FuncOp>(funcDecl).getSignature().isCapturing())
     funcDecl = funcDecl->getParentDecl()->getNearestDeclOfType<LIT::FuncOp>();
 
   ASTDecl *declRef = nullptr;

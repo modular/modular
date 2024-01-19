@@ -63,7 +63,6 @@ def LIT_FuncOp : LITOp<"func", [
     ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
-    UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     UnitAttr:$isInherited,
     UnitAttr:$isSynthetic,

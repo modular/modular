@@ -155,7 +155,6 @@ fn func_arg_conversion(f: DummyFunc): pass
 
 # CHECK-LABEL: lit.func @"implicit_func_conversion()"
 fn implicit_func_conversion():
-    @noncapturing
     def take_int(x: Int):
         pass
 

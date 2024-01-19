@@ -49,7 +49,7 @@ struct Param[T: AnyRegType]:
 
 
 # CHECK-LABEL: lit.func @"capturing_in_struct
-# CHECK-SAME: capturing -> !kgen.none attributes {isParametric
+# CHECK-SAME: capturing -> !kgen.none
 fn capturing_in_struct[x: Param[fn () capturing -> Int]]():
     pass
 

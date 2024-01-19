@@ -20,7 +20,6 @@ fn reference_params_through_imported_struct():
 # CHECK-SAME: <?, [[X:.*]]>(
 # CHECK-SAME: lit.ref<mut {{.*}}ParameterizedType<[[X]]>{{.*}}> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
-    @noncapturing
     fn nested(x: ParameterizedType, y: ParameterizedType[x.value]):
         pass
 
