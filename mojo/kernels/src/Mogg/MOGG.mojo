@@ -1106,14 +1106,14 @@ fn concat_shape[
         "normalized split axis must be within range [0, input_rank)",
     )
 
-    @always_inline
-    fn shape_equal_ignore_axis(
-        s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
-    ) -> Bool:
-        for i in range(input_rank):
-            if i != axis and s1[i] != s2[i]:
-                return False
-        return True
+    # @always_inline
+    # fn shape_equal_ignore_axis(
+    #     s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
+    # ) -> Bool:
+    #     for i in range(input_rank):
+    #         if i != axis and s1[i] != s2[i]:
+    #             return False
+    #     return True
 
     var concat_axis_dim_sum = 0
 
