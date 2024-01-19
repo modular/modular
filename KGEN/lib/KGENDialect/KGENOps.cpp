@@ -1687,18 +1687,14 @@ VariantTakeOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
 // CaptureListCreateOp
 //===----------------------------------------------------------------------===//
 
-TypedAttr CaptureListCreateOp::getCallee() { return getSymbiont(); }
-
 void CaptureListCreateOp::concretizeCallee(mlir::IRRewriter &b,
                                            SymbolConstantAttr callee) {
-  setSymbiontAttr(callee);
+  setCalleeAttr(callee);
 }
-
-TypedAttr CaptureListCopyOp::getCallee() { return getSymbiont(); }
 
 void CaptureListCopyOp::concretizeCallee(mlir::IRRewriter &b,
                                          SymbolConstantAttr callee) {
-  setSymbiontAttr(callee);
+  setCalleeAttr(callee);
 }
 
 //===----------------------------------------------------------------------===//

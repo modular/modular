@@ -63,9 +63,9 @@ public:
   TypedAttr getCallee() {
     // Micro-optimization: `isa` on operations is faster than interfaces.
     if (auto create = dyn_cast<CaptureListCreateOp>(op))
-      return create.getSymbiont();
+      return create.getCallee();
     if (auto copy = dyn_cast<CaptureListCopyOp>(op))
-      return copy.getSymbiont();
+      return copy.getCallee();
     return cast<KGENCallOpInterface>(op).getCallee();
   }
 
@@ -314,14 +314,14 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
     }
 
     if (auto create = dyn_cast<CaptureListCreateOp>(op)) {
-      CallGraphNode *closureNode = getCalleeNode(create.getSymbiont());
+      CallGraphNode *closureNode = getCalleeNode(create.getCallee());
       SmallVector<Value> captures = computeRequiredCaptures(op, closureNode);
       resolveCaptureListCreate(create, targetInfo, captures);
       return;
     }
 
     if (auto copy = dyn_cast<CaptureListCopyOp>(op)) {
-      CallGraphNode *closureNode = getCalleeNode(copy.getSymbiont());
+      CallGraphNode *closureNode = getCalleeNode(copy.getCallee());
       SmallVector<Type> captures = llvm::to_vector(
           llvm::make_second_range(closureNode->requiredPromises));
       resolveCaptureListCopy(copy, targetInfo, captures);
