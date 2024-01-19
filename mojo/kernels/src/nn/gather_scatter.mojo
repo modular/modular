@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, max, min
+from math import div_ceil, max, min, align_down
 from sys.info import sizeof, has_neon
 from sys.intrinsics import PrefetchOptions
 
@@ -35,21 +35,27 @@ from gpu.host.stream import Stream
 
 
 @always_inline
-fn normalize_neg_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
+fn normalize_neg_index[
+    type: DType, width: Int, out_type: DType = DType.index
+](idx: SIMD[type, width], dim_size: Int) -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
     Returns val + dim if val < 0 else val
     """
     debug_assert(
-        -dim_size <= int(idx) < dim_size,
+        (
+            -SIMD[type, width](dim_size) <= idx < SIMD[type, width](dim_size)
+        ).reduce_and(),
         "indices must be in range [-dim_size, dim_size)",
     )
     constrained[
         type.is_integral(),
         "normalize_neg_index expects index to be an integral type",
     ]()
-    return int(idx) + dim_size if idx < 0 else int(idx)
+    return (idx < 0).select(
+        idx.cast[out_type]() + dim_size, idx.cast[out_type]()
+    )
 
 
 @always_inline
@@ -110,7 +116,7 @@ fn gather_reduce[
         num_threads,
     )
 
-    let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
+    let out_vecs_per_thread = div_ceil(indices.dim[0](), num_tasks)
 
     var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
 
@@ -140,67 +146,76 @@ fn gather_reduce[
         let indices = indices_bind
         let row_size = output.dim[1]()
 
-        # need to reduce on an entire 2D slice at a time, otherwise multiple
-        # threads will try to accumulate in the same buffer simultaneously
-        let start_slice = task_id * num_chunks_per_task
-        let end_slice = min(
-            (task_id + 1) * num_chunks_per_task, indices.dim[0]()
+        # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
+        let out_vec_start = task_id * out_vecs_per_thread
+        let out_vec_end = min(
+            (task_id + 1) * out_vecs_per_thread, indices.dim[0]()
         )
-        for i in range(start_slice, end_slice):
+
+        # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
+        alias k_tile_sizes = VariadicList[Int](
+            2 * simd_width, 1
+        ) if has_neon() else VariadicList[Int](
+            8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
+        )
+        # unroll the j loop on neon because it benefits from vectorized
+        # blend instructions and avoids conditional flag dependencies
+        # does not appear to help on other archs
+        alias j_tile_size = 4 if has_neon() else 1
+
+        for i in range(out_vec_start, out_vec_end):
 
             @always_inline
             @parameter
-            fn _accum_in_place[simd_width: Int](k: Int):
-                var accum = SIMD[type, simd_width](reduce_init)
-                for j in range(indices.dim[1]()):
-                    """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
-                    for j in range [0,indices.dim[1])"""
-                    let idx: Int
+            fn gather_k_tile[simd_width: Int](k: Int):
+                @always_inline
+                @parameter
+                fn reduce_j_tile[
+                    unroll_factor: Int
+                ](
+                    accums: StaticTuple[unroll_factor, SIMD[type, simd_width]],
+                    j: Int,
+                ) -> StaticTuple[unroll_factor, SIMD[type, simd_width]]:
+                    var out = accums
+                    let idxs = normalize_neg_index(
+                        indices.simd_load[unroll_factor](i, j), gather_axis_size
+                    )
 
-                    @parameter
-                    if has_neon():  # TODO(#24060): remove this branch
-                        idx = indices[i, j].value
-                    else:
-                        idx = normalize_neg_index(
-                            indices[i, j], gather_axis_size
+                    @unroll
+                    for unroll_idx in range(0, unroll_factor):
+                        let gather_chunk = input.simd_load[simd_width](
+                            int(idxs[unroll_idx]), k
                         )
-
-                    # min so that we don't read beyond end of indices
-                    @parameter
-                    if prefetch_offset > 0:
-                        let clamped_prefetch_offset = min(
-                            prefetch_offset,
-                            indices.dim[0]() * indices.dim[1]()
-                            - (i * indices.dim[1]() + j)
-                            - 1,
+                        out[unroll_idx] = reduce_fn[type, simd_width](
+                            accums[unroll_idx], gather_chunk
                         )
-                        let next_idx_ptr = indices._offset(
-                            StaticIntTuple[indices_rank](i, j)
-                        ) + clamped_prefetch_offset
-                        input.prefetch[
-                            PrefetchOptions()
-                            .for_read()
-                            .high_locality()
-                            .to_data_cache()
-                        ](int(next_idx_ptr.load()), 0)
+                    return out
 
-                    let in_idx = StaticIntTuple[2](idx, k)
+                let j_residual_start = align_down(indices.dim[1](), j_tile_size)
+                var accums = StaticTuple[j_tile_size, SIMD[type, simd_width]](
+                    reduce_init
+                )
+                for j in range(0, j_residual_start, j_tile_size):
+                    accums = reduce_j_tile[j_tile_size](accums, j)
 
-                    let gather_chunk = input.simd_load[simd_width](in_idx)
-                    accum = reduce_fn[type, simd_width](accum, gather_chunk)
+                var accum = SIMD[type, simd_width].splat(reduce_init)
+
+                # TODO: use tree reduction here by generalizing simd reduce method
+                @unroll
+                for unroll_idx in range(j_tile_size):
+                    accum = reduce_fn(accum, accums[unroll_idx])
+
+                for j in range(j_residual_start, indices.dim[1](), 1):
+                    accum = reduce_j_tile[1](
+                        StaticTuple[1, SIMD[type, simd_width]](accum), j
+                    )[0]
 
                 let out_idx = StaticIntTuple[2](i, k)
                 output.simd_store[simd_width](out_idx, accum)
 
-            # TODO(#24060): remove this branch
-            alias tile_sizes = VariadicList[Int](
-                2 * simd_width, 1
-            ) if has_neon() else VariadicList[Int](
-                8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
-            )
             tile[
-                _accum_in_place,
-                tile_sizes,
+                gather_k_tile,
+                k_tile_sizes,
             ](0, row_size)
 
     sync_parallelize[task_func](num_tasks)
@@ -256,8 +271,10 @@ fn gather[
             let next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
-            input_coords[axis] = normalize_neg_index(
-                next_idx_ptr.load(), input.get_shape()[axis]
+            input_coords[axis] = int(
+                normalize_neg_index(
+                    next_idx_ptr.load(), input.get_shape()[axis]
+                )
             )
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
@@ -415,8 +432,8 @@ fn gather[
             @parameter
             fn input_indices_get[unrolled_i: Int]():
                 if unrolled_i == axis.get():
-                    data_indices[unrolled_i] = normalize_neg_index(
-                        data_index, input_shape[axis.get()]
+                    data_indices[unrolled_i] = int(
+                        normalize_neg_index(data_index, input_shape[axis.get()])
                     )
                 elif unrolled_i > axis.get():
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
@@ -557,8 +574,8 @@ async fn async_gather[
             @parameter
             fn input_indices_get[unrolled_i: Int]():
                 if unrolled_i == axis.get():
-                    data_indices[unrolled_i] = normalize_neg_index(
-                        data_index, input_shape[axis.get()]
+                    data_indices[unrolled_i] = int(
+                        normalize_neg_index(data_index, input_shape[axis.get()])
                     )
                 elif unrolled_i > axis.get():
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
@@ -737,7 +754,9 @@ fn scatter_nd_generator[
             indices_index[indices_rank - 1] = dim
 
             let idx_on_axis = indices[indices_index]
-            let pos_idx_on_axis = normalize_neg_index(idx_on_axis, input_ax_dim)
+            let pos_idx_on_axis = int(
+                normalize_neg_index(idx_on_axis, input_ax_dim)
+            )
             output_index_tensor[dim] = pos_idx_on_axis
 
         # Calculate the updates_offset from where to copy the updates.
@@ -1041,7 +1060,9 @@ fn scatter_elements[
         let indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
         let idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
-        output_coords[axis] = normalize_neg_index(idx_on_axis, input_ax_dim)
+        output_coords[axis] = int(
+            normalize_neg_index(idx_on_axis, input_ax_dim)
+        )
         let curr = output[output_coords]
         output[output_coords] = reduce_fn[input_type, 1](
             curr, updates[indices_coords]
@@ -1160,7 +1181,7 @@ fn gather_elements[
         let output_coords = rebind[StaticIntTuple[rank]](_output_coords)
         let idx_on_axis = indices[output_coords]
         var input_coords = output_coords
-        input_coords[axis] = normalize_neg_index(idx_on_axis, input_ax_dim)
+        input_coords[axis] = int(normalize_neg_index(idx_on_axis, input_ax_dim))
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
@@ -1382,7 +1403,9 @@ fn gather_nd[
             for constr in range(reshaped_indices_shape[2]):
                 let input_ax_dim = reshaped_data.get_shape()[constr + 1]
                 let idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
-                idx[constr] = normalize_neg_index(idx_on_axis, input_ax_dim)
+                idx[constr] = int(
+                    normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
 
             # Construct the full index on reshaped_data, where to copy from.
             start_tensor[0] = batch_dim
