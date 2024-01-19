@@ -1038,7 +1038,7 @@ fn concat_from_list[
 ):
     try:
         _concat[rank, type, single_thread_blocking_override](
-            output, normalize_neg_index(axis[0], rank), inputs
+            output, int(normalize_neg_index(axis[0], rank)), inputs
         )
     except e:
         ctx.set_to_error(e)
@@ -1067,7 +1067,7 @@ fn concat[
     try:
         _concat[rank, type, single_thread_blocking_override, target](
             output,
-            normalize_neg_index(buffer_to_scalar(axis), rank),
+            int(normalize_neg_index(buffer_to_scalar(axis), rank)),
             ins,
         )
     except e:
@@ -1182,7 +1182,7 @@ fn cumsum[
     ctx: MojoCallContextPtr,
 ):
     _cumsum[rank, type, exclusive == 1, reverse == 1](
-        output, input, normalize_neg_index(axis[0], rank)
+        output, input, int(normalize_neg_index(axis[0], rank))
     )
 
 
@@ -1211,7 +1211,7 @@ fn split[
     # NOTE: Synchronous, so stack allocated variadic list is safe
     try:
         _split[type, rank](
-            input, normalize_neg_index(axis[0], rank), variadic_outs
+            input, int(normalize_neg_index(axis[0], rank)), variadic_outs
         )
     except e:
         ctx.set_to_error(e)
@@ -1984,7 +1984,7 @@ fn gather[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let axis = normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank)
+    let axis = int(normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank))
 
     @parameter
     @always_inline
@@ -2266,7 +2266,7 @@ fn scatter[
             input,
             indices,
             updates,
-            normalize_neg_index(axis[0], rank),
+            int(normalize_neg_index(axis[0], rank)),
             output,
         )
     except e:
@@ -2308,7 +2308,7 @@ fn scatter_add[
             input,
             indices,
             updates,
-            normalize_neg_index(axis[0], rank),
+            int(normalize_neg_index(axis[0], rank)),
             output,
         )
     except e:
@@ -2350,7 +2350,7 @@ fn scatter_max[
             input,
             indices,
             updates,
-            normalize_neg_index(axis[0], rank),
+            int(normalize_neg_index(axis[0], rank)),
             output,
         )
     except e:
@@ -2392,7 +2392,7 @@ fn scatter_min[
             input,
             indices,
             updates,
-            normalize_neg_index(axis[0], rank),
+            int(normalize_neg_index(axis[0], rank)),
             output,
         )
     except e:
@@ -2434,7 +2434,7 @@ fn scatter_mul[
             input,
             indices,
             updates,
-            normalize_neg_index(axis[0], rank),
+            int(normalize_neg_index(axis[0], rank)),
             output,
         )
     except e:
