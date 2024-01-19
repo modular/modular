@@ -6,9 +6,9 @@
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK: lit.struct.decl @"_CW_
+# CHECK: lit.struct.decl @"fn(
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK: lit.struct.decl @"_CW_
+# CHECK: lit.struct.decl @"fn(
 
 
 fn make_diff_closures(m: StringLiteral, z: Int):

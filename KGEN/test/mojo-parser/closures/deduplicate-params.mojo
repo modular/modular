@@ -15,7 +15,7 @@ struct C[B: Int]:
 
 
 # CHECK-COUNT-1: lit.struct.decl @"`_CI_
-# CHECK-COUNT-1: lit.struct.decl @"_CW_
+# CHECK-COUNT-1: lit.struct.decl @"fn[index](
 
 
 fn use(a: Int):

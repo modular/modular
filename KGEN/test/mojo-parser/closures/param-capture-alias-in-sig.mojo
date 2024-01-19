@@ -7,7 +7,7 @@
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*_X]], |>
-# CHECK: lit.struct.decl @"_CW_{{.*}}"<p0, |>
+# CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
 
 @register_passable
@@ -21,6 +21,6 @@ fn param():
     alias X = __mlir_attr.`2 : index`
 
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}<[[X]]>
-    # CHECK: call {{.*}}_CW_{{.*}}__init__{{.*}}<[[X]]>
+    # CHECK: call {{.*}}fn{{.*}}__init__{{.*}}<[[X]]>
     fn in_sig(y: Param[X]) escaping:
         pass

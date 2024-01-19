@@ -2008,10 +2008,11 @@ LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
   std::pair<SignatureType, StringAttr> key(sig, fileModuleOp.getSymNameAttr());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
-    StringAttr name =
-        ClosureEmitter::getClosureNameFromType("_CW_", fileModuleOp, sig);
+    std::string name =
+        ASTType(sig).getAsString(/*forDiag=*/true, /*demangleParams=*/true);
     ClosureEmitter emitter(*moduleDecl, *this);
-    existing = emitter.createClosureWrapperStructDecl(name, sig, loc);
+    existing = emitter.createClosureWrapperStructDecl(
+        StringAttr::get(getContext(), name), sig, loc);
     impl->closureWrappers[key] = existing;
   }
   return existing;

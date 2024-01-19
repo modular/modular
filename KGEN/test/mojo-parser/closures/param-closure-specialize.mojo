@@ -20,7 +20,7 @@ fn pass_param_closure():
     fn closure(x: Thing[two]) escaping:
         pass
 
-    # CHECK: rebind %{{.*}} : !lit.ref<mut !wrapper, {{.*}}> to !lit.ref<{{.*}}<2>
+    # CHECK: rebind %{{.*}} : !lit.ref<mut !None, {{.*}}> to !lit.ref<{{.*}}<2>
     take_param_closure[two](closure)
 
 

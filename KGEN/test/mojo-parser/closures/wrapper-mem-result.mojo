@@ -14,7 +14,7 @@ struct MemType:
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @"_CW_
+# CHECK-LABEL: lit.struct.decl @"fn
 # CHECK-NEXT:    lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
 # CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<none>> borrow, "other": !kgen.pointer<none> borrow, |) -> !kgen.none>

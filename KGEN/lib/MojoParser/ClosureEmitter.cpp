@@ -46,15 +46,6 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
       opaqueRefType(RefType::getImmortal(true, KGEN::NoneType::get(ctx))) {}
 
-StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
-                                                  FileModuleOp fileModuleOp,
-                                                  SignatureType signatureType) {
-  // Note: Add the trailing "escaping" so that the type alias gets picked up.
-  return StringAttr::get(fileModuleOp.getContext(),
-                         prefix + fileModuleOp.getSymName() + "_" +
-                             ASTType(signatureType).getAsString() + "_wrapper");
-}
-
 static void addFieldsToStruct(StructDeclOp structOp, ArrayRef<Type> fields) {
   OpBuilder b(structOp.getRegion());
   b.setInsertionPointToStart(&structOp.getFields().front());

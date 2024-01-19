@@ -287,7 +287,8 @@ ASTType ASTType::getSignatureUserResultType() const {
 }
 
 /// Pretty print a symbol reference.
-static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
+static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
+                        bool isFunc) {
   if (!forDiag) {
     printNestedSymbolReference(os, symbol);
     return;
@@ -300,8 +301,9 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
     leaf = symbol.getNestedReferences().back().getAttr();
   // Demangle the function name.
   StringRef name = leaf.getValue();
-  if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
-    name = name.take_front(mangleStart);
+  if (isFunc)
+    if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
+      name = name.take_front(mangleStart);
   // For constructors, print the type name instead.
   // TODO: Handle other dunder methods.
   if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
@@ -325,7 +327,7 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     return;
   }
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
-    printSymbol(os, symbolCst.getSymbol(), forDiag);
+    printSymbol(os, symbolCst.getSymbol(), forDiag, /*isFunc=*/true);
     if (!symbolCst.getParamValues().empty()) {
       os << '[';
       llvm::interleaveComma(
@@ -411,7 +413,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   auto printUserType = [&](auto declRef) {
     SymbolRefAttr symbol = declRef.getSymbol();
     // Only print the leaf reference when pretty printing types.
-    printSymbol(os, symbol, forDiag);
+    printSymbol(os, symbol, forDiag, /*isFunc=*/false);
 
     ArrayRef<TypedAttr> params = declRef.getParamValues();
     if (!params.empty()) {
@@ -434,7 +436,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   } else if (auto metaType = dyn_cast<MetaTypeType>(type)) {
     printUserType(metaType);
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
-    printSymbol(os, traitType.getSymbol(), forDiag);
+    printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
   } else if (isNoneType()) {
     os << "None";
   } else if (auto sig = dyn_cast<LITSignatureType>(type)) {
