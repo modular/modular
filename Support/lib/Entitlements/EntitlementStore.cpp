@@ -402,8 +402,10 @@ const mbedtls_x509_crt *Detail::CertificateChain::getLeafCertificate() const {
 bool M::defaultEntitlementRefreshPolicy(
     std::chrono::system_clock::time_point from,
     std::chrono::system_clock::time_point to) {
-  auto midpoint = (from - to) / 2;
-  return std::chrono::system_clock::now().time_since_epoch() > midpoint;
+  // std::duration with some complicated template parameters, hence using auto.
+  auto midpointDur = (to - from) / 2;
+  std::chrono::system_clock::time_point midpoint = from + midpointDur;
+  return std::chrono::system_clock::now() > midpoint;
 }
 
 //===----------------------------------------------------------------------===//
