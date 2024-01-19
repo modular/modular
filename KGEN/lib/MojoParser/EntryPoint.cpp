@@ -200,6 +200,13 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
       op->erase();
       return WalkResult::skip();
     }
+
+    // TODO: this is a hack to allow a better mangling of parameters. The
+    // algorithm should be modified to properly handle alias decls, since they
+    // are no longer globally unique.
+    if (isa<LIT::FuncOp>(op))
+      return WalkResult::skip();
+
     return WalkResult::advance();
   });
 }
