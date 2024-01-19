@@ -1726,10 +1726,10 @@ def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create",
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$symbiont);
+  let arguments = (ins TypedAttrInterface:$callee);
   let results = (outs PointerOf<KGEN_NoneType>:$result);
 
-  let assemblyFormat = "attr-dict custom<ColonTypeParamValue>($symbiont)";
+  let assemblyFormat = "attr-dict custom<ColonTypeParamValue>($callee)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1751,10 +1751,10 @@ def KGEN_CaptureListCopyOp : KGENOp<"capture_list.copy",
   }];
 
   let arguments = (ins PointerOf<KGEN_NoneType>:$orig,
-                       TypedAttrInterface:$symbiont);
+                       TypedAttrInterface:$callee);
   let results = (outs PointerOf<KGEN_NoneType>:$result);
 
-  let assemblyFormat = "$orig attr-dict custom<ColonTypeParamValue>($symbiont)";
+  let assemblyFormat = "$orig attr-dict custom<ColonTypeParamValue>($callee)";
 }
 
 //===----------------------------------------------------------------------===//
