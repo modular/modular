@@ -17,9 +17,6 @@ from math import fma
 # Helper Functions
 # ===----------------------------------------------------------------------===#
 
-# The default integer value for unused optional arguments/parameters.
-alias UNUSED_INT = -1
-
 
 @always_inline
 fn _simd_load_maybe_partial[
@@ -121,7 +118,7 @@ fn accumulate_x86_simd[
     a_stride: Int,
     b: DTypePointer,
     b_stride: Int,
-    partial_load_b_size: Int = UNUSED_INT,
+    partial_load_b_size: Optional[Int] = None,
 ):
     """Compute c += a * b with register tiling on SIMD ISAs other than NEON.
     It has been optimized for AVX512 and AVX2.
@@ -246,7 +243,7 @@ fn accumulate_neon[
     a_stride: Int,
     b: DTypePointer,
     b_stride: Int,
-    partial_load_b_size: Int = UNUSED_INT,
+    partial_load_b_size: Optional[Int] = None,
 ):
     """Compute c += a * b with register tiling on SIMD ISAs other than NEON.
     It has been optimized for AVX512 and AVX2.
@@ -260,12 +257,12 @@ fn accumulate_neon[
 
     Args:
         length: Number of elements in accumulation.
-        a: The input buffer A.
-        b: The input buffer B.
         c: The output buffer, should have num_rows x num_cols x simd_size.
+        a: The input buffer A.
         a_stride: A's stride between each `length` segment.
+        b: The input buffer B.
         b_stride: B's stride between each `num_cols x simd_size` segment.
-        b_end: B's end in it's contiguous dimension, i.e. last dim, row-majored.
+        partial_load_b_size: The partial B load-side.
 
     Don't use prefetch on Arm hardware for now.
     """
