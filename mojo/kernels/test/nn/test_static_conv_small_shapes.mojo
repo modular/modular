@@ -13,7 +13,6 @@ from sys.info import simdwidthof
 from Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
-    direct_null_elementwise_epilogue,
 )
 from ConvUtils import (
     ConvShape,
@@ -91,6 +90,11 @@ fn static_conv(
     let tile_size = get_conv_tile_shape[value_type, micro_kernel_shape[1]](
         conv_shape
     )
+
+    fn direct_null_elementwise_epilogue(
+        n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
+    ) escaping:
+        pass
 
     let instance = ConvDirectNHWC[
         5,

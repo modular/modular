@@ -373,14 +373,7 @@ fn _ho_wo_to_hi_wi(
 # Direct Convolution                                                           #
 # ===----------------------------------------------------------------------=== #
 
-alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) capturing -> None
-
-
-@closure
-fn direct_null_elementwise_epilogue(
-    n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
-):
-    pass
+alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) escaping -> None
 
 
 @value
@@ -438,6 +431,11 @@ struct ConvDirectNHWC[
         filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
     ) raises:
+        fn direct_null_elementwise_epilogue(
+            n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
+        ) escaping:
+            pass
+
         Self.run(
             output,
             input,
@@ -2632,7 +2630,7 @@ fn conv_2d_nhwc_direct[
         wo: Int,
         f_offset: Int,
         f_size: Int,
-    ):
+    ) escaping:
         alias simd_size = simdwidthof[output_type]()
 
         @always_inline

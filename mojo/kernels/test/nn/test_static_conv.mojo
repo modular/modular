@@ -12,7 +12,6 @@ from sys.info import has_avx2, has_avx512f, simdwidthof
 from Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
-    direct_null_elementwise_epilogue,
     pack_filter,
 )
 from ConvUtils import (
