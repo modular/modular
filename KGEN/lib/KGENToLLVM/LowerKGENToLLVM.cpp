@@ -299,6 +299,14 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 // ConvertKGENParamConstant
 //===----------------------------------------------------------------------===//
 
+// Helper for ConvertKGENParamConstant and ConvertKGENParamMaterialize.  Emit a
+// good error when the type to be materialized is a non-materializable literal.
+static void failLiteralMaterialization(Type t, ImplicitLocOpBuilder b) {
+  if (isa<KGEN::IntLiteralType>(t))
+    b.emitError("can't materialize IntLiteral in dynamic context");
+  return;
+}
+
 class ConvertKGENParamConstant
     : public ConvertPOPToLLVMPattern<ParamConstantOp> {
 public:
@@ -313,8 +321,10 @@ public:
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
     Value value = convertParameterToLLVM(b, *getTypeConverter(), &imc, &scope,
                                          op.getValue());
-    if (!value)
+    if (!value) {
+      failLiteralMaterialization(op.getType(), b);
       return failure();
+    }
     rewriter.replaceOp(op, value);
     return success();
   }
@@ -342,8 +352,10 @@ public:
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
     Value value = convertParameterToLLVM(b, *getTypeConverter(), &imc, &scope,
                                          op.getValue());
-    if (!value)
+    if (!value) {
+      failLiteralMaterialization(op.getType(), b);
       return failure();
+    }
     rewriter.replaceOp(op, value);
     return success();
   }
