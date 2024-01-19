@@ -291,23 +291,6 @@ fn testInlineByRef(inout a: AlwaysInlineByRef):
     a.doByRef()
 
 
-# CHECK-LABEL: lit.func @"nestedFnInLoop()"
-fn nestedFnInLoop():
-    # CHECK: lit.loop
-    for i in range(10):
-        # CHECK: lit.call @{{.*}}__next__
-        # CHECK: lit.func *"foo()"
-        @always_inline
-        @noncapturing
-        fn foo() -> Int:
-            # CHECK: %[[I:.*]] = lit.ref.load %i
-            # CHECK-NEXT: return %[[I]]
-            return i
-
-        # CHECK: lit.call_param[!lit.signature<() -> !Int>: *"foo()"]()
-        let result = foo()
-
-
 fn paramRefFunc[T: AnyRegType](x: T):
     pass
 

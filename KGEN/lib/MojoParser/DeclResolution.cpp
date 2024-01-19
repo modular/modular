@@ -886,10 +886,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
   // Process signature decorators in the same scope as signature resolution.
+  // FIXME(jeff): Remove this in a follow-up.
+  bool userSpecifiedEscaping = false;
   auto processSignature = [&] {
-    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls) &&
-        !effects.isEscaping())
+    userSpecifiedEscaping = effects.isEscaping();
+    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls))
       effects.setCapturing();
+    if (funcOp->getParentOfType<LIT::FuncOp>())
+      effects.setEscaping();
 
     // Now that we have figured out the lexical structure, allow decorators to
     // take a crack at the signature.
@@ -898,6 +902,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
           return fnDecorators.apply(decorator, effects);
         });
+
+    // Closures are escaping by default unless the user requests @parameter.
+    if (funcOp.getIsParametric())
+      effects.setEscaping(false);
   };
 
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
@@ -1046,21 +1054,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   shared.setLocationDebugScope(diScopeGuard, funcOp);
 
-  // If this is a nested function, set its parameter declaration. It will be
-  // referenced via parameter references instead of symbol references.
-  if (funcOp->getParentOfType<LIT::FuncOp>())
-    funcOp.setParamDeclAttr(
-        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
-
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
-  if (!funcOp->getParentOfType<FuncOp>() ||
-      (!signature.isCapturing() && !signature.isEscaping()))
+  if (!funcOp->getParentOfType<FuncOp>())
     funcOp.setIsParametric(true);
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.
-  if (!funcOp.getIsParametric()) {
+  if (signature.isEscaping()) {
     // Fully resolve the body so we can swap the IR value of the decl. Later on,
     // we will need this to determine the capture signature.
     decl.resolvedness = DeclResolvedness::fully;
@@ -1072,37 +1073,35 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     bool hasCapture = false;
     mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
                                       [&](OpOperand *) { hasCapture = true; });
-    if (hasCapture || signature.isEscaping()) {
-      if (!signature.isEscaping() && !inputParamDecls.empty()) {
+    if (userSpecifiedEscaping || hasCapture) {
+      if (!inputParamDecls.empty()) {
         return emitError(
             funcOp.getLoc(),
             "nonparametric capturing closure cannot have input parameters");
       }
+      signature = signature.getWithFnEffects(
+          signature.getFnEffects().setCapturing(false));
+      funcOp.setSignature(signature);
 
-      OpBuilder b(funcOp.getContext());
-      b.setInsertionPointAfter(funcOp);
-      auto parent = funcOp->getParentOfType<LIT::FuncOp>();
-      if (!parent)
+      // Emit closure structures necessary for instantiating an escaping
+      // closure
+      if (auto closure =
+              emitClosureInstance(signature, shared, decl, decl.getLoc()))
+        decl.irValue = MRValue(closure);
+      else
         return failure();
-      // Emit Closure structures necessary for instantiating an escaping
-      // closure.
-      if (signature.isEscaping()) {
-        if (!inputParamDecls.empty()) {
-          return emitError(
-              funcOp.getLoc(),
-              "escaping closures cannot have input parameters yet");
-        }
-        if (auto closure =
-                emitClosureInstance(signature, shared, decl, decl.getLoc())) {
-          decl.irValue = MRValue(closure);
-        } else
-          return failure();
-      } else {
-        decl.irValue = SBValue(b.create<CreateClosureOp>(
-            parent.getLoc(), signature,
-            ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
-      }
+    } else {
+      signature = signature.getWithFnEffects(
+          signature.getFnEffects().setEscaping(false));
+      funcOp.setSignature(signature);
+      funcOp.setParamDeclAttr(
+          ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
     }
+  } else if (funcOp->getParentOfType<LIT::FuncOp>()) {
+    // If this is a nested function, set its parameter declaration. It will be
+    // referenced via parameter references instead of symbol references.
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
   }
 
   shared.notifyListenerOnFunctionDecl(decl, identifierLoc);

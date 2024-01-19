@@ -492,29 +492,22 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   AnyValue result =
       emitter.emitDeclReference(spelling, decls, this, refDest, capture);
 
+  if (!capture)
+    return emitter.emitResult(result, this, dest);
+
   // Find the nearest escaping closure, if there is one.
   ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
-  auto isClosureFn = [](LIT::FuncOp func) {
-    SignatureType sig = func.getSignature();
-    return sig.isEscaping() || (sig.isCapturing() && !func.getIsParametric());
-  };
-  while (funcDecl && !isClosureFn(cast<LIT::FuncOp>(funcDecl)))
+  while (funcDecl && !cast<LIT::FuncOp>(funcDecl).getSignature().isEscaping())
     funcDecl = funcDecl->getParentDecl()->getNearestDeclOfType<LIT::FuncOp>();
-  LIT::FuncOp functionContainer = cast_or_null<LIT::FuncOp>(funcDecl);
 
   ASTDecl *declRef = nullptr;
   if (!isa<LIT::FuncOp>(*decls[0])) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
-  bool declRefIsRecordableCapture =
-      funcDecl && functionContainer.getSignature().isEscaping() && declRef;
-
-  if (!capture)
-    return emitter.emitResult(result, this, dest);
 
   // Record Runtime Value Capture.
-  if (declRefIsRecordableCapture) {
+  if (funcDecl && declRef) {
     bool inParentFunc = false;
     for (ASTDecl *decl = declRef->getParentDecl(); decl;
          decl = decl->getParentDecl()) {
@@ -526,80 +519,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!inParentFunc)
       emitter.shared.addCaptureToScope(*funcDecl, declRef, *capture);
   }
-  CValue value = result.getIfCValue();
-  Value mlirValue = capture->getMlirValue();
-
-  // If we are emitting an attribute (for example, type or decorator context),
-  // then capture is delegated to the caller since we do not have enough
-  // information about the context to handle the capture.
-  if (!emitter.builder)
-    return emitter.emitResult(result, this, dest);
-
-  // If this is a capture inside a nonparametric function, emit a copy.
-  if (funcDecl && declRef && !functionContainer.getSignature().isEscaping()) {
-    assert(mlirValue && "unexpected PValue");
-    if (mlirValue.getParentRegion()->isProperAncestor(
-            &functionContainer.getBodyRegion())) {
-      // This is a captured value. Emit a copy and bind the name within the
-      // function to the copied value.
-      FuncOp parentFunc = functionContainer->getParentOfType<FuncOp>();
-      OpBuilder::InsertionGuard guard(*emitter.builder);
-      emitter.builder->setInsertionPoint(functionContainer);
-      // Emit a raw stack allocation.
-      auto ptrType = PointerType::get(value.getRValueType());
-      Value tmp = emitter.builder->create<POP::StackAllocationOp>(
-          parentFunc.getLoc(), ptrType, 1);
-
-      // TODO(references): the stack allocation should have a lifetime.
-      auto immortal = emitter.builder->getAttr<LifetimeAttr>();
-      tmp = emitter.builder->create<RefFromPointerOp>(parentFunc.getLoc(),
-                                                      /*isMut=*/true, tmp,
-                                                      immortal,
-                                                      /*startUninit=*/true,
-                                                      /*endUninit=*/false);
-      ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
-      DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-      if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
-        diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(funcSpAttr);
-      if (!emitter.emitCopyOfValue({value, this}, copyDest)) {
-        copyDest.resetForError();
-        return {};
-      }
-      // Rig the closure formation into emitting a memcpy of the raw value
-      // by causing the whole value to cross the closure boundary.
-      Value rawBytes =
-          emitter.builder->create<RefLoadOp>(parentFunc.getLoc(), tmp);
-
-      // Redeclare the value inside the closure region using a raw stack
-      // allocation. We want the lifetime tracker to ignore this: the object
-      // will live inside the closure.
-      emitter.builder->setInsertionPointToStart(functionContainer.getBody());
-      Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
-          functionContainer.getLoc(), ptrType, 1);
-      // TODO(references): the stack allocation should have a lifetime.
-      localDecl = emitter.builder->create<RefFromPointerOp>(
-          functionContainer.getLoc(), /*isMut=*/true, localDecl, immortal,
-          /*startUninit=*/true, /*endUninit=*/false);
-
-      // Copy the raw bytes in.
-      emitter.builder->create<RefStoreOp>(functionContainer.getLoc(), rawBytes,
-                                          localDecl);
-
-      // If the parent function was malformed somehow, it may not get added
-      // to the symbol table.
-      ASTDecl *parentDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
-          getFullyResolvedSymbolRef(functionContainer));
-      if (!parentDecl)
-        return {};
-
-      // Bind the copy to the name.
-      emitter.getDeclResolver().addFullyResolvedDecl(
-          MBValue(localDecl), spelling, getLoc(), parentDecl);
-      value = MBValue(localDecl);
-    }
-  }
-
-  return emitter.emitResult(value, this, dest);
+  return emitter.emitResult(result, this, dest);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR

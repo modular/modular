@@ -146,37 +146,6 @@ fn member_method_reference():
     _ = closure(`2`)
 
 
-# CHECK-LABEL: lit.func @"capture_by_copy()"
-fn capture_by_copy():
-    var c: BoxedInt = `2`
-
-    # CHECK: [[TMP:%.*]] = pop.stack_allocation
-    # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.from_pointer [[TMP]]
-    # CHECK-NEXT: %[[VAL:.*]] = lit.ref.load %c
-    # CHECK-NEXT: %[[COPY:.*]] = lit.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
-    # CHECK-NEXT: lit.ref.store %[[COPY]], [[TMPREF]]
-    # CHECK-NEXT: %[[RAW:.*]] = lit.ref.load [[TMPREF]]
-    # CHECK-NEXT: lit.func *"value_closure
-    fn value_closure(x: Int):
-        let arg = x
-        # CHECK-NEXT: [[STATE:%.*]] = pop.stack_allocation
-        # CHECK-NEXT: [[STATEREF:%.*]] = lit.ref.from_pointer [[STATE]]
-        # CHECK-NEXT: lit.ref.store %[[RAW]], [[STATEREF]]
-        let capture = c
-
-    # CHECK: %[[CLS:.*]] = kgen.create_closure{{.*}}*"value_closure
-
-    # CHECK: call_signature %[[CLS]](
-    value_closure(`3`)
-
-    # CHECK: lit.func *"doesnt_capture
-    fn doesnt_capture(x: Int):
-        let arg = x
-
-    # CHECK: lit.alias.decl {{.*}}f: {{.*}} = <*"doesnt_capture
-    alias f = doesnt_capture
-
-
 struct Param[T: AnyRegType]:
     pass
 

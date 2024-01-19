@@ -65,8 +65,7 @@ fn issue14191() -> Int:
 
 fn issue1242():
     try:
-        fn decorator(function: fn(abc:Int) capturing -> None) escaping:
-           print("calling a func")
+        let decorator: Int
 
         @decorator # expected-error {{cannot use a dynamic value in decorator}}
         fn on_message(abc:Int) -> None:
