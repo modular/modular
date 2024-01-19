@@ -513,6 +513,20 @@ static void convertDbgValueToAddr(ModuleOp module) {
         continue;
       }
 
+      // If the locationExpr begins with a deref, just pop off the deref and
+      // convert directly into a DbgDeclareOp.
+      ArrayRef<LLVM::DIExpressionElemAttr> location =
+          op.getLocationExpr().getOperations();
+      if (!location.empty() &&
+          location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
+        auto refLocation = LLVM::DIExpressionAttr::get(op->getContext(),
+                                                       location.drop_front());
+        OpBuilder(op).create<LLVM::DbgDeclareOp>(op.getLoc(), value,
+                                                 op.getVarInfo(), refLocation);
+        op->erase();
+        continue;
+      }
+
       // Build a new allocation to store the intermediate value.
       OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
       Location prologueLoc = UnknownLoc::get(op->getContext());
