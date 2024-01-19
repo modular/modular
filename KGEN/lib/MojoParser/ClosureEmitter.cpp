@@ -38,7 +38,6 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       node(moduleDecl.getLoc()), fileModuleOp(cast<FileModuleOp>(moduleDecl)),
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
-      ptrToImplName(StringAttr::get(ctx, "ptrToImpl")),
       dtorFieldAttr(StringAttr::get(ctx, "dtor")),
       copyFieldAttr(StringAttr::get(ctx, "copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
@@ -174,18 +173,12 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
   // Create Copy Member.
-  auto fnType = b.getType<FunctionType>(
-      ArrayRef<Type>({PointerType::get(opaquePtrType), opaquePtrType}),
-      noneType);
-  auto metadata =
-      FnMetadataAttr::get(ctx, {ptrToImplName, otherName},
-                          {PassingKind::PosOnly, PassingKind::PosOnly},
-                          /*numImplicitLifetimeDecls=*/0);
-  auto cpySignatureType =
-      SignatureType::get(fnType,
-                         {ValueInputConvention::BorrowedInReg,
-                          ValueInputConvention::BorrowedInReg},
-                         /*effects=*/{}, metadata);
+  auto fnType =
+      b.getType<FunctionType>(ArrayRef<Type>{opaquePtrType}, opaquePtrType);
+  auto metadata = FnMetadataAttr::get(ctx, {otherName}, {PassingKind::PosOnly},
+                                      /*numImplicitLifetimeDecls=*/0);
+  auto cpySignatureType = SignatureType::get(
+      fnType, {ValueInputConvention::OwnedInReg}, /*effects=*/{}, metadata);
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
@@ -300,10 +293,11 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     auto funcPtrRef = builder.create<RefStructGEROp>(copySelf, copy);
     Value refToImpl = builder.create<RefStructGEROp>(copySelf, impl);
     auto loadedFuncPtr = builder.create<RefLoadOp>(funcPtrRef);
-    refToImpl = builder.create<RefToPointerOp>(refToImpl);
-    builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
-                                    /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
-                                    ValueRange{refToImpl, loadedExistingImpl});
+    auto call = builder.create<CallSignatureOp>(
+        opaquePtrType, loadedFuncPtr,
+        /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+        ValueRange{loadedExistingImpl});
+    builder.create<RefStoreOp>(call.getResult(0), refToImpl);
   }
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
@@ -861,11 +855,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
       generateName("_copyinit_"), topLevelInputParams, paramPassingKinds,
-      {PointerType::get(opaquePtrType), opaquePtrType},
-      {ValueInputConvention::BorrowedInReg,
-       ValueInputConvention::BorrowedInReg},
-      {ptrToImplName, otherName}, {PassingKind::PosOnly, PassingKind::PosOnly},
-      noneType, SpecialFunctionKind::kNormal, loc, builder);
+      {opaquePtrType}, {ValueInputConvention::OwnedInReg}, {otherName},
+      {PassingKind::PosOnly}, opaquePtrType, SpecialFunctionKind::kNormal, loc,
+      builder);
 
   SmallVector<TypedAttr> topLevelInputParamRefs;
   for (auto [i, p] : llvm::enumerate(totalInputParams))
@@ -889,7 +881,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     // Allocate memory on heap and call copy constructor
     Value target = allocateHeapMemory(closureImplTopLevelPtrType, builder);
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelPtrType, body->getArgument(1));
+        closureImplTopLevelPtrType, body->getArgument(0));
 
     // TODO(references): move closures to references and correct lifetimes.
     auto immortal = builder.getAttr<LifetimeAttr>();
@@ -907,15 +899,11 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     ExprEmitter emitter(shared, moduleDecl, builder);
     emitter.emitResult(MBValue(existingRef), &node, copyDest);
 
-    // Store the allocated and populated impl into the closure wrapper.
-    Value ptrToImpl = topLevelCopyInit.getBody()->getArgument(0);
+    // Return the allocated and populated impl.
+    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(), body);
     Value erasedType =
         builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
-    builder.create<POP::StoreOp>(erasedType, ptrToImpl);
-
-    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(), body);
-    ExprEmitter::emitNormalReturn(
-        builder, builder.create<ParamConstantOp>(noneAttr), topLevelCopyInit);
+    ExprEmitter::emitNormalReturn(builder, erasedType, topLevelCopyInit);
     builder.create<LIT::EndFuncOp>();
     setMember(topLevelCopyInit, copyFieldAttr, topLevelTypes.copyFuncFieldType);
   }

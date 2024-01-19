@@ -17,7 +17,7 @@ struct MemType:
 # CHECK-LABEL: lit.struct.decl @"fn
 # CHECK-NEXT:    lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
-# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<none>> borrow, "other": !kgen.pointer<none> borrow, |) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("other": !kgen.pointer<none>, |) -> !kgen.pointer<none>>
 # CHECK-NEXT:    lit.struct.field call : {{.*}}<[1](!lit.ref<mut !MemType, *[0,0]> byref_result, !kgen.pointer<none> borrow, |) -> !kgen.none>
 
 # CHECK-LABEL:   lit.func @"__del__
@@ -66,8 +66,8 @@ struct MemType:
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
-# CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.ref.to_pointer [[SELF_IMPL_REF]]
-# CHECK-NEXT:      lit.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
+# CHECK-NEXT:      [[NEW:%.*]] = lit.call_signature [[COPY]]([[EXISTING_IMPL]])
+# CHECK-NEXT:      store [[NEW]], [[SELF_IMPL_REF]]
 
 # CHECK-LABEL:  lit.func @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.ref.struct.ger %self[field0]
