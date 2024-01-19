@@ -31,15 +31,14 @@
 # CHECK-NEXT:   [[W4:%.*]] = lit.ref.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.
-# CHECK-NEXT:  [[PTR:%.*]] = lit.ref.to_pointer [[W3]]
-# CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[PTR]], [[W1]])
+# CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[W1]])
+# CHECK-NEXT:  store [[W5]], [[W3]]
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow,
-# CHECK-SAME: %other: !kgen.pointer<none> borrow, |)
+# CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
@@ -53,7 +52,7 @@
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
-# CHECK-NEXT:  pop.store [[V4]], %[[PTR_TO_IMPL]] : !kgen.pointer<pointer<none>>
+# CHECK-NEXT:  return [[V4]]
 
 
 @value
