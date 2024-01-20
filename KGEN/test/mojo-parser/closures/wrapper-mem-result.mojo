@@ -23,18 +23,6 @@ struct MemType:
 # CHECK-LABEL:   lit.func @"__del__
 # CHECK-NEXT:      [[REF_TO_IMPL:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = lit.ref.load [[REF_TO_IMPL]]
-# CHECK-NEXT:      %index0 = kgen.param.constant = <0>
-# CHECK-NEXT:      [[SCALAR_IMPL:%.*]] = pop.pointer_to_index [[OPAQUE_IMPL]] : !kgen.pointer<none> to !pop.scalar<index>
-# CHECK-NEXT:      [[INDEX_IMPL:%.*]] = pop.cast_to_builtin [[SCALAR_IMPL]] : !pop.scalar<index> to index
-# CHECK-NEXT:      [[IS_NULL:%.*]] = index.cmp eq([[INDEX_IMPL]], %index0)
-# CHECK-NEXT:      hlcf.if [[IS_NULL]] {
-# CHECK-NEXT:        kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:        lit.ownership.mark_destroyed %self
-# CHECK-NEXT:        lit.return
-# CHECK-NEXT:        hlcf.yield
-# CHECK-NEXT:      } else {
-# CHECK-NEXT:        hlcf.yield
-# CHECK-NEXT:      }
 # CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT:      [[DTOR:%.*]] = lit.ref.load [[DTOR_PTR]]
 # CHECK-NEXT:      lit.call_signature [[DTOR]]([[OPAQUE_IMPL]])
