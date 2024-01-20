@@ -19,6 +19,7 @@ include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
+include "Support/DebugInfoDialect/IR/DebugInfoAttrs.td"
 include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
@@ -413,6 +414,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<SourceNameAttr>:$sourceName,
     EnumProperty<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);

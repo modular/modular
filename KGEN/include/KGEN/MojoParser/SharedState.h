@@ -279,7 +279,7 @@ public:
   void setLocationDebugScope(DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
                              LIT::FuncOp funcOp);
   /// Get the debug source name for a function.
-  DebugInfo::SourceNameAttr getSourceName(LIT::FuncOp func);
+  DebugInfo::SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
 
   //===--------------------------------------------------------------------===//
   // Listener Interface

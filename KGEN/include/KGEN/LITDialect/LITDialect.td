@@ -26,7 +26,8 @@ def LITDialect : Dialect {
   let dependentDialects = [
     "KGENDialect",
     "POP::POPDialect",
-    "HLCF::HLCFDialect"
+    "HLCF::HLCFDialect",
+    "DebugInfo::DebugInfoDialect"
   ];
 
   let useDefaultAttributePrinterParser = 1;

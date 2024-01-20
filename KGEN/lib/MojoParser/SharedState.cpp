@@ -1991,8 +1991,9 @@ void SharedState::traverseImportDirectories(
       return;
 }
 
-DebugInfo::SourceNameAttr SharedState::getSourceName(LIT::FuncOp func) {
-  return impl->sourceNames.getSourceName(func);
+DebugInfo::SourceNameAttr
+SharedState::getSourceName(mlir::SymbolOpInterface op) {
+  return impl->sourceNames.getSourceName(op);
 }
 
 /// Given a valid pointer into a source buffer for some token, return the

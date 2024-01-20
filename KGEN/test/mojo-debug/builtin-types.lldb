@@ -6,9 +6,9 @@
 
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:88' -o 'r' -o 'frame var' | FileCheck %s
+# RUN: %lldb %t -o 'b builtin-types.mojo:99' -o 'r' -o 'frame var' | FileCheck %s
 
-# CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
+# CHECK: (module `builtin-types`::struct ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
 # CHECK:   f32 = {
 # CHECK:     [0] = 24.125
@@ -34,7 +34,7 @@
 # CHECK:     [0] = 485
 # CHECK:   }
 # CHECK: }
-# CHECK: (AStruct) a_struct = {
+# CHECK: (module `builtin-types`::struct AStruct) a_struct = {
 # CHECK:   int = {
 # CHECK:     [0] = 12
 # CHECK:   }
@@ -47,6 +47,9 @@
 # CHECK:       [0] = 123.125
 # CHECK:     }
 # CHECK:   }
+# CHECK: }
+# CHECK: (module `builtin-types`::struct ParamStruct[type]<`:type !kgen.declref<_"$stdlib::$builtin::$int::Int", !lit.metatype<_"$stdlib::$builtin::$int::Int">>`>) p_struct_int = {
+# CHECK:   t = 8
 # CHECK: }
 # CHECK: (scalar<f32>) another_float = {
 # CHECK:   [0] = 4.125
