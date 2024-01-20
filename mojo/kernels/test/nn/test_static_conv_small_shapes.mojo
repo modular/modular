@@ -93,7 +93,7 @@ fn static_conv(
 
     fn direct_null_elementwise_epilogue(
         n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
-    ) escaping:
+    ):
         pass
 
     let instance = ConvDirectNHWC[

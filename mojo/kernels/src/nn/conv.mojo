@@ -433,7 +433,7 @@ struct ConvDirectNHWC[
     ) raises:
         fn direct_null_elementwise_epilogue(
             n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
-        ) escaping:
+        ):
             pass
 
         Self.run(
@@ -2630,7 +2630,7 @@ fn conv_2d_nhwc_direct[
         wo: Int,
         f_offset: Int,
         f_size: Int,
-    ) escaping:
+    ):
         alias simd_size = simdwidthof[output_type]()
 
         @always_inline

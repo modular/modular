@@ -175,7 +175,7 @@ fn fused_attention[
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), score_type],
-    ) escaping:
+    ):
         let row_size = c.dim(1)
         for i in range(start_row, start_row + num_rows):
             let row_view = Buffer[Dim(), DType.float32](
@@ -235,7 +235,7 @@ fn fused_attention[
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), output_type],
-    ) escaping:
+    ):
         pass
 
     # NOTE: synchronous, so the stack allocated score_mem is safe.
