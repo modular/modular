@@ -503,8 +503,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
     SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
-    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo,
-    function_ref<void()> processSignature) {
+    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
   SharedState &shared = typeEmitter.shared;
   ASTDecl &sigDecl = typeEmitter.declScope;
   // If this definition is a struct/class member, compute the self type.
@@ -681,9 +680,6 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       effects.setOwnedRegisterResult();
     }
   }
-  // While the signature decls are still in scope, do additional signature
-  // processing.
-  processSignature();
   return resultType;
 }
 

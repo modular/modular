@@ -134,8 +134,7 @@ struct ParsedArgument {
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
       SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
       ASTDecl *fnDecl = nullptr,
-      SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
-      function_ref<void()> processSignature = [] {});
+      SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
   static PassingKind mapToPassingKind(KWArgHandling handling);
