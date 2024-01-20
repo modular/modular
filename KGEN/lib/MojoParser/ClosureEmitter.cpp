@@ -61,11 +61,11 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
   b.create<RefStoreOp>(value, b.create<RefStructGEROp>(self, field));
 }
 static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
-                       Type type, StringAttr name) {
+                       StringAttr name) {
   b.create<RefStoreOp>(
-      value,
-      b.create<RefStructGEROp>(
-          cast<RefType>(self.getType()).getWithElement(type), name, self));
+      value, b.create<RefStructGEROp>(
+                 cast<RefType>(self.getType()).getWithElement(value.getType()),
+                 name, self));
 }
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
@@ -149,6 +149,95 @@ static LITSignatureType addClosureSelfArgToFunctionSignature(
       sig.getInputParamTypes(), sig.getResultParamTypes(),
       callMemberInputConventions, sig.getFnEffects().setEscaping(false),
       metadata);
+}
+
+/// ```mojo
+/// fn __init__(inout self, f: fn_ptr_type):
+///     self.field0 = f
+///     self.dtor = __closure_wrapper_noop_dtor
+///     self.copy = __closure_wrapper_noop_copy
+///     fn call_impl(field0: !kgen.pointer<none>, *args):
+///         return (fn_ptr_type)(field0)(*args)
+///     self.call = call_impl
+/// ```
+void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
+                                                LITSignatureType sig) {
+  // Skip this if builtins are not found.
+  if (!shared.hasBuiltinModule())
+    return;
+
+  // Declare the function.
+  LITSignatureType fnPtrType =
+      sig.getWithFnEffects(sig.getFnEffects().setEscaping(false));
+  auto b = ImplicitLocOpBuilder::atBlockEnd(
+      translateLocation(decl.getLoc()),
+      &cast<StructDeclOp>(decl).getFields().front());
+  LIT::FuncOp func = createFunction(
+      "__init__", {}, {},
+      {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
+      {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInReg},
+      {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw},
+      noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
+  shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
+                                            &decl);
+  Value self = func.getArgument(0);
+  b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
+
+  // Store the function pointer into the pointer field.
+  Value opaqueFnPtr =
+      b.create<POP::PointerBitcastOp>(opaquePtrType, func.getArgument(1));
+  storeField(b, self, opaqueFnPtr, b.getStringAttr("field0"));
+
+  // Use the no-op destructor and copy constructor.
+  ArrayRef<ASTDecl *> dtor = shared.getBuiltinFunction(
+      decl, "builtin._closure", "__closure_wrapper_noop_dtor", decl.getLoc());
+  ArrayRef<ASTDecl *> copy = shared.getBuiltinFunction(
+      decl, "builtin._closure", "__closure_wrapper_noop_copy", decl.getLoc());
+  if (dtor.empty() || copy.empty())
+    return;
+
+  Value dtorRef = b.create<CreateClosureOp>(
+      cast<LIT::FuncOp>(dtor.front()).getBoundReference());
+  Value copyRef = b.create<CreateClosureOp>(
+      cast<LIT::FuncOp>(copy.front()).getBoundReference());
+  storeField(b, self, dtorRef, b.getStringAttr("dtor"));
+  storeField(b, self, copyRef, b.getStringAttr("copy"));
+
+  // Generate the 'call_impl' function that performs the indirect call.
+  LITSignatureType callImplType = addClosureSelfArgToFunctionSignature(
+      opaquePtrType, ValueInputConvention::BorrowedInReg, fnPtrType);
+  StringAttr lambdaName = b.getStringAttr("call_impl");
+  LIT::FuncOp callImpl = createFunction(
+      lambdaName, {}, {}, callImplType.getValueInputs(),
+      callImplType.getInputConventions(), callImplType.getArgNames(),
+      callImplType.getArgPassingKinds(), fnPtrType.getResultType(),
+      SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
+  auto paramDecl = ParamDeclAttr::get(lambdaName, callImpl.getSignature());
+  callImpl.setParamDeclAttr(paramDecl);
+
+  // Store it into the call field.
+  storeField(b, self,
+             b.create<CreateClosureOp>(ParamDeclRefAttr::get(paramDecl)),
+             b.getStringAttr("call"));
+  b.create<LIT::ReturnOp>(Value(b.create<ParamConstantOp>(NoneAttr::get(ctx))));
+  b.create<EndFuncOp>();
+
+  // Populate the lambda.
+  b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
+  Value fnPtr = b.create<POP::PointerBitcastOp>(
+      fnPtrType, callImpl.getArgument(fnPtrType.hasMemoryOnlyResult()));
+  SmallVector<TypedAttr> lifetimes;
+  for (ParamDeclAttr lifetimeDecl : callImpl.getInputParams())
+    lifetimes.push_back(ParamDeclRefAttr::get(lifetimeDecl));
+  SmallVector<Value> callArgs;
+  llvm::append_range(callArgs, callImpl.getArguments());
+  if (fnPtrType.hasMemoryOnlyResult())
+    std::swap(callArgs[0], callArgs[1]);
+  auto callIndirect =
+      b.create<CallSignatureOp>(fnPtrType.getResultType(), fnPtr, lifetimes,
+                                ArrayRef(callArgs).drop_front());
+  b.create<LIT::ReturnOp>(callIndirect.getResult(0));
+  b.create<EndFuncOp>();
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
@@ -378,6 +467,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();
   }
+
+  synthesizeWrapperFnPtrCtor(astDecl, selfType, dependentSignatureType);
   return declOp;
 }
 
@@ -840,8 +931,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
     auto createClosure =
         builder.create<CreateClosureOp>(funcSymbol, ValueRange());
-    storeField(builder, init.getArgument(0), createClosure, fieldType,
-               fieldName);
+    storeField(builder, init.getArgument(0), createClosure, fieldName);
   };
 
   // Create the top level copy constructor.

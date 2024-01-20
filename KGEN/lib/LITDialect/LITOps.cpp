@@ -304,6 +304,10 @@ static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
 
   auto verifyTypes = [&](StringRef kind, TypeRange types,
                          TypeRange expected) -> LogicalResult {
+    if (types.size() != expected.size()) {
+      return op.emitOpError("callee expected ")
+             << expected.size() << " " << kind << "s but got " << types.size();
+    }
     for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
       if (type == exp)
         continue;

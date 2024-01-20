@@ -374,6 +374,9 @@ public:
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
+  /// Return true if the parser has builtins available.
+  bool hasBuiltinModule() const;
+
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc);
@@ -395,6 +398,10 @@ public:
   /// installed.
   ASTType getBuiltinTupleInstantion(ASTDecl &context, llvm::SMLoc loc,
                                     ArrayRef<Type> elements);
+
+  /// Lookup a builtin special function overload set.
+  ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,
+                                         StringRef fnName, llvm::SMLoc loc);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

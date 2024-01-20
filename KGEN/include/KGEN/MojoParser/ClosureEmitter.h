@@ -74,6 +74,11 @@ private:
 
   /// Given a closure wrapper, collect the top level function types.
   TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);
+
+  /// Synthesize the constructor for a closure wrapper struct from a bare
+  /// function pointer of the same function signature.
+  void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
+                                  LITSignatureType sig);
 };
 
 } // namespace M::KGEN::LIT
