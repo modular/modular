@@ -441,11 +441,11 @@ struct ValueInfo {
                                    : SpecialFunctionKind::kCopyInitReg,
                       FuncIndex::Copy)))
       return {};
-    if (isMemoryOnly) {
-      if (failed(setBit("__moveinit__", SpecialFunctionKind::kMoveInit,
-                        FuncIndex::Move)))
-        return {};
-    }
+    if (failed(setBit("__moveinit__",
+                      isMemoryOnly ? SpecialFunctionKind::kMoveInit
+                                   : SpecialFunctionKind::kMoveInitReg,
+                      FuncIndex::Move)))
+      return {};
     LookupResult inits =
         shared.lookupAndResolveDecl("__init__", astDecl.getLoc(), astDecl,
                                     /*searchParentScopes=*/false);
@@ -615,9 +615,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   };
 
   LIT::FuncOp copyFunc;
-  if (valueInfo.hasCopy()) {
+  if (!valueInfo.hasCopy()) {
     addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
-  } else if (!declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
       Type refToExisting =
           ASTType(selfType).getRefForArgument("existing", /*isMut=*/false);
@@ -635,20 +634,29 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
                                           SpecialFunctionKind::kCopyInitReg)
                      .first;
     }
-    addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
   }
+  addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
   LIT::FuncOp moveFunc;
-  if (valueInfo.hasMove()) {
-    addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
-  } else if (isMemoryOnly) {
-    addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
-    Type refToExisting =
-        ASTType(selfType).getRefForArgument("existing", /*isMut=*/true);
-    moveFunc = addVoidMethod(
-        structDecl, "__moveinit__", {refToSelf, refToExisting},
-        {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
-        {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
-        SpecialFunctionKind::kMoveInit);
+  addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+  if (!valueInfo.hasMove()) {
+    if (isMemoryOnly) {
+      addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+      Type refToExisting =
+          ASTType(selfType).getRefForArgument("existing", /*isMut=*/true);
+      moveFunc = addVoidMethod(
+          structDecl, "__moveinit__", {refToSelf, refToExisting},
+          {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
+          {selfName, existingName},
+          {PassingKind::PosOnly, PassingKind::PosOnly},
+          SpecialFunctionKind::kMoveInit);
+    } else {
+      addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+      moveFunc = synthesizeMethodInStruct(
+                     "__moveinit__", selfType, ValueInputConvention::OwnedInReg,
+                     existingName, PassingKind::PosOnly, selfType, structDecl,
+                     SpecialFunctionKind::kMoveInitReg)
+                     .first;
+    }
   }
   return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
 }
