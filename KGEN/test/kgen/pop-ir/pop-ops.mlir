@@ -441,11 +441,11 @@ kgen.func @addrspacecast(%arg0: !kgen.pointer<none>) {
 }
 
 // CHECK-LABEL: @pointer_bitcast_funcptr
-kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: () -> ()) {
-  // CHECK: pop.pointer.bitcast %arg0 : () -> () to (i32) -> i32
-  %0 = pop.pointer.bitcast %arg0 : () -> () to (i32) -> i32
-  // CHECK: pop.pointer.bitcast %arg0 : () -> () to !kgen.paramref<T>
-  %1 = pop.pointer.bitcast %arg0 : () -> () to !kgen.paramref<T>
+kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: !kgen.signature<() -> ()>) {
+  // CHECK: pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.signature<(i32) -> i32>
+  %0 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.signature<(i32) -> i32>
+  // CHECK: pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.paramref<T>
+  %1 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.paramref<T>
   kgen.return
 }
 
