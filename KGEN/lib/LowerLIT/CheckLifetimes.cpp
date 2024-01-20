@@ -139,7 +139,7 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
 
   // Variants are trivial if all elements are.
   if (auto variantType = dyn_cast<VariantType>(type)) {
-    for (auto elt : variantType.getParameterizedElementTypes())
+    for (Type elt : variantType.getTypes())
       if (!isRegisterPassableTrivial(elt))
         return false;
     return true;

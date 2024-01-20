@@ -641,23 +641,19 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
     ```
   }];
 
-  let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
-  let assemblyFormat = "`<` custom<TypeParamValues>($types) `>`";
+  let parameters = (ins ArrayRefParameter<"Type">:$types);
+  let assemblyFormat = "`<` custom<ParamTypes>($types) `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins
-      "ArrayRef<Type>":$types, "Type":$metaType)>
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
   ];
 
   let extraClassDeclaration = [{
-    /// Get the element types as parameterized types.
-    SmallVector<Type> getParameterizedElementTypes() const;
-
     /// Get an element type as a parameterized type.
-    Type getType(unsigned index);
+    Type getType(unsigned index) const;
 
     /// Return the number of types in the variant.
-    size_t getNumTypes();
+    size_t getNumTypes() const;
   }];
 }
 

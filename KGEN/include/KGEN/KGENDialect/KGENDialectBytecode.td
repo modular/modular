@@ -66,7 +66,7 @@ def PackType : DialectType<(type
 )>;
 
 def VariantType : DialectType<(type
-  TypedAttrArray:$types
+  TypeArray:$types
 )>;
 
 def KGENDialectTypes : DialectTypes<"kgen"> {
