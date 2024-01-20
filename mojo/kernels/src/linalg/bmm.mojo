@@ -252,7 +252,7 @@ fn batched_matmul[
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    ) escaping:
+    ):
         pass
 
     @parameter
@@ -311,7 +311,7 @@ fn batched_matmul[
         start_row: Int,
         num_rows: Int,
         c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    ) escaping:
+    ):
         pass
 
     batched_matmul[
@@ -453,7 +453,7 @@ fn _batched_matmul_cpu[
 
                 elementwise_epilogue_fn[c_type, width, rank](coords, out_val)
 
-            fn rowwise_closure(start_row: Int, num_rows: Int) escaping:
+            fn rowwise_closure(start_row: Int, num_rows: Int):
                 rowwise_epilogue(start_row, num_rows, c_view)
 
             let sub_matmul_config = get_partitioned_matmul[

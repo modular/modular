@@ -1466,12 +1466,10 @@ struct TiledMatmul[
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
     ):
-        fn null_elementwise_epilogue(
-            offset: GemmShape, tile_len: GemmShape
-        ) escaping:
+        fn null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
             pass
 
-        fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+        fn null_rowwise_epilogue(offset: Int, num_rows: Int):
             pass
 
         Self.run(
@@ -1493,7 +1491,7 @@ struct TiledMatmul[
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
-        fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+        fn null_rowwise_epilogue(offset: Int, num_rows: Int):
             pass
 
         Self.run(
@@ -3596,7 +3594,7 @@ fn _submatmul_sequential_sync[
             a_type, b_type, c_type, b_packed, critical_stride, saturated_vnni
         ]()
 
-        fn elementwise_closure(offset: GemmShape, shape: GemmShape) escaping:
+        fn elementwise_closure(offset: GemmShape, shape: GemmShape):
             elementwise_epilogue_c_tile[
                 mm_config.simd_size,
                 c_type,
@@ -3692,7 +3690,7 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
-    fn null_rowwise_epilogue(offset: Int, num_rows: Int) escaping:
+    fn null_rowwise_epilogue(offset: Int, num_rows: Int):
         pass
 
     _submatmul_sequential_sync[
