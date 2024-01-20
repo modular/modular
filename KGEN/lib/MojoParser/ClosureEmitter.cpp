@@ -338,34 +338,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         destructor.getLoc(), destructor.getBody());
     Value dtorSelf = destructor.getBody()->getArgument(0);
-    // Return early if the impl is null.
     Value dtorImpl = loadField(b, dtorSelf, impl);
-    Type scalarIndex = POP::SIMDType::get(
-        1,
-        DTypeConstantAttr::get(ctx, KGENDType(KGENDType::ExtraCases::index)));
-    Value zero = b.create<ParamConstantOp>(b.getIndexAttr(0));
-    Value dtorImplAsIndex = b.create<POP::CastToBuiltinOp>(
-        b.getIndexType(),
-        b.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
-    Value isEqualToZero = b.create<mlir::index::CmpOp>(
-        mlir::index::IndexCmpPredicate::EQ, dtorImplAsIndex, zero);
-    auto ifOp = b.create<HLCF::IfOp>(isEqualToZero);
-    auto insertionPoint = b.saveInsertionPoint();
-
-    // If false, the impl is not null. Continue to destruction.
-    if (ifOp.getElseRegion().empty())
-      ifOp.getElseRegion().push_back(new Block);
-    b = ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
-    b.create<HLCF::YieldOp>();
-
-    // If true, the impl is null and no destruction is needed.
-    if (ifOp.getThenRegion().empty())
-      ifOp.getThenRegion().push_back(new Block);
-    b = ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
-    ExprEmitter::emitNormalReturn(b, b.create<ParamConstantOp>(noneAttr),
-                                  destructor);
-    b.create<HLCF::YieldOp>();
-    b.restoreInsertionPoint(insertionPoint);
     Value callee = loadField(b, dtorSelf, dtor);
     b.create<CallSignatureOp>(noneType, callee,
                               /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
