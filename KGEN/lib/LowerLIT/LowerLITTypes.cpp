@@ -59,6 +59,8 @@ struct StructDeclarations {
   /// A struct declaration representing its field names and types and input
   /// parameters, as well as register passability.
   struct Decl {
+    /// The un-parameterized SourceNameAttr for the struct decl.
+    DebugInfo::SourceNameAttr sourceName;
     /// The field names and types.
     SmallVector<std::pair<StringAttr, Type>> fields;
     /// The struct input parameters.
@@ -452,24 +454,27 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
   SmallVector<DebugInfo::DIMemberType> elementTypes =
       llvm::map_to_vector(decl.fields, getDebugInfoType);
 
-  // Mangle the struct name.
-  std::string name;
-  llvm::raw_string_ostream os(name);
-  printNestedSymbolReference(os, ref.getSymbol());
-  if (!ref.getParamValues().empty()) {
-    os << '[';
-    auto eachFn = [&os](auto bind) {
-      auto [name, value] = bind;
-      os << demangleParameterName(name.getName()) << '='
-         << getParamAsString(value);
-    };
-    llvm::interleaveComma(llvm::zip(decl.decls, ref.getParamValues()), os,
-                          eachFn);
-    os << ']';
+  // Parameterize the raw source name.
+  DebugInfo::SourceNameAttr sourceName = decl.sourceName;
+  // TODO: Make StructDeclOp's sourceName a DefaultValuedAttr once properties
+  // play nicely with it.
+  if (!sourceName) {
+    std::string name;
+    llvm::raw_string_ostream os(name);
+    printNestedSymbolReference(os, ref.getSymbol());
+    sourceName = DebugInfo::SourceNameAttr::get(
+        StringAttr::get(getContext(), name), DebugInfo::SourceNameKind::Struct);
   }
 
-  return DebugInfo::DIStructType::get(StringAttr::get(ref.getContext(), name),
-                                      elementTypes);
+  SmallVector<StringAttr> paramValues;
+  for (TypedAttr value : ref.getParamValues())
+    paramValues.push_back(getParamTypeAsString(value));
+  sourceName = DebugInfo::SourceNameAttr::get(
+      sourceName.getName(), sourceName.getParamTypes(),
+      sourceName.getArgTypes(), paramValues, sourceName.getParent(),
+      sourceName.getKind());
+
+  return DebugInfo::DIStructType::get(sourceName.encode(), elementTypes);
 }
 
 static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
@@ -767,8 +772,8 @@ void LowerLITTypesPass::runOnOperation() {
 
       structDecls.decls.insert(
           {structOp.getNameAttr(),
-           {std::move(fields), structOp.getInputParamsAttr(),
-            structOp.isRegisterPassable()}});
+           {structOp.getSourceNameAttr(), std::move(fields),
+            structOp.getInputParamsAttr(), structOp.isRegisterPassable()}});
       analysis.getTopLevelSymbolTable().erase(structOp);
     } else if (isa<TraitDeclOp>(op)) {
       analysis.getTopLevelSymbolTable().erase(&op);

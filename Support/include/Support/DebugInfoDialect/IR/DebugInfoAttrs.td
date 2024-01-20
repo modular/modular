@@ -106,6 +106,9 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     /// Decode a source name from a mangled string.
     static ErrorOr<SourceNameAttr> decode(MLIRContext *ctx, StringRef str);
   }];
+
+  let constBuilderCall =
+    "DebugInfo::SourceNameAttr::get($_builder.getStringAttr($0))";
 }
 
 //===----------------------------------------------------------------------===//

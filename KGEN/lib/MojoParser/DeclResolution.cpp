@@ -1775,6 +1775,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                                decl);
       });
 
+  // Always generate SourceName for structs (even on non-debug builds).
+  structOp.setSourceNameAttr(shared.getSourceName(structOp));
+
   shared.notifyListenerOnStructDecl(decl, identifierLoc);
   return success();
 }

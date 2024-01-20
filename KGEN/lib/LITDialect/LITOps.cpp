@@ -1168,7 +1168,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/nullptr,
         /*nonmaterializableTarget=*/nullptr,
         /*destructor=*/nullptr, /*moveInit=*/nullptr, /*copyInit=*/nullptr,
-        /*closureSignature=*/nullptr, /*docString=*/nullptr);
+        /*closureSignature=*/nullptr, /*docString=*/nullptr,
+        /*sourceName=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

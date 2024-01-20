@@ -45,6 +45,13 @@ struct AStruct:
         self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
 
 
+struct ParamStruct[T: AnyRegType]:
+    var t: T
+
+    fn __init__(inout self, t: T):
+        self.t = t
+
+
 fn main():
     var a_var_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
@@ -57,6 +64,10 @@ fn main():
     let a_register_passable_struct = ARegisterPassableStruct()
 
     let a_struct = AStruct()
+
+    let p_struct_int = ParamStruct[Int](8)
+
+    let p_struct_stringref = ParamStruct[StringRef]("hello")
 
     let an_int: Int = 123
 
@@ -85,4 +96,4 @@ fn main():
 
     let none = None
 
-    print("end")
+    print("breakpoint")
