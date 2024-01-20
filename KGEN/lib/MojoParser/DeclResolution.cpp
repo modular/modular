@@ -729,11 +729,11 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
     if (capture.isMoveCapture()) {
       // HACK(#16110): This transfers ownership without an explicit `^` from the
       // user, because we don't have capture list syntax.
-      UnaryOpNode transfer(ExprNode::kTransfer, loc, &node);
+      UnaryOpNode transfer(ExprNode::kTransfer, loc, node);
       ValueDest dest(EC_CaptureCopy);
       arg = transfer.emitTransfer(arg, dest, exprEmitter);
     }
-    closureImplInitArgs.push_back({arg, &node});
+    closureImplInitArgs.push_back({arg, node});
   }
 
   ValueDest closureDest;
@@ -743,12 +743,12 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), closureImplInitArgs, &node,
+      ASTType(closureImplType), closureImplInitArgs, node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
   // Emit the Closure Wrapper instance.
   ValueDest closureWrapperDest;
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
-  closureWrapperInitArgs.push_back({value, &node});
+  closureWrapperInitArgs.push_back({value, node});
 
   // Create the ClosureWrapper type by binding parent parameters to the
   // ClosureWrapper type.
@@ -757,7 +757,7 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
       closureWrapper.bindReference(llvm::map_to_vector(
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
-      ASTType(closureWrapperType), closureWrapperInitArgs, &node,
+      ASTType(closureWrapperType), closureWrapperInitArgs, node,
       CallSyntax::kTypeCall, closureWrapperDest,
       /*allowImplicitConversion=*/false);
 
@@ -1077,7 +1077,7 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
                                     ASTDecl &parentDecl, ExprEmitter &emitter,
                                     SMLoc loc) {
   // Expr to provide location information.
-  DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
+  SyntheticNode srcLoc(loc);
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
   auto variadicEltType =
@@ -1099,9 +1099,9 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
-  ASTExprAnd<AnyValue> ctorArg = {argValue, &srcExpr};
+  ASTExprAnd<AnyValue> ctorArg = {argValue, srcLoc};
   CValue ctorResult = emitter.emitConstructorCall(
-      varListType, ctorArg, &srcExpr, CallSyntax::kTypeCall, ctorDest);
+      varListType, ctorArg, srcLoc, CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
     ctorDest.resetForError();
     return {};
@@ -1120,9 +1120,8 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
       VarLetDeclKind::Implicit);
 
   // Expr to provide location information.
-  DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
   ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
-  if (!emitter.emitBValue({argValue, &srcExpr}, dest))
+  if (!emitter.emitBValue({argValue, SyntheticNode(loc)}, dest))
     dest.resetForError();
 
   return varDecl;
@@ -1165,8 +1164,8 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       // Create a dummy node to pass down.
       SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
-          objType, {}, &locExpr, CallSyntax::kImplicitConvert, resultDest);
-      if (!result || !emitter.emitResult(result, &locExpr, resultDest))
+          objType, {}, locExpr, CallSyntax::kImplicitConvert, resultDest);
+      if (!result || !emitter.emitResult(result, locExpr, resultDest))
         resultDest.resetForError();
       else
         makeNoneReturn();
@@ -2229,9 +2228,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       llvm_unreachable("unexpected input convention");
     }
     if (kind == PassingKind::KwOnly)
-      kwOperands.insert({name, {value, &node}});
+      kwOperands.insert({name, {value, node}});
     else
-      posOperands.push_back({value, &node});
+      posOperands.push_back({value, node});
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -2241,7 +2240,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
 
   CValue callResult = emitter.emitCallUnchecked(
-      PValue(callee), CallOperands(posOperands, &kwOperands), dest, &node);
+      PValue(callee), CallOperands(posOperands, &kwOperands), dest, node);
   if (!callResult)
     return;
 
@@ -2249,8 +2248,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   if (memSig.isAsync()) {
     ValueDest dest(EC_Trait);
     callResult =
-        emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, &node},
-                                    dest, CallSyntax::kMethodCall, &node);
+        emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, node},
+                                    dest, CallSyntax::kMethodCall, node);
     if (!callResult)
       return;
   }
@@ -2265,7 +2264,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     retVal =
         builder.create<ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
   } else {
-    retVal = emitter.emitSRValue({callResult, &node}, EC_Trait);
+    retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
   }
   if (memSig.isThrows()) {
     retVal = builder.create<VariantCreateOp>(memSig.getResultType(), retVal,
@@ -2434,7 +2433,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
              SpecialFunctionKind::kDel},
             SpecialFunctionInfo::getKind(name));
 
-        OverloadSet ov(name, decls, std::move(bindings), &node,
+        OverloadSet ov(name, decls, std::move(bindings), node,
                        CallSyntax::kMethodCall);
         PValue result = ov.filterOverloadSetForValueType(
             newSignature, emitError

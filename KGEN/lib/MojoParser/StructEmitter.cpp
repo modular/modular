@@ -271,9 +271,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
       // Project self to the right field and store the RValue.
       auto fieldRef = builder.create<RefStructGEROp>(selfArg, field);
-      SyntheticNode srcExpr(structDecl.getLoc());
-      emitter.emitStoreToLValue({argVal, &srcExpr}, MLValue(fieldRef),
-                                EC_AttributeRefBase);
+      emitter.emitStoreToLValue({argVal, SyntheticNode(structDecl.getLoc())},
+                                MLValue(fieldRef), EC_AttributeRefBase);
     }
 
     // Finish off the function with a return + lit.endfunc.
@@ -334,9 +333,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
       Value srcFieldOp = b.create<RefStructGEROp>(copyExisting, fieldOp);
       CValue src =
           isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-      SyntheticNode srcExpr(location);
-      emitter.emitStoreToLValue({src, &srcExpr}, MLValue(targetFieldOp),
-                                EC_AttributeRefBase);
+      emitter.emitStoreToLValue({src, SyntheticNode(location)},
+                                MLValue(targetFieldOp), EC_AttributeRefBase);
     }
     return success();
   }
@@ -348,11 +346,10 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   SmallVector<Value> fieldVals;
   SmallVector<StringAttr> fieldNames;
   for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
-    SyntheticNode srcExpr(location);
     Value fieldValue = b.create<StructExtractOp>(existingArg, fieldOp);
     // Emit an SBValue -> SRValue conversion to get ownership of the value.
-    Value copiedVal =
-        emitter.emitSRValue({SBValue(fieldValue), &srcExpr}, EC_CallArgValue);
+    Value copiedVal = emitter.emitSRValue(
+        {SBValue(fieldValue), SyntheticNode(location)}, EC_CallArgValue);
     if (!copiedVal)
       return failure();
     fieldVals.push_back(copiedVal);

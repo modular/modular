@@ -30,6 +30,24 @@ namespace M::KGEN::LIT {
 struct ParsedArgument;
 class SRValue;
 
+/// The ExprEmitter depends on ExprNode to provide a location and emit IR for
+/// its value. In the case of synthetic code, there is a source sequence that
+/// triggered the generation but not necessarily a value associated with the
+/// synthetic code. To solve this, we use the synthetic node which will vend a
+/// location to the emitter but has no value.
+struct SyntheticNode final : public ExprNode {
+  SyntheticNode(SMLoc loc) : ExprNode(kSynthetic), location(loc) {}
+
+  const SMLoc location;
+
+  static bool classof(const ExprNode *node) { return node->kind == kSynthetic; }
+  SMLoc getLoc() const override { return location; }
+  SourceRange getRange() const override { return {getLoc(), getLoc()}; }
+  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+
+  operator ExprNode *() { return this; }
+};
+
 /// This returns an SMLoc from a StringRef that points into the source buffer.
 inline SMLoc getSMLocFromStringRef(StringRef bufferRef,
                                    uint8_t startOffset = 0) {
@@ -155,22 +173,6 @@ struct DeclRefNode final : public ExprNode, Identifier {
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getIdentifierLoc(); }
   SourceRange getRange() const override { return getIdentifierRange(); }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-};
-
-/// The ExprEmitter depends on ExprNode to provide a location and emit IR for
-/// its value. In the case of synthetic code, there is a source sequence that
-/// triggered the generation but not necessarily a value associated with the
-/// synthetic code. To solve this, we use the synthetic node which will vend a
-/// location to the emitter but has no value.
-struct SyntheticNode final : public ExprNode {
-  SyntheticNode(SMLoc loc) : ExprNode(kSynthetic), location(loc) {}
-
-  const SMLoc location;
-
-  static bool classof(const ExprNode *node) { return node->kind == kSynthetic; }
-  SMLoc getLoc() const override { return location; }
-  SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 

@@ -191,9 +191,9 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // the expected type.
       ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
-      if (emitter.canImplicitlyConvertToType({actualAttr, &node},
+      if (emitter.canImplicitlyConvertToType({actualAttr, node},
                                              expectedType)) {
-        PValue result = emitter.emitPValue({actualAttr, &node},
+        PValue result = emitter.emitPValue({actualAttr, node},
                                            EC_TypeParamValue, expectedType);
         if (result)
           inferredValues.push_back(result);
@@ -399,10 +399,10 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         Type metatype = toPush.getMetaType();
         TypedAttr actualAttr = TypeConstantAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
-        if (!emitter.canImplicitlyConvertToType({actualAttr, &node},
+        if (!emitter.canImplicitlyConvertToType({actualAttr, node},
                                                 elementType))
           return {};
-        PValue result = emitter.emitPValue({actualAttr, &node},
+        PValue result = emitter.emitPValue({actualAttr, node},
                                            EC_TypeParamValue, elementType);
         if (!result)
           return {};

@@ -83,10 +83,6 @@ public:
                               Precedence minPrec = Precedence::kExpression);
   ParseResult parseStarredItem(ExprNode *&result);
 
-  ExprNode *getNoneExpr(SMLoc loc) {
-    return alloc<SimpleLiteralNode>(ExprNode::kNoneLiteral, loc);
-  };
-
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
     return shared.allocPersistent<T>(std::forward<Args>(args)...);
@@ -507,7 +503,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   }
   case Token::kw_None:
     consumeToken(Token::kw_None);
-    result = getNoneExpr(startTok.getLoc());
+    result =
+        alloc<SimpleLiteralNode>(ExprNode::kNoneLiteral, startTok.getLoc());
     break;
   case Token::l_paren: // primary -> atom -> enclosure -> parenth_form
     consumeToken(Token::l_paren);
@@ -543,8 +540,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     // will have handled that, so we can return here.
     return parseLambda(result);
 
-  case Token::kw_ref:      // ref [lifetime] type
-  case Token::kw_mutref:   // mutref [lifetime] type
+  case Token::kw_ref:    // ref [lifetime] type
+  case Token::kw_mutref: // mutref [lifetime] type
     if (failed(parseReferenceType(result)))
       return failure();
     break;
@@ -1283,9 +1280,4 @@ ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&result,
                                                   size_t stmtIndent) {
   return ExprParser(shared, getLexer(), stmtIndent)
       .parseStarredListAsTuple(result, /*terminators=*/{});
-}
-
-/// Return an expression node for None at the specified location.
-ExprNode *ParserBase::getNoneExpr(SMLoc loc) {
-  return ExprParser(shared, getLexer(), 0).getNoneExpr(loc);
 }
