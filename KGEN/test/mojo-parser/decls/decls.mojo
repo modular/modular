@@ -499,9 +499,11 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%variadic)
     variadics()
-    # CHECK: %variadic_0 = kgen.param.constant: variadic<!Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
-    # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%variadic_0)
-    variadics(7, 11, 13)
+    # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}value = 7
+    # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}value = 11
+    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [[[C7]], [[C11]]]
+    # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"([[VARIADIC]])
+    variadics(7, 11)
     # CHECK: %[[VAR:.*]] = pop.variadic.splat %x, 1
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%[[VAR]])
     variadics(x)
@@ -568,12 +570,15 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> []>
     let e = MyTuple()
 
-    # CHECK: %[[PACK1:.*]] = kgen.param.constant: !kgen.pack<[index]> = <<1>>
+    # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
+    # CHECK: %[[PACK1:.*]] = kgen.pack.create([[C1]])
     # CHECK: lit.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
     pack(Int(1).value)
-    # CHECK: %[[PACK2:.*]] = kgen.param.constant: !kgen.pack<[index, {{.*}}FloatLiteral, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
-    # CHECK: lit.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral, index]>(%[[PACK2]])
-    pack(Int(1).value, 3.14, Int(2).value)
+    # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
+    # CHECK: [[C3:%.*]] = kgen.param.constant{{.*}}3.14
+    # CHECK: %[[PACK2:.*]] = kgen.pack.create([[C1]], [[C3]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral]>(%[[PACK2]])
+    pack(Int(1).value, 3.14)
     # CHECK: %[[PACK3:.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
     # CHECK: lit.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
     pack()
@@ -1116,9 +1121,10 @@ fn returnTup0a() -> ():
 # CHECK-LABEL: lit.func @"returnTup1
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> [!Int]>
 fn returnTup1() -> Tuple[Int]:
-  # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[!Int]>
-  # CHECK-NEXT: %1 = lit.call{{.*}}__init__
-  # CHECK-NEXT: lit.return
+  # CHECK-NEXT: %0 = kgen.param.constant: !Int
+  # CHECK-NEXT: %1 = kgen.pack.create(%0) : !kgen.pack<[!Int]>
+  # CHECK-NEXT: %2 = lit.call{{.*}}__init__
+  # CHECK-NEXT: lit.return %2
   return (Int(4),)
 
 # CHECK-LABEL: lit.func @"returnTup1
@@ -1132,13 +1138,15 @@ fn returnTup1b() -> (Int,):
 # CHECK-LABEL: lit.func @"returnTup2
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<type> [!Int, !FloatLiteral]>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
-  # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: %0 = kgen.param.constant{{.*}}value = 4
+  # CHECK-NEXT: %1 = kgen.param.constant{{.*}}"2"
+  # CHECK-NEXT: kgen.pack.create(%0, %1)
   return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<type> [!Int, !FloatLiteral]>
 fn returnTup2a() -> (Int, FloatLiteral):
-  # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK: kgen.pack.create(%0, %1)
   return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2b
