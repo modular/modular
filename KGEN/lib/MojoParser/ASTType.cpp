@@ -569,7 +569,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << ")";
   } else if (auto variantType = dyn_cast<VariantType>(type)) {
     os << "Variant[";
-    llvm::interleaveComma(variantType.getParameterizedElementTypes(), os,
+    llvm::interleaveComma(variantType.getTypes(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << "]";
   } else {

@@ -516,8 +516,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
         return emitError() << "a throwing function with byref_result must have "
                               "a variant result of 2 types";
       }
-      auto typeConst = ::dyn_cast<TypeConstantAttr>(variantTy.getTypes()[1]);
-      if (!typeConst || !::isa<KGEN::NoneType>(typeConst.getValue())) {
+      if (!::isa<KGEN::NoneType>(variantTy.getType(1))) {
         return emitError() << "a throwing function with byref_result must have "
                               "a variant result with none as the second type";
       }
@@ -1169,28 +1168,15 @@ VariadicAttr PackType::getVariadicAttr() const {
 // VariantType
 //===----------------------------------------------------------------------===//
 
-VariantType VariantType::get(ArrayRef<Type> types, Type metaType) {
+VariantType VariantType::get(ArrayRef<Type> types) {
   assert(!types.empty());
-  SmallVector<TypedAttr> typeExprs;
-  for (Type type : types)
-    typeExprs.push_back(TypeConstantAttr::get(type, metaType));
-  return get(types.front().getContext(), typeExprs);
+  return get(types.front().getContext(), types);
 }
 
 /// Return the number of types in the variant.
-size_t VariantType::getNumTypes() { return getTypes().size(); }
+size_t VariantType::getNumTypes() const { return getTypes().size(); }
 
-SmallVector<Type> VariantType::getParameterizedElementTypes() const {
-  SmallVector<Type> types;
-  types.reserve(getTypes().size());
-  for (TypedAttr type : getTypes())
-    types.push_back(ParamRefType::get(type));
-  return types;
-}
-
-Type VariantType::getType(unsigned index) {
-  return ParamRefType::get(getTypes()[index]);
-}
+Type VariantType::getType(unsigned index) const { return getTypes()[index]; }
 
 /// Compute the size in bytes of just the content section of a variant. The
 /// content field is the biggest element size rounded up to the nearest
@@ -1198,12 +1184,9 @@ Type VariantType::getType(unsigned index) {
 static std::optional<int64_t> computeVariantContentSize(VariantType type,
                                                         TargetInfoAttr target) {
   int64_t maxSize = 0;
-  for (TypedAttr typeExpr : type.getTypes()) {
-    auto typeCst = llvm::dyn_cast<ConcreteTypeConstantAttr>(typeExpr);
-    if (!typeCst)
-      return {};
+  for (Type elType : type.getTypes()) {
     std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeAllocSize(target, typeCst.getValue());
+        DataLayoutInterface::getTypeAllocSize(target, elType);
     if (!typeSize)
       return {};
     maxSize = std::max(maxSize, *typeSize);
@@ -1278,9 +1261,8 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
                           discrSize);
 
   unsigned index = discrVal.getZExtValue();
-  TypedAttr type = getTypes()[index];
-  ErrorOr<TypedAttr> result = state.readAttributeFromMemory(
-      addr, type.cast<ConcreteTypeConstantAttr>().getValue());
+  ErrorOr<TypedAttr> result =
+      state.readAttributeFromMemory(addr, getType(index));
   if (result.isError())
     return result.takeError();
   return VariantAttr::get(result.takeValue(), index, *this);

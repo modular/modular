@@ -2915,8 +2915,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!errorType)
       return {};
 
-    resultType = VariantType::get({errorType, resultType},
-                                  TypeType::get(emitter.getContext()));
+    resultType = VariantType::get({errorType, resultType});
 
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.

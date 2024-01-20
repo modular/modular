@@ -992,7 +992,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     ASTDecl *decl = ASTType(outputType).getDecl(shared);
     if (!decl) {
       if (auto variant = dyn_cast<VariantType>(outputType)) {
-        auto isMemoryOnly = [&](TypedAttr variant) {
+        auto isMemoryOnly = [&](Type variant) {
           return ASTType(variant).getRegisterPassability(callLoc, shared) ==
                  TypeConvention::MemoryOnly;
         };

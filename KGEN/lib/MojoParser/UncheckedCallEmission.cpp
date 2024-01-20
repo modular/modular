@@ -789,10 +789,8 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
     return {};
   }
   // If the async function throws, extract the normal result type.
-  if (sig.isThrows()) {
-    resultType =
-        ParamRefType::get(cast<VariantType>(resultType).getTypes().back());
-  }
+  if (sig.isThrows())
+    resultType = cast<VariantType>(resultType).getTypes().back();
 
   // Bind the result type to the base coroutine type.
   auto typeExpr =

@@ -921,8 +921,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     if (errorType.isTypeCheckErrorType())
       decl.hasReferenceError = true;
 
-    resultType =
-        VariantType::get({errorType, resultType}, TypeType::get(getContext()));
+    resultType = VariantType::get({errorType, resultType});
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.
     effects.setOwnedRegisterResult();
@@ -2104,9 +2103,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       // For a throwing function, we need to insert the type into the variant.
       // The error type is the first type.
       auto variant = cast<VariantType>(resultType);
-      resultType = VariantType::get(
-          {ParamRefType::get(variant.getTypes().front()), selfType},
-          TypeType::get(variant.getContext()));
+      resultType = VariantType::get({variant.getTypes().front(), selfType});
 
       // The result is always owned because it includes a variant containing an
       // error.

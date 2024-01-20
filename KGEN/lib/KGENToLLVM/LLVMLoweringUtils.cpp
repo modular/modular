@@ -285,8 +285,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // variant type. This needs to be optimized. For now, use an array of
     // word-size integers.
     int64_t maxSize = 0;
-    for (TypedAttr typeExpr : variant.getTypes()) {
-      Type variantType = typeExpr.cast<ConcreteTypeConstantAttr>().getValue();
+    for (Type variantType : variant.getTypes()) {
       Type type = convertType(variantType);
       if (!type)
         return {};

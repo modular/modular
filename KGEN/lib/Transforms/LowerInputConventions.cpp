@@ -84,11 +84,9 @@ lowerSignature(SignatureType sig) {
         // If the function is throwing, replace the success type in the variant.
         auto resVariant = cast<VariantType>(oldResType);
         assert(resVariant.getNumTypes() == 2);
-        SmallVector<TypedAttr> variantTypes(resVariant.getTypes());
-        TypedAttr &successTypeAttr = variantTypes[1];
-        successTypeAttr = ConcreteTypeConstantAttr::get(
-            loweredByrefResTy, successTypeAttr.getType());
-        newResTypes[0] = VariantType::get(sig.getContext(), variantTypes);
+        SmallVector<Type> variantTypes(resVariant.getTypes());
+        variantTypes[1] = loweredByrefResTy;
+        newResTypes[0] = VariantType::get(variantTypes);
       } else {
         // If the function doesn't throw, we will return the lowered type.
         newResTypes[0] = loweredByrefResTy;

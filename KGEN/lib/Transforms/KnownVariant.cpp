@@ -71,7 +71,6 @@ struct KnownVariantAnalysis
 
   void setToEntryState(VariantState *state) override {
     if (auto variant = dyn_cast<VariantType>(state->getPoint().getType())) {
-      SmallVector<Type> types = variant.getParameterizedElementTypes();
       VariantTypes value(variant.getNumTypes());
       value.knownDiscrs.set();
       propagateIfChanged(state, state->join(value));
