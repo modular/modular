@@ -111,20 +111,31 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
 
   // Start by erasing unresolved imports. This puts the module in a
   // canonical form.
-  DenseMap<StringAttr, AliasDeclOp> aliasMap;
   module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Don't purge anything from the main package if we are parsing one.
-    if (op == declOp && isa<PackageOp>(declOp))
+    if (op == declOp) {
+      // Don't purge anything from the main package if we are parsing one.
+      if (isa<PackageOp>(op))
+        return WalkResult::skip();
+      op->walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
+        if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
+          op->erase();
+          return WalkResult::skip();
+        }
+        if (isa<StructDeclOp, LIT::FuncOp, LIT::TraitDeclOp>(op))
+          return WalkResult::skip();
+        return WalkResult::advance();
+      });
       return WalkResult::skip();
-
-    if (auto aliasDecl = dyn_cast<AliasDeclOp>(op)) {
-      aliasMap.try_emplace(aliasDecl.getParamDecl().getName(), aliasDecl);
-      return WalkResult::advance();
     }
-    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
+
+    // Remove all alias decls outside functions and the main decl.
+    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp, AliasDeclOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }
+    // Functions have nothing to check inside them.
+    if (isa<LIT::FuncOp>(op))
+      return WalkResult::skip();
     return WalkResult::advance();
   });
 
@@ -134,7 +145,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   DenseSet<Operation *> liveSymbols;
   std::vector<Operation *> worklist;
   declOp->walk([&](Operation *op) {
-    if (isa<mlir::SymbolOpInterface, AliasDeclOp>(op)) {
+    if (isa<mlir::SymbolOpInterface>(op)) {
       liveSymbols.insert(op);
       worklist.push_back(op);
     }
@@ -155,10 +166,6 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     for (Operation *symbol : symbols)
       markLive(symbol);
   });
-  refCollector.addWalk([&](ParamDeclRefAttr ref) {
-    if (AliasDeclOp aliasDecl = aliasMap.lookup(ref.getName()))
-      markLive(aliasDecl);
-  });
 
   // Propagate liveness.
   while (!worklist.empty()) {
@@ -173,8 +180,6 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
             func && func.getParamDeclAttr())
           markLive(func);
         if (op->hasTrait<OpTrait::SymbolTable>())
-          return WalkResult::skip();
-        if (isa<AliasDeclOp>(op))
           return WalkResult::skip();
       }
       refCollector.walk(op->getAttrDictionary());
@@ -195,15 +200,12 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    if (isa<mlir::SymbolOpInterface, AliasDeclOp>(op) &&
-        !liveSymbols.contains(op)) {
+    if (isa<mlir::SymbolOpInterface>(op) && !liveSymbols.contains(op)) {
       op->erase();
       return WalkResult::skip();
     }
 
-    // TODO: this is a hack to allow a better mangling of parameters. The
-    // algorithm should be modified to properly handle alias decls, since they
-    // are no longer globally unique.
+    // We never need to erase anything inside functions.
     if (isa<LIT::FuncOp>(op))
       return WalkResult::skip();
 
