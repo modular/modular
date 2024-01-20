@@ -10,28 +10,7 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # TODO: should autoimport some day.
-from memory.unsafe import Reference
-
-# A helper to spell !lit.ref types.  Parametric aliases would be nice!
-struct _LITRef[
-    element_type: AnyType,
-    is_mutable: __mlir_type.i1,
-    lifetime: Lifetime,
-    addr_space: __mlir_type.index = Int(0).__mlir_index__()
-]:
-    alias type = __mlir_type[
-        `!lit.ref<mut=`,
-        is_mutable,
-        `, :`,
-        AnyType,
-        ` `,
-        element_type,
-        `, `,
-        lifetime,
-        `, `,
-        addr_space,
-        `>`,
-    ]
+from memory.unsafe import Reference, _LITRef
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
