@@ -237,9 +237,6 @@ public:
   /// expression_stmt and {augmented_|annotated_|}assignment_stmt.
   ParseResult parseSimpleStmtExprs(ExprNode *&result, size_t stmtIndent);
 
-  /// Return an expression node for None at the specified location.
-  ExprNode *getNoneExpr(SMLoc loc);
-
   /// Parse a 'suite' production into the declaration specified by `decl`.
   ParseResult parseSuite(ASTDecl &decl);
 

@@ -673,8 +673,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If there is an expression list present, parse it.
   ExprNode *operandExpr = nullptr;
+  SimpleLiteralNode noneExpr(ExprNode::kNoneLiteral, loc);
   if (!isTokenInCurrentStatement(returnIndent))
-    operandExpr = getNoneExpr(loc);
+    operandExpr = &noneExpr;
   else if (parseExpressionList(operandExpr, returnIndent))
     return failure();
 

@@ -624,8 +624,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (DebugInfo::DIScopeAttr spAttr = initFunc.getLocScope())
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-    emitter.emitConstructorCall(clType, {}, &loc, CallSyntax::kDirectCall,
-                                dest);
+    emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
   }
 
   LIT::FuncOp copyCtr = stubs->getCopyConstructor();
@@ -696,8 +695,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     Value target = builder.create<RefStructGEROp>(selfArg, paramField);
     emitter.builder = builder;
     ValueDest dest(EC_Assignment);
-    emitter.emitNamedMethodCall("expand", {{{MBValue(target), &loc}}}, dest,
-                                CallSyntax::kMethodCall, &loc);
+    emitter.emitNamedMethodCall("expand", {{{MBValue(target), loc}}}, dest,
+                                CallSyntax::kMethodCall, loc);
   }
   for (auto [declAndCapture, fieldOp] :
        llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),

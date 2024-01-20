@@ -36,6 +36,7 @@ class ExprNode {
 public:
   // This indicates the subclass.
   enum Kind {
+    kSynthetic,      // There is no source corresponding to the IR.
     kIntLiteral,     // 42
     kFloatLiteral,   // 1.1
     kBoolLiteral,    // False
@@ -56,7 +57,6 @@ public:
     kDictSubscript,  // thing{a: 1, x: 2}
     kChainedCmp,     // a < b <= c
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
-    kSynthetic,      // There is no source corresponding to the IR.
 
     // Address conversions
     kGetRefFromValue,          // __get_ref_from_value(x): like `&x` in C.
