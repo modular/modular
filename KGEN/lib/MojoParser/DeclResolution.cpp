@@ -869,27 +869,24 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   };
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
-  // Process signature decorators in the same scope as signature resolution.
-  auto processSignature = [&] {
-    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls))
-      effects.setCapturing();
-
-    // Now that we have figured out the lexical structure, allow decorators to
-    // take a crack at the signature.
-    FnDecorators fnDecorators(decl, sigDecl, shared, baseName);
-    Decorators(decl, shared)
-        .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-          return fnDecorators.apply(decorator, effects);
-        });
-  };
-
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
       resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      funcOp.getIsDef(), resultLoc, &decl, fnInfo, processSignature);
+      funcOp.getIsDef(), resultLoc, &decl, fnInfo);
   if (!resultType)
     return failure();
+
+  if (isCapturingByDefault(funcOp, structDecl, inputParamDecls))
+    effects.setCapturing();
+
+  // Now that we have figured out the lexical structure, allow decorators to
+  // take a crack at the signature.
+  FnDecorators fnDecorators(decl, sigDecl, shared, baseName);
+  Decorators(decl, shared)
+      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+        return fnDecorators.apply(decorator, effects);
+      });
 
   // Propagate errors and the parsed decls in the signature.
   decl.takeDecls(sigDecl);
