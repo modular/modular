@@ -257,9 +257,10 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   if (isVarArg)
     convention = cast<VariadicType>(expectedType).getConvention();
 
-  // If all of the remaining operands are compile-time values, then we can
-  // represent the sequence as a variadic or pack attribute.
-  if (std::all_of(remainingOperands.begin(), remainingOperands.end(),
+  // If we are emitting in a compile-time context and all of the remaining
+  // operands are compile-time values, then emit the sequence as an attribute.
+  if (!emitter.builder &&
+      std::all_of(remainingOperands.begin(), remainingOperands.end(),
                   [](ASTExprAnd<AnyValue> operand) {
                     return operand.ir.getIfPValue();
                   })) {
