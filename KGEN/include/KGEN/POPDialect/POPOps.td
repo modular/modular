@@ -503,9 +503,9 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
   }];
 
   let arguments = (ins AnyTypeOf<[KGEN_ParamRefType, PointerType,
-                                  FunctionType]>:$input);
+                                  KGEN_SignatureType]>:$input);
   let results = (outs AnyTypeOf<[KGEN_ParamRefType, PointerType,
-                                 FunctionType]>:$output);
+                                 KGEN_SignatureType]>:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];
