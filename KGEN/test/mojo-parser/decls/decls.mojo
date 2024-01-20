@@ -883,11 +883,38 @@ struct ValueMemHasMove:
        self.a = other.a
        self.b = other.b
 
-# CHECK-LABEL: lit.struct.decl @ValueRegTrivial({{.*}}) register_passable_trivial {
+# CHECK-LABEL: lit.struct.decl @ValueRegTrivial
+# CHECK-SAME: (trait<@"{{.*}}"::@AnyType>, trait<@"{{.*}}"::@Copyable>, trait<@"{{.*}}"::@Movable>) register_passable_trivial
+# CHECK: lit.func @"__copyinit__{{.*}}"(%other: !ValueRegTrivial borrow, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__copyinit__", specialFnKind = 6 : i8} {
+# CHECK-NEXT:  [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
+# CHECK-NEXT:  [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
+# CHECK-NEXT:  lit.return [[V1]] : !ValueRegTrivial
+# CHECK-NEXT:  lit.end_func
+
+# CHECK: lit.func @"__moveinit__($decls::ValueRegTrivial)"(%other: !ValueRegTrivial, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 7 : i8} {
+# CHECK-NEXT: [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
+# CHECK-NEXT: [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
+# CHECK-NEXT: lit.return [[V1]] : !ValueRegTrivial
+# CHECK-NEXT: lit.end_func
+
+# CHECK: lit.func @"`thunk___copyinit__{{.*}}"[*"{{.*}}", *"{{.*}}"](%self: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, *"{{.*}}"> borrow_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__copyinit__", specialFnKind = 3 : i8} {
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %arg : <!ValueRegTrivial
+# CHECK-NEXT: [[V1:%.*]] = lit.call @"{{.*}}"::@ValueRegTrivial::@"__copyinit__($decls::ValueRegTrivial)"(%0) : !lit.signature<("other": !ValueRegTrivial borrow, |) -> !ValueRegTrivial>
+# CHECK-NEXT: lit.ref.store [[V1]], %self : <mut !ValueRegTrivial
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT: kgen.return %none : !kgen.none
+
+# CHECK: lit.func @"`thunk___moveinit__{{.*}}"[*"{{.*}}", *"{{.*}}"](%self: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> init_self, %arg[existing]: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> owned_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 4 : i8} {
+# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %arg : !lit.ref<mut !ValueRegTrivial
+# CHECK-NEXT: [[V1:%.*]] = lit.call @"{{.*}}"::@ValueRegTrivial::@"__moveinit__($decls::ValueRegTrivial)"([[V0]]) : !lit.signature<("other": !ValueRegTrivial, |) -> !ValueRegTrivial>
+# CHECK-NEXT: lit.ref.store [[V1]], %self : <mut !ValueRegTrivial
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT: kgen.return %none : !kgen.none
+
 @value
 @register_passable("trivial")
 struct ValueRegTrivial:
-    var a: __mlir_type.index
+   var a: __mlir_type.index
 
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @value
