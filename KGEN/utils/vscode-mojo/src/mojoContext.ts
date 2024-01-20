@@ -25,6 +25,12 @@ export class MOJOContext extends DisposableContext {
   _sdk: MOJOSDK|undefined;
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   _loggingService: LoggingService|undefined;
+  extensionContext: vscode.ExtensionContext;
+
+  constructor(extensionContext: vscode.ExtensionContext) {
+    super();
+    this.extensionContext = extensionContext;
+  }
 
   public getLoggingService(): LoggingService { return this._loggingService!; }
 

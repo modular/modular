@@ -123,10 +123,10 @@ submenu in the File Explorer when right-clicking on Mojo files:
 ![right-click-menu](https://github.com/modularml/mojo/assets/77730378/b267a44c-fa2c-425d-bada-7360cd338351)
 
 You may bind hotkeys to any of the actions listed here. For example, to bind a
-hotkey for the "Run Mojo File in Terminal" action, open preferences, then select
-`Keyboard Shortcuts > Mojo: Run Mojo File in Terminal`.
+hotkey for the "Run Mojo File" action, open preferences, then select
+`Keyboard Shortcuts > Mojo: Run Mojo File`.
 
-### Run Mojo File in Terminal
+### Run Mojo File
 
 This executes the current Mojo file in a terminal that is reused by other
 invocations of this same action, even if they run a different file.

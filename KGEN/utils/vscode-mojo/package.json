@@ -18,11 +18,11 @@
     "🔥"
   ],
   "activationEvents": [
-    "onDebugInitialConfigurations:mojo-lldb",
     "onDebugDynamicConfigurations:mojo-lldb",
     "onDebugResolve:mojo-lldb",
     "onUri",
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:mojo.searchProgramToAttach"
   ],
   "main": "./out/extension",
   "scripts": {
@@ -44,6 +44,7 @@
   "dependencies": {
     "chokidar": "3.5.2",
     "ini": "4.1.1",
+    "ps-list": "8.1.1",
     "shell-escape": "0.2.0",
     "string-argv": "0.3.2",
     "vscode-languageclient": "^8.0.2-next.5",
@@ -157,7 +158,7 @@
         "category": "Mojo",
         "command": "mojo.execFileInTerminal",
         "icon": "$(play)",
-        "title": "Run Mojo File in Terminal",
+        "title": "Run Mojo File",
         "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
       },
       {
@@ -178,7 +179,7 @@
         "category": "Mojo",
         "command": "mojo.debugFileInTerminal",
         "icon": "$(debug-console)",
-        "title": "Debug Mojo File in Terminal",
+        "title": "Debug Mojo File in New Terminal",
         "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
       }
     ],
@@ -199,7 +200,7 @@
         {
           "command": "mojo.execFileInTerminal",
           "group": "1_run@0",
-          "title": "Run Mojo File in Terminal",
+          "title": "Run Mojo File",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
         {
@@ -217,7 +218,7 @@
         {
           "command": "mojo.debugFileInTerminal",
           "group": "2_debug@1",
-          "title": "Debug Mojo File In Terminal",
+          "title": "Debug Mojo File in New Terminal",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         }
       ],
@@ -225,7 +226,7 @@
         {
           "command": "mojo.execFileInTerminal",
           "group": "navigation@0",
-          "title": "Run Mojo File in Terminal",
+          "title": "Run Mojo File",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         },
         {
@@ -243,7 +244,7 @@
         {
           "command": "mojo.debugFileInTerminal",
           "group": "navigation@3",
-          "title": "Debug Mojo File In Terminal",
+          "title": "Debug Mojo File in New Terminal",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         }
       ]
@@ -306,6 +307,10 @@
           "launch": {
             "unevaluatedProperties": false,
             "properties": {
+              "description": {
+                "type": "string",
+                "description": "The description of the debug configuration."
+              },
               "program": {
                 "type": "string",
                 "description": "Path to the precompiled program to debug."
@@ -451,6 +456,10 @@
           "attach": {
             "unevaluatedProperties": false,
             "properties": {
+              "description": {
+                "type": "string",
+                "description": "The description of the debug configuration."
+              },
               "program": {
                 "type": "string",
                 "description": "Path or name to the program to attach to."
@@ -562,66 +571,105 @@
           {
             "type": "mojo-lldb",
             "request": "launch",
-            "name": "Mojo: Debug binary",
-            "program": "${workspaceFolder}/<your program>",
+            "name": "Mojo: Debug current Mojo file",
+            "description": "Launch and debug the Mojo file that is active on the editor when the debug session starts.",
+            "mojoFile": "${file}",
             "args": [],
             "env": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "runInTerminal": false
           },
           {
             "type": "mojo-lldb",
             "request": "launch",
-            "name": "Mojo: Debug current file",
-            "mojoFile": "${file}",
+            "name": "Mojo: Debug Mojo file",
+            "description": "Launch and debug a Mojo file given its path.",
+            "mojoFile": "${workspaceFolder}/<your_file.mojo>",
             "args": [],
             "env": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "runInTerminal": false
+          },
+          {
+            "type": "mojo-lldb",
+            "request": "launch",
+            "name": "Mojo: Debug binary",
+            "description": "Launch and debug a precompiled binary given its path.",
+            "program": "${workspaceFolder}/<your_binary>",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceFolder}",
+            "runInTerminal": false
           },
           {
             "type": "mojo-lldb",
             "request": "attach",
-            "name": "Mojo: Attach to binary",
-            "pid": "<pid>"
+            "name": "Mojo: Attach to process",
+            "description": "Search for a process to attach the debugger to.",
+            "pid": "${command:pickProcessToAttach}"
           }
         ],
         "configurationSnippets": [
           {
+            "label": "Mojo: Debug current Mojo file",
+            "description": "Launch and debug the Mojo file that is active on the editor when the debug session starts.",
+            "body": {
+              "type": "mojo-lldb",
+              "request": "launch",
+              "name": "Mojo: Debug current Mojo file",
+              "description": "Launch and debug the Mojo file that is active on the editor when the debug session starts.",
+              "mojoFile": "^\"\\${file}\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "runInTerminal": false
+            }
+          },
+          {
+            "label": "Mojo: Debug Mojo file",
+            "description": "Launch and debug a Mojo file given its path.",
+            "body": {
+              "type": "mojo-lldb",
+              "request": "launch",
+              "name": "Mojo: Debug Mojo file",
+              "description": "Launch and debug a Mojo file given its path.",
+              "mojoFile": "^\"\\${workspaceFolder}/<your_file.mojo>\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "runInTerminal": false
+            }
+          },
+          {
             "label": "Mojo: Debug binary",
-            "description": "A new configuration for launching a precompiled program",
+            "description": "Launch and debug a precompiled binary given its path.",
             "body": {
               "type": "mojo-lldb",
               "request": "launch",
               "name": "Mojo: Debug binary",
-              "program": "^\"\\${workspaceFolder}\"/<your program>",
+              "description": "Launch and debug a precompiled binary given its path.",
+              "program": "^\"\\${workspaceFolder}/<your_binary>\"",
               "args": [],
               "env": [],
-              "cwd": "^\"\\${workspaceFolder}\""
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "runInTerminal": false
             }
           },
           {
-            "label": "Mojo: Debug current file",
-            "description": "A new configuration for debugging the current file",
-            "body": {
-              "type": "mojo-lldb",
-              "request": "launch",
-              "name": "Mojo: Debug current file",
-              "mojoFile": "^\"\\${file}\"",
-              "args": [],
-              "env": [],
-              "cwd": "^\"\\${workspaceFolder}\""
-            }
-          },
-          {
-            "label": "Mojo: Attach to process by pid",
-            "description": "A new configuration for attaching to a process",
+            "label": "Mojo: Attach to process",
+            "description": "Search for a process to attach the debugger to.",
             "body": {
               "type": "mojo-lldb",
               "request": "attach",
               "name": "Mojo: Attach to process",
-              "pid": "<pid>"
+              "description": "Search for a process to attach the debugger to.",
+              "pid": "^\"\\${command:pickProcessToAttach}\""
             }
           }
-        ]
+        ],
+        "variables": {
+          "pickProcessToAttach": "mojo.pickProcessToAttach"
+        }
       }
     ]
   }
