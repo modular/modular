@@ -13,16 +13,16 @@
 
 # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<mut !MemType1, *"self`"> init_self,
 # CHECK-SAME: %impl: !lit.ref<mut !escaping0_, {{.*}}> owned_in_mem, |)
-# CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
 
-# CHECK-NEXT: %[[V5:.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure[{{.*}}]()
+# CHECK-NEXT: %[[V5:.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT: lit.ref.store %[[V6]], %[[V5]]
 
-# CHECK-NEXT: %[[V9:.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT: %[[V10:.*]] = kgen.create_closure[{{.*}}]()
+# CHECK-NEXT: %[[V9:.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT: lit.ref.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
@@ -35,8 +35,8 @@
 # CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0REF]], %impl)
 
 # Store heap pointer in ClosureWrapper field
-# CHECK-NEXT:  %[[V2:.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<{{.*}}> to !kgen.pointer<none>
+# CHECK-NEXT:  %[[V2:.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  lit.ref.store %[[V3]], %[[V2]]
 
 # CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: none = <#kgen.none>

@@ -52,6 +52,22 @@ static void addFieldsToStruct(StructDeclOp structOp, ArrayRef<Type> fields) {
     b.create<StructFieldOp>(structOp.getLoc(), "field" + Twine(i), type);
 }
 
+static Value loadField(ImplicitLocOpBuilder &b, Value self,
+                       StructFieldOp field) {
+  return b.create<RefLoadOp>(b.create<RefStructGEROp>(self, field));
+}
+static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
+                       StructFieldOp field) {
+  b.create<RefStoreOp>(value, b.create<RefStructGEROp>(self, field));
+}
+static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
+                       Type type, StringAttr name) {
+  b.create<RefStoreOp>(
+      value,
+      b.create<RefStructGEROp>(
+          cast<RefType>(self.getType()).getWithElement(type), name, self));
+}
+
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                  ArrayRef<ParamDeclAttr> inputParams) {
   OpBuilder b(module.getRegion());
@@ -230,45 +246,41 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   // Populate destructor.
   {
-    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         destructor.getLoc(), destructor.getBody());
     Value dtorSelf = destructor.getBody()->getArgument(0);
     // Return early if the impl is null.
-    Value dtorImpl = builder.create<RefLoadOp>(
-        builder.create<RefStructGEROp>(dtorSelf, impl));
+    Value dtorImpl = loadField(b, dtorSelf, impl);
     Type scalarIndex = POP::SIMDType::get(
         1,
         DTypeConstantAttr::get(ctx, KGENDType(KGENDType::ExtraCases::index)));
-    Value zero = builder.create<ParamConstantOp>(builder.getIndexAttr(0));
-    Value dtorImplAsIndex = builder.create<POP::CastToBuiltinOp>(
-        builder.getIndexType(),
-        builder.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
-    Value isEqualToZero = builder.create<mlir::index::CmpOp>(
+    Value zero = b.create<ParamConstantOp>(b.getIndexAttr(0));
+    Value dtorImplAsIndex = b.create<POP::CastToBuiltinOp>(
+        b.getIndexType(),
+        b.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
+    Value isEqualToZero = b.create<mlir::index::CmpOp>(
         mlir::index::IndexCmpPredicate::EQ, dtorImplAsIndex, zero);
-    auto ifOp = builder.create<HLCF::IfOp>(isEqualToZero);
-    auto insertionPoint = builder.saveInsertionPoint();
+    auto ifOp = b.create<HLCF::IfOp>(isEqualToZero);
+    auto insertionPoint = b.saveInsertionPoint();
 
     // If false, the impl is not null. Continue to destruction.
     if (ifOp.getElseRegion().empty())
       ifOp.getElseRegion().push_back(new Block);
-    builder =
-        ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
-    builder.create<HLCF::YieldOp>();
+    b = ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
+    b.create<HLCF::YieldOp>();
 
     // If true, the impl is null and no destruction is needed.
     if (ifOp.getThenRegion().empty())
       ifOp.getThenRegion().push_back(new Block);
-    builder =
-        ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
-    ExprEmitter::emitNormalReturn(
-        builder, builder.create<ParamConstantOp>(noneAttr), destructor);
-    builder.create<HLCF::YieldOp>();
-    builder.restoreInsertionPoint(insertionPoint);
-    Value callee = builder.create<RefLoadOp>(
-        builder.create<RefStructGEROp>(dtorSelf, dtor));
-    builder.create<CallSignatureOp>(noneType, callee,
-                                    /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
-                                    dtorImpl);
+    b = ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
+    ExprEmitter::emitNormalReturn(b, b.create<ParamConstantOp>(noneAttr),
+                                  destructor);
+    b.create<HLCF::YieldOp>();
+    b.restoreInsertionPoint(insertionPoint);
+    Value callee = loadField(b, dtorSelf, dtor);
+    b.create<CallSignatureOp>(noneType, callee,
+                              /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+                              dtorImpl);
   }
 
   // Populate the copy constructor.
@@ -280,24 +292,20 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         shared.translateLocation(copyCtrDecl->getLoc());
     // we want to insert before return at end of function. LIT::ReturnOp is not
     // a terminator though, so let's find it and set it.
-    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, copyCtr.getBody());
     auto returnOps = copyCtr.getBody()->getOps<LIT::ReturnOp>();
     assert(std::distance(returnOps.begin(), returnOps.end()) == 1 &&
            "copy should have exactly one return op.");
-    builder.setInsertionPoint(*returnOps.begin());
+    b.setInsertionPoint(*returnOps.begin());
     Value copySelf = copyCtr.getBody()->getArgument(0);
     Value copyExisting = copyCtr.getBody()->getArgument(1);
-    Value existingImpl = builder.create<RefStructGEROp>(copyExisting, impl);
-    auto loadedExistingImpl = builder.create<RefLoadOp>(existingImpl);
-    auto funcPtrRef = builder.create<RefStructGEROp>(copySelf, copy);
-    Value refToImpl = builder.create<RefStructGEROp>(copySelf, impl);
-    auto loadedFuncPtr = builder.create<RefLoadOp>(funcPtrRef);
-    auto call = builder.create<CallSignatureOp>(
-        opaquePtrType, loadedFuncPtr,
-        /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
-        ValueRange{loadedExistingImpl});
-    builder.create<RefStoreOp>(call.getResult(0), refToImpl);
+    Value existingImpl = loadField(b, copyExisting, impl);
+    Value funcPtr = loadField(b, copySelf, copy);
+    auto call = b.create<CallSignatureOp>(
+        opaquePtrType, funcPtr, /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+        existingImpl);
+    storeField(b, copySelf, call.getResult(0), impl);
   }
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
@@ -310,14 +318,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
     Location translatedLocation =
         shared.translateLocation(moveCtrDecl->getLoc());
-    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, moveCtr.getBody());
     Value moveExisting = moveCtr.getBody()->getArgument(1);
     auto opaquePointerTypeAttr = M::PointerAttr::get(ctx, 0, opaquePtrType);
     Value nullPtr =
-        builder.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
-    builder.create<RefStoreOp>(
-        nullPtr, builder.create<RefStructGEROp>(moveExisting, impl));
+        b.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
+    storeField(b, moveExisting, nullPtr, impl);
   }
   if (failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
@@ -351,15 +358,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       arguments.push_back(destArg);
     }
 
-    arguments.push_back(builder.create<RefLoadOp>(
-        builder.create<RefStructGEROp>(callSelf, impl)));
+    arguments.push_back(loadField(builder, callSelf, impl));
 
     for (unsigned i = 1 + hasResultSlot, e = callMethod.getNumArguments();
          i < e; i++)
       arguments.push_back(callMethod.getBody()->getArgument(i));
 
-    auto getCallMember = builder.create<RefStructGEROp>(callSelf, callMember);
-    auto callMemberPtr = builder.create<RefLoadOp>(getCallMember);
+    Value callMemberPtr = loadField(builder, callSelf, callMember);
 
     SmallVector<TypedAttr> implicitLifetimes;
     auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
@@ -818,10 +823,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
-  Value refToImpl = builder.create<RefStructGEROp>(self, implField);
   Value erasedType =
       builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
-  builder.create<RefStoreOp>(erasedType, refToImpl);
+  storeField(builder, self, erasedType, implField);
   auto generateName = [&](StringRef prefix) {
     return (closureWrapper.getSymName() + prefix + closureImpl.getSymName())
         .str();
@@ -830,17 +834,14 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   auto setMember = [&](LIT::FuncOp topLevelFunc, StringAttr fieldName,
                        Type fieldType) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
-    auto selfVal = init.getBody()->getArgument(0);
-    auto funcMember = builder.create<RefStructGEROp>(
-        cast<RefType>(selfVal.getType()).getWithElement(fieldType), fieldName,
-        selfVal);
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(
         ParameterExprArrayAttr::get(ctx, totalInputParams));
     if (funcSymbol.getType() != fieldType)
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
     auto createClosure =
         builder.create<CreateClosureOp>(funcSymbol, ValueRange());
-    builder.create<RefStoreOp>(createClosure, funcMember);
+    storeField(builder, init.getArgument(0), createClosure, fieldType,
+               fieldName);
   };
 
   // Create the top level copy constructor.

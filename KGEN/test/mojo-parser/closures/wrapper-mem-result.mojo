@@ -64,9 +64,9 @@ struct MemType:
 # CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = lit.ref.load [[EXISTING_IMPL_PTR]]
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
 # CHECK-NEXT:      [[NEW:%.*]] = lit.call_signature [[COPY]]([[EXISTING_IMPL]])
+# CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      store [[NEW]], [[SELF_IMPL_REF]]
 
 # CHECK-LABEL:  lit.func @"__moveinit__
