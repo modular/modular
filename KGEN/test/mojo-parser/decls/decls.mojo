@@ -462,6 +462,15 @@ fn referencesDefaultArgumentFunction():
     let f = defaultArgument
 
 
+# CHECK-LABEL: lit.struct.decl @Outer
+# CHECK-SAME: <[[X:.*]][X]:
+struct Outer[X: Int]:
+    # CHECK: lit.func @"nested
+    # CHECK-SAME: %x: !Int borrow = [[X]])
+    fn nested(self, x: Int = X):
+        pass
+
+
 # CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a: !kgen.variadic<!Int> borrow) vararg
 fn variadics(*a: Int):
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
