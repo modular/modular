@@ -27,11 +27,11 @@
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[W1:%.*]] = lit.ref.load [[W0]]
 # CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:   [[W3:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[W4:%.*]] = lit.ref.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.
 # CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[W1]])
+# CHECK-NEXT:  [[W3:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  store [[W5]], [[W3]]
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
