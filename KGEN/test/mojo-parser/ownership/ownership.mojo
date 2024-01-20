@@ -724,8 +724,9 @@ fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
   # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime *"mems`", :i1 1>(%mems_0, %mems)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
-  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%mems_0, [[ZERO]])
+  # CHECK-NEXT: [[MEMREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMMREF]], [[ZERO]])
 
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[MEMREF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
@@ -758,7 +759,8 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
 
   # CHECK: %iter = lit.varlet.decl
-  # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}(%iter, %mems_0)
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
+  # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}(%iter, [[IMMREF]])
   var iter = mems.__iter__()
 
   ## FIXME: This is destroyed too early.
