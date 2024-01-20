@@ -11,6 +11,7 @@ import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
 
+import {activatePickProcessToAttachCommand} from './attachQuickPick';
 import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
 import {
   initializeInlineLocalVariablesProvider,
@@ -23,6 +24,7 @@ import {
 type MojoDebugConfiguration = {
   type?: string;
   name?: string;
+  pid?: string | number;
   request?: string;
   modularHomePath?: string;
   args?: string[];
@@ -91,6 +93,10 @@ class MojoDebugConfigurationResolver implements
     // that.
     if (!config)
       return undefined;
+
+    if (typeof (debugConfiguration.pid) === "string") {
+      debugConfiguration.pid = parseInt(debugConfiguration.pid);
+    }
 
     if (debugConfiguration.mojoFile) {
       if (!debugConfiguration.mojoFile.endsWith('.🔥') &&
@@ -205,92 +211,21 @@ class MojoDebugDynamicConfigurationProvider implements
       _folder: vscode.WorkspaceFolder|undefined,
       _token?: vscode.CancellationToken|undefined,
       ): Promise<vscode.DebugConfiguration[]|undefined> {
-    // We let the user choose pick a Mojo file from the list of open files or
-    // open the system dialog for them to pick one. Then, we let the user pick
-    // between run normally or run in terminal.
-
-    type QuickPickItem = vscode.QuickPickItem&({
-      type : "file",
-      file : WorkspaceAwareFile,
-    }|{type : "action", action : "open-system-dialog"}|{type?: undefined});
-
-    const createFileItem = (file: WorkspaceAwareFile): QuickPickItem => {
-      return {
-        type : "file",
-        label : file.baseName,
-        file : file,
-        description : file.relativePath
-      };
-    };
-
-    const quickPickItems: QuickPickItem[] = [];
     const [activeFile, otherOpenFiles] = getAllOpenMojoFiles();
-    if (activeFile) {
-      quickPickItems.push(
-          {label : 'active file', kind : vscode.QuickPickItemKind.Separator});
-      quickPickItems.push(createFileItem(activeFile));
-      quickPickItems.push(
-          {label : "", kind : vscode.QuickPickItemKind.Separator});
-    }
-
-    quickPickItems.push({
-      label : "Select a Mojo file using the System Dialog",
-      type : "action",
-      action : "open-system-dialog"
-    });
-
-    if (otherOpenFiles.length > 0) {
-      quickPickItems.push(
-          {label : 'open files', kind : vscode.QuickPickItemKind.Separator});
-      quickPickItems.push(
-          ...otherOpenFiles
-              .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
-              .map(createFileItem));
-    }
-
-    const selection = await vscode.window.showQuickPick(quickPickItems, {
-      title : "Select a Mojo file to debug",
-      placeHolder :
-          "Select an active Mojo file or pick one using the System Dialog"
-    });
-    let file: WorkspaceAwareFile|undefined;
-
-    if (!selection) {
-      return undefined;
-    }
-    if (selection.type == "action" &&
-        selection.action === "open-system-dialog") {
-      const mojoFiles = await vscode.window.showOpenDialog({
-        title : "Select a Mojo file to debug",
-        canSelectMany : false,
-        openLabel : "Select",
-        filters : {Mojo : [ ".mojo", ".🔥" ]}
-      });
-      if (!mojoFiles || mojoFiles.length === 0)
-        return undefined;
-      file = new WorkspaceAwareFile(mojoFiles[0]);
-    } else if (selection.type == "file") {
-      file = selection.file;
-    } else {
-      return undefined;
-    }
-
-    return [
-      {
-        type : DEBUG_TYPE,
-        request : "launch",
-        name : `Mojo: Debug ${file.baseName} ⸱ ${file.relativePath}`,
-        mojoFile : file.uri.fsPath,
-      },
-      {
-        type : DEBUG_TYPE,
-        request : "launch",
-        name :
-            `Mojo: Debug in Terminal ${file.baseName} ⸱ ${file.relativePath}`,
-        mojoFile : file.uri.fsPath,
-        runInTerminal : true,
-      },
-    ];
+    return [ activeFile, ...otherOpenFiles ]
+        .filter((file): file is WorkspaceAwareFile => !!file)
+        .map(file => {
+          return {
+            type : DEBUG_TYPE,
+            request : "launch",
+            name : `Mojo: Debug ${file.baseName} ⸱ ${file.relativePath}`,
+            mojoFile : file.uri.fsPath,
+            args : [],
+            env : [],
+            cwd : file.workspaceFolder?.uri.fsPath,
+            runInTerminal : false,
+          };
+        });
   }
 }
 
@@ -333,6 +268,8 @@ export class MojoDebugContext extends DisposableContext {
             vscode.DebugConfigurationProviderTriggerKind.Dynamic,
             ),
     );
+
+    this.pushSubscription(activatePickProcessToAttachCommand(this.context));
 
     // Register the URI-based debug launcher.
     this.pushSubscription(vscode.window.registerUriHandler(

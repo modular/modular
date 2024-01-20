@@ -20,7 +20,7 @@ let mojoContext: MOJOContext;
 export function activate(context: vscode.ExtensionContext) {
   loggingService = new LoggingService('Mojo');
   loggingService.logInfo("Initializing the Mojo extension.")
-  mojoContext = new MOJOContext();
+  mojoContext = new MOJOContext(context);
   mojoContext.activate(loggingService);
   loggingService.logInfo("Mojo extension initialized.")
 }
