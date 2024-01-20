@@ -979,6 +979,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   return importSubModuleState(name, parentDecl, loc);
 }
 
+bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
+
 static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
                                         StringRef typeName,
                                         SharedState &shared) {
@@ -1062,6 +1064,27 @@ ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
       importModule("builtin._closure", /*currentPackage=*/nullptr, loc);
   return resolveBuiltinModuleType(closureModule, loc,
                                   "__ParameterClosureCaptureList", *this);
+}
+
+ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
+                                                    StringRef moduleName,
+                                                    StringRef fnName,
+                                                    llvm::SMLoc loc) {
+  ASTDecl &module = importModule(moduleName, /*currentPackage=*/nullptr, loc);
+  LookupResult result =
+      lookupAndResolveDecl(fnName, loc, module, /*searchParentScopes=*/false);
+  if (!result.isSuccess() || result.getIfSuccess().empty()) {
+    emitError(loc, "internal error: could not find builtin function '")
+        << fnName << "'";
+    return {};
+  }
+  ArrayRef<ASTDecl *> decls = result.getIfSuccess();
+  if (!isa<LIT::FuncOp>(decls.front())) {
+    emitError(loc, "internal error: builtin '")
+        << fnName << "' does not refer to a function";
+    return {};
+  }
+  return decls;
 }
 
 /// This returns an instance of Tuple[...] with the specified element types

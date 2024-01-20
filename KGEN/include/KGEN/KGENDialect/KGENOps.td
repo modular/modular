@@ -1121,6 +1121,9 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
   }];
 
   let builders = [
+    OpBuilder<(ins "TypedAttr":$callee), [{
+      build($_builder, $_state, callee, {});
+    }]>,
     OpBuilder<(ins "TypedAttr":$callee, "ValueRange":$captures)>,
     OpBuilder<(ins "Type":$type, "TypedAttr":$callee, "ValueRange":$captures)>
   ];
