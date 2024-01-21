@@ -145,42 +145,44 @@
     },
     "commands": [
       {
-        "category": "Mojo",
-        "command": "mojo.restart",
-        "title": "Restart the extension"
+        "category": "Developer",
+        "command": "mojo.restart-suspended",
+        "title": "Restart the Mojo Extension and Launch the LSP Server Suspended"
       },
       {
         "category": "Mojo",
-        "command": "mojo.restart-suspended",
-        "title": "Restart the extension and launch the LSP server suspended (for debugging)"
+        "command": "mojo.restart",
+        "title": "Restart the Extension"
       },
       {
         "category": "Mojo",
         "command": "mojo.execFileInTerminal",
         "icon": "$(play)",
-        "title": "Run Mojo File",
-        "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
+        "title": "Run Mojo File"
       },
       {
         "category": "Mojo",
         "command": "mojo.execFileInDedicatedTerminal",
         "icon": "$(play-circle)",
-        "title": "Run Mojo File in Dedicated Terminal",
-        "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
+        "title": "Run Mojo File in Dedicated Terminal"
       },
       {
         "category": "Mojo",
         "command": "mojo.debugFile",
         "icon": "$(debug-alt)",
-        "title": "Debug Mojo File",
-        "when": "!virtualWorkspace && editorLangId == mojo"
+        "title": "Debug Mojo File"
       },
       {
         "category": "Mojo",
         "command": "mojo.debugFileInTerminal",
         "icon": "$(debug-console)",
-        "title": "Debug Mojo File in New Terminal",
-        "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
+        "title": "Debug Mojo File in Dedicated Terminal"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.attachToProcess",
+        "icon": "$(debug)",
+        "title": "Attach to Process"
       }
     ],
     "submenus": [
@@ -196,29 +198,43 @@
           "group": "0_mojo"
         }
       ],
+      "commandPalette": [
+        {
+          "command": "mojo.execFileInTerminal",
+          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.execFileInDedicatedTerminal",
+          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.debugFile",
+          "when": "resourceLangId == mojo && !virtualWorkspace"
+        },
+        {
+          "command": "mojo.debugFileInTerminal",
+          "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
+        }
+      ],
       "explorer/context/mojo": [
         {
           "command": "mojo.execFileInTerminal",
           "group": "1_run@0",
-          "title": "Run Mojo File",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
         {
           "command": "mojo.execFileInDedicatedTerminal",
           "group": "1_run@1",
-          "title": "Run Mojo File in Dedicated Terminal",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         },
         {
           "command": "mojo.debugFile",
           "group": "2_debug@0",
-          "title": "Debug Mojo File",
           "when": "resourceLangId == mojo && !virtualWorkspace"
         },
         {
           "command": "mojo.debugFileInTerminal",
           "group": "2_debug@1",
-          "title": "Debug Mojo File in New Terminal",
           "when": "resourceLangId == mojo && !virtualWorkspace && shellExecutionSupported"
         }
       ],
@@ -226,25 +242,21 @@
         {
           "command": "mojo.execFileInTerminal",
           "group": "navigation@0",
-          "title": "Run Mojo File",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         },
         {
           "command": "mojo.execFileInDedicatedTerminal",
           "group": "navigation@1",
-          "title": "Run Mojo File in Dedicated Terminal",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         },
         {
           "command": "mojo.debugFile",
           "group": "navigation@2",
-          "title": "Debug Mojo File",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace"
         },
         {
           "command": "mojo.debugFileInTerminal",
           "group": "navigation@3",
-          "title": "Debug Mojo File in New Terminal",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         }
       ]
