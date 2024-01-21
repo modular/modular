@@ -22,44 +22,38 @@ import {DisposableContext} from './utils/disposableContext';
  *  client.
  */
 export class MOJOContext extends DisposableContext {
-  _sdk: MOJOSDK|undefined;
-  workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
-  _loggingService: LoggingService|undefined;
-  extensionContext: vscode.ExtensionContext;
+  readonly sdk: MOJOSDK;
+  private workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
+  readonly loggingService: LoggingService;
+  readonly extensionContext: vscode.ExtensionContext;
 
-  constructor(extensionContext: vscode.ExtensionContext) {
+  constructor(extensionContext: vscode.ExtensionContext,
+              loggingService: LoggingService) {
     super();
     this.extensionContext = extensionContext;
+    this.loggingService = loggingService;
+    this.sdk = new MOJOSDK(this.loggingService);
   }
-
-  public getLoggingService(): LoggingService { return this._loggingService!; }
-
-  public getSDK(): MOJOSDK { return this._sdk!; }
 
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(loggingService: LoggingService,
-                 launchLanguageServerSuspended: boolean = false) {
-    loggingService
+  async activate(launchLanguageServerSuspended: boolean = false) {
+    this.loggingService
         .logInfo("Activating the Mojo Context.")
 
-            this._loggingService = loggingService;
-    this._sdk = new MOJOSDK(loggingService);
-
-    // Initialize the commands of the extension.
-    this.pushSubscription(
-        vscode.commands.registerCommand('mojo.restart', async () => {
-          // Dispose and reactivate the context.
-          this.dispose();
-          await this.activate(loggingService);
-        }));
+        // Initialize the commands of the extension.
+        this.pushSubscription(
+            vscode.commands.registerCommand('mojo.restart', async () => {
+              // Dispose and reactivate the context.
+              this.dispose();
+              await this.activate();
+            }));
     this.pushSubscription(
         vscode.commands.registerCommand('mojo.restart-suspended', async () => {
           // Dispose and reactivate the context.
           this.dispose();
-          await this.activate(loggingService,
-                              /*launchLanguageServerSuspended=*/ true);
+          await this.activate(/*launchLanguageServerSuspended=*/ true);
         }));
 
     // This lambda is used to lazily start language clients for the given
@@ -89,7 +83,7 @@ export class MOJOContext extends DisposableContext {
         }));
 
     // Initialize the formatter.
-    this.pushSubscription(registerFormatter(loggingService, this.getSDK()));
+    this.pushSubscription(registerFormatter(this.loggingService, this.sdk));
 
     // Initialize the debugger support.
     this.pushSubscription(new MojoDebugContext(this));
@@ -98,9 +92,9 @@ export class MOJOContext extends DisposableContext {
     this.pushSubscription(activateRunCommands(this));
 
     // Initialize the decorations.
-    this.pushSubscription(new MojoDecoratorContext(this));
+    this.pushSubscription(new MojoDecoratorContext());
 
-    loggingService.logInfo("MojoContext activated.");
+    this.loggingService.logInfo("MojoContext activated.");
   }
 
   /**
@@ -113,12 +107,11 @@ export class MOJOContext extends DisposableContext {
         !uri.fsPath.endsWith(".ipynb"))
       return undefined;
 
-    this.getLoggingService().logInfo(
-        `Activating language client for URI '${uri}'`)
+    this.loggingService.logInfo(`Activating language client for URI '${uri}'`)
     // Check the scheme of the uri.
     let validSchemes = [ 'file', 'vscode-notebook-cell' ];
     if (!validSchemes.includes(uri.scheme)) {
-      this.getLoggingService().logInfo(`Unsupported URI scheme '${uri.scheme}'`)
+      this.loggingService.logInfo(`Unsupported URI scheme '${uri.scheme}'`)
       return undefined;
     }
 
@@ -132,8 +125,7 @@ export class MOJOContext extends DisposableContext {
     let client = this.workspaceClients.get(workspaceFolderStr);
     if (!client) {
       client = await this.activateWorkspaceFolder(
-          workspaceFolder, this.getLoggingService(),
-          launchLanguageServerSuspended);
+          workspaceFolder, this.loggingService, launchLanguageServerSuspended);
       if (client) {
         this.workspaceClients.set(workspaceFolderStr, client);
       }
@@ -176,7 +168,7 @@ export class MOJOContext extends DisposableContext {
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    let mojoConfig = await this.getSDK().resolveConfig(workspaceFolder);
+    let mojoConfig = await this.sdk.resolveConfig(workspaceFolder);
     if (!mojoConfig)
       return [ undefined, "" ];
 
@@ -267,7 +259,7 @@ export class MOJOContext extends DisposableContext {
   }
 
   dispose() {
-    this.getLoggingService().logInfo("Disposing MOJOContext.");
+    this.loggingService.logInfo("Disposing MOJOContext.");
     super.dispose();
     this.workspaceClients.forEach((client) => {
       if (client) {

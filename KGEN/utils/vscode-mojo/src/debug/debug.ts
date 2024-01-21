@@ -49,7 +49,7 @@ const DEBUG_TYPE: string = "mojo-lldb";
  */
 class MojoDebugAdapterDescriptorFactory implements
     vscode.DebugAdapterDescriptorFactory {
-  private context: MOJOContext|undefined;
+  private context: MOJOContext;
 
   constructor(context: MOJOContext) { this.context = context; }
 
@@ -57,7 +57,7 @@ class MojoDebugAdapterDescriptorFactory implements
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|undefined> {
-    let config = await this.context?.getSDK().resolveConfig(
+    let config = await this.context.sdk.resolveConfig(
         session.configuration.modularHomePath || session.workspaceFolder ||
         session.configuration.mojoFile);
     // We don't need to show error messages here because `resolveConfig` does
@@ -75,7 +75,7 @@ class MojoDebugAdapterDescriptorFactory implements
  */
 class MojoDebugConfigurationResolver implements
     vscode.DebugConfigurationProvider {
-  private context: MOJOContext|undefined;
+  private context: MOJOContext;
 
   constructor(context: MOJOContext) { this.context = context; }
 
@@ -86,7 +86,7 @@ class MojoDebugConfigurationResolver implements
           Promise<undefined|vscode.DebugConfiguration> {
     // Load the MojoLLDB plugin. The SDK must be present because otherwise we
     // can't get access to the debug adapter.
-    let config = await this.context?.getSDK().resolveConfig(
+    let config = await this.context.sdk.resolveConfig(
         debugConfiguration.modularHomePath || folder ||
         debugConfiguration.mojoFile);
     // We don't need to show error messages here because `resolveConfig` does
@@ -104,7 +104,7 @@ class MojoDebugConfigurationResolver implements
         const message = `Mojo Debug error: the file '${
             debugConfiguration
                 .mojoFile}' doesn't have the .🔥 or .mojo extension.`;
-        this.context?.getLoggingService().logError(message);
+        this.context.loggingService.logError(message);
         vscode.window.showErrorMessage(message);
         return undefined;
       }
@@ -284,7 +284,7 @@ export class MojoDebugContext extends DisposableContext {
 
         // Register the URI-based debug launcher.
         this.pushSubscription(vscode.window.registerUriHandler(
-            new UriLaunchServer(context.getLoggingService())));
+            new UriLaunchServer(context.loggingService)));
 
     // Register the RPC-based debug launcher.
     this.pushSubscription(
@@ -325,7 +325,7 @@ export class MojoDebugContext extends DisposableContext {
       return;
     const port = options.port;
     if (port === undefined) {
-      this.context.getLoggingService().logInfo(
+      this.context.loggingService.logInfo(
           `The 'port' key was not found in the mojo.lldb.rpcServer settings.`,
           options);
       return;
@@ -336,10 +336,10 @@ export class MojoDebugContext extends DisposableContext {
     if (existingServer) {
       existingServer.addServerToken(options.token);
     } else {
-      let rpcServer = new RpcLaunchServer(this.context.getLoggingService(),
-                                          port, options.token);
-      this.context.getLoggingService().logInfo(`Starting RPC server for port:`,
-                                               port);
+      let rpcServer =
+          new RpcLaunchServer(this.context.loggingService, port, options.token);
+      this.context.loggingService.logInfo(`Starting RPC server for port:`,
+                                          port);
       this.pushSubscription(rpcServer);
       rpcServer.listen();
       this.rpcServers.set(key, rpcServer);

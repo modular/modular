@@ -115,7 +115,7 @@ export class MOJOSDK {
   /**
    * The resolved Modular config for a set of workspaces.
    */
-  workspaceConfigs: Map<string, MOJOSDKConfig> = new Map();
+  private workspaceConfigs: Map<string, MOJOSDKConfig> = new Map();
 
   /**
    * A service that can be used to log message in the Mojo output channel.
