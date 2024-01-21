@@ -271,9 +271,20 @@ export class MojoDebugContext extends DisposableContext {
 
     this.pushSubscription(activatePickProcessToAttachCommand(this.context));
 
-    // Register the URI-based debug launcher.
-    this.pushSubscription(vscode.window.registerUriHandler(
-        new UriLaunchServer(context.getLoggingService())));
+    this.pushSubscription(vscode.commands.registerCommand(
+        "mojo.attachToProcess",
+        () => {
+          return vscode.debug.startDebugging(undefined, {
+            type : "mojo-lldb",
+            request : "attach",
+            name : "Mojo: Attach to process command",
+            pid : "${command:pickProcessToAttach}"
+          });
+        }))
+
+        // Register the URI-based debug launcher.
+        this.pushSubscription(vscode.window.registerUriHandler(
+            new UriLaunchServer(context.getLoggingService())));
 
     // Register the RPC-based debug launcher.
     this.pushSubscription(
