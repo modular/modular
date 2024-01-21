@@ -123,7 +123,13 @@ def slice_(input: Symbol, borrowed *slices: SliceSymbol) -> Symbol:
     return slice_(input, slices ^)
 
 
-def slice_(input: Symbol, slices: VariadicListMem[SliceSymbol]) -> Symbol:
+def slice_[  # FIXME(#29464): Should use autoparameterization.
+    elt_is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[elt_is_mutable].type,
+](
+    input: Symbol,
+    slices: VariadicListMem[SliceSymbol, elt_is_mutable, lifetime],
+) -> Symbol:
     let g = input.graph()
     let input_type = input.tensor_type()
 
@@ -142,8 +148,13 @@ def slice_(
     return slice_(input, shape, slices ^)
 
 
-def slice_(
-    input: Symbol, shape: TensorShape, slices: VariadicListMem[SliceSymbol]
+def slice_[  # FIXME(#29464): Should use autoparameterization.
+    elt_is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[elt_is_mutable].type,
+](
+    input: Symbol,
+    shape: TensorShape,
+    slices: VariadicListMem[SliceSymbol, elt_is_mutable, lifetime],
 ) -> Symbol:
     var g = input.graph()
     var starts = DynamicVector[Symbol]()
