@@ -14,7 +14,7 @@ import {window} from "vscode";
 type LogLevel = "DEBUG"|"INFO"|"WARN"|"ERROR"|"NONE";
 
 export class LoggingService {
-  public outputChannel: vscode.OutputChannel;
+  readonly outputChannel: vscode.OutputChannel;
   private logLevel: LogLevel = "INFO";
 
   constructor(outputChannelName: string) {

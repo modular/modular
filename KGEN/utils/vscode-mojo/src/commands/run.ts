@@ -15,12 +15,12 @@ import {DisposableContext} from '../utils/disposableContext';
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
-  _context: MOJOContext|undefined;
+  readonly context: MOJOContext;
 
   constructor(context: MOJOContext) {
     super();
 
-    this._context = context;
+    this.context = context;
     this.activateRunCommands();
   }
 
@@ -61,7 +61,7 @@ class ExecutionManager extends DisposableContext {
       return;
 
     // Find the config for processing this file.
-    let config = await this._context?.getSDK().resolveConfig(
+    let config = await this.context.sdk.resolveConfig(
         vscode.workspace.getWorkspaceFolder(doc.uri));
     if (!config)
       return;

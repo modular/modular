@@ -14,12 +14,10 @@ import {DisposableContext} from './utils/disposableContext';
  * additional information.
  */
 export class MojoDecoratorContext extends DisposableContext {
-  private mojoContext: MOJOContext;
   private docStringDecorationType: vscode.TextEditorDecorationType;
 
-  constructor(mojoContext: MOJOContext) {
+  constructor() {
     super();
-    this.mojoContext = mojoContext;
 
     // Create a decoration type for doc strings. The decoration adds a `>`
     // before the doc string, to help visually distinguish it from the rest of
