@@ -29,8 +29,8 @@ fn foo[Z: Int, W: Int]() -> Int:
 # CHECK: lit.struct.decl @"fn
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 # CHECK: lit.func @"__init__{{.*}}<[[Y:.*]][Y]: !Int, |>
-# CHECK-SAME: (%self: !lit.ref<mut @"${{.*}}"::@"fn{{.*}}"<:!Int p0, :!Int p1>
-# CHECK-SAME: %impl: !lit.ref<mut @"${{.*}}"::@"`_CI_{{.*}}"<:!Int p0, :!Int p1, :!Int [[Y]]>
+# CHECK-SAME: (%self: !lit.ref<@"${{.*}}"::@"fn{{.*}}"<:!Int p0, :!Int p1>
+# CHECK-SAME: %impl: !lit.ref<@"${{.*}}"::@"`_CI_{{.*}}"<:!Int p0, :!Int p1, :!Int [[Y]]>
 fn test_captures_are_ordered_correctly[
     aa: Int, a: Int, b: Int, bb: Int
 ](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:

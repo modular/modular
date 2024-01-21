@@ -361,18 +361,26 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
       [&] { return parseTypeParamValue(p, values.emplace_back()); });
 }
 
-/// Print an attribute value that is known to have index type.
+/// Print/Parse an attribute value that is known to have index type.
 void KGEN::printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value) {
   printParamValue(p, cast<TypedAttr>(value));
 }
-
 void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
   printParamValue(p, cast<TypedAttr>(value));
 }
-
-/// Parse a parameter value that is known to be an index type.
 ParseResult KGEN::parseIndexParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, p.getBuilder().getIndexType());
+}
+
+/// Print/Parse an attribute value that is known to have i1 type.
+void KGEN::printI1ParamValue(AsmPrinter &p, Operation *op, Attribute value) {
+  printParamValue(p, cast<TypedAttr>(value));
+}
+void KGEN::printI1ParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, cast<TypedAttr>(value));
+}
+ParseResult KGEN::parseI1ParamValue(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value, p.getBuilder().getI1Type());
 }
 
 ParseResult KGEN::parseColonTypeParamValue(AsmParser &p, TypedAttr &value) {

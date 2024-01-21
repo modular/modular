@@ -19,6 +19,6 @@ fn param[x: int]():
         # CHECK: decl [[y:.*]] =
         alias y = x
 
-        # CHECK: !lit.ref<mut {{.*}}_CI_{{.*}}escaping0"<[[y]]>
+        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping0"<[[y]]>
         fn closure() escaping:
             use[y]()

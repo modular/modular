@@ -296,7 +296,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     result = processStructExtractAttr(sattr);
   } else if (auto bind = dyn_cast<BindTypeAttr>(attr)) {
     result = processBindType(bind);
-  } else if (isa<LifetimeAttr, LifetimeUnionAttr>(attr)) {
+  } else if (isa<LifetimeAttr, LifetimeUnionAttr, LifetimeMutCastAttr>(attr)) {
     result = emptyStructAttr; // #lit.lifetime => #kgen.struct<>
   } else if (auto paramDRE = dyn_cast<ParamDeclRefAttr>(attr)) {
     result = replaceImpl<Attribute, Attribute>(attr);

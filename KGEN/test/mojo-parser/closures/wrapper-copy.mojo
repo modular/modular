@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<mut !MemType1, {{.*}}> init_self,
+# CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemType1, mut {{.*}}> init_self,
 # CHECK-SAME: %other: {{.*}}!MemType1{{.*}}borrow_in_mem, |)
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]

@@ -60,22 +60,24 @@ LIT::FuncOp StructEmitter::createFunction(
     // Dig out the lifetime decl.
     auto refArgType = cast<RefType>(argType);
     auto lifetimeAttr = refArgType.getLifetime();
-    // If this has an indexed value, synthesize a decl.
     ParamDeclAttr decl;
-    if (isa<ImplicitLifetimeRefAttr>(lifetimeAttr)) {
+    // If this is a reference to a named one already, just reuse the name.
+    if (auto lifetimeRef = dyn_cast<ParamDeclRefAttr>(
+            LifetimeMutCastAttr::strip(lifetimeAttr))) {
+      assert(isa<LifetimeType>(lifetimeRef.getType()) &&
+             "lifetimes should have LifetimeType");
+      // Look through a cast to get the name, but use the expected mutability of
+      // the lifetime type.
+      decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeAttr.getType());
+    } else {
+      // If this has an indexed value or something else, synthesize a decl.
       auto lifetimeName = StringAttr::get(
           shared.getContext(), llvm::utostr(argNo) + "_unnamed" + "`");
-      decl = ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
+      decl = ParamDeclAttr::get(lifetimeName, lifetimeAttr.getType());
 
       // Replace the argument type with a named reference.
       auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
       adjustedArgTypes.back() = refArgType.getWithLifetime(newLifetime);
-    } else {
-      // If this is a reference to a named one already, just reuse the name.
-      auto lifetimeRef = cast<ParamDeclRefAttr>(lifetimeAttr);
-      assert(isa<LifetimeType>(lifetimeRef.getType()) &&
-             "lifetimes should have LifetimeType");
-      decl = ParamDeclAttr::get(lifetimeRef);
     }
     fullInputParams.push_back(decl);
   }
@@ -303,7 +305,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 }
 
 /// Given a function of the form
-/// "lit.func __copyinit__(%target: !lit.ref<mut @MyStruct, ...>, %existing:
+/// "lit.func __copyinit__(%target: !lit.ref<@MyStruct, mut ...>, %existing:
 /// !lit.ref<@MyStruct, ...>), populate the method with the following:
 /// %targetField0Ptr = lit.ref.struct.ger %self[field0]
 /// %sourceField0Ptr = lit.ref.struct.ger %existing[field0]

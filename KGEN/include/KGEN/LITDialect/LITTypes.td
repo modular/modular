@@ -259,10 +259,28 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Lifetime type";
   let description = [{
-    This type is used for lifetime parameters when tracking ownership and
-    provenance in a signature.
+    This type is used for lifetime parameters when tracking accesses in a
+    signature.  The `isMutable` parameter indicates whether the access is
+    mutating or just reading.
   }];
-  let assemblyFormat = "";
+
+  let parameters = (ins "TypedAttr":$isMutable);
+  let assemblyFormat = "`<` custom<I1ParamValue>($isMutable) `>`";
+
+  let builders = [
+    TypeBuilder<(ins "bool":$isMutable)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return true if the mutable attribute is known to be the specific
+    /// constant.  This returns false if parametric or if the other value.
+    bool isMutableKnown(bool value);
+
+    /// Return a (possibly parameteric) specification for whether this reference
+    /// is a mutation or a read.
+    TypedAttr isMutable() { return getIsMutable(); }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -282,32 +300,24 @@ def LIT_RefType : LITType<"Ref", "ref",
     !lit.ref<f32, some_lifetime>
 
     // A reference with parametric mutability.
-    !lit.ref<mut=sometimes_mutable, f32, some_lifetime, 0>
+    !lit.ref<f32, mut=sometimes_mutable, some_lifetime, 0>
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$isMutable,
-                        "Type":$elementType,
-                        "TypedAttr":$lifetime,
+  let parameters = (ins "Type":$elementType, "TypedAttr":$lifetime,
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
-    `<` custom<MutFlag>($isMutable) `` custom<ParamType>($elementType) `,`
+    `<` custom<ParamType>($elementType) `,`
         custom<LifetimeParamValue>($lifetime) ``
         (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
-                                        "Type":$elementType,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
                                         "TypedAttr":$lifetime,
                                         CArg<"unsigned", "0">:$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
-                                        "Type":$elementType,
-                                        "TypedAttr":$lifetime,
-                                        "TypedAttr":$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable,
-                                        "Type":$elementType,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
                                         "TypedAttr":$lifetime,
                                         "TypedAttr":$addressSpace)>,
   ];
@@ -334,11 +344,19 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);
 
+    /// Return a (possibly parameteric) specification for whether this reference
+    /// is a mutation or a read.
+    TypedAttr isMutable();
+
+    /// Return the type of the lifetime reference, which is always a
+    /// `!lit.lifetime<mutability>` type.
+    LifetimeType getLifetimeType();
+
     /// Return a reference to the specified element type and mutability with an
     /// immortal (#lit.lifetime) lifetime.
-    static RefType getImmortal(bool isMut, Type elementType,
+    static RefType getImmortal(Type elementType, bool isMut,
                                unsigned addrSpace = 0);
-    static RefType getImmortal(bool isMut, Type elementType,
+    static RefType getImmortal(Type elementType, bool isMut,
                                TypedAttr addrSpace);
   }];
 }

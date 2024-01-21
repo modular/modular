@@ -614,6 +614,6 @@ void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
 RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   auto ctx = mlirType.getContext();
   auto selfLifetime = ParamDeclRefAttr::get(StringAttr::get(ctx, argName + "`"),
-                                            LifetimeType::get(ctx));
-  return RefType::get(isMut, mlirType, selfLifetime);
+                                            LifetimeType::get(ctx, isMut));
+  return RefType::get(mlirType, selfLifetime, /*addrSpace=*/0);
 }

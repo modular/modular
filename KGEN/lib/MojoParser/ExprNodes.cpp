@@ -72,7 +72,8 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
                                   shared.getContext(), Type(), &bytesRead);
   }
   if (!result) {
-    shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+    auto diag = shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+    diag.attachNote(loc) << "attempting to parse: '" << name << "'";
     return {};
   }
 
@@ -519,6 +520,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!inParentFunc)
       emitter.shared.addCaptureToScope(*funcDecl, declRef, *capture);
   }
+
   return emitter.emitResult(result, this, dest);
 }
 
@@ -2537,7 +2539,7 @@ AnyValue RefTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Get the base type and lifetime specifier.
   PValue lifetimePVal = emitter.emitExprPValue(
-      lifetime, EC_LifetimeSpec, emitter.shared.getLifetimeType());
+      lifetime, EC_LifetimeSpec, LifetimeType::get(isMutablePVal));
   if (!lifetimePVal)
     return {};
 
@@ -2561,8 +2563,7 @@ AnyValue RefTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!subType)
     return {};
 
-  auto result = RefType::get(isMutablePVal, subType, lifetimePVal.get(),
-                             addrSpacePVal.get());
+  auto result = RefType::get(subType, lifetimePVal.get(), addrSpacePVal.get());
   return emitter.emitResult(result, this, dest);
 }
 
@@ -3056,12 +3057,11 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return {};
 
   // TODO(references): if we keep these functions, they should take a lifetime.
-  auto immortal = emitter.builder->getAttr<LifetimeAttr>();
+  auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
   exprVal = emitter.builder->create<RefFromPointerOp>(
-      getLocation(emitter),
-      /*isMut=*/true, exprVal, immortal, startsUninit, endsUninit);
+      getLocation(emitter), exprVal, immortal, startsUninit, endsUninit);
 
   /// __get_address_as_owned_value(ptr) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned)

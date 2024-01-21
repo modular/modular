@@ -327,8 +327,8 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
-# CHECK-SAME: (%a: !lit.ref<mut !StructWithInit, {{.*}}> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<!StructWithInit, {{.*}}> borrow_in_mem)
+# CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
+# CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
@@ -446,7 +446,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !MemoryType, *"anonymous*`0">
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`0">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
@@ -559,15 +559,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.type`](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<{{.*}}@"$builtin"::@"$simd"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@"$decls"::@MyTuple<:variadic<type> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int, {{.*}}@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@"$decls"::@MyTuple<:variadic<type> [!Int, {{.*}}@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@"$decls"::@MyTuple<:variadic<type> [!Int]>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!FloatLiteral, index]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@"$decls"::@MyTuple<:variadic<type> [!FloatLiteral, index]>
     let d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> []>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@"$decls"::@MyTuple<:variadic<type> []>
     let e = MyTuple()
 
     # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
@@ -614,7 +614,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, #lit.lifetime>, borrow_in_mem> borrow) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, mut #lit.lifetime>, borrow_in_mem> borrow) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])]
     alias b = variadic_mem_only(x, y)
 
@@ -726,7 +726,7 @@ struct StructWithInit:
     var y: Int
 
     # CHECK: lit.func @"__init__($decls::StructWithInit=&,{{.*}}$int::Int)"
-    # CHECK-SAME: (%self: !lit.ref<mut !StructWithInit, {{.*}}> init_self,
+    # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
     fn __init__(inout self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
         # CHECK: lit.ref.store %a, %0
@@ -742,7 +742,7 @@ struct StructWithInit:
 
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !lit.ref<mut !StructWithInit, {{.*}}> init_self,
+    # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
     fn __init__(inout self, a: Int, b: Int):
         # CHECK: hlcf.if
         if a == b:
@@ -778,7 +778,7 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<mut !StructExample, {{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> byref) -> !kgen.none
     fn mutatingMethod(inout self):
         pass
 
@@ -828,7 +828,7 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
+# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %a: !Int borrow,
 # CHECK-SAME:  %b: !StructExample
 # CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
@@ -839,8 +839,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__copyinit__(
-# CHECK-SAME:  %self: !lit.ref<mut !ValueMem, {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, {{.*}}> borrow_in_mem, |)
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> borrow_in_mem, |)
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
 # CHECK-NEXT: %2 = lit.ref.load %1
@@ -853,8 +853,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__moveinit__(
-# CHECK-SAME:  %self: !lit.ref<mut !ValueMem, {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<mut !ValueMem, {{.*}}> owned_in_mem, |)
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
 # CHECK-NEXT: %2 = lit.load.consume %1
@@ -891,23 +891,23 @@ struct ValueMemHasMove:
 # CHECK-NEXT:  lit.return [[V1]] : !ValueRegTrivial
 # CHECK-NEXT:  lit.end_func
 
-# CHECK: lit.func @"__moveinit__($decls::ValueRegTrivial)"(%other: !ValueRegTrivial, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 7 : i8} {
+# CHECK: lit.func @"__moveinit__{{.*}}(%other: !ValueRegTrivial, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 7 : i8} {
 # CHECK-NEXT: [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
 # CHECK-NEXT: [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
 # CHECK-NEXT: lit.return [[V1]] : !ValueRegTrivial
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"`thunk___copyinit__{{.*}}"[*"{{.*}}", *"{{.*}}"](%self: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, *"{{.*}}"> borrow_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__copyinit__", specialFnKind = 3 : i8} {
+# CHECK: lit.func @"`thunk___copyinit__{{.*}}(%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_deb
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %arg : <!ValueRegTrivial
 # CHECK-NEXT: [[V1:%.*]] = lit.call @"{{.*}}"::@ValueRegTrivial::@"__copyinit__($decls::ValueRegTrivial)"(%0) : !lit.signature<("other": !ValueRegTrivial borrow, |) -> !ValueRegTrivial>
-# CHECK-NEXT: lit.ref.store [[V1]], %self : <mut !ValueRegTrivial
+# CHECK-NEXT: lit.ref.store [[V1]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
-# CHECK: lit.func @"`thunk___moveinit__{{.*}}"[*"{{.*}}", *"{{.*}}"](%self: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> init_self, %arg[existing]: !lit.ref<mut !ValueRegTrivial, *"{{.*}}"> owned_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 4 : i8} {
-# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %arg : !lit.ref<mut !ValueRegTrivial
-# CHECK-NEXT: [[V1:%.*]] = lit.call @"{{.*}}"::@ValueRegTrivial::@"__moveinit__($decls::ValueRegTrivial)"([[V0]]) : !lit.signature<("other": !ValueRegTrivial, |) -> !ValueRegTrivial>
-# CHECK-NEXT: lit.ref.store [[V1]], %self : <mut !ValueRegTrivial
+# CHECK: lit.func @"`thunk___moveinit__{{.*}}(%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
+# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %arg
+# CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}__moveinit__{{.*}}([[V0]]) : !lit.signature<("other": !ValueRegTrivial, |) -> !ValueRegTrivial>
+# CHECK-NEXT: lit.ref.store [[V1]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
@@ -950,7 +950,7 @@ struct Foo:
     var self: Int
 
 
-# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<mut !Foo, {{.*}}> init_self, |, %a: !Int borrow, %self: !Int borrow)
+# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<!Foo, mut {{.*}}> init_self, |, %a: !Int borrow, %self: !Int borrow)
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg
 @value
@@ -969,7 +969,7 @@ struct TraitMember[T: Copyable]:
     # CHECK: lit.func @"__moveinit__
     # CHECK: call_param{{.*}}__copyinit__
 
-# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.func @"__init__{{.*}}isSynthetic
 # CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
@@ -984,7 +984,7 @@ struct NotSynthetic:
 @register_passable("trivial")
 struct VarArgInit:
     var a: Int
-    # CHECK: lit.func @"__init__($decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, {{.*}}>, borrow_in_mem> borrow) vararg -> !VarArgInit
+    # CHECK: lit.func @"__init__($decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow) vararg -> !VarArgInit
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}
@@ -1185,7 +1185,7 @@ fn returnTup2b() -> (Int, FloatLiteral):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.globalvar.decl @trivial_global : !Int
-# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <mut !Int, #lit.lifetime>
+# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <!Int, mut #lit.lifetime>
 # CHECK-NEXT: %1 = kgen.param.constant
 # CHECK-NEXT: lit.ref.store %1, %0
 var trivial_global: Int = 1
@@ -1262,7 +1262,7 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<!MemType
     # CHECK-NEXT: [[MEM_REF_IMM:%.*]] = lit.ref.immut [[MEM_REF]]
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF_IMM]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
@@ -1325,17 +1325,17 @@ struct MyStruct:
         pass
 
 # CHECK-LABEL: lit.func @"getThing()"
-# CHECK-SAME: [*"__result__`"](%__result__:
+# CHECK-SAME: [mut *"__result__`"](%__result__:
 fn getThing() -> MyStruct:
    # result slot parameter should get a different name to avoid conflict.
    # CHECK: lit.func *"localTest()"
-   # CHECK-SAME: [*"__result__`0"](%__result___0[__result__]:
+   # CHECK-SAME: [mut *"__result__`0"](%__result___0[__result__]:
    fn localTest() -> MyStruct:
      return MyStruct()
    return localTest()
 
 # CHECK-LABEL: lit.func @"callThing()"
-# CHECK-SAME: [*"__result__`"](%__result__:
+# CHECK-SAME: [mut *"__result__`"](%__result__:
 fn callThing() -> MyStruct:
   return getThing()
 

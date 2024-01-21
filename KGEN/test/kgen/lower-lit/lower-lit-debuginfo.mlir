@@ -33,8 +33,8 @@
 
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.varlet.decl "a" var : !lit.ref<mut index, *"life_a"> loc(fused<#sp>["test.mlir":10:10])
-    %b = lit.varlet.decl "b" synth : !lit.ref<mut index, *"life_b"> loc(fused<#sp>["test.mlir":12:10])
+    %a = lit.varlet.decl "a" var : !lit.ref<index, mut life_a> loc(fused<#sp>["test.mlir":10:10])
+    %b = lit.varlet.decl "b" synth : !lit.ref<index, mut life_b> loc(fused<#sp>["test.mlir":12:10])
     %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
     kgen.return %let_value : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])
@@ -63,9 +63,9 @@ lit.file_module @module {
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])
 // CHECK-NEXT:  kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0) loc(#[[LOC_OP:.*]])
 lit.globalvar.decl @foo : index {
-  lit.globalvar.ref @foo : <mut index, #lit.lifetime> loc(fused<#file>["foo.mlir":9:4])
+  lit.globalvar.ref @foo : <index, mut #lit.lifetime> loc(fused<#file>["foo.mlir":9:4])
 }, {
-  lit.globalvar.ref @foo : <mut index, #lit.lifetime> loc(fused<#file>["foo.mlir":10:4])
+  lit.globalvar.ref @foo : <index, mut #lit.lifetime> loc(fused<#file>["foo.mlir":10:4])
 } loc(fused<#file>["foo.mlir":8:4])
 
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.mlir" in "/">

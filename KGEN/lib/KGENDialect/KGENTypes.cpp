@@ -337,7 +337,10 @@ SignatureType SignatureType::getSpecializedSignature(
     // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
     auto remappedDeclType = remapType(type);
-    if (value.getType() != remappedDeclType) {
+    // We must remap the value type being provided as well, because it may be
+    // referring to outer-context indexed parameters, whose depth will be
+    // increased when substituted into this signature.
+    if (remapType(value.getType()) != remappedDeclType) {
       assert(emitErrorFn && "unexpected invalid signature");
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                     << value.getType() << " but callee expected type "
@@ -542,6 +545,9 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
+/// Construct a signature from named parameter declarations, a function
+/// type, and metadata. This helper is used to convert between a named
+/// signature structure to a nameless `SignatureType` representation.
 SignatureType SignatureType::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
     FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,

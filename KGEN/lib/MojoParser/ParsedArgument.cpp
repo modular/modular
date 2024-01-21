@@ -757,15 +757,15 @@ void DeclResolver::computeArgumentConventions(
             /*dontRenameOutermost=*/true);
       }
 
-      auto lifetimeDecl =
-          ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
-      implicitLifetimeDecls.push_back(lifetimeDecl);
-
       // The reference is immutable when borrowing, mutable otherwise.
       bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
+
+      auto lifetimeDecl = ParamDeclAttr::get(
+          lifetimeName, LifetimeType::get(shared.getContext(), isMutable));
+      implicitLifetimeDecls.push_back(lifetimeDecl);
+
       argType = RefType::get(
-          isMutable, argType,
-          ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
+          argType, ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
     }
 
     // If this is a valid vararg argument, then we pass it as a variadic type.

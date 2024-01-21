@@ -120,9 +120,6 @@ public:
   /// This is the decl for the builtin '!kgen.none' type.
   ASTType getNoneType() const;
 
-  /// This is the decl for the builtin '!lit.lifetime' type, aka Lifetime.
-  ASTType getLifetimeType() const;
-
   /// This returns a NoneAttr.
   NoneAttr getNoneAttr() const;
 

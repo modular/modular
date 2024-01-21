@@ -124,10 +124,16 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // Handle RefType.
   if (auto actual = dyn_cast<RefType>(actualType))
     if (auto expected = dyn_cast<RefType>(expectedType)) {
-      matchParams(actual.getIsMutable(), expected.getIsMutable());
       matchTypes(actual.getElementType(), expected.getElementType());
       matchParams(actual.getLifetime(), expected.getLifetime());
       matchParams(actual.getAddressSpace(), expected.getAddressSpace());
+      return;
+    }
+
+  // Handle LifetimeType.
+  if (auto actual = dyn_cast<LifetimeType>(actualType))
+    if (auto expected = dyn_cast<LifetimeType>(expectedType)) {
+      matchParams(actual.isMutable(), expected.isMutable());
       return;
     }
 
@@ -237,7 +243,7 @@ LogicalResult ParameterInferenceState::checkOneOperand(
 
   case ValueInputConvention::OwnedInMem:
   case ValueInputConvention::BorrowedInMem:
-    // Otherwise,we expect an r-value to match up, ignoring the pointer type
+    // Otherwise,we expect an r-value to match up, ignoring the reference type
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
     [[fallthrough]];
@@ -800,16 +806,18 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Check value -> reference conversion is allowed in an argument.  This can
     // be performed by passing the existing address of dropping something into a
     // memory box.
+    // TODO(references): if we had lifetimeof(self) and inout/borrowed
+    // overloading, we could get rid of this implicit conversion.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      // Element types and lifetimes have to be exactly equal, and the
-      // mutability has to be compatible.
+      // Element type and address have to be exactly equal, the mutability just
+      // has to be compatible.
       if (ASTType(argType).isEqualCanon(expectedRef.getElementType()) &&
           // We don't currently support non-MValues.  We could dump them into
           // memory with an MBValue conversion if there is a need to.
-          argVal.isMValue() &&
-          cast<RefType>(argVal.getMValueReference().getType()).getLifetime() ==
-              expectedRef.getLifetime()) {
-        break;
+          argVal.isMValue()) {
+        auto argRefType = cast<RefType>(argVal.getMValueReference().getType());
+        if (canZeroCostConvert(shared, argRefType, expectedRef))
+          break;
       }
     }
 

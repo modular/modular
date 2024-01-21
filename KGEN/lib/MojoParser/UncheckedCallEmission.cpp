@@ -201,6 +201,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     // If this is a low-level !lit.ref passed by value, we can bind either to a
     // !lit.ref SBValue of the same type, or an MValue of the element type.
+    // TODO(references): If we had lifetimeof(self) and inout/borrowed
+    // overloading, we could get rid of this special case.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       if (auto cValue = operand.ir.getIfCValue())
         if (convention == ValueInputConvention::BorrowedInReg &&
@@ -214,10 +216,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                 "cannot pass non-memory value through implicit reference");
             return {};
           }
-          // Lifetimes must match, this is checked by OverloadFitness.
+          // Lifetimes must be convertible, this is checked by OverloadFitness.
           Value refValue = cValue.getMValueReference();
           auto refValueType = cast<RefType>(refValue.getType());
-          assert(refValueType.getLifetime() == expectedRef.getLifetime());
           // The destination may be less mutable.
           if (!refValueType.isMutableKnown(false) &&
               expectedRef.isMutableKnown(false))
@@ -324,8 +325,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
     // If there is more than one element, they probably have different
     // lifetimes, and thus need to be rebound into a common union of them.
+    LifetimeType commonLifetimeType = expectedRefType.getLifetimeType();
     auto commonLifetime =
-        LifetimeUnionAttr::get(expectedRefType.getContext(), refLifetimes);
+        LifetimeUnionAttr::get(refLifetimes, commonLifetimeType);
     expectedRefType = expectedRefType.getWithLifetime(commonLifetime);
     for (auto &arg : args)
       // Cast to common lifetime.
@@ -590,12 +592,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
       // Given a legacy pointer, get it to a reference.
       // TODO(references): RefFromPointerOp should take a novel lifetime.
-      auto immortal = emitter.builder->getAttr<LifetimeAttr>();
-      auto ref = emitter.builder->create<RefFromPointerOp>(
-          argLoc,
-          /*isMut=*/false, ptr, immortal,
-          /*startUninit=*/false,
-          /*endUninit=*/false);
+      auto immortal = emitter.builder->getAttr<LifetimeAttr>(/*isMut=*/false);
+      auto ref =
+          emitter.builder->create<RefFromPointerOp>(argLoc, ptr, immortal,
+                                                    /*startUninit=*/false,
+                                                    /*endUninit=*/false);
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the
       // lifetime of the SBValue.
@@ -737,14 +738,14 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // conversion).
     if (SignatureType::hasAddress(convention)) {
       arg = StoreToMemAttr::get(
-          arg, RefType::getImmortal(/*isMut=*/true, arg.getType()));
+          arg, RefType::getImmortal(arg.getType(), /*isMut=*/true));
     } else if (boundSigType.isVarArg(argIdx)) {
       // If handling a variadic memory argument, put each element into memory.
       auto varType = cast<VariadicType>(arg.getType());
       if (SignatureType::hasAddress(varType.getConvention())) {
         bool isMut =
             varType.getConvention() != ValueInputConvention::BorrowedInMem;
-        auto varElType = RefType::getImmortal(isMut, varType.getElementType());
+        auto varElType = RefType::getImmortal(varType.getElementType(), isMut);
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
           storedAttrs.push_back(StoreToMemAttr::get(var, varElType));

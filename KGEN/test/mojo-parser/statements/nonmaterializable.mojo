@@ -53,28 +53,28 @@ fn nmTargetNoop(x: NmTarget):
 
 
 fn useNonmaterializable(p: Bool):
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted1" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted1" var : !lit.ref<!NmTarget
     # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}true
     var gotConverted1 = NmStruct(76) + NmStruct(1)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted2" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted2" var : !lit.ref<!NmTarget
     # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}false
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVar" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVar" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}false
     var useIfVar = NmStruct(2) if p else NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVarLopsided" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}true
     var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
 
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar1" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar1" var : !lit.ref<!NmTarget
     var useOrVar1 = NmStruct(2) or NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar2" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar2" var : !lit.ref<!NmTarget
     var useOrVar2 = NmStruct(2) or NmStruct(3)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar1" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar1" var : !lit.ref<!NmTarget
     var useAndVar1 = NmStruct(2) and NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar2" var : !lit.ref<mut !NmTarget
+    # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar2" var : !lit.ref<!NmTarget
     var useAndVar2 = NmStruct(77) and NmStruct(77)
 
     # Test that parameter inference using nonmaterializable gives the target,

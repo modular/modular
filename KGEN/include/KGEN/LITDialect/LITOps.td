@@ -1657,10 +1657,10 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let summary = "Drop mutability from a reference";
   let description = [{
     This op drops mutability from a reference type: given a
-    `!lit.ref<mut X, life>`, it returns `!lit.ref<X, life>`.
+    `!lit.ref<X, mut life>`, it returns `!lit.ref<X, imm life>`.
 
     ```mlir
-    lit.ref.immut %0 : !lit.ref<mut @Foo, life>
+    lit.ref.immut %0 : !lit.ref<@Foo, mut life>
     ```
   }];
 
@@ -1724,8 +1724,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   }];
 
   let builders = [
-    // Create with a mutability, pointer and lifetime, to infer result type.
-    OpBuilder<(ins "bool":$isMut, "Value":$pointer, "TypedAttr":$lifetime,
+    // Create with a pointer and lifetime, to infer result type.
+    OpBuilder<(ins "Value":$pointer, "TypedAttr":$lifetime,
                    "bool":$startsUninit, "bool":$endsUninit)>,
   ];
 }
@@ -1749,7 +1749,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
       lit.struct.field a : !pop.scalar<T>
     }
 
-    %0 = lit.ref.struct.ger %struct[a] : !lit.ref<mut @MyStruct<...>, life>
+    %0 = lit.ref.struct.ger %struct[a] : !lit.ref<@MyStruct<...>, mut life>
     ```
   }];
 
@@ -1781,7 +1781,7 @@ def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
     ```mlir
     %0 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, lifetime>
     %1 = lit.ref.load %ref1 : !lit.ref<simd<4, type>, lifetime>
-    %2 = lit.ref.load %ref0 : !lit.ref<mut scalar<f32>, lifetime>
+    %2 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, mut lifetime>
     ```
   }];
 
@@ -1803,8 +1803,8 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"ref", "arg">]> {
     Example:
 
     ```mlir
-    lit.ref.store %0, %ref0 : !lit.ref<mut scalar<f32>, lifetime>
-    lit.ref.store %1, %ref1 : !lit.ref<mut simd<4, type>, lifetime>
+    lit.ref.store %0, %ref0 : !lit.ref<scalar<f32>, mut lifetime>
+    lit.ref.store %1, %ref1 : !lit.ref<simd<4, type>, mut lifetime>
     ```
   }];
 

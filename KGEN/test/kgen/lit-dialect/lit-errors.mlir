@@ -2,7 +2,7 @@
 
 lit.struct.decl @SomeStruct {
   // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}
-  %size = lit.varlet.decl "size" var : !lit.ref<mut simd<1, ty>, *"lifetime">
+  %size = lit.varlet.decl "size" var : !lit.ref<simd<1, ty>, mut lifetime>
 }
 
 // -----
@@ -306,8 +306,8 @@ lit.func @caller() -> !kgen.none attributes {isParametric} {
 // -----
 
 lit.func @throwing_caller(%0: !kgen.variant<@Error, index, !kgen.none>) throws -> !kgen.variant<@Error, none> attributes {isParametric} {
-    %y = lit.varlet.decl "y" let : !lit.ref<mut @MyStruct, *"lifetime">
-    %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"lifetime">
+    %y = lit.varlet.decl "y" let : !lit.ref<@MyStruct, mut *"lifetime">
+    %yp = lit.ref.to_pointer %y : !lit.ref<@MyStruct, mut *"lifetime">
     // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
     %1 = lit.handle_variant %0, %yp : (!kgen.variant<@Error, index, !kgen.none>, !kgen.pointer<@MyStruct>) -> !kgen.none
     {
@@ -428,15 +428,15 @@ lit.func @f() -> !kgen.none {
 // -----
 
 // expected-error @below {{2 lifetimes specified, but signature expected 1}}
-lit.call @calls[a, b]() : !lit.signature<[1]() -> ()>
+lit.call @calls[imm a, mut b]() : !lit.signature<[1]() -> ()>
 
 // -----
 
 // expected-error @+1 {{custom op 'lit.call' implicit lifetime reference at depth 0 has an out-of-range index: 1 >= 1}}
-lit.call @calls[a]() : !lit.signature<[1](!lit.ref<mut index, *[0,1]>) -> ()>
+lit.call @calls[mut a]() : !lit.signature<[1](!lit.ref<index, mut *[0,1]>) -> ()>
 
 // -----
-lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<index, life>) ->  !lit.ref<index, life> {
-  %ref2 = lit.ref.immut %ref1: !lit.ref<index, life>
-  kgen.return %ref2: !lit.ref<index, life>
+lit.func @ref_immut<life: lifetime<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
+  %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
+  kgen.return %ref2: !lit.ref<index, imm life>
 }

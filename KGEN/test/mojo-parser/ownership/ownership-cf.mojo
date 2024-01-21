@@ -24,7 +24,7 @@ struct MemExample:
 # CHECK-LABEL: lit.func @"if_examples
 fn if_examples(cond: __mlir_type.i1):
   # CHECK: %a = lit.varlet.decl
-  var a: MemExample  # expected-warning {{consider switching to a 'let'}}
+  var a: MemExample
 
   # CHECK-NEXT: %b = lit.varlet.decl
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
@@ -66,7 +66,7 @@ fn if_examples(cond: __mlir_type.i1):
 
   # CHECK-NEXT:  %d = lit.varlet.decl "d"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
-  var d = MemExample()  # expected-warning {{consider switching to a 'let'}}
+  var d = MemExample()
 
   # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
   # CHECK: hlcf.if [[ONE]] {

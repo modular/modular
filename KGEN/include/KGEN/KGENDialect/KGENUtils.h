@@ -156,6 +156,12 @@ void printIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `index` type.
 ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
 
+/// Print a parameter value that is known to have `i1` type.
+void printI1ParamValue(AsmPrinter &p, Operation *op, Attribute value);
+void printI1ParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to have `i1` type.
+ParseResult parseI1ParamValue(AsmParser &p, TypedAttr &value);
+
 /// Parse a index-or-colon-type and then a parameter value of that type.
 ParseResult parseColonTypeParamValue(AsmParser &p, TypedAttr &value);
 void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);

@@ -40,7 +40,7 @@ fn borrowed_generic[T: AnyType](borrowed x: T):
 fn test_owned(owned x: RegPassable):
     # CHECK: [[XVAR:%.*]] = lit.varlet.decl "x"
     # CHECK: lit.ref.store %x, [[XVAR]]
-    # CHECK: [[XIMUT:%.*]] = lit.ref.immut [[XVAR]] : <mut !RegPassable, *"x`0">
+    # CHECK: [[XIMUT:%.*]] = lit.ref.immut [[XVAR]] : <!RegPassable, mut *"x`0">
     # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
     borrowed_generic(x)
 
