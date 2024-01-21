@@ -28,7 +28,7 @@ lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> attributes
 !structTestComplexNoSourceName = !kgen.declref<@"$test::ComplexStructNoSourceName"<Int, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
-!structTestComplexRef = !lit.ref<!structTestComplex, *"mystruct`">
+!structTestComplexRef = !lit.ref<!structTestComplex, imm *"mystruct`">
 
 // CHECK: "test.types"
 "test.types"() {

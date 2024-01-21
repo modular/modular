@@ -1,24 +1,24 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect %s | kgen-opt -split-input-file -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: lit.func @calls[a, b]
-lit.func @calls[a, b](%arg0: !lit.signature<[2]() -> ()>) {
-  // CHECK: lit.call @calls[a, b]() : !lit.signature<[2]() -> ()>
-  lit.call @calls[a, b]() : !lit.signature<[2]() -> ()>
-  // CHECK: lit.call_param[!lit.signature<[2]() -> ()>: @calls][a, b]()
-  lit.call_param[!lit.signature<[2]() -> ()>: @calls][a, b]()
-  // CHECK: lit.call_signature %arg0[a, b]() : !lit.signature<[2]() -> ()>
-  lit.call_signature %arg0[a, b]() : !lit.signature<[2]() -> ()>
+// CHECK-LABEL: lit.func @calls[imm a, mut b]
+lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
+  // CHECK: lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  // CHECK: lit.call_param[!lit.signature<[2]() -> ()>: @calls][imm a, mut b]()
+  lit.call_param[!lit.signature<[2]() -> ()>: @calls][imm a, mut b]()
+  // CHECK: lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
   kgen.return
 }
 
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-  // CHECK-NEXT: %a = lit.varlet.decl "a" imp : !lit.ref<mut scalar<ty>, life>
-  %a = lit.varlet.decl "a" imp : !lit.ref<mut scalar<ty>, life>
+  // CHECK-NEXT: %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
+  %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
 
-  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<mut index, lt>
-  %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<mut index, lt>
+  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
+  %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32
@@ -35,8 +35,8 @@ lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7> {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<_1x2_ty>, life>
-  %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<_1x2_ty>, life>
+  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<scalar<_1x2_ty>, mut life>
+  %size = lit.varlet.decl "size" var : !lit.ref<scalar<_1x2_ty>, mut life>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <_1x2_ty>
@@ -72,22 +72,23 @@ lit.func @attributesAndDecorators()
   lit.end_func
 }
 
-lit.func @ref_immut<life: lifetime>(%ref1: !lit.ref<mut @MyStruct, life>)
- -> !lit.ref<@MyStruct, life> {
-  // CHECK: %0 = lit.ref.immut %ref1 : <mut @MyStruct, life>
-  %ref2 = lit.ref.immut %ref1: <mut @MyStruct, life>
-  // CHECK: kgen.return %0 : !lit.ref<@MyStruct, life>
-  kgen.return %ref2: !lit.ref<@MyStruct, life>
+lit.func @ref_immut<life: lifetime<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
+ -> !lit.ref<@MyStruct, muttoimm life> {
+  // CHECK: %0 = lit.ref.immut %ref1 : <@MyStruct, mut life>
+  %ref2 = lit.ref.immut %ref1: <@MyStruct, mut life>
+  // CHECK: kgen.return %0 : !lit.ref<@MyStruct, muttoimm life>
+  kgen.return %ref2: !lit.ref<@MyStruct, muttoimm life>
 }
 
-lit.func @ref_pointer<life: lifetime>(%ref1: !lit.ref<mut @MyStruct, life>) {
-  // CHECK: %0 = lit.ref.to_pointer %ref1 : <mut @MyStruct, life>
-  %ptr = lit.ref.to_pointer %ref1: <mut @MyStruct, *"life">
-  // CHECK: %1 = lit.ref.from_pointer %0 : <@MyStruct, life>
-  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<@MyStruct, *"life">
+lit.func @ref_pointer<life: lifetime<1>, ilife: lifetime<0>>
+     (%ref1: !lit.ref<@MyStruct, mut life>) {
+  // CHECK: %0 = lit.ref.to_pointer %ref1 : <@MyStruct, mut life>
+  %ptr = lit.ref.to_pointer %ref1: <@MyStruct, mut life>
+  // CHECK: %1 = lit.ref.from_pointer %0 : <@MyStruct, imm ilife>
+  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<@MyStruct, imm ilife>
 
-  // CHECK: %2 = lit.ref.to_pointer %1 : <@MyStruct, life>
-  %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<@MyStruct, *"life">
+  // CHECK: %2 = lit.ref.to_pointer %1 : <@MyStruct, imm ilife>
+  %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<@MyStruct, imm ilife>
   lit.end_func
 }
 
@@ -122,12 +123,12 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": lifetime> {
-lit.struct.decl @CrazyParams<*"m`": lifetime> {
+// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": lifetime<0>> {
+lit.struct.decl @CrazyParams<*"m`": lifetime<0>> {
 }
 
-lit.struct.decl @LifetimeRef<b: lifetime> {
-  lit.struct.field b : !lit.signature<(!lit.ref<@A, *(0,1)>) -> ()>
+lit.struct.decl @LifetimeRef<b: lifetime<0>> {
+  lit.struct.field b : !lit.signature<(!lit.ref<@A, imm *(0,1)>) -> ()>
 }
 
 // -----
@@ -385,11 +386,11 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 // -----
 
 lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
-  %y = lit.varlet.decl "y" var : !lit.ref<mut @MyStruct, *"life">
+  %y = lit.varlet.decl "y" var : !lit.ref<@MyStruct, mut *"life">
   %none = kgen.param.constant: none = <#kgen.none>
   %ret = kgen.param.constant: !kgen.variant<@Error, none> = <#kgen.variant<:!kgen.none #kgen.none, 1>>
   // CHECK: [[YPTR:%.*]] = lit.ref.to_pointer
-  %yptr = lit.ref.to_pointer %y: !lit.ref<mut @MyStruct, *"life">
+  %yptr = lit.ref.to_pointer %y: !lit.ref<@MyStruct, mut *"life">
   // CHECK: lit.handle_variant %variant, [[YPTR]] : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
   %0 = lit.handle_variant %ret, %yptr : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
     // CHECK-NEXT: lit.yield %{{.*}} : !kgen.none
@@ -415,8 +416,8 @@ lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
 
 // CHECK: lit.globalvar.decl @global_var : !kgen.declref<@Error> {
 lit.globalvar.decl @global_var : !kgen.declref<@Error> {
-  // CHECK-NEXT: lit.globalvar.ref @global_var : <mut @Error, #lit.lifetime>
-  %0 = lit.globalvar.ref @global_var : <mut @Error, #lit.lifetime>
+  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error, mut #lit.lifetime>
+  %0 = lit.globalvar.ref @global_var : <@Error, mut #lit.lifetime>
 // CHECK-NEXT: }, {
 }, {
 // CHECK-NEXT: }
@@ -425,7 +426,7 @@ lit.globalvar.decl @global_var : !kgen.declref<@Error> {
 // CHECK: lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar
 lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar {
 }, {
-  %0 = lit.globalvar.ref @global_let : <mut @Error, #lit.lifetime>
+  %0 = lit.globalvar.ref @global_let : <@Error, mut #lit.lifetime>
 }
 
 // -----
@@ -469,7 +470,7 @@ lit.func @lit_loop() {
 
 // -----
 
-lit.func @load_consume(%arg0 : !lit.ref<mut index, #lit.lifetime>) -> index {
-  %0 = lit.load.consume %arg0 : !lit.ref<mut index, #lit.lifetime>
+lit.func @load_consume(%arg0 : !lit.ref<index, mut #lit.lifetime>) -> index {
+  %0 = lit.load.consume %arg0 : !lit.ref<index, mut #lit.lifetime>
   kgen.return %0 : index
 }

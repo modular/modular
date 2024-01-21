@@ -129,11 +129,15 @@ void ParameterCollector::collectUsesFromAttr(
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }
+#if 0
+          // FIXME(#29491): ParameterCollector doesn't remap parameter types
+          // correctly in this check.
           Type type = types[indexRef.getIndex()];
           if (type != indexRef.getType()) {
             return emitError() << "index reference type " << indexRef.getType()
                                << " does not match parameter type " << type;
           }
+#endif
           return success();
         });
     return;

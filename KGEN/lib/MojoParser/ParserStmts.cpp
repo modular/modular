@@ -1017,9 +1017,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
                                         seqExpr)) {
-    varDeclOp.getResult().setType(
-        RefType::get(/*isMut*/ true, shared.getTypeCheckErrorType(),
-                     varDeclOp.getType().getLifetime()));
+    varDeclOp.getResult().setType(RefType::get(
+        shared.getTypeCheckErrorType(), varDeclOp.getType().getLifetime()));
     return {};
   }
 
@@ -2081,8 +2080,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     ExprContext exprContext =
         (varOp.getKind() == VarLetDeclKind::Let) ? EC_LetInit : EC_VarInit;
     if (parsedType) {
-      varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
-                                             varOp.getType().getLifetime()));
+      varOp.getResult().setType(
+          RefType::get(parsedType, varOp.getType().getLifetime()));
       dest = ValueDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
@@ -2097,8 +2096,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
-    varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
-                                           varOp.getType().getLifetime()));
+    varOp.getResult().setType(
+        RefType::get(parsedType, varOp.getType().getLifetime()));
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),

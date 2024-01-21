@@ -29,7 +29,7 @@ fn var_let_decls():
     # CHECK: kgen.param.constant: !StringLiteral = <#lit.struct<{value: string = "hello"}>>
     let const_str = "hello"
 
-    # CHECK: %str = lit.varlet.decl {{.*}} : !lit.ref<mut !StringLiteral,
+    # CHECK: %str = lit.varlet.decl {{.*}} : !lit.ref<!StringLiteral,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"

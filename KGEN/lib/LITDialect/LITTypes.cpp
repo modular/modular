@@ -303,7 +303,7 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
           p.parseRSquare())
         return failure();
-      result = ImplicitLifetimeRefAttr::get(p.getContext(), depth, index);
+      result = ImplicitLifetimeRefAttr::get(depth, index, *this);
       return mlir::success();
     }
     // We don't support *?
@@ -323,10 +323,19 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
             "in lifetime union") ||
         p.parseRBrace())
       return failure();
-    result = LifetimeUnionAttr::get(p.getContext(), elements);
+    result = LifetimeUnionAttr::get(elements, *this);
     return mlir::success();
   }
 
+  // Handle mutability casts in parens.
+  if (succeeded(p.parseOptionalLParen())) {
+    TypedAttr operand;
+    if (p.parseKeyword("mutcast") || parseLifetimeParamValue(p, operand) ||
+        p.parseRParen())
+      return failure();
+    result = LifetimeMutCastAttr::get(operand, *this);
+    return mlir::success();
+  }
   return std::nullopt;
 }
 
@@ -349,30 +358,47 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
+  if (auto mutcast = ::dyn_cast<LifetimeMutCastAttr>(value)) {
+    p << "(mutcast ";
+    printLifetimeParamValue(p, mutcast.getOperand());
+    p << ")";
+    return success();
+  }
+
   return failure();
+}
+
+LifetimeType LifetimeType::get(TypedAttr isMutable) {
+  assert(isMutable.getType().isSignlessInteger(1) &&
+         "isMutable bit should be i1");
+  return get(isMutable.getContext(), isMutable);
+}
+
+LifetimeType LifetimeType::get(MLIRContext *ctx, bool isMutable) {
+  return get(ctx, BoolAttr::get(ctx, isMutable));
+}
+
+/// Return true if the mutable attribute is known to be the specific
+/// constant.  This returns false if parametric or if the other value.
+bool LifetimeType::isMutableKnown(bool value) {
+  if (auto cst = ::dyn_cast<BoolAttr>(getIsMutable()))
+    return cst.getValue() == value;
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
 // RefType
 //===----------------------------------------------------------------------===//
 
-RefType RefType::get(TypedAttr isMutable, Type elementType, TypedAttr lifetime,
+RefType RefType::get(Type elementType, TypedAttr lifetime,
                      TypedAttr addrSpace) {
-  assert(isMutable.getType().isSignlessInteger(1) && "isMutable should be i1");
-  return get(lifetime.getContext(), isMutable, elementType, lifetime,
-             addrSpace);
+  assert(::isa<LifetimeType>(lifetime.getType()));
+  return get(lifetime.getContext(), elementType, lifetime, addrSpace);
 }
 
-RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
-                     TypedAttr addrSpace) {
-  return get(BoolAttr::get(elementType.getContext(), isMutable), elementType,
-             lifetime, addrSpace);
-}
-
-RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime,
-                     unsigned addrSpace) {
+RefType RefType::get(Type elementType, TypedAttr lifetime, unsigned addrSpace) {
   auto *ctx = elementType.getContext();
-  return get(isMutable, elementType, lifetime,
+  return get(elementType, lifetime,
              IntegerAttr::get(IndexType::get(ctx), addrSpace));
 }
 
@@ -384,81 +410,50 @@ PointerType RefType::getAsPointerType() {
 
 /// Return this RefType but with a different element type.
 RefType RefType::getWithElement(Type newElement) {
-  return get(getIsMutable(), newElement, getLifetime(), getAddressSpace());
+  return get(newElement, getLifetime(), getAddressSpace());
 }
 
 /// Return this RefType but with a different lifetime.
 RefType RefType::getWithLifetime(TypedAttr newLifetime) {
-  return get(getIsMutable(), getElementType(), newLifetime, getAddressSpace());
+  return get(getElementType(), newLifetime, getAddressSpace());
 }
 
 /// Return this RefType but with a different mutability.
 RefType RefType::getWithMutability(bool isMut) {
-  return get(isMut, getElementType(), getLifetime(), getAddressSpace());
+  return get(getElementType(), LifetimeMutCastAttr::get(getLifetime(), isMut),
+             getAddressSpace());
+}
+
+/// Return the type of the lifetime reference, which is always a
+/// `!lit.lifetime<mutability>` type.
+LifetimeType RefType::getLifetimeType() {
+  return ::cast<LifetimeType>(getLifetime().getType());
 }
 
 /// Return a reference to the specified element type and mutability with an
 /// immortal (#lit.lifetime) lifetime.
-RefType RefType::getImmortal(bool isMut, Type elementType,
+RefType RefType::getImmortal(Type elementType, bool isMut,
                              TypedAttr addrSpace) {
-  return get(isMut, elementType, LifetimeAttr::get(elementType.getContext()),
+  return get(elementType, LifetimeAttr::get(elementType.getContext(), isMut),
              addrSpace);
 }
 
-RefType RefType::getImmortal(bool isMut, Type elementType, unsigned addrSpace) {
+RefType RefType::getImmortal(Type elementType, bool isMut, unsigned addrSpace) {
   return getImmortal(
-      isMut, elementType,
+      elementType, isMut,
       IntegerAttr::get(IndexType::get(elementType.getContext()), addrSpace));
 }
 
 /// Return true if the mutable attribute is known to be the specific
 /// constant.  This returns false if parametric or if the other value.
 bool RefType::isMutableKnown(bool value) {
-  if (auto cst = ::dyn_cast<BoolAttr>(getIsMutable()))
-    return cst.getValue() == value;
-  return false;
+  return ::cast<LifetimeType>(getLifetime().getType()).isMutableKnown(value);
 }
 
-/// Print/Parse a parameter value that is known to have `lifetime` type.
-static void printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
-  printParamValue(p, value);
-}
-static ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &value) {
-  return parseParamValue(p, value,
-                         LifetimeType::get(p.getBuilder().getContext()));
-}
-
-/// Print/Parse the 'mut' keyword as 1, and its absence as 0.
-static void printMutFlag(AsmPrinter &p, TypedAttr value) {
-  if (auto boolAttr = dyn_cast<BoolAttr>(value)) {
-    if (boolAttr.getValue())
-      p << "mut ";
-    return;
-  }
-
-  p << "mut=";
-  printParamValue(p, value);
-  p << ", ";
-}
-
-static ParseResult parseMutFlag(AsmParser &p, TypedAttr &value) {
-  // !lit.ref<lifetime    ==> immmutable
-  if (failed(p.parseOptionalKeyword("mut"))) {
-    value = BoolAttr::get(p.getContext(), false);
-    return success();
-  }
-
-  // !lit.ref<mut lifetime    ==> mutable
-  if (failed(p.parseOptionalEqual())) {
-    value = BoolAttr::get(p.getContext(), true);
-    return success();
-  }
-
-  // !lit.ref<mut=expr, lifetime  ==> parametric
-  if (parseParamValue(p, value, p.getBuilder().getI1Type()) || p.parseComma())
-    return failure();
-
-  return success();
+/// Return a (possibly parameteric) specification for whether this reference
+/// is a mutation or a read.
+TypedAttr RefType::isMutable() {
+  return ::cast<LifetimeType>(getLifetime().getType()).isMutable();
 }
 
 OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
@@ -774,7 +769,7 @@ SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
     return *this;
 
   SmallVector<TypedAttr> lifetimes(getNumImplicitLifetimeDecls(),
-                                   LifetimeAttr::get(getContext()));
+                                   LifetimeAttr::get(getContext(), true));
   FunctionType newFnType = substituteImplicitLifetimesIntoValues(
       lifetimes,
       []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
@@ -808,8 +803,8 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
           // Subtract indexOffset because we may be replacing the signature
           // directly.
           size_t index = it->second;
-          return ImplicitLifetimeRefAttr::get(attr.getContext(),
-                                              depth - indexOffset, index);
+          return ImplicitLifetimeRefAttr::get(depth - indexOffset, index,
+                                              ref.getType());
         }
       }
       return nullptr;

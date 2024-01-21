@@ -16,12 +16,12 @@
 # CHECK-LABEL: lit.func @"get_test
 # CHECK-NEXT: %anonymous2A = lit.varlet.dec
 # CHECK-NEXT: lit.call @"${{.*}}"::@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A, %self)
-# CHECK-SAME: !lit.signature<[1]("self": !lit.ref<mut @"${{.*}}"::@"`_CI_{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
+# CHECK-SAME: !lit.signature<[1]("self": !lit.ref<@"${{.*}}"::@"`_CI_{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT:  %anonymous2A_0 = lit.varlet.decl
 # CHECK-NEXT: lit.call @"${{.*}}"::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A_0, %anonymous2A)
-# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<mut @"${{.*}}"::@"fn{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
+# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@"${{.*}}"::@"fn{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
 
 
 @value

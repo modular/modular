@@ -276,8 +276,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
-      varOp.getResult().setType(RefType::get(/*isMut*/ true, materializedType,
-                                             varOp.getType().getLifetime()));
+      varOp.getResult().setType(
+          RefType::get(materializedType, varOp.getType().getLifetime()));
       return MLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
@@ -1069,10 +1069,16 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (canZeroCostConvert(shared, rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
-        if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
+        if (cValue.isMValue()) {
           requiredType =
               cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
+
+        // PValues of lifetime type have a special conversion.
+        if (isa<LifetimeType>(requiredType))
+          if (auto pv = cValue.getIfPValue())
+            value = LifetimeMutCastAttr::get(pv, requiredType);
+
         value = rebindValue({value, expr}, requiredType);
         return emitCValue({value, expr}, dest);
       }

@@ -527,19 +527,18 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     if (auto varLetOp = dyn_cast<LIT::VarLetDeclOp>(varOp)) {
       // Declare the lifetime as a placeholder, we're going to replace this,
       // so we need to define the lifetime.
-      builder.create<ParamDeclareOp>(varLetOp.getParamDecl(),
-                                     builder.getAttr<LifetimeAttr>());
       lifetime = varLetOp.getType().getLifetime();
+      builder.create<ParamDeclareOp>(varLetOp.getParamDecl(),
+                                     LifetimeAttr::get(lifetime.getType()));
     } else {
       // letreg is going to be removed.  Just use a dummy lifetime.
-      lifetime = builder.getAttr<LifetimeAttr>();
+      lifetime = builder.getAttr<LifetimeAttr>(/*isMut=*/true);
     }
 
-    mallocCast =
-        builder
-            .create<mlir::UnrealizedConversionCastOp>(
-                RefType::get(/*isMut=*/true, elementType, lifetime), mallocCast)
-            .getResult(0);
+    mallocCast = builder
+                     .create<mlir::UnrealizedConversionCastOp>(
+                         RefType::get(elementType, lifetime), mallocCast)
+                     .getResult(0);
 
     return MRValue(mallocCast);
   };
@@ -550,7 +549,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
       MRValue field =
           checkInsertPersistentVar(letOp, letOp.getNameAttr(), letOp.getType(),
-                                   LifetimeAttr::get(letOp.getContext()));
+                                   LifetimeAttr::get(letOp.getContext(), true));
       if (!field)
         continue;
       decl->setIRValue(field);

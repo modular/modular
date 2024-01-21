@@ -75,22 +75,38 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     return false;
   }
 
-  // Check reference downcasting.
+  // Check lifetime downcasting.  We can convert from (mutable or parametric) to
+  // immutable, but nothing else.
+  if (auto fromLife = dyn_cast<LifetimeType>(fromType))
+    if (auto toLife = dyn_cast<LifetimeType>(toType)) {
+      return fromLife.isMutable() == toLife.isMutable() ||
+             toLife.isMutableKnown(false);
+    }
+
+  // Check reference downcasting.  The only thing allowed to disagree is the
+  // lifetime set / mutability.
   if (auto fromRef = dyn_cast<RefType>(fromType))
     if (auto toRef = dyn_cast<RefType>(toType)) {
-      // Element types have to be exactly equal.
+      // Element types and address space have to be exactly equal.
       if (!ASTType(fromRef.getElementType())
-               .isEqualCanon(toRef.getElementType()))
+               .isEqualCanon(toRef.getElementType()) ||
+          fromRef.getAddressSpace() != toRef.getAddressSpace())
         return false;
-      // We can convert from (mutable or parametric) to immutable, but nothing
-      // else.
-      if (fromRef.getIsMutable() != toRef.getIsMutable() &&
-          !toRef.isMutableKnown(false))
+
+      // Verify compatible LifetimeType(mutability).  This is checking the type
+      // of the lifetime, which contains its mutability specifier.
+      auto toLifetimeType = toRef.getLifetimeType();
+      if (fromRef.getLifetimeType() != toLifetimeType &&
+          !canZeroCostConvert(shared, fromRef.getLifetimeType(),
+                              toLifetimeType))
         return false;
-      // We can convert lifetimes to a superset of lifetimes.
+
+      // We can convert lifetime subset to a lifetimes superset.
       auto toLifetime = toRef.getLifetime();
       auto lifetimeUnion = LifetimeUnionAttr::get(
-          toRef.getContext(), {toLifetime, fromRef.getLifetime()});
+          {toLifetime,
+           LifetimeMutCastAttr::get(fromRef.getLifetime(), toLifetimeType)},
+          toLifetimeType);
       return toLifetime == lifetimeUnion;
     }
 
@@ -162,13 +178,15 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
 
       // If so, we can form a common type with a subset of their mutability and
       // a union of their lifetimes.
-      auto lifetime = LifetimeUnionAttr::get(
-          type1Ref.getContext(),
-          {type1Ref.getLifetime(), type2Ref.getLifetime()});
       auto isMutableAttr = ParamOperatorAttr::get(
-          POC::And, type1Ref.getIsMutable(), type2Ref.getIsMutable());
-      return RefType::get(isMutableAttr, eltType, lifetime,
-                          type1Ref.getAddressSpace());
+          POC::And, type1Ref.isMutable(), type2Ref.isMutable());
+
+      auto l1 = LifetimeMutCastAttr::get(type1Ref.getLifetime(), isMutableAttr);
+      auto l2 = LifetimeMutCastAttr::get(type2Ref.getLifetime(), isMutableAttr);
+
+      auto lifetime =
+          LifetimeUnionAttr::get({l1, l2}, cast<LifetimeType>(l1.getType()));
+      return RefType::get(eltType, lifetime, type1Ref.getAddressSpace());
     }
 
   // No common type found.

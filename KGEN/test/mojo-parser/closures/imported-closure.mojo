@@ -12,8 +12,8 @@ from test_package.return_closure import pass_int
 fn call_it() -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <#lit.struct<{value = 50}>>
     # CHECK: lit.call {{.*}}pass_int{{.*}}(%anonymous2A, %0)
-    # CHECK-SAME: !lit.ref<mut !Int1, {{.*}}> byref_result
+    # CHECK-SAME: !lit.ref<!Int1, mut {{.*}}> byref_result
     # CHECK-NEXT: %2 = lit.ref.immut %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%2)
-    # CHECK-SAME: (!lit.ref<!Int1, {{.*}}> borrow_in_mem, |) -> !Int
+    # CHECK-SAME: (!lit.ref<!Int1, imm {{.*}}> borrow_in_mem, |) -> !Int
     return pass_int(50)()

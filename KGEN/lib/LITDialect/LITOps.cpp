@@ -174,10 +174,9 @@ LogicalResult PackageOp::verify() {
 static ParseResult
 parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
-  auto lifetimeType = LifetimeType::get(p.getContext());
   if (p.parseCommaSeparatedList(
           AsmParser::Delimiter::OptionalSquare, [&]() -> ParseResult {
-            return parseParamValue(p, values.emplace_back(), lifetimeType);
+            return parseLifetimeParamValue(p, values.emplace_back());
           }))
     return failure();
   implicitLifetimes = ParameterExprArrayAttr::get(p.getContext(), values);
@@ -189,8 +188,9 @@ static void printLifetimeParams(AsmPrinter &p, Operation *op,
   if (implicitLifetimes.empty())
     return;
   p << '[';
-  llvm::interleaveComma(implicitLifetimes, p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(implicitLifetimes, p, [&](TypedAttr value) {
+    printLifetimeParamValue(p, value);
+  });
   p << ']';
 }
 
@@ -468,6 +468,26 @@ LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
 
 bool LIT::FuncOp::isSynthetic() { return getIsSynthetic(); }
 
+/// Parse a fixed mutability specifier that occurs for implicit lifetimes.
+// Implicit lifetime params are always known immut or mut, never parametric.
+static ParseResult parseImplicitLifetimeMutability(AsmParser &p,
+                                                   bool &isMutable) {
+  llvm::SMLoc loc;
+  StringRef mutability;
+  if (p.getCurrentLocation(&loc) || p.parseKeyword(&mutability))
+    return failure();
+  if (mutability != "mut" && mutability != "imm")
+    return p.emitError(loc, "expected 'mut' or 'imm' to indicate mutability");
+  isMutable = mutability == "mut";
+  return success();
+}
+
+static void printImplicitLifetimeMutability(AsmPrinter &p, LifetimeType type) {
+  assert((type.isMutableKnown(true) || type.isMutableKnown(false)) &&
+         "Implicit lifetimes are always known mut or imm");
+  p << (type.isMutableKnown(true) ? "mut " : "imm ");
+}
+
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
@@ -484,12 +504,14 @@ static ParseResult parseLITFunctionSignature(
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   SmallVector<ParamDeclAttr> lifetimeDecls;
-  auto lifetimeType = LifetimeType::get(p.getContext());
   auto parseLifetimeDecl = [&]() -> ParseResult {
+    bool isMutable = false;
     StringAttr name;
-    if (parseParamName(p, name))
+    if (parseImplicitLifetimeMutability(p, isMutable) ||
+        parseParamName(p, name))
       return failure();
-    lifetimeDecls.push_back(ParamDeclAttr::get(name, lifetimeType));
+    lifetimeDecls.push_back(
+        ParamDeclAttr::get(name, LifetimeType::get(p.getContext(), isMutable)));
     return success();
   };
   if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
@@ -597,6 +619,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   if (!lifetimeDecls.empty()) {
     p << '[';
     llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
+      printImplicitLifetimeMutability(p, cast<LifetimeType>(decl.getType()));
       printParamName(p, decl.getName());
     });
     p << ']';
@@ -1491,11 +1514,11 @@ OpFoldResult RefImmutOp::fold(RefImmutOp::FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             bool isMut, Value pointer, TypedAttr lifetime,
+                             Value pointer, TypedAttr lifetime,
                              bool startsUninit, bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
-  auto refType = RefType::get(isMut, ptr.getElementType(), lifetime,
-                              ptr.getAddressSpace());
+  auto refType =
+      RefType::get(ptr.getElementType(), lifetime, ptr.getAddressSpace());
   build(builder, result, refType, pointer, startsUninit, endsUninit);
 }
 
@@ -1703,13 +1726,12 @@ void VarLetDeclOp::walkDefinitions(
 void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
                          StringRef name, StringRef lifetimeName,
                          VarLetDeclKind kind) {
-  auto lifetimeType = b.getType<LifetimeType>();
+  auto lifetimeType = b.getType<LifetimeType>(/*isMutable=*/true);
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
   // Lets are mutable because they may be lazy initialized.
   auto resultType = RefType::get(
-      /*isMutable=*/true, elementType,
-      ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
+      elementType, ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
   build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{});
 }
 
@@ -1751,7 +1773,7 @@ DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
 
 void GlobalVarRefOp::build(OpBuilder &builder, OperationState &state,
                            GlobalVarDeclOp op) {
-  build(builder, state, RefType::getImmortal(/*isMut=*/true, op.getType()),
+  build(builder, state, RefType::getImmortal(op.getType(), /*isMut=*/true),
         getFullyResolvedSymbolRef(op));
 }
 
@@ -1995,11 +2017,12 @@ LogicalResult LIT::TraitFuncOp::verify() {
 
 void TransferMemOwnershipOp::build(OpBuilder &b, OperationState &state,
                                    Value srcValue, StringAttr lifetimeName) {
-  auto lifetimeType = b.getType<LifetimeType>();
+  auto srcType = cast<RefType>(srcValue.getType());
+  auto lifetimeType = b.getType<LifetimeType>(srcType.isMutable());
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeName, lifetimeType);
   // Lets are mutable because they may be lazy initialized.
-  auto resultType = cast<RefType>(srcValue.getType())
-                        .getWithLifetime(ParamDeclRefAttr::get(lifetimeDecl));
+  auto resultType =
+      srcType.getWithLifetime(ParamDeclRefAttr::get(lifetimeDecl));
   build(b, state, resultType, srcValue, lifetimeDecl);
 }
 

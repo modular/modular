@@ -167,8 +167,9 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       op->erase();
     } else if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
       // Declare the lifetime used in the result type.
-      b.create<ParamDeclareOp>(transfer.getLoc(), transfer.getParamDecl(),
-                               b.getAttr<LifetimeAttr>());
+      b.create<ParamDeclareOp>(
+          transfer.getLoc(), transfer.getParamDecl(),
+          LifetimeAttr::get(transfer.getType().getLifetimeType()));
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
           transfer, ArrayRef<Type>(transfer.getType()), transfer.getOperand());
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
@@ -206,15 +207,15 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOp(letDecl, letDecl.getOperand());
     } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
-      auto varType = varDecl.getType().getAsPointerType();
+      RefType varRegType = varDecl.getType();
       bool isSynth = varDecl.isSynthetic();
 
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),
-                               b.getAttr<LifetimeAttr>());
+                               LifetimeAttr::get(varRegType.getLifetimeType()));
       // Lower a lit.varlet.decl to pop.stack_allocation.
-      auto allocOp =
-          b.create<POP::StackAllocationOp>(varDecl.getLoc(), varType, 1);
+      auto allocOp = b.create<POP::StackAllocationOp>(
+          varDecl.getLoc(), varRegType.getAsPointerType(), 1);
       // Replace !lit.ref result type with a cast from the pointer.  This will
       // get squashed by LowerLITTypes.
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
@@ -224,10 +225,10 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       if (buildingDebugVars && !isSynth) {
         b.setInsertionPointAfter(allocOp);
         auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
-            DebugInfo::DIUnresolvedMLIRType::get(varType.getElementType()));
+            DebugInfo::DIUnresolvedMLIRType::get(varRegType.getElementType()));
         buildDebugInfoValue(
             b, allocOp, varName, funcSpAttr.getFile(), allocOp,
-            varType.getElementType(),
+            varRegType.getElementType(),
             DebugInfo::DIDerefExprAttr::get(
                 DebugInfo::DIIRValueExprAttr::get(diPointerType)));
       }
@@ -312,7 +313,7 @@ static void rewriteImplicitLifetimeDeclsAndArgs(
   for (auto decl : implicitLifetimes) {
     assert(isa<LifetimeType>(decl.getType()) &&
            "Implicit lifetimes should all have lifetime type");
-    b.create<ParamDeclareOp>(decl, b.getAttr<LifetimeAttr>());
+    b.create<ParamDeclareOp>(decl, LifetimeAttr::get(decl.getType()));
   }
 
   // Fix up the BBArgs in the entry block to use the correct types, which have

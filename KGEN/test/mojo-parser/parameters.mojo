@@ -103,7 +103,7 @@ struct TestParamStruct[A: Int]:
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
   # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
-  # CHECK: lit.ref.store %0, %arg11 : <mut {{.*}}@TestParamStruct<:!Int {{.*}}11
+  # CHECK: lit.ref.store %0, %arg11
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
@@ -114,9 +114,9 @@ fn testTestParamStruct(a: TestParamStruct[4]):
 fn testSIMD(a: Float64,
             b: Int32,
             inout reff: SIMD[DType.int32, 1]):
-  # CHECK: %field1 = lit.varlet.decl {{.*}} : !lit.ref<mut scalar<f64>,
+  # CHECK: %field1 = lit.varlet.decl {{.*}} : !lit.ref<scalar<f64>,
   var field1 = a.value
-  # CHECK: %field2 = lit.varlet.decl {{.*}} : !lit.ref<mut scalar<si32>,
+  # CHECK: %field2 = lit.varlet.decl {{.*}} : !lit.ref<scalar<si32>,
   var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
@@ -197,7 +197,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<:type index, :variadic<index> [1, 2]>
+  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<@"$parameters"::@ParamSubst<:type index, :variadic<index> [1, 2]>
   var xx : ParamSubst[index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -506,11 +506,11 @@ fn useParamVariadics():
   # CHECK-NEXT: %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() -> !kgen.none>>
   let fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<:variadic<!Int> []>
+  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<@"{{.*}}::@StructWithVariadics<:variadic<!Int> []>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>]>
+  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : !lit.ref<@{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>]>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
+  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : !lit.ref<@{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
@@ -632,7 +632,7 @@ fn testDependentField():
     var lvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE_PTR:.*]] = lit.ref.struct.ger %lvalue[value]
     # CHECK-NEXT: kgen.rebind %[[VALUE_PTR]] {{.*}} to
-    # CHECK-SAME: !lit.ref<mut {{.*}}@Abstraction<:!Int {{.*}} 2}>>
+    # CHECK-SAME: !lit.ref<{{.*}}@Abstraction<:!Int {{.*}} 2}>>
     takeAbstraction2(lvalue.value)
     let rvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE:.*]] = lit.struct.extract %rvalue[value]
@@ -777,14 +777,14 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<{{.*}}[x]: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:(!lit.ref<mut !MemoryOnlyType, #lit.lifetime> init_self) -> !kgen.none
-# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>(
+# CHECK-SAME: apply_result_slot(:(!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self) -> !kgen.none
+# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>(
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
 # CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:(!lit.ref<mut !MemoryOnlyType, #lit.lifetime> init_self) -> !kgen.none rebind(:!lit.signature<[1](!lit.ref<mut !MemoryOnlyType, *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:(!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self) -> !kgen.none rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -815,7 +815,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias T = DefaultParams[1]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[1]()
@@ -823,7 +823,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias U = DefaultParams[2, 3]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[2, 3]()
@@ -831,7 +831,7 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     alias S = DefaultParams[4, 5, "meow"]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     _ = DefaultParams[4, 5, "meow"]()
@@ -848,7 +848,7 @@ fn test_default_param_struct_all_default():
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     alias T = AllDefaultParams[]
 
-    # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@AllDefaultParams<
+    # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"{{.*}}<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
@@ -931,17 +931,17 @@ struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.func @"test_struct_kw_params()"
 fn test_struct_kw_params():
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>
     _ = KwParamStruct[5, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
     _ = KwParamStruct[5, b=7, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>
     _ = KwParamStruct[5, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
     _ = KwParamStruct[5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
     _ = KwParamStruct[a=5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
     _ = KwParamStruct[c=9, b=7, a=5]()
 
 ##===----------------------------------------------------------------------===##

@@ -270,11 +270,28 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
 def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
   let summary = "A !lit.lifetime value";
   let description = [{
-    This attribute is a singleton used when lowering lifetimes.
+    This attribute is a singleton (for each mutability) used when lowering
+    lifetimes, and represents an immortal value.
   }];
 
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "LifetimeType">:$type
+  );
+
   let assemblyFormat = "";
-  let extraClassDeclaration = [{ Type getType() const; }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+      assert(::isa<LifetimeType>(type) && "LifetimeAttr must have LifetimeType");
+      return get(type.getContext(), ::cast<LifetimeType>(type));
+    }]>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
+      return get(isMutable.getContext(), LifetimeType::get(isMutable));
+    }]>,
+    TypeBuilder<(ins "bool":$isMutable), [{
+      return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
+    }]>
+ ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -282,36 +299,75 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
 //===----------------------------------------------------------------------===//
 
 def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
-  let summary = "A !lit.lifetime.union set";
+  let summary = "A #lit.lifetime.union set";
   let description = [{
     This attribute represents a set of symbolic lifetime attributes.  It is
     canonicalized on construction, and always has !lit.lifetime type.
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$operands);
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands,
+                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
   let assemblyFormat = "`<` $operands `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
-    AttrBuilder<(ins
+    TypeBuilderWithInferredContext<(ins
       "ArrayRef<TypedAttr>":$operands,
-      "mlir::Type":$type
+      "LifetimeType":$type
     ), "", "TypedAttr">,
-
-    // The standard builder that infers lifetime type.
-    AttrBuilder<(ins
-      "ArrayRef<TypedAttr>":$operands
-    ), "", "TypedAttr">
+    TypeBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeType":$type), [{
+      return get(operands, type);
+    }], "TypedAttr">
   ];
 
-   let extraClassDeclaration = [{
-    Type getType() const;
+  let extraClassDeclaration = [{
     size_t getNumOperands() const {
       return getOperands().size();
     }
     TypedAttr getOperand(size_t i) const {
       return getOperands()[i];
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeMutCastAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
+  let summary = "Cast a !lit.lifetime value to a different mutability";
+  let description = [{
+    This attribute is a cast of a lifetime value from one mutability to another.
+    It is often folded away by the builder.
+  }];
+
+  let parameters = (ins "TypedAttr":$operand,
+                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
+
+  let assemblyFormat = "`<` $operand `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // These builders fold the request automatically.
+    TypeBuilderWithInferredContext<(ins
+      "TypedAttr":$operand, "TypedAttr":$isMutable), "", "TypedAttr">,
+    TypeBuilderWithInferredContext<(ins
+      "TypedAttr":$operand, "mlir::Type":$type), "", "TypedAttr">,
+    TypeBuilderWithInferredContext<(ins
+      "TypedAttr":$operand, "bool":$isMutable), "", "TypedAttr">,
+    TypeBuilder<(ins "TypedAttr":$operand, "LifetimeType":$type), [{
+      return get(operand, type);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// If the specified value has a LifetimeMutCastAttr on it, return the
+    /// operand, otherwise return the value.
+    static TypedAttr strip(TypedAttr value) {
+      if (auto castAttr = llvm::dyn_cast<LifetimeMutCastAttr>(value))
+        return castAttr.getOperand();
+      return value;
     }
   }];
 }
@@ -334,10 +390,16 @@ def ImplicitLifetimeRefAttr
     ```
   }];
 
-  let parameters = (ins "size_t":$depth, "size_t":$index);
+  let parameters = (ins "size_t":$depth, "size_t":$index,
+                        AttributeSelfTypeParameter<"", "LifetimeType">:$type);
   let assemblyFormat = "`<` $depth `,` $index `>`";
 
-  let extraClassDeclaration = [{ Type getType() const; }];
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "size_t":$depth, "size_t":$index, "Type":$type), [{
+      return get(type.getContext(), depth, index, ::cast<LifetimeType>(type));
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

@@ -13,9 +13,9 @@
 # CHECK-LABEL:    lit.func @"makes_escaping_closure
 # CHECK-NEXT:    debuginfo.value #[[VAR0:.*]] = %m : index loc(#[[LOC26:.*]])
 # CHECK-NEXT:    debuginfo.value #[[VAR1:.*]] = %z : index
-# CHECK-NEXT:    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping
+# CHECK-NEXT:    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<!escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
-# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !index
+# CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<!index
 # CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0)
 

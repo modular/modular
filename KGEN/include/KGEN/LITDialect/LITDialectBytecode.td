@@ -42,10 +42,11 @@ def TraitType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol
 )>;
 
-def LifetimeType : DialectType<(type)>;
+def LifetimeType : DialectType<(type
+  TypedAttr:$isMutable
+)>;
 
 def RefType : DialectType<(type
-  TypedAttr:$isMutable,
   Type:$elementType,
   TypedAttr:$lifetime,
   TypedAttr:$addressSpace
@@ -120,11 +121,21 @@ def BindTypeAttr : DialectAttribute<(attr
   ConcreteType<"MetaTypeType">:$type
 )>;
 
-def LifetimeAttr : DialectAttribute<(attr)>;
+def LifetimeAttr : DialectAttribute<(attr
+  ConcreteType<"LifetimeType">:$type)>;
+
+def LifetimeUnionAttr : DialectAttribute<(attr
+  TypedAttrArray:$values)>;
+
+def LifetimeMutCastAttr : DialectAttribute<(attr
+  TypedAttr:$operand,
+  ConcreteType<"LifetimeType">:$type
+)>;
 
 def ImplicitLifetimeRefAttr : DialectAttribute<(attr
   VarInt:$depth,
-  VarInt:$index
+  VarInt:$index,
+  ConcreteType<"LifetimeType">:$type
 )>;
 
 def UnresolvedAliasValueAttr : DialectAttribute<(attr

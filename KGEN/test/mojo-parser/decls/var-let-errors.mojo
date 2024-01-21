@@ -10,7 +10,6 @@
 # Stubs to allow testing without builtins
 # ===----------------------------------------------------------------------=== #
 
-alias Lifetime = __mlir_type.`!lit.lifetime`
 alias AnyRegType = __mlir_type.`!kgen.type`
 alias Int = __mlir_type.index
 

@@ -353,28 +353,17 @@ TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeAttr
-//===----------------------------------------------------------------------===//
-
-Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }
-
-//===----------------------------------------------------------------------===//
 // LifetimeUnionAttr
 //===----------------------------------------------------------------------===//
 
-Type LifetimeUnionAttr::getType() const {
-  return LifetimeType::get(getContext());
+static bool unionArgCompare(TypedAttr lhs, TypedAttr rhs) {
+  // Ignore LifetimeMutCastAttr's for comparison.
+  return ParameterAttr::compare(LifetimeMutCastAttr::strip(lhs),
+                                LifetimeMutCastAttr::strip(rhs));
 }
 
-TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
-                                 ArrayRef<TypedAttr> operands) {
-  return get(context, operands, LifetimeType::get(context));
-}
-
-TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
-                                 ArrayRef<TypedAttr> operandsIn, Type type) {
-  assert(::isa<LifetimeType>(type) &&
-         "#lit.lifetime.union always has !lit.lifetime type");
+TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
+                                 LifetimeType type) {
 
   // Canonicalize the operands, sorting by name/index and eliminating raw
   // #lit.lifetime members.
@@ -382,8 +371,8 @@ TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
 
   // Preprocess operands.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
-    assert(::isa<LifetimeType>(operands[i].getType()) &&
-           "all members of a lifetime union must have !lit.lifetime type");
+    assert(operands[i].getType() == type &&
+           "all members of a lifetime union must have matching type");
     // Drop #lit.lifetime, they carry no information.
     if (::isa<LifetimeAttr>(operands[i])) {
       operands[i] = operands.back();
@@ -408,7 +397,7 @@ TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
 
   // Impose an ordering on the operands, sorting by name where possible - but
   // predictably ordered w.r.t. each other.
-  llvm::stable_sort(operands, ParameterAttr::compare);
+  llvm::stable_sort(operands, unionArgCompare);
 
   // Remove duplicates which will now be sorted next to each other.
   if (operands.size() > 1) {
@@ -423,19 +412,54 @@ TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
 
   // If no results, return a plain lifetime attr.
   if (operands.empty())
-    return LifetimeAttr::get(context);
+    return LifetimeAttr::get(type);
   if (operands.size() == 1)
     return operands[0];
 
-  return LifetimeUnionAttr::Base::get(context, operands);
+  auto resultType = ::cast<LifetimeType>(operands[0].getType());
+  return LifetimeUnionAttr::Base::get(type.getContext(), operands, resultType);
 }
 
 //===----------------------------------------------------------------------===//
-// ImplicitLifetimeRefAttr
+// LifetimeMutCastAttr
 //===----------------------------------------------------------------------===//
 
-Type ImplicitLifetimeRefAttr::getType() const {
-  return LifetimeType::get(getContext());
+TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
+  auto curTy = ::cast<LifetimeType>(operand.getType());
+  if (curTy.isMutable() == isMutable)
+    return operand;
+
+  // Fold some common cases to canonicalize.
+  // mutcast(mutcast(x)) -> mutcast(x), often canceling out.
+  if (auto mutCast = ::dyn_cast<LifetimeMutCastAttr>(operand))
+    return get(mutCast.getOperand(), isMutable);
+
+  // Push into union so it cancels out.
+  if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(operand)) {
+    SmallVector<TypedAttr> elts;
+    for (auto elt : unionAttr.getOperands())
+      elts.push_back(LifetimeMutCastAttr::get(elt, isMutable));
+    return LifetimeUnionAttr::get(elts, LifetimeType::get(isMutable));
+  }
+
+  auto context = curTy.getContext();
+  return LifetimeMutCastAttr::Base::get(context, operand,
+                                        LifetimeType::get(isMutable));
+}
+
+TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, Type type) {
+  assert(::isa<LifetimeType>(type) && ::isa<LifetimeType>(operand.getType()) &&
+         "#lit.lifetime.union always has !lit.lifetime type");
+  if (operand.getType() == type)
+    return operand;
+  return get(operand, ::cast<LifetimeType>(type).isMutable());
+}
+
+TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, bool isMutable) {
+  auto operandType = ::cast<LifetimeType>(operand.getType());
+  if (operandType.isMutableKnown(isMutable))
+    return operand;
+  return get(operand, BoolAttr::get(operand.getContext(), isMutable));
 }
 
 //===----------------------------------------------------------------------===//

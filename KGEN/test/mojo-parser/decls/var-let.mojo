@@ -76,7 +76,7 @@ fn var_decls():
     # CHECK: lit.ref.store %[[F]], %y
     y = fudge_int(y)
 
-    # CHECK: %z = lit.varlet.decl {{.*}} : !lit.ref<mut index,
+    # CHECK: %z = lit.varlet.decl {{.*}} : !lit.ref<index,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %y
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = y

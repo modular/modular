@@ -74,6 +74,69 @@ Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 // Parsing and Printing
 //===----------------------------------------------------------------------===//
 
+/// Print a (potentially) parametric mutability specifier and then a value.  The
+/// forms are: "imm expr", "mut expr", "mut=<expr>, expr" and "muttoimm expr"
+/// without quotes.
+void LIT::printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
+  LifetimeType type = cast<LifetimeType>(value.getType());
+
+  // It is extremely common to have a LifetimeMutCastAttr cast from knwon
+  // mutable lifetime to known immutable lifetime (this happens when borrowed
+  // arguments are formed).  So much so that we sugar it.
+  if (auto castVal = dyn_cast<LifetimeMutCastAttr>(value);
+      castVal && type.isMutableKnown(false) &&
+      cast<LifetimeType>(castVal.getOperand().getType()).isMutableKnown(true)) {
+    p << "muttoimm ";
+    value = castVal.getOperand();
+  } else {
+    TypedAttr mutability = type.isMutable();
+    if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
+      p << (boolAttr.getValue() ? "mut " : "imm ");
+    } else {
+      p << "mut=";
+      printParamValue(p, mutability);
+      p << ", ";
+    }
+  }
+
+  // Now that the type is specified, print the lifetime value itself.
+  printParamValue(p, value);
+}
+
+ParseResult LIT::parseLifetimeParamValue(AsmParser &p, TypedAttr &result) {
+  LifetimeType type;
+  // Parse the pretty type specifier if present.
+  if (succeeded(p.parseOptionalKeyword("imm"))) {
+    type = LifetimeType::get(p.getContext(), false);
+  } else if (succeeded(p.parseOptionalKeyword("mut"))) {
+    // !lit.ref<T, mut lifetime>    ==> mutable
+    TypedAttr mutability;
+    if (failed(p.parseOptionalEqual())) {
+      mutability = BoolAttr::get(p.getContext(), true);
+    } else {
+      // !lit.ref<T, mut=expr, lifetime  ==> parametric
+      if (parseParamValue(p, mutability, p.getBuilder().getI1Type()) ||
+          p.parseComma())
+        return failure();
+    }
+    type = LifetimeType::get(mutability);
+  } else if (succeeded(p.parseOptionalKeyword("muttoimm"))) {
+    // Operand is mutable, casted to immutable.
+    if (KGEN::parseParamValue(p, result,
+                              LifetimeType::get(p.getContext(), true)))
+      return failure();
+    result = LifetimeMutCastAttr::get(result, false);
+    return success();
+  } else {
+    // If none of "mut/imm/muttoimm" are specified, it may be an "ugly" style.
+    // This is useful to support for Mojo composability.
+    return p.parseAttribute(result);
+  }
+
+  // Ok, we found the type of the lifetime, parse the value next.
+  return KGEN::parseParamValue(p, result, type);
+}
+
 void LIT::printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol) {
   os << symbol.getRootReference().strref();
   for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())

@@ -694,12 +694,16 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 SmallVector<ValueRef> ValueSet::getValueRefsForLifetime(TypedAttr lifetime) {
   SmallVector<ValueRef> result;
 
+  // FIXME: Track mutability correctly.
+  lifetime = LifetimeMutCastAttr::strip(lifetime);
+
   // If the lifetime is a LifetimeUnionAttr then it will already be uniqued,
   // inlined, and stripped of immortal references, so we can just return all
   // the value refs for its elments.
   if (auto unionAttr = dyn_cast<LifetimeUnionAttr>(lifetime)) {
     for (auto elt : unionAttr.getOperands())
-      if (auto valueRef = getFullValueRefForLifetime(elt))
+      if (auto valueRef =
+              getFullValueRefForLifetime(LifetimeMutCastAttr::strip(elt)))
         result.push_back(valueRef);
   } else if (auto valueRef = getFullValueRefForLifetime(lifetime))
     result.push_back(valueRef);
@@ -2474,7 +2478,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
       // The old reference type used a novel lifetime.  We need to declare it,
       // and coerce back to it.
       builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
-                                     builder.getAttr<LifetimeAttr>());
+                                     LifetimeAttr::get(param.getType()));
       auto refCasted = builder.create<RebindOp>(tmpDecl.getType(),
                                                 copyInitCall.getOperand(1));
 
@@ -2513,6 +2517,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // We know that the input is mutable (otherwise it wouldn't be tracked for
   // destruction), get the reference to a mutable type.
   value = getMutableRefForPossiblyImmutValue(value, builder);
+  refValue = cast<RefType>(value.getType());
 
   // Switch the source operand, and update the lifetime associated with it.
   copyInitCall.setOperand(1, value);
@@ -2565,11 +2570,11 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   // have.
   SmallVector<TypedAttr> implicitLifetimes;
   if (auto delSelfTy = dyn_cast<RefType>(signature.getValueInputs()[0])) {
-    auto argRef = cast<RefType>(valueToDestroy.getType());
-    implicitLifetimes.push_back(argRef.getLifetime());
-    assert(delSelfTy.getElementType() == argRef.getElementType());
     valueToDestroy =
         getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
+    auto argRef = cast<RefType>(valueToDestroy.getType());
+    assert(delSelfTy.getElementType() == argRef.getElementType());
+    implicitLifetimes.push_back(argRef.getLifetime());
   } else {
     assert(signature.getValueInputs()[0] == valueToDestroy.getType());
   }
