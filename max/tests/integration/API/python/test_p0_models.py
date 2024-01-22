@@ -10,61 +10,81 @@
 import argparse
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional, Sequence
 
 MODULAR_PATH = Path.cwd()
 MODELS_DIR = MODULAR_PATH / "test-models"
 YAML_PATH = MODULAR_PATH / "Models"
 
+# Frameworks
+TF = "tf"
+PYTORCH = "torch"
+ONNX = "onnx"
 
-top_models = {
-    "bert-base-uncased-seqlen-128": {
-        "s3_uri": "s3://modular-model-storage/Tensorflow/bert-base-uncased_dynamic_seqlen_savedmodel.tar.gz",
-        "saved_model_dir_name": "bert-base-uncased_dynamic_seqlen",
-        "input_names": ["attention_mask", "input_ids", "token_type_ids"],
-        "input_shapes": ["1x128", "1x128", "1x128"],
-        "output_names": ["last_hidden_state", "pooler_output"],
-    },
-    "dlrm-rm1-multihot": {
-        "s3_uri": "s3://modular-model-storage/dlrm/dlrm-facebook-1.tar.gz",
-        "saved_model_dir_name": "dlrm-facebook-1",
-        "input_names": ["ls_i", "xt"],
-        "input_shapes": ["4096x8x100", "4096x256"],
-        "output_names": ["output_0"],
-    },
-    "dlrm-rm1": {
-        "s3_uri": "s3://modular-model-storage/dlrm/dlrm_rm1.tar.gz",
-        "saved_model_dir_name": "dlrm-rm1",
-        "input_names": ["ls_i", "xt"],
-        "input_shapes": ["16384x8x1", "16384x256"],
-        "output_names": ["output_0"],
-    },
-    "dlrm-rm2": {
-        "s3_uri": "s3://modular-model-storage/dlrm/dlrm_rm2.tar.gz",
-        "saved_model_dir_name": "dlrm-rm2",
-        "input_names": ["ls_i", "xt"],
-        "input_shapes": ["2048x40x1", "2048x256"],
-        "output_names": ["output_0"],
-    },
-    "dlrm-rm3": {
-        "s3_uri": "s3://modular-model-storage/dlrm/dlrm-facebook-3.tar.gz",
-        "saved_model_dir_name": "dlrm-rm3",
-        "input_names": ["ls_i", "xt"],
-        "input_shapes": ["1024x10x1", "1024x2560"],
-        "output_names": ["output_0"],
-    },
-    "clip-vit-large-patch14": {
-        "s3_uri": "s3://modular-model-storage/Tensorflow/clip_vit_large_patch14_savedmodel.tar.gz",
-        "saved_model_dir_name": "clip_vit_large_patch14_savedmodel",
-        "input_names": ["pixel_values", "input_ids", "attention_mask"],
-        "input_shapes": ["1x3x224x224", "1x16", "1x16"],
-        "output_names": [
+
+@dataclass
+class ModelMeta:
+    s3_uri: str
+    input_names: Sequence[str]
+    input_specs: Sequence[str]
+    output_names: Sequence[str]
+    framework: str
+    saved_model_dir_name: Optional[str] = None
+
+
+top_models: Mapping[str, ModelMeta] = {
+    "bert-base-uncased-seqlen-128": ModelMeta(
+        s3_uri="s3://modular-model-storage/Tensorflow/bert-base-uncased_dynamic_seqlen_savedmodel.tar.gz",
+        saved_model_dir_name="bert-base-uncased_dynamic_seqlen",
+        input_names=["attention_mask", "input_ids", "token_type_ids"],
+        input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
+        output_names=["last_hidden_state", "pooler_output"],
+        framework=TF,
+    ),
+    "dlrm-rm1-multihot": ModelMeta(
+        s3_uri="s3://modular-model-storage/dlrm/dlrm-facebook-1.tar.gz",
+        saved_model_dir_name="dlrm-facebook-1",
+        input_names=["ls_i", "xt"],
+        input_specs=["4096x8x100xsi32", "4096x256xf32"],
+        output_names=["output_0"],
+        framework=TF,
+    ),
+    "dlrm-rm1": ModelMeta(
+        s3_uri="s3://modular-model-storage/dlrm/dlrm_rm1.tar.gz",
+        saved_model_dir_name="dlrm-rm1",
+        input_names=["ls_i", "xt"],
+        input_specs=["16384x8x1xsi32", "16384x256xf32"],
+        output_names=["output_0"],
+        framework=TF,
+    ),
+    "dlrm-rm2": ModelMeta(
+        s3_uri="s3://modular-model-storage/dlrm/dlrm_rm2.tar.gz",
+        saved_model_dir_name="dlrm-rm2",
+        input_names=["ls_i", "xt"],
+        input_specs=["2048x40x1xsi32", "2048x256xf32"],
+        output_names=["output_0"],
+        framework=TF,
+    ),
+    "dlrm-rm3": ModelMeta(
+        s3_uri="s3://modular-model-storage/dlrm/dlrm-facebook-3.tar.gz",
+        saved_model_dir_name="dlrm-rm3",
+        input_names=["ls_i", "xt"],
+        input_specs=["1024x10x1xsi32", "1024x2560xf32"],
+        output_names=["output_0"],
+        framework=TF,
+    ),
+    "clip-vit-large-patch14": ModelMeta(
+        s3_uri="s3://modular-model-storage/Tensorflow/clip_vit_large_patch14_savedmodel.tar.gz",
+        saved_model_dir_name="clip_vit_large_patch14_savedmodel",
+        input_names=["pixel_values", "input_ids", "attention_mask"],
+        input_specs=["1x3x224x224xf32", "1x16xsi32", "1x16xsi32"],
+        output_names=[
             "image_embeds",
             "logits_per_image",
             "logits_per_text",
@@ -74,16 +94,28 @@ top_models = {
             "vision_model_output_last_hidden_state",
             "vision_model_output_pooler_output",
         ],
-    },
-    "bert-base-uncased-onnx": {
-        "s3_uri": "s3://modular-model-storage/ONNX/bert-base-uncased.onnx",
-        "input_names": ["input_ids"],
-        "input_shapes": ["1x5"],
-        "output_names": [
+        framework=TF,
+    ),
+    "bert-base-uncased-onnx": ModelMeta(
+        s3_uri="s3://modular-model-storage/ONNX/bert-base-uncased.onnx",
+        input_names=["input_ids"],
+        input_specs=["1x5xsi32"],
+        output_names=[
             "last_hidden_state",
             "pooler_output",
         ],
-    },
+        framework=ONNX,
+    ),
+    "bert-base-uncased-torch": ModelMeta(
+        s3_uri="s3://modular-model-storage/TorchScript/bert-base-uncased_pytorch.torchscript",
+        input_names=["input_ids", "attention_mask", "input"],
+        input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
+        output_names=[
+            "result0",
+            "result1",
+        ],
+        framework=PYTORCH,
+    ),
 }
 
 
@@ -153,23 +185,22 @@ def test_c_package(package_path: Path):
             " --num-runs=1 --result-output-style=compact".split()
         )
         for _, value in top_models.items():
-            dir_name = value.get("saved_model_dir_name", None)
             model_path = download_s3_object(
-                value["s3_uri"], test_dir_path, dir_name
+                value.s3_uri, test_dir_path, value.saved_model_dir_name
             )
             input_names_args = [
-                f"--input-names={name}" for name in value["input_names"]
+                f"--input-names={name}" for name in value.input_names
             ]
             output_names_args = [
-                f"--output-names={name}" for name in value["output_names"]
+                f"--output-names={name}" for name in value.output_names
             ]
-            input_shapes_args = [
-                f"--input-shapes={shape}" for shape in value["input_shapes"]
+            input_specs_args = [
+                f"--input-shapes={spec}" for spec in value.input_specs
             ]
             cmd = [
                 str(modular_api_executor_binary),
                 *input_names_args,
-                *input_shapes_args,
+                *input_specs_args,
                 *output_names_args,
                 *common_modular_api_executor_args,
                 model_path,
@@ -255,12 +286,14 @@ def generate_clipvit_inputs_python():
     }
 
 
-def load_and_execute_on_random_input(model_path: Path):
+def load_and_execute_on_random_input(model_path: Path, framework: str):
     from modular import engine
 
     session = engine.InferenceSession()
     print("\t Loading ...", end="")
-    model = session.load(model_path)
+    model = session.load(
+        model_path, engine.TorchLoadOptions()
+    ) if framework is PYTORCH else session.load(model_path)
     print("✅")
     assert model is not None, "Loading failed ❌"
     if "clip_vit" in str(model_path):
@@ -283,12 +316,13 @@ def test_python_wheel():
 
     for key, value in top_models.items():
         print("Model", key)
-        s3_uri = value["s3_uri"]
+        s3_uri = value.s3_uri
         print("Downloading model from", s3_uri)
-        dir_name = value.get("saved_model_dir_name", None)
-        model_path = download_s3_object(s3_uri, test_dir_path, dir_name)
+        model_path = download_s3_object(
+            s3_uri, test_dir_path, value.saved_model_dir_name
+        )
         print("Loading and executing downloaded model ...")
-        load_and_execute_on_random_input(model_path)
+        load_and_execute_on_random_input(model_path, value.framework)
         print("Model executed successfully ✅")
     test_dir.cleanup()
 
