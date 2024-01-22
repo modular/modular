@@ -141,7 +141,7 @@ TelemetryContext::TelemetryContext(
   // Get telemetry level.
   StringRef cfgLevel = cfg.getValue("telemetry.level");
   if (cfgLevel == "")
-    telemetryLevel = Level::L0;
+    telemetryLevel = Level::L1;
   else
     telemetryLevel = levelFromString(cfgLevel);
 
