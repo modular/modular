@@ -19,10 +19,13 @@ fn matrix_band_part[
     int_type: DType,
     cond_type: DType,
     rank: Int,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_shape: StaticIntTuple[rank],
     num_lower: NDBuffer[1, DimList.create_unknown[1](), int_type],
     num_upper: NDBuffer[1, DimList.create_unknown[1](), int_type],
     exclude_buf: NDBuffer[1, DimList.create_unknown[1](), cond_type],
@@ -51,10 +54,12 @@ fn matrix_band_part[
             in_band = not in_band
 
         if in_band:
-            output[idx] = input[idx]
+            output[idx] = rebind[Scalar[type]](
+                input_0_fn[simd_width, rank](idx)
+            )
         else:
             output[idx] = 0
 
     _elementwise_impl[rank, 1, single_thread_blocking_override, func](
-        input.dynamic_shape,
+        input_shape,
     )
