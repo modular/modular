@@ -22,7 +22,7 @@ from utils._optional import Optional
 
 @value
 @register_passable("trivial")
-struct Dim(Intable):
+struct Dim(Intable, Stringable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
@@ -181,6 +181,17 @@ struct Dim(Intable):
         """
         return not self == rhs
 
+    fn __str__(self) -> String:
+        """Converts the Dim to a String. If the value is unknown, then the
+        string "?" is returned.
+
+        Returns:
+            The string representation of the type.
+        """
+        if self.is_dynamic():
+            return "?"
+        return int(self)
+
 
 # ===----------------------------------------------------------------------===#
 # DimList
@@ -188,7 +199,7 @@ struct Dim(Intable):
 
 
 @register_passable("trivial")
-struct DimList(Sized):
+struct DimList(Sized, Stringable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -363,3 +374,17 @@ struct DimList(Sized):
                 _type = __mlir_type[`!kgen.variadic<`, Dim, `>`],
             ](Dim())
         )
+
+    fn __str__(self) -> String:
+        """Converts the DimList to a String. The String is a comma separated
+        list of the string representation of Dim.
+
+        Returns:
+            The string representation of the type.
+        """
+        var res = String("")
+        for i in range(len(self)):
+            if i:
+                res += ", "
+            res += str(self.value[i])
+        return res

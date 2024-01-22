@@ -8,6 +8,7 @@
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils._optional_param import OptionalParamInt, OptionalParamInts
+from testing import *
 
 
 # CHECK-LABEL: test_dim_list
@@ -56,6 +57,13 @@ fn test_dim():
     print(dim3.has_value())
 
 
+def test_dim_to_string():
+    assert_equal(str(Dim()), "?")
+    assert_equal(str(Dim(33)), "33")
+    assert_equal(str(DimList(2, Dim(), 3)), "2, ?, 3")
+    assert_equal(str(DimList.create_unknown[5]()), "?, ?, ?, ?, ?")
+
+
 # CHECK-LABEL: test_opt_param_int
 fn test_opt_param_int():
     print("=== test_opt_param_int")
@@ -86,8 +94,9 @@ fn test_opt_param_ints():
     print(d1.at[1]())
 
 
-fn main():
+def main():
     test_dim_list()
     test_dim()
+    test_dim_to_string()
     test_opt_param_int()
     test_opt_param_ints()
