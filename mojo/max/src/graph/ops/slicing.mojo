@@ -11,6 +11,7 @@ from max.graph.type import *
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
+# TODO: Cleanup
 
 
 fn _tensor[
@@ -167,7 +168,7 @@ def slice_[  # FIXME(#29464): Should use autoparameterization.
         let input_t = value.tensor_type()
         if input_t.num_elements() != 1:
             raise "slice indicies must be singular"
-        return value if input_t.rank() == 0 else reshape(value, TensorShape())
+        return value if input_t.rank() == 0 else reshape(value)
 
     let slice_max_value = slice(None, None, None).end
     for dim in range(len(slices)):

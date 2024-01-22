@@ -4,9 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor import TensorSpec, TensorShape
-
 from max.graph.type import ElementType, MOTensor, dyn
+
+
+# ===----------------------------------------------------------------------=== #
+# Basic reductions
+# ===----------------------------------------------------------------------=== #
 
 
 fn mean(v: Symbol, axis: Int) raises -> Symbol:
@@ -22,6 +25,11 @@ fn mean(v: Symbol, axis: Int) raises -> Symbol:
     v_type.dims[norm_axis] = 1
 
     return g.op("mo.mean", (v, g.scalar(Int64(norm_axis))), v_type)
+
+
+# ===----------------------------------------------------------------------=== #
+# Arg* reductions
+# ===----------------------------------------------------------------------=== #
 
 
 fn arg_max(v: Symbol, axis: Int) raises -> Symbol:

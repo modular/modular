@@ -14,9 +14,6 @@ from memory.unsafe import Pointer
 from tensor import TensorShape, TensorSpec
 
 
-# TODO: Drop inout self - it's not reflective of any Mojo-side mutation.
-
-
 @value
 struct Graph:
     var g: GraphPtr
@@ -37,23 +34,17 @@ struct Graph:
     # nvop - the most generic op builder
     # ===------------------------------------------------------------------=== #
 
-    fn nvop(inout self, name: StringRef, inputs: Tup) -> Tup:
+    fn nvop(self, name: StringRef, inputs: Tup) -> Tup:
         return self.nvop(name, inputs, Arity(), AttrMap())
 
-    fn nvop(inout self, name: StringRef, inputs: Tup, out_types: Arity) -> Tup:
+    fn nvop(self, name: StringRef, inputs: Tup, out_types: Arity) -> Tup:
         return self.nvop(name, inputs, out_types, AttrMap())
 
-    fn nvop(
-        inout self, name: StringRef, out_types: Arity, attrs: AttrMap
-    ) -> Tup:
+    fn nvop(self, name: StringRef, out_types: Arity, attrs: AttrMap) -> Tup:
         return self.nvop(name, Tup(), out_types, attrs)
 
     fn nvop(
-        inout self,
-        name: StringRef,
-        inputs: Tup,
-        out_types: Arity,
-        attrs: AttrMap,
+        self, name: StringRef, inputs: Tup, out_types: Arity, attrs: AttrMap
     ) -> Tup:
         let loc = self.m.unknown_loc()
         let outputs = capi.graph_new_op(
@@ -67,26 +58,20 @@ struct Graph:
 
     # TODO: s/T/Arity/ when MOTensor can be autoboxed inside an Arity.
 
-    fn op[
-        T: MOType
-    ](inout self, name: StringRef, inputs: Tup, out_type: T) -> Symbol:
+    fn op[T: MOType](self, name: StringRef, inputs: Tup, out_type: T) -> Symbol:
         return self.nvop(
             name, inputs, Arity(out_type.to_mlir(self.m)), AttrMap()
         )[0]
 
     fn op[
         T: MOType
-    ](inout self, name: StringRef, out_type: T, attrs: AttrMap) -> Symbol:
+    ](self, name: StringRef, out_type: T, attrs: AttrMap) -> Symbol:
         return self.nvop(name, Arity(out_type.to_mlir(self.m)), attrs)[0]
 
     fn op[
         T: MOType
     ](
-        inout self,
-        name: StringRef,
-        inputs: Tup,
-        out_type: T,
-        attrs: AttrMap,
+        self, name: StringRef, inputs: Tup, out_type: T, attrs: AttrMap
     ) -> Symbol:
         return self.nvop(name, inputs, Arity(out_type.to_mlir(self.m)), attrs)[
             0
@@ -98,7 +83,7 @@ struct Graph:
 
     fn constant[
         dtype: DType
-    ](inout self, owned value: Tensor[dtype]) raises -> Symbol:
+    ](self, owned value: Tensor[dtype]) raises -> Symbol:
         # Note: Unlike TensorSpec, Tensor *is* the canonical "tensor value" for
         # MO attributes. So we don't need extra auxiliaty structures for it.
         return self.op(
@@ -109,7 +94,7 @@ struct Graph:
 
     fn vector[
         dtype: DType
-    ](inout self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
+    ](self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
         return self.op(
             "mo.constant",
             MOTensor(dtype, len(values)),
@@ -118,7 +103,7 @@ struct Graph:
 
     fn scalar[
         dtype: DType
-    ](inout self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
+    ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
         # Note: while this could generalize to something like splat, the
         # canonical way of achieving that is using a broadcast instead.
         var shape = DynamicVector[Int](rank)
@@ -129,10 +114,7 @@ struct Graph:
     fn range[
         dtype: DType
     ](
-        inout self,
-        start: Scalar[dtype],
-        stop: Scalar[dtype],
-        step: Scalar[dtype],
+        self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
         return self.op(
             "mo.range",
@@ -144,8 +126,8 @@ struct Graph:
             MOTensor(dtype, len(range(start, stop, step))),
         )
 
-    fn output(inout self) raises:
+    fn output(self) raises:
         _ = self.nvop("mo.output", Tup())
 
-    fn output(inout self, outs: Tup) raises:
+    fn output(self, outs: Tup) raises:
         _ = self.nvop("mo.output", outs)

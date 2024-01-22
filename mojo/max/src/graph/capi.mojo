@@ -100,11 +100,11 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     )  # account for the terminator
 
     if not mof_lib_path:
-        print("cannot get the location of graph library from modular.cfg")
+        print("cannot get graph library location from modular.cfg")
         trap()
 
     if not Path(mof_lib_path).exists():
-        print("cannot load graph library. Checked path " + mof_lib_path)
+        print("cannot load graph library from " + mof_lib_path)
         trap()
 
     let ptr = Pointer[DLHandle].alloc(1)
@@ -125,7 +125,7 @@ fn cfunc[T: AnyRegType](name: StringRef) -> T:
     var f = _get_dylib_function["MOF_LIB", _init_dylib, _destroy_dylib, T](name)
     let ptr = Pointer.address_of(f).bitcast[Pointer[NoneType]]().load()
     if not ptr:
-        print("cannot load " + String(name) + " from shared library")
+        print("cannot load " + String(name) + " from graph library")
         trap()
     return f
 

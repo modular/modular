@@ -8,7 +8,12 @@
 # and imaginary parts.
 
 
-from tensor import TensorShape
+from tensor import Tensor, TensorShape
+
+
+# ===----------------------------------------------------------------------=== #
+# Converters
+# ===----------------------------------------------------------------------=== #
 
 
 def as_complex(real: Symbol, imag: Symbol) -> Symbol:
@@ -19,11 +24,20 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
     """Reshape the input tensor as complex, interpreting the last dimension
     as being alternating (real, imag) pairs."""
     var g = interleaved.graph()
-    let rank = interleaved.tensor_type().rank()
+    let interleaved_t = interleaved.tensor_type()
+    let last_d = interleaved_t.rank() - 1
+
     let shape = shape_of(interleaved)
     let back_dims = g.constant(Tensor[DType.int64](TensorShape(2), -1, 2))
-    let new_shape = concat[axis=0](shape[: rank - 1], back_dims)
-    return reshape(interleaved, new_shape)
+    let new_shape = concat[axis=0](shape[:last_d], back_dims)
+
+    var new_dims = interleaved_t.dims
+    new_dims[last_d] = dyn() if (new_dims[last_d] == dyn()) else (
+        new_dims[last_d] // 2
+    )
+    new_dims.append(2)
+
+    return reshape(interleaved, new_shape, new_dims)
 
 
 def as_real(complex: Symbol) -> (Symbol, Symbol):
@@ -31,6 +45,11 @@ def as_real(complex: Symbol) -> (Symbol, Symbol):
     let imag: Symbol
     real, imag = split[axis= -1](complex, (1, 1))
     return (squeeze(real, axis=-1), squeeze(imag, axis=-1))
+
+
+# ===----------------------------------------------------------------------=== #
+# Ops
+# ===----------------------------------------------------------------------=== #
 
 
 def mul_complex(lhs: Symbol, rhs: Symbol) -> Symbol:

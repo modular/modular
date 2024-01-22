@@ -8,8 +8,6 @@ from math import max
 
 from max.graph.type import ElementType, MOTensor, dyn
 
-from tensor import TensorSpec, TensorShape
-
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Outer product of two vectors. This function does not broadcast."""
@@ -31,37 +29,6 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     let out_type = MOTensor(lhs_type.dtype, dims)
 
     return g.op("mo.batch_matmul", (broadcast_lhs, broadcast_rhs), out_type)
-
-
-def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let lhs_type = lhs.tensor_type()
-    let rhs_type = rhs.tensor_type()
-    if rhs_type.rank() != 2:
-        raise "rhs must be a matrix"
-
-    let reshape_shape = stack[axis=0](
-        g.scalar(Int64(-1)),
-        dim(lhs, -1),
-    )
-
-    let final_shape = concat[axis=0](
-        shape_of(lhs)[: lhs_type.rank() - 1],
-        reshape(dim(rhs, 1), TensorShape(1)),
-    )
-
-    var final_dims = DynamicVector[Int64]()
-    for i in range(lhs_type.rank() - 1):
-        final_dims.push_back(lhs_type.dim(i))
-    final_dims.push_back(rhs_type.dim(-1))
-
-    let matmul_out = g.op(
-        "mo.matmul",
-        (reshape(lhs, reshape_shape, dyn(), lhs_type.dim(-1)), rhs),
-        MOTensor(lhs_type.dtype, dyn(), rhs_type.dim(-1)),
-    )
-
-    return reshape(matmul_out, final_shape, final_dims)
 
 
 def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -127,3 +94,37 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
     )
 
     return (broadcast_lhs, broadcast_rhs)
+
+
+def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    let lhs_type = lhs.tensor_type()
+    let rhs_type = rhs.tensor_type()
+    if rhs_type.rank() != 2:
+        raise "rhs must be a matrix"
+
+    let reshape_shape = stack[axis=0](
+        g.scalar(Int64(-1)),
+        dim(lhs, -1),
+    )
+
+    let final_shape = concat[axis=0](
+        shape_of(lhs)[: lhs_type.rank() - 1],
+        dims(rhs, 1, 2),
+    )
+
+    var final_dims = DynamicVector[Int64]()
+    for i in range(lhs_type.rank() - 1):
+        final_dims.push_back(lhs_type.dim(i))
+    final_dims.push_back(rhs_type.dim(-1))
+
+    var matmul_dims = DynamicVector[Int64]()
+    matmul_dims.append(dyn())
+    matmul_dims.append(lhs_type.dim(-1))
+    let matmul_out = g.op(
+        "mo.matmul",
+        (reshape(lhs, reshape_shape, matmul_dims), rhs),
+        MOTensor(lhs_type.dtype, dyn(), rhs_type.dim(-1)),
+    )
+
+    return reshape(matmul_out, final_shape, final_dims)

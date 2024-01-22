@@ -8,78 +8,10 @@ from math import max
 
 from max.graph.type import ElementType, MOTensor, dyn
 
-from tensor import TensorSpec, TensorShape
 
-
-def _has_dynamic_dims(shape: TensorShape) -> Bool:
-    for i in range(shape.rank()):
-        if shape[i] < 0:
-            return True
-    return False
-
-
-def rsqrt(v: Symbol) -> Symbol:
-    var g = v.graph()
-    let f32_v = cast(v, DType.float32)  # TODO: add missing rsqrt coverage.
-    return g.op("mo.rsqrt", f32_v, f32_v.tensor_type())
-
-
-def softmax(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.softmax", v, v.tensor_type())
-
-
-def silu(v: Symbol) -> Symbol:
-    return mul(v, sigmoid(v))
-
-
-def sigmoid(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.sigmoid", v, v.tensor_type())
-
-
-def sin(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.sin", v, v.tensor_type())
-
-
-def cos(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.cos", v, v.tensor_type())
-
-
-def add(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.add", opnds, opnds.get[0, Symbol]().tensor_type())
-
-
-def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.sub", opnds, opnds.get[0, Symbol]().tensor_type())
-
-
-def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.mul", opnds, opnds.get[0, Symbol]().tensor_type())
-
-
-def div(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    # TODO: This needs proper type promotion, as do all binary ops.
-    let cast_rhs = cast(rhs, lhs.tensor_type().dtype)
-    let opnds = elementwise_broadcast(lhs, cast_rhs)
-    return g.op("mo.div", opnds, opnds.get[0, Symbol]().tensor_type())
-
-
-def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.pow", opnds, opnds.get[0, Symbol]().tensor_type())
-
-
+# ===----------------------------------------------------------------------=== #
+# Helpers
+# ===----------------------------------------------------------------------=== #
 def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
     var g = lhs.graph()
     let lhs_type = lhs.tensor_type()
@@ -128,3 +60,73 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
         MOTensor(rhs_type.dtype, broadcast_dims),
     )
     return (broadcast_lhs, broadcast_rhs)
+
+
+# ===----------------------------------------------------------------------=== #
+# Ops
+# ===----------------------------------------------------------------------=== #
+
+
+# Note: Keep alphabetized.
+
+
+def add(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    let opnds = elementwise_broadcast(lhs, rhs)
+    return g.op("mo.add", opnds, opnds.get[0, Symbol]().tensor_type())
+
+
+def cos(v: Symbol) -> Symbol:
+    var g = v.graph()
+    return g.op("mo.cos", v, v.tensor_type())
+
+
+def div(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    # TODO: This needs proper type promotion, as do all binary ops.
+    let cast_rhs = cast(rhs, lhs.tensor_type().dtype)
+    let opnds = elementwise_broadcast(lhs, cast_rhs)
+    return g.op("mo.div", opnds, opnds.get[0, Symbol]().tensor_type())
+
+
+def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    let opnds = elementwise_broadcast(lhs, rhs)
+    return g.op("mo.mul", opnds, opnds.get[0, Symbol]().tensor_type())
+
+
+def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    let opnds = elementwise_broadcast(lhs, rhs)
+    return g.op("mo.pow", opnds, opnds.get[0, Symbol]().tensor_type())
+
+
+def rsqrt(v: Symbol) -> Symbol:
+    var g = v.graph()
+    let f32_v = cast(v, DType.float32)  # TODO: add missing rsqrt coverage.
+    return g.op("mo.rsqrt", f32_v, f32_v.tensor_type())
+
+
+def softmax(v: Symbol) -> Symbol:
+    var g = v.graph()
+    return g.op("mo.softmax", v, v.tensor_type())
+
+
+def sigmoid(v: Symbol) -> Symbol:
+    var g = v.graph()
+    return g.op("mo.sigmoid", v, v.tensor_type())
+
+
+def silu(v: Symbol) -> Symbol:
+    return mul(v, sigmoid(v))
+
+
+def sin(v: Symbol) -> Symbol:
+    var g = v.graph()
+    return g.op("mo.sin", v, v.tensor_type())
+
+
+def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
+    var g = lhs.graph()
+    let opnds = elementwise_broadcast(lhs, rhs)
+    return g.op("mo.sub", opnds, opnds.get[0, Symbol]().tensor_type())

@@ -99,10 +99,7 @@ struct Module:
     # ===------------------------------------------------------------------=== #
 
     fn graph(
-        inout self,
-        name: StringRef,
-        in_types: Arity,
-        out_types: Arity,
+        inout self, name: StringRef, in_types: Arity, out_types: Arity
     ) -> Graph:
         let unknown = capi.loc_new_unknown(self.m)
         let g = capi.graph_new(self.m, unknown, name, in_types.a, out_types.a)
