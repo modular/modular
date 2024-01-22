@@ -2287,30 +2287,29 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   // Detect unreachable code and warn about it.
   auto deadCodeCheck = [&]() {
     if (lhsI1PVal) {
-      if (IntegerAttr asIntAttr =
-              dyn_cast_or_null<IntegerAttr>(lhsI1PVal.get())) {
-        bool isZero = asIntAttr.getValue().isZero();
-        bool deadElse = false;
-        if (kind == kBoolOr && !isZero) {
-          deadElse = true;
-          emitter.emitWarning(this->getLoc())
-              << "unreachable code on right side of 'True or ...'";
-        } else if (kind == kBoolAnd && isZero) {
-          deadElse = true;
-          emitter.emitWarning(this->getLoc())
-              << "unreachable code on right side of 'False and ...'";
-        } else {
-          // This has no dead code, but let's still warn about a constant branch
-          // condition.
-          emitter.emitWarning(this->getLoc())
-              << "constant value on left side of '"
-              << (isZero ? "False" : "True") << " "
-              << (kind == kBoolOr ? "or" : "and") << " ...'";
-        }
-        // Eliminate the dead code.
-        if (deadElse)
-          markRegionUnreachable(&ifOp.getElseRegion(), ifOp.getLoc());
+      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(lhsI1PVal.get());
+      if (!asIntAttr)
+        return;
+      bool isZero = asIntAttr.getValue().isZero();
+      bool deadElse = false;
+      if (kind == kBoolOr && !isZero) {
+        deadElse = true;
+        emitter.emitWarning(this->getLoc())
+            << "unreachable code on right side of 'True or ...'";
+      } else if (kind == kBoolAnd && isZero) {
+        deadElse = true;
+        emitter.emitWarning(this->getLoc())
+            << "unreachable code on right side of 'False and ...'";
+      } else {
+        // This has no dead code, but let's still warn about a constant branch
+        // condition.
+        emitter.emitWarning(this->getLoc())
+            << "constant value on left side of '" << (isZero ? "False" : "True")
+            << " " << (kind == kBoolOr ? "or" : "and") << " ...'";
       }
+      // Eliminate the dead code.
+      if (deadElse)
+        markRegionUnreachable(&ifOp.getElseRegion(), ifOp.getLoc());
     }
   };
 
@@ -2644,19 +2643,19 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto deadCodeCheck = [&]() {
     if (PValue condPVal = condRVal.getIfPValue()) {
       // Warn about dead code and remove it.
-      if (IntegerAttr asIntAttr =
-              dyn_cast_or_null<IntegerAttr>(condPVal.get())) {
-        Region *deadRegion = &ifOp.getElseRegion();
-        if (asIntAttr.getValue().isZero()) {
-          deadRegion = &ifOp.getThenRegion();
-          emitter.emitWarning(this->getLoc())
-              << "left hand side expression of 'if False' is dead";
-        } else {
-          emitter.emitWarning(this->getLoc())
-              << "right hand side expression of 'if True' is dead";
-        }
-        markRegionUnreachable(deadRegion, ifOp.getLoc());
+      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(condPVal.get());
+      if (!asIntAttr)
+        return;
+      Region *deadRegion = &ifOp.getElseRegion();
+      if (asIntAttr.getValue().isZero()) {
+        deadRegion = &ifOp.getThenRegion();
+        emitter.emitWarning(this->getLoc())
+            << "left hand side expression of 'if False' is dead";
+      } else {
+        emitter.emitWarning(this->getLoc())
+            << "right hand side expression of 'if True' is dead";
       }
+      markRegionUnreachable(deadRegion, ifOp.getLoc());
     }
   };
 
