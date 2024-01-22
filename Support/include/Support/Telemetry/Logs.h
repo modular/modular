@@ -62,8 +62,8 @@ class Logger : public std::enable_shared_from_this<Logger> {
 public:
   /// Emit event with given name, severity, body and attributes.
   void emitEvent(StringRef eventName, Severity severity,
-                 M::Telemetry::Level level, StringRef body = "",
-                 const llvm::StringMap<AttributeValue> &attributes = {}) {
+                 M::Telemetry::Level level, StringRef body,
+                 const llvm::StringMap<AttributeValue> &attributes) {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (eventEnabled(level)) {
       // Convert the attributes to unordered_map to pass to OTel.
@@ -76,6 +76,16 @@ public:
                         body, attrs);
     }
 #endif
+  }
+  void emitEvent(StringRef eventName, Severity severity,
+                 M::Telemetry::Level level) {
+    llvm::StringMap<AttributeValue> attrs;
+    return emitEvent(eventName, severity, level, "", attrs);
+  }
+  void emitEvent(StringRef eventName, Severity severity,
+                 M::Telemetry::Level level, StringRef body) {
+    llvm::StringMap<AttributeValue> attrs;
+    return emitEvent(eventName, severity, level, body, attrs);
   }
 
   /// Returns true if an event will be emitted based on its level and the
@@ -124,8 +134,7 @@ public:
     std::string eventName;
     Severity severity;
     M::Telemetry::Level level;
-    // We convert the attributes to unordered_map to pass to OTel.
-    std::unordered_map<std::string, AttributeValue> attributes;
+    llvm::StringMap<AttributeValue> attributes;
     // TODO: timestamp.
     std::shared_ptr<Logger> logger;
   };
@@ -187,21 +196,6 @@ private:
 
   // Configured level for Telemetry.
   M::Telemetry::Level telemetryLevel;
-
-  /// Emit event with given name, severity, body and attributes. This method is
-  /// private and used only by LogStream to log the event with OTel without
-  /// additional copies or conversions of the attributes.
-  void
-  emitEvent(StringRef eventName, Severity severity, M::Telemetry::Level level,
-            StringRef body,
-            const std::unordered_map<std::string, AttributeValue> &attributes) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (eventEnabled(level))
-      logger->EmitEvent(eventName,
-                        static_cast<opentelemetry::logs::Severity>(severity),
-                        body, attributes);
-#endif
-  }
 };
 
 } // namespace M::Telemetry::Logs
