@@ -32,11 +32,6 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
            "the local path and are not part of the Mojo standard library, use "
            "this to specify the path where Mojo can find those packages.">;
 
-def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
-  Group<CompilationOptionGroup>, Index<1>, Flags<[HelpHidden]>,
-  HelpText<"For internal use only; see `ParserConfig::parsingStandardLibrary` "
-           "for details.">;
-
 //===----------------------------------------------------------------------===//
 // Validation Options
 //===----------------------------------------------------------------------===//
