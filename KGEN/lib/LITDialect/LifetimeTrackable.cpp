@@ -279,10 +279,11 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
 
 /// This is a helper for LIT::getOperationEffects split out since calls are so
 /// interesting.
-static void getCallOpEffects(
-    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes) {
+static void
+getCallOpEffects(Operation &op,
+                 SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+                 SmallVectorImpl<ResultEffect> &results,
+                 SmallVectorImpl<TypedAttr> &lifetimes) {
   SignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ValueInputConvention> conventions;
@@ -396,17 +397,16 @@ static void getCallOpEffects(
 
   // Look at the types accessible by the callee to see if there are any
   // lifetime accesses.
-  for (auto argType : typesAccessibleByCallee) {
-    // TODO: move the access kind from the !lit.ref onto the lifetime.  We
-    // shouldn't need to know about RefType or VariadicType at all.
-    if (auto variadicType = dyn_cast<VariadicType>(argType)) {
-      if (auto refType = dyn_cast<RefType>(variadicType.getElementType())) {
-        // The callee is allowed to mutate the pointed-to value unless known
-        // to be non-mut.
-        auto accessType = refType.isMutableKnown(false) ? LifetimeAccess::read
-                                                        : LifetimeAccess::write;
-        lifetimes.push_back({accessType, refType.getLifetime()});
-      }
+  for (auto [num, argType] : llvm::enumerate(typesAccessibleByCallee)) {
+    auto dre = dyn_cast<DeclRefType>(argType);
+    if (!dre)
+      continue;
+
+    for (auto paramValue : dre.getParamValues()) {
+      // If the type captured a lifetime, the callee may touch the location
+      // with the mutability of the target access.
+      if (isa<LifetimeType>(paramValue.getType()))
+        lifetimes.push_back(paramValue);
     }
   }
 
@@ -425,7 +425,7 @@ static void getCallOpEffects(
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes) {
+    SmallVectorImpl<TypedAttr> &lifetimes) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
   if (isa<DebugInfo::ValueOp, RefStructGEROp, RebindOp, RefImmutOp>(op)) {

@@ -745,11 +745,12 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}(%iter, [[IMMREF]])
   var iter = mems.__iter__()
 
-  ## FIXME: This is destroyed too early.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
-
   # CHECK-NEXT: %x = lit.varlet.decl
   # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
+
+  ## FIXME: This destruction should be ordered after the destroy of the iterator
+  ## Since the iterator can refer to the mems struct.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
 
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
