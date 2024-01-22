@@ -176,13 +176,13 @@ fn if_try(p: Bool):
     if p:
         # CHECK: lit.try {
         try:
-            # CHECK: lit.letreg.decl "b"
-            let b = 1
+            # CHECK: lit.varlet.decl "b"
+            var b = 1
             # CHECK: lit.try.yield
         # CHECK: } except (%arg0: !Error)
         except e:
-            # CHECK: lit.letreg.decl "c"
-            let c = 2
+            # CHECK: lit.varlet.decl "c"
+            var c = 2
             # CHECK: lit.try.yield
         # CHECK-NEXT: } else {
         # CHECK-NEXT:  lit.try.yield
@@ -192,9 +192,9 @@ fn if_try(p: Bool):
         # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: } else {
     else:
-        # CHECK: lit.letreg.decl "d"
-        let d = 3
-        # CHECK-NEXT: hlcf.yield
+        # CHECK: lit.varlet.decl "d"
+        var d = 3
+        # CHECK: hlcf.yield
     # CHECK-NEXT: }
 
 
@@ -377,11 +377,11 @@ fn induction_var_scope():
     # CHECK: lit.loop
     for item in range(0):
         # CHECK: lit.ref.load %item
-        # CHECK: "g" = %{{.*}}
-        let g = item
+        # CHECK: lit.ref.store %{{.*}}, %g
+        var g = item
     for item in range(0):
         # CHECK: lit.ref.load %item
-        let g = item
+        var g = item
 
 # CHECK-LABEL: lit.func @"unroll_for()"
 fn unroll_for():

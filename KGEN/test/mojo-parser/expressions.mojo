@@ -112,18 +112,19 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
+  # CHECK-NEXT: %v2xx = lit.varlet.decl "v2xx"
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
   # CHECK-NEXT: [[V2XX:%.*]] = lit.ref.struct.ger [[V2X]][x]
   # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[V2XX]]
-  # CHECK-NEXT: lit.letreg.decl "v2xx" = [[VAL]]
-  let v2xx = v2.x.x
+  # CHECK-NEXT: lit.ref.store [[VAL]], %v2xx
+  var v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
   # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[V2X]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mpFloat, [[IMMREF]])
-  let mpFloat : MemoryOnlyFloat64 = v2.x
+  var mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}(%anonymous2A
@@ -499,9 +500,10 @@ fn listValues():
 
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
   # CHECK: %0 = kgen.param.constant: !Int = <#lit.struct<{value = 42}>>
-  # CHECK: lit.letreg.decl "a" = %0
-  let a = Int{value: Int(42).value}
+  # CHECK-NEXT: lit.ref.store %0, %a
+  var a = Int{value: Int(42).value}
 
   # Issue #7343: Trailing comma ok too.
   _ = Int{value: Int(42).value,}
@@ -535,13 +537,13 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
-  # CHECK: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
@@ -1140,9 +1142,9 @@ struct DynamicObject:
 
 # CHECK-LABEL: lit.func @"dynamic_attribute()"
 fn dynamic_attribute():
-    let const_obj = ConstDynamicObject()
+    var const_obj = ConstDynamicObject()
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "dynamic_attribute"
-    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"(%const_obj, %[[KEY]])
+    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"({{.*}}, %[[KEY]])
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
@@ -1253,32 +1255,37 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
                  cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
-  # CHECK: %ref1 = lit.letreg.decl "ref1" =
-  let ref1 = Reference(a).value
-  # CHECK: %ref2 = lit.letreg.decl "ref2" =
-  let ref2 = Reference(b).value
+  # CHECK: %ref1 = lit.varlet.decl "ref1"
+  var ref1 = Reference(a).value
+  # CHECK: %ref2 = lit.varlet.decl "ref2"
+  var ref2 = Reference(b).value
 
-  # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer %ref1
-  # CHECK-NEXT: %ptr1 = lit.letreg.decl "ptr1" = [[MV]]
-  let ptr1 = __mlir_op.`lit.ref.to_pointer`(ref1)
+  # CHECK: %ptr1 = lit.varlet.decl "ptr1"
+  # CHECK: [[REF1V:%.*]] = lit.ref.load %ref1
+  # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer [[REF1V]]
+  # CHECK-NEXT: lit.ref.store [[MV]], %ptr1
+  var ptr1 = __mlir_op.`lit.ref.to_pointer`(ref1)
 
   # CHECK-NEXT: %localLet = lit.varlet.decl "localLet"
-  let localLet = MemoryOnlyInt()
-  # CHECK: %ref3 = lit.letreg.decl "ref3" =
-  let ref3 = Reference(localLet).value
+  var localLet = MemoryOnlyInt()
+  # CHECK: %ref3 = lit.varlet.decl "ref3"
+  var ref3 = Reference(localLet).value
 
-  # CHECK-NEXT: %localVar = lit.varlet.decl "localVar"
+  # CHECK: %localVar = lit.varlet.decl "localVar"
   var localVar = MemoryOnlyInt()
-  # CHECK: %ref4 = lit.letreg.decl "ref4" =
-  let ref4 = Reference(localVar).value
+  # CHECK: %ref4 = lit.varlet.decl "ref4"
+  var ref4 = Reference(localVar).value
 
-  # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}> {
+  # CHECK: %ref5 = lit.varlet.decl "ref5"
+  # CHECK: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}> {
   # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`")}> {
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
-  # CHECK-NEXT:     hlcf.yield [[TMP]]
+  # CHECK-NEXT:     [[REF1V:%.*]] = lit.ref.load [[TMP]]
+  # CHECK-NEXT:     hlcf.yield [[REF1V]]
   # CHECK-NEXT:   } else {
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref2
-  # CHECK-NEXT:     hlcf.yield [[TMP]]{{.*}}>
+  # CHECK-NEXT:     [[REF2V:%.*]] = lit.ref.load [[TMP]]
+  # CHECK-NEXT:     hlcf.yield [[REF2V]]{{.*}}>
   # CHECK-NEXT:   }
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}>
@@ -1288,8 +1295,8 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-SAME:             : !lit.ref<!MemoryOnlyInt, mut *"c`"> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}>
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
-  # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]
-  let ref5 = ref1 if cond else ref2 if cond else Reference(c).value
+  # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
+  var ref5 = ref1 if cond else ref2 if cond else Reference(c).value
 
 struct CallableStruct:
     var value: Int
@@ -1655,12 +1662,10 @@ fn static_type[a: Bool](x: type_function(a)):
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 512}>>
-  # CHECK-NEXT: [[DECL:%.*]] lit.letreg.decl "notSoBig" = [[VAR]] : !Int
-  let notSoBig = bigggNumber // (2 << 246)
+  var notSoBig = bigggNumber // (2 << 246)
   # Easy min-int
-  # CHECK-NEXT: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = -9223372036854775808}>>
-  # CHECK: [[DECL:%.*]] lit.letreg.decl "minInt" = [[VAR]] : !Int
-  let minInt = -(2<<62)
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = -9223372036854775808}>>
+  var minInt = -(2<<62)
   return notSoBig
 
 ##===----------------------------------------------------------------------===##

@@ -372,10 +372,6 @@ fn ownedConventionReg(
     # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
     _ = b.y
 
-    # CHECK: %t = lit.letreg.decl "t" = %triv
-    # No copy call.
-    let t = triv
-
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
     # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: lit.ref.store [[ONE]], [[AX]]
@@ -413,14 +409,16 @@ fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
 
 # CHECK-LABEL: lit.func @"callDefaultArgument
 fn callDefaultArgument(x: Int) -> Int:
-    # CHECK-NEXT: %[[ARG1:.*]] = kgen.param.constant{{.*}} = 3
-    # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
-    # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG1]], %[[ARG2]])
-    # CHECK-NEXT: lit.letreg.decl "a"
-    let a = defaultArgument(x)
+    # CHECK: [[ARG1:%.*]] = kgen.param.constant{{.*}} = 3
+    # CHECK-NEXT: [[ARG2:%.*]] = kgen.param.constant{{.*}} = 5
+    # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, [[ARG1]], [[ARG2]])
+    # CHECK-NEXT: lit.ref.store {{.*}}, %a
+    var a = defaultArgument(x)
+
+    # CHECK-NEXT: %b = lit.varlet.decl
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
-    let b = defaultArgument(x, x)
+    var b = defaultArgument(x, x)
     return a + b
 
 
@@ -458,8 +456,9 @@ fn callNonRegisterDefaultArg():
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f = lit.letreg.decl "f" = %0
-    let f = defaultArgument
+    # CHECK: %f = lit.varlet.decl "f"
+    # CHECK: lit.ref.store %0, %f
+    var f = defaultArgument
 
 
 # CHECK-LABEL: lit.struct.decl @Outer
@@ -539,15 +538,17 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
 # CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args: !kgen.pack<[[TS]]> borrow)
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
-    # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
-    let copy = args
+    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
+    # CHECK-NEXT: lit.ref.store %args, %copy
+    var copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
 # CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
-    # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
-    let copy = args
+    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
+    # CHECK-NEXT: lit.ref.store %args, %copy
+    var copy = args
 
 
 # Ensure that parameters can be bound correctly.
@@ -1006,8 +1007,7 @@ struct StructWithAsync:
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
         # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
-        # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
-        let a = coroutine()
+        _ = coroutine()
 
 
 # CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async|ownedresult -> !kgen.variant<!Error, !Int>

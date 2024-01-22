@@ -169,13 +169,15 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
     # CHECK-NEXT: lit.ref.store %a, %a_0
 
+    # CHECK-NEXT: %x = lit.varlet.decl "x"
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
-    # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
-    let x = a ^
+    # CHECK-NEXT: lit.ref.store [[A]], %x
+    var x = a ^
 
-    # CHECK-NEXT: [[X:%.*]] = lit.transfer_reg_ownership %x
-    # CHECK-NEXT: kgen.return [[X]]
+    # CHECK-NEXT: [[X:%.*]] = lit.transfer_mem_ownership %x
+    # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[X]]
+    # CHECK-NEXT: kgen.return [[RES]]
     return x ^
 
 
@@ -213,17 +215,21 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # Check that copies that are immediately destroyed are elided.
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
-    # CHECK: %a = lit.letreg.decl "a"
-    let a = RegExample()
+    # CHECK: %a = lit.varlet.decl "a"
+    # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.ref.store [[A]], %a
+    var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
-    # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], %a)
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[A]])
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], [[A]])
     takeTwo(a, a)
 
     # CHECK-NEXT: %x = lit.varlet.decl "x"
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
-    let x = MemExample()
+    var x = MemExample()
 
     # We need one copy of 'x' here, not two + dtor.
 
@@ -270,22 +276,31 @@ fn optimizeCopyToMove():
 
     # All the copyinit's should be removed.
 
+    # CHECK-NEXT: %r1 = lit.varlet.decl "r1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: %r1 = lit.letreg.decl "r1" = [[TMP]]
-    let r1 = RegExample()
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r1)
+    # CHECK-NEXT: lit.ref.store
+    var r1 = RegExample()
+    # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R1]])
     r1.noop()
 
-    # CHECK-NEXT: %r2 = lit.letreg.decl "r2" = %r1
-    let r2 = r1
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r2)
+    # CHECK-NEXT: %r2 = lit.varlet.decl "r2"
+    # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
+    # CHECK-NEXT: lit.ref.store [[R1]], %r2
+    var r2 = r1
+    # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R2]])
     r2.noop()
 
-    # CHECK-NEXT: %r3 = lit.letreg.decl "r3" = %r2
-    let r3 = r2
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}(%r3)
+    # CHECK-NEXT: %r3 = lit.varlet.decl "r3"
+    # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
+    # CHECK-NEXT: lit.ref.store [[R2]], %r3
+    var r3 = r2
+    # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3]])
     r3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
+    # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
 
     # CHECK-NEXT: %v1 = lit.varlet.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()

@@ -70,14 +70,12 @@ fn parametricMut[isMut: __mlir_type.i1,
 # CHECK-LABEL: lit.func @"testParametricMut
 fn testParametricMut(i: MemExample, inout m: MemExample):
   # This infers an immutable reference.
-  # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
-  # CHECK-NEXT: %iRef = lit.letreg.decl "iRef" = [[RES]] : !lit.ref<!MemExample, imm *"i`">
-  let iRef = parametricMut(Reference(i).value)
+  # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
+  _ = parametricMut(Reference(i).value)
 
   # This infers a mutable reference.
-  # CHECK: [[RES:%.*]] = lit.call {{.*}}parametricMut
-  # CHECK: %mRef = lit.letreg.decl "mRef" = [[RES]] : !lit.ref<!MemExample, mut *"m`">
-  let mRef = parametricMut(Reference(m).value)
+  # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut *"m`">
+  _ = parametricMut(Reference(m).value)
 
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
@@ -96,12 +94,13 @@ fn testUseConditional(cond: __mlir_type.i1):
   let aref = Reference(a).value
   let bref = Reference(b).value
 
-  # CHECK: %cref = lit.letreg.decl "cref"
-  let cref = aref if cond else bref
+  # CHECK: %cref = lit.varlet.decl "cref"
+  var cref = aref if cond else bref
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
   Reference(cref)[].noop()
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
@@ -118,32 +117,35 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
-  let aref = Reference(a).value
-  let bref = Reference(b).value
+  var aref = Reference(a).value
+  var bref = Reference(b).value
 
-  # CHECK: %cref = lit.letreg.decl "cref"
-  let cref = aref if cond else bref
+  # CHECK: %cref = lit.varlet.decl "cref"
+  var cref = aref if cond else bref
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
   Reference(cref)[].mutate()
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
   Reference(cref)[] = MemExample()
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
 
   # Overwriting is eligible for copy => move optimization as well.
-  let shouldBeMovedFrom = MemExample()
+  var shouldBeMovedFrom = MemExample()
   Reference(cref)[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%cref)
+  # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
@@ -166,20 +168,22 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   var a = MemExample()
 
+  # CHECK-NEXT: %aref = lit.varlet.decl "aref"
   # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
-
-  # CHECK-NEXT: %aref = lit.letreg.decl "aref" = [[ARV]]
-  let aref = Reference(a)
+  # CHECK-NEXT: lit.ref.store [[ARV]], %aref
+  var aref = Reference(a)
   # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime<1> = <*"a`0">
   alias aLifetime =  aref.lifetime
 
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
+  # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
   aref[].noop()
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[LITREF]]
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
 
   # This is a mutable reference so go head and store through it whynot?
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%aref)
+  # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
   aref[] = MemExample()
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[LITREF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[LITREF]])
@@ -189,13 +193,16 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
-  # CHECK-NEXT: %aref2 = lit.letreg.decl "aref2" = %aref
-  let aref2 = aref
+  # CHECK-NEXT: %aref2 = lit.varlet.decl "aref2"
+  # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
+  # CHECK-NEXT: lit.ref.store [[AR]], %aref2
+  var aref2 = aref
 
   # Reference can bind to immutable things as well, no problem.
+  # CHECK-NEXT: %immref = lit.varlet.decl "immref"
   # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%imm)
-  # CHECK-NEXT: %immref = lit.letreg.decl "immref" = [[IMMRV]]
-  let immref = Reference(imm)
+  # CHECK-NEXT: lit.ref.store [[IMMRV]], %immref
+  var immref = Reference(imm)
   immref[].noop()
 
 # ===----------------------------------------------------------------------=== #
@@ -217,9 +224,9 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK-NEXT: = lit.call {{.*}}method{{.*}}:lifetime<0> *"a`">(%a)
-  let r1 = a.method()
+  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<0> *"a`">(%a)
+  _ = a.method()
 
   # Bind mutably to b
   # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<1> *"b`">(%b)
-  let r2 = b.method()
+  _ = b.method()
