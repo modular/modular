@@ -104,8 +104,6 @@ static int doc(const State &state) {
   LIT::ParserConfig parserConfig(&context, *runtime, compilationOptions);
   parserConfig.warnMissingDocStrings =
       args.hasArg(options::OPT_warn_missing_dog_strings);
-  if (args.hasArg(options::OPT_parsing_stdlib))
-    parserConfig.parsingStandardLibrary = true;
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
