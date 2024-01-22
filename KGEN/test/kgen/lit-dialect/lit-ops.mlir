@@ -19,12 +19,6 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
 
   // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
   %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
-
-  // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
-  %y = lit.letreg.decl "y" = %x: i32
-
-  // CHECK-NEXT: %z = lit.letreg.decl "z" = %y : i32
-  %z = lit.letreg.decl "z" = %y: i32
   kgen.return
 }
 

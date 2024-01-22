@@ -83,10 +83,12 @@ fn destructors(owned arg0: MemExample):
   mem2 = MemExample()
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem2)
 
-  # CHECK-NEXT: [[REGVAL:%.*]] = lit.call @"$ownership"::@RegExample::@"__init__()"()
-  let reg = RegExample()
-  # CHECK-NEXT: %reg = lit.letreg.decl "reg" = [[REGVAL]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%reg)
+  var reg = RegExample()
+  # CHECK-NEXT: %reg = lit.varlet.decl "reg"
+  # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}__init__
+  # CHECK-NEXT: lit.ref.store [[REGVAL]], %reg
+  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %reg
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
 
   mem2.noop()
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem2
@@ -125,12 +127,15 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
   RegExample{}.noop()
 
+  # CHECK-NEXT: %localReg = lit.varlet.decl
   # CHECK-NEXT: [[REG2:%.*]] = lit.call {{.*}}@RegExample::@"__init__()"()
-  # CHECK-NEXT: %localReg = lit.letreg.decl{{.*}}[[REG2]]
-  # CHECK-NEXT: [[REG2C:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%localReg)
-  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=%localReg)
+  # CHECK-NEXT: lit.ref.store [[REG2]], %localReg
+  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
+  # CHECK-NEXT: [[REG2C:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[REG]])
+  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
+  # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BIGREG]])
-  let localReg = RegExample()
+  var localReg = RegExample()
   _ = BigRegExample{a: localReg, b: localReg }
 
 # CHECK-LABEL: lit.func @"indirect_call
@@ -188,10 +193,11 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   consume(__get_address_as_owned_value(ptr))
 
   # i1 doesn't have ownership but should still work for generality.
+  # CHECK-NEXT: %ownedI1 = lit.varlet.decl
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr end_uninit :
   # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume [[REF]]
-  # CHECK-NEXT: %ownedI1 = lit.letreg.decl "ownedI1" = [[I1VAL]]
-  let ownedI1 = __get_address_as_owned_value(i1ptr)
+  # CHECK-NEXT: lit.ref.store [[I1VAL]], %ownedI1
+  var ownedI1 = __get_address_as_owned_value(i1ptr)
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
@@ -214,10 +220,11 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
   # i1 doesn't have ownership but should still work for generality.
+  # CHECK-NEXT: %i1Val = lit.varlet.decl "i1Val"
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr :
   # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load [[REF]]
-  # CHECK-NEXT: %i1Val = lit.letreg.decl "i1Val" = [[I1VAL]]
-  let i1Val = __get_address_as_lvalue(i1ptr)
+  # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1Val
+  var i1Val = __get_address_as_lvalue(i1ptr)
 
   # CHECK-NEXT: kgen.param.constant: none
 
@@ -376,31 +383,6 @@ fn test_result_optimization():
 
 # CHECK: lit.func @"test_result_consume_reg
 fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-  # CHECK-NEXT: %example1 = lit.letreg.decl "example1" = [[TMP]]
-  let example1 = RegExample()
-
-  # CHECK-NEXT: hlcf.if %cond
-  if cond:
-    # Transferring ownership to the result means the copy ctor/dtor isn't
-    # invoked.
-
-    # CHECK-NEXT: [[TMP:%.*]] = lit.transfer_reg_ownership %example1
-    # CHECK-NEXT: kgen.return [[TMP]]
-    return example1^
-
-  # CHECK: hlcf.if %cond
-  if cond:
-    # Normal copying works and the copy/destroy can be elided.
-    # CHECK-NEXT: kgen.return %example1
-    return example1
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%example1)
-  # CHECK-NEXT:    hlcf.yield
-  # CHECK-NEXT: }
-
-  # Make sure var bindings work the same way even though the IR differs.
-
   # CHECK-NEXT: %example2 = lit.varlet.decl
   # CHECK: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: lit.ref.store [[TMP]], %example2

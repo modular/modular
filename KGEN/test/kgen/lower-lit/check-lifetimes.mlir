@@ -608,9 +608,17 @@ lit.struct.decl @Reg register_passable attributes {
 // CHECK-LABEL: lit.func @copy_del_reg_value
 lit.func @copy_del_reg_value() {
   %0 = kgen.param.materialize: !Reg = <#lit.struct<{}>>
-  %x = lit.letreg.decl "x" = %0 : !Reg
-  // CHECK: call @Reg::@__del__(%x)
-  %1 = lit.call @Reg::@__copyinit__(%x) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
+
+  %x = lit.varlet.decl "x"  var : !lit.ref<!Reg, mut a>
+  lit.ref.store %0, %x : !lit.ref<!Reg, mut a>
+  %load = lit.ref.load %x : !lit.ref<!Reg, mut a>
+  // CHECK: lit.ref.store
+  // CHECK: [[LOAD:%.*]] = lit.ref.load %x
+  // CHECK: [[COPY:%.*]] = lit.call @Reg::@__copyinit__([[LOAD]])
+  %1 = lit.call @Reg::@__copyinit__(%load) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
+  // CHECK: [[ORIG:%.*]] = lit.ref.load %x
+  // CHECK: call @Reg::@__del__([[ORIG]])
+  // CHECK: call @Reg::@__del__([[COPY]])
   kgen.return
 }
 
@@ -643,16 +651,6 @@ lit.struct.decl @RegType register_passable {}
 !RegType = !kgen.declref<@RegType>
 
 lit.func @use_value(%arg0: !RegType borrow) {
-  kgen.return
-}
-
-// COM: Just check that this is a valid borrow.
-lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
-  %x = lit.letreg.decl "x" = %arg0 : !RegType
-  %0 = pop.stack_allocation 1 x !RegType
-  pop.store %x, %0 : !kgen.pointer<!RegType>
-  %1 = lit.ref.from_pointer %0: <!RegType, mut #lit.lifetime>
-  lit.call @use_value(%x) : !lit.signature<(!RegType) -> ()>
   kgen.return
 }
 

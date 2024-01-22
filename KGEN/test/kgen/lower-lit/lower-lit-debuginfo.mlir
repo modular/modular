@@ -8,7 +8,6 @@
 // CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DI_INDEX_TYPE]]
 
 // CHECK-NOT: #debuginfo.local_variable<scope = #[[DISP]], name = "b", file = #{{.*}}, line = 12> : ![[DI_PTR_TYPE]]
-// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DI_INDEX_TYPE]]
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index loc
@@ -18,8 +17,6 @@
 // CHECK-NEXT:    builtin.unrealized_conversion_cast %[[VAR_A]]
 // CHECK-NEXT:    kgen.param.declare life_b: lifetime
 // CHECK-NEXT:    %[[VAR_B:.*]] = pop.stack_allocation 1 x index
-// CHECK-NEXT:    builtin.unrealized_conversion_cast %[[VAR_B]]
-// CHECK-NEXT:    debuginfo.value #[[DILETVAR]] = %[[ARG0]] : index
 
 // CHECK-LABEL: kgen.generator @"module::fn"()
 
@@ -35,8 +32,7 @@ lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
     %a = lit.varlet.decl "a" var : !lit.ref<index, mut life_a> loc(fused<#sp>["test.mlir":10:10])
     %b = lit.varlet.decl "b" synth : !lit.ref<index, mut life_b> loc(fused<#sp>["test.mlir":12:10])
-    %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
-    kgen.return %let_value : index loc(fused<#sp>[#loc])
+    kgen.return %arg0 : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])
 }
 

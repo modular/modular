@@ -46,14 +46,6 @@ lit.func @varDecl(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
-// CHECK-LABEL: kgen.generator @letDecl(%arg0
-// CHECK-NEXT:    kgen.return %arg0 : index
-lit.func @letDecl(%arg0: index) -> index {
-  %a = lit.letreg.decl "a" = %arg0 : index
-  %b = lit.letreg.decl "b" = %a : index
-  kgen.return %b : index
-}
-
 // CHECK-LABEL: kgen.generator @varDecl2
 // CHECK-SAME:  (%[[ARG0:.*]]: index owned)
 // CHECK-NEXT: kgen.param.declare alife: lifetime<1> = <#lit.lifetime>

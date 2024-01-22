@@ -44,28 +44,6 @@ fn return_generic_memory_only[T: AnyType]() -> T:
 fn fudge_int(x: Int) -> Int:
     return x
 
-
-# CHECK-LABEL: lit.func @"let_decls()
-fn let_decls():
-    # CHECK: %x = lit.letreg.decl "x" = %index123 : index
-    let x = `123`
-
-    # CHECK: [[TMP:%.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%x)
-    # CHECK: %z = lit.letreg.decl "z" = [[TMP]]
-    let z = fudge_int(x)
-
-    # These may be declared on the same line.
-    let a = `42`
-    let b = a
-    # CHECK: %a = lit.letreg.decl "a" =
-    # CHECK-NEXT: %b = lit.letreg.decl "b" =
-
-    # COM: The parser cannot emit this into a `lit.letreg.decl` because the
-    # COM: generic function call assumes memory-only conventions.
-    # CHECK: lit.varlet.decl "c"
-    let c = return_generic_memory_only[Bool]()
-
-
 # CHECK-LABEL: lit.func @"var_decls()
 fn var_decls():
     # CHECK: %y = lit.varlet.decl "y" var
@@ -98,16 +76,16 @@ def var_decls_implicit() -> None:
 
 # CHECK-LABEL: lit.func @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
-    # CHECK: lit.letreg.decl "c"
+    # CHECK: lit.varlet.decl "c"
     # CHECK: if
-    let c = `10`
+    var c = `10`
     if cond:
-        # CHECK: lit.letreg.decl "c"
-        let c = `42`
+        # CHECK: lit.varlet.decl "c"
+        var c = `42`
     # CHECK: else
     else:
-        # CHECK: lit.letreg.decl "c"
-        let c = `123`
+        # CHECK: lit.varlet.decl "c"
+        var c = `123`
 
 
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
