@@ -68,82 +68,6 @@ fn _simd_store_maybe_partial[
 
 
 # ===----------------------------------------------------------------------===#
-# Accumulation entry point.
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn accumulate[
-    num_rows: Int,
-    num_cols: Int,
-    simd_size: Int,
-    prefetch_offset: Optional[Int] = None,
-    partial_load_b: Bool = False,
-](
-    length: Int,
-    c: DTypePointer,
-    a: DTypePointer,
-    a_stride: Int,
-    b: DTypePointer,
-    b_stride: Int,
-    partial_load_b_size: Optional[Int] = None,
-):
-    """Compute c += a * b with register tiling on SIMD ISAs>
-
-    Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
-        prefetch_offset: The distance to  prefetch ahead.
-        partial_load_b: Whether use partial load for B.
-
-    Args:
-        length: Number of elements in accumulation.
-        c: The output buffer, should have num_rows x num_cols x simd_size.
-        a: The input buffer A.
-        a_stride: A's stride between each `length` segment.
-        b: The input buffer B.
-        b_stride: B's stride between each `num_cols x simd_size` segment.
-        partial_load_b_size: The partial load B size.
-
-    """
-
-    @parameter
-    if has_neon():
-        _accumulate_neon[
-            num_rows,
-            num_cols,
-            simd_size,
-            prefetch_offset=None,
-            partial_load_b=partial_load_b,
-        ](
-            length,
-            c,
-            a,
-            a_stride,
-            b,
-            b_stride,
-            partial_load_b_size,
-        )
-    else:
-        _accumulate_x86_simd[
-            num_rows,
-            num_cols,
-            simd_size,
-            prefetch_offset=prefetch_offset,
-            partial_load_b=partial_load_b,
-        ](
-            length,
-            c,
-            a,
-            a_stride,
-            b,
-            b_stride,
-            partial_load_b_size,
-        )
-
-
-# ===----------------------------------------------------------------------===#
 # Accumulation optimized for AVX2 and AVX512
 # ===----------------------------------------------------------------------===#
 
@@ -181,11 +105,11 @@ fn accumulate[
 
 
 @always_inline
-fn _accumulate_x86_simd[
+fn accumulate_x86_simd[
     num_rows: Int,
     num_cols: Int,
     simd_size: Int,
-    prefetch_offset: Optional[Int] = None,
+    prefetch_offset: Int = -1,
     partial_load_b: Bool = False,
 ](
     length: Int,
@@ -196,8 +120,26 @@ fn _accumulate_x86_simd[
     b_stride: Int,
     partial_load_b_size: Optional[Int] = None,
 ):
-    """Accumulation optimized for AVX512 and AVX2."""
+    """Compute c += a * b with register tiling on SIMD ISAs other than NEON.
+    It has been optimized for AVX512 and AVX2.
 
+    Parameters:
+        num_rows: Number of rows in resigter tiling.
+        num_cols: Number of columns in resigter tiling.
+        simd_size: Number of lanes of a SIMD vector.
+        prefetch_offset: The distance to  prefetch ahead.
+        partial_load_b: Whether use partial load for B.
+
+    Args:
+        length: Number of elements in accumulation.
+        c: The output buffer, should have num_rows x num_cols x simd_size.
+        a: The input buffer A.
+        a_stride: A's stride between each `length` segment.
+        b: The input buffer B.
+        b_stride: B's stride between each `num_cols x simd_size` segment.
+        partial_load_b_size: The partial load B size.
+
+    """
     constrained[not has_neon()]()
 
     @parameter
@@ -211,13 +153,11 @@ fn _accumulate_x86_simd[
     for l in range(length):
         # prefetch
         @parameter
-        if prefetch_offset:
+        if prefetch_offset > 0:
 
             @unroll
             for i in range(num_cols):
-                (
-                    b + prefetch_offset.value() * kernel_width + i * simd_size
-                ).prefetch[
+                (b + prefetch_offset * kernel_width + i * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
@@ -290,11 +230,11 @@ fn _accumulate_x86_simd[
 
 
 @always_inline
-fn _accumulate_neon[
+fn accumulate_neon[
     num_rows: Int,
     num_cols: Int,
     simd_size: Int,
-    prefetch_offset: Optional[Int] = None,
+    prefetch_offset: Int = -1,
     partial_load_b: Bool = False,
 ](
     length: Int,
@@ -305,8 +245,27 @@ fn _accumulate_neon[
     b_stride: Int,
     partial_load_b_size: Optional[Int] = None,
 ):
-    """Accumulation optimized for NEON."""
+    """Compute c += a * b with register tiling on SIMD ISAs other than NEON.
+    It has been optimized for AVX512 and AVX2.
 
+    Parameters:
+        num_rows: Number of rows in resigter tiling.
+        num_cols: Number of columns in resigter tiling.
+        simd_size: Number of lanes of a SIMD vector.
+        prefetch_offset: The distance to  prefetch ahead.
+        partial_load_b: Whether use partial load for B.
+
+    Args:
+        length: Number of elements in accumulation.
+        c: The output buffer, should have num_rows x num_cols x simd_size.
+        a: The input buffer A.
+        a_stride: A's stride between each `length` segment.
+        b: The input buffer B.
+        b_stride: B's stride between each `num_cols x simd_size` segment.
+        partial_load_b_size: The partial B load-side.
+
+    Don't use prefetch on Arm hardware for now.
+    """
     constrained[has_neon()]()
 
     @parameter
@@ -386,7 +345,7 @@ fn init_register_tile[
 
         @unroll
         for j in range(num_cols):
-            tile.simd_store(i * tile_width + j * simd_size, zero_vec)
+            tile.simd_store[simd_size](i * tile_width + j * simd_size, zero_vec)
 
 
 @always_inline
