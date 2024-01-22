@@ -459,16 +459,16 @@ key_3 = value3_override
   Config base;
   auto err = base.parseFrom(one);
   ASSERT_FALSE(err.isError()) << err.getError();
-  ASSERT_EQ(base.getAllValues().size(), 6);
+  ASSERT_EQ(base.getAllValues().size(), (size_t)6);
 
   Config over;
   err = over.parseFrom(two);
   ASSERT_FALSE(err.isError()) << err.getError();
-  ASSERT_EQ(over.getAllValues().size(), 5);
+  ASSERT_EQ(over.getAllValues().size(), (size_t)5);
 
   err = base.overrideFrom(over);
   ASSERT_FALSE(err.isError()) << err.getError();
-  ASSERT_EQ(base.getAllValues().size(), 8);
+  ASSERT_EQ(base.getAllValues().size(), (size_t)8);
 
   EXPECT_EQ(base.getValue("global_key_1"), "value1");
   EXPECT_EQ(base.getValue("global_key_2"), "value2_override");
