@@ -90,13 +90,13 @@ struct TestParamStruct[A: Int]:
     # CHECK: %temp = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
     var temp: TestParamStruct[C]
 
-    # CHECK: lit.alias.decl {{.*}}intVal: !Int = <#lit.struct<{value = 42}>>
+    # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <#lit.struct<{value = 42}>>
     alias intVal : Int = 42
 
     # CHECK: %temp2 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
-  # CHECK: lit.alias.decl {{.*}}TypeLevelAlias: !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
+  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
   alias TypeLevelAlias = A*A
 
 # Test that we support partially bound parameters.
@@ -170,7 +170,7 @@ struct Pair[dt: DType]:
 
 # CHECK: useParameterizedField
 fn useParameterizedField[x: Pair[DType.float32]]():
-  # CHECK: lit.alias.decl {{.*}}y:
+  # CHECK: lit.alias.decl *"y{{.*}}":
   alias y : OurSIMD[42, DType.float32] = x.a
 
 
@@ -330,11 +330,11 @@ fn passMemoryValue(x: MemoryType) -> MemoryType:
 
 # CHECK-LABEL: lit.func @"callMemoryValueParam
 fn callMemoryValueParam():
-    # CHECK: paramValue: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
+    # CHECK: lit.alias.decl [[PARAM_VALUE1:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     alias paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.varlet.decl
-    # CHECK: %[[PARAM_VALUE:.*]] = kgen.param.materialize: !MemoryType = <{{.*}}paramValue>
-    # CHECK: lit.ref.store %[[PARAM_VALUE]], %dynamicLet
+    # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType = <[[PARAM_VALUE1]]>
+    # CHECK: lit.ref.store %[[PARAM_VALUE2]], %dynamicLet
     let dynamicLet = paramValue
 
     alias nonMovable = NonMovableMemoryType(42)
@@ -343,11 +343,11 @@ fn callMemoryValueParam():
     # CHECK: lit.ref.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
-    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem({{.*}}paramValue
+    # CHECK: lit.alias.decl [[COPY:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem({{.*}}paramValue
     alias copy = passMemoryValue(paramValue)
     # CHECK: lit.varlet.decl
     # CHECK: [[MVALUE:%.*]] = lit.varlet.decl "anonymous*"
-    # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <{{.*}}copy>
+    # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <[[COPY]]>
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A_0
     # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, [[IMMREF]])
@@ -416,22 +416,22 @@ fn dependent_function_type[a: index, f: fn (ParamType[a]) -> None]():
 # Alias resolution
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl {{.*}}boolDtype: dtype = <bool>
+# CHECK: lit.alias.decl *"boolDtype{{.*}}": dtype = <bool>
 alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
-# CHECK: lit.alias.decl {{.*}}FOURTY_TWO: !IntLiteral = <{{.*}}42
+# CHECK: lit.alias.decl *"FOURTY_TWO{{.*}}": !IntLiteral = <{{.*}}42
 alias FOURTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <[[V:.*]][v]: !Int>
 struct A[v: Int]:
-  # CHECK: lit.alias.decl {{.*}}member: !Int = <apply({{.*}}__add__{{.*}}, [[V]], {{.*}}42
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[V]], {{.*}}42
   alias member = v + FOURTY_TWO
 
 # CHECK-LABEL: lit.func @"testUseOfAliases
 fn testUseOfAliases(a: Bool):
   # This type checks.
   _ = SIMD[DType(boolDtype), 4].splat(a)
-  # CHECK: lit.alias.decl {{.*}}y: !Int = <{{.*}}44
+  # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
   alias y = A[2].member
 
 @register_passable
@@ -451,7 +451,7 @@ struct MyDType:
   alias float32 = MyDType(Int(2).value)
   alias float64 = MyDType(Int(3).value)
 
-  # CHECK: lit.alias.decl {{.*}}ui16: !MyDType = <#lit.struct<{state = 7}>>
+  # CHECK: lit.alias.decl *"ui16{{.*}}": !MyDType = <#lit.struct<{state = 7}>>
   alias ui16 = MyDType{state: Int(7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
@@ -466,7 +466,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup
 # CHECK-SAME: <[[PARAM:.*]][param]: !Int>
 struct UnqualAliasLookup[param: Int]:
-  # CHECK: lit.alias.decl {{.*}}member: !Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
   alias member = param+1
   fn get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
@@ -497,7 +497,7 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: !lit.signature<<"b": variadic<!Int>>() param_vararg -> !kgen.none>
+  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.signature<<"b": variadic<!Int>>() param_vararg -> !kgen.none>
   # CHECK-SAME: = <@"$parameters"::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 
@@ -603,7 +603,7 @@ fn testDependentType[
 
 # CHECK-LABEL: lit.func @"testParameterEvaluator()"
 fn testParameterEvaluator():
-  # CHECK-NEXT: lit.alias.decl {{.*}}x = <1>
+  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <1>
   alias x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.varlet.decl "y"
   # CHECK-NEXT: %0 = lit.call @"$parameters"::@Abstraction::@"push{{.*}}"<:{{.*}} = 1{{.*}}, :{{.*}} = 2{{.*}}>()
@@ -667,10 +667,11 @@ fn fn_with_param[x: Int](y: Abstraction[x]):
 
 # CHECK-LABEL: lit.func @"indirect_call_infer_params
 fn indirect_call_infer_params():
+    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = fn_with_param
     # CHECK: call_param[!lit.signature<("y": {{.*}}Abstraction<:!Int #lit.struct<{value = 2}>>
     # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction<:!Int *(0,0)>
-    # CHECK-SAME: callee, #lit.struct<{value = 2}>
+    # CHECK-SAME: [[CALLEE]], #lit.struct<{value = 2}>
     callee(Abstraction[2]())
 
 ##===----------------------------------------------------------------------===##
@@ -738,7 +739,7 @@ fn test_default_params():
 
 
 fn test_indirect_default_params():
-    # CHECK: lit.alias.decl [[CALLEE:.*_callee]]: !lit.signature
+    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = default_params
 
     # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
@@ -843,7 +844,7 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
-    # CHECK: lit.alias.decl {{.*}}T: metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
+    # CHECK: lit.alias.decl *"T{{.*}}": metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 0}>,
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     alias T = AllDefaultParams[]
@@ -863,7 +864,7 @@ struct StructWithParametricDefaultValue[T: AnyRegType, N: Int = IntForType[T]()]
 
 # CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
-    # CHECK: lit.alias.decl {{.*}}_a: metatype<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
+    # CHECK: lit.alias.decl *"a{{.*}}": metatype<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
     # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
@@ -1008,14 +1009,14 @@ struct DependentDefault[x: Int = 1, y: Int = x]:
 
 # CHECK-LABEL: lit.func @"dependent_default_ctad
 fn dependent_default_ctad():
-    # CHECK-NEXT: value: {{.*}}@DependentDefault<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 1}>>
+    # CHECK-NEXT: value{{.*}}: {{.*}}@DependentDefault<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 1}>>
     alias value = DependentDefault()
 
 
 # CHECK-LABEL: lit.func @"scalar_type
 # CHECK-SAME: <[[dt:.*]][dt]: !DType>
 fn scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*_T]]: metatype<{{.*}}SIMD<:!DType [[dt]],
+    # CHECK: alias.decl [[T:.*]]: metatype<{{.*}}SIMD<:!DType [[dt]],
     alias T = Scalar[dt]
 
     #FIXME(29495): reenable.

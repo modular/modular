@@ -16,9 +16,9 @@ fn param[x: int]():
     # CHECK: lit.func *"param_closure
     @parameter
     fn param_closure():
-        # CHECK: decl [[y:.*]] =
+        # CHECK: lit.alias.decl [[y:.*]] =
         alias y = x
 
-        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping0"<[[y]]>
+        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping1"<[[y]]>
         fn closure() escaping:
             use[y]()

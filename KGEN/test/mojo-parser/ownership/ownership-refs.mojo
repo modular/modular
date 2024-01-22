@@ -52,10 +52,10 @@ fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
   # CHECK: lit.varlet.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}_lt1, {{.*}}_as1>
   let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
-  # CHECK: lit.alias.decl {{.*}}_as2: !Int = <#lit.struct<{value = 42}>>
+  # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <#lit.struct<{value = 42}>>
   alias as2 : Int = 42
 
-  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm {{.*}}_lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, {{.*}}_as2)>
+  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm {{.*}}_lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
   let ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
 
 # This preserves reference mutability
@@ -170,7 +170,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[ARV]], %aref
   var aref = Reference(a)
-  # CHECK-NEXT: lit.alias.decl {{.*}}_aLifetime: lifetime<1> = <*"a`0">
+  # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`0">
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref

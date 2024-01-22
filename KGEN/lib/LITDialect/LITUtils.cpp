@@ -41,7 +41,7 @@ std::string LIT::mangleParameter(const Twine &baseName, unsigned line,
 StringRef LIT::demangleParameterName(StringRef name) {
   llvm::Regex re("^_[0-9]+x[0-9]+_");
   if (!re.match(name))
-    return name;
+    return name.take_front(name.find('`'));
   // Strip the prefix. Drop the leading underscore and the drop until the second
   // underscore. This way, the function can avoid returning a `std::string`.
   name = name.drop_front();

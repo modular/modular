@@ -2145,8 +2145,18 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // UnresolvedAliasValueAttr.
   auto type = getUnresolvedType();
   auto value = UnresolvedAliasValueAttr::get(type);
-  auto decl = ParamDeclAttr::get(
-      shared.getMangledParameterName(name.getValue(), smLoc), type);
+
+  // TODO(fixme): currently, we cannot rely on looking up name collisions of
+  // aliases because of things like this:
+  // fn foo():
+  //     fn bar():
+  //         alias z = __mlir_attr.`0: index`
+  //     alias z = __mlir_attr.`1: index`
+  // So we treat them as implicitly declared to force a mangling. We could
+  // probably fix this when parameters stop being non-lexical.
+  StringAttr mangledName =
+      parentDecl.getUniqueParamNameNew(name, /*isUserDefinedDecl=*/false);
+  auto decl = ParamDeclAttr::get(mangledName, type);
   auto declOp = builder.create<AliasDeclOp>(loc, decl, value);
 
   // Skip the body of this definition: go to a token the starts a line at the
