@@ -6,7 +6,7 @@
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | kgen-opt -verify-parameters | FileCheck %s
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*_X]], |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*]], |>
 # CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
 
@@ -17,7 +17,7 @@ struct Param[y: __mlir_type.index]:
 
 # CHECK-LABEL: lit.func @"param()"
 fn param():
-    # CHECK: lit.alias.decl [[X:.*_X]] = <2>
+    # CHECK: lit.alias.decl [[X:.*]] = <2>
     alias X = __mlir_attr.`2 : index`
 
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}<[[X]]>

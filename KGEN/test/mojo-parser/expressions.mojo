@@ -448,13 +448,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}c: !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}d: !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -540,7 +540,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
@@ -582,11 +582,11 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
 # CHECK-SAME: <[[A:.*_a]][a]: !Int, [[A2:.*_a2]][a2]: !Int>
 fn parameterExprs[a: Int, a2: Int]():
-  # CHECK: lit.alias.decl {{.*}}b: !Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
+  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
   alias b = a-a
-  # CHECK: lit.alias.decl {{.*}}c: !Int = <apply({{.*}}__add__{{.*}}, [[A]], {{.*}}42{{.*}})>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[A]], {{.*}}42{{.*}})>
   alias c = a+42
-  # CHECK: lit.alias.decl {{.*}}d: !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A2]])>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A2]])>
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##
@@ -649,7 +649,7 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <#lit.struct<{value = 4}>>
   alias int = Int(4)
-  # CHECK: lit.alias.decl {{.*}}value = <#lit.struct.extract<:!Int [[INT]], "value">>
+  # CHECK: lit.alias.decl *"value{{.*}}" = <#lit.struct.extract<:!Int [[INT]], "value">>
   alias value = int.value
   alias foldToValue = Int(5).value
 
@@ -1117,7 +1117,7 @@ struct RegWeirdArray:
 
 # CHECK-LABEL: lit.func @"dlValueToPValue
 fn dlValueToPValue[arr: RegWeirdArray]():
-    # CHECK-NEXT: lit.alias.decl {{.*}}x: !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}, {{.*}}arr, #lit.struct<{value = 2}>)>
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}, {{.*}}arr, #lit.struct<{value = 2}>)>
     alias x = arr[2]
 
 
@@ -1200,11 +1200,11 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 
 # Test chained comparison op in parameter domain for issue
 # https://github.com/modularml/modular/issues/22050
-# CHECK: lit.alias.decl{{.*}}chainedCmpAlias1: !Bool ={{.*}}false
+# CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}false
 alias chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
-# CHECK: lit.alias.decl{{.*}}chainedCmpAlias2: !Bool ={{.*}}true
+# CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}true
 alias chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
-# CHECK: lit.alias.decl{{.*}}chainedCmpAlias3: !Bool ={{.*}}false
+# CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}false
 alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # CHECK: [[XCMP:%.*]] = lit.varlet.decl "xCmp"
@@ -1360,8 +1360,8 @@ fn function_types(
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
-# CHECK-NEXT: lit.alias.decl _{{.*}}_x: type = <i8>
-# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
+# CHECK-NEXT: lit.alias.decl *"x{{.*}}": type = <i8>
+# CHECK-NEXT: lit.alias.decl *"B{{.*}}": type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None
@@ -1382,7 +1382,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.varlet.decl
     # CHECK-NEXT: %0 = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
     # CHECK-NEXT: lit.ref.store %0, %b_0
-    # CHECK: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%index3]
     let v1 = a[3]
@@ -1658,7 +1658,7 @@ fn static_type[a: Bool](x: type_function(a)):
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl{{.*}}bigggNumber: !IntLiteral = <#lit.struct<{value: !kgen.int_literal = 115792089237316195423570985008687907853269984665640564039457584007913129639936}>>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}": !IntLiteral = <#lit.struct<{value: !kgen.int_literal = 115792089237316195423570985008687907853269984665640564039457584007913129639936}>>
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 512}>>

@@ -12,7 +12,7 @@ struct Foo[a: Int]:
     var b: Int
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*a]]: !Int, [[X:.*X]]: [[FOO:.*]]<:!Int [[a]]> : metatype<[[FOO]]<:!Int [[a]]>>, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*a]]: !Int, [[X:\*".*"]]: [[FOO:.*]]<:!Int [[a]]> : metatype<[[FOO]]<:!Int [[a]]>>, |>
 # CHECK: lit.func @"__call__{{.*}}({{.*}}<:!Int [[a]], :[[FOO]]<:!Int [[a]]>
 # CHECK-NEXT: [[VAR1:%.*]] = lit.ref.struct.ger %0[field0]
 # CHECK-NEXT: [[VAR2:%.*]] = lit.ref.load [[VAR1]]

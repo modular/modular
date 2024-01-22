@@ -202,6 +202,15 @@ public:
   StringAttr getUniqueParamName(const Twine &name, bool isLifetime = false,
                                 bool dontRenameOutermost = true);
 
+  /// Create a unique parameter name by postpending a backtick ("`"), scope
+  /// depth, and a unique ID.
+  ///
+  /// If `isUserDefinedDecl` is true, the function checks if the name collides
+  /// with a known user declared parameter name, and only mangles if needed.
+  /// TODO: rename when the migration is complete
+  StringAttr getUniqueParamNameNew(StringAttr name,
+                                   bool isUserDefinedDecl = true);
+
   /// Create an anonymous (and unique) lifetime parameter name for the specified
   /// value name that cannot collide with any other parameters. This uses the
   /// same uniquing scheme as `getUniqueParamName`, but ignores non-function

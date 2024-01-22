@@ -82,7 +82,7 @@ fn fancierSubstitutions():
 
     # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = `1`
-    # CHECK: lit.alias.decl {{.*}}new_lower = <max([[A]], 42)>
+    # CHECK: lit.alias.decl *"new_lower{{.*}}" = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max,`, a, `, `, (`42`), `> : index`
     ]
@@ -95,7 +95,7 @@ fn fancierSubstitutions():
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
-    # CHECK: lit.alias.decl {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
+    # CHECK: lit.alias.decl *"x{{.*}}": variadic<index> = <[1, [[LENGTH]]]>
     alias x = __mlir_attr[
         `#kgen.variadic<`, +`1`, `,`, length, `> : !kgen.variadic<index>`
     ]

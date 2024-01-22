@@ -23,7 +23,7 @@ fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     fn nested(x: ParameterizedType, y: ParameterizedType[x.value]):
         pass
 
-    # CHECK: lit.alias.decl {{.*}}fn_type:
+    # CHECK: lit.alias.decl *"fn_type`1x2":
     # CHECK-SAME: signature<[2]<?, index>("x":
     # CHECK-SAME: "y": !lit.ref<{{.*}}ParameterizedType<*(0,0)>
     alias fn_type: fn (

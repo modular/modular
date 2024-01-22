@@ -48,6 +48,40 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   declsInScope = std::move(src.declsInScope);
 }
 
+StringAttr ASTDecl::getUniqueParamNameNew(StringAttr name,
+                                          bool isUserDefinedDecl) {
+  // First, calculate depths and check if we need to mangle due to collisions.
+  const ASTDecl *curScope = this;
+  bool hasCollision = false;
+  size_t depth = 0;
+  while (curScope) {
+    // We only check for collisions if this is a user defined decl. Implicit
+    // declarations always get mangled.
+    if (isUserDefinedDecl && !hasCollision) {
+      ArrayRef<ASTDecl *> result = curScope->lookupInCurrentScope(name);
+      hasCollision = !result.empty();
+    }
+    depth++;
+
+    if (isa<FileModuleOp>(*curScope))
+      break;
+    curScope = curScope->parentDecl;
+  }
+  depth--; // Adjust so depth starts at 0.
+
+  // User visible declarations only get mangled if there is a collision.
+  if (isUserDefinedDecl && !hasCollision)
+    return name;
+
+  // This mangling guarantees that whatever name we generate is unique,
+  // independently of whether the name we are mangling comes from an explicit
+  // declaration by the Mojo user. Due to the use of depth, the mangling doesn't
+  // change when the order of function declarations change, so we have hash
+  // stability as well.
+  return StringAttr::get(getContext(), name.getValue() + "`" + Twine(depth) +
+                                           "x" + Twine(getNextUniqueID()));
+}
+
 StringAttr ASTDecl::getUniqueParamName(const Twine &name, bool isLifetime,
                                        bool dontRenameOutermost) {
   // Find the enclosing isolated from above decl that will scope parameter

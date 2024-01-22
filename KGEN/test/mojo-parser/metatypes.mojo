@@ -54,7 +54,7 @@ struct NMType:
 # CHECK-LABEL: lit.func @"metatypes()"
 fn metatypes():
     # COM: Test that a local alias can retain type properties.
-    # CHECK: lit.alias.decl [[T:.*_T]]: metatype<[[THING:@.*]]> = <!Thing>
+    # CHECK: lit.alias.decl [[T:\*"T.*]]: metatype<[[THING:@.*]]> = <!Thing>
     alias T = Thing
     # CHECK: [[VAL:%.*]] = kgen.param.constant: !Thing =
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[VAL]])
@@ -63,7 +63,7 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyRegType]()"<:type !Thing>>
+    # CHECK: bound{{.*}}: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyRegType]()"<:type !Thing>>
     alias bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
