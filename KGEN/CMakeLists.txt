@@ -231,9 +231,10 @@ function(add_mojo_package target visibility)
     set(KGEN_OPTIMIZATION_FLAG "-no-optimization")
   endif()
 
-  # If this is not a standard library package, it should depend on the full-sdk.
+  # If this is not a standard library package, then the package should depend
+  # on the full-stdlib.
   if (NOT KGEN_STDLIB)
-    list(APPEND KGEN_LIB_DEPENDS mojo-sdk)
+    list(APPEND KGEN_LIB_DEPENDS mojo-stdlib)
   endif()
 
   set(KGEN_PACKAGE_FILENAME "${KGEN_PACKAGE_DIR}/__init__.mojo")
