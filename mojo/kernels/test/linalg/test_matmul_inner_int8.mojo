@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: inner_int8_support
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import align_up
