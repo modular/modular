@@ -760,8 +760,7 @@ private:
   void checkDefForLetDiagnostics(ValueRef valueRef, Operation &op);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
-  void checkLifetimeEffect(LifetimeAccess accessKind, TypedAttr lifetime,
-                           Operation &op);
+  void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1073,11 +1072,12 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 }
 
 /// Check any unstructured lifetimes that are accessed by the operation.
-void UninitializedValueScan::checkLifetimeEffect(LifetimeAccess accessKind,
-                                                 TypedAttr lifetime,
+void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
                                                  Operation &op) {
+  // We assume this may mutate the lifetime unless we know it is read-only.
+  bool isMutate = !cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
-  bool isMutate = accessKind == LifetimeAccess::write;
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
@@ -1115,7 +1115,7 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
 void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
+  SmallVector<TypedAttr> lifetimeEffects;
   for (Operation &op : block) {
     operandEffects.clear();
     resultEffects.clear();
@@ -1216,8 +1216,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
     }
 
     // Process any other indirect lifetimes accessed.
-    for (auto [accessKind, lifetime] : lifetimeEffects)
-      checkLifetimeEffect(accessKind, lifetime, op);
+    for (auto lifetime : lifetimeEffects)
+      checkLifetimeEffect(lifetime, op);
 
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
@@ -1446,8 +1446,7 @@ private:
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
-  void checkLifetimeEffect(LifetimeAccess accessKind, TypedAttr lifetime,
-                           Operation &op);
+  void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
@@ -1578,7 +1577,7 @@ void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<std::pair<LifetimeAccess, TypedAttr>> lifetimeEffects;
+  SmallVector<TypedAttr> lifetimeEffects;
   for (Operation &op : llvm::reverse(block)) {
     operandEffects.clear();
     resultEffects.clear();
@@ -1681,8 +1680,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Process any other indirect lifetimes accessed.
-    for (auto [accessKind, lifetime] : lifetimeEffects)
-      checkLifetimeEffect(accessKind, lifetime, op);
+    for (auto lifetime : lifetimeEffects)
+      checkLifetimeEffect(lifetime, op);
   }
 }
 
@@ -2139,8 +2138,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
 }
 
 /// Check any unstructured lifetimes that are accessed by the operation.
-void DestructorInsertion::checkLifetimeEffect(LifetimeAccess accessKind,
-                                              TypedAttr lifetime,
+void DestructorInsertion::checkLifetimeEffect(TypedAttr lifetime,
                                               Operation &op) {
   // For destructor insertion, we don't care if this is a read or write.
   // If needed, emit the destructor immediately after the specified operation.
@@ -2149,7 +2147,7 @@ void DestructorInsertion::checkLifetimeEffect(LifetimeAccess accessKind,
 
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForLifetime(lifetime);
   for (auto access : accesses) {
-    // Iff this is the /last/ use of the value, emit a for the value.
+    // Iff this is the /last/ use of the value, emit a dtor for the value.
     ValueInfo &valueInfo = valueSet.getValueInfos()[access.valueId];
     if (valueInfo.hasErrorDiagnosed)
       continue;

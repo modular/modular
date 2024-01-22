@@ -109,12 +109,10 @@ fn testUseConditional(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.func @"testDefConditional
 fn testDefConditional(cond: __mlir_type.i1):
-  # CHECK-NOT: __del__
+  # CHECK-NOT: lit.call {{[^)]*}}__del__
 
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
   var a = MemExample()
 
-  # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
   var aref = Reference(a).value

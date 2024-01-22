@@ -141,14 +141,14 @@ enum class OverallOpValueEffect {
   tryOp,
 };
 
-enum class LifetimeAccess { read, write };
-
-/// This computes the effects that an operation has on any operands and result
-/// values. This information is used by both phases of CheckLifetimes.
-OverallOpValueEffect getOperationEffects(
-    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results,
-    SmallVectorImpl<std::pair<LifetimeAccess, TypedAttr>> &lifetimes);
+/// This computes the effects that an operation has on any operands, result
+/// values, and other declared lifetimes. This information is used by both
+/// phases of CheckLifetimes.
+OverallOpValueEffect
+getOperationEffects(Operation &op,
+                    SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+                    SmallVectorImpl<ResultEffect> &results,
+                    SmallVectorImpl<TypedAttr> &lifetimes);
 
 } // namespace LIT
 } // namespace M::KGEN
