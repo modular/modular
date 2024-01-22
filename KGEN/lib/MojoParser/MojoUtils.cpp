@@ -274,12 +274,11 @@ bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
 
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   Block &deadBlock = deadRegion->front();
-  {
-    Operation *op = &deadBlock.front();
-    // Erase bottom up to avoid deleting an op while something uses its results.
-    while (&deadBlock.back() != op)
-      deadBlock.back().erase();
-    op->erase();
-  }
+  Operation *op = &deadBlock.front();
+  // Erase bottom up to avoid deleting an op while something uses its results.
+  while (&deadBlock.back() != op)
+    deadBlock.back().erase();
+  op->erase();
+
   OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(unreachableLoc);
 }
