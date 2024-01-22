@@ -86,7 +86,7 @@ struct MatmulDataType:
 @value
 @register_passable("trivial")
 struct MicroKernelShape:
-    """Record describing the inner kernel shape"""
+    """Record describing the inner kernel shape."""
 
     var a_row_size: Int
 
