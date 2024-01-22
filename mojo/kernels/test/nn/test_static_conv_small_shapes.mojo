@@ -115,6 +115,7 @@ fn static_conv(
         Index(0, 0, 0, 0),
         Index(N, C, F, HO),
         tile_size,
+        direct_null_elementwise_epilogue,
     )
 
     instance._n_loop()

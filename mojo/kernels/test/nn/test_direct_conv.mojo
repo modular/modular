@@ -215,7 +215,6 @@ fn test[
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))
                         print("filter packed", filter_packed)
-                        print("num groups", num_groups)
                         print("Test failed at index: ", Index(n, ho, wo, f))
                         print("Golden value: ", output_ref[n, ho, wo, f])
                         print("Actual value: ", output[n, ho, wo, f])
@@ -658,6 +657,9 @@ fn main() raises:
             1,  # num_groups
             rt,
         )
+
+        # Test with padding
+        # This is a fallback implementation assuming all shapes are dynamic.
 
         test[DType.float32, False](
             1,  # N

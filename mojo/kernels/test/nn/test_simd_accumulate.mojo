@@ -8,7 +8,8 @@
 from algorithm.functional import vectorize
 from AccumulateSIMD import (
     _simd_load_maybe_partial,
-    accumulate,
+    accumulate_x86_simd,
+    accumulate_neon,
     load_register_tile,
     store_register_tile,
 )
@@ -71,9 +72,15 @@ def test_accumulate[
 
     vectorize[simd_size, fill_c](c_size)
 
-    accumulate[num_rows, num_cols, simd_size](
-        length, c, a, length, b, kernel_width
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length, c, a, length, b, kernel_width
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length, c, a, length, b, kernel_width
+        )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -93,9 +100,15 @@ def test_accumulate[
         SIMD[DType.float32, simd_size](1.0),
     )
 
-    accumulate[num_rows, num_cols, simd_size](
-        length, c, a, 2 * length, b + kernel_width, kernel_width
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length, c, a, 2 * length, b + kernel_width, kernel_width
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length, c, a, 2 * length, b + kernel_width, kernel_width
+        )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -115,14 +128,25 @@ def test_accumulate[
         SIMD[DType.float32, simd_size](7.0),
     )
 
-    accumulate[num_rows, num_cols, simd_size](
-        length,
-        c,
-        a + length,
-        2 * length,
-        b + kernel_width,
-        2 * kernel_width,
-    )
+    @parameter
+    if has_neon():
+        accumulate_neon[num_rows, num_cols, simd_size](
+            length,
+            c,
+            a + length,
+            2 * length,
+            b + kernel_width,
+            2 * kernel_width,
+        )
+    else:
+        accumulate_x86_simd[num_rows, num_cols, simd_size](
+            length,
+            c,
+            a + length,
+            2 * length,
+            b + kernel_width,
+            2 * kernel_width,
+        )
 
     # C results:
     # [4.0, 4.0, 4.0, 4.0]
