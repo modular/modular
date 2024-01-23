@@ -632,10 +632,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                              signature.getDefaultPosParams(),
                              signature.getDefaultKwOnlyParams(), evaluator);
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
-  PassingKindPrinter passingKindPrinter(p, signature.getNumInputs(), '|');
+  PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
-    passingKindPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
-                                              i);
+    passingKindPrinter.printOptionalStarSlash(i);
 
     // Print the SSA name first, which might have been automatically uniqued.
     BlockArgument arg = region->getArgument(i);
