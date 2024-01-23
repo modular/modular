@@ -778,25 +778,6 @@ fn search_mm_config[
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, critical_stride
     ]()
-    # We can fork on a_row_size and pack_inner_size independently to get a cross-product:
-    #     __mlir_op.`kgen.param.fork`[
-    #         paramDecl=__mlir_attr.`#kgen<param.decl result_hidden1 : index>`,
-    #         values=__mlir_attr[
-    #             `#kgen.variadic<4, 3, 5, 8> : !kgen.variadic<index>`
-    #         ],
-    #     ]()
-    #     alias a_row_size = (
-    #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden1"> : index`
-    #     )
-    #     __mlir_op.`kgen.param.fork`[
-    #         paramDecl=__mlir_attr.`#kgen<param.decl result_hidden2 : index>`,
-    #         values=__mlir_attr[
-    #             `#kgen.variadic<3, 4, 2> : !kgen.variadic<index>`
-    #         ],
-    #     ]()
-    #     alias pack_inner_size = (
-    #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden2"> : index`
-    #     )
     alias mm_config1 = get_matmul_config[
         a_type,
         b_type,
@@ -805,10 +786,6 @@ fn search_mm_config[
         kernel_shape.pack_inner_size,
         saturated_vnni,
     ]()
-    # FIXME: The 8,2 config is giving erroneous results.
-    # alias mm_config2 = get_matmul_config[8, 2]()
-
-    # alias mm_config = autotune(mm_config1, mm_config2)
     return mm_config1
 
 
