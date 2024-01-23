@@ -95,7 +95,7 @@ struct EngineTensor(Sized):
     fn dtype(self) -> DType:
         return self.ptr.dtype(self.lib).to_dtype()
 
-    fn spec(self) -> TensorSpec:
+    fn spec(self) raises -> TensorSpec:
         return self.ptr.get_tensor_spec(
             self.lib, self.session.copy()
         ).get_as_tensor_spec()

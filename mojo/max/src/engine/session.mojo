@@ -123,6 +123,18 @@ struct _InferenceSessionImpl(Movable):
             raise "failed to create tensor spec"
         return EngineTensorSpec(name, spec, self.engine.lib, session ^)
 
+    fn get_as_engine_tensor_spec(
+        self,
+        name: StringRef,
+        shape: Optional[DynamicVector[Optional[Int64]]],
+        dtype: DType,
+        owned session: InferenceSession,
+    ) raises -> EngineTensorSpec:
+        let context = self.context.borrow_ptr()
+        if not context.ptr:
+            raise "failed to create tensor spec"
+        return EngineTensorSpec(name, shape, dtype, self.engine.lib, session ^)
+
     fn new_tensor_map(
         self, owned session: InferenceSession
     ) raises -> TensorMap:
@@ -180,9 +192,41 @@ struct InferenceSession:
     fn get_as_engine_tensor_spec(
         self, name: StringRef, spec: TensorSpec
     ) raises -> EngineTensorSpec:
+        """Gets a TensorSpec compatible with Max Engine.
+
+        Args:
+            name: Name of the Tensor.
+            spec: Tensor specification in Mojo TensorSpec format.
+
+        Returns:
+           EngineTensorSpec to be used with Max Engine APIs.
+
+        """
         return __get_address_as_lvalue(
             self.ptr.value
         ).get_as_engine_tensor_spec(name, spec, self.copy())
+
+    fn get_as_engine_tensor_spec(
+        self,
+        name: StringRef,
+        shape: Optional[DynamicVector[Optional[Int64]]],
+        dtype: DType,
+    ) raises -> EngineTensorSpec:
+        """Gets a TensorSpec compatible with Max Engine.
+
+        Args:
+            name: Name of the Tensor.
+            shape: Shape of the Tensor.
+                   Dynamic Dimensions can be represented with None and for
+                   Dynamic Rank Tensor use None as value for shape.
+            dtype: DataType of the Tensor.
+
+        Returns:
+            EngineTensorSpec to be used with Max Engine APIs.
+        """
+        return __get_address_as_lvalue(
+            self.ptr.value
+        ).get_as_engine_tensor_spec(name, shape, dtype, self.copy())
 
     fn new_tensor_map(self) raises -> TensorMap:
         return __get_address_as_lvalue(self.ptr.value).new_tensor_map(

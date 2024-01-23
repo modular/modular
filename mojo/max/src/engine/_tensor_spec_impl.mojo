@@ -21,7 +21,8 @@ struct CTensorSpec:
     This doesn't free the memory on destruction.
     """
 
-    var ptr: DTypePointer[DType.invalid]
+    alias ptr_type = DTypePointer[DType.invalid]
+    var ptr: Self.ptr_type
 
     alias FreeTensorSpecFnName = "M_freeTensorSpec"
     alias GetDimAtFnName = "M_getDimAt"
@@ -29,6 +30,8 @@ struct CTensorSpec:
     alias GetNameFnName = "M_getName"
     alias GetDTypeFnName = "M_getDtype"
     alias IsDynamicallyRankedFnName = "M_isDynamicRanked"
+    alias GetDynamicRankValueFnName = "M_getDynamicRankValue"
+    alias GetDynamicDimensionValueFnName = "M_getDynamicDimensionValue"
 
     fn get_dim_at(self, idx: Int, lib: DLHandle) -> Int:
         return call_dylib_func[Int](lib, Self.GetDimAtFnName, self, idx)
@@ -48,6 +51,14 @@ struct CTensorSpec:
             lib, Self.IsDynamicallyRankedFnName, self
         )
         return is_dynamic == 1
+
+    @staticmethod
+    fn get_dynamic_rank_value(lib: DLHandle) -> Int:
+        return call_dylib_func[Int](lib, Self.GetDynamicRankValueFnName)
+
+    @staticmethod
+    fn get_dynamic_dimension_value(lib: DLHandle) -> Int:
+        return call_dylib_func[Int](lib, Self.GetDynamicDimensionValueFnName)
 
     fn free(self, borrowed lib: DLHandle):
         call_dylib_func(lib, Self.FreeTensorSpecFnName, self)

@@ -50,7 +50,7 @@ struct CTensorMap:
             Self.BorrowTensorIntoFnName,
             self,
             ptr,
-            spec.borrow_ptr(),
+            spec._borrow_ptr(),
             status.borrow_ptr(),
         )
         if status:
