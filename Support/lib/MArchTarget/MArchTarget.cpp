@@ -184,8 +184,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
     opts->CPU = mcpu;
 
     // Check for an AArch64 arch.
-  } else if (std::optional<AArch64::ArchInfo> aarch64Arch =
-                 AArch64::parseArch(march)) {
+  } else if (const AArch64::ArchInfo *aarch64Arch = AArch64::parseArch(march)) {
     triple.setArchName(march);
     opts->CPU = "generic";
 

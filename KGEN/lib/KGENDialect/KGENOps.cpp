@@ -889,7 +889,7 @@ LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
 
   if (cur == op)
     return failure();
-  rewriter.updateRootInPlace(op, [&] { op.setOperand(cur.getOperand()); });
+  rewriter.modifyOpInPlace(op, [&] { op.setOperand(cur.getOperand()); });
   return success();
 }
 

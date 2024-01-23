@@ -119,7 +119,7 @@ public:
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert debuginfo type");
     }
-    rewriter.updateRootInPlace(op, [&] {
+    rewriter.modifyOpInPlace(op, [&] {
       op.setOperand(adaptor.getValue());
       DILocalVariableAttr info = op.getValueInfo();
       op.setValueInfoAttr(DILocalVariableAttr::get(

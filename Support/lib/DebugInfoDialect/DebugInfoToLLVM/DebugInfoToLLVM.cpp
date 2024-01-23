@@ -369,7 +369,7 @@ struct ConvertOpLocations : public mlir::RewritePattern {
 
   LogicalResult matchAndRewrite(Operation *op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.updateRootInPlace(op, [&] {
+    rewriter.modifyOpInPlace(op, [&] {
       // Update the debug info attributes within the locations of this operation
       // to use the LLVM equivalent.
       replacer.replaceElementsIn(op);

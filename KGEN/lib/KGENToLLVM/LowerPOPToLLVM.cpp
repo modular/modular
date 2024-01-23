@@ -1482,8 +1482,8 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     if (!func) {
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
-      func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getCallee(),
-                                               signature);
+      func = rewriter.create<LLVM::LLVMFuncOp>(
+          mlir::UnknownLoc::get(getContext()), op.getCallee(), signature);
       func.setPassthroughAttr(passthrough);
       if (argAttrs)
         func.setArgAttrsAttr(argAttrs);
@@ -1538,7 +1538,8 @@ public:
       OpBuilder::InsertionGuard guard(b);
       b.clearInsertionPoint();
       SmallVector<Attribute> passthrough;
-      func = b.create<LLVM::LLVMFuncOp>(op.getLoc(), allocFnName, allocFnSig);
+      func = b.create<LLVM::LLVMFuncOp>(mlir::UnknownLoc::get(getContext()),
+                                        allocFnName, allocFnSig);
 
       // `noalias` result.
       func.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(),
@@ -1621,7 +1622,8 @@ public:
       OpBuilder::InsertionGuard guard(b);
       b.clearInsertionPoint();
       SmallVector<Attribute> passthrough;
-      func = b.create<LLVM::LLVMFuncOp>(op.getLoc(), freeFnName, freeFnSig);
+      func = b.create<LLVM::LLVMFuncOp>(mlir::UnknownLoc::get(getContext()),
+                                        freeFnName, freeFnSig);
 
       // `allocptr` on first argument.
       func.setArgAttr(0, LLVM::LLVMDialect::getAllocatedPointerAttrName(),

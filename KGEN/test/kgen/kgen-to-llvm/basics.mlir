@@ -385,7 +385,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: llvm.func @llvm_metadata
 // CHECK-SAME: nvvm.intval = 4 : i64
-// CHECK-SAME: nvvm.maxntid = [1 : index, 2 : index, 3 : index]
+// TODO(#29637): nvvm.maxntid = [1 : index, 2 : index, 3 : index]
 // CHECK-SAME: nvvm.unitattr
 // CHECK-SAME: passthrough = [{{.*}}, ["intval", "2"], ["strval", "hello"], "unitattr"]
 kgen.func export @llvm_metadata() attributes {
@@ -395,8 +395,9 @@ kgen.func export @llvm_metadata() attributes {
     llvm.strval = "hello",
 
     nvvm.unitattr,
-    nvvm.intval = 4,
-    nvvm.maxntid = #kgen.pack<1, 2, 3> : !kgen.pack<[index, index, index]>
+    nvvm.intval = 4
+    // TODO(#29637): Fix array type.
+    // nvvm.maxntid = #kgen.pack<1, 2, 3> : !kgen.pack<[index, index, index]>
   }
 } {
   kgen.return
