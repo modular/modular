@@ -7,6 +7,7 @@
 #include "Support/Telemetry/Telemetry.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Telemetry/Logs.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <thread>
 
@@ -371,13 +372,8 @@ TEST(Telemetry, Logger) {
 
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
-  StringRef logString = "hello\nthis is a string";
-  StringRef escapedLogString = "hello\\nthis is a string";
-
   auto logger = ctx.getLogger("basic.log");
-  llvm::StringMap<M::Telemetry::Logs::AttributeValue> attributes = {
-      {"attr1", "hello"}, {"attr2", "world"}};
-  logger->getInfo("test.Logger", Level::L1, attributes) << logString;
+  logger->emitL1Event("test.Logger", {{"attr1", "hello"}, {"attr2", "world"}});
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -401,9 +397,10 @@ TEST(Telemetry, Logger) {
 
           eventFound = true;
 
+          // There should be no body
           auto bodyPos = message.find("body");
           StringRef bodyLine = getLineStartingAt(bodyPos);
-          EXPECT_EQ(bodyLine.split(':').second.trim(), escapedLogString);
+          EXPECT_EQ(bodyLine.split(':').second.trim(), "");
 
           auto severityPos = message.find("severity_text");
           StringRef severityLine = getLineStartingAt(severityPos);
@@ -431,10 +428,8 @@ TEST(Telemetry, LoggerL2) {
 
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
-  StringRef logString = "hello\nthis is a string";
-
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test.LoggerL2", Level::L2) << logString;
+  logger->emitL2Event("test.LoggerL2");
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -467,7 +462,7 @@ TEST(Telemetry, Resources) {
   TelemetryContext ctx(extras, logFileSetup.getConfig());
 
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test.Resources", Level::L0) << StringRef("foo");
+  logger->emitL0Event("test.Resources");
   ctx.flush();
 
   auto err = readFileUnderLock(

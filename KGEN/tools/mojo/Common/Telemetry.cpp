@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Telemetry.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 
@@ -18,11 +20,6 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
   // not implemented yet. We should add the current mojo version as an attribute
   // when we can.
 
-  // Notify an invocation event of the current subcommand and arguments.
-  M::Telemetry::Logs::Logger::LogStream os =
-      telemetryCtx.getLogger("mojo")->getInfo(
-          "invoke." + StringRef(state.subcommand), M::Telemetry::Level::L1);
-
   // Extract the recordable arguments from the command line, and order them by
   // id to ensure a deterministic order.
   DenseSet<unsigned> privateArgsSet(privateArgs.begin(), privateArgs.end());
@@ -34,17 +31,24 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
   llvm::stable_sort(publicArgs, [](const auto *lhs, const auto *rhs) {
     return lhs->getOption().getID() < rhs->getOption().getID();
   });
+
+  std::string s;
+  llvm::raw_string_ostream ss(s);
   llvm::interleave(
-      publicArgs, os,
+      publicArgs, ss,
       [&](const llvm::opt::Arg *arg) {
-        os << StringRef(args.getArgString(arg->getIndex()));
+        ss << StringRef(args.getArgString(arg->getIndex()));
         if (ArrayRef<const char *> values = arg->getValues(); !values.empty()) {
-          os << StringRef("=[");
+          ss << StringRef("=[");
           llvm::interleave(
-              values, os, [&](const char *value) { os << StringRef(value); },
+              values, ss, [&](const char *value) { ss << StringRef(value); },
               " ");
-          os << StringRef("]");
+          ss << StringRef("]");
         }
       },
       " ");
+  // Notify an invocation event of the current subcommand and arguments.
+  auto logger = telemetryCtx.getLogger("mojo");
+  logger->emitL1Event("invoke." + StringRef(state.subcommand).str(),
+                      {{"args", s}});
 }

@@ -146,16 +146,13 @@ void M::Frameworks::StatsReport::emitTelemetry(
   attributes["lowered_op_count"] = numLoweredOps;
   attributes["fallback_op_count"] = numFallbackOps;
   attributes["failed_op_count"] = numFailedOps;
-  logger->emitEvent(framework + ".stats", Telemetry::Logs::Severity::kInfo,
-                    Telemetry::Level::L1, "", attributes);
+  logger->emitL1Event(framework + ".stats", attributes);
 
   auto logAttributes =
       [&](llvm::StringMap<Telemetry::Logs::AttributeValue> &attributes,
           std::string name) {
         if (attributes.size() > 0)
-          logger->emitEvent(framework + ".stats." + name,
-                            Telemetry::Logs::Severity::kInfo,
-                            Telemetry::Level::L1, "", attributes);
+          logger->emitL1Event(framework + ".stats." + name, attributes);
       };
 
   llvm::StringMap<Telemetry::Logs::AttributeValue> fallbackAttributes = {};
