@@ -102,7 +102,7 @@ fn meta_param_then_param_redef[
 def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
-# expected-error @+1 {{non-default parameter follows default parameter}}
+# expected-error @+1 {{required positional parameter follows optional positional parameter}}
 fn default_after_non_default[a: Int = 7, b: Int]():
     pass
 
@@ -110,12 +110,9 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 # Variadic Parameters
 ##===----------------------------------------------------------------------===##
 
-# The keyword argument flags work in parameter lists.
-fn kw_only_param[a: Int, *,
-                 c: Int](): # expected-error {{keyword-only parameters not supported yet}}
-    pass
-
-# expected-error @+1 {{keyword-only parameters not supported yet}}
+# TODO(#21950): fix how we model variadics to produce a better error here
+# expected-error @+2 {{keyword-only arguments after variadics not supported yet}}
+# expected-error @+1 {{variadic keyword argument not supported yet}}
 fn variadic_kw_result_binding[**a: Int]():
     pass
 
@@ -171,7 +168,7 @@ alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect
 # Default struct parameters
 ##===----------------------------------------------------------------------===##
 
-# expected-error @below {{non-default parameter follows default parameter}}
+# expected-error @below {{required positional parameter follows optional positional parameter}}
 struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]: pass
 
 

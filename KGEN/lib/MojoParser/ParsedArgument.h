@@ -121,7 +121,8 @@ struct ParsedArgument {
       SmallVectorImpl<ParamDeclAttr> &params,
       SmallVectorImpl<StringAttr> &names,
       SmallVectorImpl<PassingKind> &passingKinds,
-      SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg);
+      SmallVectorImpl<TypedAttr> &defaultPosParams,
+      SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg);
 
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
@@ -132,8 +133,9 @@ struct ParsedArgument {
       SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-      SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
-      ASTDecl *fnDecl = nullptr,
+      SmallVectorImpl<TypedAttr> &defaultPosArgs,
+      SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef,
+      SMLoc resultLoc, ASTDecl *fnDecl = nullptr,
       SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
