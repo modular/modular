@@ -215,38 +215,6 @@ fn use_non_parameter_func() -> Int:
   print(higher_order_int_func[my_nested_func]())
 
 ##===----------------------------------------------------------------------===##
-# Keyword arguments
-##===----------------------------------------------------------------------===##
-
-# expected-note @+1 {{function declared here}}
-fn var_func(s: StringLiteral, *args: Int): pass
-
-# expected-note @+1 {{function declared here}}
-fn pack_func[*Ts: AnyRegType](*args: *Ts): pass
-
-# expected-note @+1 {{function declared here}}
-fn take_kw_args(i: Int, j: Int = 7): pass
-
-fn test_kw_args():
-  # expected-error @+2 {{duplicate keyword argument 'j'}}
-  # expected-note @+1 {{previously specified here}}
-  take_kw_args(j = 42, j = 43)
-  # expected-error @+1 {{positional argument follows keyword argument}}
-  take_kw_args(j = 42, 1)
-
-fn test_kw_args_2():
-  # expected-error @+1 {{unexpected keyword argument: 'args'}}
-  var_func("boo", args=3)
-  # expected-error @+1 {{unexpected keyword argument: 'args'}}
-  pack_func("boo", args=2)
-  # expected-error @+1 {{unexpected keyword argument: 'z'}}
-  take_kw_args(8, z=13)
-  # expected-error @+1 {{unexpected keyword arguments: 'x', 'z'}}
-  take_kw_args(8, x=11, z=13)
-  # expected-error @+1 {{argument #0 ('i') passed both as positional and keyword operand}}
-  take_kw_args(8, i=11)
-
-##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##
 

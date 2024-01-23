@@ -471,7 +471,9 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                                ASTType ty, ASTExprAnd<AnyValue> operand,
                                size_t argIdx) const;
-  InflightDiag missingArgs(ArrayRef<StringAttr> missingArgs) const;
+  InflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
+                           const Twine &kindStr) const;
+  InflightDiag posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
 
 private:
   SMLoc callLoc;
@@ -659,12 +661,25 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   }
 }
 
-InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs) const {
+InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
+                                      const Twine &kindStr) const {
   InflightDiag diag = initDiag() << "missing " << missingArgs.size()
-                                 << " required positional argument"
+                                 << " required " << kindStr << " argument"
                                  << plural(missingArgs.size()) << ": ";
   llvm::interleave(
       missingArgs, [&](StringAttr str) { diag << str; },
+      [&]() { diag << ", "; });
+  return diag;
+}
+
+InflightDiag
+DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
+  size_t num = posOnlyPassedByKw.size();
+  InflightDiag diag = initDiag() << "got " << num << " positional-only argument"
+                                 << plural(num) << " passed as keyword operand"
+                                 << plural(num) << ": ";
+  llvm::interleave(
+      posOnlyPassedByKw, [&](StringAttr str) { diag << str; },
       [&]() { diag << ", "; });
   return diag;
 }
@@ -865,25 +880,41 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
-OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
-                                          const OverloadSet &callable,
-                                          const CallOperands &callOperands,
-                                          bool allowImplicitConversions) {
-  // Before we do anything, we check if there were any unexpected keyword
-  // operands passed. This keeps the subsequent code much simpler.
-
-  // First, we collect all real argument names.
-  // TODO: improve error messages for pos-only pass by keyword.
+/// Helper to diagnose common cases of candidate mismatch related to keyword
+/// arguments/operands (unexpected kw-operands, pos-only argument provided by
+/// kw-operand, missing kw-only arguments).
+static std::optional<InflightDiag>
+diagnoseKeywordOperands(LITSignatureType signature,
+                        const CallOperands &callOperands,
+                        const DiagEmitter &emitDiagFor) {
+  // First, we collect any (named) pos-only arguments passed by keyword operand,
+  // and missing kw-only arguments. We also collect all argument names that
+  // might be specified by keyword.
   StringSet<> argNames;
+  SmallVector<StringAttr> posOnlyPassedByKw;
+  SmallVector<StringAttr> missingKwOnly;
   for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
            signature.getArgNames(), signature.getArgPassingKinds())) {
-    if (argPassingKind == PassingKind::PosOnly)
+    if (argPassingKind == PassingKind::PosOnly) {
+      if (callOperands.findKwArg(argName))
+        posOnlyPassedByKw.emplace_back(argName);
       continue;
+    }
+    if (argPassingKind == PassingKind::KwOnly &&
+        !callOperands.findKwArg(argName)) {
+      missingKwOnly.emplace_back(argName);
+      continue;
+    }
     if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
       continue; // Variadic/pack args cannot be specified by keyword.
     auto [_, addedNew] = argNames.insert(argName);
     assert(addedNew && "duplicate argument name in signature");
   }
+
+  if (!missingKwOnly.empty())
+    return emitDiagFor.missingArgs(missingKwOnly, "keyword-only");
+  if (!posOnlyPassedByKw.empty())
+    return emitDiagFor.posOnlyPassedByKw(posOnlyPassedByKw);
 
   // TODO(#21295): handle variadic keyword arguments.
   // Then we find all the keyword operands with unknown names.
@@ -894,6 +925,16 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         unknownKwOperands.insert(name);
   }
 
+  if (!unknownKwOperands.empty())
+    return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
+
+  return std::nullopt;
+}
+
+OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
+                                          const OverloadSet &callable,
+                                          const CallOperands &callOperands,
+                                          bool allowImplicitConversions) {
   // We set up diagnostics.
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
@@ -902,8 +943,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   SharedState &shared = callable.getShared();
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
-  if (!unknownKwOperands.empty())
-    return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
+  if (auto diag = diagnoseKeywordOperands(signature, callOperands, emitDiagFor))
+    return std::move(*diag);
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
@@ -1186,7 +1227,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If any arguments were missing, we emit diagnostics.
   if (!missingArgs.empty())
-    return emitDiagFor.missingArgs(missingArgs);
+    return emitDiagFor.missingArgs(missingArgs, "positional");
 
   assert(posOperandIdx == numPosOperands &&
          "should handle argument mismatch above");
