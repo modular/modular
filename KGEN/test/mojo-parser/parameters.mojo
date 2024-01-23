@@ -278,7 +278,7 @@ fn test_implicit_params_with_var_params():
     implicit_params_with_var_params(TwoParams[1, 2]())
 
 # CHECK-LABEL: lit.func @"explicit_autoparameterization
-# CHECK-SAME: "<?, [[V0:.*_v0]]: !Int, [[W0:.*_w0]]: !Int, [[W1:.*_w1]]: !Int>(
+# CHECK-SAME: "<?, [[V0:.*]]: !Int, [[W0:.*]]: !Int, [[W1:.*]]: !Int>(
 # CHECK-SAME: %v: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
 # CHECK-SAME: %w: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>>
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):

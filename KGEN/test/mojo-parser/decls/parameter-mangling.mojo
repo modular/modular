@@ -39,3 +39,14 @@ struct A[x: Int, x_0: Int]:
         fn bar[x: Int, x_2: Int]():
             # CHECK: lit.alias.decl *"z`3x0" = <3>
             alias z = __mlir_attr.`3: index`
+
+
+# COM: test names of implicit parameters
+struct MyStruct[a: Int, b: Int]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_implicit_parameters
+# CHECK-SAME: <?, *"x`1x0", *"x`1x1", *"y`1x2", *"y`1x3">
+fn test_implicit_parameters(x: MyStruct, y: MyStruct):
+    pass
