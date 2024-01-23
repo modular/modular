@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Activations import relu
+from NN.Activations import relu
 from math import sqrt
 from utils._annotations import *
 from MOGGIntList import IntList

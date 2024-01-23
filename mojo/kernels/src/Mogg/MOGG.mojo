@@ -45,7 +45,7 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 
-from Activations import gelu, relu, sigmoid
+from NN.Activations import gelu, relu, sigmoid
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import (
@@ -61,35 +61,32 @@ from algorithm.reduction import (
     _reduce_generator,
     mean as _mean,
 )
-from Arange import arange, arange_shape
-from ArgNonzero import arg_nonzero, arg_nonzero_shape
+from NN.Arange import arange, arange_shape
+from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
 from BatchedMatmul import (
     batched_matmul_shape,
     batched_matmul as _batched_matmul,
     get_trace_information as get_trace_information_batched_matmul,
 )
-from Concat import concat as _concat
-from Concat import (
+from NN.Concat import concat as _concat
+from NN.Concat import (
     concat_shape as concat_from_list_shape,
     variadic_list_to_vector,
 )
-from Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
-from Conv import pack_conv_filter as _pack_conv_filter
-from Conv import pack_conv_filter_shape as _pack_conv_filter_shape
-from ConvTranspose import conv_transpose as conv_transpose_impl
-from ConvTranspose import conv_transpose_shape
-from Cumsum import cumsum as _cumsum
-from GatherScatter import (
-    gather as _gather,
-    async_gather as _async_gather,
-)
-from GatherScatter import gather_nd as _gather_nd, gather_nd_shape
-from GatherScatter import gather_reduce, gather_shape, scatter_elements
-from GatherScatter import scatter_elements_shape as scatter_shape
-from GatherScatter import scatter_nd_shape
-from GatherScatter import scatter_nd as _scatter_nd
-from GatherScatter import scatter_nd_generator
-from GatherScatter import normalize_neg_index
+from NN.Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
+from NN.Conv import pack_conv_filter as _pack_conv_filter
+from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
+from NN.ConvTranspose import conv_transpose as conv_transpose_impl
+from NN.ConvTranspose import conv_transpose_shape
+from NN.Cumsum import cumsum as _cumsum
+from NN.GatherScatter import gather as _gather, async_gather as _async_gather
+from NN.GatherScatter import gather_nd as _gather_nd, gather_nd_shape
+from NN.GatherScatter import gather_reduce, gather_shape, scatter_elements
+from NN.GatherScatter import scatter_elements_shape as scatter_shape
+from NN.GatherScatter import scatter_nd_shape
+from NN.GatherScatter import scatter_nd as _scatter_nd
+from NN.GatherScatter import scatter_nd_generator
+from NN.GatherScatter import normalize_neg_index
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -99,29 +96,29 @@ from Matmul import (
 from MatmulUtils import GemmShape, get_trace_information, search_mm_config
 from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve, matrix_solve_shape
-from Reshape import reshape, reshape_shape
+from NN.Reshape import reshape, reshape_shape
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast, DTypePointer, Pointer
-from MultiHeadAttention import flash_attention
-from MultiHeadAttention import fused_attention as cpu_fused_attention_impl
+from NN.MultiHeadAttention import flash_attention
+from NN.MultiHeadAttention import fused_attention as cpu_fused_attention_impl
 
-from NonMaxSuppression import (
+from NN.NonMaxSuppression import (
     non_max_suppression,
     non_max_suppression_shape_func,
 )
-from Normalization import layer_norm
-from Pad import (
+from NN.Normalization import layer_norm
+from NN.Pad import (
     pad_reflect as _pad_reflect,
     pad_constant as _pad_constant,
     pad_shape,
 )
-from Pool import avg_pool as _avg_pool, max_pool, pool_shape
+from NN.Pool import avg_pool as _avg_pool, max_pool, pool_shape
 from random import randn, seed
-from Resize import CoordinateTransformationMode, RoundMode
-from Resize import resize_linear as resize_linear_kernel
-from Resize import resize_nearest_neighbor
-from ROIAlign import roi_align_nhwc
+from NN.Resize import CoordinateTransformationMode, RoundMode
+from NN.Resize import resize_linear as resize_linear_kernel
+from NN.Resize import resize_nearest_neighbor
+from NN.ROIAlign import roi_align_nhwc
 from runtime.llcl import (
     MojoCallContextPtr,
     MojoCallTask,
@@ -129,13 +126,13 @@ from runtime.llcl import (
     Runtime,
 )
 from runtime.tracing import Trace, TraceLevel
-from Slice import slice_as_view, slice_shape
-from Softmax import logsoftmax as _logsoftmax
-from Softmax import softmax as _softmax
-from Split import split as _split
-from Tile import tile, tile_shape
-from TopK import top_k as _top_k
-from TopK import top_k_shape
+from NN.Slice import slice_as_view, slice_shape
+from NN.Softmax import logsoftmax as _logsoftmax
+from NN.Softmax import softmax as _softmax
+from NN.Split import split as _split
+from NN.Tile import tile, tile_shape
+from NN.TopK import top_k as _top_k
+from NN.TopK import top_k_shape
 
 from utils._annotations import *
 from utils.index import Index, StaticIntTuple, product
