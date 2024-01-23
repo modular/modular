@@ -580,11 +580,15 @@ std::string FunctionDeclView::getSignature(
   }
 
   // Emit the arguments of the function.
-  PassingKindPrinter ssPrinter(signatureOS, args.size(),
-                               /*suppressSlashAfterSelf=*/isMethod());
+  SmallVector<PassingKind> passingKinds =
+      llvm::map_to_vector(args, [](const M::ArgumentDeclView &arg) {
+        return arg.getPassingKind();
+      });
+  PassingKindPrinter passingKindPrinter(signatureOS, passingKinds,
+                                        /*suppressSlashAfterSelf=*/isMethod());
   size_t idx = 0;
   auto printArg = [&](const M::ArgumentDeclView &arg) {
-    ssPrinter.printOptionalStarSlash(arg.getPassingKind(), idx);
+    passingKindPrinter.printOptionalStarSlash(idx);
 
     unsigned argStart = signature.size();
     signatureOS << arg.getDeclarationSnippet();
@@ -592,7 +596,7 @@ std::string FunctionDeclView::getSignature(
       argumentOffsets->push_back({argStart, signature.size()});
 
     // Check if we are at the end; if so, we might still have to print a '/'.
-    ssPrinter.printOptionalTrailingSlash(idx++);
+    passingKindPrinter.printOptionalTrailingSlash(idx++);
   };
 
   signatureOS << "(";

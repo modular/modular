@@ -617,10 +617,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
       signature.getDefaultPosParams(), signature.getDefaultKwOnlyParams());
 
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
-  PassingKindPrinter passingKindPrinter(p, signature.getNumInputs(), '|');
+  PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
-    passingKindPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
-                                              i);
+    passingKindPrinter.printOptionalStarSlash(i);
 
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {

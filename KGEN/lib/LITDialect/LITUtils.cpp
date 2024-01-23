@@ -268,9 +268,9 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      defaultKwOnlyParams);
 
   size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, inputParamDecls.size(), '|');
+  PassingKindPrinter passingKindPrinter(p, paramPassingKinds, '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
-    passingKindPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
+    passingKindPrinter.printOptionalStarSlash(idx);
 
     printParamDecl(p, decl, paramNames[idx]);
     if (auto defaultOr = defaultHandler.getDefault(idx)) {
@@ -339,9 +339,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
 
   size_t idx = 0;
 
-  PassingKindPrinter passingKindPrinter(p, inputParamTypes.size(), '|');
+  PassingKindPrinter passingKindPrinter(p, paramPassingKinds, '|');
   auto printWithDefault = [&](Type type) {
-    passingKindPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
+    passingKindPrinter.printOptionalStarSlash(idx);
 
     if (StringAttr name = paramNames[idx]; !name.empty()) {
       p.printString(name);
@@ -473,18 +473,21 @@ PassingKindParser::getNumPassingKinds() const {
           idx - numKwOnlySoFar - numPosOrKwSoFar - numPosOnly};
 }
 
-PassingKindPrinter::PassingKindPrinter(raw_ostream &os, size_t numInputs,
+PassingKindPrinter::PassingKindPrinter(raw_ostream &os,
+                                       ArrayRef<PassingKind> passingKinds,
                                        bool suppressSlashAfterSelf, char slash)
-    : os(os), numInputs(numInputs), prevPassingKind(PassingKind::PosOnly),
+    : os(os), passingKinds(passingKinds), numInputs(passingKinds.size()),
+      prevPassingKind(PassingKind::PosOnly),
       suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
-PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer, size_t numInputs,
+PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
+                                       ArrayRef<PassingKind> passingKinds,
                                        char slash)
-    : PassingKindPrinter(printer.getStream(), numInputs,
+    : PassingKindPrinter(printer.getStream(), passingKinds,
                          /*suppressSlashAfterSelf=*/false, slash) {}
 
-void PassingKindPrinter::printOptionalStarSlash(PassingKind passingKind,
-                                                size_t idx) {
+void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
+  PassingKind passingKind = passingKinds[idx];
   if (prevPassingKind == passingKind)
     return;
 

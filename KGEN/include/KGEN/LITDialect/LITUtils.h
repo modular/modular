@@ -188,19 +188,20 @@ private:
 /// printing methods with mojo syntax).
 class PassingKindPrinter {
 public:
-  PassingKindPrinter(raw_ostream &os, size_t numInputs,
+  PassingKindPrinter(raw_ostream &os, ArrayRef<PassingKind> passingKinds,
                      bool suppressSlashAfterSelf = false, char slash = '/');
-  PassingKindPrinter(AsmPrinter &printer, size_t numInputs, char slash = '/');
+  PassingKindPrinter(AsmPrinter &printer, ArrayRef<PassingKind> passingKinds,
+                     char slash = '/');
 
-  /// Print a single '*' or '/' if needed, given the passing kind, and the index
-  /// of the argument.
-  void printOptionalStarSlash(PassingKind passingKind, size_t idx);
+  /// Print a single '*' or '/' if needed, given the index of the passing kind.
+  void printOptionalStarSlash(size_t idx);
 
   /// Print a single trailing '/' at the end of a signature if needed.
   void printOptionalTrailingSlash(size_t idx) const;
 
 private:
   raw_ostream &os;
+  ArrayRef<PassingKind> passingKinds;
   size_t numInputs;
   PassingKind prevPassingKind;
   bool suppressSlashAfterSelf;
