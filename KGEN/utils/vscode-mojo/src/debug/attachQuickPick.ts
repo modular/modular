@@ -6,10 +6,8 @@
 
 import * as vscode from 'vscode';
 
+import {ProcessDescriptor, psList} from "../external/psList";
 import {MOJOContext} from '../mojoContext';
-
-import type {ProcessDescriptor} from "ps-list";
-import {esmImporter} from '../utils/esmImporter';
 
 class RefreshButton implements vscode.QuickInputButton {
   get iconPath(): vscode.ThemeIcon {
@@ -23,11 +21,9 @@ interface ProcessItem extends vscode.QuickPickItem {
   id: number;
 }
 
-async function getProcessItems(): Promise<ProcessItem[]> {
-  // We need to load ps-list dynamically because it's not compatible with
-  // regular typescript modules.
-  const psList = (await esmImporter("ps-list")).default;
-  let processes: ProcessDescriptor[] = await psList();
+async function getProcessItems(context: vscode.ExtensionContext):
+    Promise<ProcessItem[]> {
+  let processes: ProcessDescriptor[] = await psList(context);
   processes.filter(p => p.pid !== undefined);
 
   processes.sort((a, b) => {
@@ -68,13 +64,14 @@ async function getProcessItems(): Promise<ProcessItem[]> {
  *     exception is thrown.
  */
 async function showQuickPick(context: MOJOContext,
-                             debugConfig: any): Promise<string> {
-  const processItems: ProcessItem[] = await getProcessItems();
+                             debugConfig: any): Promise<string|undefined> {
+  const processItems: ProcessItem[] =
+      await getProcessItems(context.extensionContext);
   const memento = context.extensionContext.workspaceState;
   const filterMementoKey = ("searchProgramToAttach" + debugConfig.name);
   const previousFilter = memento.get<string>(filterMementoKey);
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<string|undefined>((resolve, reject) => {
     const quickPick: vscode.QuickPick<ProcessItem> =
         vscode.window.createQuickPick<ProcessItem>();
     quickPick.value = previousFilter || "";
@@ -88,9 +85,9 @@ async function showQuickPick(context: MOJOContext,
     let textFilter = "";
     const disposables: vscode.Disposable[] = [];
 
-    quickPick.onDidTriggerButton(
-        async () => { quickPick.items = await getProcessItems(); }, undefined,
-        disposables);
+    quickPick.onDidTriggerButton(async () => {
+      quickPick.items = await getProcessItems(context.extensionContext);
+    }, undefined, disposables);
 
     quickPick.onDidChangeValue((e: string) => { textFilter = e; });
 
@@ -112,7 +109,7 @@ async function showQuickPick(context: MOJOContext,
       disposables.forEach(item => item.dispose());
       quickPick.dispose();
 
-      reject(new Error("Process not selected."));
+      resolve(undefined);
     }, undefined, disposables);
 
     quickPick.show();
