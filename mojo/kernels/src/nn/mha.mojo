@@ -538,7 +538,8 @@ fn _fill[
         ptr[i] = val
 
 
-@__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
+# TODO(#29637): Fix array type.
+# @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
@@ -865,7 +866,8 @@ fn flash_attention_kernel[
         o_global_row_offset += row_stride
 
 
-@__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
+# TODO(#29637): Fix array type.
+# @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel_flexible_seqlen[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
