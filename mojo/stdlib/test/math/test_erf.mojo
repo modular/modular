@@ -8,7 +8,7 @@
 
 from math import erf, round
 
-from Activations import _erf
+from NN.Activations import _erf
 
 
 # CHECK-LABEL: test_erf_float32
