@@ -168,6 +168,20 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: constant = <p1>
   kgen.param.constant = <cond(eq(p1, p2), p2, p1)>
 
+  // CHECK: constant = <cond(eq(p1, 1), 4, 5)>
+  kgen.param.constant = <cond(eq(p1, 1), add(p1, 3), 5)>
+
+  // COM: Make sure both internal conditionals substitute into add(p1, p2)
+  // CHECK: constant = <cond(eq(p1, 1), 4, 5)>
+  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 3), add(p1, p2), 4), 5)>
+
+  // CHECK: constant = <1>
+  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, p1, 1), 1), 1)>
+
+  // COM: This hits the depth limit of recursion (3 ops deep max) but would be <1> if raised
+  // CHECK: constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
+  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
+
   // CHECK: constant: scalar<index> = <cond(int1, 1, 2)>
   kgen.param.constant: scalar<index> = <cond(int1, #pop.simd<1>, #pop.simd<2>)>
 
