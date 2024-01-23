@@ -2044,6 +2044,14 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
       return thenAttr;
   }
 
+  // cond(A == B, B, A) == A
+  if (auto eqAttr = dyn_castPE(POC::EQ, condAttr)) {
+    auto lhsEq = eqAttr.getOperand(0);
+    auto rhsEq = eqAttr.getOperand(1);
+    if (thenAttr == rhsEq && elseAttr == lhsEq)
+      return lhsEq;
+  }
+
   // cond(X, false, X) == X
   if (auto then = dyn_cast<IntegerAttr>(thenAttr))
     if (then.getValue().isZero() && condAttr == elseAttr)
