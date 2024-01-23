@@ -2483,7 +2483,7 @@ fn conv_shape[
     dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
     paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
     num_groups_buf: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
     compatible.
@@ -2512,18 +2512,17 @@ fn conv_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(input_rank == 4, "input rank must be 4")
-    debug_assert(input_rank == filter_rank, "input rank must match filter rank")
-    debug_assert(
-        strides_buf.dim(0) == input_rank - 2
-        and dilations_buf.dim(0) == input_rank - 2,
-        "strides and dilations size must be input rank - 2",
-    )
-    debug_assert(
-        paddings_buf.dim(0) == 2 * (input_rank - 2),
-        "paddings size must be 2 * (input rank - 2)",
-    )
+    if input_rank != 4:
+        raise Error("input rank must be 4")
+    if input_rank != filter_rank:
+        raise Error("input rank must match filter rank")
+    if (
+        strides_buf.dim(0) != input_rank - 2
+        or dilations_buf.dim(0) != input_rank - 2
+    ):
+        raise Error("strides and dilations size must be input rank - 2")
+    if paddings_buf.dim(0) != 2 * (input_rank - 2):
+        raise Error("paddings size must be 2 * (input rank - 2)")
 
     # Assume input has layout NHWC
     let batch_size = input_buf.dim(0)
@@ -2533,34 +2532,37 @@ fn conv_shape[
     let num_groups = int(num_groups_buf[0])
     let output_channels = filter_buf.dim(3)
 
-    # TODO(#17512)
-    debug_assert(
-        input_channels == (num_groups * filter_channels),
-        "input channels and groups times filter channels must match",
-    )
-    debug_assert(
-        (output_channels % num_groups) == 0,
-        "output_channels must be divisible by the number of groups",
-    )
+    if input_channels != (num_groups * filter_channels):
+        raise Error(
+            "input channels and groups times filter channels must match"
+        )
+    if (output_channels % num_groups) != 0:
+        raise Error("output_channels must be divisible by the number of groups")
 
     # compute and return the output shape
-    var output_shape = StaticIntTuple[input_rank]()
-    output_shape[0] = batch_size
-    output_shape[1] = get_sliding_window_out_dim(
+    let output_height = get_sliding_window_out_dim(
         input_buf.dim(1),
         filter_buf.dim(0),
         int(dilations_buf[0]),
         int(strides_buf[0]),
         int(paddings_buf[0] + paddings_buf[1]),
     )
-    output_shape[2] = get_sliding_window_out_dim(
+    let output_width = get_sliding_window_out_dim(
         input_buf.dim(2),
         filter_buf.dim(1),
         int(dilations_buf[1]),
         int(strides_buf[1]),
         int(paddings_buf[2] + paddings_buf[3]),
     )
-    output_shape[3] = output_channels
+
+    if output_height <= 0:
+        raise Error("output height must be positive")
+    if output_width <= 0:
+        raise Error("output width must be positive")
+
+    var output_shape = StaticIntTuple[input_rank](
+        batch_size, output_height, output_width, output_channels
+    )
 
     return output_shape
 

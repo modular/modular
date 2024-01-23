@@ -51,7 +51,7 @@ fn pool_shape[
     strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
     dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
     paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
     compatible. Works for 2D pool operations only in the NHWC format.
@@ -76,18 +76,18 @@ fn pool_shape[
     Returns:
         The output shape.
     """
-    # TODO(#17512)
-    debug_assert(input_rank == 4, "input rank must be 4")
-    debug_assert(
-        filter_buf.dim(0) == input_rank - 2
-        and strides_buf.dim(0) == input_rank - 2
-        and dilations_buf.dim(0) == input_rank - 2,
-        "strides and dilations size must be input rank - 2",
-    )
-    debug_assert(
-        paddings_buf.dim(0) == 2 * (input_rank - 2),
-        "paddings size must be 2 * (input rank - 2)",
-    )
+    if input_rank != 4:
+        raise Error("input rank must be 4")
+
+    if (
+        filter_buf.dim(0) != input_rank - 2
+        or strides_buf.dim(0) != input_rank - 2
+        or dilations_buf.dim(0) != input_rank - 2
+    ):
+        raise Error("strides and dilations size must be input rank - 2")
+
+    if paddings_buf.dim(0) != 2 * (input_rank - 2):
+        raise Error("paddings size must be 2 * (input rank - 2)")
 
     # Assume input has layout NHWC
     let batch_size = input_buf.dim(0)
@@ -107,16 +107,20 @@ fn pool_shape[
     let pad_height = int(paddings_buf[0] + paddings_buf[1])
     let pad_width = int(paddings_buf[2] + paddings_buf[3])
 
-    var output_shape = StaticIntTuple[input_rank]()
-
-    output_shape[0] = batch_size
-    output_shape[3] = input_channels
-
-    output_shape[1] = get_sliding_window_out_dim(
+    let output_height = get_sliding_window_out_dim(
         input_height, filter_height, dilation_height, stride_height, pad_height
     )
-    output_shape[2] = get_sliding_window_out_dim(
+    let output_width = get_sliding_window_out_dim(
         input_width, filter_width, dilation_width, stride_width, pad_width
+    )
+
+    if output_height <= 0:
+        raise Error("output height must be positive")
+    if output_width <= 0:
+        raise Error("output width must be positive")
+
+    var output_shape = StaticIntTuple[input_rank](
+        batch_size, output_height, output_width, input_channels
     )
 
     return output_shape
