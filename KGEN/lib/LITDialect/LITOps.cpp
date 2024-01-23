@@ -631,21 +631,11 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                              signature.getParamPassingKinds(),
                              signature.getDefaultPosParams(),
                              signature.getDefaultKwOnlyParams(), evaluator);
-
-  // Substitute input and result parameters when printing default arguments.
-  ArrayRef<TypedAttr> defaultPosArgs = signature.getDefaultPosArgs();
-  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
-  size_t numInputs = signature.getNumInputs();
-  size_t defaultPosEnd = countNumPositional(argPassingKinds);
-  size_t defaultPosStart = defaultPosEnd - defaultPosArgs.size();
-
-  ArrayRef<TypedAttr> defaultKwOnlyArgs = signature.getDefaultKwOnlyArgs();
-  size_t defaultKwOnlyEnd = numInputs - countNumImplicitKinds(argPassingKinds);
-  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyArgs.size();
-
-  PassingKindPrinter passingKindPrinter(p, numInputs, '|');
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  PassingKindPrinter passingKindPrinter(p, signature.getNumInputs(), '|');
   auto printElt = [&](unsigned i) {
-    passingKindPrinter.printOptionalStarSlash(argPassingKinds[i], i);
+    passingKindPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
+                                              i);
 
     // Print the SSA name first, which might have been automatically uniqued.
     BlockArgument arg = region->getArgument(i);
@@ -673,14 +663,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printInputConvention(p, signature.getInputConvention(i),
                          ValueInputConvention::OwnedInReg);
 
-    if (i >= defaultPosStart && i < defaultPosEnd) {
+    if (auto defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
-      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultPosArgs[i - defaultPosStart])));
-    } else if (i >= defaultKwOnlyStart && i < defaultKwOnlyEnd) {
-      p << " = ";
-      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultKwOnlyArgs[i - defaultKwOnlyStart])));
+      printParamValue(
+          p, cast<TypedAttr>(evaluator.getReboundAttribute(*defaultOr)));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -1092,22 +1078,14 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   }
 
   // Compute the resultant signature.
-  ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
-  ArrayRef<TypedAttr> defaultsPos = sig.getDefaultPosParams();
-  size_t numInputs = sig.getNumInputParams();
-  size_t defaultPosEnd = countNumPositional(passingKinds);
-  size_t defaultPosStart = defaultPosEnd - defaultsPos.size();
-
-  ArrayRef<TypedAttr> defaultsKwOnly = sig.getDefaultKwOnlyParams();
-  size_t defaultKwOnlyEnd = numInputs - countNumImplicitKinds(passingKinds);
-  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultsKwOnly.size();
-
   SmallVector<Type> newParamTypes;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
   bool paramVarArg = false;
+
+  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   for (auto [i, value, type, name, kind] :
        llvm::enumerate(paramValues, sig.getInputParamTypes(),
                        sig.getParamNames(), sig.getParamPassingKinds())) {
@@ -1116,10 +1094,10 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       newParamNames.push_back(name);
       newPassingKinds.push_back(kind);
 
-      if (i >= defaultPosStart && i < defaultPosEnd)
-        newPosDefaults.push_back(defaultsPos[i - defaultPosStart]);
-      else if (i >= defaultKwOnlyStart && i < defaultKwOnlyEnd)
-        newKwOnlyDefaults.push_back(defaultsKwOnly[i - defaultKwOnlyStart]);
+      if (auto defaultOr = defaultHandler.getPosDefault(i))
+        newPosDefaults.push_back(*defaultOr);
+      else if (auto defaultOr = defaultHandler.getKwOnlyDefault(i))
+        newKwOnlyDefaults.push_back(*defaultOr);
 
       if (sig.isVarArg(i))
         paramVarArg = true;

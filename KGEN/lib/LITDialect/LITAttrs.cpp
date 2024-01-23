@@ -109,26 +109,15 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newParamPassingKinds;
 
-  ArrayRef<PassingKind> passingKinds = getParamPassingKinds();
-  size_t numPositional = countNumPositional(passingKinds);
-  ArrayRef<TypedAttr> defaultsPos = getDefaultPosParams();
-  size_t defaultPosStart = numPositional - defaultsPos.size();
-
-  size_t numParams = boundParams.size();
-  ArrayRef<TypedAttr> defaultsKwOnly = getDefaultKwOnlyParams();
-  size_t kwOnlyEnd = numParams - countNumImplicitKinds(passingKinds);
-  size_t defaultKwOnlyStart = kwOnlyEnd - defaultsKwOnly.size();
-
-  for (size_t idx = 0; idx < numParams; ++idx) {
+  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(*this);
+  for (size_t idx = 0; idx < boundParams.size(); ++idx) {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);
-      newParamPassingKinds.emplace_back(passingKinds[idx]);
-      if (defaultPosStart <= idx && idx < numPositional) {
-        newDefaultPosParams.emplace_back(defaultsPos[idx - defaultPosStart]);
-      } else if (defaultKwOnlyStart <= idx && idx < kwOnlyEnd) {
-        newDefaultKwOnlyParams.emplace_back(
-            defaultsKwOnly[idx - defaultKwOnlyStart]);
-      }
+      newParamPassingKinds.emplace_back(getParamPassingKinds()[idx]);
+      if (auto defaultOr = defaultHandler.getPosDefault(idx))
+        newDefaultPosParams.emplace_back(*defaultOr);
+      else if (auto defaultOr = defaultHandler.getKwOnlyDefault(idx))
+        newDefaultKwOnlyParams.emplace_back(*defaultOr);
     }
   }
 

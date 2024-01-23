@@ -216,9 +216,6 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   TypeSignatureType sig = getSignature();
-  size_t defaultIdx =
-      sig.getNumInputParams() - sig.getDefaultPosParams().size();
-
   auto sigRange = llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
                                   sig.getParamPassingKinds());
   auto sigIt = sigRange.begin();
@@ -227,8 +224,10 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
+  SmallVector<TypedAttr> newKwOnlyDefaults;
   bool paramVarArg = false;
 
+  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // Current value is unbound. This corresponds to a parameter in the
     // signature.
@@ -238,9 +237,12 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         newParamTypes.push_back(type);
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
-        // TODO: implement default kw-only struct parameters
-        if (i >= defaultIdx)
-          newPosDefaults.push_back(sig.getDefaultPosParams()[i - defaultIdx]);
+
+        if (auto defaultOr = defaultHandler.getPosDefault(i))
+          newPosDefaults.push_back(*defaultOr);
+        else if (auto defaultOr = defaultHandler.getKwOnlyDefault(i))
+          newKwOnlyDefaults.push_back(*defaultOr);
+
         if (sig.isVarArg(i))
           paramVarArg = true;
       }
@@ -251,10 +253,9 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   }
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
-  // TODO: implement kw-only struct parameters
   auto newSig = TypeSignatureType::get(
       getContext(), newParamTypes, newParamNames, newPassingKinds,
-      newPosDefaults, /*defaultKwOnlyParams=*/{}, paramVarArg);
+      newPosDefaults, newKwOnlyDefaults, paramVarArg);
   return MetaTypeType::get(getSymbol(), values, newSig);
 }
 
@@ -615,19 +616,11 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
       signature.getParamNames(), signature.getParamPassingKinds(),
       signature.getDefaultPosParams(), signature.getDefaultKwOnlyParams());
 
-  ArrayRef<TypedAttr> defaultPosArgs = signature.getDefaultPosArgs();
-  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
-  size_t numInputs = signature.getNumInputs();
-  size_t defaultPosEnd = countNumPositional(argPassingKinds);
-  size_t defaultPosStart = defaultPosEnd - defaultPosArgs.size();
-
-  ArrayRef<TypedAttr> defaultKwOnlyArgs = signature.getDefaultKwOnlyArgs();
-  size_t defaultKwOnlyEnd = numInputs - countNumImplicitKinds(argPassingKinds);
-  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyArgs.size();
-
-  PassingKindPrinter passingKindPrinter(p, numInputs, '|');
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  PassingKindPrinter passingKindPrinter(p, signature.getNumInputs(), '|');
   auto printElt = [&](unsigned i) {
-    passingKindPrinter.printOptionalStarSlash(argPassingKinds[i], i);
+    passingKindPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
+                                              i);
 
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {
@@ -640,12 +633,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     printInputConvention(p, signature.getInputConvention(i),
                          ValueInputConvention::OwnedInReg);
 
-    if (i >= defaultPosStart && i < defaultPosEnd) {
+    if (auto defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
-      printParamValue(p, defaultPosArgs[i - defaultPosStart]);
-    } else if (i >= defaultKwOnlyStart && i < defaultKwOnlyEnd) {
-      p << " = ";
-      printParamValue(p, defaultKwOnlyArgs[i - defaultKwOnlyStart]);
+      printParamValue(p, *defaultOr);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
