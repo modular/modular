@@ -127,11 +127,12 @@ InputParamBindings::verifyBindings(
     bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
     bool isPackVarArg, const DiagEmitter &diagEmitter,
     bool allowPartiallyBound) const {
+  // TODO(#21950): wire in keyword-only params
+  DefaultValueHandler defaultHandler(paramPassingKinds, defaultParams,
+                                     /*defaultsKwOnly=*/{});
 
   size_t numParams = expectedParamTypes.size();
   size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
-  size_t defaultEnd = numParams - numImplicit;
-  size_t defaultStart = defaultEnd - defaultParams.size();
 
   auto isVarArg = [&](size_t idx) {
     // The variadic argument is the last non-implicit argument.
@@ -279,12 +280,12 @@ InputParamBindings::verifyBindings(
       }
 
       // If available, we use a default parameter value.
-      if (idx >= defaultStart && idx < defaultEnd) {
+      if (auto defaultOr = defaultHandler.getPosDefault(idx)) {
         // Default parameter values may reference other parameter values, so we
         // need to evaluate these.
         expectedType = evaluator.getReboundType(expectedType);
-        auto reboundAttr = cast<TypedAttr>(
-            evaluator.getReboundAttribute(defaultParams[idx - defaultStart]));
+        auto reboundAttr =
+            cast<TypedAttr>(evaluator.getReboundAttribute(*defaultOr));
         assert(expectedType.isEqualCanon(reboundAttr.getType()));
 
         setParamValue(reboundAttr);

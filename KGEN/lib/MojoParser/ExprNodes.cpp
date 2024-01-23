@@ -1468,12 +1468,15 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     return success();
   };
 
+  // TODO(#21950): wire in keyword-only params
+  ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
+  DefaultValueHandler defaultHandler(passingKinds, sig.getDefaultPosParams(),
+                                     /*defaultsKwOnly=*/{});
+
   size_t posIdx = 0;
-  ArrayRef<TypedAttr> defaultParams = sig.getDefaultPosParams();
   size_t numParams = sig.getNumInputParams();
-  for (auto [idx, paramType, paramName, paramPassingKind] :
-       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
-                       sig.getParamPassingKinds())) {
+  for (auto [idx, paramType, paramName, paramPassingKind] : llvm::enumerate(
+           sig.getInputParamTypes(), sig.getParamNames(), passingKinds)) {
     // Emit positional operands while possible.
     if (posIdx < numPosOperands) {
       if (failed(addBoundOperand(posOperands[posIdx++], paramType)))
@@ -1484,7 +1487,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     if (paramPassingKind == PassingKind::PosOnly) {
       size_t numPosOnly = idx;
       while (numPosOnly < numParams &&
-             sig.getParamPassingKinds()[numPosOnly] == PassingKind::PosOnly)
+             passingKinds[numPosOnly] == PassingKind::PosOnly)
         ++numPosOnly;
 
       InflightDiag diag = emitter.emitError(range.getStart())
@@ -1502,9 +1505,8 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     }
 
     // If no operand is provided, try a default.
-    if (size_t defaultStartIdx = numParams - defaultParams.size();
-        idx >= defaultStartIdx) {
-      bindOperands.emplace_back(defaultParams[idx - defaultStartIdx]);
+    if (auto defaultOr = defaultHandler.getPosDefault(idx)) {
+      bindOperands.emplace_back(*defaultOr);
       continue;
     }
 

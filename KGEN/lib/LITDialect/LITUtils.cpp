@@ -264,27 +264,19 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   for (ParamDeclAttr param : resultParamDecls)
     evaluator.addResultValue(ParamDeclRefAttr::get(param));
 
-  size_t numParams = inputParamDecls.size();
-  size_t defaultPosEnd = countNumPositional(paramPassingKinds);
-  size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
-  size_t defaultKwOnlyEnd =
-      numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyParams.size();
-  size_t idx = 0;
+  DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
+                                     defaultKwOnlyParams);
 
-  PassingKindPrinter passingKindPrinter(p, numParams, '|');
+  size_t idx = 0;
+  PassingKindPrinter passingKindPrinter(p, inputParamDecls.size(), '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
 
     printParamDecl(p, decl, paramNames[idx]);
-    if (idx >= defaultPosStart && idx < defaultPosEnd) {
+    if (auto defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
-      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultPosParams[idx - defaultPosStart])));
-    } else if (idx >= defaultKwOnlyStart && idx < defaultKwOnlyEnd) {
-      p << " = ";
-      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultKwOnlyParams[idx - defaultKwOnlyStart])));
+      printParamValue(
+          p, cast<TypedAttr>(evaluator.getReboundAttribute(*defaultOr)));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -342,15 +334,12 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<PassingKind> paramPassingKinds,
                                       ArrayRef<TypedAttr> defaultPosParams,
                                       ArrayRef<TypedAttr> defaultKwOnlyParams) {
-  size_t numParams = inputParamTypes.size();
-  size_t defaultPosEnd = countNumPositional(paramPassingKinds);
-  size_t defaultPosStart = defaultPosEnd - defaultPosParams.size();
-  size_t defaultKwOnlyEnd =
-      numParams - countNumImplicitKinds(paramPassingKinds);
-  size_t defaultKwOnlyStart = defaultKwOnlyEnd - defaultKwOnlyParams.size();
+  DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
+                                     defaultKwOnlyParams);
+
   size_t idx = 0;
 
-  PassingKindPrinter passingKindPrinter(p, numParams, '|');
+  PassingKindPrinter passingKindPrinter(p, inputParamTypes.size(), '|');
   auto printWithDefault = [&](Type type) {
     passingKindPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
 
@@ -359,12 +348,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
-    if (idx >= defaultPosStart && idx < defaultPosEnd) {
+    if (auto defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
-      printParamValue(p, defaultPosParams[idx - defaultPosStart]);
-    } else if (idx >= defaultKwOnlyStart && idx < defaultKwOnlyEnd) {
-      p << " = ";
-      printParamValue(p, defaultKwOnlyParams[idx - defaultKwOnlyStart]);
+      printParamValue(p, *defaultOr);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -728,51 +714,33 @@ LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<Type> types, StringRef argOrParam,
                                   ArrayRef<ValueInputConvention> convs) {
   size_t numTypes = types.size();
+  auto emitTooManyDefaults = [&](size_t numDefaults, StringRef kindStr) {
+    return emitError() << "there are more default " << kindStr << " "
+                       << argOrParam << "s than " << kindStr << " "
+                       << argOrParam << "s: " << numDefaults << " vs. "
+                       << numTypes;
+  };
+
   size_t numPositional = countNumPositional(passingKinds);
   size_t numPosDefaults = defaultsPos.size();
-  if (numPosDefaults > numPositional) {
-    return emitError() << "there are more default positional " << argOrParam
-                       << "s than positional parameters: " << numPosDefaults
-                       << " vs. " << numTypes;
-  }
-
-  size_t defaultPosStart = numPositional - numPosDefaults;
-  for (size_t idx = defaultPosStart; idx < numPositional; idx++) {
-    Type expectedType = types[idx];
-    Type defaultType = defaultsPos[idx - defaultPosStart].getType();
-
-    // Memory-only arguments store their default values as pure values.
-    if (!convs.empty()) {
-      if (SignatureType::hasAddress(convs[idx])) {
-        if (auto ptr = ::dyn_cast<PointerType>(expectedType))
-          expectedType = ptr.getElementType();
-        else
-          expectedType = ::cast<RefType>(expectedType).getElementType();
-      }
-    }
-
-    if (defaultType != expectedType &&
-        !llvm::isa<TypeCheckErrorType>(expectedType)) {
-      return emitError() << argOrParam << " #" << idx << " has type "
-                         << expectedType << " but the default " << argOrParam
-                         << " value has type " << defaultType;
-    }
-  }
+  if (numPosDefaults > numPositional)
+    return emitTooManyDefaults(numPosDefaults, "positional");
 
   size_t numImplicit = countNumImplicitKinds(passingKinds);
   size_t numKwOnly = numTypes - numPositional - numImplicit;
   size_t numKwOnlyDefaults = defaultsKwOnly.size();
-  if (numKwOnlyDefaults > numKwOnly) {
-    return emitError() << "there are more default keyword-only " << argOrParam
-                       << "s than keyword-only " << argOrParam
-                       << "s: " << numKwOnlyDefaults << " vs. " << numTypes;
-  }
+  if (numKwOnlyDefaults > numKwOnly)
+    return emitTooManyDefaults(numKwOnlyDefaults, "keyword-only");
 
-  size_t defaultKwOnlyStart = numTypes - numImplicit - numKwOnlyDefaults;
-  for (size_t idx = defaultKwOnlyStart; idx < numPositional + numKwOnly;
-       idx++) {
+  // NOTE: the number of defaults are now verified so we can use the handler.
+  DefaultValueHandler defaultHandler(passingKinds, defaultsPos, defaultsKwOnly);
+  for (size_t idx = 0; idx < passingKinds.size(); ++idx) {
+    auto defaultOr = defaultHandler.getDefault(idx);
+    if (!defaultOr.has_value())
+      continue;
+
     Type expectedType = types[idx];
-    Type defaultType = defaultsKwOnly[idx - defaultKwOnlyStart].getType();
+    Type defaultType = defaultOr->getType();
 
     // Memory-only arguments store their default values as pure values.
     if (!convs.empty()) {
@@ -785,7 +753,7 @@ LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
     }
 
     if (defaultType != expectedType &&
-        !llvm::isa<TypeCheckErrorType>(expectedType)) {
+        !::isa<TypeCheckErrorType>(expectedType)) {
       return emitError() << argOrParam << " #" << idx << " has type "
                          << expectedType << " but the default " << argOrParam
                          << " value has type " << defaultType;

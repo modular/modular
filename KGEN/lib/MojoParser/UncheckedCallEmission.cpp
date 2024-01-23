@@ -17,6 +17,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -361,15 +362,16 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t posOperandIdx = 0;
 
-  size_t numInputs = calleeSig.getNumInputs();
-  ArrayRef<TypedAttr> defaultArgs = calleeSig.getDefaultPosArgs();
-
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
-  argumentValues.reserve(numInputs);
+  argumentValues.reserve(calleeSig.getNumInputs());
+
+  // TODO(#21950): wire in keyword-only arguments
+  ArrayRef<PassingKind> passingKinds = calleeSig.getArgPassingKinds();
+  DefaultValueHandler defaultHandler(
+      passingKinds, calleeSig.getDefaultPosArgs(), /*defaultsKwOnly=*/{});
   for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
-                       calleeSig.getInputConventions(),
-                       calleeSig.getArgPassingKinds())) {
+                       calleeSig.getInputConventions(), passingKinds)) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -429,13 +431,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       // Otherwise, apply the default argument. We've ensured before that we
       // have a default argument for each missing operand.
-      size_t defaultStartIdx = numInputs - defaultArgs.size();
-      assert(argIdx >= defaultStartIdx);
-
-      TypedAttr defaultArg = defaultArgs[argIdx - defaultStartIdx];
+      auto defaultOr = defaultHandler.getPosDefault(argIdx);
+      assert(defaultOr.has_value());
       assert(convention != ValueInputConvention::ByRef &&
              "by_ref argument cannot have defaults");
-      argumentValues.push_back({PValue(defaultArg), callExpr});
+      argumentValues.push_back({PValue(*defaultOr), callExpr});
       continue;
     }
 

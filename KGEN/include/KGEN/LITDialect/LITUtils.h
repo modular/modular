@@ -35,6 +35,7 @@ class ParameterExprArrayAttr;
 enum class ValueInputConvention : uint32_t;
 
 namespace LIT {
+class LITSignatureType;
 class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
 
@@ -242,6 +243,74 @@ struct MangledSymbol {
 
 /// Print a mangled symbol.
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
+
+//===----------------------------------------------------------------------===//
+// DefaultValueHandler
+//===----------------------------------------------------------------------===//
+
+/// Helper class to allow easy checking and retrieval of positional and
+/// keyword-only default values.
+class DefaultValueHandler {
+public:
+  DefaultValueHandler(ArrayRef<PassingKind> passingKinds,
+                      ArrayRef<TypedAttr> defaultsPos,
+                      ArrayRef<TypedAttr> defaultsKwOnly)
+      : passingKinds(passingKinds), defaultsPos(defaultsPos),
+        defaultsKwOnly(defaultsKwOnly),
+        numPositional(countNumPositional(passingKinds)),
+        defaultPosStart(numPositional - defaultsPos.size()),
+        kwOnlyEnd(passingKinds.size() - countNumImplicitKinds(passingKinds)),
+        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
+
+  /// Return a DefaultValueHandler for the arguments of the given signature.
+  template <typename SigType>
+  static DefaultValueHandler getDefaultArgHandler(SigType sig) {
+    return DefaultValueHandler(sig.getArgPassingKinds(),
+                               sig.getDefaultPosArgs(),
+                               sig.getDefaultKwOnlyArgs());
+  }
+
+  /// Return a DefaultValueHandler for the parameters of the given signature.
+  template <typename SigType>
+  static DefaultValueHandler getDefaultParamHandler(SigType sig) {
+    return DefaultValueHandler(sig.getParamPassingKinds(),
+                               sig.getDefaultPosParams(),
+                               sig.getDefaultKwOnlyParams());
+  }
+
+  /// If the given index refers to an optional positional (pos-only or
+  /// pos-or-kw) argument/parameter, return its default value or null otherwise.
+  inline std::optional<TypedAttr> getPosDefault(size_t idx) {
+    if (defaultPosStart <= idx && idx < numPositional)
+      return defaultsPos[idx - defaultPosStart];
+    return std::nullopt;
+  }
+
+  /// If the given index refers to an optional keyword-only argument/parameter,
+  /// return its default value or null otherwise.
+  inline std::optional<TypedAttr> getKwOnlyDefault(size_t idx) {
+    if (defaultKwOnlyStart <= idx && idx < kwOnlyEnd)
+      return defaultsKwOnly[idx - defaultKwOnlyStart];
+    return std::nullopt;
+  }
+
+  /// If the given index refers to an optional argument/parameter (of any
+  /// passing kind), return its default value or null otherwise.
+  inline std::optional<TypedAttr> getDefault(size_t idx) {
+    if (auto defaultOr = getPosDefault(idx))
+      return *defaultOr;
+    return getKwOnlyDefault(idx);
+  }
+
+private:
+  ArrayRef<PassingKind> passingKinds;
+  ArrayRef<TypedAttr> defaultsPos;
+  ArrayRef<TypedAttr> defaultsKwOnly;
+  size_t numPositional;
+  size_t defaultPosStart;
+  size_t kwOnlyEnd;
+  size_t defaultKwOnlyStart;
+};
 
 //===----------------------------------------------------------------------===//
 // Verifier helpers
