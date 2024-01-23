@@ -348,9 +348,9 @@ struct IfRemoveUnusedResults : public OpRewritePattern<IfOp> {
       return b.notifyMatchFailure(op.getLoc(), "all results have uses");
 
     if (thenYield)
-      b.updateRootInPlace(thenYield, [&] { thenYield->eraseOperands(unused); });
+      b.modifyOpInPlace(thenYield, [&] { thenYield->eraseOperands(unused); });
     if (elseYield)
-      b.updateRootInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
+      b.modifyOpInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
 
     auto newIf = b.create<IfOp>(op.getLoc(), TypeRange(ValueRange(toReplace)),
                                 op.getCond());
@@ -432,7 +432,7 @@ struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
       // If this is a matching break, remove the unused operands.
       if (auto breakOp = dyn_cast<BreakOp>(op);
           breakOp && getParentLoop(breakOp, breakOp.getLabelAttr()) == loop)
-        b.updateRootInPlace(breakOp, [&] { breakOp->eraseOperands(unused); });
+        b.modifyOpInPlace(breakOp, [&] { breakOp->eraseOperands(unused); });
 
       return WalkResult::advance();
     });
@@ -475,7 +475,7 @@ struct RemoveUnusedLoopArgs : OpRewritePattern<LoopOp> {
       // If this is a matching break, remove the unused operands.
       if (auto cont = dyn_cast<ContinueOp>(op);
           cont && getParentLoop(cont, cont.getLabelAttr()) == loop)
-        b.updateRootInPlace(cont, [&] { cont->eraseOperands(unused); });
+        b.modifyOpInPlace(cont, [&] { cont->eraseOperands(unused); });
 
       return WalkResult::advance();
     });

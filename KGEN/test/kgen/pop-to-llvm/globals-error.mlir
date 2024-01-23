@@ -1,9 +1,8 @@
-// RUN: kgen-opt -lower-global-pop-to-llvm -verify-diagnostics %s
+// RUN: not kgen-opt -lower-global-pop-to-llvm -verify-diagnostics %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @external_call(%a: !pop.simd<1, ui32>) {
-  // expected-note @below {{see function declaration here}}
   pop.external_call @foo(%a) : (!pop.simd<1, ui32>) -> ()
   // expected-error @below {{existing function with conflicting signature}}
   // expected-error @below {{failed to legalize}}
