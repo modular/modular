@@ -7,9 +7,9 @@
 
 import builtin
 
-from Image import Image2DLayout, ImageData, ImageShape
+from NN.Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
-from Pool import max_pool, avg_pool, PoolMethod
+from NN.Pool import max_pool, avg_pool, PoolMethod
 from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple

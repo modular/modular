@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s
 
 from memory.buffer import NDBuffer
-from ROIAlign import roi_align_nhwc
+from NN.ROIAlign import roi_align_nhwc
 from testing import *
 
 

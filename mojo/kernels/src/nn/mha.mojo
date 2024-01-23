@@ -19,7 +19,7 @@ from memory.unsafe import DTypePointer, bitcast
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory import stack_allocation
 from runtime.llcl import Runtime
-from Softmax import softmax, softmax_3_pass
+from .Softmax import softmax, softmax_3_pass
 from Transpose import transpose
 
 from utils.index import Index, StaticIntTuple

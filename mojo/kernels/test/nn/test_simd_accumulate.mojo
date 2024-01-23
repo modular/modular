@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s
 
 from algorithm.functional import vectorize
-from AccumulateSIMD import (
+from NN.AccumulateSIMD import (
     _simd_load_maybe_partial,
     accumulate_x86_simd,
     accumulate_neon,

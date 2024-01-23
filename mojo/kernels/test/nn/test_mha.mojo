@@ -13,7 +13,7 @@ from runtime.llcl import Runtime
 from utils.index import Index
 from utils.list import DimList
 from BatchedMatmul import batched_matmul
-from Softmax import softmax
+from NN.Softmax import softmax
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
@@ -24,7 +24,7 @@ from gpu.host.memory import (
     _malloc,
 )
 
-from MultiHeadAttention import fused_attention, _naive_attention
+from NN.MultiHeadAttention import fused_attention, _naive_attention
 
 
 # TODO: Move this function to a common space.

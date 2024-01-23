@@ -10,11 +10,11 @@
 from math import div_ceil
 from sys.info import simdwidthof
 
-from Conv import (
+from NN.Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
 )
-from ConvUtils import (
+from NN.ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,

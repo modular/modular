@@ -7,7 +7,7 @@
 
 from math import max
 
-from GatherScatter import scatter_elements
+from NN.GatherScatter import scatter_elements
 from runtime.llcl import Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill

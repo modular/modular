@@ -22,7 +22,7 @@ from algorithm.functional import (
 )
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
-from Reshape import reshape
+from .Reshape import reshape
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
@@ -1221,6 +1221,8 @@ fn gather_nd_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         batch_dims: Batch dimensions.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.

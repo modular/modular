@@ -16,7 +16,7 @@ from sys.info import (
     sizeof,
 )
 
-from Image import Image2DLayout, ImageData
+from .Image import Image2DLayout, ImageData
 from MatmulUtils import partition_work
 from memory.buffer import NDBuffer
 

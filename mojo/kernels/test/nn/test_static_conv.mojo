@@ -9,12 +9,12 @@ from math import abs, div_ceil, isclose, min
 from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
-from Conv import (
+from NN.Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     pack_filter,
 )
-from ConvUtils import (
+from NN.ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,

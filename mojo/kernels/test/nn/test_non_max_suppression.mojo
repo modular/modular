@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from NonMaxSuppression import (
+from NN.NonMaxSuppression import (
     non_max_suppression,
     non_max_suppression_shape_func,
 )

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Concat import (
+from NN.Concat import (
     _concat_parallel,
     concat,
     variadic_list_to_vector,

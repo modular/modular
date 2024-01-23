@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from ArgNonzero import arg_nonzero, arg_nonzero_shape
+from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
 from memory.buffer import Buffer, NDBuffer
 from utils.list import DimList
 from testing import assert_equal

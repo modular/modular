@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from Pad import pad_constant, pad_reflect
+from NN.Pad import pad_constant, pad_reflect
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

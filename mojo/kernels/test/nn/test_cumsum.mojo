@@ -7,7 +7,7 @@
 
 from math import iota
 
-from Cumsum import cumsum
+from NN.Cumsum import cumsum
 from memory.buffer import NDBuffer
 
 

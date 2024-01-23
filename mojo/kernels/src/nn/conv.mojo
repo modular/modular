@@ -25,8 +25,8 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from AccumulateSIMD import accumulate_x86_simd, accumulate_neon
-from ConvUtils import (
+from .AccumulateSIMD import accumulate_x86_simd, accumulate_neon
+from .ConvUtils import (
     ConvInfo,
     ConvInfoStatic,
     ConvShape,
@@ -38,7 +38,7 @@ from ConvUtils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
-from Image import Image2DLayout, ImageData, ImageShape
+from .Image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -64,7 +64,7 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer
-from ShapeFuncUtils import get_sliding_window_out_dim
+from .ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

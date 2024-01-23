@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from ConvTranspose import conv_transpose
+from NN.ConvTranspose import conv_transpose
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 
