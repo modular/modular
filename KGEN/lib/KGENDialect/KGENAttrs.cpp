@@ -2026,6 +2026,51 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
   return variadic.getValues()[index.getInt()];
 }
 
+// Returns the op with operands replaced with substitutions with actual values.
+// substitutions are automatically added in conditionals with equals.
+//
+// E.g. given substitutions = {C: 3} calling this on
+//  cond(eq(A == 2 and C == 3), f(A, C), g(A, C))
+//
+// Will become cond(eq(A == 2 and 3 == 3), f(A, 3), g(A, 3))
+//
+// We are able to apply the substitution `A == 2` for the "then" branch
+// Note the substitution from the equal can only be applied to the then branch.
+//
+// This substitution and walking is done in a recursive manner. The depth
+// of this recursion is bound by the initial `depth_left` parameter.
+static TypedAttr cloneOperandsWithSubstitution(
+    TypedAttr op, const DenseMap<TypedAttr, IntegerAttr> &substitutions,
+    size_t depth_left) {
+  if (substitutions.contains(op))
+    return substitutions.at(op);
+
+  if (depth_left <= 0)
+    return op;
+
+  auto opParamOperator = dyn_cast<ParamOperatorAttr>(op);
+  if (!opParamOperator)
+    return op;
+
+  // Constrain to IntegerAttr substitutions for now
+  SmallVector<TypedAttr> newOperands;
+  bool hasChanged = false;
+  for (TypedAttr oldOperand : opParamOperator.getOperands()) {
+    TypedAttr newOperand = cloneOperandsWithSubstitution(
+        oldOperand, substitutions, depth_left - 1);
+    newOperands.push_back(newOperand);
+    hasChanged = hasChanged || (newOperand != oldOperand);
+  }
+
+  // No changes
+  if (!hasChanged)
+    return opParamOperator;
+
+  auto result =
+      ParamOperatorAttr::get(opParamOperator.getOpcode(), newOperands);
+  return result;
+}
+
 static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   TypedAttr condAttr = operands[0];
   TypedAttr thenAttr = operands[1];
@@ -2050,6 +2095,23 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
     auto rhsEq = eqAttr.getOperand(1);
     if (thenAttr == rhsEq && elseAttr == lhsEq)
       return lhsEq;
+
+    auto rhsEqAsIntegral = dyn_cast<IntegerAttr>(rhsEq);
+    auto lhsEqAsIntegral = dyn_cast<IntegerAttr>(lhsEq);
+
+    // If in form cond(A == 5, f(A, ...), ...)
+    // Substitute all occurrences of A in the then branch with '5' up to
+    // `MAX_RECURSION_DEPTH`
+    const static size_t MAX_RECURSION_DEPTH = 3;
+    if (rhsEqAsIntegral && !lhsEqAsIntegral) {
+      DenseMap<TypedAttr, IntegerAttr> substitutions = {
+          {lhsEq, rhsEqAsIntegral}};
+      TypedAttr newThenAttr = cloneOperandsWithSubstitution(
+          thenAttr, substitutions, MAX_RECURSION_DEPTH);
+      if (newThenAttr != thenAttr)
+        return ParamOperatorAttr::get(POC::Cond,
+                                      {condAttr, newThenAttr, elseAttr});
+    }
   }
 
   // cond(X, false, X) == X
