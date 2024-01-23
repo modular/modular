@@ -64,14 +64,14 @@ fn _get_start_indices_of_nth_subvolume[
         @parameter
         fn compute_shape[idx: Int]():
             alias i = rank - 1 - idx - subvolume_rank
-            out._unsafe_set_dim(i, curr_index % shape[i])
+            out[i] = curr_index % shape[i]
             curr_index //= shape[i]
 
         unroll[rank - subvolume_rank, compute_shape]()
     else:
         let rank = len(out)
         for i in range(rank - subvolume_rank - 1, -1, -1):
-            out._unsafe_set_dim(i, curr_index % shape[i])
+            out[i] = curr_index % shape[i]
             curr_index //= shape[i]
 
     return out ^
@@ -124,12 +124,14 @@ struct Tensor[
         self.strides = IntList[static_strides](shape)
         self.dyn_rank = len(shape)
 
-        var stride = 1
-
-        # Walk backwards to compute the fully contiguous strides.
-        for i in range(len(self.shape) - 1, -1, -1):
-            self.strides._unsafe_set_dim(i, stride)
-            stride *= self.shape[i]
+        # If the strides are already fully static we don't need to set them.
+        @parameter
+        if not IntList[static_strides].is_fully_static():
+            var stride = 1
+            # Walk backwards to compute the fully contiguous strides.
+            for i in range(len(self.shape) - 1, -1, -1):
+                self.strides[i] = stride
+                stride *= self.shape[i]
 
         # Increment the refcount if we own the memory otherwise create an
         # empty counter.
@@ -302,10 +304,40 @@ struct Tensor[
             self._simd_store_internal(index, val)
 
     @always_inline
+    fn store(self, index: Int, value: SIMD):
+        constrained[
+            self.static_rank == 1,
+            (
+                "Single int access to kernels only allowed on tensors"
+                " statically known to be 1D"
+            ),
+        ]()
+        var as_nd = self.get_nd_indices()
+        as_nd[0] = index
+        self.store(as_nd, value)
+
+    @always_inline
     fn _simd_store_internal(self, index: IntList, val: SIMD):
         let flat_index = self._compute_flat_index(index)
         let value = rebind[SIMD[type, val.size]](val)
         self.data.simd_store[val.size](flat_index, value)
+
+    @always_inline
+    fn get_nd_indices(self) -> IntList[Self.same_rank_param()]:
+        return IntList[Self.same_rank_param()].zeros(self.dyn_rank)
+
+    @always_inline
+    fn simd_load[simd_width: Int](self, index: Int) -> SIMD[type, simd_width]:
+        constrained[
+            self.static_rank == 1,
+            (
+                "Single int access to kernels only allowed on tensors"
+                " statically known to be 1D"
+            ),
+        ]()
+        var as_nd = self.get_nd_indices()
+        as_nd[0] = index
+        return self.simd_load[simd_width](as_nd)
 
     @always_inline
     fn simd_load[
@@ -393,7 +425,7 @@ struct Tensor[
             fn func_wrapper[width: Int](idx: Int):
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
-                indices._unsafe_set_dim(rank - 1, idx)
+                indices[rank - 1] = idx
                 let out = func[width, Self.type, indices.static_values](indices)
                 self.store(indices, out)
 

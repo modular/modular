@@ -111,6 +111,27 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
     @staticmethod
     @always_inline
+    fn zeros(length: Int) -> Self:
+        """
+        Create a new IntList with all zeros.
+        """
+        var new = Self()
+
+        @parameter
+        if Self.has_static_length():
+
+            @unroll
+            for i in range(Self._length):
+                new.stack_alloc_data[i] = 0
+        else:
+            # Worst case we allocate the memory on the heap.
+            new.length = length
+            new.data = Pointer[Int].alloc(length)
+            memset_zero(new.data, length)
+        return new
+
+    @staticmethod
+    @always_inline
     fn shape_idx_statically_known[idx: Int]() -> Bool:
         @parameter
         if not Self.has_static_length():
@@ -170,16 +191,18 @@ struct IntList[static_values: DimList = DimList()](Sized):
                 num_elms *= self[i]
         return num_elms
 
-    # Mutate the list. This should never be used by a user as it blurs the semantics, if the shape is known then static shape will not change with this function as one might expect.
-    fn _unsafe_set_dim(inout self, index: Int, value: Int):
+    @always_inline("nodebug")
+    fn __setitem__(inout self, index: Int, value: Int):
+        constrained[
+            not Self.is_fully_static(),
+            "Fully static int lists can't be modified",
+        ]()
+
         @parameter
-        if Self.is_fully_static():
-            # No change for static
-            return
-        elif Self.has_static_length():
+        if Self.has_static_length():
             self.stack_alloc_data[index] = value
         else:
-            self.data[index] = value
+            self.data.store(index, value)
 
     @staticmethod
     @always_inline

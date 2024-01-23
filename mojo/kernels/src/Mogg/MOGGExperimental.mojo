@@ -67,16 +67,16 @@ fn to_tensor[
         fn body[idx: Int]():
             # Start from the back so we can accumulate the strides.
             let i = rank - 1 - idx
-            shape._unsafe_set_dim(i, shape_ptr.load(i))
-            strides._unsafe_set_dim(i, stride)
+            shape[i] = shape_ptr.load(i)
+            strides[i] = stride
             stride *= shape[i]
 
         unroll[rank, body]()
     else:
         # Start from the back so we can accumulate the strides.
         for i in range(length - 1, -1, -1):
-            shape._unsafe_set_dim(i, shape_ptr.load(i))
-            strides._unsafe_set_dim(i, stride)
+            shape[i] = shape_ptr.load(i)
+            strides[i] = stride
             stride *= shape[i]
 
     return Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False](
@@ -171,8 +171,8 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     fn body[i: Int]():
         let index = IntList[DimList(i)](i)
         let dim = int(perm.simd_load[1](index))
-        new_shape._unsafe_set_dim(i, x.shape[dim])
-        new_stride._unsafe_set_dim(i, x.strides[dim])
+        new_shape[i] = x.shape[dim]
+        new_stride[i] = x.strides[dim]
 
     unroll[rank, body]()
 
