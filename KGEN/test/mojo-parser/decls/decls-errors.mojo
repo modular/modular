@@ -90,12 +90,12 @@ async fn async_mem_result() -> MemType:
 # COM: Issue https://github.com/modularml/mojo/issues/1091
 fn missing_arg_type_or_default(
     a: Int = 9,
-    # expected-error @+2 {{non-default argument follows default argument}}
+    # expected-error @+2 {{required positional argument follows optional positional argument}}
     # expected-error @+1 {{'fn' argument type must be specified}}
     b,
-    c: Int,  # expected-error {{non-default argument follows default argument}}
+    c: Int,  # expected-error {{required positional argument follows optional positional argument}}
     d: Int = 0,
-    # expected-error @+2 {{non-default argument follows default argument}}
+    # expected-error @+2 {{required positional argument follows optional positional argument}}
     # expected-error @+1 {{'fn' argument type must be specified}}
     e,
 ):
@@ -103,9 +103,9 @@ fn missing_arg_type_or_default(
 
 def missing_default(
     a=9,
-    b,  # expected-error {{non-default argument follows default argument}}
+    b,  # expected-error {{equired positional argument follows optional positional argument}}
     c=0,
-    d,  # expected-error {{non-default argument follows default argument}}
+    d,  # expected-error {{required positional argument follows optional positional argument}}
 ):
     pass
 
@@ -260,25 +260,6 @@ fn badPackCalls(value: Int):
   examplePack(packArgOverload)
   # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 input parameters, but 0 were specified}}
   first_and_rest(value)
-
-##===----------------------------------------------------------------------===##
-# Keyword Arguments
-##===----------------------------------------------------------------------===##
-
-# expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw1(a, *, *, b): pass # expected-error {{cannot have two '*' markers in the same argument list}}
-def kw2(a, /, /, b): pass # expected-error {{cannot have two '/' markers in the same argument list}}
-# expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw3(a, /, *, b): pass # OK
-# expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw4(a, *, /, b): pass # expected-error {{cannot specify '/' marker after '*' marker}}
-def kw5(/, a):       pass # expected-error {{'/' marker cannot be used at the start of the argument list}}
-def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of argument list}}
-# expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw7(*a: Int, *b: Int): pass # expected-error {{cannot have two '*' markers in the same argument list}}
-# expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw8[*Ts: __mlir_type.`!kgen.type`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
-fn kw9(*a: Int, b: Int): pass # expected-error {{keyword-only arguments not supported yet}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading

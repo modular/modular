@@ -289,6 +289,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<StringAttr> &names,
                                 SmallVectorImpl<PassingKind> &passingKinds,
                                 SmallVectorImpl<TypedAttr> &defaultPosParams,
+                                SmallVectorImpl<TypedAttr> &defaultKwOnlyParams,
                                 bool &paramVarArg);
 } // namespace impl
 

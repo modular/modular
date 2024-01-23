@@ -2878,9 +2878,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
   ParsedArgument::processParameterInputArgs(
       typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
-      paramPassingKinds, defaultPosParams, paramVarArg);
+      paramPassingKinds, defaultPosParams, defaultKwOnlyParams, paramVarArg);
 
   FnEffects effects = this->effects;
   if (paramVarArg)
@@ -2889,10 +2890,11 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
+  SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, typeEmitter, paramNames, paramPassingKinds,
       inputParamDecls, resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      isDef, resultLoc);
+      defaultKwOnlyArgs, isDef, resultLoc);
   if (!resultType)
     return {};
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
@@ -2929,8 +2931,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       inputParamDecls, {}, functionType, inputConventions, effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, defaultPosArgs, defaultPosParams,
-                          // TODO: wire in kw-only args/params in mojo
-                          /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
+                          defaultKwOnlyArgs, defaultKwOnlyParams,
                           implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {

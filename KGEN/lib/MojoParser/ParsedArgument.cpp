@@ -242,6 +242,9 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
       arg.vararg = VarArgKind::None;
     }
 
+    if (arg.vararg == VarArgKind::KWVarArg)
+      p.emitError(arg.loc, "variadic keyword argument not supported yet");
+
     // Otherwise just remember the argument.
     args.push_back(arg);
     return success();
@@ -266,19 +269,13 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
     arg.kwArgHandling = KWArgHandling::kPositionalOnly;
   }
 
-  // TODO(Keyword Args): now that we parsed a fully generic parameter list,
-  // reject keyword-only arguments. Remove them from the signature since the
-  // representation does not support them either.
-  auto trailingKwarg = [&] {
-    return !args.empty() &&
-           args.back().kwArgHandling == KWArgHandling::kKeywordOnly;
-  };
-  if (trailingKwarg()) {
-    p.emitError(args.back().loc, "keyword-only ")
-        << argOrParam << "s not supported yet";
-    do {
-      args.pop_back();
-    } while (trailingKwarg());
+  // TODO(#21950): we currently don't allow keyword-only args after variadics.
+  auto hasVarArg = [](const ParsedArgument &arg) { return arg.vararg; };
+  if (!args.empty() &&
+      args.back().kwArgHandling == KWArgHandling::kKeywordOnly &&
+      llvm::any_of(args, hasVarArg)) {
+    p.emitError(args.back().loc,
+                "keyword-only arguments after variadics not supported yet");
   }
   return success();
 }
@@ -344,15 +341,30 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
 // Parameter signature implementation
 //===----------------------------------------------------------------------===//
 
+/// Helper to emit a consistent error message when a required argument or
+/// parameter follows a optional one.
+static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
+                                              const ParsedArgument &arg,
+                                              StringRef argOrParam) {
+  std::string kindStr =
+      arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly
+          ? "keyword-only"
+          : "positional";
+  return emitter.emitError(arg.loc, "required ")
+         << kindStr << " " << argOrParam << " follows optional " << kindStr
+         << " " << argOrParam;
+}
+
 /// Core implementation of the parameter argument parsing logic.
-static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
-                                 ArrayRef<ParsedArgument> args,
-                                 SmallVectorImpl<ParamDeclAttr> &params,
-                                 SmallVectorImpl<StringAttr> &names,
-                                 SmallVectorImpl<PassingKind> &passingKinds,
-                                 SmallVectorImpl<TypedAttr> &defaultPosParams,
-                                 bool isResultParams, bool &paramVarArg) {
-  bool seenInitExpr = false;
+static void processParameterArgs(
+    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
+    SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
+    SmallVectorImpl<PassingKind> &passingKinds,
+    SmallVectorImpl<TypedAttr> &defaultPosParams,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool isResultParams,
+    bool &paramVarArg) {
+  bool seenPosInitExpr = false;
+  bool seenKwOnlyInitExpr = false;
   for (const ParsedArgument &arg : args) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -377,21 +389,29 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
       paramVarArg = true;
     }
 
+    if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly)
+      seenPosInitExpr = false;
+
     if (const ExprNode *initExpr = arg.initExpr) {
-      seenInitExpr = true;
       Type paramType = type;
       PValue value =
           emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
       if (!value)
         return;
-      defaultPosParams.push_back(value);
+      if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly) {
+        defaultKwOnlyParams.push_back(value);
+        seenKwOnlyInitExpr = true;
+      } else {
+        defaultPosParams.push_back(value);
+        seenPosInitExpr = true;
+      }
+
       if (isResultParams) {
         emitter.emitError(arg.loc,
                           "unexpected default value for result parameter");
       }
-    } else if (seenInitExpr) {
-      emitter.emitError(arg.loc,
-                        "non-default parameter follows default parameter")
+    } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
+      emitOptionalAfterRequired(emitter, arg, "parameter")
           << arg.typeExpr->getRange();
     }
 
@@ -424,9 +444,11 @@ void ParsedArgument::processParameterInputArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
     SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg) {
   processParameterArgs(emitter, declScope, args, params, names, passingKinds,
-                       defaultPosParams, /*isResultParams=*/false, paramVarArg);
+                       defaultPosParams, defaultKwOnlyParams,
+                       /*isResultParams=*/false, paramVarArg);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -437,7 +459,8 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
     SmallVectorImpl<ParamDeclAttr> &inputParams,
     SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams, bool &paramVarArg) {
+    SmallVectorImpl<TypedAttr> &defaultPosParams,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
@@ -458,9 +481,9 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
 
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(p.shared, declScope, EC_Type);
-  ParsedArgument::processParameterInputArgs(emitter, declScope, args,
-                                            inputParams, names, passingKinds,
-                                            defaultPosParams, paramVarArg);
+  ParsedArgument::processParameterInputArgs(
+      emitter, declScope, args, inputParams, names, passingKinds,
+      defaultPosParams, defaultKwOnlyParams, paramVarArg);
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
@@ -500,7 +523,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-    SmallVectorImpl<TypedAttr> &defaultPosArgs, bool isDef, SMLoc resultLoc,
+    SmallVectorImpl<TypedAttr> &defaultPosArgs,
+    SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef, SMLoc resultLoc,
     ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
   SharedState &shared = typeEmitter.shared;
   ASTDecl &sigDecl = typeEmitter.declScope;
@@ -527,7 +551,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
-  bool seenInitExpr = false;
+  bool seenPosInitExpr = false;
+  bool seenKwOnlyInitExpr = false;
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
@@ -592,17 +617,25 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         arg.convention = ParsedArgument::kConventionBorrowed;
     }
 
+    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
+      seenPosInitExpr = false;
+
     // Emit default argument values.
     if (const ExprNode *initExpr = arg.initExpr) {
-      seenInitExpr = true;
       PValue value =
           typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
       if (!value)
         return {};
-      defaultPosArgs.push_back(value);
-    } else if (seenInitExpr) {
-      InflightDiag diag = typeEmitter.emitError(
-          arg.loc, "non-default argument follows default argument");
+      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly) {
+        defaultKwOnlyArgs.push_back(value);
+        seenKwOnlyInitExpr = true;
+      } else {
+        defaultPosArgs.push_back(value);
+        seenPosInitExpr = true;
+      }
+    } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
+      InflightDiag diag =
+          emitOptionalAfterRequired(typeEmitter, arg, "argument");
       // Depending on `reportError`, the type might also be missing.
       if (arg.typeExpr)
         diag << arg.typeExpr->getRange();

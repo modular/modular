@@ -827,15 +827,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                            paramNames, paramPassingKinds,
-                                            defaultPosParams, paramVarArg))
+  if (impl::parseOptionalParameterSignature(
+          p, sigDecl, inputParamDecls, paramNames, paramPassingKinds,
+          defaultPosParams, defaultKwOnlyParams, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -863,6 +864,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
+  SmallVector<TypedAttr> defaultKwOnlyArgs;
   auto reportError = [&] {
     decl.hasReferenceError = true;
     return success();
@@ -873,7 +875,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
       resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      funcOp.getIsDef(), resultLoc, &decl, fnInfo);
+      defaultKwOnlyArgs, funcOp.getIsDef(), resultLoc, &decl, fnInfo);
   if (!resultType)
     return failure();
 
@@ -946,10 +948,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       builder.getFunctionType(argTypes, {resultType.mlirType});
   auto metadata = FnMetadataAttr::get(
       builder.getContext(), argNames, argPassingKinds, paramNames,
-      paramPassingKinds, defaultPosArgs, defaultPosParams,
-      // TODO: wire through kw-only args and params
-      /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
-      implicitLifetimeDecls.size());
+      paramPassingKinds, defaultPosArgs, defaultPosParams, defaultKwOnlyArgs,
+      defaultKwOnlyParams, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, {}, functionType, inputConventions, effects, metadata,
       silenceErrors(getContext()));
@@ -1721,6 +1721,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<TypeLineageAttr> parentTypes;
 
   bool paramVarArgs = false;
@@ -1729,9 +1730,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      impl::parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                            paramNames, paramPassingKinds,
-                                            defaultPosParams, paramVarArgs) ||
+      impl::parseOptionalParameterSignature(
+          p, sigDecl, inputParamDecls, paramNames, paramPassingKinds,
+          defaultPosParams, defaultKwOnlyParams, paramVarArgs) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
@@ -1743,10 +1744,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   auto inputParams = ParamDeclArrayAttr::get(getContext(), inputParamDecls);
   structOp.setInputParamsAttr(inputParams);
-  // TODO: implement kw-only struct parameters
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      defaultPosParams, /*defaultKwOnlyParams=*/{}, paramVarArgs);
+      defaultPosParams, defaultKwOnlyParams, paramVarArgs);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
@@ -2141,8 +2141,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getArgPassingKinds().drop_front(replacedResult),
           traitSig.getParamNames(), traitSig.getParamPassingKinds(),
           traitSig.getDefaultPosArgs(), traitSig.getDefaultPosParams(),
-          // TODO: wire through kw-only args and params
-          /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
+          traitSig.getDefaultKwOnlyArgs(), traitSig.getDefaultKwOnlyParams(),
           numImplicitLifetimeDecls));
 }
 

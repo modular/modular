@@ -11,11 +11,19 @@
 # Stubs to allow testing without builtins
 # ===----------------------------------------------------------------------=== #
 
+alias AnyRegType = __mlir_type.`!kgen.type`
 alias Int = __mlir_type.index
 
 alias `1` = __mlir_attr.`1 : index`
 
 struct object: pass
+
+@register_passable
+struct VariadicList[type: AnyRegType]:
+    alias storage_type = __mlir_type[`!kgen.variadic<`, type, `>`]
+
+    fn __init__(value: Self.storage_type) -> Self:
+        return Self {}
 
 # ===----------------------------------------------------------------------=== #
 # Actual tests
@@ -60,3 +68,40 @@ fn missing_parameter_name[: Int](): pass
 fn test_unknown_arg_type(a: InvalidType):
     _ = a.value  # Should not produce a follow-on error.
     return
+
+# expected-error @+1 {{cannot have two '*' markers in the same argument list}}
+fn two_stars(a: Int, *, *, b: Int):
+    pass
+
+# expected-error @+1 {{cannot have two '/' markers in the same argument list}}
+fn two_slashes(a: Int, /, /, b: Int):
+    pass
+
+# expected-error @+1 {{cannot specify '/' marker after '*' marker}}
+fn slash_after_start(a: Int, *, /, b: Int):
+    pass
+
+# expected-error @+1 {{'/' marker cannot be used at the start of the argument list}}
+fn leading_slash(/, a: Int):
+    pass
+
+# expected-error @+1 {{'*' marker is not allowed at end of argument list}}
+fn trailing_star(a: Int, *):
+    pass
+
+# TODO(#21950): fix how we model variadics to suppress this error
+# expected-error @+2 {{keyword-only arguments after variadics not supported yet}}
+# # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
+fn two_variadics(*a: Int, *b: Int):
+    pass
+
+# TODO(#21950): fix how we model variadics to suppress this error
+# expected-error @+2 {{keyword-only arguments after variadics not supported yet}}
+# expected-error @+1 {{cannot have two '*' markers in the same argument list}}
+fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
+    pass
+
+# TODO(#21950): fix how we model variadics to allow this
+# expected-error @+1 {{keyword-only arguments after variadics not supported yet}}
+fn variadic_and_kw_only(a: Int, *b: Int, c: Int):
+    pass
