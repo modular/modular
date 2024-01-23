@@ -14,7 +14,7 @@ from runtime.llcl import Runtime
 from utils.index import Index
 from utils.list import DimList
 from BatchedMatmul import batched_matmul
-from Softmax import softmax
+from NN.Softmax import softmax
 from gpu.host.event import time_function
 from sys import argv
 
@@ -27,7 +27,7 @@ from gpu.host.memory import (
     _malloc,
 )
 
-from MultiHeadAttention import (
+from NN.MultiHeadAttention import (
     flash_attention_kernel,
     flash_attention_kernel_flexible_seqlen,
     _naive_attention_with_transpose,

@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import Runtime
-from Softmax import softmax_2_pass, softmax
+from NN.Softmax import softmax_2_pass, softmax
 from random import rand
 
 from utils.list import Dim, DimList

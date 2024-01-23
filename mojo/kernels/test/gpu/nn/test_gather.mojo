@@ -8,7 +8,7 @@
 
 from sys.info import simdwidthof
 
-from GatherScatter import gather
+from NN.GatherScatter import gather
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 

@@ -8,7 +8,7 @@
 
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
-from Activations import gelu
+from NN.Activations import gelu
 from algorithm import elementwise
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer

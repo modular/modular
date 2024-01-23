@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys import argv
-from Concat import _concat_gpu, _concat_inner_most_single_dim
+from NN.Concat import _concat_gpu, _concat_inner_most_single_dim
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from memory.buffer import NDBuffer
 
