@@ -6,7 +6,7 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from utils._optional import Optional
+from collections.optional import Optional
 from ._utils import *
 from ._status import Status
 from sys.param_env import is_defined

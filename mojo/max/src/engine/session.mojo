@@ -13,7 +13,7 @@ from .tensor_map import *
 from ._engine_impl import _EngineImpl, _get_engine_path
 from memory.anypointer import AnyPointer
 from os.atomic import Atomic
-from utils._optional import Optional
+from collections.optional import Optional
 
 
 struct _InferenceSessionImpl(Movable):
