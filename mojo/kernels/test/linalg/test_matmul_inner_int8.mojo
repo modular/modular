@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: inner_int8_support
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import align_up
@@ -41,6 +40,7 @@ alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 alias M: Int = 64
 alias N: Int = 64
 alias K: Int = 256
+alias NP = align_up(N, tile_inner_size)
 alias KH = align_up(K, factor)
 
 
@@ -51,7 +51,7 @@ fn matmul_inner_loop(
     b_packed: NDBuffer[
         3,
         DimList(
-            N // tile_inner_size,
+            NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
@@ -62,7 +62,7 @@ fn matmul_inner_loop(
         DimList(M, K),
         DimList(M, N),
         DimList(
-            N // tile_inner_size,
+            NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
@@ -97,7 +97,7 @@ fn test_micro_kernel():
     let b_packed = NDBuffer[
         3,
         DimList(
-            N // tile_inner_size,
+            NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
