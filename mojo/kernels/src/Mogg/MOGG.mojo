@@ -531,8 +531,8 @@ fn destruct_buffer_list[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ]
 ):
-    # mojo lowering will insert destructor call for `list`
-    pass
+    # Must call destructor explicitly until `InlinedFixedVector` has `__del__`
+    list._del_old()
 
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
