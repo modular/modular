@@ -467,7 +467,7 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function input parameters.
 static ASTType
-addImplicitTypeParams(SharedState &shared, ASTType type,
+addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
                       const ParsedArgument &arg,
                       SmallVectorImpl<StringAttr> &inputParamNames,
                       SmallVectorImpl<PassingKind> &inputParamPassingKinds,
@@ -480,12 +480,10 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
   if (inputParams.empty())
     return type;
 
-  unsigned nameCounter = 0;
   SmallVector<TypedAttr> paramValues;
   for (Type type : inputParams) {
     auto funcDecl = ParamDeclAttr::get(
-        shared.getMangledParameterName(
-            arg.name.getValue() + Twine(nameCounter++), arg.loc),
+        declScope.getUniqueParamNameNew(arg.name, /*isUserDefinedDecl=*/false),
         type);
     inputParamNames.push_back(StringAttr::get(type.getContext()));
     inputParamPassingKinds.push_back(PassingKind::Implicit);
@@ -548,7 +546,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         type = shared.getTypeCheckErrorType();
         arg.isErroneous = true;
       }
-      type = addImplicitTypeParams(shared, type, arg, inputParamNames,
+      type = addImplicitTypeParams(shared, sigDecl, type, arg, inputParamNames,
                                    inputParamPassingKinds, inputParamDecls);
     } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
       // If this is the 'self' argument in a struct, default the type to Self.

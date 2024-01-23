@@ -216,7 +216,7 @@ struct MyStruct[x: Int]:
 # CHECK: {
 # CHECK:     "description": "",
 # CHECK:     "kind": "parameter",
-# CHECK:     "name": "x0",
+# CHECK:     "name": "x",
 # CHECK:     "type": "Int"
 # CHECK: }
 

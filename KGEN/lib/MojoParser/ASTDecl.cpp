@@ -78,8 +78,9 @@ StringAttr ASTDecl::getUniqueParamNameNew(StringAttr name,
   // declaration by the Mojo user. Due to the use of depth, the mangling doesn't
   // change when the order of function declarations change, so we have hash
   // stability as well.
-  return StringAttr::get(getContext(), name.getValue() + "`" + Twine(depth) +
-                                           "x" + Twine(getNextUniqueID()));
+  return StringAttr::get(name.getContext(), name.getValue() + "`" +
+                                                Twine(depth) + "x" +
+                                                Twine(getNextUniqueID()));
 }
 
 StringAttr ASTDecl::getUniqueParamName(const Twine &name, bool isLifetime,
