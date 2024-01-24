@@ -44,6 +44,7 @@ from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
+from utils._optional import Optional
 
 from NN.Activations import gelu, relu, sigmoid
 from algorithm import argmax as _argmax
@@ -2067,6 +2068,9 @@ fn gather[
 # MOGG matmul
 # ===----------------------------------------------------------------------===#
 
+# TODO(#29765): remove import and allow Optional type to be inferred
+from MatmulUtils import elementwise_lambda_fn_sig_type
+
 
 @mogg_register("mo.matmul")
 @always_inline
@@ -2148,9 +2152,10 @@ fn matmul[
             transpose_a,
             transpose_b,
             b_packed,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-            False,  # saturated_vnni
+            Optional[elementwise_lambda_fn_sig_type](
+                epilogue_wrapper
+            ) if lambdas_have_fusion else None,
+            saturated_vnni=False,
             single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](
