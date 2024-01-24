@@ -2,11 +2,11 @@
   "name": "vscode-mojo",
   "displayName": "Mojo 🔥",
   "description": "Mojo language support",
-  "version": "6.0.2-dev",
+  "version": "6.0.3-dev",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages",
@@ -36,7 +36,7 @@
     "@types/mocha": "^7.0.2",
     "@types/node": "^18.11.18",
     "@types/shell-escape": "0.2.0",
-    "@types/vscode": "~1.74.0",
+    "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.19.0",
     "typescript": "^4.6.4"
   },
