@@ -10,8 +10,8 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
-#include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "LLCL/Support/Profiling.h"
+#include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Process.h"
