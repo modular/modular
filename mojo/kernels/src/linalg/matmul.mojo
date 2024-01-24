@@ -64,6 +64,7 @@ from Neon import _neon_matmul, _neon_dotprod
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 from utils._optional import Optional
+from utils.static_tuple import StaticTuple
 from algorithm.functional import tile_and_unswitch
 from Gemv import gemv
 
@@ -2414,8 +2415,9 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
 # WNITER: The number of subwarp tiling steps in N dimension.
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
-# TODO(#29637): Fix array type.
-# @__llvm_metadata(`nvvm.maxntid`=[int(NUM_THREADS)])
+@__llvm_metadata(
+    `nvvm.maxntid`=StaticTuple[1, Int32](NUM_THREADS.cast[DType.int32]())
+)
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
