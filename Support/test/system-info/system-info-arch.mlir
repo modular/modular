@@ -5,10 +5,10 @@
 
 // CHECK-M1: target-triple: aarch64-unknown-macosx
 // CHECK-M1: arch: apple-m1
-// CHECK-M1: features: aes, crc, dotprod, fp-armv8, fp16fml, fullfp16, lse, neon, ras, rcpc, rdm, sha2, sha3
+// CHECK-M1: features: aes, complxnum, crc, dotprod, fp-armv8, fp16fml, fullfp16, jsconv, lse, neon, ras, rcpc, rdm, sha2, sha3
 
 
 // CHECK-M2: target-triple: aarch64-unknown-macosx
 // CHECK-M2 os: macosx
 // CHECK-M2: arch: apple-m2
-// CHECK-M2: features: aes, bf16, crc, dotprod, fp-armv8, fp16fml, fullfp16, i8mm, lse, neon, ras, rcpc, rdm, sha2, sha3
+// CHECK-M2: features: aes, bf16, complxnum, crc, dotprod, fp-armv8, fp16fml, fullfp16, i8mm, jsconv, lse, neon, ras, rcpc, rdm, sha2, sha3
