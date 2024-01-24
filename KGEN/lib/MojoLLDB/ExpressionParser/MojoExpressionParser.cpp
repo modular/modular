@@ -162,7 +162,8 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 #if __APPLE__
       /*packageLinkHandlerFn=*/
       [](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
-        return packageLink.getPreElaborationModuleAttr();
+        return loadPreElaboratedBytecodeForLinking(
+            packageLink.getPreElaborationModuleAttr());
       }
 #else
       /*packageLinkHandlerFn=*/

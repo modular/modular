@@ -193,17 +193,10 @@ elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
   return std::make_tuple(bytecodeResource, symtab, exportMap);
 }
 
-/// Loads serialized MLIR bytecode representing a pre-elaborated module for a
-/// package, elaborates it, and generates a static archive. If successful, the
-/// given package_link op will have its elaborated bytecode and static archive
-/// attributes set.
-ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
-    PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-    const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
-  // Load the pre-elaborated bytecode, which contains the package module.
-  // We'll run the elaborator on this bytecode module.
-  mlir::AsmResourceBlob *blob =
-      packageLink.getPreElaborationModuleAttr().getRawHandle().getBlob();
+/// Load the given bytecode module and return it.
+static ErrorOr<OwningOpRef<ModuleOp>>
+loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr) {
+  mlir::AsmResourceBlob *blob = bytecodeAttr.getRawHandle().getBlob();
   if (!blob)
     return Error("unable to find the pre-elaborated module blob");
   ArrayRef<char> bytecode = blob->getData();
@@ -212,18 +205,37 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
 
   // Read the entirety of the bytecode in the buffer; no lazy loading.
   auto sourceMgr = std::make_shared<llvm::SourceMgr>();
-  mlir::ParserConfig parserConfig(packageLink.getContext());
+  mlir::ParserConfig parserConfig(bytecodeAttr.getContext());
   mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/false,
                               sourceMgr);
   Block block;
   if (failed(reader.readTopLevel(&block)))
     return Error("unable to read pre-elaborated module blob");
-  ModuleOp packageModule = cast<ModuleOp>(block.front());
+
+  // Take ownership of the parsed module by removing it from the block so that
+  // we can return it.
+  ModuleOp module = cast<ModuleOp>(block.front());
+  module->remove();
+  return module;
+}
+
+/// Loads serialized MLIR bytecode representing a pre-elaborated module for a
+/// package, elaborates it, and generates a static archive. If successful, the
+/// given package_link op will have its elaborated bytecode and static archive
+/// attributes set.
+ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
+    PackageLinkOp packageLink, TargetInfoAttr targetInfo,
+    const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      loadPreElaboratedModuleBytecode(
+          packageLink.getPreElaborationModuleAttr());
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
 
   // Elaborate the bytecode for the given target, and set the resulting bytecode
   // as an attribute on the package_link op.
-  auto elaborateOr = elaborateBytecode(packageModule, packageLink, targetInfo,
-                                       compileOptions, runtime);
+  auto elaborateOr = elaborateBytecode(**packageModuleOr, packageLink,
+                                       targetInfo, compileOptions, runtime);
   if (elaborateOr.isError())
     return elaborateOr.takeError();
   auto [bytecodeResource, symtab, exportedSymbols] = elaborateOr.takeValue();
@@ -243,6 +255,57 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
   packageLink.setArchives(archives);
 
   return bytecodeResource;
+}
+
+ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::loadPreElaboratedModuleForLinking(
+    DenseResourceElementsAttr bytecodeAttr) {
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      loadPreElaboratedModuleBytecode(bytecodeAttr);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+
+  // Strip the implicit package exports, we don't need these because we're going
+  // to link the package into an existing module as-is.
+  for (ExportInterface op : (*packageModuleOr)->getOps<ExportInterface>())
+    if (op.isPackageExported())
+      op.setNotExported();
+
+  // Materialize all of the dependent packages now, making sure they also
+  // get linked in properly.
+  mlir::PassManager pm((*packageModuleOr)->getContext());
+  pm.addPass(KGEN::createMaterializePackages(
+      [=](KGEN::PackageLinkOp packageLink, TargetInfoAttr) {
+        return KGEN::loadPreElaboratedBytecodeForLinking(
+            packageLink.getPreElaborationModuleAttr());
+      }));
+  if (failed(pm.run(**packageModuleOr)))
+    return Error("unable to materialize dependent packages");
+
+  return std::move(*packageModuleOr);
+}
+
+ErrorOr<DenseResourceElementsAttr> M::KGEN::loadPreElaboratedBytecodeForLinking(
+    DenseResourceElementsAttr bytecodeAttr) {
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      loadPreElaboratedModuleForLinking(bytecodeAttr);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+
+  // Write the package bytecode to the given buffer. This will be attached to
+  // the exported high level functions.
+  WriteableBufferRef str = WriteableBuffer::get();
+  if (failed(mlir::writeBytecodeToFile(**packageModuleOr, *str)))
+    return Error("could not write bytecode for package module");
+
+  // Hash the bytecode itself - this will give us a unique'd attr name that
+  // shouldn't clash even when a large number of packages get imported - and
+  // if they do clash, they're guaranteed to be exactly the same.
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                        (const uint8_t *)str->getBufferEnd()));
+  return createResourceAttr((*packageModuleOr)->getContext(), str->getBuffer(),
+                            "bytecode_" +
+                                llvm::toHex(hash, /*LowerCase=*/true));
 }
 
 //===----------------------------------------------------------------------===//
