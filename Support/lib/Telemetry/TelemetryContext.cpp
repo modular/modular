@@ -6,6 +6,7 @@
 
 #include "Support/Telemetry/Telemetry.h"
 
+#include "Config/Version.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
@@ -114,6 +115,15 @@ TelemetryContext::TelemetryContext(
   // system.
   attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
   attrs.SetAttribute("os.type", hostInfoOr->osName);
+
+  // Set the underlying Modular version.
+  auto version = getModularVersion();
+  attrs.SetAttribute("modular.version.major", version.major);
+  attrs.SetAttribute("modular.version.minor", version.minor);
+  attrs.SetAttribute("modular.version.patch", version.patch);
+  attrs.SetAttribute("modular.version.label", version.label);
+  attrs.SetAttribute("modular.version.revision", version.revision);
+  attrs.SetAttribute("modular.version.buildtype", version.buildType);
 
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
