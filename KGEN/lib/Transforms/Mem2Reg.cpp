@@ -90,13 +90,15 @@ struct PromotedStackAlloc {
   /// Create a new DebugInfo ValueOp for a StackAllocation that was promoted.
   /// By default, an undef value is set as the DI value if no previous stores
   /// were observed.
-  ErrorOr<DebugInfo::ValueOp>
+  ErrorOrSuccess
   createDebugValue(StackAllocationOp alloc, DebugInfo::ValueOp value,
                    DebugInfo::DIExprLeafReplacer &exprLeafReplacer) {
     ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
         exprLeafReplacer.apply(value.getConversionExprAttr());
+    // Not enough source information available to track this transformation.
+    // Cannot debug this local variable anymore.
     if (failed(newConversionExpr))
-      return newConversionExpr.takeError();
+      return success();
 
     OpBuilder b(value);
     if (!currValue)
@@ -110,7 +112,7 @@ struct PromotedStackAlloc {
       return Error(
           "location of debug value does not contain a subprogram scope");
     debugValues.try_emplace(scope, debugValue);
-    return debugValue;
+    return success();
   }
 
   /// Update the current value of this promoted alloc.
