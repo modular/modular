@@ -18,6 +18,7 @@ if(MODULAR_ENABLE_TELEMETRY)
     MSupport
     MSupportEntitlements
     MArchTarget
+    MVersion
     opentelemetry_metrics
     opentelemetry_logs
 
