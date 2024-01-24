@@ -269,7 +269,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
             ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
                 leafReplacer.direct.apply(conversionExpr, i);
             if (failed(newConversionExpr)) {
-              user->emitOpError() << newConversionExpr.getError();
+              // Not enough source information available to track this
+              // transformation. Cannot debug this local variable anymore.
               continue;
             }
             b.create<DebugInfo::ValueOp>(value.getLoc(), load, valueInfo,
@@ -286,7 +287,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
             leafReplacer.indirect.apply(conversionExpr, i);
         if (failed(newConversionExpr)) {
-          user->emitOpError() << newConversionExpr.getError();
+          // Not enough source information available to track this
+          // transformation. Cannot debug this local variable anymore.
           continue;
         }
         b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, valueInfo,
