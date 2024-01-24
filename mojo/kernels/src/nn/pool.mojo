@@ -115,9 +115,9 @@ fn pool_shape[
     )
 
     if output_height <= 0:
-        raise Error("output height must be positive")
+        raise Error("Pooling output height must be positive")
     if output_width <= 0:
-        raise Error("output width must be positive")
+        raise Error("Pooling output width must be positive")
 
     var output_shape = StaticIntTuple[input_rank](
         batch_size, output_height, output_width, input_channels
