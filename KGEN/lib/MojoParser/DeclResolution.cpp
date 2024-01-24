@@ -520,21 +520,23 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 namespace {
 struct FnDecorators : public SharedStateUser {
   FnDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
-               StringRef baseName)
+               StringRef baseName, FnEffects effects)
       : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
-        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName) {}
+        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName), effects(effects) {}
 
   /// Apply a function signature decorator.
   LogicalResult apply(ExprNode *decorator, FnEffects &effects);
 
 private:
   void applyMoveCapture(const CallNode &node);
+  void applyCopyCapture(const CallNode &node);
   void applyLLVMMetadata(const CallNode &node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
   LIT::FuncOp funcOp;
   StringRef baseName;
+  FnEffects effects;
 };
 } // namespace
 
@@ -570,6 +572,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
                     funcOp);
       else if (declRef->spelling == "__move_capture")
         applyMoveCapture(*callNode);
+      else if (declRef->spelling == "__copy_capture")
+        applyCopyCapture(*callNode);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
       else
@@ -607,6 +611,68 @@ void FnDecorators::applyMoveCapture(const CallNode &node) {
     }
     emitError(declRef->getLoc(), "cannot capture '")
         << declRef->spelling << "'";
+  }
+}
+
+void FnDecorators::applyCopyCapture(const CallNode &node) {
+  // HACK(#16110): Need to implement proper capture list syntax rather than rely
+  // on a special decorator.
+  for (const Operand &operand : node.operands) {
+    auto *declRef = dyn_cast<DeclRefNode>(operand.value);
+    if (!declRef) {
+      emitError(operand.getLoc(), "'@__copy_capture' expected a declaration");
+      continue;
+    }
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
+        /*searchParentScopes=*/true);
+    if (ArrayRef<ASTDecl *> decls = lookup.getIfSuccess(); !decls.empty()) {
+      // Emit an immutable copy of the captured declaration.
+      LIT::FuncOp parentOp = funcOp->getParentOfType<LIT::FuncOp>();
+      if (!parentOp) {
+        emitError(declRef->getLoc(), "'@__copy_capture' decorator is only "
+                                     "applicable to nested functions.");
+        return;
+      }
+      ExprEmitter emitter(shared, decl, EC_CaptureCopy);
+      ValueDest dest(EC_CaptureCopy);
+      std::optional<Capture> capture;
+      AnyValue declarationReference = emitter.emitDeclReference(
+          declRef->spelling, decls, declRef, dest, capture);
+      CValue value = declarationReference.getIfCValue();
+      if (!effects.isEscaping() &&
+          !value.getRValueType().isRegisterPassable(decl.getLoc(), shared)) {
+        emitError(declRef->getLoc(), "cannot capture '")
+            << declRef->spelling
+            << "' because capturing instances of memory only types in "
+               "parametric functions is not supported";
+        continue;
+      }
+      OpBuilder builder(parentOp.getContext());
+      builder.setInsertionPoint(funcOp);
+      ExprEmitter copyEmitter(shared, decl, builder);
+      ValueDest copyDest(EC_LetInit);
+      CValue result = copyEmitter.emitCopyOfValue({value, declRef}, copyDest);
+      if (!result) {
+        emitError(declRef->getLoc(), "cannot capture '")
+            << declRef->spelling << "'";
+        continue;
+      }
+
+      // Bind the name in the scope.
+      DeclIRValue declVal = declIrValueFromCValue(result);
+      if (!declVal) {
+        emitError(declRef->getLoc(),
+                  "Encountered a capture of an unsupported value type: '")
+            << declRef->spelling << "'";
+        return;
+      }
+
+      copyEmitter.getDeclResolver().addFullyResolvedDecl(
+          declVal, declRef->spelling, sigDecl.getLoc(), &sigDecl);
+      shared.addCaptureToScope(decl, decls.front(),
+                               Capture(result, /*isMove=*/false));
+    }
   }
 }
 
@@ -884,7 +950,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  FnDecorators fnDecorators(decl, sigDecl, shared, baseName);
+  FnDecorators fnDecorators(decl, sigDecl, shared, baseName, effects);
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
         return fnDecorators.apply(decorator, effects);

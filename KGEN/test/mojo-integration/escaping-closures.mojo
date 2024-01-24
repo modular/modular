@@ -166,6 +166,16 @@ fn makeEscapingClosure[
     return formatter
 
 
+fn makeEscapingClosureWithUselessCopyDecorator(
+    y: String,
+) -> fn (x: String) escaping -> String:
+    @__copy_capture(y)
+    fn ec(x: String) escaping -> String:
+        return x + y
+
+    return ec
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -210,7 +220,8 @@ fn main():
         pass
 
     try:
-        let x = atol(argv()[1])
+        let str = argv()[1]
+        let x = atol(str)
         let y = atol(argv()[2])
 
         @parameter
@@ -228,5 +239,8 @@ fn main():
         let f2 = makeEscapingClosure[formatter2](y)
         # CHECK: 11
         takeClosure(f2, y)
+
+        # CHECK: 22
+        print(makeEscapingClosureWithUselessCopyDecorator(x)(x))
     except e:
         print(e)
