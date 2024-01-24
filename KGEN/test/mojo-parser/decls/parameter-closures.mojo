@@ -66,3 +66,20 @@ struct CapturingMember[f: fn () capturing -> None]:
     @staticmethod
     fn static_method():
         pass
+
+fn makeClosure[p:Int](x:Int) -> Int:
+    var z = __mlir_op.`index.add`(x, x)
+    # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <index, mut *"z`0">
+    # CHECK: %index = kgen.param.constant = <p>
+    @__copy_capture(z, p)
+    @parameter
+    fn formatter() -> Int:
+        # CHECK: lit.return [[COPY_VAL]] : index
+        return z
+    return formatter()
+
+
+fn foo():
+    let x = `3`
+    let y = `2`
+    _ = makeClosure[`3`](x)
