@@ -307,8 +307,11 @@ fn orvalueInferType():
 # CHECK-LABEL: lit.func @"kernel
 # CHECK-SAME: <[[X:.*]][x]: !Int>
 # CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#kgen.pack<[[X]]> : !kgen.pack<[!Int]>
-@__llvm_metadata(`nvvm.maxntid`=[x])
-fn kernel[x: Int]():
+
+@__llvm_metadata(
+    `nvvm.maxntid`=__mlir_attr[`#pop.array<`,x,`> : !pop.array<1, i32>]
+)
+fn kernel[x: Int32]():
     pass
 
 # https://github.com/modularml/mojo/issues/1152
