@@ -1059,7 +1059,10 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
-    printParamName(p, declRef.getName(), /*isRef=*/isTypeExpr(value));
+    bool isRef = isTypeExpr(value);
+    if (auto type = dyn_cast<ParameterTypeInterface>(value.getType()))
+      isRef |= type.isMetaType();
+    printParamName(p, declRef.getName(), isRef);
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {

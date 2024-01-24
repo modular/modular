@@ -221,6 +221,8 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
   let extraClassDeclaration = [{
     /// Bind parameter values to the metatype.
     MetaTypeType bind(ArrayRef<TypedAttr> values) const;
+    /// Return whether the type is a metatype.
+    bool isMetaType() { return true; }
   }];
 }
 
@@ -249,6 +251,11 @@ def LIT_TraitType: LITType<"Trait", "trait",
       return get(symbol.getContext(), symbol);
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    /// Return whether the type is a metatype.
+    bool isMetaType() { return true; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
