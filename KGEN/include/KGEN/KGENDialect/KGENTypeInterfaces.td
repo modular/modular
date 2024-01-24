@@ -42,7 +42,10 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
       Print an attribute of this type, using pretty syntax if desired. Return
       false if the attribute is not one the type knows how to print.
     }], "LogicalResult", "printValue", (ins "AsmPrinter &":$p,
-                                            "TypedAttr":$value)>
+                                            "TypedAttr":$value)>,
+    InterfaceMethod<[{
+      Return whether the type is a metatype.
+    }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>
   ];
 }
 
