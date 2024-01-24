@@ -305,11 +305,11 @@ fn orvalueInferType():
 
 
 # CHECK-LABEL: lit.func @"kernel
-# CHECK-SAME: <[[X:.*]][x]: !Int>
-# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#kgen.pack<[[X]]> : !kgen.pack<[!Int]>
+# CHECK-SAME: <[[X:.*]][x]:
+# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<[[X]]> : !pop.array<
 
 @__llvm_metadata(
-    `nvvm.maxntid`=__mlir_attr[`#pop.array<`,x,`> : !pop.array<1, i32>]
+    `nvvm.maxntid`=__mlir_attr[`#pop.array<`,x,`> : !pop.array<1, `, Int32, `>`]
 )
 fn kernel[x: Int32]():
     pass
