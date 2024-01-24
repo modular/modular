@@ -20,7 +20,7 @@ from max.graph.type import ElementType
 def dim(v: Symbol, dim: Int) -> Symbol:
     if dim < 0:
         dim += v.tensor_type().rank()
-    return index[axis=0](shape_of(v), dim)
+    return get(shape_of(v), dim)
 
 
 def dims(v: Symbol, start: Int, stop: Int) -> Symbol:

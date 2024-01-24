@@ -73,9 +73,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
     rhs_final_dims.push_back(rhs_type.dim(-2))
     rhs_final_dims.push_back(rhs_type.dim(-1))
 
-    let lhs_broadcast_shape = concat[axis=0](
-        broadcast_dims_shape, lhs_matrix_dims
-    )
+    let lhs_broadcast_shape = concat((broadcast_dims_shape, lhs_matrix_dims))
 
     let broadcast_lhs = g.op(
         "mo.broadcast_to",
@@ -83,9 +81,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
         MOTensor(lhs_type.dtype, lhs_final_dims),
     )
 
-    let rhs_broadcast_shape = concat[axis=0](
-        broadcast_dims_shape, rhs_matrix_dims
-    )
+    let rhs_broadcast_shape = concat((broadcast_dims_shape, rhs_matrix_dims))
 
     let broadcast_rhs = g.op(
         "mo.broadcast_to",
@@ -103,14 +99,10 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     if rhs_type.rank() != 2:
         raise "rhs must be a matrix"
 
-    let reshape_shape = stack[axis=0](
-        g.scalar(Int64(-1)),
-        dim(lhs, -1),
-    )
+    let reshape_shape = stack((g.scalar(Int64(-1)), dim(lhs, -1)))
 
-    let final_shape = concat[axis=0](
-        shape_of(lhs)[: lhs_type.rank() - 1],
-        dims(rhs, 1, 2),
+    let final_shape = concat(
+        (shape_of(lhs)[: lhs_type.rank() - 1], dims(rhs, 1, 2))
     )
 
     var final_dims = DynamicVector[Int64]()

@@ -12,6 +12,8 @@ from max.graph.type import ElementType, MOTensor, dyn
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
+
+
 def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
     var g = lhs.graph()
     let lhs_type = lhs.tensor_type()

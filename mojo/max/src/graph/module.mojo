@@ -82,7 +82,7 @@ struct Module:
     fn scalar_attr[
         dtype: DType
     ](
-        inout self, name: StringRef, value: Scalar[dtype], rank: Int = 0
+        self, name: StringRef, value: Scalar[dtype], rank: Int = 0
     ) raises -> AttrPtr:
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
@@ -98,9 +98,7 @@ struct Module:
     # Graph factories
     # ===------------------------------------------------------------------=== #
 
-    fn graph(
-        inout self, name: StringRef, in_types: Arity, out_types: Arity
-    ) -> Graph:
+    fn graph(self, name: StringRef, in_types: Arity, out_types: Arity) -> Graph:
         let unknown = capi.loc_new_unknown(self.m)
         let g = capi.graph_new(self.m, unknown, name, in_types.a, out_types.a)
         return Graph(g, self)

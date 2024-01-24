@@ -17,7 +17,7 @@ from tensor import Tensor, TensorShape
 
 
 def as_complex(real: Symbol, imag: Symbol) -> Symbol:
-    return stack[axis= -1](real, imag)
+    return stack((real, imag), axis=-1)
 
 
 def as_interleaved_complex(interleaved: Symbol) -> Symbol:
@@ -29,7 +29,7 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
 
     let shape = shape_of(interleaved)
     let back_dims = g.constant(Tensor[DType.int64](TensorShape(2), -1, 2))
-    let new_shape = concat[axis=0](shape[:last_d], back_dims)
+    let new_shape = concat((shape[:last_d], back_dims))
 
     var new_dims = interleaved_t.dims
     new_dims[last_d] = dyn() if (new_dims[last_d] == dyn()) else (
@@ -41,9 +41,9 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
 
 
 def as_real(complex: Symbol) -> (Symbol, Symbol):
-    let real: Symbol
-    let imag: Symbol
-    real, imag = split[axis= -1](complex, (1, 1))
+    let splits = split[2](complex, (1, 1), axis=-1)
+    let real = splits[0]
+    let imag = splits[1]
     return (squeeze(real, axis=-1), squeeze(imag, axis=-1))
 
 

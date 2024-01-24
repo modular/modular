@@ -171,3 +171,10 @@ struct Arity:
 
     fn to_mlir(self, m: Module) -> ArityPtr:
         return self.a
+
+    # ===------------------------------------------------------------------=== #
+    # Mutators
+    # ===------------------------------------------------------------------=== #
+
+    fn add(self, type: TypePtr):
+        capi.arity_add_type(self.a, type)

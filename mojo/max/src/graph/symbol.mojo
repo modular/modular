@@ -62,9 +62,6 @@ struct Symbol(CollectionElement, Stringable):
     # ... to tidy up ...
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__(self, *spans: SliceSymbol) raises -> Symbol:
-        return slice_(self, spans ^)
-
     fn __getitem__(self, span: slice) raises -> Symbol:
         if not span._has_end():
             raise "slice expects stop to be specified"
@@ -72,6 +69,8 @@ struct Symbol(CollectionElement, Stringable):
         let spec = self.tensor_type()
         if len(spec.dims) != 1:
             raise "__getitem__ with slice object on `Symbol` only supports 1D tensors"
+
+        # TODO: Use ops.get, once it supports passing a static type.
 
         var g = self.graph()
         return g.op(
@@ -280,7 +279,7 @@ struct Symbol(CollectionElement, Stringable):
 
 
 @value
-struct Tup:
+struct SymbolTuple(Sized):
     var t: TuplePtr
 
     # ===------------------------------------------------------------------=== #
@@ -331,3 +330,10 @@ struct Tup:
 
     fn __getitem__(self, pos: UInt32) -> Symbol:
         return Symbol(capi.tuple_get_symbol(self.t, pos))
+
+    # ===------------------------------------------------------------------=== #
+    # Mutators
+    # ===------------------------------------------------------------------=== #
+
+    fn add(self, s: Symbol):
+        capi.tuple_add_symbol(self.t, s.s)

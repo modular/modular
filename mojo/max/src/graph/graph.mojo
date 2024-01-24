@@ -7,7 +7,7 @@
 from .attr import AttrMap
 from .capi import AttrPtr, GraphPtr, SymbolPtr, TuplePtr, TypePtr
 from .module import Module
-from .symbol import Symbol, Tup
+from .symbol import Symbol, SymbolTuple
 from .type import dyn, MOType, MOTensor, Arity
 
 from memory.unsafe import Pointer
@@ -34,23 +34,31 @@ struct Graph:
     # nvop - the most generic op builder
     # ===------------------------------------------------------------------=== #
 
-    fn nvop(self, name: StringRef, inputs: Tup) -> Tup:
+    fn nvop(self, name: StringRef, inputs: SymbolTuple) -> SymbolTuple:
         return self.nvop(name, inputs, Arity(), AttrMap())
 
-    fn nvop(self, name: StringRef, inputs: Tup, out_types: Arity) -> Tup:
+    fn nvop(
+        self, name: StringRef, inputs: SymbolTuple, out_types: Arity
+    ) -> SymbolTuple:
         return self.nvop(name, inputs, out_types, AttrMap())
 
-    fn nvop(self, name: StringRef, out_types: Arity, attrs: AttrMap) -> Tup:
-        return self.nvop(name, Tup(), out_types, attrs)
+    fn nvop(
+        self, name: StringRef, out_types: Arity, attrs: AttrMap
+    ) -> SymbolTuple:
+        return self.nvop(name, SymbolTuple(), out_types, attrs)
 
     fn nvop(
-        self, name: StringRef, inputs: Tup, out_types: Arity, attrs: AttrMap
-    ) -> Tup:
+        self,
+        name: StringRef,
+        inputs: SymbolTuple,
+        out_types: Arity,
+        attrs: AttrMap,
+    ) -> SymbolTuple:
         let loc = self.m.unknown_loc()
         let outputs = capi.graph_new_op(
             self.g, loc, name, inputs.t, out_types.to_mlir(self.m), attrs.m
         )
-        return Tup(outputs)
+        return SymbolTuple(outputs)
 
     # ===------------------------------------------------------------------=== #
     # op - shorthands for single-result ops
@@ -58,7 +66,9 @@ struct Graph:
 
     # TODO: s/T/Arity/ when MOTensor can be autoboxed inside an Arity.
 
-    fn op[T: MOType](self, name: StringRef, inputs: Tup, out_type: T) -> Symbol:
+    fn op[
+        T: MOType
+    ](self, name: StringRef, inputs: SymbolTuple, out_type: T) -> Symbol:
         return self.nvop(
             name, inputs, Arity(out_type.to_mlir(self.m)), AttrMap()
         )[0]
@@ -71,7 +81,7 @@ struct Graph:
     fn op[
         T: MOType
     ](
-        self, name: StringRef, inputs: Tup, out_type: T, attrs: AttrMap
+        self, name: StringRef, inputs: SymbolTuple, out_type: T, attrs: AttrMap
     ) -> Symbol:
         return self.nvop(name, inputs, Arity(out_type.to_mlir(self.m)), attrs)[
             0
@@ -127,7 +137,7 @@ struct Graph:
         )
 
     fn output(self) raises:
-        _ = self.nvop("mo.output", Tup())
+        _ = self.nvop("mo.output", SymbolTuple())
 
-    fn output(self, outs: Tup) raises:
+    fn output(self, outs: SymbolTuple) raises:
         _ = self.nvop("mo.output", outs)

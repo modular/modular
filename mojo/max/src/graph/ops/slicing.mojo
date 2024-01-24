@@ -4,63 +4,23 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor import TensorSpec, TensorShape
+from tensor import TensorShape
 
-from max.graph.symbol import Tup
+from max.graph.symbol import SymbolTuple
 from max.graph.type import *
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
+# TODO: Move axis to kwarg-only when that's supported
 # TODO: Cleanup
 
 
-fn _tensor[
-    N: Int
-](shape: TensorShape, data: StaticIntTuple[N]) -> Tensor[DType.int64]:
-    let ptr = DTypePointer[DType.int64].alloc(N)
-    for i in range(N):
-        ptr.store(i, data[i])
-    return Tensor(ptr, shape)
+# ===----------------------------------------------------------------------=== #
+# Slicing
+# ===----------------------------------------------------------------------=== #
 
 
-def index[axis: Int = 0](v: Symbol, idx: Int) -> Symbol:
-    """Index a tensor at a specific dim on a single axis.
-    The output is a tensor omitting the dim `axis` and returning only the
-    part of the tensor at at the specified index of the `axis` dimension."""
-    var g = v.graph()
-    let v_type = v.tensor_type()
-    let rank = v_type.rank()
-
-    var slice_dims = DynamicVector[Int64]()
-    var start = DynamicVector[Int64]()
-    var stop = DynamicVector[Int64]()
-    var step = DynamicVector[Int64]()
-    for i in range(rank):
-        if i == axis:
-            slice_dims.append(1)
-            start.append(idx)
-            stop.append(idx + 1)
-        else:
-            slice_dims.append(v_type.dims[i])
-            start.append(0)
-            stop.append(slice(None, None, None).end)
-        step.append(1)
-
-    let slice = g.op(
-        "mo.slice",
-        (
-            v,
-            g.vector[DType.int64](start),
-            g.vector[DType.int64](stop),
-            g.vector[DType.int64](step),
-        ),
-        MOTensor(v_type.dtype, slice_dims),
-    )
-
-    return squeeze(slice, axis)
-
-
-def gather(input: Symbol, indices: Symbol, axis: Int) -> Symbol:
+def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     var g = input.graph()
     let input_type = input.tensor_type()
     let indices_type = indices.tensor_type()
@@ -90,122 +50,111 @@ def gather(input: Symbol, indices: Symbol, axis: Int) -> Symbol:
     )
 
 
-@value
-struct SliceSymbol:
-    var start: Symbol
-    var stop: Symbol
-    var step: Symbol
+def get(v: Symbol, idx: Int, axis: Int = 0) -> Symbol:
+    var g = v.graph()
+    let v_type = v.tensor_type()
+    let rank = v_type.rank()
 
-    fn __init__(inout self, stop: Symbol) raises:
-        var g = stop.graph()
-        self.__init__(g.scalar(Int64(0)), stop)
+    let v_shape = shape_of(v)
+    if axis < 0:
+        axis = rank + axis
 
-    fn __init__(inout self, start: Symbol, stop: Symbol) raises:
-        var g = stop.graph()
-        self.__init__(start, stop, g.scalar(Int64(1)))
+    var slice_dims = DynamicVector[Int64]()
+    var start = DynamicVector[Symbol]()
+    var stop = DynamicVector[Symbol]()
+    var step = DynamicVector[Int64]()
+    for i in range(rank):
+        if i == axis:
+            slice_dims.append(1)
+            start.append(g.scalar(Int64(idx)))
+            stop.append(g.scalar(Int64(idx + 1)))
+        else:
+            slice_dims.append(v_type.dims[i])
+            start.append(g.scalar(Int64(0)))
+            stop.append(get(v_shape, i))
+        step.append(1)
 
-    fn __init__(inout self, start_stop: (Symbol, Symbol)) raises:
-        self.__init__(start_stop.get[0, Symbol](), start_stop.get[1, Symbol]())
+    let slice = g.op(
+        "mo.slice",
+        (v, stack(start), stack(stop), g.vector[DType.int64](step)),
+        MOTensor(v_type.dtype, slice_dims),
+    )
 
-    fn __init__(inout self, start: Symbol, stop: Symbol, step: Symbol):
-        self.start = start
-        self.stop = stop
-        self.step = step
-
-    fn __init__(inout self, start_stop_step: (Symbol, Symbol, Symbol)):
-        self.__init__(
-            start_stop_step.get[0, Symbol](),
-            start_stop_step.get[1, Symbol](),
-            start_stop_step.get[2, Symbol](),
-        )
+    return squeeze(slice, axis)
 
 
-def slice_(input: Symbol, borrowed *slices: SliceSymbol) -> Symbol:
-    return slice_(input, slices ^)
-
-
-def slice_[  # FIXME(#29464): Should use autoparameterization.
-    elt_is_mutable: __mlir_type.i1,
-    lifetime: AnyLifetime[elt_is_mutable].type,
-](
-    input: Symbol,
-    slices: VariadicListMem[SliceSymbol, elt_is_mutable, lifetime],
-) -> Symbol:
+def get(input: Symbol, *slices: SymbolTuple) -> Symbol:
     let g = input.graph()
     let input_type = input.tensor_type()
 
-    var dims = DynamicVector[Int]()
+    var dims = DynamicVector[Int64]()
     for slice in slices:
-        dims.push_back(dyn().to_int())
+        dims.push_back(dyn())
     for i in range(len(slices), input_type.rank()):
-        dims.push_back(input_type.dims[i].to_int())
+        dims.push_back(input_type.dims[i])
 
-    return slice_(input, dims, slices ^)
-
-
-def slice_(
-    input: Symbol, shape: TensorShape, borrowed *slices: SliceSymbol
-) -> Symbol:
-    return slice_(input, shape, slices ^)
-
-
-def slice_[  # FIXME(#29464): Should use autoparameterization.
-    elt_is_mutable: __mlir_type.i1,
-    lifetime: AnyLifetime[elt_is_mutable].type,
-](
-    input: Symbol,
-    shape: TensorShape,
-    slices: VariadicListMem[SliceSymbol, elt_is_mutable, lifetime],
-) -> Symbol:
-    var g = input.graph()
     var starts = DynamicVector[Symbol]()
     var stops = DynamicVector[Symbol]()
     var steps = DynamicVector[Symbol]()
 
     let input_t = input.tensor_type()
 
-    fn ensure_constant(value: Symbol) raises -> Symbol:
-        let input_t = value.tensor_type()
-        if input_t.num_elements() != 1:
-            raise "slice indicies must be singular"
-        return value if input_t.rank() == 0 else reshape(value)
-
     let slice_max_value = slice(None, None, None).end
-    for dim in range(len(slices)):
-        let slice: SliceSymbol = slices[dim]
-        starts.push_back(ensure_constant(slice.start))
-        stops.push_back(ensure_constant(slice.stop))
-        steps.push_back(ensure_constant(slice.step))
+    for s in slices:
+        starts.push_back(s[][0])
+        stops.push_back(s[][1])
+        if len(s[]) == 3:
+            steps.push_back(s[][2])
+        else:
+            steps.push_back(g.scalar(Int64((1))))
     for dim in range(len(slices), input_t.rank()):
         starts.push_back(g.scalar(Int64(0)))
+        # TODO: This ought to be the dynamic dimension
         stops.push_back(g.scalar(Int64(slice_max_value)))
         steps.push_back(g.scalar(Int64((1))))
 
-    let start = stack[axis=0](starts)
-    let stop = stack[axis=0](stops)
-    let step = stack[axis=0](steps)
-
-    var dims = DynamicVector[Int64]()
-    for i in range(shape.rank()):
-        dims.append(shape[i])
+    let start = stack(starts, axis=0)
+    let stop = stack(stops, axis=0)
+    let step = stack(steps, axis=0)
 
     return g.op(
         "mo.slice", (input, start, stop, step), MOTensor(input_t.dtype, dims)
     )
 
 
-def concat[axis: Int](*values: Symbol) -> Symbol:
-    return concat[axis](values)
+# ===----------------------------------------------------------------------=== #
+# Splitting
+# ===----------------------------------------------------------------------=== #
 
 
-def concat[axis: Int](values: VariadicList[Symbol]) -> Symbol:
-    var vec = DynamicVector[Symbol](len(values))
-    for value in values:
-        vec.append(value)
-    return concat[axis](vec)
+def split[
+    n: Int
+](x: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> SymbolTuple:
+    var g = x.graph()
+    let x_type = x.tensor_type()
+    let norm_axis = axis + x_type.rank() if axis < 0 else axis
+
+    var split_sizes = DynamicVector[Int64]()
+    let out_types = Arity()
+    for i in range(n):
+        split_sizes.append(sizes[i])
+        var out_dims = x_type.dims
+        out_dims[norm_axis] = sizes[i]
+        out_types.add(MOTensor(x_type.dtype, out_dims).to_mlir(g.m))
+
+    return g.nvop(
+        "mo.split",
+        (x, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))),
+        out_types,
+    )
 
 
-def concat[axis: Int](values: DynamicVector[Symbol]) -> Symbol:
+# ===----------------------------------------------------------------------=== #
+# Concatenation
+# ===----------------------------------------------------------------------=== #
+
+
+def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
     if not len(values):
         raise "must concat at least 1 value"
     let v0 = values[0]
@@ -252,41 +201,8 @@ def concat[axis: Int](values: DynamicVector[Symbol]) -> Symbol:
     return g.op("mo.concat", concat_args, MOTensor(v0_type.dtype, dims))
 
 
-def stack[axis: Int](values: DynamicVector[Symbol]) -> Symbol:
-    # axis treated like an unsqueeze index
+def stack(values: SymbolTuple, axis: Int = 0) -> Symbol:
     var unsqueezed = DynamicVector[Symbol]()
     for i in range(len(values)):
         unsqueezed.push_back(unsqueeze(values[i], axis))
-    return concat[axis](unsqueezed)
-
-
-def stack[axis: Int](*values: Symbol) -> Symbol:
-    var vec = DynamicVector[Symbol](len(values))
-    for value in values:
-        vec.append(value)
-    return stack[axis](vec)
-
-
-def split[axis: Int](x: Symbol, split_sizes: (Int, Int)) -> (Symbol, Symbol):
-    let tup = split[axis, N=2](
-        x,
-        StaticIntTuple[2](split_sizes.get[0, Int](), split_sizes.get[1, Int]()),
-    )
-    return (tup[0], tup[1])
-
-
-def split[axis: Int, N: Int](x: Symbol, split_sizes: StaticIntTuple[N]) -> Tup:
-    var g = x.graph()
-    let sizes = g.constant(_tensor[N](TensorShape(N), split_sizes))
-
-    let x_type = x.tensor_type()
-    var out_dims = DynamicVector[Int64]()
-    for i in range(x_type.rank()):
-        out_dims.append(dyn())
-    let split_type = MOTensor(x_type.dtype, out_dims).to_mlir(g.m)
-
-    return g.nvop(
-        "mo.split",
-        (x, sizes, g.scalar(Int64(axis))),
-        Arity(split_type, split_type),
-    )
+    return concat(unsqueezed, axis=axis)

@@ -171,10 +171,7 @@ fn attr_new_tensor(
 
 
 fn attr_new_tensor_from_file(
-    module: ModulePtr,
-    name: StringRef,
-    file_name: StringRef,
-    type: TypePtr,
+    module: ModulePtr, name: StringRef, file_name: StringRef, type: TypePtr
 ) -> AttrPtr:
     return cfunc[fn (ModulePtr, StringRef, StringRef, TypePtr) -> AttrPtr](
         "MAXG_attrNewTensorFromFile"
@@ -182,9 +179,7 @@ fn attr_new_tensor_from_file(
 
 
 fn attr_new_string(
-    module: ModulePtr,
-    name: StringRef,
-    value: StringRef,
+    module: ModulePtr, name: StringRef, value: StringRef
 ) -> AttrPtr:
     return cfunc[fn (ModulePtr, StringRef, StringRef) -> AttrPtr](
         "MAXG_attrNewString"
@@ -200,7 +195,7 @@ fn attr_map_new() -> AttrMapPtr:
     return cfunc[fn () -> AttrMapPtr]("MAXG_attrMapNew")()
 
 
-fn attr_map_add_attr(inout m: AttrMapPtr, a: AttrPtr):
+fn attr_map_add_attr(m: AttrMapPtr, a: AttrPtr):
     return cfunc[fn (AttrMapPtr, AttrPtr) -> NoneType]("MAXG_attrMapAddAttr")(
         m, a
     )
@@ -216,7 +211,7 @@ fn attr_map_size(m: AttrMapPtr) -> Int:
 
 
 fn graph_new(
-    inout module: ModulePtr,
+    module: ModulePtr,
     loc: LocPtr,
     name: StringRef,
     inTypes: ArityPtr,
@@ -231,10 +226,7 @@ fn graph_get_module(graph: GraphPtr) -> ModulePtr:
     return cfunc[fn (GraphPtr) -> ModulePtr]("MAXG_graphGetModule")(graph)
 
 
-fn graph_get_arg(
-    graph: GraphPtr,
-    pos: UInt32,
-) -> SymbolPtr:
+fn graph_get_arg(graph: GraphPtr, pos: UInt32) -> SymbolPtr:
     return cfunc[fn (GraphPtr, UInt32) -> SymbolPtr]("MAXG_graphGetArg")(
         graph, pos
     )
@@ -319,7 +311,7 @@ fn tuple_size(tup: TuplePtr) -> Int:
     return cfunc[fn (TuplePtr) -> Int]("MAXG_tupleSize")(tup)
 
 
-fn tuple_add_symbol(inout tup: TuplePtr, symbol: SymbolPtr):
+fn tuple_add_symbol(tup: TuplePtr, symbol: SymbolPtr):
     return cfunc[fn (TuplePtr, SymbolPtr) -> NoneType]("MAXG_tupleAddSymbol")(
         tup, symbol
     )
@@ -390,7 +382,7 @@ fn arity_size(tup: ArityPtr) -> Int:
     return cfunc[fn (ArityPtr) -> Int]("MAXG_aritySize")(tup)
 
 
-fn arity_add_type(inout arity: ArityPtr, t: TypePtr):
+fn arity_add_type(arity: ArityPtr, t: TypePtr):
     return cfunc[fn (ArityPtr, TypePtr) -> NoneType]("MAXG_arityAddType")(
         arity, t
     )
