@@ -2017,7 +2017,7 @@ kgen.generator export @main() {
 
 // -----
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none)>
+!capture = !kgen.struct<(string, index, (!kgen.pointer<none> borrow) capturing -> !kgen.none)>
 
 kgen.generator @lambda() capturing -> index {
   %0 = pop.compiler.global_load "var" : index
@@ -2031,16 +2031,17 @@ kgen.generator @captures<f: () capturing -> index>() capturing -> index {
 
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
-  // CHECK-NEXT: struct<(string, index, (!kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none)> = <{ "{{.*}}", 1, [[POPULATE:@.*]] }>
+  // CHECK-NEXT: struct<(string, index, (!kgen.pointer<none> borrow) capturing -> !kgen.none)> = <{ "{{.*}}", 1, [[POPULATE:@.*]] }>
   %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), asm, :() capturing -> index @captures<:() capturing -> index @lambda>)>
   kgen.return
 }
 
-// CHECK: kgen.func [[POPULATE]](%arg0: !kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none always_inline
+// CHECK: kgen.func [[POPULATE]](%arg0: !kgen.pointer<none> borrow) capturing -> !kgen.none always_inline
 // CHECK: [[VAR:%.*]] = pop.compiler.global_load "var" : index
 // CHECK: [[ARG:%.*]] = pop.stack_allocation
 // CHECK: pop.store [[VAR]], [[ARG]]
-// CHECK: [[PTR:%.*]] = pop.offset %arg0[%index0]
+// CHECK: [[ARGCAST:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<pointer<none>>
+// CHECK: [[PTR:%.*]] = pop.offset [[ARGCAST]][%index0]
 // CHECK: [[RAW:%.*]] = pop.pointer.bitcast [[ARG]]
 // CHECK: pop.store [[RAW]], [[PTR]]
 
