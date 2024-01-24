@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: mojo package --parsing-stdlib %mojo_args %mojo_user_pkg -o %t.mojopkg
+# RUN: mojo package %mojo_args %mojo_user_pkg -o %t.mojopkg
 # RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %t.mojopkg | FileCheck %s
 
 from max.engine import (
