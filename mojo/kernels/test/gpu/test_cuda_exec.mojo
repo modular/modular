@@ -65,7 +65,7 @@ fn run_vec_add() raises:
 
     @parameter
     @always_inline
-    fn populate(ptr: Pointer[NoneType]):
+    fn populate(ptr: Pointer[Pointer[NoneType]]):
         return
 
     let block_dim = 32
