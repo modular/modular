@@ -122,9 +122,36 @@ void M::printParenOperandListWithShadowing(
   printer << ")";
 }
 
-ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
-                                                    OperationState &state,
-                                                    Type defaultType) {
+ParseResult M::parseParenOperandListWithDefaultType(
+    OpAsmParser &parser,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &unresolvedOperands,
+    SmallVectorImpl<Type> &operandTypes, Type defaultType) {
+  auto parseOperandFn = [&]() -> ParseResult {
+    // Parse the unresolved operand.
+    OpAsmParser::UnresolvedOperand &unresolvedOperand =
+        unresolvedOperands.emplace_back();
+
+    if (parser.parseOperand(unresolvedOperand))
+      return failure();
+
+    // Parse optional type annotation
+    Type type = defaultType;
+    if (succeeded(parser.parseOptionalColon())) {
+      if (parser.parseType(type))
+        return failure();
+    }
+    operandTypes.push_back(type);
+
+    return success();
+  };
+
+  return parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
+                                        parseOperandFn, "in operand list");
+}
+
+ParseResult M::parseParenOperandListWithDefaultType(
+    OpAsmParser &parser, SmallVectorImpl<Value> &operands,
+    SmallVectorImpl<Type> &operandTypes, Type defaultType) {
   auto parseOperandFn = [&]() -> ParseResult {
     // The operand to capture as part of the ops inputs.
     OpAsmParser::UnresolvedOperand unresolvedOperand;
@@ -140,8 +167,10 @@ ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
         return failure();
     }
 
+    operandTypes.push_back(type);
+
     // Resolve the input operand into the operation state.
-    if (parser.resolveOperand(unresolvedOperand, type, state.operands))
+    if (parser.resolveOperand(unresolvedOperand, type, operands))
       return failure();
 
     return success();
@@ -149,6 +178,14 @@ ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
 
   return parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
                                         parseOperandFn, "in operand list");
+}
+
+ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
+                                                    OperationState &state,
+                                                    Type defaultType) {
+  SmallVector<Type> operandTypes;
+  return parseParenOperandListWithDefaultType(parser, state.operands,
+                                              operandTypes, defaultType);
 }
 
 void M::printParenOperandListWithDefaultType(OpAsmPrinter &printer,

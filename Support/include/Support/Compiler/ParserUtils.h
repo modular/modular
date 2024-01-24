@@ -52,7 +52,30 @@ void printParenOperandListWithShadowing(
     OpAsmPrinter &printer, const OperandRange &operands,
     const Block::BlockArgListType &arguments, bool isIsolatedFromAbove);
 
+/// Parse a list of operands that have optional types. If an operand in the list
+/// does not have a specified type, the default type is assigned to the operand.
+///
+/// Basic form is (%a, %b: f32). %a will be assigned the default type, and %b
+/// will have type f32.
+ParseResult parseParenOperandListWithDefaultType(
+    OpAsmParser &parser,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+    SmallVectorImpl<Type> &operandTypes, Type defaultType);
+
 /// Parses a parenthesized operand list with optional type annotations.
+/// The given optional type is used if no type annotation is given.
+/// Additionally, populates operandList with the types of the operands.
+///
+/// Eg: Basic form:
+///   (%a: i32, %b: f32)
+/// Eg: With default type taken from defaultType:
+///   (%a, %b: f32)
+ParseResult parseParenOperandListWithDefaultType(
+    OpAsmParser &parser, SmallVectorImpl<Value> &operands,
+    SmallVectorImpl<Type> &operandTypes, Type defaultType);
+
+/// Parses a parenthesized operand list with optional type annotations.
+/// The operands are gotten from the OperationState argument.
 /// The given optional type is used if no type annotation is given.
 ///
 /// Eg: Basic form:
