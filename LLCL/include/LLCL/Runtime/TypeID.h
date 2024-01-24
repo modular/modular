@@ -17,7 +17,7 @@
 #define LLCL_RUNTIME_TYPEID_H
 
 #include "LLCL/Runtime/Globals/Globals.h"
-#include "LLCL/Support/ConcurrentAppendingVector.h"
+#include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"

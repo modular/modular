@@ -7,8 +7,8 @@
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "LLCL/Support/SpinWaiter.h"
+#include "Support/ADT/ConcurrentAppendingVector.h"
 #include "llvm/Support/Format.h"
 
 using namespace M::LLCL;
