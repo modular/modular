@@ -11,10 +11,12 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/Threading/ThreadLocalCache.h"
@@ -43,6 +45,65 @@ static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
 }
 
 namespace {
+
+template <typename T>
+static Attribute arrayAttrToDenseArrayAttr(Builder builder,
+                                           POP::ArrayAttr array) {
+  SmallVector<T> values =
+      llvm::map_to_vector(array.getValues(), [](Attribute attr) -> T {
+        if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
+          return static_cast<T>(integerAttr.getInt());
+        return static_cast<T>(::cast<POP::SIMDAttr>(attr)
+                                  .getValues()
+                                  .front()
+                                  .getIntVal()
+                                  .getSExtValue());
+      });
+  if constexpr (std::is_same_v<T, int8_t>)
+    return builder.getDenseI8ArrayAttr(values);
+  else if constexpr (std::is_same_v<T, int16_t>)
+    return builder.getDenseI16ArrayAttr(values);
+  else if constexpr (std::is_same_v<T, int32_t>)
+    return builder.getDenseI32ArrayAttr(values);
+  else
+    return builder.getDenseI64ArrayAttr(values);
+}
+
+static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
+                                         StringRef name, POP::ArrayAttr array,
+                                         mlir::Type elementType) {
+  if (auto type = dyn_cast<POP::SIMDType>(elementType)) {
+    if (type.getResolvedSize().value_or(-1) != 1)
+      return Error("ArrayAttr elements must be a scalar");
+
+    std::optional<KGENDType> dtype = type.getResolvedDType();
+
+    if (!dtype)
+      return Error("unable to resolve the dtype for the SIMD value");
+
+    if (!dtype->isInt())
+      return Error("ArrayAttr must be an integral dtype");
+
+    return addArrayAttrToDict(
+        builder, attrs, name, array,
+        getEquivalentIntegerType(builder.getContext(), *dtype));
+  }
+
+  if (auto type = dyn_cast<IntegerType>(elementType);
+      type && llvm::is_contained({8, 16, 32, 64}, type.getWidth())) {
+    if (type.getWidth() == 8)
+      attrs.append(name, arrayAttrToDenseArrayAttr<int8_t>(builder, array));
+    else if (type.getWidth() == 16)
+      attrs.append(name, arrayAttrToDenseArrayAttr<int16_t>(builder, array));
+    else if (type.getWidth() == 32)
+      attrs.append(name, arrayAttrToDenseArrayAttr<int32_t>(builder, array));
+    else
+      attrs.append(name, arrayAttrToDenseArrayAttr<int64_t>(builder, array));
+    return success();
+  }
+
+  return Error("non-integral dtypes are not supported");
+}
 
 //===----------------------------------------------------------------------===//
 // ConvertKGENFunc
@@ -98,12 +159,20 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
     } else if (auto str = dyn_cast<StringAttr>(value)) {
       // Strip the type from string attributes.
       attrs.append(attr.getName(), b.getStringAttr(str.getValue()));
+    } else if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+      mlir::Type elementType = array.getType().getElementType();
+      if (auto err =
+              addArrayAttrToDict(b, attrs, attr.getName(), array, elementType);
+          err.isError())
+        return mlir::emitError(func.getLoc(), "unsupported array type: ")
+               << array << " because " << err.takeError();
+    } else if (auto array = dyn_cast<mlir::DenseI32ArrayAttr>(value)) {
+      attrs.append(attr.getName(), array);
     } else {
       return mlir::emitError(func.getLoc(),
                              "unsupported LLVM metadata attribute kind: ")
              << value;
     }
-    // TODO(amdgpu): DenseI32ArrayAttr for ROCDL work group size.
   }
 
   // Update the attributes.
@@ -138,8 +207,8 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
-      // Exported functions to the NVVM target get a special metadata attribute
-      // to tell LLVM that these are kernel functions.
+      // Exported functions to the NVVM target get a special metadata
+      // attribute to tell LLVM that these are kernel functions.
       if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
                              target.getTriple().getArch()))
         funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
@@ -299,8 +368,9 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 // ConvertKGENParamConstant
 //===----------------------------------------------------------------------===//
 
-// Helper for ConvertKGENParamConstant and ConvertKGENParamMaterialize.  Emit a
-// good error when the type to be materialized is a non-materializable literal.
+// Helper for ConvertKGENParamConstant and ConvertKGENParamMaterialize.  Emit
+// a good error when the type to be materialized is a non-materializable
+// literal.
 static void failLiteralMaterialization(Type t, ImplicitLocOpBuilder b) {
   if (isa<KGEN::IntLiteralType>(t))
     b.emitError("can't materialize IntLiteral in dynamic context");
@@ -395,8 +465,8 @@ struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
   matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Get llvm types to compare because something like
-    // !kgen.pointer<index> is same as !kgen.pointer<scalar<index>> when lowered
-    // to llvm and should be allowed.
+    // !kgen.pointer<index> is same as !kgen.pointer<scalar<index>> when
+    // lowered to llvm and should be allowed.
     Type resultType = getTypeConverter()->convertType(op.getType());
     Type inputType = getTypeConverter()->convertType(op.getInput().getType());
     rewriter.replaceOp(op, op.getInput());
