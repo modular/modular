@@ -496,7 +496,7 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 
 # CHECK-LABEL: lit.func @"callVariadic{{.*}})"<
-# CHECK-SAME: [[P:.*_p]][p]: !Int>
+# CHECK-SAME: [[P:.*]][p]: !Int>
 fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%variadic)
@@ -539,7 +539,7 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
 
 
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args: !kgen.pack<[[TS]]> borrow)
+# CHECK-SAME: [[TS:.*]][Ts]: variadic<type>>(%args: !kgen.pack<[[TS]]> borrow)
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
     # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
     # CHECK-NEXT: lit.ref.store %args, %copy
@@ -547,7 +547,7 @@ fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
+# CHECK-SAME: [[TS:.*]][Ts]: variadic<type>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
     # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
     # CHECK-NEXT: lit.ref.store %args, %copy

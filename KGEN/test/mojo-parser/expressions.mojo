@@ -443,7 +443,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   _ = d or b
 
 # CHECK-LABEL: lit.func @"paramAndOr{{.*}}()"
-# CHECK-SAME: <[[A:.*_a]][a]: !Boolish, [[B:.*_b]][b]: !Boolish>
+# CHECK-SAME: <[[A:.*]][a]: !Boolish, [[B:.*]][b]: !Boolish>
 fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
@@ -535,7 +535,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
         i += 1
 
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
-# CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool>
+# CHECK-SAME: <[[COND:.*]][cond]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
@@ -547,13 +547,13 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(!Int borrow, |) -> !Int>>(%a: !Int borrow) -> !Int
+# CHECK-SAME: <[[CALLABLE:.*]][callable]: !lit.signature<(!Int borrow, |) -> !Int>>(%a: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: [[CALLABLE]]](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, [[B:.*_b]][b]: !Int>(%a: !Int borrow) -> !Int
+# CHECK-SAME: [[CALLABLE:.*]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, [[B:.*]][b]: !Int>(%a: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
   return callable[b](a)
@@ -573,14 +573,14 @@ fn returnIndex2() -> Int:
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
+# CHECK-SAME: <[[CALLABLE:.*]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}[[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
-# CHECK-SAME: <[[A:.*_a]][a]: !Int, [[A2:.*_a2]][a2]: !Int>
+# CHECK-SAME: <[[A:.*]][a]: !Int, [[A2:.*]][a2]: !Int>
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
   alias b = a-a
@@ -1377,7 +1377,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
         pass
 
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
-# CHECK-SAME: {{.*}}[idx]: !Int, [[A:.*_a]][a]: variadic<!Int>>
+# CHECK-SAME: {{.*}}[idx]: !Int, [[A:.*]][a]: variadic<!Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.varlet.decl
     # CHECK-NEXT: %0 = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)

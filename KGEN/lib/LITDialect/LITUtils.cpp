@@ -33,19 +33,9 @@ bool LIT::isTypeExpr(TypedAttr attr) {
 // Parameter Mangling
 //===----------------------------------------------------------------------===//
 
-std::string LIT::mangleParameter(const Twine &baseName, unsigned line,
-                                 unsigned col) {
-  return ("_" + Twine(line) + "x" + Twine(col) + "_" + baseName).str();
-}
-
 StringRef LIT::demangleParameterName(StringRef name) {
-  llvm::Regex re("^_[0-9]+x[0-9]+_");
-  if (!re.match(name))
-    return name.take_front(name.find('`'));
-  // Strip the prefix. Drop the leading underscore and the drop until the second
-  // underscore. This way, the function can avoid returning a `std::string`.
-  name = name.drop_front();
-  return name.drop_front(name.find('_') + 1);
+  // Strip the "`" postfix and and trailing depth and unique ID.
+  return name.empty() ? name : name.take_front(name.find('`'));
 }
 
 /// Hide the implementation of `demangleIfNeeded` from the header file by

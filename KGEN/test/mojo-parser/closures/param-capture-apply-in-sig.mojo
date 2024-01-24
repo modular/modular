@@ -17,7 +17,7 @@ struct Foo[x: Int]:
         return self.b
 
 
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*_a]], [[Y:\*".*"]]: {{.*}}Foo<[[a]]>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*]], [[Y:\*".*"]]: {{.*}}Foo<[[a]]>
 # CHECK: lit.func @"__call__
 # CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<[[a]]>, [[Y]])>
 

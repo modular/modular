@@ -294,12 +294,6 @@ ASTType SharedState::getTypeCheckErrorType() const {
 ASTType SharedState::getNoneType() const { return impl->noneType; }
 NoneAttr SharedState::getNoneAttr() const { return impl->noneAttr; }
 
-StringAttr SharedState::getMangledParameterName(const Twine &baseName,
-                                                SMLoc loc) {
-  auto [line, col] = getSourceMgr().getLineAndColumn(loc);
-  return StringAttr::get(getContext(), mangleParameter(baseName, line, col));
-}
-
 StringAttr SharedState::getMangledModuleName(MLIRContext *ctx,
                                              StringRef moduleName) {
   return StringAttr::get(ctx, "$" + moduleName);
