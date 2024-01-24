@@ -6,6 +6,7 @@
 
 from memory.buffer import Buffer, NDBuffer
 from algorithm.reduction import _reduce_generator
+from utils._optional import Optional
 
 from utils.index import Index
 from utils.list import Dim, DimList
@@ -13,38 +14,6 @@ from MatmulUtils import elementwise_lambda_fn_sig_type
 
 
 # Parallelized version of Gemv
-
-
-fn gemv[
-    parallelize: Bool,
-    c_size: Dim,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_size: Dim,
-    b_type: DType,
-](
-    c_buf: Buffer[c_size, c_type],
-    a_buf: NDBuffer[2, a_shape, a_type],
-    b_buf: Buffer[b_size, b_type],
-):
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
-
-    gemv[
-        parallelize,
-        c_size,
-        c_type,
-        a_shape,
-        a_type,
-        b_size,
-        b_type,
-        False,
-        null_lambda,
-    ](c_buf, a_buf, b_buf)
 
 
 @always_inline
@@ -56,8 +25,7 @@ fn gemv[
     a_type: DType,
     b_size: Dim,
     b_type: DType,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
 ](
     c_buf: Buffer[c_size, c_type],
     a_buf: NDBuffer[2, a_shape, a_type],
@@ -84,11 +52,12 @@ fn gemv[
         out_type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank], value: SIMD[out_type, width]):
         @parameter
-        if elementwise_epilogue_enabled:
+        if elementwise_lambda_fn:
+            alias func = elementwise_lambda_fn.value()
 
             @unroll
             for i in range(width):
-                elementwise_lambda_fn[out_type, 1]((idx[0] + i, 0), value[i])
+                func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
             c_buf.simd_store[width](idx[0], value.cast[c_type]())
 

@@ -67,12 +67,6 @@ fn test_gemv():
 
     # Validate results from serial and parallel implementations
 
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
-
     out.zero()
     gemv[parallelize=False](out, lhs, rhs)
 
@@ -163,20 +157,7 @@ fn test_gemv():
         @always_inline
         @parameter
         fn bench_fn_matmul():
-            matmul[
-                type,
-                DimList.create_unknown[2](),
-                type,
-                DimList.create_unknown[2](),
-                type,
-                DimList.create_unknown[2](),
-                False,  # transpose_a
-                False,  # transpose_b
-                False,  # b_packed
-                False,  # elementwise_epilogue_enabled
-                null_lambda,
-                False,  # saturated_vnni
-            ](out_mat, lhs, rhs_mat)
+            matmul(out_mat, lhs, rhs_mat)
 
         bench_fn_matmul()
 

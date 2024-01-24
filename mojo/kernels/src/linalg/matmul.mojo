@@ -2305,9 +2305,7 @@ fn _small_matmul[
     b_shape: DimList,
     c_shape: DimList,
     transpose_b: Bool,
-    epilogue_wrapper: fn[type: DType, width: Int] (
-        StaticIntTuple[2], SIMD[type, width]
-    ) capturing -> None,
+    epilogue_wrapper: Optional[elementwise_lambda_fn_sig_type],
 ](
     a: NDBuffer[2, a_shape, type],
     b: NDBuffer[2, b_shape, type],
@@ -2340,9 +2338,14 @@ fn _small_matmul[
 
                 vectorize_unroll[simd_width, unroll_factor, compute_fn](K)
 
-                epilogue_wrapper[type, 1](
-                    Index(m, n), acc_vector.reduce_add() + acc_scalar
-                )
+                let val = acc_vector.reduce_add() + acc_scalar
+
+                @parameter
+                if epilogue_wrapper:
+                    alias func = epilogue_wrapper.value()
+                    func[type, 1](Index(m, n), val)
+                else:
+                    c[Index(m, n)] = val
     else:
 
         @parameter
@@ -2357,9 +2360,14 @@ fn _small_matmul[
         @parameter
         @always_inline
         fn last_update[
-            type: DType, width: Int
-        ](coords: StaticIntTuple[2], val: SIMD[type, width]):
-            epilogue_wrapper[type, width](coords, val)
+            _type: DType, width: Int
+        ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
+            @parameter
+            if epilogue_wrapper:
+                alias func = epilogue_wrapper.value()
+                func[_type, width](coords, val)
+            else:
+                c.simd_store[width](coords, rebind[SIMD[type, width]](val))
 
         @always_inline
         @parameter
@@ -2938,8 +2946,7 @@ fn _matmul_gpu[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
@@ -2974,7 +2981,7 @@ fn _matmul_gpu[
     let use_32bit_indexing = m * n < max_uint32 and m * k < max_uint32 and n * k < max_uint32
 
     @parameter
-    if elementwise_epilogue_enabled:
+    if elementwise_lambda_fn:
         if use_32bit_indexing:
             _matmul_gpu_dispatch[
                 a_type,
@@ -3240,8 +3247,7 @@ fn _matmul_cpu[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
@@ -3270,165 +3276,6 @@ fn _matmul_cpu[
             rebind[NDBuffer[2, b_shape, a_type]](b),
             rebind[NDBuffer[2, c_shape, a_type]](c),
         )
-
-    matmul[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        elementwise_epilogue_enabled,
-        elementwise_lambda_fn,
-        saturated_vnni,
-    ](c, a, b, num_threads)
-
-
-@always_inline
-fn matmul[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-](
-    c: NDBuffer[2, c_shape, c_type],
-    a: NDBuffer[2, a_shape, a_type],
-    b: NDBuffer[2, b_shape, b_type],
-    num_threads: Int = -1,
-):
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
-
-    matmul[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        False,
-        null_lambda,
-        False,
-    ](c, a, b, num_threads)
-
-
-@always_inline
-fn matmul[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
-    saturated_vnni: Bool,
-    single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
-](
-    c: NDBuffer[2, c_shape, c_type],
-    a: NDBuffer[2, a_shape, a_type],
-    b: NDBuffer[2, b_shape, b_type],
-    num_threads: Int = -1,
-):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
-    func[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        elementwise_epilogue_enabled,
-        elementwise_lambda_fn,
-        saturated_vnni,
-        single_thread_blocking_override,
-    ](c, a, b, num_threads)
-
-
-@always_inline
-fn matmul[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-    saturated_vnni: Bool,
-](
-    c: NDBuffer[2, c_shape, c_type],
-    a: NDBuffer[2, a_shape, a_type],
-    b: NDBuffer[2, b_shape, b_type],
-    num_threads: Int = -1,
-):
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
-
-    matmul[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        False,
-        null_lambda,
-        saturated_vnni,
-    ](c, a, b, num_threads)
-
-
-from runtime.tracing import Trace, TraceLevel
-
-
-fn matmul[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
-    saturated_vnni: Bool,
-](
-    c: NDBuffer[2, c_shape, c_type],
-    a: NDBuffer[2, a_shape, a_type],
-    b: NDBuffer[2, b_shape, b_type],
-    num_threads: Int = -1,
-):
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
@@ -3449,7 +3296,6 @@ fn matmul[
             a_type=a_type,
             b_size = Dim(),
             b_type=b_type,
-            elementwise_epilogue_enabled=elementwise_epilogue_enabled,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
@@ -3541,7 +3387,6 @@ fn matmul[
                 transpose_a,
                 transpose_b,
                 b_packed,
-                elementwise_epilogue_enabled,
                 elementwise_lambda_fn,
                 saturated_vnni,
             ](
@@ -3564,6 +3409,46 @@ fn matmul[
         a_packed_ptr.free()
 
 
+@always_inline
+fn matmul[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
+    num_threads: Int = -1,
+):
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
+
+    func[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_lambda_fn,
+        saturated_vnni,
+        single_thread_blocking_override,
+    ](c, a, b, num_threads)
+
+
 fn _submatmul_sequential_sync[
     a_type: DType,
     a_shape: DimList,
@@ -3574,8 +3459,7 @@ fn _submatmul_sequential_sync[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
 ](
@@ -3598,16 +3482,20 @@ fn _submatmul_sequential_sync[
         ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-            elementwise_epilogue_c_tile[
-                mm_config.simd_size,
-                c_type,
-                mm_config.shape_c,
-                elementwise_lambda_fn,
-            ](
-                offset,
-                shape,
-                rebind[NDBuffer[2, mm_config.shape_c, c_type]](c),
-            )
+            @parameter
+            if elementwise_lambda_fn:
+                elementwise_epilogue_c_tile[
+                    mm_config.simd_size,
+                    c_type,
+                    mm_config.shape_c,
+                    elementwise_lambda_fn.value(),
+                ](
+                    offset,
+                    shape,
+                    rebind[NDBuffer[2, mm_config.shape_c, c_type]](c),
+                )
+            else:
+                pass
 
         TiledMatmul[
             mm_config,
@@ -3618,7 +3506,7 @@ fn _submatmul_sequential_sync[
             False,
             transpose_b,
             b_packed,
-            elementwise_epilogue_enabled,
+            elementwise_lambda_fn.__bool__(),
             rowwise_epilogue_enabled,
         ].run(
             rebind[NDBuffer[2, mm_config.shape_c, c_type]](c),
@@ -3643,48 +3531,7 @@ fn _submatmul_sequential_sync[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-](
-    c: NDBuffer[2, c_shape, c_type],
-    a: NDBuffer[2, a_shape, a_type],
-    b: NDBuffer[2, b_shape, b_type],
-    sub_matrix_shape: GemmShape,
-    sub_matrix_offset: GemmShape,
-):
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
-
-    _submatmul_sequential_sync[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        # elementwise_epilogue_enabled,
-        False,
-        null_lambda,
-        False,
-    ](c, a, b, sub_matrix_shape, sub_matrix_offset)
-
-
-fn _submatmul_sequential_sync[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
     saturated_vnni: Bool,
 ](
     c: NDBuffer[2, c_shape, c_type],
@@ -3706,7 +3553,6 @@ fn _submatmul_sequential_sync[
         transpose_a,
         transpose_b,
         b_packed,
-        elementwise_epilogue_enabled,
         elementwise_lambda_fn,
         False,
         saturated_vnni,

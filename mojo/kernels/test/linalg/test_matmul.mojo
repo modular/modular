@@ -138,10 +138,9 @@ fn test_matmul[
         DimList.create_unknown[2](),
         c_type,
         DimList.create_unknown[2](),
-        False,
         transpose_b,
-        b_packed,
-        saturated,
+        b_packed=b_packed,
+        saturated_vnni=saturated,
     ](c, a, bp)
 
     gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)

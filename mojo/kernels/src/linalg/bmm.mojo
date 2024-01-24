@@ -22,6 +22,7 @@ from MatmulUtils import (
     get_partitioned_matmul,
     is_critical_stride,
     partition_work,
+    elementwise_lambda_fn_sig_type as matmul_2d_epilogue_sig_type,
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
@@ -472,13 +473,14 @@ fn _batched_matmul_cpu[
                 DimList.create_unknown[2](),
                 c_type,
                 DimList.create_unknown[2](),
-                False,
-                adj_b,
-                False,  # b_packed
-                elementwise_epilogue_enabled,
-                elementwise_lambda_2d,
-                rowwise_epilogue_enabled,
-                saturated_vnni,
+                transpose_a=False,
+                transpose_b=adj_b,
+                b_packed=False,
+                elementwise_lambda_fn = Optional[matmul_2d_epilogue_sig_type](
+                    elementwise_lambda_2d
+                ) if elementwise_epilogue_enabled else None,
+                rowwise_epilogue_enabled=rowwise_epilogue_enabled,
+                saturated_vnni=saturated_vnni,
             ](
                 c_view,
                 a_view,
@@ -528,9 +530,9 @@ fn batched_matmul[
     ](c_buf, a_buf, b_buf, rowwise_epilogue)
 
 
-alias elementwise_lambda_fn_sig_type = fn[
-    c_type: DType, width: Int, rank: Int
-] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
+alias bmm_epilogue_sig_type = fn[c_type: DType, width: Int, rank: Int] (
+    StaticIntTuple[rank], SIMD[c_type, width]
+) capturing -> None
 
 
 fn batched_matmul_kernel[
@@ -541,7 +543,7 @@ fn batched_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[bmm_epilogue_sig_type] = None,
 ](
     c_buff: NDBuffer[3, c_shape, c_type],
     a_buff: NDBuffer[3, a_shape, a_type],
@@ -585,7 +587,7 @@ fn _batched_matmul_gpu[
     adj_a: Bool,
     adj_b: Bool,
     elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
+    elementwise_epilogue_fn: bmm_epilogue_sig_type,
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
 ](
@@ -653,7 +655,7 @@ fn batched_matmul[
     adj_a: Bool,
     adj_b: Bool,
     elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
+    elementwise_epilogue_fn: bmm_epilogue_sig_type,
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
     target: StringLiteral = "cpu",
