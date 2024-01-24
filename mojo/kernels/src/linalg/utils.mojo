@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, div_ceil, max, min, sqrt
+from math import align_up, align_down, div_ceil, max, min, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     has_avx2,
@@ -522,7 +522,7 @@ fn get_partitioned_matmul[
             # i8mm needs to have even partitions in m.
             # Only the last range is allowed to be odd.
             var partition = get_partitioned_matmul_mojo[
-                a_row_size, pack_inner_size, use_i8mm
+                a_type, b_type, c_type, a_row_size, pack_inner_size, use_i8mm
             ](m // 2, n, k, task_id, num_tasks)
 
             let t0 = 2 * partition.offset[0]
@@ -533,9 +533,9 @@ fn get_partitioned_matmul[
             partition.shape[0] = t1
             return partition
         else:
-            return get_partitioned_matmul_mojo[a_row_size, pack_inner_size](
-                m, n, k, task_id, num_tasks
-            )
+            return get_partitioned_matmul_mojo[
+                a_type, b_type, c_type, a_row_size, pack_inner_size
+            ](m, n, k, task_id, num_tasks)
     else:
         return get_partitioned_matmul_im2col[a_row_size, pack_inner_size](
             m, n, k, task_id, num_tasks
@@ -543,19 +543,102 @@ fn get_partitioned_matmul[
 
 
 fn get_partitioned_matmul_mojo[
-    micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool = False
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    micro_kernel_m: Int,
+    micro_kernel_n: Int,
+    use_i8mm: Bool = False,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    if num_tasks >= 32:
-        return get_partitioned_matmul_mojo_v2[
-            micro_kernel_m, micro_kernel_n, use_i8mm
-        ](m, n, k, task_id, num_tasks)
+    # We can remove version once the new partitioning scheme is accepted.
+    alias version = 0
+    if version == 0:
+        let shape = get_partitioned_matmul_mojo_shape[
+            a_type, b_type, c_type, micro_kernel_m, micro_kernel_n, use_i8mm
+        ](m, n, k, num_tasks)
+        let num_row_tasks = shape[0]
+        let num_col_tasks = shape[1]
+        let row_task_id = task_id // num_col_tasks
+        let col_task_id = task_id % num_col_tasks
+
+        let row_range = partition_work(
+            row_task_id, num_row_tasks, m, micro_kernel_m
+        )
+        let col_range = partition_work(
+            col_task_id, num_col_tasks, n, micro_kernel_n
+        )
+        return SubMatmulConfig(
+            Index(row_range[0], col_range[0], 0),
+            Index(row_range[1], col_range[1], k),
+        )
+
     else:
-        return get_partitioned_matmul_mojo_v1[
-            micro_kernel_m, micro_kernel_n, use_i8mm
-        ](m, n, k, task_id, num_tasks)
+        if num_tasks >= 32:
+            return get_partitioned_matmul_mojo_v2[
+                micro_kernel_m, micro_kernel_n, use_i8mm
+            ](m, n, k, task_id, num_tasks)
+        else:
+            return get_partitioned_matmul_mojo_v1[
+                micro_kernel_m, micro_kernel_n, use_i8mm
+            ](m, n, k, task_id, num_tasks)
 
 
-# New partition scheme being developed. Currently only used for 32 or more threads
+# New partition scheme being developed.
+fn get_partitioned_matmul_mojo_shape[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    micro_kernel_m: Int,
+    micro_kernel_n: Int,
+    use_i8mm: Bool,
+](m: Int, n: Int, k: Int, num_tasks: Int) -> StaticIntTuple[2]:
+    var num_row_tasks = 1
+    var num_col_tasks = 1
+
+    var min_work = m * n
+
+    let num_packs_m = div_ceil(m, micro_kernel_m)
+    let num_packs_n = div_ceil(n, micro_kernel_n)
+    var max_num_packs_m = num_packs_m
+    var max_num_packs_n = num_packs_n
+    if (use_i8mm and 2 * m > n) or m > n:
+        let half_l2size = get_pack_data_size[b_type]()
+        # Limit the partitions in N if the size is smaller than half the L2 cache size.
+        let num_packs_n2 = max(k * n // half_l2size, 1)
+        if num_packs_m * num_packs_n2 >= num_tasks:
+            max_num_packs_n = min(num_packs_n, num_packs_n2)
+    else:
+        # get the minimum work in n
+        let worki = micro_kernel_n * max((num_packs_n // num_tasks), 1)
+        # ensure the work in m is not much smaller than in n
+        let num_packs_m2 = div_ceil(m, align_down(worki, micro_kernel_m))
+        if num_packs_n * num_packs_m2 >= num_tasks:
+            max_num_packs_m = min(max_num_packs_m, num_packs_m2)
+
+    max_num_packs_m = min(max_num_packs_m, num_tasks)
+    max_num_packs_n = min(max_num_packs_n, num_tasks)
+    # Loop over all possible partitions and find the the partition that balances the work best.
+    for j in range(max_num_packs_m, 0, -1):
+        let workj = micro_kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
+        for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):
+            let worki = micro_kernel_n * div_ceil(
+                num_packs_n, i
+            ) if i != 1 else n
+            let work = workj * worki
+            if work <= min_work:
+                min_work = work
+                num_row_tasks = j
+                num_col_tasks = i
+
+    # heuristic for small m
+    if m <= 32 and num_packs_n >= num_tasks:
+        num_row_tasks = 1
+        num_col_tasks = num_tasks
+
+    return Index(num_row_tasks, num_col_tasks)
+
+
+# Deprecated partition scheme. Only used for 32 or more threads
 fn get_partitioned_matmul_mojo_v2[
     micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:

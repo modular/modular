@@ -3373,10 +3373,6 @@ fn _matmul_cpu[
             ):
                 return
 
-            if use_i8mm and m >= n:
-                let t0 = sub_matmul_config.offset[0]
-                let t1 = t0 + sub_matmul_config.shape[0]
-                packA_i8mm(t0, t1)
             _submatmul_sequential_sync[
                 a_type,
                 a_shape,
@@ -3400,7 +3396,7 @@ fn _matmul_cpu[
         # i8mm partition needs to be optimized as a function of m, n and k
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
-        if use_i8mm and m < n:
+        if use_i8mm:
             sync_parallelize[pack_task_func](num_tasks)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
