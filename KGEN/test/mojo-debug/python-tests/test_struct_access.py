@@ -12,9 +12,7 @@ from modular.utils.debuglib.lldbtypes import SBValue
 class TestSample(LLDBTestBase):
     @staticmethod
     def check_int_pair(struct: SBValue, first: int, second: int):
-        assert (
-            struct.GetDisplayTypeName() == "module struct_access::struct MyPair"
-        )
+        assert struct.GetDisplayTypeName() == "MyPair"
         assert struct.GetNumChildren() == 2
         first_field = struct.GetChildAtIndex(0)
         assert first_field.GetValueAsSigned(first - 1) == first
@@ -36,10 +34,7 @@ class TestSample(LLDBTestBase):
             ctx = ctx.resume()
             assert ctx
             pp = ctx.frame.FindVariable("pp")
-            assert (
-                pp.GetDisplayTypeName()
-                == "module struct_access::struct MyPairPair"
-            )
+            assert pp.GetDisplayTypeName() == "MyPairPair"
             assert pp.GetNumChildren() == 2
             pp_first = pp.GetChildAtIndex(0)
             TestSample.check_int_pair(pp_first, 5, 6)

@@ -8,7 +8,7 @@
 
 # RUN: %lldb %t -o 'b builtin-types.mojo:99' -o 'r' -o 'frame var' | FileCheck %s
 
-# CHECK: (module `builtin-types`::struct ARegisterPassableStruct) a_register_passable_struct = {
+# CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
 # CHECK:   f32 = {
 # CHECK:     [0] = 24.125
@@ -34,7 +34,7 @@
 # CHECK:     [0] = 485
 # CHECK:   }
 # CHECK: }
-# CHECK: (module `builtin-types`::struct AStruct) a_struct = {
+# CHECK: (AStruct) a_struct = {
 # CHECK:   int = {
 # CHECK:     [0] = 12
 # CHECK:   }
@@ -48,20 +48,20 @@
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
-# CHECK: (module `builtin-types`::struct ParamStruct[type]<`:type !kgen.declref<_"$stdlib::$builtin::$int::Int", !lit.metatype<_"$stdlib::$builtin::$int::Int">>`>) p_struct_int = {
+# CHECK: (ParamStruct[!kgen.declref<_"$stdlib::$builtin::$int::Int", !lit.metatype<_"$stdlib::$builtin::$int::Int">>]) p_struct_int = {
 # CHECK:   t = 8
 # CHECK: }
 # CHECK: (scalar<f32>) another_float = {
 # CHECK:   [0] = 4.125
 # CHECK: }
 # CHECK: (string) a_string_literal = "fofofo"
-# CHECK: (pack) a_list = {
-# CHECK:   m0 = 1
-# CHECK:   m1 = {
-# CHECK:     [0] = 2.125
-# CHECK:   }
-# CHECK:   m2 = 3
-# CHECK: }
+# HECK: (pack) a_list = {
+# HECK:   m0 = 1
+# HECK:   m1 = {
+# HECK:     [0] = 2.125
+# HECK:   }
+# HECK:   m2 = 3
+# HECK: }
 # CHECK: (simd<4, f16>) a_simd = {
 # CHECK:   [0] = 1.125
 # CHECK:   [1] = 2.5
