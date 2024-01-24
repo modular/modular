@@ -180,7 +180,7 @@ struct EngineTensorSpec(Stringable):
         """Gets the String representation of Spec.
 
         Returns:
-            Spec as string. This will be of format {name=<spec name>, spec=[None|shape]xdtype}.
+            Spec as string. This will be of format `{name=<spec name>, spec=[None|shape]xdtype}`.
         """
         var _repr: String = "{name="
         _repr += self.get_name()
