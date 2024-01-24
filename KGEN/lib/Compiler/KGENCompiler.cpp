@@ -187,9 +187,9 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
-  auto sig = SignatureType::get(b.getFunctionType(nonePtr, noneType),
-                                ValueInputConvention::BorrowedInReg,
-                                FnEffects().setCapturing());
+  auto sig = SignatureType::get(
+      b.getFunctionType(PointerType::get(nonePtr), noneType),
+      ValueInputConvention::BorrowedInReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
                        sig, InlineLevel::Always);
@@ -213,10 +213,8 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
     Value value = b.create<POP::CompilerGlobalLoadOp>(type, capture);
     Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type), 1);
     b.create<POP::StoreOp>(value, ptr);
-    Value argPtrPtrs =
-        b.create<POP::PointerBitcastOp>(PointerType::get(nonePtr), argPtrs);
     Value gep = b.create<POP::OffsetOp>(
-        argPtrPtrs, b.create<ParamConstantOp>(b.getIndexAttr(i)));
+        argPtrs, b.create<ParamConstantOp>(b.getIndexAttr(i)));
     Value opaque = b.create<POP::PointerBitcastOp>(nonePtr, ptr);
     b.create<POP::StoreOp>(opaque, gep);
   }
