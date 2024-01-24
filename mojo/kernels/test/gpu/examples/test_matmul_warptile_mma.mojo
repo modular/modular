@@ -64,8 +64,9 @@ alias MMA_K = 8
 # WMITER: The number of subwarp tiling steps in M dimension.
 # WNITER: The number of subwarp tiling steps in N dimension.
 # (Each warp sequentially computes sub-tiles of WMITERxWNITER dimension)
-# TODO(#29637): Fix array type.
-# @__llvm_metadata(`nvvm.maxntid`=[int(NUM_THREADS)])
+@__llvm_metadata(
+    `nvvm.maxntid`=StaticTuple[1, Int32](NUM_THREADS.cast[DType.int32]())
+)
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
