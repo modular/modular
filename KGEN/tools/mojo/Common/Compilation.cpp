@@ -166,7 +166,6 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
     LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
-    llvm::opt::OptSpecifier parsingStdlibId,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // We don't allow users to configure the time profiler.
@@ -183,8 +182,6 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))
     parseConfig.maxNotesPerDiagnostic = maxNotes;
-  if (args.hasArg(parsingStdlibId))
-    parseConfig.parsingStandardLibrary = true;
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);

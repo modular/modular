@@ -520,7 +520,7 @@ static int package(const State &state) {
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, *runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
-      options::OPT_D, options::OPT_parsing_stdlib,
+      options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) =
