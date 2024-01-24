@@ -26,12 +26,12 @@ struct MemExample:
   fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<
-# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime<0>>(%a: !lit.ref<!MemExample, imm [[LT]]> borrow)
+# CHECK-SAME: [[LT:.*]][lt]: lifetime<0>>(%a: !lit.ref<!MemExample, imm [[LT]]> borrow)
 fn borrow[lt: ImmLifetime](a: _LITRef[MemExample, False.__mlir_i1__(), lt].type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<
-# CHECK-SAME: [[LT:.*_lt]][lt]: lifetime<1>>(%a: !lit.ref<!MemExample, mut [[LT]]> borrow)
+# CHECK-SAME: [[LT:.*]][lt]: lifetime<1>>(%a: !lit.ref<!MemExample, mut [[LT]]> borrow)
 fn mutate[lt: MutLifetime](a: _LITRef[MemExample, True.__mlir_i1__(), lt].type):
   pass
 
@@ -49,19 +49,19 @@ fn implicit_owned(owned a: MemExample):
 
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
-  # CHECK: lit.varlet.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}_lt1, {{.*}}_as1>
+  # CHECK: lit.varlet.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
   let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <#lit.struct<{value = 42}>>
   alias as2 : Int = 42
 
-  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm {{.*}}_lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
+  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
   let ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut={{.*}}isMut, {{.*}}x18_life> borrow)
-# CHECK-SAME: -> !lit.ref<!MemExample, mut=_{{.*}}x18_isMut, _{{.*}}x18_life>
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=isMut, life> borrow)
+# CHECK-SAME: -> !lit.ref<!MemExample, mut=isMut, life>
 fn parametricMut[isMut: __mlir_type.i1,
                  life: AnyLifetime[isMut].type](a: _LITRef[MemExample, isMut, life].type)
    -> _LITRef[MemExample, isMut, life].type:
@@ -214,7 +214,7 @@ struct SelfRefTest:
   fn __init__(inout self): pass
 
   # CHECK-LABEL: lit.func @"method
-  # CHECK-SAME: (%self: !lit.ref<!SelfRefTest, mut={{.*}}_isMut, {{.*}}_lt> borrow)
+  # CHECK-SAME: (%self: !lit.ref<!SelfRefTest, mut=isMut, lt> borrow)
   fn method[isMut: __mlir_type.i1, lt: AnyLifetime[isMut].type](
      self: _LITRef[Self, isMut, lt].type) -> Reference[Self, isMut, lt]:
       return Reference(self)

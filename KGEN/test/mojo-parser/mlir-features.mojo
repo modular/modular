@@ -52,7 +52,7 @@ fn mlirMagicTest(
 
 
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
-# CHECK-SAME: [[DTYPE:.*_dtype]][dtype]: dtype>()
+# CHECK-SAME: [[DTYPE:.*]][dtype]: dtype>()
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
     # CHECK: %a = lit.varlet.decl "a" var : !lit.ref<scalar<[[DTYPE]]>, mut
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
@@ -91,7 +91,7 @@ fn fancierSubstitutions():
 # This shows that we can use unary+ to make the printer avoid printing types.
 # See Issue #6468: [Lit] __mlir_attr construction fails for !kgen.list
 # CHECK-LABEL: @"testAttrConcatWithoutType{{.*}}()"<
-# CHECK-SAME: [[LENGTH:.*_length]][length]>() ->
+# CHECK-SAME: [[LENGTH:.*]][length]>() ->
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
@@ -118,7 +118,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"[mut *"arg`"]<
-# CHECK-SAME: [[T:.*_T]][T]: type>(%arg: !lit.ref<[[T]], mut {{.*}}> byref)
+# CHECK-SAME: [[T:.*]][T]: type>(%arg: !lit.ref<[[T]], mut {{.*}}> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.type`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)

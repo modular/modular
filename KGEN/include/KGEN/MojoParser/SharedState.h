@@ -123,9 +123,6 @@ public:
   /// This returns a NoneAttr.
   NoneAttr getNoneAttr() const;
 
-  /// Get a mangled parameter name based on the source location.
-  StringAttr getMangledParameterName(const Twine &baseName, SMLoc loc);
-
   /// Return a mangled version of the given module name. This is used to avoid
   /// conflicts with symbols that are actually visible.
   StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName);

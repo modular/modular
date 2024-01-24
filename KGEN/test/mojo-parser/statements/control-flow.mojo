@@ -122,7 +122,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     return a
 
 # CHECK-LABEL: lit.func @"param_if{{.*}})"<
-# CHECK-SAME: [[A:.*_a]][a]: i1, [[B:.*_b]][b]: !Bool>()
+# CHECK-SAME: [[A:.*]][a]: i1, [[B:.*]][b]: !Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <[[A]]> {
   @parameter
@@ -140,7 +140,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: }
 
 # CHECK-LABEL: lit.func @"param_if_andor_i1[__mlir_type.i1,__mlir_type.i1]()"<
-# CHECK-SAME: [[A:.*_a]][a]: i1, [[B:.*_b]][b]: i1>()
+# CHECK-SAME: [[A:.*]][a]: i1, [[B:.*]][b]: i1>()
 fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
   # CHECK: kgen.param.if <cond([[A]], [[B]], [[A]])>
   @parameter
@@ -156,7 +156,7 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 
 
 # CHECK-LABEL: lit.func @"param_if_and[{{.*}}$builtin::$bool::Bool,{{.*}}$builtin::$bool::Bool]()"<
-# CHECK-SAME: [[A:.*_a]][a]: !Bool, [[B:.*_b]][b]: !Bool>()
+# CHECK-SAME: [[A:.*]][a]: !Bool, [[B:.*]][b]: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
   # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", cond(

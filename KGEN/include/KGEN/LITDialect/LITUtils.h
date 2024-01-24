@@ -46,9 +46,6 @@ bool isTypeExpr(TypedAttr attr);
 // Parameter Mangling
 //===----------------------------------------------------------------------===//
 
-/// Mangle a parameter name with the line and column index where it's declared.
-std::string mangleParameter(const Twine &baseName, unsigned line, unsigned col);
-
 /// Demangle a mangled parameter name if it is mangled.
 StringRef demangleParameterName(StringRef name);
 

@@ -103,18 +103,18 @@ struct CFMStruct(CFMTrait):
 # Test for struct with parameters and function with parameters.
 # CHECK-LABEL: lit.trait.decl @CFMTraitParams<?, MT: type, T: !kgen.paramref<MT>>
 trait CFMTraitParams:
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[TT:_.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[TT:.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
 struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[ST1:_.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:_.*]], :type [[T2:_.*]]>{{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[ST1:.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
        pass
 
 # CHECK-LABEL: lit.func @"generic_trait_fn
-# CHECK-SAME: <[[T:.*_T]][T]: trait<{{.*}}@Trait>>
+# CHECK-SAME: <[[T:.*]][T]: trait<{{.*}}@Trait>>
 # CHECK-SAME: %x: !lit.ref<:trait<{{.*}}@Trait> [[T]], imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK: call_param[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:

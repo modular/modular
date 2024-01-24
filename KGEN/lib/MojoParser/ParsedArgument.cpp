@@ -422,9 +422,8 @@ static void processParameterArgs(
     // Bind the parsed type expression so references from other parameters
     // can be resolved. The parameter names in ParamDeclAttr are mangled with
     // the location so that parameter names in mojo are unique in the IR.
-    auto newDecl = ParamDeclAttr::get(
-        emitter.shared.getMangledParameterName(arg.name.getValue(), arg.loc),
-        type);
+    auto newDecl =
+        ParamDeclAttr::get(declScope.getUniqueParamNameNew(arg.name), type);
     params.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
