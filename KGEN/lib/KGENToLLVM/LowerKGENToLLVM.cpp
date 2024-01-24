@@ -39,6 +39,7 @@ static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
     return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Internal;
   case ExportKind::Exported:
   case ExportKind::CExported:
+  case ExportKind::PackageExported:
     return LLVM::Linkage::External;
   }
   llvm_unreachable("invalid export kind");

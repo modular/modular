@@ -442,7 +442,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // the main module for the contents of the module.
   parsedPackageOp.walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
     if (canExternalize(func))
-      func.setExported();
+      func.setPackageExported();
     return WalkResult::skip();
   });
 
