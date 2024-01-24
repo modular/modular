@@ -135,7 +135,7 @@ struct ParsedDWARFTypeAttributes {
         break;
 
       case DW_AT_linkage_name:
-        mangledName.SetCString(form_value.AsCString());
+        linkageName.SetCString(form_value.AsCString());
         break;
 
       case DW_AT_name:
@@ -150,7 +150,7 @@ struct ParsedDWARFTypeAttributes {
   }
 
   bool inlined = false;
-  lldb_private::ConstString mangledName;
+  lldb_private::ConstString linkageName;
   bool external = false;
   DWARFFormValue type;
   lldb_private::ConstString name;
@@ -208,41 +208,24 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
     ParsedDWARFTypeAttributes attrs(die);
     std::string name;
     // The DIE name is the file path
-    if (attrs.name.IsEmpty()) {
-      dwarf->GetObjectFile()->GetModule()->ReportError(
-          "[MojoDWARFParser::getDeclForDIE]: Compile unit name is empty. Die = "
-          "{0:x16}.",
-          die.GetOffset());
-      name = "anonymous";
-    } else {
+    if (!attrs.name.IsEmpty()) {
       // The name of the module is the base name of the file. We might need to
       // eventually define a unique parser for each compile unit in case of name
       // collision.
       name = std::filesystem::path(attrs.name.AsCString()).stem().string();
     }
 
-    decl = typeSystem.getOrCreateModuleDecl(name);
+    decl = typeSystem.getOrCreateDeclChainForDie(die, name);
     break;
   }
   case DW_TAG_subprogram: {
     ParsedDWARFTypeAttributes attrs(die);
-    decl = typeSystem.getOrCreateFunctionDecl(attrs.mangledName);
+    decl = typeSystem.getOrCreateFunctionDecl(attrs.linkageName);
     break;
   }
   case DW_TAG_structure_type: {
     ParsedDWARFTypeAttributes attrs(die);
-    std::string name;
-    if (attrs.name.IsEmpty()) {
-      dwarf->GetObjectFile()->GetModule()->ReportError(
-          "[MojoDWARFParser::getDeclForDIE]: Structure name is empty. Die = "
-          "{0:x16}.",
-          die.GetOffset());
-      name = "anonymous";
-    } else {
-      name = attrs.name;
-    }
-
-    decl = typeSystem.getOrCreateStructDecl(name, die);
+    decl = typeSystem.getOrCreateDeclChainForDie(die, attrs.name);
     break;
   }
   default:
@@ -344,7 +327,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         "[MojoDWARFParser::ParseTypeFromDWARF] Will parse type. Die = {0:x16}, "
         "tag = {1}, name = '{2}', linkage name = '{3}', byte size = {4}.",
         die.GetOffset(), die.GetTagAsCString(), die.GetName(),
-        attrs.mangledName.AsCString(), attrs.byteSize);
+        attrs.linkageName.AsCString(), attrs.byteSize);
   }
 
   if (typeIsNewPtr)

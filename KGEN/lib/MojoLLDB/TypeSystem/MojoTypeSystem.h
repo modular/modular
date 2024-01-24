@@ -25,6 +25,9 @@ namespace M {
 class MojoASTTypeRef;
 class MojoParserContext;
 class TargetInfoAttr;
+namespace DebugInfo {
+class SourceNameAttr;
+} // namespace DebugInfo
 } // namespace M
 
 namespace M::LLCL {
@@ -613,38 +616,29 @@ public:
   lldb_private::CompilerType createSIMDType(StringRef dtype,
                                             size_t numElements);
 
-  /// Create a module decl given its name under the given parentDecl. If the
-  /// parent module already contains a module with that name, return it instead.
-  /// If the parent module is invalid, then the module becomes a top-level one.
-  ///
-  /// Return the decl of the module.
-  MojoASTDeclRef getOrCreateModuleDecl(StringRef moduleName,
-                                       MojoASTDeclRef parentDecl = {});
+  MojoASTDeclRef getOrCreatePackageDecl(StringRef name,
+                                        MojoASTDeclRef parentDeclRef);
 
-  /// Create a function decl given its mangled name unless it already exists. If
-  /// its mangled name includes nested modules or structs, then they are created
-  /// as well if needed.
+  /// Create a function decl given its mangled name unless it already exists.
+  /// If its mangled name includes nested modules or structs, then they are
+  /// created as well if needed.
   ///
   /// Return the decl of the function, or an invalid decl if the function name
   /// couldn't be demangled.
   MojoASTDeclRef getOrCreateFunctionDecl(StringRef mangledName);
 
-  /// Create a struct decl given its name under the given parent decl. If the
-  /// parent decl already contains a struct with that name, return it instead.
+  /// If the given `name` is parsable as a `SourceName`, traverse each decl
+  /// and create it unless it's been created already.
+  /// If `name` cannot be parsed, then the die tag is used as a fallback to
+  /// create a decl.
+  /// If `name` is empty, then a placeholder name will be created.
+  /// This doesn't work for functions, for which `getOrCreateFunctionDecl`
+  /// should be used.
   ///
-  /// Return the decl of the struct.
-  MojoASTDeclRef getOrCreateStructDecl(StringRef structName,
-                                       MojoASTDeclRef parentDecl);
-
-  /// Create a struct decl given its mangled name unless it already exists. If
-  /// its mangled name includes nested modules, then they are created if as well
-  /// if needed.
-  ///
-  /// Return the decl of the struct, or an invalid decl if the struct name
-  /// couldn't be demangled.
+  /// Return the leaf decl.
   MojoASTDeclRef
-  getOrCreateStructDecl(StringRef mangledName,
-                        const lldb_private::plugin::dwarf::DWARFDIE &die);
+  getOrCreateDeclChainForDie(const lldb_private::plugin::dwarf::DWARFDIE &die,
+                             StringRef name);
 
   /// Add a field at the end of the given struct decl and the given type.
   ///
@@ -653,10 +647,35 @@ public:
                                   StringRef fieldName,
                                   lldb::opaque_compiler_type_t type);
 
+private:
+  /// Create a struct decl given its name under the given parent decl. If the
+  /// parent decl already contains a struct with that name, return it instead.
+  /// If the parent decl is null, then a placeholder module will be created.
+  ///
+  /// Return the decl of the struct.
+  MojoASTDeclRef getOrCreateStructDecl(StringRef structName,
+                                       MojoASTDeclRef parentDecl);
+
+  /// Create a module decl given its name under the given parentDecl. If the
+  /// parent module already contains a module with that name, return it
+  /// instead.
+  /// If the parent decl is null, then the Mojo parser's top decl will be used.
+  ///
+  /// Return the decl of the module.
+  MojoASTDeclRef getOrCreateModuleDecl(StringRef moduleName,
+                                       MojoASTDeclRef parentDecl = {});
+
+  /// Traverse each decl of the `SourceName` and create it unless it's been
+  /// created already.
+  ///
+  /// Return the leaf decl.
+  MojoASTDeclRef
+  createDeclsFromSourceNameRecursive(M::DebugInfo::SourceNameAttr sourceName);
+
   //===--------------------------------------------------------------------===//
   // RTTI Support
   //===--------------------------------------------------------------------===//
-
+public:
   bool isA(const void *classID) const override { return classID == &ID; }
   static bool classof(const TypeSystem *ts) { return ts->isA(&ID); }
 

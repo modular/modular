@@ -33,6 +33,7 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/SymbolFileDWARF.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Process.h"
@@ -806,6 +807,103 @@ lldb_private::CompilerType MojoTypeSystem::createSIMDType(StringRef dtype,
 }
 
 MojoASTDeclRef
+MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
+                                       MojoASTDeclRef parentDeclRef) {
+  LIT::SharedState &sharedState = impl->parserContext->getSharedState();
+
+  LIT::ASTDecl &parentDecl =
+      parentDeclRef ? *parentDeclRef
+                    : impl->parserContext->getSharedState().getTopLevelDecl();
+  auto &declsInScope = parentDecl.getDeclsInScope();
+  StringAttr mangledName =
+      sharedState.getMangledModuleName(&impl->mlirContext, name);
+  if (auto it = declsInScope.find(mangledName); it != declsInScope.end()) {
+    assert(it->second.size() == 1 &&
+           "We expect one single package decl with a given name.");
+    return it->second[0];
+  }
+  return &sharedState.createPackage(name, name);
+}
+
+/// Generate a human readable version of the identifier of a struct along with
+/// its parameters given its SourceName.
+static std::string
+generateParametrizedNameForStruct(DebugInfo::SourceNameAttr attr) {
+  ArrayRef<StringAttr> paramValues = attr.getParamValues();
+  std::string displayName;
+  llvm::raw_string_ostream os(displayName);
+  os << attr.getName().getValue();
+  if (!attr.getParamTypes().empty()) {
+    os << "[";
+    ArrayRef<DebugInfo::SourceNameAttr> paramTypes = attr.getParamTypes();
+    size_t paramDisplayCount = std::min(paramTypes.size(), paramValues.size());
+    llvm::interleaveComma(paramTypes.take_front(paramDisplayCount), os,
+                          [&](DebugInfo::SourceNameAttr paramType) {
+                            StringRef paramValue =
+                                paramValues.front().getValue();
+                            paramValue.consume_front(":type ");
+                            os << paramValue;
+                            paramValues = paramValues.drop_front(1);
+                          });
+    // If we don't have all required parameters available, we just show `...`
+    if (paramDisplayCount < paramTypes.size()) {
+      if (paramDisplayCount > 0)
+        os << ", ";
+      os << "...";
+    }
+    os << "]";
+  }
+  return displayName;
+}
+
+MojoASTDeclRef MojoTypeSystem::createDeclsFromSourceNameRecursive(
+    DebugInfo::SourceNameAttr sourceName) {
+  MojoASTDeclRef parentDeclRef;
+  if (DebugInfo::SourceNameAttr parent = sourceName.getParent())
+    parentDeclRef = createDeclsFromSourceNameRecursive(parent);
+
+  switch (sourceName.getKind()) {
+  case DebugInfo::SourceNameKind::Package:
+    return getOrCreatePackageDecl(sourceName.getName(), parentDeclRef);
+  case DebugInfo::SourceNameKind::Module:
+    return getOrCreateModuleDecl(sourceName.getName(), parentDeclRef);
+  case DebugInfo::SourceNameKind::Struct:
+    return getOrCreateStructDecl(generateParametrizedNameForStruct(sourceName),
+                                 parentDeclRef);
+  default:
+    return {};
+  }
+}
+
+MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
+                                                          StringRef name) {
+  std::string effectiveName = name.str();
+  if (name.empty()) {
+    die.GetDWARF()->GetObjectFile()->GetModule()->ReportError(
+        "[MojoTypeSystem::getDeclForDie]: {0} is empty. Die = {1:x16}.",
+        die.GetTagAsCString(), die.GetOffset());
+
+    effectiveName = "__lldb_anonymous__" + std::to_string(die.GetOffset());
+  }
+
+  ErrorOr<DebugInfo::SourceNameAttr> sourceNameOr =
+      DebugInfo::SourceNameAttr::decode(getMLIRContext(), effectiveName);
+  if (succeeded(sourceNameOr) &&
+      sourceNameOr->getKind() != DebugInfo::SourceNameKind::Unknown)
+    return createDeclsFromSourceNameRecursive(*sourceNameOr);
+
+  switch (die.Tag()) {
+  case DW_TAG_compile_unit:
+    return getOrCreateModuleDecl(effectiveName, MojoASTDeclRef{});
+  case DW_TAG_structure_type: {
+    return getOrCreateStructDecl(effectiveName, MojoASTDeclRef{});
+  }
+  default:
+    return {};
+  }
+}
+
+MojoASTDeclRef
 MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
                                       MojoASTDeclRef parentDeclRef) {
   LIT::SharedState &sharedState = impl->parserContext->getSharedState();
@@ -825,7 +923,7 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
   }
 
   // We create a fake empty file so that parser diagnostics can be emitted if
-  // we are doing somethig wrong when creating the decls. Otherwise, we hit
+  // we are doing something wrong when creating the decls. Otherwise, we hit
   // asserts and LLDB aborts.
   auto loc = FileLineColLoc::get(getMLIRContext(), moduleName, /*line=*/0,
                                  /*column=*/0);
@@ -894,6 +992,9 @@ MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
 MojoASTDeclRef
 MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
                                       MojoASTDeclRef parentDecl) {
+  if (!parentDecl)
+    parentDecl = getOrCreateModuleDecl("__lldb_anonymous__");
+
   StringAttr name = StringAttr::get(getMLIRContext(), structName);
 
   // We first check if the struct already exists, in which case we just return
@@ -909,37 +1010,6 @@ MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
       getSharedState().translateLocation(parentDecl->getLoc()), name);
   return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
       newStruct, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
-}
-
-MojoASTDeclRef MojoTypeSystem::getOrCreateStructDecl(StringRef mangledName,
-                                                     const DWARFDIE &die) {
-  FailureOr<LIT::MangledSymbol> mangledSymbol = LIT::MangledSymbol::demangle(
-      StringAttr::get(getMLIRContext(), mangledName));
-  if (failed(mangledSymbol) || mangledSymbol->moduleNames.empty()) {
-    // Builtin structs might not have a parent module, so we can just put them
-    // in an anonymous one. Besides that, as multiple definitions of different
-    // structs with the same name might exist in the same compilation unit, we
-    // create a different anonymous module for each definition using the offset
-    // of the corresponding die. This happens with pack, for example, where
-    // different instances of !kgen.pack have different inner data, but they
-    // turn out to have the same name, therefore they cannot live under the same
-    // module.
-    // Another advantage of crating this anonymous module is that we don't need
-    // to modify the type name to have it in a unique scope.
-    return getOrCreateStructDecl(
-        mangledName, &*getOrCreateModuleDecl("anonymous_" +
-                                             std::to_string(die.GetOffset())));
-  }
-
-  // Note: if we ever have in the same DWARF file two structs with the exact
-  // same mangled name but different implementation, we might need to create a
-  // top level unique module for each one of them (see the solution for the case
-  // above), but that's not the case now.
-  LIT::ASTDecl *parentDecl = nullptr;
-  for (StringAttr moduleName : mangledSymbol->moduleNames)
-    parentDecl = &*getOrCreateModuleDecl(moduleName, parentDecl);
-
-  return getOrCreateStructDecl(mangledSymbol->symName, parentDecl);
 }
 
 MojoASTDeclRef
