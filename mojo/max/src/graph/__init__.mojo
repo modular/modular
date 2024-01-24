@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements the Mojo graph-building APIs."""
 
 from .attr import AttrMap
 from .graph import Graph

@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements various ops for the graph-building APIs."""
 
 from .complex import as_complex
 from .complex import as_interleaved_complex

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the engine package."""
+"""Implements the Mojo inference engine APIs."""
 
 from .engine import get_version
 from .session import InferenceSession
