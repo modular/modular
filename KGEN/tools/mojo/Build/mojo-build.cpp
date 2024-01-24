@@ -385,7 +385,7 @@ static int build(const State &state) {
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &context, *runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
-      options::OPT_D, options::OPT_parsing_stdlib,
+      options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(sourceMgr, parserConfig, ts);
       });

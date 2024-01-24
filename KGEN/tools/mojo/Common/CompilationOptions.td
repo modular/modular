@@ -42,11 +42,6 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<2>,
            "that, when queried with the `sys.param_env` module from within the "
            "Mojo program, would yield the compile-time value `42`.">;
 
-def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
-  Group<CompilationOptionGroup>, Index<3>, Flags<[HelpHidden]>,
-  HelpText<"For internal use only; see `ParserConfig::parsingStandardLibrary` "
-           "for details.">;
-
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
