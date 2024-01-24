@@ -22,6 +22,7 @@ from runtime.llcl import Runtime
 from .Softmax import softmax, softmax_3_pass
 from Transpose import transpose
 
+from utils.static_tuple import StaticTuple
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList, Dim
 
@@ -538,8 +539,9 @@ fn _fill[
         ptr[i] = val
 
 
-# TODO(#29637): Fix array type.
-# @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
+@__llvm_metadata(
+    `nvvm.maxntid`=StaticTuple[1, Int32](num_threads.cast[DType.int32]())
+)
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
@@ -866,8 +868,9 @@ fn flash_attention_kernel[
         o_global_row_offset += row_stride
 
 
-# TODO(#29637): Fix array type.
-# @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
+@__llvm_metadata(
+    `nvvm.maxntid`=StaticTuple[1, Int32](num_threads.cast[DType.int32]())
+)
 fn flash_attention_kernel_flexible_seqlen[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
