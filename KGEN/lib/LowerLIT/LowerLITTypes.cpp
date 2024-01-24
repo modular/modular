@@ -16,18 +16,13 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -136,19 +131,6 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   /// Cache to memorize AttrType replacement results.
   DenseMap<const void *, const void *> attrTypeReplaceCache;
 
-  /// Flag to erase the type for a struct field of recursive pointer.
-  bool eraseRecursivePointerField = false;
-
-  /// Flag to track recursive AttrType replacement when erasing recursive struct
-  /// pointer type.
-  bool erasedType = false;
-
-  /// Seen Types when replacing.
-  DenseSet<Type> seenTypes;
-
-  /// Seen Attributes when replacing.
-  DenseSet<Attribute> seenAttrs;
-
   /// Flag to run debug type conversion on updated types.
   bool runDebugTypeConversion = false;
 
@@ -157,8 +139,20 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 
   /// Cached anyRegTypeType so we don't need to recreate it.
   TypeType anyRegTypeType;
+
+  /// Flag to tell the replacer if it is replacing a `#lit.struct` attr where
+  /// the pointer type should be erased as if they are in a
+  /// `!kgen.declref` because these are struct fields.
+  int lowerLitStructValues = 0;
+
+  /// Whether replace should use the cache or not.
+  bool useReplaceCache();
 };
 } // namespace
+
+bool StructOperationLowerer::useReplaceCache() {
+  return lowerLitStructValues == 0;
+}
 
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
@@ -232,34 +226,32 @@ U StructOperationLowerer::replaceImpl(T value) {
 
 Attribute StructOperationLowerer::replace(Attribute attr) {
   auto iter = attrTypeReplaceCache.find(attr.getAsOpaquePointer());
-  if (iter != attrTypeReplaceCache.end())
+
+  if (useReplaceCache() && iter != attrTypeReplaceCache.end())
     return Attribute::getFromOpaquePointer(iter->second);
-
-  bool foundRecursion = seenAttrs.contains(attr);
-  if (foundRecursion && !eraseRecursivePointerField) {
-    // Found illegal recursion.
-    return nullptr;
-  }
-
-  // Keep track of ancestor attributes.
-  seenAttrs.insert(attr);
 
   auto processStructAttr = [&](LITStructAttr attr) -> Attribute {
     PointerUnion<KGEN::StructType, Type> newType =
         substituteStructRef(attr.getType());
     // Handle flattened single-element structs.
+    ++lowerLitStructValues;
     if (auto type = dyn_cast<Type>(newType)) {
       auto &decl = structDecls.getDecl(attr.getType());
       ParameterEvaluator evaluator(decl.decls, attr.getType().getParamValues());
       Attribute value =
           evaluator.getReboundAttribute(std::get<1>(attr.getValues()[0]));
 
-      return replace(value);
+      Attribute newValue = replace(value);
+      --lowerLitStructValues;
+      return newValue;
     }
 
     SmallVector<TypedAttr> values;
     for (auto [name, value] : attr.getValues())
       values.push_back(cast<TypedAttr>(replace(value)));
+
+    --lowerLitStructValues;
+
     return KGEN::StructAttr::get(values, cast<KGEN::StructType>(newType));
   };
 
@@ -307,72 +299,29 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
 
   attrTypeReplaceCache.try_emplace(attr.getAsOpaquePointer(),
                                    result.getAsOpaquePointer());
-  seenAttrs.erase(attr);
 
   return result;
 }
 
 Type StructOperationLowerer::replace(Type type) {
   auto iter = attrTypeReplaceCache.find(type.getAsOpaquePointer());
-  if (iter != attrTypeReplaceCache.end())
+
+  if (useReplaceCache() && iter != attrTypeReplaceCache.end())
     return Type::getFromOpaquePointer(iter->second);
 
-  bool foundRecursion = seenTypes.contains(type);
-  if (foundRecursion && !eraseRecursivePointerField) {
-    // Found illegal recursion.
-    return nullptr;
-  }
-
-  bool cacheResult = true;
-
-  // Keep track of types.
-  seenTypes.insert(type);
-
-  auto processPointer = [&](PointerType ptr) -> Type {
-    if (!foundRecursion)
+  auto processPointerType = [&](PointerType ptr) -> Type {
+    if (lowerLitStructValues == 0)
       return replaceImpl(ptr);
-    // Handle a struct (Foo) that has a pointer to a recursive struct, i.e.:
-    // 1. the pointer points to the struct itself Foo
-    // struct Foo:
-    //    var x: Pointer[Foo]
-    //
-    // 2. the pointer points to another struct that has a chain of field of
-    // structs that recurses back to Foo, and one of the field is a Pointer
-    // before Foo shows up again in the chain
-    //
-    // struct Foo:
-    //    var x: Pointer[Bar]
-    // struct Bar:
-    //    var x: Foo
-    //
-    // or
-    // struct Foo:
-    //    var x: Bar
-    // struct Bar:
-    //    var x: Pointer[Foo]
-    //
-    // or
-    // struct Foo:
-    //    var x: Pointer[Bar]
-    // struct Bar:
-    //    var x: Pointer[Foo]
-    cacheResult = false;
-    erasedType = true;
-    // Erase the type of Pointer[Foo] to Pointer[NoneType] to break the
-    // recursive chain.
-    return PointerType::get(POP::SIMDType::get(
-        1, KGEN::DTypeConstantAttr::get(ptr.getContext(), DType::invalid)));
+    // Erase elementType if a field is of pointer type in a struct.
+    // Here updates the value type in a `#lit.struct` which is a constant value
+    // for a struct.
+    auto newAddrSpace = replace(ptr.getAddressSpace());
+    return PointerType::get(KGEN::NoneType::get(ptr.getContext()),
+                            cast<TypedAttr>(newAddrSpace));
   };
 
   auto processDeclRefType = [&](DeclRefType ref) -> Type {
     PointerUnion<KGEN::StructType, Type> result = substituteStructRef(ref);
-    if (erasedType) {
-      // If Pointer type erase happened, don't cache this type replacement
-      // result.
-      cacheResult = false;
-      erasedType = false;
-    }
-
     if (!result)
       return nullptr;
 
@@ -387,7 +336,7 @@ Type StructOperationLowerer::replace(Type type) {
     if (runDebugTypeConversion)
       result = debugTypeConverter.convertDebugType(ditype);
   } else if (auto ptr = dyn_cast<PointerType>(type)) {
-    result = processPointer(ptr);
+    result = processPointerType(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
   } else if (isa<MetaTypeType, TraitType>(type)) {
@@ -405,13 +354,8 @@ Type StructOperationLowerer::replace(Type type) {
     result = replaceImpl(type);
   }
 
-  if (cacheResult) {
-    attrTypeReplaceCache.try_emplace(type.getAsOpaquePointer(),
-                                     result.getAsOpaquePointer());
-  }
-
-  if (!foundRecursion)
-    seenTypes.erase(type);
+  attrTypeReplaceCache.try_emplace(type.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
 
   return result;
 }
@@ -423,10 +367,18 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   SmallVector<Type> elementTypes;
   for (Type type : llvm::make_second_range(decl.fields)) {
     Type reboundType = evaluator.getReboundType(type);
+
+    if (auto ptr = dyn_cast<PointerType>(reboundType)) {
+      // Erase elementType if a field is of pointer type in a struct.
+      auto newAddrSpace = replace(ptr.getAddressSpace());
+      Type substituteReboundType = PointerType::get(
+          KGEN::NoneType::get(ptr.getContext()), cast<TypedAttr>(newAddrSpace));
+      elementTypes.push_back(substituteReboundType);
+      continue;
+    }
     Type substituteReboundType = replace(reboundType);
     elementTypes.push_back(substituteReboundType);
   }
-
   // Flatten register-passable, single-element structs.
   if (elementTypes.size() == 1 && decl.isRegisterPassable)
     return elementTypes[0];
@@ -442,8 +394,15 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 
   auto getDebugInfoType = [&](const std::pair<StringAttr, Type> &nameAndType) {
     auto [name, type] = nameAndType;
-    return DebugInfo::DIMemberType::get(
-        name, converter.convertDebugType(evaluator.getReboundType(type)));
+    DebugInfo::DIType fieldDIType;
+    if (auto ptr = dyn_cast<PointerType>(type)) {
+      DebugInfo::DIType elementType = debugTypeConverter.convertDebugType(
+          KGEN::NoneType::get(ptr.getContext()));
+      fieldDIType = DebugInfo::DITargetIndependentPointerType::get(elementType);
+    } else {
+      fieldDIType = converter.convertDebugType(evaluator.getReboundType(type));
+    }
+    return DebugInfo::DIMemberType::get(name, fieldDIType);
   };
 
   // Flatten register-passable, single-element structs.
@@ -598,7 +557,8 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                                            lowerer.getIndexAttr(index));
 }
 
-static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
+static Value getCastedToType(Location newLoc, Value value, Type destType,
+                             OpBuilder &b) {
   // If already casted, done.
   if (value.getType() == destType)
     return value;
@@ -609,8 +569,8 @@ static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
       return castOp.getOperand(0);
 
   // Otherwise create a new cast.
-  auto cast = b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(),
-                                                         destType, value);
+  auto cast =
+      b.create<mlir::UnrealizedConversionCastOp>(newLoc, destType, value);
   return cast.getResult(0);
 }
 
@@ -633,7 +593,11 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
       return failure();
     }
 
-    castedOperands.push_back(getCastedToType(value, newType, *this));
+    // When value is a function argument, location info's function scope is
+    // different from the operations in the function body. Use op->getLoc() for
+    // new cast op's location instead of using value.loc().
+    castedOperands.push_back(
+        getCastedToType(op->getLoc(), value, newType, *this));
   }
 
   typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary());
@@ -641,7 +605,7 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
     auto resultType = op->getResult(0).getType();
     Value result = lowerOp(op, adaptor, *this);
     if (result.getType() != resultType)
-      result = getCastedToType(result, resultType, *this);
+      result = getCastedToType(result.getLoc(), result, resultType, *this);
     replaceOp(op, {result});
   } else {
     assert(op->getNumResults() == 0);
@@ -783,7 +747,6 @@ void LowerLITTypesPass::runOnOperation() {
   StructOperationLowerer structLowerer(&getContext(), structDecls);
 
   // Lower KGEN struct operations.
-  structLowerer.eraseRecursivePointerField = true;
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
@@ -792,7 +755,6 @@ void LowerLITTypesPass::runOnOperation() {
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });
-  structLowerer.eraseRecursivePointerField = false;
   if (result.wasInterrupted())
     return signalPassFailure();
 

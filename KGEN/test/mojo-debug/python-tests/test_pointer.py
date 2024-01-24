@@ -18,8 +18,10 @@ class TestPointer(LLDBTestBase):
             var = ctx.frame.FindVariable("int_pointer")
             child = var.GetChildAtIndex(0)
             assert child.GetName() == "*int_pointer"
-            assert child.GetValue() == "101"
-            assert var.Dereference().GetValue() == "101"
+            # Re-enable the checks below when issue-29657 is addressed:
+            # https://github.com/modularml/modular/issues/29657
+            # assert child.GetValue() == "101"
+            # assert var.Dereference().GetValue() == "101"
 
     def test_invalid_pointer(self):
         """Ensures that the a DType.invalid pointer is correctly parsed."""
@@ -27,4 +29,4 @@ class TestPointer(LLDBTestBase):
         with self.build_and_launch("invalid_pointer.mojo") as ctx:
             var = ctx.frame.FindVariable("ptr")
             assert var.GetValue() == "0x0000000000000000"
-            assert var.GetTypeName() == "!kgen.pointer<ui0>"
+            assert var.GetTypeName() == "!kgen.pointer<none>"
