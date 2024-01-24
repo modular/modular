@@ -179,3 +179,34 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     return Tensor[x.type, x.same_rank_param()](
         x.data, new_shape, new_stride, x.refcount()
     )
+
+
+# Test we support a nested lambda using values from the parent contexts.
+@mogg_register("recursive_lambda_test_target")
+@export
+fn recursive_lambda_test_target(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    var simd1 = SIMD[x.type, 1](0.5)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        var simd2 = SIMD[_t, width](4.0)
+
+        @parameter
+        @always_inline
+        fn inner(val: SIMD[_t, width]) -> SIMD[_t, width]:
+            @parameter
+            @always_inline
+            fn inner2(val2: SIMD[_t, width]) -> SIMD[_t, width]:
+                return val2 + rebind[SIMD[_t, width]](simd1) + simd2
+
+            return inner2(val)
+
+        return inner(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
