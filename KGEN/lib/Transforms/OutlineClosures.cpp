@@ -36,6 +36,8 @@ namespace M::KGEN {
 namespace {
 struct OutlineClosuresPass
     : M::KGEN::impl::OutlineClosuresBase<OutlineClosuresPass> {
+  using OutlineClosuresBase::OutlineClosuresBase;
+
   void runOnOperation() override;
 };
 } // namespace
@@ -117,20 +119,29 @@ void OutlineClosuresPass::runOnOperation() {
       ParameterCollector collector(paramCache);
       SmallVector<ParamDeclRefAttr, 16> capturedUses;
       for (Value capture : captures) {
-        capturedUses.clear();
         bool unused;
         {
           CompilerTimeTraceScope traceScope("collectParameters");
           collector.collectUsesFromType(capture.getType(), capturedUses,
                                         unused);
         }
-        for (ParamDeclRefAttr capturedUse : capturedUses) {
-          Operation *declOp =
-              regionDeclUses->second.decls.find(capturedUse.getName())
-                  ->second.declOp;
-          if (!regionDecl->isAncestor(declOp))
-            regionDeclUses->second.usesFromAbove.insert(capturedUse);
-        }
+      }
+
+      // Scan locations for captured parameters when in a debug build.
+      if (debugBuild) {
+        regionDecl.walk([&](Operation *op) {
+          bool unused;
+          collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
+        });
+      }
+
+      // Add additional uses to the captures set.
+      for (ParamDeclRefAttr capturedUse : capturedUses) {
+        Operation *declOp =
+            regionDeclUses->second.decls.find(capturedUse.getName())
+                ->second.declOp;
+        if (!regionDecl->isAncestor(declOp))
+          regionDeclUses->second.usesFromAbove.insert(capturedUse);
       }
 
       for (ParamDeclRefAttr useFromAbove :

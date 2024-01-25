@@ -91,7 +91,8 @@ void KGEN::buildElaborateModulePipeline(
 
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
-  pm.addPass(createOutlineClosures());
+  pm.addPass(createOutlineClosures(OutlineClosuresOptions{
+      options.debugLevel != CompilationOptions::kNoDebug}));
   // TODO(#20717): CSE cannot run before `OutlineClosures`.
   pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
   pm.addPass(createVerifyParameters());

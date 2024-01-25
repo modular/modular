@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -outline-closures -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -outline-closures=debug-build=true -mlir-print-debuginfo | FileCheck %s
 
 
 // CHECK-LABEL: kgen.generator @foo_NestedClosure() -> !pop.array<0, i32> {
@@ -83,3 +83,21 @@ kgen.generator @foo(%arg0: index) -> !pop.array<0, i1> {
 #locNested = loc(fused<#spNested>[#loc3])
 #locCap = loc(fused<#spCap>[#loc4])
 #locNestedCap = loc(fused<#spNestedCap>[#loc5])
+
+// -----
+
+// COM: Use of 'a' appears only in a location inside the closure.
+
+// CHECK-LABEL: @outline_closures_ref_closure<a>()
+// CHECK-NEXT: kgen.return loc([[LOC:#.*]])
+
+// CHECK-LABEL: @outline_closures_ref<a>
+kgen.generator @outline_closures_ref<a>() {
+  // CHECK-NEXT: declare closure: () -> () = <@outline_closures_ref_closure<a>>
+  kgen.param.declare.region closure = () {
+    kgen.return loc(fused<#kgen.param.decl.ref<"a"> : index>["a:0:0"])
+  }
+  kgen.return
+}
+
+// CHECK: [[LOC]] = loc(fused<#kgen.param.decl.ref<"a"> : index>[
