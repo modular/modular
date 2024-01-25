@@ -8,9 +8,9 @@
 
 
 fn var_let_decls():
-    # CHECKL: %xx = lit.varlet.decl "xx"  var
-    # CHECKL: %[[V1:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 42}>>
-    # CHECKL: lit.ref.store %[[V1]], %xx
+    # CHECK: %xx = lit.varlet.decl "xx"  var
+    # CHECK: %[[V1:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 42}>>
+    # CHECK: lit.ref.store %[[V1]], %xx
     var xx = 42
 
     # CHECK: %yy = lit.varlet.decl "yy"  var
