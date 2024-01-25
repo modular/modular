@@ -535,13 +535,12 @@ void RaiseForLoops::runOnOperation() {
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
 
     InFlightDiagnostic diag =
-        mlir::emitError(loop->getLoc(), " loop is decorated with @unroll, "
-                                        "but compiler can't fully unroll it");
+        mlir::emitWarning(loop->getLoc(), " loop is decorated with @unroll, "
+                                          "but compiler can't fully unroll it");
 
-    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll()) {
-      signalPassFailure();
+    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll())
       continue;
-    }
+
     diag.abandon();
   }
 }
