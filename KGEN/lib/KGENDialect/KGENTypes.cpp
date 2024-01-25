@@ -324,6 +324,7 @@ SignatureType SignatureType::getSpecializedSignature(
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
   evaluator.setInputDepth(1);
+  IndexDepthAdjuster adjuster(/*adjustDepth=*/1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -340,7 +341,7 @@ SignatureType SignatureType::getSpecializedSignature(
     // We must remap the value type being provided as well, because it may be
     // referring to outer-context indexed parameters, whose depth will be
     // increased when substituted into this signature.
-    if (remapType(value.getType()) != remappedDeclType) {
+    if (adjuster.replace(value.getType()) != remappedDeclType) {
       assert(emitErrorFn && "unexpected invalid signature");
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                     << value.getType() << " but callee expected type "

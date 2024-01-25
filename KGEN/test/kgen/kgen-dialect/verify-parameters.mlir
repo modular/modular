@@ -117,3 +117,15 @@ kgen.generator @use() {
   >() -> () = <?>
   kgen.return
 }
+
+// -----
+
+lit.struct.decl @T<a> {
+}
+
+// CHECK-LABEL: kgen.generator @f
+kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
+  // CHECK-NEXT: ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
+  kgen.param.declare ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
+  kgen.unreachable
+}
