@@ -81,18 +81,36 @@ namespace {
 struct PromotedStackAlloc {
   /// The latest value that the alloc'd value has.
   Value currValue;
-  /// The initial DebugInfo ValueOp that was created for the promoted
-  /// StackAllocation. One alloc may be mapped to multiple source variables
-  /// (each via a DebugInfo ValueOp) after inlining. This map allows tracking
-  /// stores to them separately.
-  DenseMap<DebugInfo::DISubprogramAttr, DebugInfo::ValueOp> debugValues;
+  /// The attributes that will be used to create DebugInfo ValueOps for the
+  /// promoted StackAllocation. One alloc may be mapped to multiple source
+  /// variables (each via a DebugInfo ValueOp) after inlining. This map allows
+  /// tracking stores to them separately.
+  struct DebugValue {
+    DebugInfo::DILocalVariableAttr varInfo;
+    DebugInfo::DIExprAttr conversionExpr;
+  };
+  DenseMap<DebugInfo::DISubprogramAttr, DebugValue> debugValues;
 
-  /// Create a new DebugInfo ValueOp for a StackAllocation that was promoted.
-  /// By default, an undef value is set as the DI value if no previous stores
-  /// were observed.
+  /// Get the current value of this promoted stack allocation. If none exist
+  /// yet, create an undef with the same type and return that.
+  Value getCurrValueOrUndef(StackAllocationOp alloc, Operation *user) {
+    if (LLVM_LIKELY(currValue))
+      return currValue;
+    // If the value is undefined, materialize an undef operation.
+    UndefOp undef =
+        OpBuilder(user).create<UndefOp>(user->getLoc(), getAllocType(alloc));
+    // Create a DebugInfo ValueOp right after this undef.
+    updateValue(undef, undef);
+    return undef;
+  }
+
+  /// Register that a promoted StackAllocation needs DebugInfo.
+  /// The caller pass in the existing DebugInfo ValueOp for the StackAllocation
+  /// so that when future stores into this StackAllocation gets transformed, a
+  /// DebugInfo ValueOp can be created at the previous store site.
   ErrorOrSuccess
-  createDebugValue(StackAllocationOp alloc, DebugInfo::ValueOp value,
-                   DebugInfo::DIExprLeafReplacer &exprLeafReplacer) {
+  registerDebugValue(StackAllocationOp alloc, DebugInfo::ValueOp value,
+                     DebugInfo::DIExprLeafReplacer &exprLeafReplacer) {
     ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
         exprLeafReplacer.apply(value.getConversionExprAttr());
     // Not enough source information available to track this transformation.
@@ -100,18 +118,12 @@ struct PromotedStackAlloc {
     if (failed(newConversionExpr))
       return success();
 
-    OpBuilder b(value);
-    if (!currValue)
-      currValue = b.create<UndefOp>(alloc->getLoc(), getAllocType(alloc));
-    auto debugValue = b.create<DebugInfo::ValueOp>(value.getLoc(), currValue,
-                                                   value.getValueInfo(),
-                                                   newConversionExpr.get());
     DebugInfo::DISubprogramAttr scope =
         extractPreInlineSubprogramScope(value->getLoc());
     if (!scope)
       return Error(
           "location of debug value does not contain a subprogram scope");
-    debugValues.try_emplace(scope, debugValue);
+    debugValues[scope] = {value.getValueInfo(), newConversionExpr.get()};
     return success();
   }
 
@@ -141,9 +153,9 @@ struct PromotedStackAlloc {
     if (auto it = debugValues.find(mutatorScope); it != debugValues.end()) {
       OpBuilder b(mutator->getContext());
       b.setInsertionPointAfter(mutator);
-      auto newDebugValueOp = cast<DebugInfo::ValueOp>(b.clone(*it->second));
-      newDebugValueOp.setOperand(newValue);
-      newDebugValueOp->setLoc(mutator->getLoc());
+      DebugValue &dbgValue = it->second;
+      b.create<DebugInfo::ValueOp>(mutator->getLoc(), newValue,
+                                   dbgValue.varInfo, dbgValue.conversionExpr);
     }
   }
 
@@ -171,14 +183,6 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         "regions");
   }
 
-  auto valueOrUndef = [](StackAllocationOp alloc, Operation *op,
-                         Value value) -> Value {
-    if (LLVM_LIKELY(value))
-      return value;
-    // If the value is undefined, materialize an undef operation.
-    return OpBuilder(op).create<UndefOp>(op->getLoc(), getAllocType(alloc));
-  };
-
   for (Operation &op : llvm::make_early_inc_range(region.front())) {
     if (auto alloc = dyn_cast<StackAllocationOp>(op)) {
       // If we can promote this stack allocation, initialize its state with an
@@ -192,8 +196,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // value of the stack allocation.
       if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
-          load.replaceAllUsesWith(
-              valueOrUndef(alloc, load, it->second.currValue));
+          load.replaceAllUsesWith(it->second.getCurrValueOrUndef(alloc, load));
           load.erase();
           ++stats.numLoadsElided;
         }
@@ -205,7 +208,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       if (auto alloc = value.getValue().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
           auto newValue =
-              it->second.createDebugValue(alloc, value, exprLeafReplacer);
+              it->second.registerDebugValue(alloc, value, exprLeafReplacer);
           if (failed(newValue))
             return value.emitError() << newValue.getError();
           value.erase();
@@ -234,7 +237,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       SmallVector<Value> newOperands;
       for (StackAllocationOp alloc : it->second) {
         newOperands.push_back(
-            valueOrUndef(alloc, &op, state.find(alloc)->second.currValue));
+            state.find(alloc)->second.getCurrValueOrUndef(alloc, &op));
       }
       term.insertVariants(newOperands);
       continue;
@@ -320,8 +323,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
             parentHasInit = true;
             SmallVector<Value> initOperands;
             for (StackAllocationOp alloc : variant) {
-              initOperands.push_back(valueOrUndef(
-                  alloc, &op, state.find(alloc)->second.currValue));
+              initOperands.push_back(
+                  state.find(alloc)->second.getCurrValueOrUndef(alloc, &op));
             }
 
             node.insertVariants(initOperands);
