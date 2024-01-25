@@ -1757,13 +1757,11 @@ fn squeeze_shape_shape[
 ](
     input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
     remove_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
-) -> StaticIntTuple[1]:
+) raises -> StaticIntTuple[1]:
     let out_dim = input_shape.dim(0) - remove_indices.dim(0)
 
-    # TODO(17512)
-    debug_assert(
-        out_dim >= 0, "Cannot remove more dimensions than there exists"
-    )
+    if out_dim < 0:
+        raise Error("cannot remove more dimensions than there exists")
 
     return StaticIntTuple[1](out_dim)
 
@@ -1890,32 +1888,21 @@ fn transpose_shape[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
-) -> StaticIntTuple[rank]:
-    debug_assert(
-        perms.dim(0) == rank,
-        (
-            "Size of transpose permutation vector doesn't match expected output"
-            " shape"
-        ),
-    )
+) raises -> StaticIntTuple[rank]:
+    if perms.dim(0) != rank:
+        raise Error("Permutation size must match input rank")
 
     @unroll
     for i in range(rank):
         let perm = int(perms[i])
-        # TODO(17512)
-        debug_assert(perm >= 0, "Transpose permutation is less than zero")
-        debug_assert(perm < rank, "Transpose permutation is out of range")
+        if perm < 0 or rank <= perm:
+            raise Error("each permutation must be within [0, rank)")
 
     # NOTE this assumes `transpose` can handle input with null data pointer
     let out = transpose[rank, type, int_type, single_thread_blocking_override](
         input, perms, MojoCallContextPtr()
     ).dynamic_shape
 
-    # TODO(17512)
-    debug_assert(
-        out.flattened_length() == input.dynamic_shape.flattened_length(),
-        "Dynamic transpose has changed the number of elements",
-    )
     return out
 
 
