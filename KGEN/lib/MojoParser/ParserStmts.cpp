@@ -228,9 +228,9 @@ struct StmtParser : public ParserBase {
   // Declarations.
   ParseResult parseFromImportStmt();
   ParseResult parseImportStmt();
-  ParseResult parseImportModuleName(bool allowRelativeModules,
-                                    StringAttr &parsedName,
-                                    StringRef *leafModuleName = nullptr);
+  ParseResult
+  parseImportModuleName(StringAttr &parsedName,
+                        StringRef *nonIdentLeafModuleName = nullptr);
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTraitStmt(LexerCursor startCursor, size_t curIndent);
@@ -1734,7 +1734,7 @@ ParseResult StmtParser::parseFromImportStmt() {
 
   SMLoc importLoc = getToken().getLoc();
   StringAttr moduleAttr;
-  if (parseImportModuleName(/*allowRelativeModules=*/true, moduleAttr) ||
+  if (parseImportModuleName(moduleAttr) ||
       parseToken(Token::kw_import, "expected 'import' after module name"))
     return failure();
 
@@ -1829,8 +1829,7 @@ ParseResult StmtParser::parseImportStmt() {
     SMLoc importLoc = getToken().getLoc();
     StringAttr moduleAttr;
     StringRef boundModuleName;
-    if (parseImportModuleName(/*allowRelativeModules=*/true, moduleAttr,
-                              &boundModuleName))
+    if (parseImportModuleName(moduleAttr, &boundModuleName))
       return failure();
 
     // Check for a name binding.
@@ -1858,8 +1857,10 @@ ParseResult StmtParser::parseImportStmt() {
 /// Parse a module name for use in an import statement.
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
-ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
-                                              StringAttr &parsedName,
+///
+/// If `leafModuleName` is provided, the name is required to be have a `module`
+/// component.
+ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
                                               StringRef *leafModuleName) {
   // The individual name components making up a module.
   SmallVector<StringRef> moduleNames;
@@ -1889,39 +1890,44 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
 
   // Parse the relative '.' indicators that resolve to a parent package. These
   // push "" to the set to indicate relative resolution.
-  if (allowRelativeModules) {
-    while (true) {
-      if (consumeIf(Token::dot))
-        moduleNames.push_back("");
-      else if (consumeIf(Token::dot_dot_dot))
-        llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
-      else
-        break;
-    }
+  while (true) {
+    if (consumeIf(Token::dot))
+      moduleNames.push_back("");
+    else if (consumeIf(Token::dot_dot_dot))
+      llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
+    else
+      break;
   }
 
-  // Parse the first module name.
-  StringRef rootModuleName = getTokenSpelling();
-  bool missingIdentifier = failed(parseIdentifier("expected module name"));
-  notifyListenerOfImport();
-
-  // If there was no identifier, then we're done.
-  if (missingIdentifier)
-    return failure();
-  moduleNames.push_back(rootModuleName);
-
-  // Parse nested module names.
-  while (consumeIf(Token::dot)) {
+  // If we have a non-relative module name, or we require one, try to parse it.
+  if (leafModuleName || moduleNames.empty() || getToken().isIdentifier()) {
+    // Parse the first module name.
+    StringRef rootModuleName = getTokenSpelling();
+    bool missingIdentifier = failed(parseIdentifier("expected module name"));
     notifyListenerOfImport();
 
-    moduleNames.push_back(getTokenSpelling());
-    if (parseIdentifier("expected module name"))
+    // If there was no identifier, then we're done.
+    if (missingIdentifier)
       return failure();
+    moduleNames.push_back(rootModuleName);
+
+    // Parse nested module names.
+    while (consumeIf(Token::dot)) {
+      notifyListenerOfImport();
+
+      moduleNames.push_back(getTokenSpelling());
+      if (parseIdentifier("expected module name"))
+        return failure();
+    }
+
+    if (leafModuleName)
+      *leafModuleName = moduleNames.back();
+  } else {
+    notifyListenerOfImport();
+    moduleNames.push_back("");
   }
 
   parsedName = builder.getStringAttr(llvm::join(moduleNames, "."));
-  if (leafModuleName)
-    *leafModuleName = moduleNames.back();
   return success();
 }
 
