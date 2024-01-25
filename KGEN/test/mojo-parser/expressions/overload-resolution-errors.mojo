@@ -72,13 +72,13 @@ fn pack_func[*Ts: AnyRegType](*args: *Ts):
 
 
 fn test_unexpected_kw(x: Int):
-    # expected-error @+1 {{unexpected keyword argument: 'c'}}
+    # expected-error @+1 {{unknown keyword argument: 'c'}}
     takes_pos_or_kw(x, c=x, j=x)
-    # expected-error @+1 {{unexpected keyword arguments: 'c', 'd'}}
+    # expected-error @+1 {{unknown keyword arguments: 'c', 'd'}}
     takes_pos_or_kw(x, d=x, c=x)
-    # expected-error @+1 {{unexpected keyword argument: 'args'}}
+    # expected-error @+1 {{unknown keyword argument: 'args'}}
     var_func(args=x)
-    # expected-error @+1 {{unexpected keyword argument: 'args'}}
+    # expected-error @+1 {{unknown keyword argument: 'args'}}
     pack_func(args=x)
 
 

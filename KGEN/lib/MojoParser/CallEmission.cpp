@@ -475,7 +475,7 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       /*emitUnknownKw=*/
       [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
         InflightDiag diag = shared.emitError(exprLoc);
-        emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+        emitUnknownKeywords(diag, std::move(unknownKeywords), "parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
       /*emitRedundantKw=*/
