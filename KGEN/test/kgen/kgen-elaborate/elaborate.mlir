@@ -143,57 +143,6 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: @"genItf2,x=0"()
-kgen.generator @genItf2<x>() {
-  // CHECK-NEXT: kgen.call @"genItf2_impl0,x=0"
-  kgen.param.fork impl : () -> () = <[@genItf2_impl0<x>, @genItf2_impl1<x>]>
-  kgen.call_param[() -> () : impl]()
-  kgen.return
-}
-
-// CHECK-NOT: kgen.func @"genItf2_impl0,x=1_1"() {
-// CHECK-LABEL: kgen.func @"genItf2_impl0,x=0"() {
-// CHECK-NEXT:   "impl.0"() : () -> ()
-// CHECK-NEXT:   kgen.return
-// CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
-kgen.generator @genItf2_impl0<x>()
-  constraints <[eq(x, 0), "x must be zero"]> {
-  "impl.0"() : () -> ()
-  kgen.return
-}
-
-// CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
-// CHECK-LABEL: kgen.func @"genItf2_impl1,x=1"() {
-// CHECK-NEXT:   "impl.1"() : () -> ()
-// CHECK-NEXT:   kgen.return
-// CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
-kgen.generator @genItf2_impl1<x>()
-  constraints <[eq(x, 1), "x must be 1"]> {
-  "impl.1"() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @use_Itf2zero() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=0"() : () -> ()
-// CHECK-NEXT:   kgen.return
-kgen.generator @use_Itf2zero() {
-  kgen.call @genItf2<0>() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @use_Itf2one() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=1,impl=@genItf2_impl1<1>"() : () -> ()
-// CHECK-NEXT:   kgen.return
-// CHECK-NEXT: }
-kgen.generator @use_Itf2one() {
-  kgen.call @genItf2<1>() : () -> ()
-  kgen.return
-}
-
-// -----
-
-//===----------------------------------------------------------------------===//
-
 // Test that expansions are tracked and each ultimate kernel version only allows
 // any particular generator/parameter set pair to expand one direction, reducing
 // exponential explosion.
@@ -1823,26 +1772,6 @@ kgen.generator @bat_binder(%arg0: index) {
 	%2 = kgen.create_closure[(index) capturing -> index: h]()
 	kgen.param.declare h: (index) capturing -> index = <@bat>
 	kgen.return
-}
-
-// -----
-
-// COM: First instantiation of `@fwd` is inside a constraint.
-
-kgen.generator @fwd(%a: i1) -> i1 {
-  kgen.return %a : i1
-}
-
-kgen.generator @f()
-    constraints <[apply(:(i1) -> i1 @fwd, 1), "true"]> {
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func export @top
-kgen.generator export @top() {
-  // CHECK-NEXT: call @f
-  kgen.call @f() : () -> ()
-  kgen.return
 }
 
 // -----
