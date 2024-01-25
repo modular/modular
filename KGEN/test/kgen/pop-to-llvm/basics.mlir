@@ -793,7 +793,7 @@ kgen.func @variadic_splat(%a: i24) {
   // CHECK: %[[STRUCT2:.*]] = llvm.insertvalue %[[ALLOCA]], %[[STRUCT1]][0]
   // CHECK: llvm.insertvalue %[[SIZE]], %[[STRUCT2]][1]
   // CHECK: llvm.intr.lifetime.end 8, %[[ALLOCA]]
-  %0 = pop.variadic.splat %a, 2 : !kgen.variadic<i24>
+  %0 = pop.variadic.splat 2, %a : !kgen.variadic<i24>
   kgen.return
 }
 
