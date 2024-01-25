@@ -237,10 +237,10 @@ static void emitSortedNames(InflightDiag &diag,
       [&]() { diag << ", "; });
 }
 
-void LIT::emitUnexpectedKeywords(InflightDiag &diag,
-                                 SmallVectorImpl<StringRef> &&unknownKeywords,
-                                 StringRef argOrParam) {
-  diag << "unexpected keyword " << argOrParam << plural(unknownKeywords.size())
+void LIT::emitUnknownKeywords(InflightDiag &diag,
+                              SmallVectorImpl<StringRef> &&unknownKeywords,
+                              StringRef argOrParam) {
+  diag << "unknown keyword " << argOrParam << plural(unknownKeywords.size())
        << ": ";
   emitSortedNames(diag, std::move(unknownKeywords));
 }

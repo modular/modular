@@ -202,13 +202,13 @@ fn test_func_kw_params2():
     take_kw_params[a=42, 1]()
 
 fn test_func_kw_params3():
-    # expected-error @below {{unexpected keyword parameter: 'args'}}
+    # expected-error @below {{unknown keyword parameter: 'args'}}
     var_params["woof", args=7]
-    # expected-error @below {{unexpected keyword parameter: 'Ts'}}
+    # expected-error @below {{unknown keyword parameter: 'Ts'}}
     pack_params[Ts=Int]
-    # expected-error @below {{unexpected keyword parameter: 'c'}}
+    # expected-error @below {{unknown keyword parameter: 'c'}}
     take_kw_params[7, c=9]()
-    # expected-error @below {{unexpected keyword parameters: 'c', 'z'}}
+    # expected-error @below {{unknown keyword parameters: 'c', 'z'}}
     take_kw_params[7, z=13, c=9]()
     # expected-error @below {{parameter #0 ('a') passed both as positional and keyword operand}}
     take_kw_params[7, b=7, a=9]()
@@ -261,11 +261,11 @@ fn test_struct_kw_params2():
     _ = KwParamStruct[a=42, 1]()
 
 fn test_struct_kw_params3():
-    # expected-error @below {{unexpected keyword parameter: 'args'}}
+    # expected-error @below {{unknown keyword parameter: 'args'}}
     _ = VarParamStruct["woof", args=7]
-    # expected-error @below {{unexpected keyword parameter: 'c'}}
+    # expected-error @below {{unknown keyword parameter: 'c'}}
     _ = KwParamStruct[7, c=9]()
-    # expected-error @below {{unexpected keyword parameters: 'c', 'z'}}
+    # expected-error @below {{unknown keyword parameters: 'c', 'z'}}
     _ = KwParamStruct[7, z=13, c=9]()
     # expected-error @below {{parameter #0 ('a') passed both as positional and keyword operand}}
     _ = KwParamStruct[7, b=7, a=9]()

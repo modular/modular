@@ -61,10 +61,10 @@ void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
                               size_t maxAllowed, size_t numActual,
                               Twine argOrParam);
 
-/// Helper to emit an error message for unexpected keyword operands.
-void emitUnexpectedKeywords(InflightDiag &diag,
-                            SmallVectorImpl<StringRef> &&unknownKeywords,
-                            StringRef argOrParam);
+/// Helper to emit an error message for unknown keyword operands.
+void emitUnknownKeywords(InflightDiag &diag,
+                         SmallVectorImpl<StringRef> &&unknownKeywords,
+                         StringRef argOrParam);
 
 /// Helper to emit an error message for positional-only operands passed by
 /// keyword.

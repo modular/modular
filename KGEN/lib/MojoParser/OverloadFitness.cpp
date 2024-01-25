@@ -515,7 +515,7 @@ DiagEmitter::unexpectedKwArgs(StringSet<> &unknownKwOperands) const {
   InflightDiag diag = initDiag();
   SmallVector<StringRef> keywords = llvm::map_to_vector(
       unknownKwOperands, [](auto &it) { return it.getKey(); });
-  emitUnexpectedKeywords(diag, std::move(keywords), "argument");
+  emitUnknownKeywords(diag, std::move(keywords), "argument");
   return diag;
 }
 
@@ -982,7 +982,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
       /*emitUnknownKw=*/
       [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
-        emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+        emitUnknownKeywords(diag, std::move(unknownKeywords), "parameter");
       },
       /*emitRedundantKw=*/
       [&](size_t paramIdx, StringAttr paramName) {
