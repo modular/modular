@@ -161,7 +161,8 @@ fn unary_op_without_fusion(
 @mogg_register_override("mo.transpose", 1000)
 @export
 fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
-    alias rank = x.static_rank
+    # Currently we don't support alias.
+    # alias rank = x.static_rank
 
     var new_shape = IntList[x.same_rank_param()]()
     var new_stride = IntList[x.same_rank_param()]()
@@ -174,11 +175,25 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
         new_shape[i] = x.shape[dim]
         new_stride[i] = x.strides[dim]
 
-    unroll[rank, body]()
+    unroll[x.static_rank, body]()
 
     return Tensor[x.type, x.same_rank_param()](
         x.data, new_shape, new_stride, x.refcount()
     )
+
+
+@mogg_register_override("copy", 1000)
+@export
+fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](x.simd_load[width](i))
+
+    out.for_each[1, func]()
+    return out
 
 
 # Test we support a nested lambda using values from the parent contexts.
