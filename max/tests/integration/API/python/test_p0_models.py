@@ -106,16 +106,16 @@ top_models: Mapping[str, ModelMeta] = {
         ],
         framework=ONNX,
     ),
-    "bert-base-uncased-torch": ModelMeta(
-        s3_uri="s3://modular-model-storage/TorchScript/bert-base-uncased_pytorch.torchscript",
-        input_names=["input_ids", "attention_mask", "input"],
-        input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
-        output_names=[
-            "result0",
-            "result1",
-        ],
-        framework=PYTORCH,
-    ),
+    # "bert-base-uncased-torch": ModelMeta(
+    #     s3_uri="s3://modular-model-storage/TorchScript/bert-base-uncased_pytorch.torchscript",
+    #     input_names=["input_ids", "attention_mask", "input"],
+    #     input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
+    #     output_names=[
+    #         "result0",
+    #         "result1",
+    #     ],
+    #     framework=PYTORCH,
+    # ),
 }
 
 
