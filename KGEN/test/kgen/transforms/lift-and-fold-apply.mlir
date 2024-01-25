@@ -80,3 +80,15 @@ kgen.generator @isolated_constraints()
     constraints <[eq(apply(:(index) -> index @pass, 1), 1), "1"]> {
   kgen.return
 }
+
+kgen.generator @bad() -> index {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.generator @nohoist_cond
+kgen.generator @nohoist_cond() {
+  kgen.param.declare cond: i1 = <0>
+  // CHECK-NOT: kgen.param.apply
+  kgen.param.declare value = <cond(cond, apply(:() -> index @bad), 1)>
+  kgen.return
+}

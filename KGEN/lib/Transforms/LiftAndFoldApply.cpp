@@ -47,9 +47,16 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return std::make_pair(signature, WalkResult::skip());
   });
 
-  replacer.addReplacement([&](ParamOperatorAttr op) -> Attribute {
+  replacer.addReplacement([&](ParamOperatorAttr op)
+                              -> std::pair<Attribute, WalkResult> {
+    // Expressions cannot be hoisted out of a condition because it only
+    // conditionally evaluates both branches. Moving expressions out changes the
+    // semantics of the program.
+    if (op.getOpcode() == POC::Cond)
+      return {op, WalkResult::skip()};
+
     if (op.getOpcode() != POC::Apply)
-      return op;
+      return {op, WalkResult::advance()};
 
     // When we encounter an 'apply' operator, check the lifted map for this
     // scope for an operator of the same value in the current scope that has
@@ -58,7 +65,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     if (auto it = curMap.find(op); it != curMap.end()) {
       // Deduplicated an 'apply'.
       ++numDedupedApplies;
-      return it->second;
+      return {it->second, WalkResult::advance()};
     }
 
     // Collect all parameter uses within the operator so we can check the
@@ -125,7 +132,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // has the effect of allowing searches for the same operator to end early in
     // nested scopes.
     curMap.try_emplace(op, existing);
-    return existing;
+    return {existing, WalkResult::advance()};
   });
 
   // If the parent is a function, extract 'apply' operators and place them at
