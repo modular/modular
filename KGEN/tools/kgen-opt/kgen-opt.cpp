@@ -243,6 +243,11 @@ struct TestAlwaysFailPass
 } // namespace
 
 int main(int argc, char **argv) {
+  // HACK: Read in the option early.
+  bool llclSingleThread = false;
+  if (argc >= 2 && StringRef(argv[1]) == "--llcl-single-thread")
+    llclSingleThread = true;
+
   DialectRegistry registry;
 
   // Register all KGEN dialects.
@@ -315,8 +320,12 @@ int main(int argc, char **argv) {
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
   // Register passes that require a runtime.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(
-      LLCL::RuntimeOptions().withLeakCheckedAllocator());
+  LLCL::RuntimeOptions llclOpts;
+  llclOpts.withLeakCheckedAllocator();
+  if (llclSingleThread)
+    llclOpts.withSingleThreaded();
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(llclOpts);
+
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(*runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(*runtime); });
@@ -335,7 +344,9 @@ int main(int argc, char **argv) {
         });
   });
 
-  // Register cl options for the tracer.
+  // Register cl options.
+  static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};
+
   static llvm::cl::opt<bool> timeTrace{
       "time-trace",
       llvm::cl::desc("Turn on time profiler. Generates JSON file "
