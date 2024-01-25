@@ -2322,3 +2322,22 @@ kgen.generator export @main() {
   %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), llvm, :(index, index, index) -> (index) @fma)>
   kgen.return
 }
+
+// -----
+
+// CHECK-NOT: @no_impl
+kgen.generator @no_impl() -> index {
+  kgen.param.assert <0>, "bad"
+  %index0 = kgen.param.constant = <0>
+  kgen.return %index0 : index
+}
+
+kgen.generator @make_true() -> i1 {
+  %0 = kgen.param.constant: i1 = <1>
+  kgen.return %0 : i1
+}
+
+kgen.generator export @conditional_alias() {
+  kgen.param.declare value = <cond(apply(:() -> i1 @make_true), 1, apply(:() -> index @no_impl))>
+  kgen.return
+}

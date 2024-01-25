@@ -114,8 +114,10 @@ private:
   Attribute doReplace(Attribute attr, size_t rootDepth);
   friend class ParameterReplacer<ParameterEvaluator>;
 
-  /// Handle the `cond` operator.
-  IntegerAttr narrowCondOp(Attribute attr, size_t rootDepth);
+  /// Handle the `cond` operator. This needs to return a tri-state: whether the
+  /// condition can be narrowed to an integer constant and whether we need to
+  /// suspend, which is that the bool represents.
+  std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t rootDepth);
 
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
