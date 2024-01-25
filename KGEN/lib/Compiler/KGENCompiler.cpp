@@ -16,9 +16,9 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/Telemetry/Telemetry.h"
-#include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
@@ -253,18 +253,11 @@ static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
   std::unique_ptr<llvm::MemoryBuffer> bytecode =
       llvm::MemoryBuffer::getMemBuffer(StringRef(it, size), /*BufferName=*/"",
                                        /*RequiresNullTerminator=*/false);
-  Block container;
-  if (failed(mlir::readBytecodeFile(
-          *bytecode, &container,
-          mlir::ParserConfig(ctx, /*verifyAfterParse=*/false))))
+  OwningOpRef<Operation *> func = readOpFromBytecodeFile(
+      *bytecode, mlir::ParserConfig(ctx, /*verifyAfterParse=*/false));
+  if (!func)
     return Error("failed to read capture function bytecode");
-  assert(container.getOperations().size() == 1 && "expected a single function");
   it += size;
-
-  // Take ownership of the function.
-  Operation *captureFunc = &container.front();
-  captureFunc->remove();
-  OwningOpRef<Operation *> func = captureFunc;
 
   // Read the number of captures.
   uint64_t numCaptures = llvm::support::endian::read64le(it);

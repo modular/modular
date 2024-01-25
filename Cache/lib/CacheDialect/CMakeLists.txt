@@ -20,6 +20,7 @@ add_modular_dialect_library(CacheDialect
   LLCLRuntime
   LLCLCompilerSupport
   MCache
+  MCompilerSupport
   MDialect
   MSupport
   MLIRBytecodeReader

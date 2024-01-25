@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(MCompilerSupport
+  BytecodeReaderWriter.cpp
   Diags.cpp
   ErrorTree.cpp
   MLIRDenseAttr.cpp
