@@ -29,8 +29,7 @@ add_modular_tool(mojo
   Run/mojo-run.cpp
 
   DEPENDS
-  orc-rt-cas
-  compiler-rt-cas
+  KGENCompilerRTShared
   KGENCompilerRT-static
   modular-crashpad-handler
   MojoLLDB
