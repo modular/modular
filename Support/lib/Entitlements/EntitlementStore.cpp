@@ -657,48 +657,29 @@ EntitlementStore::getUserID(std::optional<Config> cfg) const {
 }
 
 //===----------------------------------------------------------------------===//
-// EntitlementStore::alwaysOpen
-//===----------------------------------------------------------------------===//
-
-EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
-                                              llvm::raw_ostream &warnStream) {
-  if (!client)
-    return {}; // Empty entitlement store.
-
-  auto storeOr = EntitlementStore::open(*client);
-  if (storeOr.isError()) {
-    warnStream << "WARNING: " << storeOr.getError() << "\n";
-    return {}; // Empty entitlement store.
-  }
-
-  return storeOr.takeValue();
-}
-
-//===----------------------------------------------------------------------===//
 // EntitlementStore::open
 //===----------------------------------------------------------------------===//
 
-ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
+ErrorOr<std::optional<EntitlementStore>>
+EntitlementStore::open(HTTPClient &client) {
   // Register all the entitlements we have.
   registerAllEntitlements();
 
   EntitlementStore out;
-  // Find the client certificate. If we don't have one already, fetch one from
-  // auth.modular.com.
+  // Find the client certificate. If we don't have one already, return
+  // std::nullopt.
   auto certOr = findModularFile("client.pem");
-  if (!certOr) {
-    if (auto err = out.authAndFetchCertificate(client))
-      return err.takeError();
-  } else {
-    // Otherwise, read the certificate.
-    auto mbufOr = Buffer::getFile(certOr->string());
-    if (mbufOr.isError())
-      return mbufOr.takeError();
+  if (!certOr)
+    return std::nullopt;
 
-    // Parse the certificate chain. This will store the cert in this class.
-    if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
-      return err.takeError();
-  }
+  // Otherwise, read the certificate.
+  auto mbufOr = Buffer::getFile(certOr->string());
+  if (mbufOr.isError())
+    return mbufOr.takeError();
+
+  // Parse the certificate chain. This will store the cert in this class.
+  if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
+    return err.takeError();
 
   // Open the keypair, this function prefers a private key.
   auto privKeyOr = Keypair::open();
@@ -709,30 +690,79 @@ ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
   out.clientKeys = std::move(*privKeyOr);
 
   // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(client))
+  if (auto err = out.verifyAndFlushClientCert(&client))
     return err.takeError();
 
   return out;
 }
 
 //===----------------------------------------------------------------------===//
-// EntitlementStore::openWithRetry
+// EntitlementStore::generate
 //===----------------------------------------------------------------------===//
 
-ErrorOr<EntitlementStore> EntitlementStore::openWithRetry(HTTPClient &client) {
-  // Attempt to open, if it worked then return it.
-  auto storeOr = open(client);
-  if (!storeOr.isError())
-    return std::move(storeOr);
-
-  // Otherwise, remove the client cert file (if it exists) and try again.
+ErrorOr<EntitlementStore> EntitlementStore::generate(HTTPClient &client) {
+  // Remove the client cert file (if it exists) and try again.
   auto certFile = findModularFile("client.pem");
   if (certFile) {
     std::error_code ec;
     std::filesystem::remove(*certFile, ec);
   }
 
-  return open(client);
+  EntitlementStore out;
+  if (auto err = out.authAndFetchCertificate(client))
+    return err.takeError();
+
+  // Validate the certificate.
+  if (auto err = out.verifyAndFlushClientCert(&client))
+    return err.takeError();
+
+  return out;
+}
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::alwaysOpen
+//===----------------------------------------------------------------------===//
+
+EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
+                                              llvm::raw_ostream &warnStream) {
+
+  // Register all the entitlements we have.
+  registerAllEntitlements();
+
+  EntitlementStore out;
+  // Find the client certificate. If we don't have one already, return
+  // std::nullopt.
+  auto certOr = findModularFile("client.pem");
+  if (!certOr)
+    return {}; // Empty entitlements store.
+
+  auto onError = [&](Error e) -> EntitlementStore {
+    warnStream << e.get();
+    return {}; // Empty entitlement store.
+  };
+
+  // Otherwise, read the certificate.
+  auto mbufOr = Buffer::getFile(certOr->string());
+  if (mbufOr.isError())
+    return onError(mbufOr.takeError());
+
+  // Parse the certificate chain. This will store the cert in this class.
+  if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
+    return onError(err.takeError());
+
+  // Open the keypair, this function prefers a private key.
+  auto privKeyOr = Keypair::open();
+  if (privKeyOr.isError())
+    return onError(privKeyOr.takeError());
+  if (!privKeyOr->hasPrivateKey())
+    return onError(Error("client keypair did not include a private key"));
+  out.clientKeys = std::move(*privKeyOr);
+
+  // Validate the certificate.
+  if (auto err = out.verifyAndFlushClientCert(client))
+    return onError(err.takeError());
+
+  return out;
 }
 
 //===----------------------------------------------------------------------===//
@@ -793,7 +823,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
     return err.takeError();
 
   // Validate and flush the certificate we just got.
-  if (auto err = verifyAndFlushClientCert(client))
+  if (auto err = verifyAndFlushClientCert(&client))
     return err.takeError();
 
   return success();
@@ -829,32 +859,35 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 // EntitlementStore::verifyAndFlushClientCert
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
+ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
   // Ensure that we have a data folder.
   auto dataFolderOr = Config::getModularDataFolderPath();
   if (dataFolderOr.isError())
     return dataFolderOr.takeError();
 
-  HTTPRequest certificateRequest{"https://crl.modular.com"};
-  WriteableBufferRef crlBuf = WriteableBuffer::get(
-      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
-  // The CRL isn't behind any kind of auth - that's allowed to be public.
-  client.noAuthNeeded();
-  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
-  // We ignore failures here, for now at least, it isn't an error to fail to
-  // fetch the CRL.
-  if (response.isSuccess()) {
-    // Flush it to the filesystem.
-    auto err = writeFileUnderLock(*dataFolderOr / "crl.pem",
-                                  [&](llvm::raw_ostream &os) {
-                                    os << crlBuf->Buffer::getBuffer();
-                                    // Write a null-terminator explicitly - this
-                                    // is required by mbedTLS' PEM parsing
-                                    // functions.
-                                    os << '\0';
-                                  });
-    if (err.isError()) {
-      return err.takeError();
+  // If we have a client, then fetch the CRL.
+  if (client) {
+    HTTPRequest certificateRequest{"https://crl.modular.com"};
+    WriteableBufferRef crlBuf = WriteableBuffer::get(
+        /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
+    // The CRL isn't behind any kind of auth - that's allowed to be public.
+    client->noAuthNeeded();
+    HTTPResponse response = client->executeRequest(certificateRequest, *crlBuf);
+    // We ignore failures here, for now at least, it isn't an error to fail to
+    // fetch the CRL.
+    if (response.isSuccess()) {
+      // Flush it to the filesystem.
+      auto err = writeFileUnderLock(*dataFolderOr / "crl.pem",
+                                    [&](llvm::raw_ostream &os) {
+                                      os << crlBuf->Buffer::getBuffer();
+                                      // Write a null-terminator explicitly -
+                                      // this is required by mbedTLS' PEM
+                                      // parsing functions.
+                                      os << '\0';
+                                    });
+      if (err.isError()) {
+        return err.takeError();
+      }
     }
   }
 
@@ -868,8 +901,9 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
       crlPEM = std::move(*pemOr);
   }
 
-  // Verify the certificate with the CRL we fetched.
-  if (auto err = clientCert->verify(clientKeys, crlPEM->getBuffer()))
+  // Verify the certificate with the CRL on the system, if we have it.
+  if (auto err =
+          clientCert->verify(clientKeys, crlPEM ? crlPEM->getBuffer() : ""))
     return err.takeError();
 
   // Flush the certificate to a local file now we know it's valid.

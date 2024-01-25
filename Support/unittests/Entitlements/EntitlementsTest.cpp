@@ -364,10 +364,31 @@ TEST(TestEntitlementStore, Bootstrap) {
   Firechicken client(std::move(httpCtx));
   client.noAuthNeeded();
 
-  auto storeOr = EntitlementStore::open(client);
+  auto storeOr = EntitlementStore::generate(client);
   EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
+  EXPECT_TRUE(e != nullptr);
+}
+
+/// Bootstrap an EntitlementStore, close it, and open again.
+TEST(TestEntitlementStore, BootstrapAndOpen) {
+  Entitlement::registerEntitlement<TestEntitlement>();
+
+  HTTPContextRef httpCtx = getHTTPContextRef();
+  Firechicken client(std::move(httpCtx));
+  client.noAuthNeeded();
+
+  { // Scope to call the entitlement store's destructor so we can `open` it.
+    auto storeOr = EntitlementStore::generate(client);
+    EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
+  }
+
+  auto storeOr = EntitlementStore::open(client);
+  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
+  EXPECT_TRUE(storeOr->has_value()) << "we just generated this...?";
+
+  auto e = (*storeOr)->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 }
 
@@ -379,7 +400,7 @@ TEST(TestEntitlementStore, Refresh) {
   Firechicken client(std::move(httpCtx));
   client.noAuthNeeded();
 
-  auto storeOr = EntitlementStore::open(client);
+  auto storeOr = EntitlementStore::generate(client);
   EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();

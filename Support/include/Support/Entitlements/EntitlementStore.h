@@ -45,6 +45,14 @@ public:
   EntitlementStore(const EntitlementStore &other) = delete;
   EntitlementStore(EntitlementStore &&other);
 
+  /// Move-assignment operator.
+  EntitlementStore &operator=(EntitlementStore &&other) {
+    if (&other != this)
+      new (this) EntitlementStore(std::move(other));
+
+    return *this;
+  }
+
   /// Get the current user ID. Clients should use this rather than reading
   /// `modular.cfg` or any other alternative if they want to find the current
   /// user's ID for e.g. telemetry. This may return an error if we don't have
@@ -52,29 +60,25 @@ public:
   ErrorOr<std::string>
   getUserID(std::optional<Config> cfg = std::nullopt) const;
 
+  /// Open the entitlements store. If the client certificate exists, this will
+  /// return a valid and ready-to-use EntitlementStore. If the client
+  /// certificate does not exist, then return std::nullopt because the enclosing
+  /// application should decide what to do in that state. If an actual error
+  /// occurs, return the error.
+  static ErrorOr<std::optional<EntitlementStore>> open(HTTPClient &client);
+
+  /// Remove an existing certificate from the user's system (if it exists) and
+  /// fetch a new one. This always returns an EntitlementStore on success,
+  /// because the only case where we cannot fetch a certificate is the one where
+  /// an actual error occurred.
+  static ErrorOr<EntitlementStore> generate(HTTPClient &client);
+
   /// Always open an EntitlementStore, and simply default to an empty
-  /// EntitlementStore if we don't have the required infrastructure or the
-  /// opening fails. This will print a warning to `warnStream` there was an
-  /// actual error in opening the EntitlementStore.
+  /// EntitlementStore if we don't have the required infrastructure, we don't
+  /// have a certificate, or the opening fails. This will print a warning to
+  /// `warnStream` if there was an actual error in opening the EntitlementStore.
   static EntitlementStore alwaysOpen(HTTPClient *client,
                                      llvm::raw_ostream &warnStream);
-
-  /// Open the entitlements store. If the client certificate exists, that one
-  /// will be used. Otherwise, we drop into the OAuth Device Authorization Flow
-  /// and prompt the user to perform actions in their browser to authorize this
-  /// process. If the certificate found on the system is invalid or fails to
-  /// parse, then we return an error. Users should prefer `openWithRetry` below
-  /// unless there's a clear reason to error on an invalid certificate.
-  static ErrorOr<EntitlementStore> open(HTTPClient &client);
-
-  /// Open the entitlement store with a single retry. Performs the actions of
-  /// `open` above. The main use-case for this function is when the certificate
-  /// on-disk is invalid or does not parse; this function will remove that
-  /// certificate and perform the OAuth Device Authorization Flow to issue a new
-  /// certificate. This will also retry in case there is a separate error in the
-  /// flow. To re-emphasize, this will perform a *single* retry if an error
-  /// occurs in the `open` procedure.
-  static ErrorOr<EntitlementStore> openWithRetry(HTTPClient &client);
 
   /// Refresh the entitlement store by refreshing the client certificate. This
   /// will also invalidate any entitlements that currently exist, even if the
@@ -109,7 +113,7 @@ public:
 private:
   /// This will verify the client's certificate chain and flush it to disk if
   /// and only if it's valid.
-  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient &client);
+  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient *client);
 
   /// Given a PEM buffer with one or more certificates, parse them and take any
   /// entitlements that might be encoded in the extensions and put them in the
