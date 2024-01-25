@@ -197,9 +197,15 @@ public:
     ~REPLLocMapper();
 
     /// Map the given location in the input expression to the wrapped
-    /// expression, or vice-a-versa. Returns an invalid location if the location
+    /// expression, or vice versa. Returns an invalid location if the location
     /// is not mapped.
     llvm::SMLoc mapLocation(llvm::SMLoc loc) const;
+
+    /// Map the given range in the input expression to the wrapped expression,
+    /// or vice versa. Returns invalid locations in the range if they cannot
+    /// be mapped.
+    /// This handles exclusive ends that don't belong to the underlying buffers.
+    llvm::SMRange mapRange(llvm::SMRange range) const;
 
     /// Remap the locations in the given diagnostic, returning a newly formed
     /// diagnostic.

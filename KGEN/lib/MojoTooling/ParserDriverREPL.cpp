@@ -78,7 +78,7 @@ public:
     // Check if the location is within the input or wrapped expression.
     if (loc.getPointer() >= inputExpr.data() &&
         loc.getPointer() < inputExpr.end()) {
-      return mapImpl(inputExpr.data(), wrappedExpr.data(), wrappedToInputMap);
+      return mapImpl(inputExpr.data(), wrappedExpr.data(), inputToWrappedMap);
     }
     if (loc.getPointer() >= wrappedExpr.data() &&
         loc.getPointer() < wrappedExpr.end()) {
@@ -112,7 +112,24 @@ MojoParserContext::REPLLocMapper::mapLocation(llvm::SMLoc loc) const {
   for (ExprLocMapper &mapper : llvm::make_pointee_range(exprMappers))
     if (llvm::SMLoc newLoc = mapper.mapLocation(loc); newLoc.isValid())
       return newLoc;
+
   return llvm::SMLoc();
+}
+
+llvm::SMRange
+MojoParserContext::REPLLocMapper::mapRange(llvm::SMRange range) const {
+  SMLoc newStart = mapLocation(range.Start);
+  SMLoc newEnd = mapLocation(range.End);
+  if (newStart.isValid() && !newEnd.isValid()) {
+    // If we are in an exclusive end that couldn't be mapped, we map the
+    // previous location (inclusive) and then adjust the offset.
+    if (!newEnd.isValid() && range.End.getPointer()) {
+      newEnd = mapLocation(SMLoc::getFromPointer(range.End.getPointer() - 1));
+      if (newEnd.isValid())
+        newEnd = SMLoc::getFromPointer(newEnd.getPointer() + 1);
+    }
+  }
+  return llvm::SMRange(newStart, newEnd);
 }
 
 llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
@@ -148,9 +165,7 @@ llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
   // Update the locations of the fixits.
   SmallVector<llvm::SMFixIt> fixits;
   for (auto &fixit : diag.getFixIts()) {
-    fixits.emplace_back(llvm::SMRange(mapLocation(fixit.getRange().Start),
-                                      mapLocation(fixit.getRange().End)),
-                        fixit.getText());
+    fixits.emplace_back(mapRange(fixit.getRange()), fixit.getText());
   }
 
   // Remap the file name and record the diagnostic.
