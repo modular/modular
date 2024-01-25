@@ -2241,6 +2241,124 @@ fn accumulate_wo_tile_1d[
         )
 
 
+@always_inline
+fn conv1d_update_wo_tile[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    filter_packed: Bool,
+    effected_by_padding: Bool,
+    has_residual: Bool,
+    last_c_tile: Bool,
+    elementwise_epilogue_enabled: Bool,
+](
+    output: DTypePointer,
+    input: DTypePointer,
+    filter: DTypePointer,
+    first_c_tile: Bool,
+    c_tile_size: Int,
+    f_tile_offset: Int,
+    f_tile_size: Int,
+    conv_shape: ConvShape,
+    n: Int,
+    wo: Int,
+    elementwise_epilogue_fn: elementwise_epilogue_type,
+):
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Input stride when s increments by 1
+    let input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
+
+    # Filter stride when s increments by 1.
+    let filter_stride_by_s: Int
+
+    @parameter
+    if filter_packed:  # FRSCf layout
+        filter_stride_by_s = conv_shape.c_per_group() * micro_kernel_f_size
+    else:  # RSCF layout
+        filter_stride_by_s = conv_shape.c * conv_shape.f
+
+    # Filter stride in F dimension in FRSCf
+    let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
+
+    # Input coordinates
+    let w = wo * conv_shape.stride[1] - conv_shape.pad_w[0]
+
+    # This will be all lifted to simd registers for FMA unless the micro
+    # kernel is too large that spills named registers.
+    let register_tile = NDBuffer[
+        2,
+        DimList(micro_kernel_height, micro_kernel_width * simd_size),
+        output.type,
+    ].stack_allocation()
+
+    if first_c_tile:
+        init_register_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+        ](register_tile.data)
+    else:
+        load_register_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            partial_load=has_residual,
+        ](
+            register_tile.data,
+            output,
+            conv_shape.f,
+            conv_shape.f_per_group() % simd_size,
+        )
+
+    accumulate_wo_tile_1d[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        has_residual and not filter_packed,
+        effected_by_padding,
+    ](
+        c_tile_size,
+        conv_shape.s,
+        register_tile.data,
+        input,
+        conv_shape.c * conv_shape.stride[1],
+        input_stride_by_s,
+        filter,
+        filter_stride,
+        filter_stride_by_s,
+        conv_shape.f % simd_size,
+        w,
+        conv_shape.w,
+        conv_shape.dilation[1],
+    )
+
+    # Store the micro tile
+    store_register_tile[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        partial_store=has_residual,
+    ](
+        output,
+        conv_shape.f,
+        register_tile.data,
+        conv_shape.f_per_group() % simd_size,
+    )
+
+    # Apply elementwise epilogue if necessary
+    @parameter
+    if elementwise_epilogue_enabled and last_c_tile:
+        # If has residual, the tile size has been extended to a simd_size.
+        # Here needs to use the real bound F.
+        let f_tile_size_bounded = conv_shape.f - f_tile_offset if has_residual else f_tile_size
+        alias ho = 1
+        for wo_idx in range(wo, wo + micro_kernel_height):
+            elementwise_epilogue_fn(
+                n, ho, wo_idx, f_tile_offset, f_tile_size_bounded
+            )
+
+
 # ===----------------------------------------------------------------------=== #
 # Direct Convolution 2D
 # ===----------------------------------------------------------------------=== #
