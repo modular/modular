@@ -146,37 +146,6 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
   return success();
 }
 
-ParseResult LIT::parseParamDecl(AsmParser &p, ParamDeclAttr &result,
-                                StringAttr &name) {
-  StringAttr declName;
-  if (parseParamName(p, declName))
-    return failure();
-
-  // Parse the unmangled name or set it to empty if not present.
-  if (succeeded(p.parseOptionalLSquare())) {
-    if (parseParamName(p, name) || p.parseRSquare())
-      return failure();
-  } else {
-    name = StringAttr::get(p.getContext());
-  }
-
-  Type type;
-  if (parseColonTypeOrIndex(p, type))
-    return failure();
-  result = ParamDeclAttr::get(declName, type);
-  return success();
-}
-
-void LIT::printParamDecl(AsmPrinter &p, ParamDeclAttr decl, StringAttr name) {
-  printParamName(p, decl.getName());
-  if (!name.empty()) {
-    p << '[';
-    printParamName(p, name);
-    p << ']';
-  }
-  printColonTypeOrIndex(p, decl.getType());
-}
-
 /// Parse a parameter spec if present, including input and result parameter
 /// declarations, and default values.
 /// parameter-decl   ::= identifier (`[` identifier `]`)?
@@ -202,11 +171,15 @@ ParseResult LIT::parseOptionalParameterSpec(
       return res.value();
 
     ParamDeclAttr decl;
-    StringAttr name;
-    if (failed(parseParamDecl(p, decl, name)))
+    if (failed(parseParamDecl(p, decl)))
       return failure();
     decls.emplace_back(decl);
-    paramNames.emplace_back(name);
+
+    // We store an empty string for the name of implicit parameters.
+    bool isImplicit = passingKindParser.isCurrentImplicit();
+    paramNames.emplace_back(StringAttr::get(
+        p.getContext(),
+        isImplicit ? "" : demangleParameterName(decl.getName())));
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
@@ -219,7 +192,7 @@ ParseResult LIT::parseOptionalParameterSpec(
         defaultPosParams.emplace_back(defaultVal);
         foundPosDefault = true;
       }
-    } else if (!passingKindParser.isCurrentImplicit()) {
+    } else if (!isImplicit) {
       if (passingKindParser.isCurrentKwOnly() && foundKwOnlyDefault) {
         return p.emitError(
             loc, "expected keyword-only parameter with default value");
@@ -243,7 +216,6 @@ ParseResult LIT::parseOptionalParameterSpec(
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
                                      ArrayRef<ParamDeclAttr> resultParamDecls,
-                                     ArrayRef<StringAttr> paramNames,
                                      ArrayRef<PassingKind> paramPassingKinds,
                                      ArrayRef<TypedAttr> defaultPosParams,
                                      ArrayRef<TypedAttr> defaultKwOnlyParams,
@@ -262,7 +234,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
-    printParamDecl(p, decl, paramNames[idx]);
+    printParamDecl(p, decl);
     if (auto defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
       printParamValue(

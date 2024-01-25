@@ -61,8 +61,8 @@ fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
 fn variadic_trait_elt[T: Intable](*xs: T): pass
 
 # CHECK-LABEL: lit.func @"trait_pack
-# CHECK-SAME: <{{.*}}, [[TS:.*]][Ts]:
-# CHECK-SAME: !kgen.pack<:variadic<trait<{{.*}}Intable>> [[TS]]> borrow
+# CHECK-SAME: <{{.*}}, Ts:
+# CHECK-SAME: !kgen.pack<:variadic<trait<{{.*}}Intable>> Ts> borrow
 fn trait_pack[T: Intable, *Ts: Intable](first: T, *rest: *Ts):
     pass
 
@@ -304,9 +304,8 @@ fn orvalueInferType():
     paramRefFunc(func)
 
 
-# CHECK-LABEL: lit.func @"kernel
-# CHECK-SAME: <[[X:.*]][x]:
-# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<[[X]]> : !pop.array<
+# CHECK-LABEL: lit.func @"kernel{{.*}}"<x:
+# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#pop.array<x> : !pop.array<
 
 @__llvm_metadata(
     `nvvm.maxntid`=__mlir_attr[`#pop.array<`,x,`> : !pop.array<1, `, Int32, `>`]
@@ -464,11 +463,10 @@ fn referencesDefaultArgumentFunction():
     var f = defaultArgument
 
 
-# CHECK-LABEL: lit.struct.decl @Outer
-# CHECK-SAME: <[[X:.*]][X]:
+# CHECK-LABEL: lit.struct.decl @Outer<X:
 struct Outer[X: Int]:
     # CHECK: lit.func @"nested
-    # CHECK-SAME: %x: !Int borrow = [[X]])
+    # CHECK-SAME: %x: !Int borrow = X)
     fn nested(self, x: Int = X):
         pass
 
@@ -495,16 +493,15 @@ struct VarArgsParameterizedStruct[*Is: Int]:
         pass
 
 
-# CHECK-LABEL: lit.func @"callVariadic{{.*}})"<
-# CHECK-SAME: [[P:.*]][p]: !Int>
+# CHECK-LABEL: lit.func @"callVariadic{{.*}}"<p: !Int>
 fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%variadic)
     variadics()
-    # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}value = 7
-    # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}value = 11
-    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [[[C7]], [[C11]]]
-    # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"([[VARIADIC]])
+    # CHECK: %[[C7:.*]] = kgen.param.constant{{.*}}value = 7
+    # CHECK: %[[C11:.*]] = kgen.param.constant{{.*}}value = 11
+    # CHECK: %[[VARIADIC:.*]] = pop.variadic.create [%[[C7]], %[[C11]]]
+    # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%[[VARIADIC]])
     variadics(7, 11)
     # CHECK: %[[VAR:.*]] = pop.variadic.splat 1, %x
     # CHECK: call @"$decls"::@"variadics({{.*}}$builtin::$int::Int*)"(%[[VAR]])
@@ -516,7 +513,7 @@ fn callVariadic[p: Int](x: Int):
 
     # CHECK: @"variadics({{.*}}$builtin::$int::Int*)", []
     alias EmptyVariadic = variadics()
-    # CHECK: @"variadics({{.*}}$builtin::$int::Int*)", [[[P]], {{.*}} = 1{{.*}}]
+    # CHECK: @"variadics({{.*}}$builtin::$int::Int*)", [p, {{.*}} = 1{{.*}}]
     alias NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
@@ -530,7 +527,7 @@ fn callVariadic[p: Int](x: Int):
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<type>>
+# CHECK-SAME: <Ts: variadic<type>>
 struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
     var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
@@ -539,17 +536,17 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
 
 
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*]][Ts]: variadic<type>>(%args: !kgen.pack<[[TS]]> borrow)
+# CHECK-SAME: Ts: variadic<type>>(%args: !kgen.pack<Ts> borrow)
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
-    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
+    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
     var copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
-# CHECK-SAME: [[TS:.*]][Ts]: variadic<type>>
+# CHECK-SAME: Ts: variadic<type>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
-    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<[[TS]]>
+    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
     var copy = args
 
@@ -614,12 +611,11 @@ struct MemStruct:
 fn variadic_mem_only(*values: MemStruct) -> Int:
     return values[1].t
 
-# CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<
-# CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
+# CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
     # CHECK-SAME: :(!kgen.variadic<!lit.ref<!MemStruct, mut #lit.lifetime>, borrow_in_mem> borrow) vararg -> !Int {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
-    # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])]
+    # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
 
@@ -718,7 +714,7 @@ struct EmptyStruct:
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}[size]: !Int>
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !Int>
 struct OneLineStruct[size: Int]:
     pass
     pass
@@ -1090,9 +1086,9 @@ fn closureParameter[
     pass
 
 
-# CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<{{.*}}[a_param]>
+# CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
-    # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<{{.*}}[b_param]>
+    # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<b_param>
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
@@ -1112,9 +1108,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
 
 struct SomeParamStruct[c_param: Int]:
-    # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]{{.*}}<{{.*}}[a_param]
+    # CHECK-LABEL: lit.func @"topLevelParamFn{{.*}}<a_param: !Int>
     fn topLevelParamFn[a_param: Int](self):
-        # CHECK: lit.func *"nestedFunction[{{.*}}$int::Int]()"<{{.*}}[b_param]
+        # CHECK: lit.func *"nestedFunction{{.*}}"<b_param: !Int>
         fn nestedFunction[b_param: Int]():
             return
 

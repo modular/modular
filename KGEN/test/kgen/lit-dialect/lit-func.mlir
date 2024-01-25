@@ -98,20 +98,20 @@ lit.func @slashAndStarOnly(|, *) {
 
 // CHECK-LABEL: lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1)
 lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
-  // CHECK: self: !lit.signature<<dtype, scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
-  kgen.param.declare self: !lit.signature<<dtype, scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
+  // CHECK: self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
+  kgen.param.declare self: !lit.signature<<"dt": dtype, "w": scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
   // CHECK: call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index borrow = 1) -> ()>
   kgen.call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.signature<("a": index borrow = 1) -> ()>
   kgen.return
 }
 
 // CHECK-LABEL: lit.func @default_params<
-// CHECK-SAME: _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
-// CHECK-SAME: _d[d]: dtype, _e[e]: dtype = si8, _f[f]: scalar<si16> = 2
+// CHECK-SAME: a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
+// CHECK-SAME: d: dtype, e: dtype = si8, f: scalar<si16> = 2
 // CHECK-SAME: >(%z: index borrow = 42)
 lit.func @default_params<
-  _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
-  _d[d]: dtype, _e[e]: dtype = si8, _f[f]: scalar<si16> = 2
+  a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
+  d: dtype, e: dtype = si8, f: scalar<si16> = 2
 >(%z: index borrow = 42) {
   // CHECK: self: !lit.signature<
   // CHECK-SAME: <"a": dtype, "b": dtype = f32, "c": scalar<si32> = 1, *, "d": dtype, "e": dtype = si8, "f": scalar<si16> = 2
@@ -143,8 +143,8 @@ lit.func @default_args(
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @star_slash_params<_a[a]: dtype, |, _b[b]: dtype = f32, *, _w[w]: scalar<si32> = 1>(%z: index borrow = 42)
-lit.func @star_slash_params<_a[a]: dtype, |, _b[b]: dtype = f32, *, _w[w]: scalar<si32> = 1>(%z: index borrow = 42) {
+// CHECK-LABEL: lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index borrow = 42)
+lit.func @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index borrow = 42) {
   // CHECK: self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
   kgen.param.declare self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
   kgen.return
@@ -172,8 +172,8 @@ lit.func @call_parametric_default_arg(%x: !pop.simd<4, si8>) {
 }
 
 // CHECK-LABEL: lit.func @parametric_default_param
-// CHECK-SAME: <_1x3_x[x], _1x6_y[y] = _1x3_x>()
-lit.func @parametric_default_param<_1x3_x[x], _1x6_y[y] = _1x3_x>() {
+// CHECK-SAME: <x, y = x>()
+lit.func @parametric_default_param<x, y = x>() {
   kgen.return
 }
 

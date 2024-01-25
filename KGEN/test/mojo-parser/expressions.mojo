@@ -185,8 +185,7 @@ struct RegPassable:
   fn __matmul__(self, rhs: Self) -> Self: pass
   fn __rmatmul__(lhs, self: Self) -> Self: pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithFuncParam
-# CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
+# CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.signature
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
 struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
@@ -251,10 +250,10 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  lit.ref.store %[[NEG]], %z
   z = -2**z
-  # CHECK-NEXT: [[Z:%.*]] = lit.ref.load %z
-  # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value = 1}>
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"([[Z]], [[ONE]])
-  # CHECK-NEXT: lit.ref.store [[RES]], %z
+  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
+  # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}#lit.struct<{value = 1}>
+  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"(%[[Z]], %[[ONE]])
+  # CHECK-NEXT: lit.ref.store %[[RES]], %z
   z = Int(1).value + z
 
   # div tests
@@ -266,13 +265,13 @@ fn precedence_associativity(a: Int):
 
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
-  # CHECK: [[RES:%.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"
   var z = Int(1).value + a
 
-  # CHECK: [[RES:%.*]] = lit.call {{.*}}Int::@"__rsub__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rsub__({{.*}}$int::Int,{{.*}}$int::Int)"
   z = Int(2).value - z
 
-  # CHECK: [[RES:%.*]] = lit.call {{.*}}Int::@"__rmul__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rmul__({{.*}}$int::Int,{{.*}}$int::Int)"
   z = Int(3).value * z
 
   # div tests
@@ -442,19 +441,18 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: }
   _ = d or b
 
-# CHECK-LABEL: lit.func @"paramAndOr{{.*}}()"
-# CHECK-SAME: <[[A:.*]][a]: !Boolish, [[B:.*]][b]: !Boolish>
+# CHECK-LABEL: lit.func @"paramAndOr{{.*}}"<a: !Boolish, b: !Boolish>
 fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", a)), b, a)>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", a)), a, b)>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -515,8 +513,8 @@ fn initializers():
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: lit.ref.store %cond, %cond_0
     # CHECK: %i = lit.varlet.decl "i"
-    # CHECK: [[COND:%.*]] = lit.ref.load %cond_0
-    # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[COND]])
+    # CHECK: %[[COND:.*]] = lit.ref.load %cond_0
+    # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
@@ -534,31 +532,30 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     if cond:     # 'if' stmt, not an 'if' expression.
         i += 1
 
-# CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
-# CHECK-SAME: <[[COND:.*]][cond]: !Bool>
+# CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
-# CHECK-SAME: <[[CALLABLE:.*]][callable]: !lit.signature<(!Int borrow, |) -> !Int>>(%a: !Int borrow) -> !Int
+# CHECK-SAME: <callable: !lit.signature<(!Int borrow, |) -> !Int>>(%a: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: [[CALLABLE]]](%a)
+  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, [[B:.*]][b]: !Int>(%a: !Int borrow) -> !Int
+# CHECK-SAME: callable: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, b: !Int>(%a: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
+  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}[a]: !Int>() -> !Int
+# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
 fn takeIndexParam[a: Int]() -> Int:
   return a + 1
 
@@ -573,20 +570,20 @@ fn returnIndex2() -> Int:
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
+# CHECK-SAME: <callable: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}[[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
+  # CHECK-NEXT: %0 = lit.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
-# CHECK-SAME: <[[A:.*]][a]: !Int, [[A2:.*]][a2]: !Int>
+# CHECK-SAME: <a: !Int, a2: !Int>
 fn parameterExprs[a: Int, a2: Int]():
-  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
+  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <apply({{.*}}__sub__{{.*}}, a, a)>
   alias b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[A]], {{.*}}42{{.*}})>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, a, {{.*}}42{{.*}})>
   alias c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A2]])>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <apply({{.*}}__mul__{{.*}}, a, a2)>
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##
@@ -659,8 +656,8 @@ def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: lit.ref.store %a, %a_0
   # CHECK: %b_1 = lit.varlet.decl "b" imp : !lit.ref<!Int, mut *"b`1">
   # CHECK: lit.ref.store %b, %b_1
-  # CHECK: [[B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: lit.ref.store [[B]], %a_0
+  # CHECK: %[[B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.ref.store %[[B]], %a_0
   a = b # Parameters are mutable!
 
 ##===----------------------------------------------------------------------===##
@@ -671,50 +668,50 @@ def defTests(a: Int, b: Int, untyped) -> None:
 def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK:      %a_0 = lit.varlet.decl "a" imp
   # CHECK:      %b_1 = lit.varlet.decl "b" imp
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iadd__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}(%a_0, %[[LOAD_B]])
   a += b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__isub__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__isub__{{.*}}(%a_0, %[[LOAD_B]])
   a -= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imul__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__imul__{{.*}}(%a_0, %[[LOAD_B]])
   a *= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a_0, %[[LOAD_B]])
   a //= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imod__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__imod__{{.*}}(%a_0, %[[LOAD_B]])
   a %= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ipow__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ipow__{{.*}}(%a_0, %[[LOAD_B]])
   a **= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__irshift__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__irshift__{{.*}}(%a_0, %[[LOAD_B]])
   a >>= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a_0, %[[LOAD_B]])
   a <<= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iand__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__iand__{{.*}}(%a_0, %[[LOAD_B]])
   a &= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ixor__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ixor__{{.*}}(%a_0, %[[LOAD_B]])
   a ^= b
-  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ior__{{.*}}(%a_0, [[LOAD_B]])
+  # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.call {{.*}}Int::@"__ior__{{.*}}(%a_0, %[[LOAD_B]])
   a |= b
 
-  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
-  # CHECK-NEXT: lit.ref.store [[FOUR]], %b_1
-  # CHECK-NEXT: lit.ref.store [[FOUR]], %a_0
+  # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: {{.*}}value = 4
+  # CHECK-NEXT: lit.ref.store %[[FOUR]], %b_1
+  # CHECK-NEXT: lit.ref.store %[[FOUR]], %a_0
   a = b = 4
 
   # Walrus
-  # CHECK-NEXT: [[SEVEN:%.*]] = kgen.param.constant: {{.*}}value = 7
-  # CHECK-NEXT: lit.ref.store [[SEVEN]], %b_1
-  # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
-  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}([[A]], [[SEVEN]])
+  # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: {{.*}}value = 7
+  # CHECK-NEXT: lit.ref.store %[[SEVEN]], %b_1
+  # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a_0
+  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVEN]])
   simpleMath(a, b := 7)
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
@@ -1044,11 +1041,11 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
     `!pop.scalar<`, type.value, `>`]:
   # CHECK: %a_0 = lit.varlet.decl "a"
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: [[AVAL:%.*]] = lit.ref.load %a_0
-  # CHECK: [[ZERO:%.*]] = kgen.param.constant: {{.*}} = 0
-  # CHECK: [[GOT:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[AVAL]], [[ZERO]])
-  # CHECK: [[RES:%.*]] = lit.struct.extract [[GOT]][value]
-  # CHECK: lit.return [[RES]]
+  # CHECK: %[[AVAL:.*]] = lit.ref.load %a_0
+  # CHECK: %[[ZERO:.*]] = kgen.param.constant: {{.*}} = 0
+  # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])
+  # CHECK: %[[RES:.*]] = lit.struct.extract %[[GOT]][value]
+  # CHECK: lit.return %[[RES]]
   return a[0].value
 
 
@@ -1322,7 +1319,7 @@ struct MemoryType:
 struct RegType: pass
 
 # CHECK-LABEL: lit.struct.decl @ParamType
-# CHECK-SAME: <[[A:.*]][a]: !Int>
+# CHECK-SAME: <a: !Int>
 @register_passable
 struct ParamType[a: Int]: pass
 
@@ -1376,18 +1373,17 @@ struct TwoParamsStruct[a: Int, b: Int]:
     fn __copyinit__(inout self, other: Self):
         pass
 
-# CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
-# CHECK-SAME: {{.*}}[idx]: !Int, [[A:.*]][a]: variadic<!Int>>
+# CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.varlet.decl
     # CHECK-NEXT: %0 = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
     # CHECK-NEXT: lit.ref.store %0, %b_0
-    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%index3]
     let v1 = a[3]
-    # CHECK: [[LIST:%.*]] = lit.ref.load %b_0
-    # CHECK: lit.call {{.*}}__getitem__{{.*}}([[LIST]],
+    # CHECK: %[[LIST:.*]] = lit.ref.load %b_0
+    # CHECK: lit.call {{.*}}__getitem__{{.*}}(%[[LIST]],
     let v2 = b[idx]
 
 
@@ -1648,9 +1644,8 @@ fn type_function(a: Bool) -> AnyRegType:
     return rebind[AnyRegType](Int) if a else Bool
 
 
-# CHECK-LABEL: lit.func @"static_type
-# CHECK-SAME: <[[PARAM:.*]][a]: !Bool>
-# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.type> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
+# CHECK-LABEL: lit.func @"static_type{{.*}}"<a: !Bool>
+# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.type> {{.*}}@"type_function{{.*}}, a)> borrow)
 fn static_type[a: Bool](x: type_function(a)):
     pass
 

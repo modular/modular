@@ -16,9 +16,8 @@ struct Foo[B: Int]:
     pass
 
 
-# CHECK-LABEL: lit.func @"take_closure
-# CHECK-SAME: <[[C_TYPE:.*c_type]][c_type]>
-# CHECK-SAME: (%arg[closure]: {{.*}}<[[C_TYPE]]>
+# CHECK-LABEL: lit.func @"take_closure{{.*}}<c_type>(
+# CHECK-SAME: %arg[closure]: {{.*}}<c_type>
 fn take_closure[c_type: Int](closure: fn (z: Foo[c_type]) escaping -> None):
     closure(Foo[c_type]())
     pass

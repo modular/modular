@@ -22,32 +22,32 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7>
-lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7> {
+// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7>
+lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
   // CHECK-NEXT: lit.func @foo() {
   lit.func @foo() {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<scalar<_1x2_ty>, mut life>
-  %size = lit.varlet.decl "size" var : !lit.ref<scalar<_1x2_ty>, mut life>
+  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<scalar<ty>, mut life>
+  %size = lit.varlet.decl "size" var : !lit.ref<scalar<ty>, mut life>
 
   // CHECK: lit.func @getMyType
-  // CHECK-NEXT: kgen.param.constant: dtype = <_1x2_ty>
+  // CHECK-NEXT: kgen.param.constant: dtype = <ty>
   lit.func @getMyType() -> !kgen.dtype {
-    %dtype = kgen.param.constant: dtype = <_1x2_ty>
+    %dtype = kgen.param.constant: dtype = <ty>
     kgen.return %dtype : !kgen.dtype
   }
 }
 
 // CHECK-LABEL: lit.struct.decl @struct_param_passing_kinds<
-// CHECK-SAME: _z[z]: dtype, |,
-// CHECK-SAME: _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
-// CHECK-SAME: _d[d]: dtype, _e[e]: dtype = f16, _f[f]: scalar<si16> = 2
+// CHECK-SAME: z: dtype, |,
+// CHECK-SAME: a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
+// CHECK-SAME: d: dtype, e: dtype = f16, f: scalar<si16> = 2
 lit.struct.decl @struct_param_passing_kinds<
-  _z[z]: dtype, |,
-  _a[a]: dtype, _b[b]: dtype = f32, _c[c]: scalar<si32> = 1, *,
-  _d[d]: dtype, _e[e]: dtype = f16, _f[f]: scalar<si16> = 2
+  z: dtype, |,
+  a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
+  d: dtype, e: dtype = f16, f: scalar<si16> = 2
 > {}
 
 // CHECK-LABEL: lit.trait.decl @T {
