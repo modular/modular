@@ -3,3 +3,5 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from . import myfile as myfile_copy
