@@ -135,7 +135,7 @@ fn matrix_solve_shape[
 ](
     a_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
     b_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
-) -> StaticIntTuple[rank]:
+) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a matrix solve operation (i.e., given A and B
     from AX = B, compute X), and assert the inputs are compatible.
@@ -154,27 +154,20 @@ fn matrix_solve_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(rank >= 2, "matrix-solve requires rank >= 2")
+    if rank < 2:
+        raise Error("matrix-solve requires rank >= 2")
 
-    # TODO(#17512)
-    debug_assert(
-        a_buff.dim(rank - 1) == a_buff.dim(rank - 2),
-        "matrix-solve requires first input to be a (batch of) square matrix",
-    )
+    if a_buff.dim(rank - 1) != a_buff.dim(rank - 2):
+        raise Error(
+            "matrix-solve requires first input to be a (batch of) square matrix"
+        )
 
-    # TODO(#17512)
-    debug_assert(
-        a_buff.dim(rank - 2) == b_buff.dim(rank - 2),
-        "matrix-solve input outter dimensions must match",
-    )
+    if a_buff.dim(rank - 2) != b_buff.dim(rank - 2):
+        raise Error("matrix-solve input outter dimensions must match")
 
     @unroll
     for i in range(rank - 2):
-        # TODO(#17512)
-        debug_assert(
-            a_buff.dim(i) == b_buff.dim(i),
-            "matrix-solve batch dimensions must match",
-        )
+        if a_buff.dim(i) != b_buff.dim(i):
+            raise Error("matrix-solve batch dimensions must match")
 
     return b_buff.get_shape()
