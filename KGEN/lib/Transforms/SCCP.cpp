@@ -325,6 +325,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
     return success();
   }
 
+  bool skip = false;
   if (isa<LoopOp, ForOp>(node.getOperation())) {
     // Prepare for initial loop inputs.
     SmallVector<Attribute> constantOperands;
@@ -349,9 +350,17 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       // Prepare for input arguments for this iteration.
       for (auto [inputValue, blockArg] :
            llvm::zip(inputValues, node->getRegions().front().getArguments())) {
+        if (loopIter > 0 && !inputValue) {
+          // After 1st iteration, if any of the loop inputs is already unknown,
+          // stop analyzing.
+          skip = true;
+          break;
+        }
         ConstantState *lattice = getLatticeElement(blockArg, nestedState);
         (void)lattice->join(ConstantValue(inputValue, node->getDialect()));
       }
+      if (skip)
+        break;
 
       // Process loop body.
       bool hasEarlyExits = false;
@@ -367,7 +376,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       ++loopIter;
     }
 
-    if (workList.empty()) {
+    if (workList.empty() && !skip) {
       // Merge analysis states if analyze loop converges.
       (void)mergeStates(state, cfStates->exitStates);
     } else {
