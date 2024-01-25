@@ -9,6 +9,7 @@
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -448,20 +449,14 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
             llvm::MemoryBuffer::getMemBuffer(bytecodeBuf->getBuffer(),
                                              /*BufferName=*/"",
                                              /*RequiresNullTerminator=*/false);
-
-        // Create a dummy block that we can use to inflate container ops.
-        Block b;
-        if (failed(mlir::readBytecodeFile(
-                *bytecode, &b,
-                mlir::ParserConfig(r->getContext(),
-                                   /*verifyAfterParse=*/false)))) {
+        auto container = readOpFromBytecodeFile<ContainerOp>(
+            *bytecode, mlir::ParserConfig(r->getContext(),
+                                          /*verifyAfterParse=*/false));
+        if (!container) {
           return std::move(out).setToError(getMLIRDiagnostic(
               Error("reading bytecode file failed"), r->getLoc()));
         }
-
-        // Get the container and take its body.
-        ContainerOp container = cast<ContainerOp>(b.front());
-        r->takeBody(container.getBodyRegion());
+        r->takeBody(container->getBodyRegion());
 
         // Finish up by replacing symbols/hashes with their original attrs.
         mlir::AttrTypeReplacer replacer;

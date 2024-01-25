@@ -7,6 +7,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -297,18 +298,13 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
     std::unique_ptr<llvm::MemoryBuffer> bytecode =
         llvm::MemoryBuffer::getMemBuffer(bytecodeBuffer, /*BufferName=*/"",
                                          /*RequiresNullTerminator=*/false);
+    OwningOpRef<Operation *> cachedOp = readOpFromBytecodeFile(
+        *bytecode, mlir::ParserConfig(op->getContext(),
+                                      /*verifyAfterParse=*/false));
 
-    // Create a dummy block that we can use to inflate container ops.
-    Block b;
-    if (failed(mlir::readBytecodeFile(
-            *bytecode, &b,
-            mlir::ParserConfig(op->getContext(),
-                               /*verifyAfterParse=*/false)))) {
-      return Error("reading bytecode file failed");
-    }
     // Get the body from the parsed op and onto the op we're using.
     for (auto [cached, opRegion] :
-         llvm::zip(b.front().getRegions(), op->getRegions()))
+         llvm::zip(cachedOp->getRegions(), op->getRegions()))
       opRegion.takeBody(cached);
 
     return success();
