@@ -2114,13 +2114,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
     bindings.addPrechecked(params.back());
   }
 
-  return {signature.getSpecializedSignature(
-              params,
-              []() -> InFlightDiagnostic {
-                assert(false && "getSpecializedSignature should not fail here");
-                return {};
-              }),
-          std::move(bindings)};
+  return {signature.getSpecializedSignature(params), std::move(bindings)};
 }
 
 /// Given the signature of a trait function, which assumes that the self type is
