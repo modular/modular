@@ -232,7 +232,7 @@ fn test[
 fn main() raises:
     """It only includes shapes where F is multiple simd_size."""
     with Runtime() as rt:
-        # likely partition in n_ho_wo or sequential
+        # No packing or padding.
         test[DType.float32, False](
             1,  # N
             6,  # H
@@ -362,9 +362,7 @@ fn main() raises:
             rt,
         )
 
-        # Pre-packed test
-        # Avoid using dispatch functions for now because pre-packed version
-        # has more restrictions for F.
+        # Pre-packed test w/o padding.
 
         test[DType.float32, True](
             1,  # N
@@ -446,7 +444,6 @@ fn main() raises:
             rt,
         )
 
-        # likely partition in F or both
         test[DType.float32, True](
             1,  # N
             7,  # H
@@ -479,206 +476,7 @@ fn main() raises:
             rt,
         )
 
-        # Top resnet shapes, all pre-packed
-
-        # likely to partition C
-        test[DType.float32, True](
-            1,  # N
-            16,  # H
-            16,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            58,  # H
-            58,  # W
-            64,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            30,  # H
-            30,  # W
-            128,  # C
-            3,  # R
-            3,  # S
-            128,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            9,  # H
-            9,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            230,  # H
-            230,  # W
-            3,  # C
-            7,  # R
-            7,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            58,  # H
-            58,  # W
-            128,  # C
-            3,  # R
-            3,  # S
-            128,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            30,  # H
-            30,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            16,  # H
-            16,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            56,  # H
-            56,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            14,  # H
-            14,  # W
-            1024,  # C
-            3,  # R
-            3,  # S
-            2048,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            28,  # H
-            28,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            1024,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        # Test with padding
-        # This is a fallback implementation assuming all shapes are dynamic.
-
-        test[DType.float32, False](
-            1,  # N
-            56,  # H
-            56,  # W
-            64,  # C
-            3,  # R
-            3,  # S
-            1024,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        # Test with padding
-        # This is a fallback implementation assuming all shapes are dynamic.
+        # No packing, w/ padding, and F not multiple of simd_size.
 
         test[DType.float32, False](
             1,  # N
@@ -759,6 +557,105 @@ fn main() raises:
             1,  # num_groups
             rt,
         )
+
+        # Pre-packed, F not multiple of simd_size
+
+        test[DType.float32, True](
+            1,  # N
+            5,  # H
+            5,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            7,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            7,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            42,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            23,  # H
+            23,  # W
+            17,  # C
+            3,  # R
+            3,  # S
+            90,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            5,  # H
+            11,  # W
+            2,  # C
+            3,  # R
+            5,  # S
+            7,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            9,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            42,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            11,  # H
+            7,  # W
+            17,  # C
+            3,  # R
+            5,  # S
+            90,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+        # Top resnet shapes, all pre-packed w/ padding.
 
         test[DType.float32, True](
             1,  # N
@@ -904,17 +801,17 @@ fn main() raises:
             rt,
         )
 
-        # Test with F not multiple of simd_size
+        # MaskRCNN shapes.
 
         test[DType.float32, True](
-            1,  # N
-            5,  # H
-            5,  # W
-            2,  # C
+            2,  # N
+            19,  # H
+            19,  # W
+            256,  # C
             3,  # R
             3,  # S
-            7,  # F
-            Index(1, 1),  # stride
+            384,  # F
+            Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
@@ -923,13 +820,77 @@ fn main() raises:
         )
 
         test[DType.float32, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            2,  # C
+            2,  # N
+            19,  # H
+            19,  # W
+            288,  # C
             3,  # R
             3,  # S
-            42,  # F
+            320,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            2,  # N
+            19,  # H
+            19,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            288,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            2,  # N
+            19,  # H
+            19,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            384,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            2,  # N
+            19,  # H
+            19,  # W
+            288,  # C
+            3,  # R
+            3,  # S
+            320,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            2,  # N
+            19,  # H
+            19,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            288,  # F
             Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
@@ -940,13 +901,13 @@ fn main() raises:
 
         test[DType.float32, True](
             1,  # N
-            23,  # H
-            23,  # W
-            17,  # C
+            129,  # H
+            129,  # W
+            320,  # C
             3,  # R
             3,  # S
-            90,  # F
-            Index(1, 1),  # stride
+            384,  # F
+            Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
@@ -956,48 +917,32 @@ fn main() raises:
 
         test[DType.float32, True](
             1,  # N
-            5,  # H
-            11,  # W
-            2,  # C
-            3,  # R
-            5,  # S
-            7,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(2, 2),  # pad_w
-            1,  # num_groups
-            rt,
-        )
-
-        test[DType.float32, True](
-            1,  # N
-            7,  # H
-            9,  # W
-            2,  # C
+            129,  # H
+            129,  # W
+            256,  # C
             3,  # R
             3,  # S
-            42,  # F
+            384,  # F
             Index(2, 2),  # stride
             Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
             1,  # num_groups
             rt,
         )
 
         test[DType.float32, True](
             1,  # N
-            11,  # H
-            7,  # W
-            17,  # C
+            1025,  # H
+            1025,  # W
+            3,  # C
             3,  # R
-            5,  # S
-            90,  # F
+            3,  # S
+            32,  # F
             Index(2, 2),  # stride
             Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(2, 2),  # pad_w
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
             1,  # num_groups
             rt,
         )
