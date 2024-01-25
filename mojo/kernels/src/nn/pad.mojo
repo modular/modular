@@ -177,7 +177,7 @@ fn pad_shape[
         input_rank, DimList.create_unknown[input_rank](), input_type
     ],
     paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -197,11 +197,10 @@ fn pad_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(
-        paddings_buf.dim(0) == input_rank and paddings_buf.dim(1) == 2,
-        "paddings shape must be (input_rank, 2)",
-    )
+    # TODO add runtime test once we support dynamic rank execution, currently
+    # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
+    if paddings_buf.dim(0) != input_rank or paddings_buf.dim(1) != 2:
+        raise Error("paddings shape must be (input_rank, 2)")
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()

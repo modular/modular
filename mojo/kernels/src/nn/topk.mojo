@@ -24,7 +24,7 @@ fn top_k_shape[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-) -> StaticIntTuple[rank]:
+) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a  top/bottom k operation.
 
@@ -42,20 +42,15 @@ fn top_k_shape[
     Returns:
         The output shape.
     """
-    debug_assert(k_buf.size() == 1, "k_buf must be a scalar")
-    debug_assert(axis_buf.size() == 1, "axis_buf must be a scalar")
-
     let axis = int(axis_buf[0])
     let k = int(k_buf[0])
 
-    debug_assert(axis < rank, "Axis should be less than the rank of the input")
-    debug_assert(
-        k <= input.get_shape()[axis],
-        "K should be less or equal to the size of the axis",
-    )
+    if axis < 0 or axis >= rank:
+        raise Error("axis must be within [0, rank]")
+    if k < 0 or k > input.get_shape()[axis]:
+        raise Error("k must be within [0, input_shape[axis]]")
 
     var shape = input.get_shape()
-
     shape[axis] = k
 
     return shape

@@ -207,7 +207,6 @@ fn tile[
 @always_inline
 fn tile_shape[
     input_rank: Int,
-    repeats_rank: Int,
     input_type: DType,
     repeats_type: DType,
     single_thread_blocking_override: Bool,
@@ -215,17 +214,14 @@ fn tile_shape[
     input_buf: NDBuffer[
         input_rank, DimList.create_unknown[input_rank](), input_type
     ],
-    repeats_buf: NDBuffer[
-        repeats_rank, DimList.create_unknown[repeats_rank](), repeats_type
-    ],
-) -> StaticIntTuple[input_rank]:
+    repeats_buf: NDBuffer[1, DimList.create_unknown[1](), repeats_type],
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are
     compatible.
 
     Parameters:
         input_rank: Rank of the input tensor (can be any shape).
-        repeats_rank: Rank of the repeats tensor (must be 1).
         input_type: Type of the input tensor.
         repeats_type: Type of the repeats tensor.
         single_thread_blocking_override: If True, then the operation is run
@@ -239,11 +235,10 @@ fn tile_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(repeats_rank == 1, "repeats rank must be 1")
-    debug_assert(
-        repeats_buf.dim(0) == input_rank, "repeats length must match input rank"
-    )
+    # TODO add runtime test once we support dynamic rank execution, currently
+    # MLIR verifier of `MO::TileOp` prevents testing this with static rank.
+    if repeats_buf.dim(0) != input_rank:
+        raise Error("repeats length must match input rank")
 
     # Compute and return the output shape.
     var output_shape = StaticIntTuple[input_rank]()

@@ -19,7 +19,7 @@ fn main():
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND
     """
 
-    fn test_gather_nd_eg1():
+    fn test_gather_nd_eg1() raises:
         # Example 1
         alias batch_dims = 0
         alias data_rank = 2
@@ -74,7 +74,7 @@ fn main():
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
         )
 
-    fn test_gather_nd_eg2():
+    fn test_gather_nd_eg2() raises:
         # Example 2
         alias batch_dims = 0
         alias data_rank = 2
@@ -134,7 +134,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg3():
+    fn test_gather_nd_eg3() raises:
         # Example 3
         alias batch_dims = 0
         alias data_rank = 3
@@ -200,7 +200,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg4():
+    fn test_gather_nd_eg4() raises:
         # Example 4
         alias batch_dims = 0
         alias data_rank = 3
@@ -266,7 +266,7 @@ fn main():
             output_data_buffer[1, 0, 1],
         )
 
-    fn test_gather_nd_eg5():
+    fn test_gather_nd_eg5() raises:
         # Example 5
         alias batch_dims = 1
         alias data_rank = 3
@@ -330,7 +330,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg6():
+    fn test_gather_nd_eg6() raises:
         # Example 6
         alias batch_dims = 2
         alias data_rank = 3
@@ -423,7 +423,7 @@ fn main():
             output_data_buffer[1, 2, 0],
         )
 
-    fn test_gather_nd_eg7():
+    fn test_gather_nd_eg7() raises:
         # Example 4
         alias batch_dims = 0
         alias data_rank = 3
@@ -496,7 +496,7 @@ fn main():
             output_data_buffer[1, 0, 1, 1],
         )
 
-    fn test_gather_nd_eg8():
+    fn test_gather_nd_eg8() raises:
         # Example 2
         alias batch_dims = 0
         alias data_rank = 2
@@ -562,27 +562,30 @@ fn main():
             output_data_buffer[1, 2],
         )
 
-    # CHECK: Output shape:  (2,)
-    # CHECK: Output buffer: 0 , 3
-    test_gather_nd_eg1()
-    # CHECK: Output shape:  (2, 2)
-    # CHECK: Output buffer: 2 , 3 , 0 , 1
-    test_gather_nd_eg2()
-    # CHECK: Output shape:  (2, 2)
-    # CHECK: Output buffer: 2.0 , 3.0 , 4.0 , 5.0
-    test_gather_nd_eg3()
-    # CHECK: Output shape:  (2, 1, 2)
-    # CHECK: Output buffer: 2 , 3 , 4 , 5
-    test_gather_nd_eg4()
-    # CHECK: Output shape:  (2, 2)
-    # CHECK: Output buffer: 2 , 3 , 4 , 5
-    test_gather_nd_eg5()
-    # CHECK: Output shape:  (2, 3, 1)
-    # CHECK: Output buffer: 2 , 5 , 11 , 13 , 19 , 23
-    test_gather_nd_eg6()
-    # CHECK: Output shape:  (2, 1, 2, 2)
-    # CHECK: Output buffer: 0 , 1 , 2 , 3 , 4 , 5 , 6 , 7
-    test_gather_nd_eg7()
-    # CHECK: Output shape:  (2, 3)
-    # CHECK: Output buffer: 3 , 4 , 5 , 0 , 1 , 2
-    test_gather_nd_eg8()
+    try:
+        # CHECK: Output shape:  (2,)
+        # CHECK: Output buffer: 0 , 3
+        test_gather_nd_eg1()
+        # CHECK: Output shape:  (2, 2)
+        # CHECK: Output buffer: 2 , 3 , 0 , 1
+        test_gather_nd_eg2()
+        # CHECK: Output shape:  (2, 2)
+        # CHECK: Output buffer: 2.0 , 3.0 , 4.0 , 5.0
+        test_gather_nd_eg3()
+        # CHECK: Output shape:  (2, 1, 2)
+        # CHECK: Output buffer: 2 , 3 , 4 , 5
+        test_gather_nd_eg4()
+        # CHECK: Output shape:  (2, 2)
+        # CHECK: Output buffer: 2 , 3 , 4 , 5
+        test_gather_nd_eg5()
+        # CHECK: Output shape:  (2, 3, 1)
+        # CHECK: Output buffer: 2 , 5 , 11 , 13 , 19 , 23
+        test_gather_nd_eg6()
+        # CHECK: Output shape:  (2, 1, 2, 2)
+        # CHECK: Output buffer: 0 , 1 , 2 , 3 , 4 , 5 , 6 , 7
+        test_gather_nd_eg7()
+        # CHECK: Output shape:  (2, 3)
+        # CHECK: Output buffer: 3 , 4 , 5 , 0 , 1 , 2
+        test_gather_nd_eg8()
+    except e:
+        print(e)
