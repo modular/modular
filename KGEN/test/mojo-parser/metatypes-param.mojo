@@ -139,3 +139,44 @@ struct ParamVarArg[F: Int, *I: Int]:
         # CHECK: BoundMore{{.*}}: {{.*}}@ParamVarArg<1, :variadic<index> [2, 1]>
         alias BoundSome = Unbound[`1`]
         alias BoundMore = Unbound[`1`, `2`, `1`]
+
+
+@register_passable
+struct ParamType[x: __mlir_type.index]:
+    pass
+
+
+struct DependentParam[
+    a: __mlir_type.index, b: __mlir_type.index, c: ParamType[b]
+]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"direct_binding
+fn direct_binding():
+    # Test direct bind of DeclRefType
+    # CHECK: alias.decl *"a{{.*}} metatype<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> : metatype<[[PT]]<?>> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>
+    alias a = DependentParam
+    # CHECK: alias.decl *"b{{.*}} metatype<[[DEP]]<1, ?, :[[PT]]<?> : metatype<[[PT]]<?>> ?>, <"b": index, "c": [[PT]]<*(0,0)>
+    alias b = DependentParam[__mlir_attr.`1:index`]
+    # CHECK: alias.decl *"c{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> ?>, <"c": [[PT]]<2>
+    alias c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
+
+    # Test partial bind of DeclRefType
+    # CHECK: alias.decl *"d{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> ?>, <"c": [[PT]]<2>
+    alias d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
+
+
+# CHECK: lit.func @"indirect_binding
+fn indirect_binding():
+    # CHECK: alias.decl [[a:\*"a.*"]]: metatype
+    alias a = DependentParam
+    # Test indirect binds.
+    # CHECK: alias.decl [[b:\*"b.*"]]: metatype<[[DEP]]<1, ?, :[[PT]]<?> : {{.*}}, <"b": index, "c": [[PT]]<*(0,0)>{{.*}} = <#lit.bind_type<{{.*}} [[a]], [1, ?, ?]>>
+    alias b = a[__mlir_attr.`1:index`]
+    # CHECK: alias.decl [[c:\*"c.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> : {{.*}}, <"c": [[PT]]<2>{{.*}} = <#lit.bind_type<{{.*}} [[b]], [2, ?]>>
+    alias c = b[__mlir_attr.`2:index`]
+    # CHECK: alias.decl [[d:\*"d.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> *?>> = <#lit.bind_type<{{.*}} [[c]], [*?]>>
+    alias d = c[
+        __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]
+    ]

@@ -1070,8 +1070,11 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   if (paramValues.empty()) {
     // Create a fully unbound reference to the type.
     SmallVector<TypedAttr> unbound;
-    for (Type type : sig.getInputParamTypes())
-      unbound.push_back(UnboundAttr::get(type));
+    ParameterEvaluator evaluator;
+    for (Type type : sig.getInputParamTypes()) {
+      unbound.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
+      evaluator.addInputValue(unbound.back());
+    }
     return DeclRefType::get(symbol, unbound,
                             MetaTypeType::get(symbol, unbound, sig));
   }

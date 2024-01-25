@@ -7,6 +7,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -228,13 +229,14 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   bool paramVarArg = false;
 
   auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
+  ParameterEvaluator evaluator;
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // Current value is unbound. This corresponds to a parameter in the
     // signature.
     if (::isa<UnboundAttr>(cur)) {
       if (::isa<UnboundAttr>(val)) {
         auto [i, type, name, kind] = *sigIt;
-        newParamTypes.push_back(type);
+        newParamTypes.push_back(evaluator.getReboundType(type));
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
 
@@ -245,6 +247,11 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 
         if (sig.isVarArg(i))
           paramVarArg = true;
+        evaluator.addInputValue(ParamIndexRefAttr::get(
+            /*depth=*/0, /*isResult=*/false, newParamTypes.size() - 1,
+            newParamTypes.back()));
+      } else {
+        evaluator.addInputValue(val);
       }
       ++sigIt;
       continue;
