@@ -217,8 +217,13 @@ static ParseResult parseBindTypeParams(AsmParser &p,
                        "'bind_type' expected a metatyped type value");
   }
 
+  ParameterEvaluator evaluator;
   auto eachFn = [&](Type type) {
-    return parseParamValue(p, values.emplace_back(), type);
+    if (failed(parseParamValue(p, values.emplace_back(),
+                               evaluator.getReboundType(type))))
+      return failure();
+    evaluator.addInputValue(values.back());
+    return mlir::success();
   };
   auto betweenFn = [&] { return p.parseComma(); };
   return failableInterleave(metatype.getSignature().getInputParamTypes(),
@@ -247,12 +252,14 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
            << "'bind_type' has wrong number of input parameters: have "
            << values.size() << " but expected " << inputTypes.size();
   }
-  for (auto [i, type, value] :
-       llvm::enumerate(inputTypes.take_front(values.size()), values)) {
-    if (type == value.getType())
+  ParameterEvaluator valueSubst;
+  for (auto [i, type, value] : llvm::enumerate(inputTypes, values)) {
+    Type expected = valueSubst.getReboundType(type);
+    valueSubst.addInputValue(value);
+    if (expected == value.getType())
       continue;
     return emitError() << "'bind_type' parameter #" << i << " has type "
-                       << value.getType() << " but type expected " << type;
+                       << value.getType() << " but type expected " << expected;
   }
 
   if (metatype.getParamValues().size() != type.getParamValues().size()) {
@@ -278,9 +285,17 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   // Ignore unbound values.
   SmallVector<Type> expected;
   ArrayRef<Type> resultTypes = type.getSignature().getInputParamTypes();
-  for (auto [type, value] : llvm::zip(inputTypes, values))
-    if (::isa<UnboundAttr>(value))
-      expected.push_back(type);
+  ParameterEvaluator typeSubst;
+  for (auto [type, value] : llvm::zip(inputTypes, values)) {
+    if (::isa<UnboundAttr>(value)) {
+      expected.push_back(typeSubst.getReboundType(type));
+      typeSubst.addInputValue(ParamIndexRefAttr::get(
+          /*depth=*/0, /*isResult=*/false, expected.size() - 1,
+          expected.back()));
+    } else {
+      typeSubst.addInputValue(value);
+    }
+  }
   if (resultTypes.size() != expected.size()) {
     return emitError() << "'bind_type' result metatype signature should have "
                        << expected.size() << " input parameters";
