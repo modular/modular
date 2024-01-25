@@ -7,8 +7,6 @@
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
-#include "KGEN/ExecutionEngine/COMPILERRTCASID.h"
-#include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -315,60 +313,15 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
   return success();
 }
 
-static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
-  // Create a BlobCache ref.
-  std::filesystem::path base = ".mojo_cache";
-  base /= "orc";
-  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(
-      /*cacheDir=*/base.string(),
-      /*optExistingRuntime=*/Runtime::getCurrentRuntimeOrNull());
-  if (auto err = runtimeAndCache.setup(KGEN_VERSION_STRING))
-    return err.takeError();
-
-  BlobCache<ReadOnlyKey> &cache = runtimeAndCache.getCache();
-
-  // Decode the base64 CAS ID to do the lookup with the raw bytes.
-  std::vector<char> bytes;
-  bytes.reserve(32);
-  llvm::cantFail(llvm::decodeBase64(casID, bytes));
-  AsyncValueRef<std::optional<BufferRef>> rtBuf =
-      cache.find(StringRef(bytes.data(), bytes.size()));
-  // Await the runtime buffer.
-  LLCL::await(rtBuf);
-
-  // Take the diagnostic.
-  if (rtBuf.isError())
-    return std::move(rtBuf.takeDiagnostic().getMessage());
-
-  return std::move(*rtBuf);
-}
-
 /// Initialize the CompilerRT dylib.
 static ErrorOrSuccess
 initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
                      const llvm::DataLayout &layout,
                      const ExecutionEngineOptions &options) {
-  auto compilerRTBuf = extractRTFromCache(M::CASID::kCompilerRT);
-  if (compilerRTBuf.isError())
-    return compilerRTBuf.takeError();
-  std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
-  std::optional<TempFile> rtFile;
-  std::string compilerRTPath;
-  // If we have rtBuf we can write it to a file and use that. Otherwise, attempt
-  // to read it from the build dir.
-  if (rtBuf) {
-    auto rtFileOr =
-        writeTempFile("compiler_rt-%%%%%%%.a", (*rtBuf)->getBuffer());
-    if (rtFileOr.isError())
-      return rtFileOr.takeError();
-    rtFile.emplace(std::move(*rtFileOr)); // Keep alive until below.
-    compilerRTPath = rtFile->getPath().string();
-  } else {
-    std::error_code ec;
-    compilerRTPath = cfg.getCompilerRTPath().str();
-    if (!std::filesystem::exists(compilerRTPath, ec) || ec)
-      return Error("unable to locate compiler_rt");
-  }
+  std::error_code ec;
+  std::string compilerRTPath = cfg.getCompilerRTPath().str();
+  if (!std::filesystem::exists(compilerRTPath, ec) || ec)
+    return Error("unable to locate compiler_rt");
 
   auto generatorOr =
       toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
@@ -399,14 +352,6 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
 
 /// Grab a memory buffer for the Orc runtime.
 static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg) {
-  // Try to grab the runtime from the cache.
-  auto orcRTBuf = extractRTFromCache(M::CASID::kOrcRT);
-  if (orcRTBuf.isError())
-    return orcRTBuf.takeError();
-  if ((*orcRTBuf).has_value())
-    return std::move(*orcRTBuf);
-
-  // Otherwise, read it from the config.
   std::error_code ec;
   std::string orcRTPath = cfg.getOrcRTPath().str();
   if (!std::filesystem::exists(orcRTPath, ec) || ec)
