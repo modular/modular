@@ -121,16 +121,15 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     var z: Int = 4
     return a
 
-# CHECK-LABEL: lit.func @"param_if{{.*}})"<
-# CHECK-SAME: [[A:.*]][a]: i1, [[B:.*]][b]: !Bool>()
+# CHECK-LABEL: lit.func @"param_if{{.*}}"<a: i1, b: !Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
-  # CHECK: kgen.param.if <[[A]]> {
+  # CHECK: kgen.param.if <a> {
   @parameter
   if a:
     # CHECK: lit.varlet.decl "inside_1" var
     var inside_1: Int
   # CHECK: } else {
-  # CHECK:     kgen.param.if <apply{{.*}}{{.*}}Bool::@"__mlir_i1__{{.*}}[[B]])> {
+  # CHECK:     kgen.param.if <apply{{.*}}{{.*}}Bool::@"__mlir_i1__{{.*}}b)> {
   elif b:
   # CHECK:     lit.varlet.decl "inside_2" var
     var inside_2: Int
@@ -139,28 +138,26 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK:   kgen.param.yield
   # CHECK: }
 
-# CHECK-LABEL: lit.func @"param_if_andor_i1[__mlir_type.i1,__mlir_type.i1]()"<
-# CHECK-SAME: [[A:.*]][a]: i1, [[B:.*]][b]: i1>()
+# CHECK-LABEL: lit.func @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
 fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
-  # CHECK: kgen.param.if <cond([[A]], [[B]], [[A]])>
+  # CHECK: kgen.param.if <cond(a, b, a)>
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v" var
     var v: Int
   # CHECK:   kgen.param.yield
   # CHECK: } else {
-  # CHECK: kgen.param.if <cond([[A]], [[A]], [[B]])>
+  # CHECK: kgen.param.if <cond(a, a, b)>
   elif a or b:
   # CHECK:   lit.varlet.decl "w" var
     var w: Int
 
 
-# CHECK-LABEL: lit.func @"param_if_and[{{.*}}$builtin::$bool::Bool,{{.*}}$builtin::$bool::Bool]()"<
-# CHECK-SAME: [[A:.*]][a]: !Bool, [[B:.*]][b]: !Bool>()
+# CHECK-LABEL: lit.func @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
   # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", cond(
-  # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}$builtin::$bool::Bool)", a), b, a))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v" var

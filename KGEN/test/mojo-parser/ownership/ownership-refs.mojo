@@ -25,13 +25,11 @@ struct MemExample:
   fn noop(self): pass
   fn mutate(inout self): pass
 
-# CHECK-LABEL: lit.func @"borrow{{.*}}"<
-# CHECK-SAME: [[LT:.*]][lt]: lifetime<0>>(%a: !lit.ref<!MemExample, imm [[LT]]> borrow)
+# CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt> borrow)
 fn borrow[lt: ImmLifetime](a: _LITRef[MemExample, False.__mlir_i1__(), lt].type):
   pass
 
-# CHECK-LABEL: lit.func @"mutate{{.*}}"<
-# CHECK-SAME: [[LT:.*]][lt]: lifetime<1>>(%a: !lit.ref<!MemExample, mut [[LT]]> borrow)
+# CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt> borrow)
 fn mutate[lt: MutLifetime](a: _LITRef[MemExample, True.__mlir_i1__(), lt].type):
   pass
 

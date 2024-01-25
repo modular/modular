@@ -148,8 +148,7 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
        mem.noop()
        # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%mem)
 
-# CHECK-LABEL: lit.struct.decl @Parameterized
-# CHECK-SAME: <{{.*}}[level]: !Int>
+# CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
 struct Parameterized[level: Int]:
     fn __init__(inout self): pass
 

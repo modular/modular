@@ -28,7 +28,7 @@ fn foo[Z: Int, W: Int]() -> Int:
 # COM: Closure Wrapper has correct input parameters and initializer parameters
 # CHECK: lit.struct.decl @"fn
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
-# CHECK: lit.func @"__init__{{.*}}<[[Y:.*]][Y]: !Int, |>
+# CHECK: lit.func @"__init__{{.*}}<[[Y:.*]]: !Int, |>
 # CHECK-SAME: (%self: !lit.ref<@"${{.*}}"::@"fn{{.*}}"<:!Int p0, :!Int p1>
 # CHECK-SAME: %impl: !lit.ref<@"${{.*}}"::@"`_CI_{{.*}}"<:!Int p0, :!Int p1, :!Int [[Y]]>
 fn test_captures_are_ordered_correctly[

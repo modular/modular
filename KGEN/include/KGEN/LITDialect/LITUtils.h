@@ -81,13 +81,6 @@ void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
 ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                       Type type, bool hasAddress = false);
 
-/// Parse and print a ParamDeclAttr which has syntactic form `declName ([ name
-/// ])? (: declType )?`. `name` is the unmangled name (i.e. as the user declared
-/// it).
-ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result,
-                           StringAttr &name);
-void printParamDecl(AsmPrinter &p, ParamDeclAttr decl, StringAttr name);
-
 /// Parse a parameter specification in a lit op.
 ParseResult
 parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
@@ -102,7 +95,6 @@ parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
 void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
                                 ArrayRef<ParamDeclAttr> resultParamDecls,
-                                ArrayRef<StringAttr> paramNames,
                                 ArrayRef<PassingKind> paramPassingKinds,
                                 ArrayRef<TypedAttr> defaultPosParams,
                                 ArrayRef<TypedAttr> defaultKwOnlyParams,
