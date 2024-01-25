@@ -207,6 +207,11 @@ def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+
+  let options = [
+    Option<"debugBuild", "debug-build", "bool", "false",
+           "Whether to check locations for parameter uses.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
