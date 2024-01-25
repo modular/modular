@@ -75,13 +75,16 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return failure();
 }
 
-IntegerAttr ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
+std::pair<IntegerAttr, bool>
+ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   if (auto op = dyn_cast<ParamOperatorAttr>(attr);
       op && op.getOpcode() == POC::Cond) {
-    return dyn_cast_or_null<IntegerAttr>(
-        replaceImpl(op.getOperands().front(), rootDepth));
+    Attribute cond = replaceImpl(op.getOperands().front(), rootDepth);
+    if (!cond)
+      return {nullptr, true};
+    return {dyn_cast<IntegerAttr>(cond), false};
   }
-  return nullptr;
+  return {nullptr, false};
 }
 
 Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
@@ -113,7 +116,10 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
-  } else if (IntegerAttr condVal = narrowCondOp(attr, rootDepth)) {
+  } else if (auto [condVal, skip] = narrowCondOp(attr, rootDepth);
+             condVal || skip) {
+    if (skip)
+      return nullptr;
     // If condition is a constant rebind only one of the clauses.
     auto op = cast<ParamOperatorAttr>(attr);
     if (condVal.getValue().isZero())
