@@ -219,10 +219,12 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// also can remap the signature in the parameter list itself.
     ///
     /// If an error occurs making the substitution, report it with emitErrorFn
-    /// and return null.
+    /// and return null. If `emitErrorFn` is not specified, the callee will
+    /// assume that the substitution cannot fail. If a location is specified,
+    /// a default diagnostic is created with it and used as emitErrorFn.
     SignatureType
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
-      function_ref<InFlightDiagnostic()> emitErrorFn);
+      function_ref<InFlightDiagnostic()> emitErrorFn = {});
     SignatureType
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       Location location);

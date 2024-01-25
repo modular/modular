@@ -167,11 +167,7 @@ static SymbolConstantAttr getSpecialMemberForType(
     return attr;
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedSignature(
-      paramValues, []() -> InFlightDiagnostic {
-        assert(false && "getSpecializedSignature should not error here");
-        return {};
-      });
+  auto newSig = attr.getType().getSpecializedSignature(paramValues);
   return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
 }
 
@@ -186,11 +182,8 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
       if (dtorSig) {
         auto traitWithMD =
             TypeConstantAttr::get(trait, TypeType::get(type.getContext()));
-        auto specSig = dtorSig.getSpecializedSignature(
-            {traitWithMD, generic.getParam()}, []() -> InFlightDiagnostic {
-              llvm_unreachable(
-                  "getSpecializedSignature not expected to fail here");
-            });
+        auto specSig =
+            dtorSig.getSpecializedSignature({traitWithMD, generic.getParam()});
         auto delStr =
             StringAttr::get("__del__", StringType::get(type.getContext()));
         return ParamOperatorAttr::get(POC::GetTypeMethod,

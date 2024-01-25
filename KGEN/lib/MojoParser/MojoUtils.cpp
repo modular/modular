@@ -62,14 +62,8 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     SignatureType toSig = toDecl.getClosureSignature().value_or(nullptr);
     if (fromSig && toSig) {
       // Compare the specialized signatures.
-      auto noEmitError = []() -> InFlightDiagnostic {
-        assert(false && "getSpecializedSignature shouldn't error here");
-        return {};
-      };
-      fromSig = fromSig.getSpecializedSignature(fromType.getParamBindings(),
-                                                noEmitError);
-      toSig =
-          toSig.getSpecializedSignature(toType.getParamBindings(), noEmitError);
+      fromSig = fromSig.getSpecializedSignature(fromType.getParamBindings());
+      toSig = toSig.getSpecializedSignature(toType.getParamBindings());
       return canZeroCostConvert(shared, fromSig, toSig);
     }
     return false;
