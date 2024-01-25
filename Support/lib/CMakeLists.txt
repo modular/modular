@@ -23,6 +23,7 @@ add_modular_library(MSupport
   IPInt.cpp
   JSON.cpp
   MicroBenchmark.cpp
+  PlatformLibNames.cpp
   Process.cpp
   Progress.cpp
   Random.cpp
@@ -38,6 +39,15 @@ add_modular_library(MSupport
   MLIRSupport
   MVersion
   )
+
+set_property(
+  SOURCE PlatformLibNames.cpp
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS
+  SHARED_LIBRARY_PREFIX=\"${CMAKE_SHARED_LIBRARY_PREFIX}\"
+  SHARED_LIBRARY_SUFFIX=\"${CMAKE_SHARED_LIBRARY_SUFFIX}\"
+  STATIC_LIBRARY_PREFIX=\"${CMAKE_STATIC_LIBRARY_PREFIX}\"
+  STATIC_LIBRARY_SUFFIX=\"${CMAKE_STATIC_LIBRARY_SUFFIX}\")
 
 string(REPLACE ";" " " LLVM_TARGETS_BUILT "${LLVM_TARGETS_TO_BUILD}")
 set(BUILD_INFO_DEFINITIONS
