@@ -1689,14 +1689,15 @@ def POP_VariadicSplatOp : POPOp<"variadic.splat", [Pure,
 
     ```mlir
     // Create a variadic sequence of 16 scalar floats.
-    %0 = pop.variadic.splat %arg0, 16 : !kgen.variadic<scalar<f32>>
+    %0 = pop.variadic.splat 16, %arg0 : !kgen.variadic<scalar<f32>>
     ```
   }];
 
   let arguments = (ins AnyType:$operand, AttrOfType<Index>:$numElements);
   let results = (outs KGEN_VariadicType:$result);
+
   let assemblyFormat = [{
-    ` ` $operand `,` custom<IndexParamValue>($numElements)
+    ` ` custom<IndexParamValue>($numElements) `,` $operand
     attr-dict `:` qualified(type($result))
   }];
 

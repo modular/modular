@@ -946,7 +946,7 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: Float32):
   _ = a[idx, idx]
   # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx, %idx)
   _ = a[idx, idx, idx]
-  # CHECK: [[VARIADIC:%.*]] = pop.variadic.splat %idx, 4
+  # CHECK: [[VARIADIC:%.*]] = pop.variadic.splat 4, %idx
   # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %f, [[VARIADIC]])
   _ = a[f, idx, idx, idx, idx]
 
