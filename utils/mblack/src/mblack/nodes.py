@@ -419,6 +419,15 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
             if prev and prev.type == token.DOT:
                 return NO
 
+    elif p.type == syms.dotted_as_names:
+        if t == token.DOT:
+            if prev and prev.type == token.DOT:
+                return NO
+
+        elif t == token.NAME:
+            if prev and prev.type == token.DOT:
+                return NO
+
     elif p.type == syms.sliceop:
         return NO
 
