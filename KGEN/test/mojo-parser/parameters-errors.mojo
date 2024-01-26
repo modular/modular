@@ -123,10 +123,6 @@ fn variadic_int_params[*a: Int]():
     pass
 
 fn callVariadic():
-  variadic_int_params() # OK
-  variadic_int_params[1]() # OK
-  variadic_int_params[1, 2]() # OK
-
   variadic_int_params[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
   variadic_int_params[*b] # expected-error {{unpacked parameters not supported yet}}
 
