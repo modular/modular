@@ -1468,11 +1468,8 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     return success();
   };
 
-  // TODO(#21950): wire in keyword-only params
   ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
-  DefaultValueHandler defaultHandler(passingKinds, sig.getDefaultPosParams(),
-                                     /*defaultsKwOnly=*/{});
-
+  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   size_t posIdx = 0;
   size_t numParams = sig.getNumInputParams();
   for (auto [idx, paramType, paramName, paramPassingKind] : llvm::enumerate(
@@ -1505,7 +1502,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     }
 
     // If no operand is provided, try a default.
-    if (auto defaultOr = defaultHandler.getPosDefault(idx)) {
+    if (auto defaultOr = defaultHandler.getDefault(idx)) {
       bindOperands.emplace_back(*defaultOr);
       continue;
     }

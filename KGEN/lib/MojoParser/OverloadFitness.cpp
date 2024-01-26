@@ -319,6 +319,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
   size_t posOperandIdx = 0;
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getValueInputs(),
                        signature.getInputConventions(),
@@ -350,13 +351,9 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       // meaning there can't be anything to infer here directly, but we still
       // check to make sure that the default value doesn't contradict already
       // inferred parameters.
-      ArrayRef<TypedAttr> defaultArgs = signature.getDefaultPosArgs();
-      size_t numArgs = signature.getNumInputs();
-      if (expectedArgIdx >= numArgs - defaultArgs.size()) {
-        PValue defaultVal =
-            defaultArgs[expectedArgIdx + defaultArgs.size() - numArgs];
+      if (auto defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
         if (failed(
-                checkOneOperand(defaultVal, expectedType, expectedConvention)))
+                checkOneOperand(*defaultOr, expectedType, expectedConvention)))
           return {};
         continue;
       }
@@ -720,7 +717,8 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
 
   // One less required argument for each argument that has a default value we
   // can use instead.
-  minRequiredArgs -= signature.getDefaultPosArgs().size();
+  minRequiredArgs -= signature.getDefaultPosArgs().size() +
+                     signature.getDefaultKwOnlyArgs().size();
 
   return {minRequiredArgs, maxAllowedArgs};
 }
@@ -1114,6 +1112,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(*shared.declResolver);
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
              passingKind] :
        llvm::enumerate(signature.getValueInputs(),
@@ -1164,8 +1163,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       }
 
       // We don't need to provide a value for this argument if it has a default.
-      if (expectedArgIdx >=
-          signature.getNumInputs() - signature.getDefaultPosArgs().size()) {
+      if (defaultHandler.getDefault(expectedArgIdx)) {
         // Arguments with default values must be followed only by other
         // arguments with default values, or by keyword arguments.
         continue;

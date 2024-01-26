@@ -123,13 +123,13 @@ static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
-    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
-    bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-    bool isPackVarArg, const DiagEmitter &diagEmitter,
-    bool allowPartiallyBound) const {
-  // TODO(#21950): wire in keyword-only params
-  DefaultValueHandler defaultHandler(paramPassingKinds, defaultParams,
-                                     /*defaultsKwOnly=*/{});
+    ArrayRef<PassingKind> paramPassingKinds,
+    ArrayRef<TypedAttr> defaultPosParams,
+    ArrayRef<TypedAttr> defaultKwOnlyParams, bool hasParamVarArgs,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+    const DiagEmitter &diagEmitter, bool allowPartiallyBound) const {
+  DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
+                                     defaultKwOnlyParams);
 
   size_t numParams = expectedParamTypes.size();
   size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
@@ -280,7 +280,7 @@ InputParamBindings::verifyBindings(
       }
 
       // If available, we use a default parameter value.
-      if (auto defaultOr = defaultHandler.getPosDefault(idx)) {
+      if (auto defaultOr = defaultHandler.getDefault(idx)) {
         // Default parameter values may reference other parameter values, so we
         // need to evaluate these.
         expectedType = evaluator.getReboundType(expectedType);
@@ -433,7 +433,8 @@ std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                    ArrayRef<StringAttr> paramNames,
                                    ArrayRef<PassingKind> paramPassingKinds,
-                                   ArrayRef<TypedAttr> defaultParams,
+                                   ArrayRef<TypedAttr> defaultPosParams,
+                                   ArrayRef<TypedAttr> defaultKwOnlyParams,
                                    bool hasParamVarArgs, StringRef baseName,
                                    Location opLoc, llvm::SMLoc exprLoc,
                                    bool allowPartiallyBound) const {
@@ -446,7 +447,9 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
               /*maxAllowed=*/expectedParamTypes.size(), /*numActual=*/numActual,
               "positional input parameter");
         } else {
-          size_t minRequired = expectedParamTypes.size() - defaultParams.size();
+          size_t minRequired = expectedParamTypes.size() -
+                               defaultPosParams.size() -
+                               defaultKwOnlyParams.size();
           emitWrongArgOrParamCount(diag, minRequired,
                                    /*maxAllowed=*/expectedParamTypes.size(),
                                    numActual, "input parameter");
@@ -497,7 +500,7 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       }};
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
-                        defaultParams, hasParamVarArgs,
+                        defaultPosParams, defaultKwOnlyParams, hasParamVarArgs,
                         /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
                         diagEmitter, allowPartiallyBound);
 }
@@ -508,8 +511,8 @@ InputParamBindings::verifyBindings(
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultPosParams(),
-                        sig.hasParamVarArgs(), parameterInferenceHook,
-                        isPackVarArg, diagEmitter,
+                        sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
+                        parameterInferenceHook, isPackVarArg, diagEmitter,
                         /*allowPartiallyBound=*/false);
 }
 
@@ -517,10 +520,11 @@ std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr};
-  return verifyBindings(
-      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultPosParams(), sig.hasParamVarArgs(),
-      /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
+  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+                        sig.getParamPassingKinds(), sig.getDefaultPosParams(),
+                        sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
+                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
+                        diagEmitter);
 }
 
 ParameterExprArrayAttr
@@ -529,18 +533,19 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
                                    bool allowPartiallyBound) const {
   auto [bindingValuesAttr, _] = verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultPosParams(), sig.getParamVarArg(), structOp.getName(),
-      structOp.getLoc(), exprLoc, allowPartiallyBound);
+      sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
+      sig.getParamVarArg(), structOp.getName(), structOp.getLoc(), exprLoc,
+      allowPartiallyBound);
   return bindingValuesAttr;
 }
 
 ParameterExprArrayAttr
 InputParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                                    Location opLoc, llvm::SMLoc exprLoc) const {
-  auto [newBindings, _] =
-      verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
-                     sig.getParamPassingKinds(), sig.getDefaultPosParams(),
-                     sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  auto [newBindings, _] = verifyBindings(
+      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
+      sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
 
