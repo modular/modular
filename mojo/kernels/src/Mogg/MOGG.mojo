@@ -1086,7 +1086,7 @@ fn concat_shape[
     *input_bufs: NDBuffer[
         input_rank, DimList.create_unknown[input_rank](), input_type
     ],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     # TODO we should refactor this with `concat_from_list_shape`, but this
     # variadic input version has more static info (we _always_ know how many
     # input buffers there'll be for each invocation), thereby yielding simpler
@@ -1099,34 +1099,31 @@ fn concat_shape[
     var axis = axis_buf[0].to_int()
     if axis < 0:
         axis += input_rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= axis and axis < input_rank,
-        "normalized split axis must be within range [0, input_rank)",
-    )
+    if axis < 0 or input_rank <= axis:
+        raise ("normalized split axis must be within range [0, input_rank)")
 
-    # @always_inline
-    # fn shape_equal_ignore_axis(
-    #     s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
-    # ) -> Bool:
-    #     for i in range(input_rank):
-    #         if i != axis and s1[i] != s2[i]:
-    #             return False
-    #     return True
+    @parameter
+    @always_inline
+    fn shape_equal_ignore_axis(
+        s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
+    ) -> Bool:
+        @unroll
+        for i in range(input_rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
 
     var concat_axis_dim_sum = 0
 
     @unroll
     for i in range(input_bufs.__len__()):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
-        # TODO(#17512)
-        # TODO bring back after #27333
-        # debug_assert(
-        #    shape_equal_ignore_axis(
-        #        input_bufs[0].get_shape(), input_bufs[i].get_shape()
-        #    ),
-        #    "input shapes must be equal except for at the concat axis",
-        # )
+        if not shape_equal_ignore_axis(
+            input_bufs[0].get_shape(), input_bufs[i].get_shape()
+        ):
+            raise Error(
+                "input shapes must be equal except for at the concat axis"
+            )
 
     # compute and return the output shape
     var output_shape = input_bufs[0].get_shape()
