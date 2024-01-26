@@ -16,11 +16,18 @@ from MOGGTensor import Tensor
 @export
 fn empty_tensor[
     type: DType,
-](shape: IntList) -> Tensor[type, shape.static_values,]:
+](shape: IntList) -> Tensor[type, shape.static_values]:
     let ptr = DTypePointer[type].alloc(shape.nelems())
     let ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values](ptr, shape, ref_cnt)
+
+
+@mogg_register("mogg.shape_from_kgen")
+@always_inline
+@export
+fn get_static_shape(shape: IntList) -> StaticIntTuple[shape._safe_len]:
+    return shape.stack_alloc_data
 
 
 @mogg_tensor_allocator()
@@ -197,13 +204,31 @@ fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
 
 
 # Test we support a nested lambda using values from the parent contexts.
-@mogg_register("recursive_lambda_test_target")
+@mogg_register_override("add_like_custom_op_target", 1000)
 @export
-fn recursive_lambda_test_target(
-    x: Tensor,
+fn add_like_custom_op_target(
+    x: Tensor, y: Tensor
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
 
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register("recursive_lambda_test_target")
+@export
+fn recursive_lambda_test_target(x: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
     var simd1 = SIMD[x.type, 1](0.5)
 
     @parameter
