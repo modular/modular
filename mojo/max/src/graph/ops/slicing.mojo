@@ -11,12 +11,10 @@ from max.graph.type import *
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
-# TODO: Move axis to kwarg-only when that's supported
-# TODO: Cleanup
 
 
 # ===----------------------------------------------------------------------=== #
-# Slicing
+# Slicing and indexing
 # ===----------------------------------------------------------------------=== #
 
 
@@ -50,12 +48,13 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     )
 
 
-def get(v: Symbol, idx: Int, axis: Int = 0) -> Symbol:
-    var g = v.graph()
-    let v_type = v.tensor_type()
-    let rank = v_type.rank()
+# TODO: Come up with a satisfactory name for this single-slice thing
+def slice(input: Symbol, idx: Int, axis: Int = 0) -> Symbol:
+    var g = input.graph()
+    let input_type = input.tensor_type()
+    let rank = input_type.rank()
 
-    let v_shape = shape_of(v)
+    let input_shape = shape_of(input)
     if axis < 0:
         axis = rank + axis
 
@@ -69,26 +68,28 @@ def get(v: Symbol, idx: Int, axis: Int = 0) -> Symbol:
             start.append(g.scalar(Int64(idx)))
             stop.append(g.scalar(Int64(idx + 1)))
         else:
-            slice_dims.append(v_type.dims[i])
+            slice_dims.append(input_type.dims[i])
             start.append(g.scalar(Int64(0)))
-            stop.append(get(v_shape, i))
+            stop.append(slice(input_shape, i))
         step.append(1)
 
     let slice = g.op(
         "mo.slice",
-        (v, stack(start), stack(stop), g.vector[DType.int64](step)),
-        MOTensor(v_type.dtype, slice_dims),
+        (input, stack(start), stack(stop), g.vector[DType.int64](step)),
+        MOTensor(input_type.dtype, slice_dims),
     )
 
     return squeeze(slice, axis)
 
 
-def get(input: Symbol, *slices: SymbolTuple) -> Symbol:
+def slice(input: Symbol, *slices: SymbolTuple) -> Symbol:
     let g = input.graph()
     let input_type = input.tensor_type()
+    let input_shape = shape_of(input)
 
     var dims = DynamicVector[Int64]()
     for slice in slices:
+        # TODO: This can actually be calculated.
         dims.push_back(dyn())
     for i in range(len(slices), input_type.rank()):
         dims.push_back(input_type.dims[i])
@@ -99,7 +100,6 @@ def get(input: Symbol, *slices: SymbolTuple) -> Symbol:
 
     let input_t = input.tensor_type()
 
-    let slice_max_value = slice(None, None, None).end
     for s in slices:
         starts.push_back(s[][0])
         stops.push_back(s[][1])
@@ -109,8 +109,7 @@ def get(input: Symbol, *slices: SymbolTuple) -> Symbol:
             steps.push_back(g.scalar(Int64((1))))
     for dim in range(len(slices), input_t.rank()):
         starts.push_back(g.scalar(Int64(0)))
-        # TODO: This ought to be the dynamic dimension
-        stops.push_back(g.scalar(Int64(slice_max_value)))
+        stops.push_back(slice(input_shape, dim))
         steps.push_back(g.scalar(Int64((1))))
 
     let start = stack(starts, axis=0)
@@ -140,7 +139,7 @@ def split[
         split_sizes.append(sizes[i])
         var out_dims = x_type.dims
         out_dims[norm_axis] = sizes[i]
-        out_types.add(MOTensor(x_type.dtype, out_dims).to_mlir(g.m))
+        out_types.append(MOTensor(x_type.dtype, out_dims).to_mlir(g.m))
 
     return g.nvop(
         "mo.split",

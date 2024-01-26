@@ -6,6 +6,7 @@
 
 from tensor import TensorShape
 
+from max.graph import ops
 from max.graph.type import ElementType
 
 
@@ -20,7 +21,7 @@ from max.graph.type import ElementType
 def dim(v: Symbol, dim: Int) -> Symbol:
     if dim < 0:
         dim += v.tensor_type().rank()
-    return get(shape_of(v), dim)
+    return ops.slice(shape_of(v), dim)
 
 
 def dims(v: Symbol, start: Int, stop: Int) -> Symbol:

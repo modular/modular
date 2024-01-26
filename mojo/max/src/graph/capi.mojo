@@ -289,10 +289,10 @@ fn tuple_size(tup: TuplePtr) -> Int:
     return cfunc[fn (TuplePtr) -> Int]("MAXG_tupleSize")(tup)
 
 
-fn tuple_add_symbol(tup: TuplePtr, symbol: SymbolPtr):
-    return cfunc[fn (TuplePtr, SymbolPtr) -> NoneType]("MAXG_tupleAddSymbol")(
-        tup, symbol
-    )
+fn tuple_append_symbol(tup: TuplePtr, symbol: SymbolPtr):
+    return cfunc[fn (TuplePtr, SymbolPtr) -> NoneType](
+        "MAXG_tupleAppendSymbol"
+    )(tup, symbol)
 
 
 fn tuple_get_symbol(tup: TuplePtr, pos: UInt32) -> SymbolPtr:
@@ -358,7 +358,7 @@ fn arity_size(tup: ArityPtr) -> Int:
     return cfunc[fn (ArityPtr) -> Int]("MAXG_aritySize")(tup)
 
 
-fn arity_add_type(arity: ArityPtr, t: mlir.Type):
+fn arity_append_type(arity: ArityPtr, t: mlir.Type):
     return cfunc[fn (ArityPtr, mlir._c.IR.MlirType) -> NoneType](
-        "MAXG_arityAddType"
+        "MAXG_arityAppendType"
     )(arity, t._c)

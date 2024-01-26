@@ -292,12 +292,12 @@ struct SymbolTuple(Sized):
     fn __init__(inout self, symbols: VariadicList[Symbol]):
         self.t = capi.tuple_new()
         for symbol in symbols:
-            capi.tuple_add_symbol(self.t, symbol.s)
+            capi.tuple_append_symbol(self.t, symbol.s)
 
     fn __init__(inout self, symbols: DynamicVector[Symbol]):
         self.t = capi.tuple_new()
         for i in range(len(symbols)):
-            capi.tuple_add_symbol(self.t, symbols[i].s)
+            capi.tuple_append_symbol(self.t, symbols[i].s)
 
     # ===------------------------------------------------------------------=== #
     # Convenience tuple adapters
@@ -335,5 +335,5 @@ struct SymbolTuple(Sized):
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn add(self, s: Symbol):
-        capi.tuple_add_symbol(self.t, s.s)
+    fn append(self, s: Symbol):
+        capi.tuple_append_symbol(self.t, s.s)

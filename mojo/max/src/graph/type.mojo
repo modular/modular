@@ -166,7 +166,7 @@ struct Arity:
     fn __init__(inout self, *types: mlir.Type):
         self.a = capi.arity_new()
         for t in types:
-            capi.arity_add_type(self.a, t[])
+            capi.arity_append_type(self.a, t[])
 
     fn __len__(self) -> Int:
         return capi.arity_size(self.a)
@@ -178,5 +178,5 @@ struct Arity:
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn add(self, type: mlir.Type):
-        capi.arity_add_type(self.a, type)
+    fn append(self, type: mlir.Type):
+        capi.arity_append_type(self.a, type)
