@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Core graph primitives."""
 
 from .attr import AttrMap
 from .capi import GraphPtr, SymbolPtr, TuplePtr
@@ -16,19 +17,49 @@ from tensor import TensorShape, TensorSpec
 
 @value
 struct Graph:
-    var g: GraphPtr
-    var m: Module
+    """The core unit of computation in MAX Engine.
 
-    # ===------------------------------------------------------------------=== #
-    # Constructors and basic accessors
-    # ===------------------------------------------------------------------=== #
+    `Graph`s are callable routines in MAX Engine, similar to functions in
+    Mojo. Like functions, graphs have a name and signature. Unlike functions,
+    which follow an imperative programming model, `Graph`s follow a dataflow
+    programming model, using lazily-executed, parallel operations instead of
+    sequential instructions. `Graph`s aren't called directly from Mojo, but are
+    instead compiled and executed by MAX Engine, for example using the MAX
+    Engine API.
+    """
+
+    # TODO: Add an exmple, after we cleaned up the Arity thing.
+    # TODO: Refer to the concepts doc for the meaning of Symbol, etc.
+    # TODO: Link to max engine page, wikipedia, etc.
+
+    var g: GraphPtr
+    """A handle to the `Graph`'s internal implementation."""
+
+    # TODO: Remove
+    var m: Module
 
     fn __init__(inout self, g: GraphPtr):
         self.g = g
         self.m = Module(capi.graph_get_module(g))
 
-    fn __getitem__(self, pos: UInt32) -> Symbol:
-        return Symbol(capi.graph_get_arg(self.g, pos))
+    # ===------------------------------------------------------------------=== #
+    # Constructors and basic accessors
+    # ===------------------------------------------------------------------=== #
+
+    fn __getitem__(self, n: UInt32) -> Symbol:
+        """Returns the `n`th argument of this graph.
+
+        This gives access to the graph's argument to the ops inside it.
+
+        Args:
+            n: The argument's position.
+
+        Returns:
+            A `Symbol` representing the argumen't symbolic value, as seen from
+            within the `Graph`'s body.
+        """
+        # TODO: Add an exmple, after we cleaned up the Arity thing.
+        return Symbol(capi.graph_get_arg(self.g, n))
 
     # ===------------------------------------------------------------------=== #
     # nvop - the most generic op builder
