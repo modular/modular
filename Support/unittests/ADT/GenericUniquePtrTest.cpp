@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Support/GenericUniquePtr.h"
+#include "Support/ADT/GenericUniquePtr.h"
 
 #include "gtest/gtest.h"
 
-using namespace M::LLCL;
+using namespace M;
 
 namespace {
 

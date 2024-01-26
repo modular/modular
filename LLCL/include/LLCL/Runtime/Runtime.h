@@ -21,7 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/GenericUniquePtrSet.h"
+#include "Support/ADT/GenericUniquePtrSet.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/DenseMap.h"

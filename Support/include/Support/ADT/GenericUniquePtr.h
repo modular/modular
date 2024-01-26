@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_GENERICUNIQUEPTR_H
-#define LLCL_SUPPORT_GENERICUNIQUEPTR_H
+#ifndef SUPPORT_ADT_GENERICUNIQUEPTR_H
+#define SUPPORT_ADT_GENERICUNIQUEPTR_H
 
 #include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 
-namespace M::LLCL {
+namespace M {
 
 /// A type-erased version of std::unique_ptr<T>, where T is recorded using
 /// a TypeID::get<T>() and cast (with type safety check) on access. Not
@@ -141,6 +141,6 @@ inline GenericUniquePtr makeGenericUniquePtr(Args &&...args) {
   return ptr;
 }
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_GENERICUNIQUEPTR_H
+#endif // SUPPORT_ADT_GENERICUNIQUEPTR_H
