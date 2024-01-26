@@ -137,14 +137,6 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
   if (DeclRefType valueType = dyn_cast<DeclRefType>(type))
     return getStructDeclForType(valueType).isRegisterPassableTrivial();
 
-  // Variants are trivial if all elements are.
-  if (auto variantType = dyn_cast<VariantType>(type)) {
-    for (Type elt : variantType.getTypes())
-      if (!isRegisterPassableTrivial(elt))
-        return false;
-    return true;
-  }
-
   // Other values of raw MLIR type are always trivial.
   return true;
 }

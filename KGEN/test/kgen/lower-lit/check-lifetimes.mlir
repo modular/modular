@@ -705,32 +705,3 @@ lit.func @top(%c: !lit.ref<@Box<:trait<@AnyType> !Thing>, mut #lit.lifetime> bor
   lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<!Thing, mut #lit.lifetime> borrow_in_mem) -> ()>
   kgen.return
 }
-
-
-
-// -----
-
-!Error = !kgen.declref<@Error, !lit.metatype<@Error>>
-
-lit.struct.decl @Error register_passable attributes {
-  destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error owned) -> !kgen.none>} {
-  lit.struct.field a : index
-  lit.func @__init__() ownedresult -> !Error {
-     %idx0 = index.constant 0
-     %0 = lit.struct.create(a=%idx0) : (index) -> !Error
-     kgen.return %0 : !Error
-  }
-}
-lit.func @use_variant_wrong(%a: !kgen.variant<!Error, none> owned) {
-  // expected-note @+1 {{'x' declared here}}
-  %x = lit.varlet.decl "x" let : !lit.ref<!kgen.variant<!Error, none>, mut life>
-  lit.ref.store %a, %x : !lit.ref<!kgen.variant<!Error, none>, mut life>
-
-  %tmp1 = lit.ref.load %x: !lit.ref<!kgen.variant<!Error, none>, mut life>
-  %0 = kgen.variant.take %tmp1, 1 : <!Error, none>
-
-  // expected-error @+1 {{use of uninitialized value 'x'}}
-  %tmp2 = lit.ref.load %x: !lit.ref<!kgen.variant<!Error, none>, mut life>
-  %1 = kgen.variant.take %tmp2, 0 : <!Error, none>
-  kgen.return
-}
