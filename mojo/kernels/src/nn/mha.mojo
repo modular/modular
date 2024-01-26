@@ -197,8 +197,10 @@ fn fused_attention[
             )
 
     # Fuse softmax when matmul is only partitioned in M.
-    # TODO: use  portition function instead of copying heuristic.
-    let softmax_fusable = (M > N) or (M == N and K <= M)
+    # TODO: use portition function instead of copying heuristic.
+    # TODO(#26198) Disabled for now. Should be partition aware and has a req
+    # of `(M > N) or (M == N and K <= M)`.
+    let softmax_fusable = False
 
     # The transpose of Q K V swaps batch and matmul dimensions,
     # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
