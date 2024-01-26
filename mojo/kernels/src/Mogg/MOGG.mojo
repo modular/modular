@@ -693,25 +693,6 @@ fn simd_store[
 
 
 # ===----------------------------------------------------------------------===#
-# GPU helper functions
-# ===----------------------------------------------------------------------===#
-
-
-# TODO (#24946): remove this, kernel should be passed scalars directly, not
-# through NDBuffer
-@always_inline
-fn buffer_to_scalar[
-    type: DType
-](
-    buf: NDBuffer[1, DimList.create_unknown[1](), type],
-    idx: Int = 0,
-) -> SIMD[
-    type, 1
-]:
-    return buf[idx]
-
-
-# ===----------------------------------------------------------------------===#
 # Broadcast
 # ===----------------------------------------------------------------------===#
 
@@ -1066,7 +1047,7 @@ fn concat[
     try:
         _concat[rank, type, single_thread_blocking_override, target](
             output,
-            int(normalize_neg_index(buffer_to_scalar(axis), rank)),
+            int(normalize_neg_index(axis[0], rank)),
             ins,
         )
     except e:
@@ -1308,7 +1289,7 @@ fn mean[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let axis = buffer_to_scalar(axis_buffer)
+    let axis = axis_buffer[0]
 
     @always_inline
     @parameter
@@ -1458,7 +1439,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    let axis = buffer_to_scalar(axis_buffer)
+    let axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
         try:
             _reduce_generator[
@@ -1517,7 +1498,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    let axis = buffer_to_scalar(axis_buffer)
+    let axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
         try:
             _reduce_generator[
@@ -1576,7 +1557,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    let axis = buffer_to_scalar(axis_buffer)
+    let axis = axis_buffer[0]
 
     with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
         try:
@@ -1636,7 +1617,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    let axis = buffer_to_scalar(axis_buffer)
+    let axis = axis_buffer[0]
 
     with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
         try:
@@ -1867,7 +1848,7 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        let dim = int(buffer_to_scalar(perms, i))
+        let dim = int(perms[i])
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1979,7 +1960,7 @@ fn gather[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let axis = int(normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank))
+    let axis = int(normalize_neg_index(axis_buffer[0], in_rank))
 
     @parameter
     @always_inline
