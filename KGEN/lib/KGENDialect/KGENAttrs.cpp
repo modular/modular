@@ -774,6 +774,19 @@ ErrorOr<EnvAttr> EnvAttr::parseDefines(MLIRContext *ctx,
   return EnvAttr::get(attrs.getDictionary(ctx));
 }
 
+EnvAttr EnvAttr::extend(EnvAttr attr) {
+  NamedAttrList values = getValues();
+  for (NamedAttribute val : attr.getValues()) {
+    // If the key exists, then we remove it so that we overwrite.
+    if (values.getNamed(val.getName()))
+      values.erase(val.getName());
+
+    values.append(val);
+  }
+
+  return EnvAttr::get(values.getDictionary(attr.getContext()));
+}
+
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//

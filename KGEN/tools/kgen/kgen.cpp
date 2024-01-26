@@ -244,14 +244,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Tag the module with the environment parsed from the defines.
   ctx->loadDialect<KGENDialect>();
 
-  // Set the environment (defines) for the module.
-  setModularEnvAttr(*theModule);
-
-  // Now parse defines that the user passed in.
+  // Populate the module with the user-provided -D options.
   ErrorOr<EnvAttr> env = EnvAttr::parseDefines(ctx, clOptions.defines);
   if (env.isError())
     return failure(clOptions.reportError(env.takeError().get()));
   theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());
+
+  // Extend the module with the Module env-attrs.
+  extendWithModularEnvAttr(theModule.get());
 
   // If we are generating a dependency file, do so now.
   if (!clOptions.dependencyFilename.empty()) {

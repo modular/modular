@@ -214,7 +214,8 @@ PackageBuilder::PackageBuilder(
 
   // Clone the parsed package operation and push its ops onto the worklist.
   thePackage = cloneWithoutRegions(parsedPackageOp);
-  thePackage.setCompiledEnvAttr(env);
+  thePackage.setCompiledEnvAttr(
+      KGEN::getModularEnvAttr(thePackage.getContext()).extend(env));
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());

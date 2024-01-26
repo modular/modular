@@ -753,7 +753,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   setTargetInfo(*module, impl->typeSystem->GetTargetInfo());
 
   // Set the environment (defines) for the module.
-  setModularEnvAttr(*module);
+  extendWithModularEnvAttr(*module);
 
   // Ensure the expression function in the cloned module gets exported.
   auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));
