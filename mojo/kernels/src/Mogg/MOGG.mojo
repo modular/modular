@@ -87,7 +87,7 @@ from NN.GatherScatter import scatter_elements_shape as scatter_shape
 from NN.GatherScatter import scatter_nd_shape
 from NN.GatherScatter import scatter_nd as _scatter_nd
 from NN.GatherScatter import scatter_nd_generator
-from NN.GatherScatter import normalize_neg_index
+from NN.GatherScatter import normalize_neg_index, Axis
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -1960,18 +1960,6 @@ fn gather[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let axis = int(normalize_neg_index(axis_buffer[0], in_rank))
-
-    @parameter
-    @always_inline
-    fn no_prefetch[
-        input_rank: Int, indices_rank: Int
-    ](
-        input_cooords: StaticIntTuple[input_rank],
-        indices_coords: StaticIntTuple[indices_rank],
-    ):
-        pass
-
     # TODO: This is disabled as if we make this a shape without a spec we have
     # nothing to deduce `indices_type` from.
     @parameter
@@ -1997,11 +1985,9 @@ fn gather[
                 input_0_fn,
                 load_indices,
                 output_0_fn,
-                no_prefetch,
-                Dim(),
-                target,
+                target=target,
             ](
-                OptionalParamInt[Dim()](axis),
+                Axis(axis_buffer[0], in_rank),
                 input_shape,
                 indices.dynamic_shape,
                 output_shape,
@@ -2019,11 +2005,9 @@ fn gather[
             input_0_fn,
             load_indices,
             output_0_fn,
-            no_prefetch,
-            Dim(),
-            target,
+            target=target,
         ](
-            OptionalParamInt[Dim()](axis),
+            Axis(axis_buffer[0], in_rank),
             input_shape,
             indices.dynamic_shape,
             output_shape,
