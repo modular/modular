@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# RUN: kgen %s %mojo_cpu_build_arch -emit-header | FileCheck %s
+# RUN: kgen %s -emit-header | FileCheck %s
 
 
 @export("bar", ABI="C")

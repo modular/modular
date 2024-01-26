@@ -300,7 +300,6 @@ function(add_kgen_library target)
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
-      ${MOJO_ARCH_FLAGS}
       ${MOJO_DEFINES}
       $<$<BOOL:${KGEN_DISABLE_PREBUILT_PACKAGES}>:-disable-prebuilt-packages>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
@@ -367,7 +366,6 @@ function(add_kgen_kernel target)
     OUTPUT ${header_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
-    ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
     -enable-search
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
@@ -397,7 +395,6 @@ function(add_kgen_kernel target)
     OUTPUT ${archive_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit
-    ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     -enable-search

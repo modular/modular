@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo build %mojo_cpu_build_arch %s -o %t
+# RUN: mojo build %s -o %t
 # RUN: %t | FileCheck %s
 
 # Test that we can build executables that rely on LLCL and the runtime
