@@ -118,6 +118,13 @@ private:
   ParseResult parseReferenceType(ExprNode *&result);
   ParseResult parseAddressConvert(ExprNode *&result);
 
+  /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
+  /// adhere to the Python grammar. Positional operands cannot appear after
+  /// keyword operands, and duplicate keyword operands are not allowed. An
+  /// optional flag can be specified to allow unpacked operands.
+  ParseResult checkOperands(ArrayRef<Operand>, StringRef argOrParam,
+                            bool allowUnpacked = true);
+
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
   /// line.  This allows the expression parser to know when to keep parsing the
@@ -819,20 +826,8 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     }
   }
 
-  // The official Python grammar is super complicated, but the constraint is
-  // just that you can't have positional arguments after keyword arguments. This
-  // is easier to enforce with a bool than with BNF.
-  bool sawKeywordArg = false;
-  for (const Operand &operand : operands) {
-    // We have a positional / non-keyword argument.  Python syntactically
-    // rejects these to reduce ambiguity so we do the same.
-    if (operand.isPositional() && sawKeywordArg) {
-      emitError(operand.getLoc(),
-                "positional argument follows keyword argument");
-      return failure();
-    }
-    sawKeywordArg |= operand.isKeywordOrUnpackedKeyword();
-  }
+  if (checkOperands(operands, "argument"))
+    return failure();
 
   // Otherwise we're good to go.
   result = alloc<CallNode>(result, lparenLoc, copyArrayRef<Operand>(operands),
@@ -891,6 +886,33 @@ ParseResult ExprParser::parseExprOrSlice(ExprNode *&result) {
   return success();
 }
 
+ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
+                                      StringRef argOrParam,
+                                      bool allowUnpacked) {
+  // We keep a map of "name -> operand" so that we can emit better diagnostics.
+  llvm::SmallDenseMap<StringAttr, const Operand *> kwOperands;
+  for (const Operand &operand : operands) {
+    SMLoc loc = operand.getLoc();
+    if (operand.isUnpacked() && !allowUnpacked)
+      return emitError(loc, "unpacked ") << argOrParam << "s not supported yet";
+    if (operand.isPositional() && !kwOperands.empty()) {
+      return emitError(loc, "positional ")
+             << argOrParam << " follows keyword " << argOrParam;
+    }
+    if (operand.isKeyword()) {
+      auto [it, addedNew] = kwOperands.try_emplace(operand.name, &operand);
+      if (!addedNew) {
+        auto diag = emitError(loc, "duplicate keyword ")
+                    << argOrParam << " " << operand.name;
+        diag.attachNote(it->getSecond()->getLoc())
+            << "previously specified here";
+        return std::move(diag);
+      }
+    }
+  }
+  return success();
+}
+
 /// subscription ::=  primary "[" expression_list "]"
 ///
 /// slicing      ::=  primary "[" slice_list "]"  [TODO]
@@ -933,21 +955,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
       getLocation(rsquareLoc))
     return failure();
 
-  // Inspect each parsed operand, and check for duplicates.
-  SmallPtrSet<StringAttr, 4> keywords;
-  bool foundKw = false;
-  for (const Operand &operand : operands) {
-    SMLoc loc = operand.getLoc();
-    if (operand.isUnpacked())
-      return emitError(loc, "unpacked parameters not supported yet");
-    if (foundKw && operand.isPositional())
-      return emitError(loc, "positional parameter follows keyword parameter");
-    if (operand.isKeyword()) {
-      if (auto [_, isNewKw] = keywords.insert(operand.name); !isNewKw)
-        return emitError(loc, "duplicate keyword parameter ") << operand.name;
-      foundKw = true;
-    }
-  }
+  if (checkOperands(operands, "parameter", /*allowUnpacked=*/false))
+    return failure();
 
   if (parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();

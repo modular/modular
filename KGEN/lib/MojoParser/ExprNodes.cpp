@@ -1265,15 +1265,8 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     } else {
       assert(operand.isKeyword());
       StringAttr name = operand.name;
-      auto [it, addedNew] = kwOperands.try_emplace(name, std::move(exprAndVal));
-      if (!addedNew) {
-        auto diag =
-            emitter.emitError(operand.getLoc(), "duplicate keyword argument ")
-            << name;
-        diag.attachNote(it->getSecond().expr->getLoc())
-            << "previously specified here";
-        return {};
-      }
+      auto [_, addedNew] = kwOperands.try_emplace(name, std::move(exprAndVal));
+      assert(addedNew && "duplicate keyword argument");
     }
   }
   CallOperands operands(posOperands, &kwOperands);
