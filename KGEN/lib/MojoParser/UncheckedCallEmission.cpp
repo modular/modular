@@ -365,13 +365,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(calleeSig.getNumInputs());
 
-  // TODO(#21950): wire in keyword-only arguments
-  ArrayRef<PassingKind> passingKinds = calleeSig.getArgPassingKinds();
-  DefaultValueHandler defaultHandler(
-      passingKinds, calleeSig.getDefaultPosArgs(), /*defaultsKwOnly=*/{});
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(calleeSig);
   for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
-                       calleeSig.getInputConventions(), passingKinds)) {
+                       calleeSig.getInputConventions(),
+                       calleeSig.getArgPassingKinds())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -431,7 +429,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       // Otherwise, apply the default argument. We've ensured before that we
       // have a default argument for each missing operand.
-      auto defaultOr = defaultHandler.getPosDefault(argIdx);
+      auto defaultOr = defaultHandler.getDefault(argIdx);
       assert(defaultOr.has_value());
       assert(convention != ValueInputConvention::ByRef &&
              "by_ref argument cannot have defaults");

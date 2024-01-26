@@ -193,9 +193,11 @@ private:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
       ArrayRef<PassingKind> paramPassingKinds,
-      ArrayRef<TypedAttr> defaultParams, bool hasParamVarArgs,
-      ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
+      ArrayRef<TypedAttr> defaultPosParams,
+      ArrayRef<TypedAttr> defaultKwOnlyParamsdefaultKwParams,
+      bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
+      bool isPackVarArg, const DiagEmitter &diagEmitter,
+      bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -207,7 +209,8 @@ private:
   verifyBindings(ArrayRef<Type> expectedParamTypes,
                  ArrayRef<StringAttr> paramNames,
                  ArrayRef<PassingKind> paramPassingKinds,
-                 ArrayRef<TypedAttr> defaultParams, bool hasParamVarArgs,
+                 ArrayRef<TypedAttr> defaultPosParams,
+                 ArrayRef<TypedAttr> defaultKwOnlyParams, bool hasParamVarArgs,
                  StringRef baseName, Location opLoc, llvm::SMLoc exprLoc,
                  bool allowPartiallyBound = false) const;
 };
