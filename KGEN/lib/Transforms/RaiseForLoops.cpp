@@ -533,10 +533,11 @@ void RaiseForLoops::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
+    // FIXME(#29784) https://github.com/modularml/modular/issues/29784
     // Revert this warning back to compilation error when we have more
     // sophisticated analysis to extra loop bounds and step info with general
     // patterns (e.g. SCEV). `@unroll` should be a compilation guarantee instead
-    // of as a hint. https://github.com/modularml/modular/issues/29784
+    // of as a hint.
     InFlightDiagnostic diag =
         mlir::emitWarning(loop->getLoc(), " loop is decorated with @unroll, "
                                           "but compiler can't fully unroll it");
