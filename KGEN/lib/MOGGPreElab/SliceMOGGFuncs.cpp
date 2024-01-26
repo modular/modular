@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "GenericML/GraphCompiler/MOGGDialect/Support/MOGGTensorAccessor.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
@@ -75,42 +76,6 @@ SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,
   return decoratorsToCopy;
 }
 
-// Mirror of the tensor attributes as they exist in Mojo. This allows us to
-// manipulate parameters on calls as we can understand which parameter
-// corresponds to which in the tensor when passing them into a call.
-struct TensorInMojo {
-  TensorInMojo() { params.resize(NUM_PARAMS); }
-
-  SmallVector<TypedAttr> params;
-
-  void assignParam(TypedAttr param, size_t index) { params[index] = param; }
-
-  bool isParamDefaulted(size_t index) const {
-    return !isa<KGEN::ParamIndexRefAttr>(params[index]);
-  }
-
-  KGEN::ParamIndexRefAttr paramAsRef(size_t index) const {
-    return dyn_cast<KGEN::ParamIndexRefAttr>(params[index]);
-  }
-
-  KGEN::ParamIndexRefAttr outputLambdaAsRef() const {
-    return paramAsRef(OUTPUT_LAMBDA_IDX);
-  }
-
-  KGEN::ParamIndexRefAttr ownedMemoryAsRef() const {
-    return paramAsRef(OWNED_MEMORY);
-  }
-
-  // The indices of each parameter as they appear on the struct.
-  // static constexpr size_t DTYPE_IDX = 0;
-  // static constexpr size_t SHAPE_IDX = 1;
-  // static constexpr size_t STRIDE_IDX = 2;
-  static constexpr size_t INPUT_LAMBDA_IDX = 3;
-  static constexpr size_t OUTPUT_LAMBDA_IDX = 4;
-  static constexpr size_t OWNED_MEMORY = 5;
-  static constexpr size_t NUM_PARAMS = 6;
-};
-
 bool isTensor(KGEN::DeclRefType maybeTensor) {
   // Look at the top level symbol name, it is structured like
   // Folder::File::ClassName.
@@ -165,8 +130,8 @@ bool hasAtLeastOneTensor(GeneratorOp generator) {
 
 // Given a mojo function pull the tensor parameter information off of it. I.E
 // which parameter corresponds to which parameter in a given input.
-std::optional<TensorInMojo> getTensorRepFromFunctionInput(GeneratorOp generator,
-                                                          size_t index) {
+std::optional<MOGG::MOGGTensorParamAccessor>
+getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
   std::optional<PreservedAttr> sig = generator.getSourceSignature();
   if (!sig.has_value())
     return std::nullopt;
@@ -186,7 +151,7 @@ std::optional<TensorInMojo> getTensorRepFromFunctionInput(GeneratorOp generator,
   if (!isTensor(asDeclRef))
     return std::nullopt;
 
-  TensorInMojo tensor;
+  MOGG::MOGGTensorParamAccessor tensor;
 
   for (auto [paramIdx, param] : llvm::enumerate(asDeclRef.getParamValues())) {
     tensor.assignParam(param, paramIdx);
@@ -217,7 +182,8 @@ private:
   /// given lambda.
   void rewriteCallWithNewParams(
       CallOp call, SymbolTable symTab,
-      std::function<void(const TensorInMojo &, SmallVector<TypedAttr> &)>
+      std::function<void(const MOGG::MOGGTensorParamAccessor &,
+                         SmallVector<TypedAttr> &)>
           updateParams) {
     KGEN::SymbolConstantAttr symbol = call.getCallee();
     FlatSymbolRefAttr flatSym = cast<FlatSymbolRefAttr>(symbol.getSymbol());
@@ -230,7 +196,7 @@ private:
 
     // Update the parameters using the caller provided heuristic.
     for (auto [idx, value] : llvm::enumerate(call->getOperands())) {
-      std::optional<TensorInMojo> callRep =
+      std::optional<MOGG::MOGGTensorParamAccessor> callRep =
           getTensorRepFromFunctionInput(calledFunc, idx);
       if (callRep.has_value())
         updateParams(*callRep, newParams);
@@ -319,7 +285,7 @@ private:
     auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
                                         POP::SIMDType::get(1, boolType));
     gen.walk([&](CallOp call) {
-      auto paramUpdate = [&](const TensorInMojo &tensor,
+      auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
                              SmallVector<TypedAttr> &newParams) {
         if (KGEN::ParamIndexRefAttr param = tensor.ownedMemoryAsRef())
           newParams[param.getIndex()] = boolFalse;
@@ -527,8 +493,9 @@ private:
                                           /*replaceLocs=*/false,
                                           /*replaceTypes=*/true);
 
-      size_t lambdaIndex = isInput ? TensorInMojo::INPUT_LAMBDA_IDX
-                                   : TensorInMojo::OUTPUT_LAMBDA_IDX;
+      size_t lambdaIndex =
+          isInput ? MOGG::MOGGTensorParamAccessor::INPUT_LAMBDA_IDX
+                  : MOGG::MOGGTensorParamAccessor::OUTPUT_LAMBDA_IDX;
       auto newLambdaBinding =
           newSampleCall->getCallee().getParamValues()[lambdaIndex];
 
@@ -537,8 +504,8 @@ private:
       // replace all uses of the old one with the new.
       if (isInput) {
         ParamDeclRefAttr oldLambdaBinding = cast<ParamDeclRefAttr>(
-            enableFusionFunc.getCallee()
-                .getParamValues()[TensorInMojo::INPUT_LAMBDA_IDX]);
+            enableFusionFunc.getCallee().getParamValues()
+                [MOGG::MOGGTensorParamAccessor::INPUT_LAMBDA_IDX]);
 
         paramRebinds[oldLambdaBinding] = newLambdaBinding;
         for (Operation &topLevelOp : gen.getOps()) {
@@ -569,7 +536,7 @@ private:
             if (inLambda)
               continue;
 
-            auto paramUpdate = [&](const TensorInMojo &tensor,
+            auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
                                    SmallVector<TypedAttr> &newParams) {
               if (KGEN::ParamIndexRefAttr param = tensor.outputLambdaAsRef())
                 newParams[param.getIndex()] = newLambdaBinding;
@@ -787,7 +754,7 @@ public:
       SmallVector<KGEN::CallOp> enableFusionFuncs;
       SmallVector<KGEN::CallOp> deconstructors;
 
-      std::optional<TensorInMojo> outTensorParameters =
+      std::optional<MOGG::MOGGTensorParamAccessor> outTensorParameters =
           getTensorRepFromFunctionInput(slicedComputeFunction, 0);
       if (!outTensorParameters.has_value())
         continue;
