@@ -10,6 +10,8 @@
 # Stubs to allow testing without builtins
 # ===----------------------------------------------------------------------=== #
 
+alias AnyRegType = __mlir_type.`!kgen.type`
+alias Float = __mlir_type.`!pop.scalar<f64>`
 alias Int = __mlir_type.index
 
 
@@ -26,6 +28,78 @@ trait Copyable:
 # ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
+
+
+@register_passable("trivial")
+struct MyInt:
+    var value: Int
+
+    @always_inline("nodebug")
+    fn __init__(v: Int) -> Self:
+        return Self {value: v}
+
+
+fn overloaded_param[a: Int, b: MyInt]():
+    pass
+
+
+fn overloaded_param[a: Int, b: Int]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_kw_params_overload{{.*}}"<x, y>
+fn test_kw_params_overload[x: Int, y: Int]():
+    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, y>()
+    overloaded_param[b=y, a=x]()
+
+    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply(
+    # CHECK-SAME :!lit.signature<("v": index borrow) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
+    overloaded_param[b = MyInt(y), a=x]()
+
+
+fn overloaded_arg(a: Int, b: MyInt):
+    pass
+
+
+fn overloaded_arg(a: Int, b: Int):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_kw_args_overload{{.*}}"(%x: index borrow, %y: index borrow)
+fn test_kw_args_overload(x: Int, y: Int):
+    # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
+    overloaded_arg(b=y, a=x)
+
+    # CHECK: %[[Y:.*]] = lit.call {{.*}}@MyInt::@"__init__{{.*}}"(%y)
+    # CHECK-NEXT: call {{.*}}@"overloaded_arg{{.*}}"(%x, %[[Y]])
+    overloaded_arg(b=MyInt(y), a=x)
+
+
+# COM: test parametric overload in the presence of keyword operands.
+fn take_kw_param_infer[A: AnyRegType, B: AnyRegType](a: A, b: B):
+    pass
+
+
+fn take_kw_param_infer[B: AnyRegType](a: MyInt, b: B):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_kw_args_param_infer
+fn test_kw_args_param_infer(x: Int, f: Float, s: MyInt):
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    take_kw_param_infer(x, b=f)
+
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    take_kw_param_infer[Int](b=f, a=x)
+
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
+    take_kw_param_infer[Int, Float](b=f, a=x)
+
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}<:type index>(%s, %x)
+    take_kw_param_infer(s, b=x)
+
+    # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}<:type index>(%s, %x)
+    take_kw_param_infer(b=x, a=s)
 
 
 # COM: Test overloading precedence in the presence of static methods.

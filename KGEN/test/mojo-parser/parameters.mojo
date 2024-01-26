@@ -858,60 +858,6 @@ fn test_struct_with_parametric_default_value():
     # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
 
-
-##===----------------------------------------------------------------------===##
-# Function keyword parameters
-##===----------------------------------------------------------------------===##
-
-fn take_kw_params[a: Int, b: Int = 2, c: Int = 3](): pass
-
-# CHECK-LABEL: lit.func @"test_simple_kw_params()"
-fn test_simple_kw_params():
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>>
-    take_kw_params[5, b=7]()
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
-    take_kw_params[5, b=7, c=9]()
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>>
-    take_kw_params[5, c=9]()
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
-    take_kw_params[5, c=9, b=7]()
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
-    take_kw_params[a=5, c=9, b=7]()
-    # CHECK: lit.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
-    take_kw_params[c=9, b=7, a=5]()
-
-
-fn test_indirect_kw_params():
-  # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
-  alias callee = take_kw_params
-  # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
-  # CHECK-SAME: #lit.struct<{value = 5}>, #lit.struct<{value = 2}>, #lit.struct<{value = 9}>)]()
-  callee[5, c=9]()
-  # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
-  # CHECK-SAME: #lit.struct<{value = 5}>, #lit.struct<{value = 7}>, #lit.struct<{value = 9}>)]()
-  callee[c=9, b=7, a=5]()
-
-
-@register_passable("trivial")
-struct MyInt:
-    var value: Int
-
-    @always_inline("nodebug")
-    fn __init__(_a: Int) -> Self:
-        return Self {value: _a}
-
-fn overloaded_kw_param[a: Int, b: MyInt](): pass
-
-fn overloaded_kw_param[a: Int, b: Int](): pass
-
-# CHECK-LABEL: lit.func @"test_kw_params_overload
-fn test_kw_params_overload[a: Int, b: Int]():
-    # CHECK: lit.call @{{.*}}@"overloaded_kw_param[{{.*}}::Int,{{.*}}::Int]()"
-    overloaded_kw_param[b=b, a=a]()
-    # CHECK: lit.call @{{.*}}@"overloaded_kw_param[{{.*}}::Int,{{.*}}::MyInt]()"
-    overloaded_kw_param[b = MyInt(b), a=a]()
-
-
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters
 ##===----------------------------------------------------------------------===##
