@@ -213,7 +213,6 @@ fn fused_attention[
             score_type,
             False,
             transpose_k,
-            True,
             fuse_elementwise_fn,
             fuse_softmax,
         ](
@@ -246,9 +245,6 @@ fn fused_attention[
         v_type,
         output_type,
         False,
-        False,
-        False,
-        null_bmm_lambda,
         False,
     ](
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), output_type]](
