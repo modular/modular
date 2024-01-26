@@ -321,7 +321,7 @@ void POPDialect::registerTypes() {
 
   dialect->registerKeywordParser("scalar", parseScalarType);
   dialect->registerPrettyType(
-      "simd", &SIMDType::parse, TypeID::get<SIMDType>(),
+      "simd", &SIMDType::parse, mlir::TypeID::get<SIMDType>(),
       +[](AsmPrinter &p, Type type) {
         auto simd = cast<SIMDType>(type);
         if (simd.isScalar()) {

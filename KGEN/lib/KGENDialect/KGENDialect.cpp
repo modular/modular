@@ -175,14 +175,14 @@ void KGENDialect::registerKeywordParser(StringRef keyword, TypeParseFn parse) {
 }
 
 void KGENDialect::registerPrettyType(StringRef keyword, TypeParseFn parse,
-                                     TypeID id, TypePrintFn print) {
+                                     mlir::TypeID id, TypePrintFn print) {
   registerKeywordParser(keyword, parse);
   if (!typePrintFns.try_emplace(id, print).second)
     llvm::report_fatal_error("duplicate printer for: " + keyword);
   typeNames.try_emplace(id, keyword);
 }
 
-std::optional<StringRef> KGENDialect::getTypeName(TypeID id) {
+std::optional<StringRef> KGENDialect::getTypeName(mlir::TypeID id) {
   auto it = typeNames.find(id);
   if (it == typeNames.end())
     return {};

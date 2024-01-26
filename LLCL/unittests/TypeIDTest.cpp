@@ -4,7 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Runtime/TypeID.h"
+/// This test is still under LLCL because we want to do fine-grained thread
+/// control to run this test with semaphores, which rightly lives in LLCL.
+#include "Support/TypeID.h"
 
 #include "LLCL/Support/Semaphore.h"
 
@@ -38,7 +40,7 @@ struct bar;
 namespace {
 
 TEST(TypeID, typeName) {
-  using namespace M::LLCL::Detail;
+  using namespace M::Detail;
   using namespace std::string_view_literals;
 #if (defined(__clang__))
   static_assert("void"sv == typeNameFor<void>());

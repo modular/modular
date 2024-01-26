@@ -50,7 +50,7 @@ def KGENDialect : Dialect {
 
     /// Register a keyword parser and printer. The dialect will try to parse
     /// a pretty type indicated by a keyword when parsing a parameter type.
-    void registerPrettyType(StringRef keyword, TypeParseFn parse, TypeID id,
+    void registerPrettyType(StringRef keyword, TypeParseFn parse, mlir::TypeID id,
                             TypePrintFn print);
 
     /// Register a custom type parser using the type's mnemonic.
@@ -58,15 +58,15 @@ def KGENDialect : Dialect {
     void registerMnemonicType();
 
     /// Get the "name" of the type, if it has registered one.
-    std::optional<StringRef> getTypeName(TypeID id);
+    std::optional<StringRef> getTypeName(mlir::TypeID id);
 
   private:
     /// The map of keyword parsers.
     llvm::StringMap<TypeParseFn> typeParseFns;
     /// A map of pretty type printers.
-    DenseMap<TypeID, TypePrintFn> typePrintFns;
+    DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
     /// A map containing the "names" of types.
-    DenseMap<TypeID, StringRef> typeNames;
+    DenseMap<mlir::TypeID, StringRef> typeNames;
 
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.

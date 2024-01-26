@@ -7,7 +7,7 @@
 #ifndef LLCL_SUPPORT_GENERICUNIQUEPTR_H
 #define LLCL_SUPPORT_GENERICUNIQUEPTR_H
 
-#include "LLCL/Runtime/TypeID.h"
+#include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M::LLCL {
@@ -32,7 +32,7 @@ public:
     void *oldPayload = payload;
     llvm::unique_function<void(void *)> oldDeletor = std::move(deletor);
 
-    typeId = LLCL::TypeID::get<T>();
+    typeId = M::TypeID::get<T>();
     deletor = [](void *ptr) {
       typename std::unique_ptr<T>::deleter_type defaultDeletor;
       defaultDeletor(static_cast<T *>(ptr));
@@ -63,7 +63,7 @@ public:
 
   /// Returns the type id of the payload, or the invalid type id if pointer
   /// has no payload.
-  LLCL::TypeID getTypeID() const { return typeId; }
+  TypeID getTypeID() const { return typeId; }
 
   /// Returns the payload as type T*, or null if pointer has no payload.
   /// If pointer has a payload then the static type id for T must match the
@@ -71,7 +71,7 @@ public:
   template <typename T>
   T *get() {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericUniquePtr::get");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericUniquePtr::get");
       return static_cast<T *>(payload);
     } else {
       return nullptr;
@@ -81,7 +81,7 @@ public:
   template <typename T>
   const T *get() const {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericUniquePtr::get");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericUniquePtr::get");
       return static_cast<const T *>(payload);
     } else {
       return nullptr;
@@ -94,7 +94,7 @@ public:
   template <typename T>
   T *release() {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericUniquePtr::release");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericUniquePtr::release");
       T *result = static_cast<T *>(payload);
       payload = nullptr;
       typeId = TypeID();

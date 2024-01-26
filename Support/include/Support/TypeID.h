@@ -9,15 +9,13 @@
 // and used across dynamic library / executable boundaries via inclusion of
 // this header file.
 //
-// TODO: Consider moving to Support/
-//
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_RUNTIME_TYPEID_H
-#define LLCL_RUNTIME_TYPEID_H
+#ifndef SUPPORT_TYPEID_H
+#define SUPPORT_TYPEID_H
 
-#include "LLCL/Runtime/Globals/Globals.h"
 #include "Support/ADT/ConcurrentAppendingVector.h"
+#include "Support/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -31,7 +29,7 @@
 #include <string_view>
 #include <utility>
 
-namespace M::LLCL {
+namespace M {
 
 /// Type of destructor functions of arbitrary type.
 using ValueDestructorFn = void (*)(void *);
@@ -313,6 +311,6 @@ private:
   Detail::RawTypeID id = Detail::kInvalidRawTypeID;
 };
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_RUNTIME_TYPEID_H
+#endif // SUPPORT_TYPEID_H

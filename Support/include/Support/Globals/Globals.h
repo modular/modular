@@ -6,7 +6,13 @@
 
 #include "Support/SymbolExport.h"
 
+#include <functional>
+
 namespace M {
+namespace Detail {
+class TypeInfoTable;
+}
+
 namespace ProfilingDetail {
 struct GlobalProfilerContext;
 }
@@ -18,6 +24,9 @@ getGlobalProfilerContext();
 
 extern MODULAR_CXX_EXPORT M::ProfilingDetail::GlobalProfilerContext *
 exchangeGlobalProfilerContext(M::ProfilingDetail::GlobalProfilerContext *ctx);
+
+extern MODULAR_CXX_EXPORT Detail::TypeInfoTable &
+getTypeInfoTableSingleton(const std::function<Detail::TypeInfoTable *()> &ctor);
 
 } // namespace Globals
 

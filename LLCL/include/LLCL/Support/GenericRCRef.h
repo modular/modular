@@ -7,8 +7,8 @@
 #ifndef LLCL_SUPPORT_GENERICRCREF_H
 #define LLCL_SUPPORT_GENERICRCREF_H
 
-#include "LLCL/Runtime/TypeID.h"
 #include "Support/RCRef.h"
+#include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M::LLCL {
@@ -44,7 +44,7 @@ public:
   static GenericRCRef take(T *payload) {
     GenericRCRef result;
     result.payload = payload;
-    result.typeId = LLCL::TypeID::get<T>();
+    result.typeId = M::TypeID::get<T>();
     result.dropRef = [](void *ptr) {
       RCRef<T>::lowLevelDropRef(static_cast<T *>(ptr));
     };
@@ -85,7 +85,7 @@ public:
 
   /// Returns the type id of the payload, or the invalid type id if reference
   /// has no payload.
-  LLCL::TypeID getTypeID() const { return typeId; }
+  M::TypeID getTypeID() const { return typeId; }
 
   /// Returns the payload as type T*, or null if reference has no payload.
   /// If reference has a payload then the static type id for T must match the
@@ -93,7 +93,7 @@ public:
   template <typename T>
   T *get() {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericRCRef::get");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericRCRef::get");
       return static_cast<T *>(payload);
     } else {
       return nullptr;
@@ -103,7 +103,7 @@ public:
   template <typename T>
   const T *get() const {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericRCRef::get");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericRCRef::get");
       return static_cast<const T *>(payload);
     } else {
       return nullptr;
@@ -116,7 +116,7 @@ public:
   template <typename T>
   T *release() {
     if (payload) {
-      typeId.assertEqual(LLCL::TypeID::get<T>(), "GenericRCRef::release");
+      typeId.assertEqual(M::TypeID::get<T>(), "GenericRCRef::release");
       T *result = static_cast<T *>(payload);
       payload = nullptr;
       typeId = TypeID();

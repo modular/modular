@@ -250,7 +250,6 @@ template <typename Ty, typename Value = mlir::Value>
 using TypedValue =
     std::conditional_t<std::is_same_v<Ty, mlir::Type>, mlir::Value,
                        mlir::detail::TypedValue<Ty>>;
-using mlir::TypeID;
 using mlir::TypeRange;
 using mlir::TypeStorage;
 using mlir::UnknownLoc;
