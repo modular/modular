@@ -12,6 +12,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Buffer.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -158,16 +159,8 @@ static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
 elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
                   TargetInfoAttr targetInfo,
                   const CompilationOptions &compileOptions,
-                  LLCL::Runtime &runtime) {
-  // Run elaboration passes on the pre-elaborated module.
-  auto cacheBackends = getMojoCacheBackends(runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
-  auto transformCache =
-      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
-  auto regionCache =
-      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
-
+                  LLCL::Runtime &runtime, RCRef<Cache::RegionCache> regionCache,
+                  RCRef<Cache::TransformCache> transformCache) {
   setTargetInfo(packageModule, targetInfo);
   mlir::PassManager elaboratePM(packageModule->getContext());
   populateElaborateModulePasses(elaboratePM, runtime, targetInfo,
@@ -226,35 +219,101 @@ loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr) {
 ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
     PackageLinkOp packageLink, TargetInfoAttr targetInfo,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
-  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
-      loadPreElaboratedModuleBytecode(
-          packageLink.getPreElaborationModuleAttr());
-  if (packageModuleOr.isError())
-    return packageModuleOr.takeError();
+  DenseResourceElementsAttr preElaborationModuleAttr =
+      packageLink.getPreElaborationModuleAttr();
 
-  // Elaborate the bytecode for the given target, and set the resulting bytecode
-  // as an attribute on the package_link op.
-  auto elaborateOr = elaborateBytecode(**packageModuleOr, packageLink,
-                                       targetInfo, compileOptions, runtime);
-  if (elaborateOr.isError())
-    return elaborateOr.takeError();
-  auto [bytecodeResource, symtab, exportedSymbols] = elaborateOr.takeValue();
+  // Run elaboration passes on the pre-elaborated module.
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
+  auto regionCache =
+      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
 
-  // Create the compiled archive of the package, and add the resulting archive
-  // bytes to the package link op's archives attribute.
-  auto archiveOr =
-      createPackageArchive(symtab, exportedSymbols, targetInfo,
-                           bytecodeResource, compileOptions, runtime);
-  if (archiveOr.isError())
-    return archiveOr.takeError();
+  // Build a cache key for the elaboration transformation.
+  WriteableBufferRef key = WriteableBuffer::get();
+  *key << "loadAndElaborateBytecode(" << targetInfo;
+  compileOptions.print(*key);
+  if (failed(writeAttrToBytecodeFile(preElaborationModuleAttr, *key)))
+    return Error("failed to write pre-elaborated module bytecode");
+  *key << ")";
 
-  // Insert the new archive into the array of archives on the package link op.
-  SmallVector<PackageArchiveAttr> archives{archiveOr.takeValue()};
+  // Functor to adapt the transform functor to the required API.
+  auto runTransformation = [packageLink, preElaborationModuleAttr, targetInfo,
+                            transformCache = transformCache.copy(),
+                            regionCache = regionCache.copy(), &compileOptions,
+                            &runtime](WriteableBufferRef buf,
+                                      AnyAsyncValueRef chain) mutable {
+    auto output =
+        AsyncValueRef<PackageArchiveAttr>::allocate(chain.getRuntime());
+    std::move(chain).andThenSync(
+        [packageLink, preElaborationModuleAttr, targetInfo, &compileOptions,
+         &runtime, transformCache = transformCache.copy(),
+         regionCache = regionCache.copy(), output = output.copy(),
+         buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
+          if (chain.isError())
+            return std::move(output).setToError(chain.takeDiagnostic());
+
+          ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+              loadPreElaboratedModuleBytecode(preElaborationModuleAttr);
+          if (packageModuleOr.isError()) {
+            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                packageModuleOr.takeError(), packageLink->getLoc()));
+          }
+
+          // Elaborate the bytecode for the given target, and set the resulting
+          // bytecode as an attribute on the package_link op.
+          auto elaborateOr = elaborateBytecode(
+              **packageModuleOr, packageLink, targetInfo, compileOptions,
+              runtime, regionCache.copy(), transformCache.copy());
+          if (elaborateOr.isError()) {
+            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                elaborateOr.takeError(), packageLink->getLoc()));
+          }
+          auto [bytecodeResource, symtab, exportedSymbols] =
+              elaborateOr.takeValue();
+
+          // Create the compiled archive of the package, and add the resulting
+          // archive bytes to the package link op's archives attribute.
+          auto archiveOr =
+              createPackageArchive(symtab, exportedSymbols, targetInfo,
+                                   bytecodeResource, compileOptions, runtime);
+          if (archiveOr.isError()) {
+            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                archiveOr.takeError(), packageLink->getLoc()));
+          }
+
+          if (failed(writeAttrToBytecodeFile(*archiveOr, *buf))) {
+            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                "failed to write archive bytecode", packageLink->getLoc()));
+          }
+          return std::move(output).emplace(*archiveOr);
+        });
+    return output;
+  };
+  // On cache hit, just return the assembly buffer.
+  auto onCacheHit = [packageLink](BufferRef buf) {
+    return readAttrFromBytecodeFile<PackageArchiveAttr>(
+        buf->getMemBufferRef(), packageLink->getContext());
+  };
+
+  AnyAsyncValueRef result = Cache::cachedTransform(
+      LLCL::MLIRLocationDecoder::getEncodedLocation(packageLink->getLoc()),
+      transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
+      std::move(key), std::move(runTransformation), onCacheHit);
+  await(result);
+  if (result.isError())
+    return std::move(result.takeDiagnostic().getMessage());
+  auto archiveAttr = result.get<PackageArchiveAttr>();
+
+  // Set an updated list of archives on the package link.
+  SmallVector<PackageArchiveAttr> archives{archiveAttr};
   if (PackageArchiveArrayAttr existing = packageLink.getArchivesAttr())
     llvm::append_range(archives, existing.getValue());
   packageLink.setArchives(archives);
 
-  return bytecodeResource;
+  return archiveAttr.getElaboratedModule();
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::loadPreElaboratedModuleForLinking(

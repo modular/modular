@@ -28,6 +28,17 @@ OwningOpRef<T> readOpFromBytecodeFile(llvm::MemoryBufferRef buffer,
   }
   return OwningOpRef<T>();
 }
+
+/// Write a single attribute to a bytecode file.
+LogicalResult writeAttrToBytecodeFile(Attribute attr, raw_ostream &os);
+
+/// Read a single attribute from a bytecode file.
+Attribute readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer,
+                                   MLIRContext *ctx);
+template <typename T>
+T readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer, MLIRContext *ctx) {
+  return dyn_cast_if_present<T>(readAttrFromBytecodeFile(buffer, ctx));
+}
 } // namespace M
 
 #endif // SUPPORT_COMPILER_BYTECODEREADERWRITER_H
