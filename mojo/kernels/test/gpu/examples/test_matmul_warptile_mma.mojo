@@ -26,7 +26,7 @@ from utils.index import Index
 from utils.list import DimList
 from utils._optional import Optional
 from Matmul import matmul_kernel_naive
-from MatmulUtils import elementwise_lambda_fn_sig_type
+from MatmulUtils import elementwise_epilogue_type
 
 
 @always_inline
@@ -83,7 +83,7 @@ fn sgemm_warp_tiling_kernel[
     WMITER: Scalar[indexing_integral_dtype],
     WNITER: Scalar[indexing_integral_dtype],
     NUM_THREADS: Scalar[indexing_integral_dtype],
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[2, c_shape, c_type],
     mat_a: NDBuffer[2, a_shape, a_type],

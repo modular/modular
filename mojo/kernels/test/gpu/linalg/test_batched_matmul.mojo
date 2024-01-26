@@ -76,13 +76,6 @@ fn test_batched_matmul() raises:
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
         dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
-    fn rowwise_epilogue_empty(
-        a: Int,
-        b: Int,
-        c: NDBuffer[2, DimList.create_unknown[2](), DType.float32],
-    ):
-        pass
-
     batched_matmul[
         rank=3,
         a_type = DType.float32,
@@ -90,16 +83,12 @@ fn test_batched_matmul() raises:
         c_type = DType.float32,
         adj_a=False,
         adj_b=False,
-        elementwise_epilogue_enabled=False,
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
-        rowwise_epilogue_enabled=False,
-        saturated_vnni=False,
         target="cuda",
     ](
         dst_buffer,
         lhs_buffer,
         rhs_buffer,
-        rowwise_epilogue_empty,
     )
     synchronize()
 
