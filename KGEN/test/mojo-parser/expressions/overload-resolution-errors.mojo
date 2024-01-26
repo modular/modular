@@ -43,14 +43,14 @@ fn test_pos_only_passed_by_kw(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only(*, a: Int, b: Int):
+fn takes_kw_only(*, a: Int, b: Int, c: Int = `7`):
     pass
 
 
 fn test_missing_kw_only(x: Int):
     # COM: missing kw-only error takes precedence over unknown keyword
     # expected-error @+1 {{missing 1 required keyword-only argument: 'b'}}
-    takes_kw_only(a=x, c=x)
+    takes_kw_only(a=x, d=x)
 
     # expected-error @+1 {{missing 2 required keyword-only arguments: 'a', 'b'}}
     takes_kw_only()
