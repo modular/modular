@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .capi import AttrMapPtr, AttrPtr
+from .capi import AttrMapPtr
+
+import mlir
 
 
 @value
@@ -15,13 +17,18 @@ struct AttrMap:
     # Basic constructors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, *attrs: AttrPtr):
-        self.__init__(attrs)
-
-    fn __init__(inout self, attrs: VariadicList[AttrPtr]):
+    fn __init__(inout self, *attrs: mlir.NamedAttribute):
         self.m = capi.attr_map_new()
-        for i in range(len(attrs)):
-            capi.attr_map_add_attr(self.m, attrs[i])
+        for attr in attrs:
+            capi.attr_map_add_attr(self.m, attr[])
+
+    # TODO: parser crash
+    #     self.__init__(attrs)
+
+    # fn __init__(inout self, attrs: VariadicListMem[mlir.NamedAttribute]):
+    #     self.m = capi.attr_map_new()
+    #     for i in range(len(attrs)):
+    #         capi.attr_map_add_attr(self.m, attrs[i])
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors

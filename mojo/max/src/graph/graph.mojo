@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attr import AttrMap
-from .capi import AttrPtr, GraphPtr, SymbolPtr, TuplePtr, TypePtr
+from .capi import GraphPtr, SymbolPtr, TuplePtr
 from .module import Module
 from .symbol import Symbol, SymbolTuple
 from .type import dyn, MOType, MOTensor, Arity

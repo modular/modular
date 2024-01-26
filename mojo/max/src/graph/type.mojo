@@ -6,8 +6,10 @@
 
 from tensor import TensorSpec
 
+import mlir
+
 from .module import Module
-from .capi import ArityPtr, TypePtr
+from .capi import ArityPtr
 
 
 # TODO: Don't use magic value, return a proper type.
@@ -16,7 +18,7 @@ fn dyn() -> Int64:
 
 
 trait MOType:
-    fn to_mlir(self, m: Module) -> TypePtr:
+    fn to_mlir(self, m: Module) -> mlir.Type:
         ...
 
     fn to_string(self, m: Module) -> String:
@@ -28,11 +30,11 @@ struct ElementType(MOType):
     # TODO: This mey be insufficient, if we ever need parametric dtypes.
     var dtype: DType
 
-    fn to_mlir(self, m: Module) -> TypePtr:
+    fn to_mlir(self, m: Module) -> mlir.Type:
         return capi.dtype_new(m.m, self.dtype)
 
     fn to_string(self, m: Module) -> String:
-        return capi.type_to_string(self.to_mlir(m))
+        return str(self.to_mlir(m))
 
 
 @value
@@ -94,13 +96,13 @@ struct MOTensor(MOType):
     # MOType trait
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> TypePtr:
+    fn to_mlir(self, m: Module) -> mlir.Type:
         return capi.tensor_type_new(
             m.m, self.dtype.to_mlir(m), self.dims, self.ranked
         )
 
     fn to_string(self, m: Module) -> String:
-        return capi.type_to_string(self.to_mlir(m))
+        return str(self.to_mlir(m))
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -161,10 +163,10 @@ struct Arity:
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, *types: TypePtr):
+    fn __init__(inout self, *types: mlir.Type):
         self.a = capi.arity_new()
         for t in types:
-            capi.arity_add_type(self.a, t)
+            capi.arity_add_type(self.a, t[])
 
     fn __len__(self) -> Int:
         return capi.arity_size(self.a)
@@ -176,5 +178,5 @@ struct Arity:
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn add(self, type: TypePtr):
+    fn add(self, type: mlir.Type):
         capi.arity_add_type(self.a, type)

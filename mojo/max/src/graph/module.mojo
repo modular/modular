@@ -7,43 +7,51 @@
 from tensor import Tensor, TensorSpec, TensorShape
 
 from .type import Arity
-from .capi import AttrPtr, LocPtr, ModulePtr, TypePtr
 from .symbol import Symbol
 from .type import MOTensor, MOType
+
+import mlir
 
 
 @value
 struct Module:
-    var m: ModulePtr
+    var m: mlir.Module
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self):
-        self.__init__(capi.module_new())
+        var context = mlir.Context()
+        context.load_modular_dialects()
+        context.load_all_available_dialects()
+        self.__init__(context)
+
+    fn __init__(inout self, ctx: mlir.Context):
+        self.__init__(mlir.Module(mlir.Location.unknown(ctx)))
 
     fn __str__(self) -> String:
-        return capi.module_to_string(self.m)
+        return str(self.m)
 
     # ===------------------------------------------------------------------=== #
     # High level utilities
     # ===------------------------------------------------------------------=== #
 
     fn verify(self) raises:
-        if not capi.module_verify(self.m):
+        if not self.m.as_op().verify():
             raise "Module did not verify"
 
     fn save_to_file(self, path: Path) raises:
-        if not capi.module_to_bytecode(self.m, path.__str__()):
+        # TODO: high-level bytecode writer API
+        if not capi.module_to_bytecode(self.m, str(path)):
             raise "Error writing to file"
 
     # ===------------------------------------------------------------------=== #
     # Location factories
     # ===------------------------------------------------------------------=== #
 
-    fn unknown_loc(self) -> LocPtr:
-        return capi.loc_new_unknown(self.m)
+    fn unknown_loc(self) -> mlir.Location:
+        return mlir.Location.unknown(self.m.context())
 
     # ===------------------------------------------------------------------=== #
     # Attribute factories
@@ -51,7 +59,7 @@ struct Module:
 
     fn tensor_attr[
         dtype: DType
-    ](self, name: StringRef, owned value: Tensor[dtype]) -> AttrPtr:
+    ](self, name: StringRef, owned value: Tensor[dtype]) -> mlir.NamedAttribute:
         let t = MOTensor(value.spec()).to_mlir(self)
         return capi.attr_new_tensor(
             self.m,
@@ -63,14 +71,16 @@ struct Module:
 
     fn tensor_resource_attr(
         self, name: StringRef, file_name: StringRef, type: MOTensor
-    ) -> AttrPtr:
+    ) -> mlir.NamedAttribute:
         return capi.attr_new_tensor_from_file(
             self.m, name, file_name, type.to_mlir(self)
         )
 
     fn vector_attr[
         dtype: DType
-    ](self, name: StringRef, values: DynamicVector[Scalar[dtype]]) -> AttrPtr:
+    ](
+        self, name: StringRef, values: DynamicVector[Scalar[dtype]]
+    ) -> mlir.NamedAttribute:
         return capi.attr_new_tensor(
             self.m,
             name,
@@ -83,7 +93,7 @@ struct Module:
         dtype: DType
     ](
         self, name: StringRef, value: Scalar[dtype], rank: Int = 0
-    ) raises -> AttrPtr:
+    ) raises -> mlir.NamedAttribute:
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
         var shape = DynamicVector[Int](rank)
@@ -91,7 +101,9 @@ struct Module:
             shape.append(1)
         return self.tensor_attr[dtype](name, Tensor(shape, value))
 
-    fn string_attr(self, name: StringRef, value: StringRef) -> AttrPtr:
+    fn string_attr(
+        self, name: StringRef, value: StringRef
+    ) -> mlir.NamedAttribute:
         return capi.attr_new_string(self.m, name, value)
 
     # ===------------------------------------------------------------------=== #
@@ -99,7 +111,7 @@ struct Module:
     # ===------------------------------------------------------------------=== #
 
     fn graph(self, name: StringRef, in_types: Arity, out_types: Arity) -> Graph:
-        let unknown = capi.loc_new_unknown(self.m)
+        let unknown = self.unknown_loc()
         let g = capi.graph_new(self.m, unknown, name, in_types.a, out_types.a)
         return Graph(g, self)
 
@@ -107,14 +119,14 @@ struct Module:
     # Type convenience helpers
     # ===------------------------------------------------------------------=== #
 
-    fn i32(self, *dims: Int64) -> TypePtr:
+    fn i32(self, *dims: Int64) -> mlir.Type:
         return MOTensor(DType.int32, dims).to_mlir(self)
 
-    fn i64(self, *dims: Int64) -> TypePtr:
+    fn i64(self, *dims: Int64) -> mlir.Type:
         return MOTensor(DType.int64, dims).to_mlir(self)
 
-    fn f32(self, *dims: Int64) -> TypePtr:
+    fn f32(self, *dims: Int64) -> mlir.Type:
         return MOTensor(DType.float32, dims).to_mlir(self)
 
-    fn bool(self, *dims: Int64) -> TypePtr:
+    fn bool(self, *dims: Int64) -> mlir.Type:
         return MOTensor(DType.bool, dims).to_mlir(self)
