@@ -75,7 +75,35 @@ fn test_unroll3():
     unroll[4, 2, 3, func]()
 
 
-fn main():
+# CHECK-LABEL: test_unroll_raises
+fn test_unroll_raises() raises:
+    print("test_unroll_raises")
+
+    # CHECK: 0
+    # CHECK: 1
+    # CHECK: 2
+    # CHECK: 3
+    @parameter
+    fn func[idx: Int]() raises:
+        print(idx)
+
+    unroll[4, func]()
+
+    # CHECK: 0
+    @parameter
+    fn func2[idx: Int]() raises:
+        print(idx)
+        raise "Exception"
+
+    try:
+        unroll[4, func2]()
+    except e:
+        # CHECK: raised Exception
+        print("raised " + str(e))
+
+
+fn main() raises:
     test_unroll()
     test_unroll2()
     test_unroll3()
+    test_unroll_raises()
