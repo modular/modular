@@ -128,19 +128,26 @@ bool isTensor(KGEN::DeclRefType maybeTensor) {
   return false;
 }
 
-// Returns true if there is at least one recognizable tensor on the signature.
-bool hasAtLeastOneTensor(GeneratorOp generator) {
-  std::optional<PreservedAttr> sig = generator.getSourceSignature();
+std::optional<LIT::LITSignatureType> getSourceSig(GeneratorOp gen) {
+  std::optional<PreservedAttr> sig = gen.getSourceSignature();
   if (!sig.has_value())
-    return false;
+    return std::nullopt;
   auto typeAttr = dyn_cast<TypeAttr>(sig.value().getValue());
   if (!typeAttr)
-    return false;
+    return std::nullopt;
   auto litSig = dyn_cast<LIT::LITSignatureType>(typeAttr.getValue());
   if (!litSig)
+    return std::nullopt;
+  return litSig;
+}
+
+// Returns true if there is at least one recognizable tensor on the signature.
+bool hasAtLeastOneTensor(GeneratorOp generator) {
+  std::optional<LIT::LITSignatureType> litSig = getSourceSig(generator);
+  if (!litSig.has_value())
     return false;
 
-  for (Type metadata : litSig.getValues().getInputs()) {
+  for (Type metadata : litSig->getValues().getInputs()) {
     // Tensors are expected to be passed as references.
     auto asLitRef = dyn_cast<LIT::RefType>(metadata);
     if (!asLitRef)
@@ -368,9 +375,10 @@ private:
   }
 
   void attachMetadataToGenerator(GeneratorOp gen,
-                                 SmallVector<std::string> &inputLambdaNames,
-                                 SmallVector<std::string> &outputLambdaNames,
-                                 CallOp elementwiseOp, bool isView = false) {
+                                 ArrayRef<std::string> inputLambdaNames,
+                                 ArrayRef<std::string> outputLambdaNames,
+                                 CallOp elementwiseOp, GeneratorOp shapeFunc,
+                                 bool isView = false) {
     // The new attributes on the generator.
     SmallVector<NamedAttribute> newAttrs;
 
@@ -410,6 +418,13 @@ private:
       auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
       newAttrs.push_back(NamedAttribute{b.getStringAttr("_elementwise_lambda"),
                                         asParam.getName()});
+    }
+
+    // Tell the graph compiler that this function has an accompanying shape
+    // function.
+    if (shapeFunc) {
+      newAttrs.push_back(NamedAttribute{b.getStringAttr("_has_shape_func"),
+                                        shapeFunc.getSymNameAttr()});
     }
 
     gen->setAttrs(newAttrs);
@@ -573,6 +588,146 @@ private:
     }
   }
 
+  GeneratorOp sliceShapeFunction(Value shape, GeneratorOp funcToSlice) {
+    Operation *op = shape.getDefiningOp();
+
+    // Identify all ops used to create the shape.
+    DenseSet<Operation *> opsToClone;
+    DenseSet<Value> usedInputs;
+    SmallVector<Operation *> worklist;
+    worklist.push_back(op);
+    while (!worklist.empty()) {
+      Operation *opToProcess = worklist.back();
+      worklist.pop_back();
+      if (opsToClone.contains(opToProcess))
+        continue;
+      opsToClone.insert(opToProcess);
+
+      for (Value operand : opToProcess->getOperands()) {
+        if (operand.getDefiningOp())
+          worklist.push_back(operand.getDefiningOp());
+        else
+          usedInputs.insert(operand);
+      }
+    }
+
+    std::optional<LIT::LITSignatureType> oldLitSig = getSourceSig(funcToSlice);
+    FunctionType funcTy = funcToSlice.getFunctionType();
+    FunctionType litFuncType = oldLitSig->getValues();
+    LIT::FnMetadataAttr oldMetadata = oldLitSig->getMetadata();
+
+    // We need to build LIT/KGEN function types for the new signature.
+    SmallVector<Type> funcInputs, litFuncInputs;
+    SmallVector<StringAttr> litArgNames;
+
+    // Identify which of the inputs we are using. This needs to be preserved
+    // so MO can know which are used and in which order to map back onto the
+    // original kernel.
+    DenseSet<size_t> inputIndices;
+    SmallVector<int32_t> usedInputsInOrder;
+    for (auto [idx, operand] :
+         llvm::enumerate(funcToSlice.getBody()->getArguments())) {
+      if (usedInputs.contains(operand)) {
+        inputIndices.insert(idx);
+        funcInputs.push_back(funcTy.getInputs()[idx]);
+        litFuncInputs.push_back(litFuncType.getInputs()[idx]);
+        litArgNames.push_back(oldMetadata.getArgNames()[idx]);
+
+        // Subtract one to account for the pass by ref output.
+        usedInputsInOrder.push_back(static_cast<int32_t>(idx - 1));
+      }
+    }
+
+    mlir::IRMapping mapper;
+
+    GeneratorOp slicedShapeFunction = funcToSlice.cloneWithoutRegions();
+
+    // Create the new function type.
+    FunctionType newFuncType =
+        FunctionType::get(ctx, funcInputs, {shape.getType()});
+
+    SignatureType oldSig = slicedShapeFunction.getSignature();
+
+    // Drop the input conventions.
+    SignatureType newSig = SignatureType::remapToSignature(
+        slicedShapeFunction.getInputParams(),
+        slicedShapeFunction.getResultParams(), newFuncType,
+        /*inputConventions=*/{}, oldSig.getFnEffects(),
+        /*metadata*/ {});
+
+    // Replace the parameter refs with their actual values.
+    newSig = newSig.getWithValuesReplaced(newFuncType);
+
+    // We also have to rebuild the lit metadata function so we can still infer
+    // each parameter.
+    FunctionType newLitFunctionType =
+        FunctionType::get(ctx, litFuncInputs, {shape.getType()});
+
+    SmallVector<KGEN::LIT::PassingKind> passingKinds{
+        litFuncInputs.size(), KGEN::LIT::PassingKind::PosOnly};
+
+    auto metadata = LIT::FnMetadataAttr::get(
+        ctx, litArgNames, passingKinds, oldMetadata.getParamNames(),
+        oldMetadata.getParamPassingKinds(),
+        /*defaultPosArgs*/ {}, oldMetadata.getDefaultPosParams(),
+        oldMetadata.getDefaultKwOnlyArgs(),
+        oldMetadata.getDefaultKwOnlyParams(),
+        /*numImplicitLifetimeDecls*/ 0);
+
+    auto newLitSig = LIT::LITSignatureType::get(
+        newLitFunctionType, oldLitSig->getInputParamTypes(),
+        oldLitSig->getResultParamTypes(),
+        /*inputConventions=*/{}, oldSig.getFnEffects(), metadata);
+
+    slicedShapeFunction.setSignature(newSig);
+    slicedShapeFunction.setFunctionType(newSig.getValues());
+
+    slicedShapeFunction.setSourceSignatureAttr(
+        PreservedAttr::get(ctx, TypeAttr::get(newLitSig)));
+
+    Block &shapeFuncBlock =
+        slicedShapeFunction.getCallableRegion()->emplaceBlock();
+
+    // Add the operands onto the sliced shape func.
+    for (auto [idx, operand] :
+         llvm::enumerate(funcToSlice.getBody()->getArguments())) {
+      if (inputIndices.contains(idx)) {
+        Value newV =
+            shapeFuncBlock.addArgument(operand.getType(), operand.getLoc());
+        mapper.map(operand, newV);
+      }
+    }
+
+    OpBuilder b{&shapeFuncBlock, shapeFuncBlock.begin()};
+
+    // Clone all the ops used in the construction of the slice.
+    for (Operation *op : opsToClone)
+      b.clone(*op, mapper);
+    b.create<KGEN::ReturnOp>(shape.getLoc(), mapper.lookup(shape));
+
+    // Attached the used inputs as attribute. This allows the graph compiler to
+    // discard unused inputs on the op.
+    SmallVector<NamedAttribute> newAttrs;
+    for (NamedAttribute attr : slicedShapeFunction->getAttrs())
+      newAttrs.push_back(attr);
+    newAttrs.push_back(NamedAttribute{b.getStringAttr("_used_inputs"),
+                                      b.getI32ArrayAttr(usedInputsInOrder)});
+    slicedShapeFunction->setAttrs(newAttrs);
+
+    // Even though fusion is not presently supported on shape functions we
+    // still need to add the empty annotations for consistency with the
+    // compute functions.
+    SmallVector<std::string> emptyInputLambdas;
+    emptyInputLambdas.resize(usedInputsInOrder.size(), "");
+
+    // Shape function still needs some metadata to inform the graph compiler
+    // about its properties.
+    attachMetadataToGenerator(slicedShapeFunction, emptyInputLambdas, {},
+                              nullptr, nullptr, false);
+
+    return slicedShapeFunction;
+  }
+
 public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
@@ -610,6 +765,11 @@ public:
       if (!hasAtLeastOneTensor(userKernel))
         continue;
 
+      // Currently we only support kernels which return something. We will later
+      // enforce that this is a tensor.
+      if (!userKernel.getSignature().hasMemoryOnlyResult())
+        continue;
+
       // Slice out a new compute kernel. This replaces the old kernel as the
       // entry point for the thing we are going to execute.
       KGEN::GeneratorOp slicedComputeFunction = userKernel.clone();
@@ -629,7 +789,6 @@ public:
 
       std::optional<TensorInMojo> outTensorParameters =
           getTensorRepFromFunctionInput(slicedComputeFunction, 0);
-
       if (!outTensorParameters.has_value())
         continue;
 
@@ -677,6 +836,10 @@ public:
                               "");
       outputLambdaNames.resize(1, "");
 
+      // Output tensor is the first argument.
+      Value outputTensor = slicedComputeFunction.getBody()->getArgument(0);
+      Value shape;
+
       bool isView = false;
 
       // Any MOGG annotated kernel which has no allocation should be treated as
@@ -694,6 +857,7 @@ public:
         continue;
       } else {
         // Otherwise we are dealing with a normal allocating op.
+        shape = allocationFunc.getOperand(1);
 
         // clang-format-off
         // Functions with tensor allocation will follow the rough pattern.
@@ -704,7 +868,6 @@ public:
         // clang-format-on
         // We can use this to identify the output tensor and the the tensor
         // which has been allocated. To us they are an alias.
-        Value outputTensor = constructor.getOperand(0);
         Value tmpTensor = constructor.getOperand(1);
         tmpTensor.replaceAllUsesWith(outputTensor);
 
@@ -726,12 +889,32 @@ public:
       // compiler.
       markAllTensorsAsOwned(slicedComputeFunction, symTab);
 
+      // Add compute function part to the module, i.e the kernel sans
+      // allocation.
+      symTab.insert(slicedComputeFunction);
+
+      GeneratorOp slicedShapeFunction;
+
+      if (shape) {
+        slicedShapeFunction = sliceShapeFunction(shape, slicedComputeFunction);
+      } else {
+        // TODO: Shape functions for views.
+      }
+
+      if (slicedShapeFunction) {
+        // Has to be added to the module symbol table otherwise the function
+        // name will not match in the metadata.
+        symTab.insert(slicedShapeFunction);
+
+        // Drop the decorators on the shape function.
+        slicedShapeFunction.setDecorators({});
+        seenFuncs.insert(slicedShapeFunction);
+      }
+
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
-                                outputLambdaNames, elementwiseOp, isView);
-
-      // Add the sliced functions to the KGEN as well.
-      symTab.insert(slicedComputeFunction);
+                                outputLambdaNames, elementwiseOp,
+                                slicedShapeFunction, isView);
 
       // Remove the attributes from the user kernel as that should remain
       // untouched for the user to use directly in their code.
@@ -741,6 +924,8 @@ public:
       // Don't process the function we just added if we see it again.
       seenFuncs.insert(slicedComputeFunction);
     }
+
+    // mod.walk([&](GeneratorOp gen) { gen.removeSourceSignatureAttr(); });
   }
 };
 
