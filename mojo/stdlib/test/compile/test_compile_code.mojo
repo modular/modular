@@ -24,4 +24,4 @@ def main():
         ], emission_kind="llvm"
     ]()
 
-    assert_true(asm.find("fadd") != 0)
+    assert_true(asm.__contains__("fadd"))
