@@ -723,6 +723,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
   let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

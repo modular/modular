@@ -123,6 +123,14 @@ kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
 
 // -----
 
+kgen.func @simd_splat(%arg0: !pop.scalar<f32>) {
+  // expected-error @below {{'pop.simd.splat' op requires a non-negative size}}
+  %0 = pop.simd.splat %arg0 : !pop.simd<-1, f32>
+  kgen.return
+}
+
+// -----
+
 kgen.func @invalid_array_create(%arg0: i32) {
   // expected-error @below {{expected 2 operands to create array but got 1}}
   %0 = pop.array.create [%arg0] : !pop.array<2, i32>

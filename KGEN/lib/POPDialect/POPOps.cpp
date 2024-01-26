@@ -190,6 +190,21 @@ LogicalResult SIMDShuffleOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDSplatOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult SIMDSplatOp::verify() {
+  std::optional<int64_t> size = getType().getResolvedSize();
+  if (!size)
+    return success();
+
+  if (*size <= 0)
+    return emitOpError("requires a non-negative size");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp
 //===----------------------------------------------------------------------===//
 
