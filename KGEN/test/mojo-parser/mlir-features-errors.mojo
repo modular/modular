@@ -21,8 +21,10 @@ fn test_mlir():
   # expected-error @+1 {{operation already has attributes}}
   __mlir_op.`op`[value1=`42`][value2=`42`]
 
-  # expected-error @+1 {{duplicate keyword parameter 'value'}}
-  __mlir_op.`op`[value=`42`, value=`42`]
+  __mlir_op.`op`[
+    value=`42`,  # expected-note {{previously specified here}}
+    value=`42`,  # expected-error {{duplicate keyword parameter 'value'}}
+  ]
 
 fn test_mlir2():
   # expected-error @below {{invalid MLIR type: kgen.dtype}}

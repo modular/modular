@@ -189,14 +189,6 @@ fn var_params[s: StringLiteral, *args: Int](): pass
 # expected-note @below {{declared here}}
 fn pack_params[*Ts: AnyRegType](*args: *Ts): pass
 
-fn test_func_kw_params():
-    # expected-error @below {{duplicate keyword parameter 'a'}}
-    take_kw_params[a=42, a=43]()
-
-fn test_func_kw_params2():
-    # expected-error @below {{positional parameter follows keyword parameter}}
-    take_kw_params[a=42, 1]()
-
 fn test_func_kw_params3():
     # expected-error @below {{unknown keyword parameter: 'args'}}
     var_params["woof", args=7]
@@ -249,8 +241,10 @@ struct KwParamStruct[a: Int, b: Int = 0]: pass
 struct VarParamStruct[s: StringLiteral, *args: Int]: pass
 
 fn test_struct_kw_params():
-    # expected-error @below {{duplicate keyword parameter 'a'}}
-    _ = KwParamStruct[a=42, a=43]()
+    _ = KwParamStruct[
+      a=42,  # expected-note {{previously specified here}}
+      a=43,  # expected-error {{duplicate keyword parameter 'a'}}
+    ]()
 
 fn test_struct_kw_params2():
     # expected-error @below {{positional parameter follows keyword parameter}}
