@@ -58,6 +58,22 @@ fn normalize_neg_index[
     )
 
 
+@value
+@register_passable("trivial")
+struct Axis(Intable):
+    var axis: Int
+
+    @always_inline
+    fn __init__[
+        type: DType
+    ](axis_unnormalized: Scalar[type], rank: Int) -> Self:
+        return Self {axis: int(normalize_neg_index(axis_unnormalized, rank))}
+
+    @always_inline
+    fn __int__(self) -> Int:
+        return self.axis
+
+
 @always_inline
 fn gather_reduce[
     output_rank: Int,
@@ -320,10 +336,9 @@ fn gather[
         indices_fn,
         output_fn,
         prefetch_fn,
-        Dim(axis),
         target,
     ](
-        OptionalParamInt[Dim(axis)](axis),
+        axis,
         input.dynamic_shape,
         indices.dynamic_shape,
         output.dynamic_shape,
@@ -348,13 +363,16 @@ fn gather[
     output_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
-    prefetch_fn: fn[input_rank: Int, indices_rank: Int] (
-        StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-    ) capturing -> None,
-    axis_static: Dim,
+    prefetch_fn: Optional[
+        fn[
+            input_rank: Int, indices_rank: Int
+        ] (
+            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
+        ) capturing -> None
+    ] = None,
     target: StringLiteral = "cpu",
 ](
-    axis: OptionalParamInt[axis_static],
+    axis: Axis,
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
@@ -366,31 +384,31 @@ fn gather[
     """
 
     # Disable error checking in trivial kernels.
-    if axis.get() < 0:
+    if int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
 
     # The output shape has the same shape as the input, with the indexed-axis
     # replaced by the shape of the indices
-    for i in range(axis.get()):
+    for i in range(axis):
         if output_shape[i] != input_shape[i]:
             raise Error(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis.get(), axis.get() + indices_rank):
-        if output_shape[i] != indices_shape[i - axis.get()]:
+    for i in range(axis, int(axis) + indices_rank):
+        if output_shape[i] != indices_shape[i - int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(axis.get() + indices_rank, output_rank):
+    for i in range(int(axis) + indices_rank, output_rank):
         if output_shape[i] != input_shape[i - indices_rank + 1]:
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
 
-    if axis.get() >= input_rank:
+    if int(axis) >= input_rank:
         raise Error("gather: axis must be less than input rank")
 
     with Trace[TraceLevel.OP]("mojo.gather") as t:
@@ -414,7 +432,7 @@ fn gather[
             @always_inline
             @parameter
             fn indices_get[unrolled_i: Int]():
-                indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+                indices_index[unrolled_i] = idx[unrolled_i + int(axis)]
 
             unroll[indices_rank, indices_get]()
 
@@ -431,11 +449,11 @@ fn gather[
             @always_inline
             @parameter
             fn input_indices_get[unrolled_i: Int]():
-                if unrolled_i == axis.get():
+                if unrolled_i == int(axis):
                     data_indices[unrolled_i] = int(
-                        normalize_neg_index(data_index, input_shape[axis.get()])
+                        normalize_neg_index(data_index, input_shape[int(axis)])
                     )
-                elif unrolled_i > axis.get():
+                elif unrolled_i > int(axis):
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
                     data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
                 else:
@@ -444,14 +462,17 @@ fn gather[
             unroll[input_rank, input_indices_get]()
 
             # Load the the data.
-            prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
+            @parameter
+            if prefetch_fn:
+                alias func = prefetch_fn.value()
+                func[input_rank, indices_rank](data_indices, indices_index)
             let data = input_fn[simd_width, input_rank](data_indices)
 
             # Store it to the original index.
             output_fn[simd_width, rank](idx, data)
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if axis.get() == input_rank - 1:
+        if int(axis) == input_rank - 1:
             _elementwise_impl[
                 output_rank,
                 1,
@@ -490,13 +511,16 @@ async fn async_gather[
     output_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
-    prefetch_fn: fn[input_rank: Int, indices_rank: Int] (
-        StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-    ) capturing -> None,
-    axis_static: Dim,
+    prefetch_fn: Optional[
+        fn[
+            input_rank: Int, indices_rank: Int
+        ] (
+            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
+        ) capturing -> None
+    ] = None,
     target: StringLiteral = "cpu",
 ](
-    axis: OptionalParamInt[axis_static],
+    axis: Axis,
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
@@ -508,31 +532,31 @@ async fn async_gather[
     """
 
     # Disable error checking in trivial kernels.
-    if axis.get() < 0:
+    if int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
 
     # The output shape has the same shape as the input, with the indexed-axis
     # replaced by the shape of the indices
-    for i in range(axis.get()):
+    for i in range(axis):
         if output_shape[i] != input_shape[i]:
             raise Error(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis.get(), axis.get() + indices_rank):
-        if output_shape[i] != indices_shape[i - axis.get()]:
+    for i in range(axis, int(axis) + indices_rank):
+        if output_shape[i] != indices_shape[i - int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(axis.get() + indices_rank, output_rank):
+    for i in range(int(axis) + indices_rank, output_rank):
         if output_shape[i] != input_shape[i - indices_rank + 1]:
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
 
-    if axis.get() >= input_rank:
+    if int(axis) >= input_rank:
         raise Error("gather: axis must be less than input rank")
 
     with Trace[TraceLevel.OP]("mojo.gather") as t:
@@ -556,7 +580,7 @@ async fn async_gather[
             @always_inline
             @parameter
             fn indices_get[unrolled_i: Int]():
-                indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+                indices_index[unrolled_i] = idx[unrolled_i + int(axis)]
 
             unroll[indices_rank, indices_get]()
 
@@ -573,11 +597,11 @@ async fn async_gather[
             @always_inline
             @parameter
             fn input_indices_get[unrolled_i: Int]():
-                if unrolled_i == axis.get():
+                if unrolled_i == int(axis):
                     data_indices[unrolled_i] = int(
-                        normalize_neg_index(data_index, input_shape[axis.get()])
+                        normalize_neg_index(data_index, input_shape[int(axis)])
                     )
-                elif unrolled_i > axis.get():
+                elif unrolled_i > int(axis):
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
                     data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
                 else:
@@ -586,14 +610,17 @@ async fn async_gather[
             unroll[input_rank, input_indices_get]()
 
             # Load the the data.
-            prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
+            @parameter
+            if prefetch_fn:
+                alias func = prefetch_fn.value()
+                func[input_rank, indices_rank](data_indices, indices_index)
             let data = input_fn[simd_width, input_rank](data_indices)
 
             # Store it to the original index.
             output_fn[simd_width, rank](idx, data)
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if axis.get() == input_rank - 1:
+        if int(axis) == input_rank - 1:
             await _async_elementwise_impl[
                 output_rank,
                 1,
