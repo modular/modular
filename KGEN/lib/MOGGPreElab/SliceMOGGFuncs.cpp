@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "GenericML/GraphCompiler/MOGGDialect/Support/MOGGTensorAccessor.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -891,8 +891,6 @@ public:
       // Don't process the function we just added if we see it again.
       seenFuncs.insert(slicedComputeFunction);
     }
-
-    // mod.walk([&](GeneratorOp gen) { gen.removeSourceSignatureAttr(); });
   }
 };
 
