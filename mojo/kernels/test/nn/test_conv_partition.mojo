@@ -22,18 +22,16 @@ fn test_partition():
     alias micro_kernel_f_size = micro_kernel_width * simd_size
     alias num_threads = 8
 
-    let conv_shape = ConvShape {
+    let conv_shape = ConvShape[2] {
         n: 1,
-        h: 56,
-        w: 56,
+        input_dims: Index(56, 56),
+        output_dims: Index(56, 56),
+        filter_dims: Index(3, 3),
         c: 64,
-        out_h: 56,
-        out_w: 56,
         f: 64,
-        r: 3,
-        s: 3,
         stride: Index(1, 1),
         dilation: Index(1, 1),
+        pad_d: Index(0, 0),
         pad_h: Index(1, 1),
         pad_w: Index(1, 1),
         num_groups: 1,
@@ -77,7 +75,7 @@ fn test_partition():
     # CHECK: (42, 7)
     # CHECK: (49, 7)
     for i in range(num_partitions[3]):
-        let ho_range = partition_work(i, num_partitions[3], conv_shape.out_h, 1)
+        let ho_range = partition_work(i, num_partitions[3], conv_shape.ho(), 1)
         print(ho_range)
 
 

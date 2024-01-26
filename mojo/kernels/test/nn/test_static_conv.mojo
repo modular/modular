@@ -56,18 +56,16 @@ fn test[
     alias simd_size = simdwidthof[type]()
     alias num_groups = 1
 
-    let conv_shape = ConvShape {
+    let conv_shape = ConvShape[2] {
         n: N,
-        h: H,
-        w: W,
+        input_dims: Index(H, W),
+        output_dims: Index(HO, WO),
+        filter_dims: Index(R, S),
         c: C,
-        out_h: HO,
-        out_w: WO,
         f: F,
-        r: R,
-        s: S,
         stride: stride,
         dilation: dilation,
+        pad_d: Index(0, 0),
         pad_h: pad_h,
         pad_w: pad_w,
         num_groups: num_groups,
@@ -120,7 +118,9 @@ fn test[
     alias conv_attr_dynamic = ConvInfoStatic.create_unknown()
 
     ConvDirectNHWC[
+        4,
         5,
+        4,
         DimList.create_unknown[4](),  # input shape
         DimList.create_unknown[5](),  # filter shape
         DimList.create_unknown[4](),  # output shape
@@ -170,7 +170,9 @@ fn test[
     )
 
     ConvDirectNHWC[
+        4,
         5,
+        4,
         DimList(N, H, W, C),
         packed_filter_shape,
         DimList(N, HO, WO, F),

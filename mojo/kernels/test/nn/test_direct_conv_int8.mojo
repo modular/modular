@@ -65,18 +65,16 @@ fn test[
     let WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
 
-    let conv_shape = ConvShape {
+    let conv_shape = ConvShape[2] {
         n: N,
-        h: H,
-        w: W,
+        input_dims: Index(H, W),
+        output_dims: Index(HO, WO),
+        filter_dims: Index(R, S),
         c: C,
-        out_h: HO,
-        out_w: WO,
         f: F,
-        r: R,
-        s: S,
         stride: stride,
         dilation: dilation,
+        pad_d: Index(0, 0),
         pad_h: pad_h,
         pad_w: pad_w,
         num_groups: 1,
@@ -175,7 +173,9 @@ fn test[
     @parameter
     if filter_packed:
         ConvDirectNHWC[
+            4,
             5,
+            4,
             DimList.create_unknown[4](),
             DimList.create_unknown[5](),
             DimList.create_unknown[4](),
@@ -193,6 +193,8 @@ fn test[
         )
     else:
         ConvDirectNHWC[
+            4,
+            4,
             4,
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),

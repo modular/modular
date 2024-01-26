@@ -70,25 +70,23 @@ fn static_conv(
         value_type,
     ],
 ):
-    let conv_shape = ConvShape {
+    let conv_shape = ConvShape[2] {
         n: N,
-        h: H,
-        w: W,
+        input_dims: Index(H, W),
+        output_dims: Index(HO, WO),
+        filter_dims: Index(R, S),
         c: C,
-        out_h: HO,
-        out_w: WO,
         f: F,
-        r: R,
-        s: S,
         stride: Index(stride_h, stride_w),
         dilation: Index(dilation_h, dilation_w),
+        pad_d: Index(0, 0),
         pad_h: Index(pad_bottom, pad_top),
         pad_w: Index(pad_left, pad_right),
         num_groups: num_groups,
     }
 
-    let tile_size = get_conv_tile_shape[value_type, micro_kernel_shape[1]](
-        conv_shape
+    let tile_size = get_conv_tile_shape[value_type](
+        C, R * S, micro_kernel_shape[1]
     )
 
     fn direct_null_elementwise_epilogue(
@@ -97,7 +95,9 @@ fn static_conv(
         pass
 
     let instance = ConvDirectNHWC[
+        4,
         5,
+        4,
         DimList(N, H, W, C),
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
         DimList(N, HO, WO, F),

@@ -45,27 +45,121 @@ fn get_conv_pack_inner_size() -> Int:
 
 
 @register_passable("trivial")
-struct ConvShape:
+struct ConvShape[rank: Int]:
     """A shape struct describing the convolution dimensions."""
 
-    # Input dimensions.
     var n: Int  # Input batch size.
-    var h: Int  # Input height.
-    var w: Int  # Input width.
-    var c: Int  # Input channel count.
-    var out_h: Int  # Output height.
-    var out_w: Int  # Output width.
 
-    # Filter dimensions.
-    var f: Int  # Filter count.
-    var r: Int  # Filter height.
-    var s: Int  # Filter width.
-    # Convolution parameters.
-    var stride: StaticIntTuple[2]  # Stride on [H, W]
-    var dilation: StaticIntTuple[2]  # Dilation on [H, W]
-    var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
-    var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
+    var input_dims: StaticIntTuple[rank]  # Ex H and W for 2D
+    var output_dims: StaticIntTuple[rank]  # Ex HO and WO for 2D.
+    var filter_dims: StaticIntTuple[rank]  # Ex R and S for 2D.
+
+    var c: Int  # Input channel.
+    var f: Int  # Output channel.
+
+    var stride: StaticIntTuple[rank]
+
+    var dilation: StaticIntTuple[rank]
+
+    # TODO: change paddings to
+    # pad_lower: StaticIntTuple[rank]
+    # pad_upper: StaticIntTuple[rank]
+    var pad_d: StaticIntTuple[2]
+    var pad_h: StaticIntTuple[2]
+    var pad_w: StaticIntTuple[2]
+
     var num_groups: Int
+
+    @always_inline
+    fn d(self) -> Int:
+        """Input depth."""
+
+        @parameter
+        if rank >= 3:
+            return self.input_dims[rank - 3]
+        else:
+            return 1
+
+    @always_inline
+    fn h(self) -> Int:
+        """Input height."""
+
+        @parameter
+        if rank >= 2:
+            return self.input_dims[rank - 2]
+        else:
+            return 1
+
+    @always_inline
+    fn w(self) -> Int:
+        """Input width."""
+        return self.input_dims[rank - 1]
+
+    @always_inline
+    fn do(self) -> Int:
+        """Output depth."""
+
+        @parameter
+        if rank >= 3:
+            return self.output_dims[rank - 3]
+        else:
+            return 1
+
+    @always_inline
+    fn ho(self) -> Int:
+        """Output height."""
+
+        @parameter
+        if rank >= 2:
+            return self.output_dims[rank - 2]
+        else:
+            return 1
+
+    @always_inline
+    fn wo(self) -> Int:
+        """Output width."""
+        return self.output_dims[rank - 1]
+
+    @always_inline
+    fn q(self) -> Int:
+        """Filter window depth."""
+
+        @parameter
+        if rank >= 3:
+            return self.filter_dims[rank - 3]
+        else:
+            return 1
+
+    @always_inline
+    fn r(self) -> Int:
+        """Filter window height."""
+
+        @parameter
+        if rank >= 2:
+            return self.filter_dims[rank - 2]
+        else:
+            return 1
+
+    @always_inline
+    fn s(self) -> Int:
+        """Filter windown width."""
+        return self.filter_dims[rank - 1]
+
+    @always_inline
+    fn filter_window_flat_size(self) -> Int:
+        return self.filter_dims.flattened_length()
+
+    @always_inline
+    fn matmul_M(self) -> Int:
+        return self.n * self.output_dims.flattened_length()
+
+    @always_inline
+    fn matmul_N(self) -> Int:
+        return self.f
+
+    @always_inline
+    fn matmul_K(self) -> Int:
+        return self.c * self.filter_dims.flattened_length()
 
     @always_inline
     fn c_per_group(self) -> Int:
@@ -120,70 +214,27 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
     num_groups: Int,
-) -> ConvShape:
-    @parameter
-    if (
-        data_layout == Image2DLayout.NCHW
-        and filter_layout == Image2DLayout.NCHW
-    ):
-        return ConvShape {
-            n: input.dim[0](),
-            h: input.dim[2](),
-            w: input.dim[3](),
-            c: input.dim[1](),
-            out_h: output.dim[2](),
-            out_w: output.dim[3](),
-            f: filter.dim[0](),
-            r: filter.dim[2](),
-            s: filter.dim[3](),
-            stride: stride,
-            dilation: dilation,
-            pad_h: pad_h,
-            pad_w: pad_w,
-            num_groups: num_groups,
-        }
-    elif (
+) -> ConvShape[2]:
+    constrained[
         data_layout == Image2DLayout.NHWC
-        and filter_layout == Image2DLayout.NHWC
-    ):
-        return ConvShape {
-            n: input.dim[0](),
-            h: input.dim[1](),
-            w: input.dim[2](),
-            c: input.dim[3](),
-            out_h: output.dim[1](),
-            out_w: output.dim[2](),
-            f: filter.dim[0](),
-            r: filter.dim[1](),
-            s: filter.dim[2](),
-            stride: stride,
-            dilation: dilation,
-            pad_h: pad_h,
-            pad_w: pad_w,
-            num_groups: num_groups,
-        }
-    else:
-        constrained[
-            data_layout == Image2DLayout.NHWC
-            and filter_layout == Image2DLayout.RSCF,
-            "not a valid layout configuration",
-        ]()
-        return ConvShape {
-            n: input.dim[0](),
-            h: input.dim[1](),
-            w: input.dim[2](),
-            c: input.dim[3](),
-            out_h: output.dim[1](),
-            out_w: output.dim[2](),
-            f: filter.dim[3](),
-            r: filter.dim[0](),
-            s: filter.dim[1](),
-            stride: stride,
-            dilation: dilation,
-            pad_h: pad_h,
-            pad_w: pad_w,
-            num_groups: num_groups,
-        }
+        and filter_layout == Image2DLayout.RSCF,
+        "only support NHWC and RSCF layout for conv2D.",
+    ]()
+
+    return ConvShape[2] {
+        n: input.dim[0](),
+        input_dims: Index(input.dim[1](), input.dim[2]()),
+        output_dims: Index(output.dim[1](), output.dim[2]()),
+        filter_dims: Index(filter.dim[0](), filter.dim[1]()),
+        c: input.dim[3](),
+        f: output.dim[3](),
+        stride: stride,
+        dilation: dilation,
+        pad_d: Index(0, 0),
+        pad_h: pad_h,
+        pad_w: pad_w,
+        num_groups: num_groups,
+    }
 
 
 fn get_conv2d_shape[
@@ -203,51 +254,38 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
     num_groups: Int,
-) -> ConvShape:
+) -> ConvShape[2]:
     constrained[data_layout == Image2DLayout.NHWC]()
     constrained[
         (filter_rank == 4 and filter_layout == Image2DLayout.RSCF)
         or (filter_rank == 5 and filter_layout == Image2DLayout.FRSCf)
     ]()
 
+    let filter_dims: StaticIntTuple[2]
+
     @parameter
     if filter_rank == 4 and filter_layout == Image2DLayout.RSCF:
-        return ConvShape {
-            n: input.dim[0](),
-            h: input.dim[1](),
-            w: input.dim[2](),
-            c: input.dim[3](),
-            out_h: output.dim[1](),
-            out_w: output.dim[2](),
-            f: filter.dim[3](),
-            r: filter.dim[0](),
-            s: filter.dim[1](),
-            stride: stride,
-            dilation: dilation,
-            pad_h: pad_h,
-            pad_w: pad_w,
-            num_groups: num_groups,
-        }
+        filter_dims = Index(filter.dim[0](), filter.dim[1]())
+    else:
+        filter_dims = Index(filter.dim[1](), filter.dim[2]())
 
-    # default case: filter is packed, FRSCf
-    return ConvShape {
+    return ConvShape[2] {
         n: input.dim[0](),
-        h: input.dim[1](),
-        w: input.dim[2](),
+        input_dims: Index(input.dim[1](), input.dim[2]()),
+        output_dims: Index(output.dim[1](), output.dim[2]()),
+        filter_dims: filter_dims,
         c: input.dim[3](),
-        out_h: output.dim[1](),
-        out_w: output.dim[2](),
         f: output.dim[3](),
-        r: filter.dim[1](),
-        s: filter.dim[2](),
         stride: stride,
         dilation: dilation,
+        pad_d: Index(0, 0),
         pad_h: pad_h,
         pad_w: pad_w,
         num_groups: num_groups,
     }
 
 
+@always_inline
 fn get_conv_tile_size[type: DType]() -> Int:
     # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
     # filter window in convolution. So the cache tile size (in terms of
@@ -273,9 +311,16 @@ fn get_conv_tile_size[type: DType]() -> Int:
     return 288 * KB // sizeof[type]()
 
 
+@always_inline
 fn get_conv_tile_shape[
-    type: DType, micro_kernel_width: Int
-](conv_shape: ConvShape) -> StaticIntTuple[2]:
+    type: DType,
+](
+    c: Int,
+    filter_window_size: Int,
+    micro_kernel_width: Int,
+) -> StaticIntTuple[
+    2
+]:
     """Compute the (c, f) tile shape in L2.
     Assume NHWC layout, the tile shape is (R, S, c_tile, f_tile). R and S are
     by default fully covered. The heuristic tried to block in C as much as
@@ -289,12 +334,12 @@ fn get_conv_tile_shape[
     let micro_kernel_f = micro_kernel_width * simd_size
     # Max C tile size, assuming R, S, and micro_kernel_f are covered.
     # Round up to multiple simd_size
-    let CF_tile_size = tile_size // (conv_shape.r * conv_shape.s)
+    let CF_tile_size = tile_size // filter_window_size
     let max_c_tile_size = max(
         CF_tile_size // micro_kernel_f // simd_size, 1
     ) * simd_size
     # C tile size is bounded by the input channels.
-    let c_tile_size = min(max_c_tile_size, conv_shape.c)
+    let c_tile_size = min(max_c_tile_size, c)
     # F tile size is rounded up to multiple micro_kernel_f.
     let f_tile_size = max(
         CF_tile_size // c_tile_size // micro_kernel_f, 1
@@ -497,9 +542,8 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     # for direct conv may be different.
     alias min_task_size = 64 * 1024
     # fmt: off
-    let complexity = conv_shape.n * conv_shape.out_h * conv_shape.out_w \
-                   * conv_shape.r * conv_shape.s * conv_shape.c \
-                   * conv_shape.f
+    let complexity = conv_shape.matmul_M() * conv_shape.matmul_N() \
+                   * conv_shape.matmul_K()
     # fmt: on
     # Ensure at most one task per thread.
     return min(div_ceil(complexity, min_task_size), num_threads)
@@ -526,9 +570,9 @@ fn get_conv_num_partitions[
     # alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
     # alias min_c_per_task = 64
 
-    let matmul_M = conv_shape.n * conv_shape.out_h * conv_shape.out_w
-    let matmul_N = conv_shape.f
-    let matmul_K = conv_shape.r * conv_shape.s * conv_shape.c
+    let matmul_M = conv_shape.matmul_M()
+    let matmul_N = conv_shape.matmul_N()
+    let matmul_K = conv_shape.matmul_K()
 
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to let the heuristic bias on partitioning M.

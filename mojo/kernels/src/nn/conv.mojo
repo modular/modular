@@ -67,6 +67,7 @@ from memory.buffer import (
     _compute_ndbuffer_offset,
     partial_simd_load,
     partial_simd_store,
+    prod_dims,
 )
 from memory.unsafe import DTypePointer
 from .ShapeFuncUtils import get_sliding_window_out_dim
@@ -75,8 +76,6 @@ from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 from utils._optional import Optional
 from runtime.llcl import Runtime
-
-alias MAX_NUM_CHANNELS_TILE = 384
 
 
 @value
@@ -306,12 +305,12 @@ struct Naive2dConvolution[
 
 
 # ===----------------------------------------------------------------------=== #
-# Im2Col convolution:
+# Direct convolution helpers
 # ===----------------------------------------------------------------------=== #
 
 
 @always_inline
-fn _m_to_n_ho_wo_nhwc(m: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
+fn _m_to_n_ho_wo_nhwc(m: Int, WO: Int, HO: Int) -> StaticIntTuple[3]:
     """Converts post-im2col m dimension index to pre-im2col coordinates on
     (N, Hout, Wout) dimensions.
         Args:
@@ -323,71 +322,81 @@ fn _m_to_n_ho_wo_nhwc(m: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
     TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
-    let n = m // (conv_shape.out_h * conv_shape.out_w)
-    let ho = (m % (conv_shape.out_h * conv_shape.out_w)) // conv_shape.out_w
-    let wo = m % conv_shape.out_w
+    let n = m // (HO * WO)
+    let ho = (m % (HO * WO)) // WO
+    let wo = m % WO
     return Index(n, ho, wo)
 
 
+# Elementwise epilogue signature
+alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) escaping -> None
+
+
+# Reduce helper when the input channel dimension is partitioned.
 @always_inline
-fn _k_to_r_s_c_nhwc(k: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
-    """Converts post-im2col k dimension index to pre-im2col coordinates on
-    (R, S, C) dimensions.
-        Args:
-            m (Int): Index on M dimension.
-            conv_shape (ConvShape): convolution dimension description.
+fn _reduce_output[
+    simd_size: Int,
+    elementwise_epilogue_enabled: Bool,
+](
+    scratch: DTypePointer,
+    output: DTypePointer[scratch.type],
+    N: Int,
+    HO: Int,
+    WO: Int,
+    F: Int,
+    num_partitions: Int,
+    num_threads: Int,
+    elementwise_epilogue_fn: elementwise_epilogue_type,
+):
+    let num_rows = N * HO * WO
+    let buf_size = num_rows * F
 
-        Returns (StaticIntTuple):
-            The translated 3d indices in (R, S, C) format.
-    TODO(Fixel): This utility should be generalized into a im2col util
-    class with some additional layout agnostic logic.
-    """
-    let r = k // (conv_shape.s * conv_shape.c)
-    let s = (k // conv_shape.c) % conv_shape.s
-    let c = k % conv_shape.c
-    return Index(r, s, c)
+    # Reduce from the output scratch buffer to the actual output.
+    @parameter
+    @always_inline
+    fn reduce_task(tid: Int):
+        # Use all threads in reduction.
+        let reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
+        @parameter
+        @always_inline
+        fn sum[width: Int](offset: Int):
+            let tid_output_offset = reduce_range[0] * F + offset
+            var vec = scratch.simd_load[width](tid_output_offset)
+            # The number of partitions here is typically small.
+            # There may not be much benefit from unrolling the reduction axis.
+            # Only unroll the last dimension.
+            for i in range(1, num_partitions):
+                vec += scratch.simd_load[width](
+                    tid_output_offset + i * buf_size
+                )
+            output.simd_store[width](tid_output_offset, vec)
 
-@always_inline
-fn _ho_wo_to_hi_wi(
-    ho_wo: StaticIntTuple[2],
-    r_s: StaticIntTuple[2],
-    conv_shape: ConvShape,
-) -> StaticIntTuple[2]:
-    """Converts index on the output images to index on the input images.
-        Args:
-            ho_wo (StaticIntTuple): Index on output image in (Hout, Wout).
-            r_s (StaticIntTuple): Index on filter dimensions in (R, S).
-            conv_shape (ConvShape): convolution dimension description.
+        vectorize_unroll[simd_size, 4, sum](reduce_range[1] * F)
 
-        Returns (StaticIntTuple):
-            Index on input image in (H, W).
+        @parameter
+        if elementwise_epilogue_enabled:
+            for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
+                let nhowo = _m_to_n_ho_wo_nhwc(m, HO, WO)
+                elementwise_epilogue_fn(nhowo[0], nhowo[1], nhowo[2], 0, F)
 
-        Returns (StaticIntTuple):
-            The translated 3d indices in (R, S, C) format.
-    TODO(Fixel): This utility should be generalized into a conv util
-    class with some additional layout agnostic logic.
-    """
-    let pad_left = Index(
-        conv_shape.pad_h[0],
-        conv_shape.pad_w[0],
-    )
-    return ho_wo * conv_shape.stride - pad_left + r_s * conv_shape.dilation
+    # NOTE: synchronous, so use of locally allocated output_ptr is safe.
+    sync_parallelize[reduce_task](num_threads)
 
 
 # ===----------------------------------------------------------------------=== #
 # Direct Convolution                                                           #
 # ===----------------------------------------------------------------------=== #
 
-alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) escaping -> None
-
 
 @value
 struct ConvDirectNHWC[
+    input_rank: Int,
     filter_rank: Int,
-    shape_input: DimList,
-    shape_filter: DimList,
-    shape_output: DimList,
+    output_rank: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -406,11 +415,11 @@ struct ConvDirectNHWC[
     Assume F is divisible at least by simd_size.
     """
 
-    var output: NDBuffer[4, shape_output, output_type]
-    var input: NDBuffer[4, shape_input, input_type]
-    var filter: NDBuffer[filter_rank, shape_filter, filter_type]
+    var output: NDBuffer[output_rank, output_shape, output_type]
+    var input: NDBuffer[input_rank, input_shape, input_type]
+    var filter: NDBuffer[filter_rank, filter_shape, filter_type]
 
-    var conv_shape: ConvShape
+    var conv_shape: ConvShape[input_rank - 2]
 
     # If n, ho, wo dimensions are merged (for no padding), the first three
     # dimensions are the offsets and sizes in (n_ho_wo, c, f) iteration space.
@@ -424,18 +433,20 @@ struct ConvDirectNHWC[
     var elementwise_epilogue_fn: elementwise_epilogue_type
 
     # If shapes and attributes are known at compile time
-    alias fully_static = conv_attr.all_known() and shape_input.all_known[
-        4
-    ]() and shape_output.all_known[4]() and shape_filter.all_known[
+    alias packed_and_fully_static = conv_attr.all_known() and input_shape.all_known[
+        1, input_rank
+    ]() and output_shape.all_known[
+        1, output_rank
+    ]() and filter_shape.all_known[
         filter_rank
-    ]()
+    ]() and filter_packed
 
     @staticmethod
     fn run(
-        output: NDBuffer[4, shape_output, output_type],
-        input: NDBuffer[4, shape_input, input_type],
-        filter: NDBuffer[filter_rank, shape_filter, filter_type],
-        conv_shape: ConvShape,
+        output: NDBuffer[output_rank, output_shape, output_type],
+        input: NDBuffer[input_rank, input_shape, input_type],
+        filter: NDBuffer[filter_rank, filter_shape, filter_type],
+        conv_shape: ConvShape[input_rank - 2],
     ) raises:
         fn direct_null_elementwise_epilogue(
             n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
@@ -452,16 +463,16 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[4, shape_output, output_type],
-        input: NDBuffer[4, shape_input, input_type],
-        filter: NDBuffer[filter_rank, shape_filter, filter_type],
-        conv_shape: ConvShape,
+        output: NDBuffer[output_rank, output_shape, output_type],
+        input: NDBuffer[input_rank, input_shape, input_type],
+        filter: NDBuffer[filter_rank, filter_shape, filter_type],
+        conv_shape: ConvShape[input_rank - 2],
         elementwise_epilogue_fn: elementwise_epilogue_type,
     ) raises:
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
-            shape_output.at[2](),
-            shape_output.at[3](),
+            output_shape.at[output_rank - 2](),  # WO
+            output_shape.at[output_rank - 1](),  # F
             conv_attr,
             simd_size,
         ]()
@@ -469,8 +480,10 @@ struct ConvDirectNHWC[
         alias micro_kernel_width = micro_kernel_shape[1]
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        let cf_tile_size = get_conv_tile_shape[filter_type, micro_kernel_width](
-            conv_shape
+        let cf_tile_size = get_conv_tile_shape[filter_type](
+            conv_shape.c,
+            conv_shape.filter_window_flat_size(),
+            micro_kernel_width,
         )
 
         @parameter
@@ -508,7 +521,7 @@ struct ConvDirectNHWC[
 
         # Wrap the pointer inside NDBuffer so it can be properly captured by async closure.
         var output_ptr = output.data
-        let output_size = conv_shape.n * conv_shape.out_h * conv_shape.out_w * conv_shape.f
+        let output_size = prod_dims[0, output_rank](output)
         let scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
             output_ptr = DTypePointer[output_type].alloc(scratch_size)
@@ -547,7 +560,7 @@ struct ConvDirectNHWC[
             # Merge wo and ho loops when there is no padding.
             # Otherwise the partition granularity is a row.
             let work_unit = 1 if has_padding else micro_kernel_height
-            let work_load = conv_shape.out_h if has_padding else conv_shape.out_h * conv_shape.out_w
+            let work_load = conv_shape.ho() if has_padding else conv_shape.ho() * conv_shape.wo()
             let howo_range = partition_work(
                 task_id_howo, num_partitions[3], work_load, work_unit
             )
@@ -566,21 +579,18 @@ struct ConvDirectNHWC[
                 min(cf_tile_size[0], c_range[1]), cf_tile_size[1]
             )
 
-            let task_output = NDBuffer[4, shape_output, output_type](
+            let task_output = NDBuffer[output_rank, output_shape, output_type](
                 output_scratch.data.offset(task_id_c * output_size),
-                Index(
-                    conv_shape.n,
-                    conv_shape.out_h,
-                    conv_shape.out_w,
-                    conv_shape.f,
-                ),
+                output.dynamic_shape,
             )
 
             let instance = ConvDirectNHWC[
+                input_rank,
                 filter_rank,
-                shape_input,
-                shape_filter,
-                shape_output,
+                output_rank,
+                input_shape,
+                filter_shape,
+                output_shape,
                 input_type,
                 filter_type,
                 output_type,
@@ -603,47 +613,18 @@ struct ConvDirectNHWC[
             sync_parallelize[task_func](num_tasks)
 
             # Reduce from the output scratch buffer to the actual output.
-            @parameter
-            @always_inline
-            fn reduce_task(tid: Int):
-                # Use all threads in reduction.
-                let nhowo = conv_shape.n * conv_shape.out_w * conv_shape.out_h
-                let reduce_range = partition_work(tid, num_threads, nhowo, 1)
+            _reduce_output[simd_size, elementwise_epilogue_enabled](
+                output_scratch.data,
+                output.data,
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
+                num_partitions[1],
+                num_threads,
+                elementwise_epilogue_fn,
+            )
 
-                @parameter
-                @always_inline
-                fn sum[width: Int](offset: Int):
-                    let tid_output_offset = reduce_range[
-                        0
-                    ] * conv_shape.f + offset
-                    var vec = output_scratch.data.offset(
-                        tid_output_offset
-                    ).simd_load[width]()
-                    # The number of partitions here is typically small.
-                    # There may not be much benefit from unrolling the reduction axis.
-                    # Only unroll the last dimension.
-                    for i in range(1, num_partitions[1]):
-                        vec += output_scratch.data.offset(
-                            tid_output_offset + i * output_size
-                        ).simd_load[width]()
-                    output.data.offset(tid_output_offset).simd_store[width](vec)
-
-                vectorize_unroll[simd_size, 4, sum](
-                    reduce_range[1] * conv_shape.f
-                )
-
-                @parameter
-                if elementwise_epilogue_enabled:
-                    for m in range(
-                        reduce_range[0], reduce_range[0] + reduce_range[1]
-                    ):
-                        let nhowo = _m_to_n_ho_wo_nhwc(m, conv_shape)
-                        elementwise_epilogue_fn(
-                            nhowo[0], nhowo[1], nhowo[2], 0, conv_shape.f
-                        )
-
-            # NOTE: synchronous, so use of locally allocated output_ptr is safe.
-            sync_parallelize[reduce_task](num_threads)
             output_ptr.free()
         else:
             # Use sync to work around #12624
@@ -677,7 +658,11 @@ struct ConvDirectNHWC[
             # there is a fast path for pointwise (no padding) conv with strides.
             # Grouped conv logic has not been plumbed into static specialized funcs yet.
             @parameter
-            if self.fully_static and padded and conv_attr.num_groups == Dim(1):
+            if (
+                self.packed_and_fully_static
+                and padded
+                and conv_attr.num_groups == Dim(1)
+            ):
                 self._f_tile_loop_static[False](n, c_tile_offset, c_tile_size)
             else:
                 self._f_tile_loop[padded, False](n, c_tile_offset, c_tile_size)
@@ -705,7 +690,7 @@ struct ConvDirectNHWC[
 
                 # Update the last c tile with fusion
                 @parameter
-                if self.fully_static and padded:
+                if self.packed_and_fully_static and padded:
                     self._f_tile_loop_static[True](
                         n,
                         c_start + c_round_by_tile,
@@ -889,8 +874,8 @@ struct ConvDirectNHWC[
         @parameter
         fn set_input_base_offsets[idx: Int]():
             # Global wo, ho index.
-            let ho = (ho_wo + idx) // self.conv_shape.out_w
-            let wo = (ho_wo + idx) % self.conv_shape.out_w
+            let ho = (ho_wo + idx) // self.conv_shape.wo()
+            let wo = (ho_wo + idx) % self.conv_shape.wo()
             # Translate ho, wo to hi, wi/range
             let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
             let w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[0]
@@ -898,7 +883,7 @@ struct ConvDirectNHWC[
                 idx,
                 c_tile_offset
                 + self.conv_shape.c
-                * (w + self.conv_shape.w * (h + self.conv_shape.h * n)),
+                * (w + self.conv_shape.w() * (h + self.conv_shape.h() * n)),
             )
 
         unroll[micro_kernel_height, set_input_base_offsets]()
@@ -910,7 +895,7 @@ struct ConvDirectNHWC[
             output_type,
         ].aligned_stack_allocation[alignment]()
 
-        let n_ho_wo = n * self.conv_shape.out_h * self.conv_shape.out_w + ho_wo
+        let n_ho_wo = n * self.conv_shape.ho() * self.conv_shape.wo() + ho_wo
         if self.is_new_c_accum(c_tile_offset):
             self._init_output_micro_tile[
                 micro_kernel_height, micro_kernel_width, simd_size
@@ -940,17 +925,17 @@ struct ConvDirectNHWC[
             )
             filter_ptr = filter_ptr.offset(
                 self.conv_shape.f_in_group(f_tile_offset)
-                * self.conv_shape.r
-                * self.conv_shape.s
+                * self.conv_shape.r()
+                * self.conv_shape.s()
                 * self.conv_shape.c_per_group()
                 + self.conv_shape.c_in_group(c_tile_offset)
                 * micro_kernel_f_size
             )
 
-        for r in range(self.conv_shape.r):
-            for s in range(self.conv_shape.s):
+        for r in range(self.conv_shape.r()):
+            for s in range(self.conv_shape.s()):
                 let input_offset = self.conv_shape.c * (
-                    s + self.conv_shape.w * r
+                    s + self.conv_shape.w() * r
                 )
 
                 # Unpacked version. For each (r, s), we first offset the
@@ -960,7 +945,7 @@ struct ConvDirectNHWC[
                 @parameter
                 if not filter_packed:
                     filter_ptr = self.filter.data.offset(
-                        (s + r * self.conv_shape.s)
+                        (s + r * self.conv_shape.s())
                         * self.conv_shape.c
                         * self.conv_shape.f
                         + c_tile_offset * self.conv_shape.f
@@ -1011,8 +996,8 @@ struct ConvDirectNHWC[
                 # Convert the 1D index back to (n, ho, wo).
                 self.elementwise_epilogue_fn(
                     n,
-                    m // self.conv_shape.out_w,
-                    m % self.conv_shape.out_w,
+                    m // self.conv_shape.wo(),
+                    m % self.conv_shape.wo(),
                     f_tile_offset,
                     f_tile_size_bounded,
                 )
@@ -1096,8 +1081,8 @@ struct ConvDirectNHWC[
                     )
 
             @parameter
-            if shape_output.at[3]().has_value():
-                alias F = shape_output.get[3]()
+            if output_shape.at[3]().has_value():
+                alias F = output_shape.get[3]()
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -1154,8 +1139,8 @@ struct ConvDirectNHWC[
                     )
 
             @parameter
-            if shape_output.at[3]().has_value():
-                alias F = shape_output.get[3]()
+            if output_shape.at[3]().has_value():
+                alias F = output_shape.get[3]()
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -1483,9 +1468,9 @@ struct ConvDirectNHWC[
             self.conv_shape.pad_w[0], self.conv_shape.stride[1]
         )
         let right_pad_impact_start = (
-            self.conv_shape.w
+            self.conv_shape.w()
             + self.conv_shape.pad_w[0]
-            - self.conv_shape.s * self.conv_shape.dilation[1]
+            - self.conv_shape.s() * self.conv_shape.dilation[1]
         ) // self.conv_shape.stride[1] + 1
 
         var filter_base: DTypePointer[filter_type]
@@ -1501,8 +1486,8 @@ struct ConvDirectNHWC[
             filter_base = filter_base.offset(
                 self.conv_shape.f_in_group(f_tile_offset)
                 * self.conv_shape.c_per_group()
-                * self.conv_shape.r
-                * self.conv_shape.s
+                * self.conv_shape.r()
+                * self.conv_shape.s()
                 + self.conv_shape.c_in_group(c_tile_offset)
                 * micro_kernel_f_size
             )
@@ -1512,13 +1497,10 @@ struct ConvDirectNHWC[
             )
 
         let input_curr_image = self.input.data.offset(
-            n * self.conv_shape.w * self.conv_shape.h * self.conv_shape.c
+            n * self.conv_shape.w() * self.conv_shape.h() * self.conv_shape.c
         )
         let output_curr_image = self.output.data.offset(
-            n
-            * self.conv_shape.out_w
-            * self.conv_shape.out_h
-            * self.conv_shape.f
+            n * self.conv_shape.wo() * self.conv_shape.ho() * self.conv_shape.f
         )
 
         # Temporary fix for #23189, edge case where padding is larger than input.
@@ -1535,15 +1517,15 @@ struct ConvDirectNHWC[
                 var input_base = input_curr_image.offset(
                     c_tile_offset
                     + self.conv_shape.c
-                    * (-self.conv_shape.pad_w[0] + self.conv_shape.w * h)
+                    * (-self.conv_shape.pad_w[0] + self.conv_shape.w() * h)
                 )
                 # Point to (n, 0, ho, f_tile_offset) mapped in input
                 var output_base = output_curr_image.offset(
                     f_tile_offset
-                    + self.conv_shape.f * self.conv_shape.out_w * ho
+                    + self.conv_shape.f * self.conv_shape.wo() * ho
                 )
 
-                for wo in range(self.conv_shape.out_w):
+                for wo in range(self.conv_shape.wo()):
                     self._inner_loops_padding[
                         1,
                         micro_kernel_width,
@@ -1578,11 +1560,11 @@ struct ConvDirectNHWC[
             var input_base = input_curr_image.offset(
                 c_tile_offset
                 + self.conv_shape.c
-                * (-self.conv_shape.pad_w[0] + self.conv_shape.w * h)
+                * (-self.conv_shape.pad_w[0] + self.conv_shape.w() * h)
             )
             # Point to (n, 0, ho, f_tile_offset) in output
             var output_base = output_curr_image.offset(
-                f_tile_offset + self.conv_shape.f * self.conv_shape.out_w * ho
+                f_tile_offset + self.conv_shape.f * self.conv_shape.wo() * ho
             )
 
             @parameter
@@ -1605,7 +1587,7 @@ struct ConvDirectNHWC[
                     c_tile_size,
                     f_tile_offset,
                     f_tile_size,
-                    self.conv_shape,
+                    rebind[ConvShape[2]](self.conv_shape),
                     n,
                     Index(ho, wo),
                     self.elementwise_epilogue_fn,
@@ -1622,7 +1604,7 @@ struct ConvDirectNHWC[
                 0,
                 left_pad_impact_end,
                 right_pad_impact_start,
-                self.conv_shape.out_w,
+                self.conv_shape.wo(),
             )
 
     @always_inline
@@ -1686,7 +1668,7 @@ struct ConvDirectNHWC[
         @parameter
         if filter_packed:  # FRSCf layout
             filter_F_stride = (
-                self.conv_shape.r * self.conv_shape.s * filter_S_stride
+                self.conv_shape.r() * self.conv_shape.s() * filter_S_stride
             )
         else:
             filter_F_stride = micro_kernel_f_size
@@ -1718,26 +1700,26 @@ struct ConvDirectNHWC[
         var h_shift = 0
         # h index in input image
         let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
-        for r in range(self.conv_shape.r):
+        for r in range(self.conv_shape.r()):
             # Skip if row falls in padding.
-            if h + h_shift < 0 or h + h_shift >= self.conv_shape.h:
+            if h + h_shift < 0 or h + h_shift >= self.conv_shape.h():
                 h_shift += self.conv_shape.dilation[0]
                 continue
 
             var input_ptr = input_base.offset(
-                h_shift * self.conv_shape.c * self.conv_shape.w
+                h_shift * self.conv_shape.c * self.conv_shape.w()
             )
             var filter_ptr = filter_base.offset(
-                r * self.conv_shape.s * filter_S_stride
+                r * self.conv_shape.s() * filter_S_stride
             )
 
             var w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[0]
-            for s in range(self.conv_shape.s):
+            for s in range(self.conv_shape.s()):
                 # Skip neighbor points in padding, if current point is
                 # effected by padding.
                 @parameter
                 if w_padding_impact:
-                    if w < 0 or w >= self.conv_shape.w:
+                    if w < 0 or w >= self.conv_shape.w():
                         w += self.conv_shape.dilation[1]
                         filter_ptr = filter_ptr.offset(filter_S_stride)
                         input_ptr = input_ptr.offset(input_shift)
@@ -1786,8 +1768,8 @@ struct ConvDirectNHWC[
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        alias WO = shape_output.get[2]()  # NHWC
-        alias F = shape_output.get[3]()  # NHWC
+        alias WO = output_shape.get[2]()  # NHWC
+        alias F = output_shape.get[3]()  # NHWC
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             WO, F, conv_attr, simd_size
@@ -1854,14 +1836,14 @@ struct ConvDirectNHWC[
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias H = shape_input.get[1]()  # NHWC
-        alias W = shape_input.get[2]()  # NHWC
-        alias C = shape_input.get[3]()  # NHWC
-        alias R = shape_filter.get[1]()  # FRSCf
-        alias S = shape_filter.get[2]()  # FRSCf
-        alias HO = shape_output.get[1]()  # NHWC
-        alias WO = shape_output.get[2]()  # NHWC
-        alias F = shape_output.get[3]()  # NHWC
+        alias H = input_shape.get[1]()  # NHWC
+        alias W = input_shape.get[2]()  # NHWC
+        alias C = input_shape.get[3]()  # NHWC
+        alias R = filter_shape.get[1]()  # FRSCf
+        alias S = filter_shape.get[2]()  # FRSCf
+        alias HO = output_shape.get[1]()  # NHWC
+        alias WO = output_shape.get[2]()  # NHWC
+        alias F = output_shape.get[3]()  # NHWC
 
         let filter_base: DTypePointer[filter_type]
 
@@ -2037,9 +2019,9 @@ struct ConvDirectNHWC[
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias R = shape_filter.get[1]()  # FRSCf
-        alias S = shape_filter.get[2]()  # FRSCf
-        alias C = shape_input.get[3]()  # NHWC
+        alias R = filter_shape.get[1]()  # FRSCf
+        alias S = filter_shape.get[2]()  # FRSCf
+        alias C = input_shape.get[3]()  # NHWC
         alias s_stride_in_input = conv_attr.dilations()[1] * C
         alias wo_stride_in_input = conv_attr.strides()[1] * C
         alias filter_S_stride = C * micro_kernel_f_size
@@ -2065,9 +2047,9 @@ struct ConvDirectNHWC[
                 has_residual,
             ](output_base, output_micro_tile)
 
-        alias W = shape_input.get[2]()  # NHWC
-        alias H = shape_input.get[1]()  # NHWC
-        alias WO = shape_output.get[2]()  # NHWC
+        alias W = input_shape.get[2]()  # NHWC
+        alias H = input_shape.get[1]()  # NHWC
+        alias WO = output_shape.get[2]()  # NHWC
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
         # h index in input image
@@ -2137,7 +2119,7 @@ struct ConvDirectNHWC[
         ](output_micro_tile, output_base)
 
         # Apply elmentwise epilogue to the
-        alias F = shape_output.get[3]()  # NHWC
+        alias F = output_shape.get[3]()  # NHWC
 
         @parameter
         if elementwise_epilogue_enabled and last_c_tile:
@@ -2319,7 +2301,7 @@ fn conv1d_update_wo_tile[
         effected_by_padding,
     ](
         c_tile_size,
-        conv_shape.s,
+        conv_shape.s(),
         register_tile.data,
         input,
         conv_shape.c * conv_shape.stride[1],
@@ -2329,7 +2311,7 @@ fn conv1d_update_wo_tile[
         filter_stride_by_s,
         conv_shape.f % simd_size,
         w,
-        conv_shape.w,
+        conv_shape.w(),
         conv_shape.dilation[1],
     )
 
@@ -2436,7 +2418,7 @@ fn conv2d_update_wo_tile[
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,
-    conv_shape: ConvShape,
+    conv_shape: ConvShape[2],
     n: Int,
     howo: StaticIntTuple[2],
     elementwise_epilogue_fn: elementwise_epilogue_type,
@@ -2445,7 +2427,9 @@ fn conv2d_update_wo_tile[
 
     # Input stride to neighbor point in the filter window (R, S).
     let input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
-    let input_stride_by_r = conv_shape.dilation[0] * conv_shape.w * conv_shape.c
+    let input_stride_by_r = conv_shape.dilation[
+        0
+    ] * conv_shape.w() * conv_shape.c
 
     # Filter stride when s increments by 1.
     let filter_stride_by_s: Int
@@ -2456,7 +2440,7 @@ fn conv2d_update_wo_tile[
     else:  # RSCF layout
         filter_stride_by_s = conv_shape.c * conv_shape.f
 
-    let filter_stride_by_r = conv_shape.s * filter_stride_by_s
+    let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
 
     # Filter stride in F dimension in FRSCf
     let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
@@ -2502,7 +2486,7 @@ fn conv2d_update_wo_tile[
         effected_by_padding,
     ](
         c_tile_size,
-        Index(conv_shape.r, conv_shape.s),
+        Index(conv_shape.r(), conv_shape.s()),
         register_tile.data,
         input,
         conv_shape.c * conv_shape.stride[1],
@@ -2512,7 +2496,7 @@ fn conv2d_update_wo_tile[
         Index(filter_stride_by_r, filter_stride_by_s),
         conv_shape.f % simd_size,
         hw,
-        Index(conv_shape.h, conv_shape.w),
+        Index(conv_shape.h(), conv_shape.w()),
         conv_shape.dilation,
     )
 
@@ -3027,7 +3011,9 @@ fn conv_2d_nhwc_direct[
         vectorize[simd_size, body](f_size)
 
     ConvDirectNHWC[
+        4,  # input_rank
         filter_rank,
+        4,  # output_rank
         input_shape,
         filter_shape,
         output_shape,
