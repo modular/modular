@@ -42,7 +42,7 @@ private:
   // The message attached to the event.
   std::string message;
   // The ARGB color (in Hex) of the event.
-  uint32_t color = 0;
+  [[maybe_unused]] uint32_t color = 0;
 };
 } // namespace M::CUDA::NVTX
 
