@@ -13,11 +13,11 @@
 #define LLCL_RUNTIME_ASYNCVALUE_H
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
-#include "LLCL/Runtime/TypeID.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/Support/Casting.h"

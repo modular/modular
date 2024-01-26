@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 set(SOURCES
-    GlobalProfilerContext.cpp)
+  Globals.cpp)
 
 # This target is intended to appear exactly once in all top-level
 # executables/dynamic libraries.

@@ -16,7 +16,6 @@ class Runtime;
 class CompactRuntimePtr;
 
 namespace Detail {
-class TypeInfoTable;
 class RuntimeTable;
 } // namespace Detail
 
@@ -32,9 +31,6 @@ namespace M::LLCL::Globals {
 /// NOTE: MSVC does not allow a thread_local to have DLL linkage, so we must
 /// hide this under a function.
 extern MODULAR_CXX_EXPORT CompactRuntimePtr &getCurrentRuntimeInTLS();
-
-extern MODULAR_CXX_EXPORT Detail::TypeInfoTable &
-getTypeInfoTableSingleton(const std::function<Detail::TypeInfoTable *()> &ctor);
 
 extern MODULAR_CXX_EXPORT Detail::RuntimeTable &
 getRuntimeTableSingleton(const std::function<Detail::RuntimeTable *()> &ctor);

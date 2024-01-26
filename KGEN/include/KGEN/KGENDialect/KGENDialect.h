@@ -23,7 +23,7 @@ template <typename TypeT>
 void KGENDialect::registerMnemonicType() {
   registerPrettyType(
       TypeT::getMnemonic(), +[](AsmParser &p) { return TypeT::parse(p); },
-      TypeID::get<TypeT>(),
+      mlir::TypeID::get<TypeT>(),
       +[](AsmPrinter &p, Type type) {
         p << TypeT::getMnemonic();
         cast<TypeT>(type).print(p);

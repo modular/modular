@@ -29,6 +29,7 @@ add_modular_library(MSupport
   Random.cpp
   ReferenceCounted.cpp
   Stats.cpp
+  TypeID.cpp
   URI.cpp
   Version.cpp
 

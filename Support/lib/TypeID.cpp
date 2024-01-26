@@ -4,14 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Runtime/TypeID.h"
+#include "Support/TypeID.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "typeids"
 
 using namespace M;
-using namespace LLCL;
 
 Detail::RawTypeID Detail::TypeInfoTable::getSlow(std::string_view typeName,
                                                  ValueDestructorFn destructor) {

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Globals/GlobalProfilerContext.h"
+#include "Support/Globals/Globals.h"
 #include "Support/SymbolExport.h"
 #include <atomic>
 
@@ -20,4 +20,11 @@ MODULAR_CXX_EXPORT M::ProfilingDetail::GlobalProfilerContext *
 M::Globals::exchangeGlobalProfilerContext(
     M::ProfilingDetail::GlobalProfilerContext *ctx) {
   return globalProfilerContextInstance.exchange(ctx);
+}
+
+MODULAR_CXX_EXPORT M::Detail::TypeInfoTable &
+M::Globals::getTypeInfoTableSingleton(
+    const std::function<Detail::TypeInfoTable *()> &ctor) {
+  static Detail::TypeInfoTable *table = ctor();
+  return *table;
 }

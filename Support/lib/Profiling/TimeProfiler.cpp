@@ -7,7 +7,7 @@
 #include "Support/Profiling/TimeProfiler.h"
 
 #include "Config/Version.h"
-#include "Support/Globals/GlobalProfilerContext.h"
+#include "Support/Globals/Globals.h"
 #include "Support/MArchTarget/Host.h"
 
 #include "llvm/ADT/DenseSet.h"
