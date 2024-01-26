@@ -93,8 +93,10 @@ void KGEN::buildElaborateModulePipeline(
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures(OutlineClosuresOptions{
       options.debugLevel != CompilationOptions::kNoDebug}));
-  // TODO(#20717): CSE cannot run before `OutlineClosures`.
-  pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
+  if (options.optimizationLevel >= 1) {
+    // TODO(#20717): CSE cannot run before `OutlineClosures`.
+    pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
+  }
   pm.addPass(createVerifyParameters());
   pm.addPass(createLiftAndFoldApply());
 
