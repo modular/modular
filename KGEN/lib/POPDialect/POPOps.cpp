@@ -233,7 +233,12 @@ void ArrayCreateOp::build(OpBuilder &b, OperationState &state,
 
 LogicalResult ArrayRepeatOp::verify() {
   std::optional<int64_t> size = getType().getResolvedSize();
-  if (size && *size != 0 && getNumOperands() == 0)
+  // Can only verify with concrete size.
+  if (!size)
+    return success();
+  if (*size < 0)
+    return emitOpError("requires a non-negative size");
+  if (*size != 0 && getNumOperands() == 0)
     return emitOpError("requires at least one operand to create an array whose "
                        "size is non-zero");
   return success();

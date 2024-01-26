@@ -155,6 +155,14 @@ kgen.func @repeat_zero() {
 
 // -----
 
+kgen.func @array_repeat_crash(%arg0: index) {
+  // expected-error @below {{'pop.array.repeat' op requires a non-negative size}}
+  %0 = "pop.array.repeat"(%arg0) : (index) -> !pop.array<-1, index>
+  kgen.return
+}
+
+// -----
+
 kgen.generator @pack_create<Ts: variadic<!kgen.type>>(%arg0: f32, %arg1: si8) {
   // expected-error @below {{operand types cannot be inferred for resulting pack type '!kgen.pack<Ts>'}}
   %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<Ts>
