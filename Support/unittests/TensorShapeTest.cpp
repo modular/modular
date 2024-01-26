@@ -232,3 +232,18 @@ TEST(TensorShape, yamlOutput) {
   output << holder;
   EXPECT_EQ(str, "---\nshape:           5x?\n...\n");
 }
+
+// Regression test for #29927.
+TEST(TensorShape, moveAssignmentDoesntLeak) {
+  TensorShape a{1, 2, 3, 4, 5, 6, 7};
+  a = TensorShape{1, 2, 3};
+  // LSAN should now fail if this caused a leak.
+}
+
+// Regression test for #29927.
+TEST(TensorShape, copyAssignmentDoesntLeak) {
+  TensorShape a{1, 2, 3, 4, 5, 6, 7};
+  TensorShape b{1, 2, 3};
+  a = b;
+  // LSAN should now fail if this caused a leak.
+}

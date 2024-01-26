@@ -109,6 +109,8 @@ public:
     operator=(other);
   }
   void operator=(const TensorShapeStorage &other) {
+    if (isOutOfLine())
+      delete[] representation.repOutOfLine.dims;
     memcpy(&representation, &other.representation, sizeof(representation));
     if (isOutOfLine()) {
       representation.repOutOfLine.dims = new ssize_t[getRank()];
@@ -118,6 +120,8 @@ public:
     }
   }
   void operator=(TensorShapeStorage &&other) {
+    if (isOutOfLine())
+      delete[] representation.repOutOfLine.dims;
     memcpy(&representation, &other.representation, sizeof(representation));
     // Take ownership of an out-of-line pointer if present.
     other.representation.repOutOfLine.kind = RepKind::k16;
