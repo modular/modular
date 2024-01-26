@@ -2021,7 +2021,12 @@ fn gather[
 # ===----------------------------------------------------------------------===#
 
 # TODO(#29765): remove import and allow Optional type to be inferred
-from MatmulUtils import elementwise_lambda_fn_sig_type
+from MatmulUtils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
+from BatchedMatmul import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
 
 
 @mogg_register("mo.matmul")
@@ -2104,7 +2109,7 @@ fn matmul[
             transpose_a,
             transpose_b,
             b_packed,
-            Optional[elementwise_lambda_fn_sig_type](
+            Optional[matmul_elementwise_epilogue_type](
                 epilogue_wrapper
             ) if lambdas_have_fusion else None,
             saturated_vnni=False,
@@ -2182,10 +2187,11 @@ fn batched_matmul[
             c_type,
             adj_a,
             adj_b,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-            False,  # saturated_vnni
-            single_thread_blocking_override,
+            Optional[batched_matmul_elementwise_epilogue_type](
+                epilogue_wrapper
+            ) if lambdas_have_fusion else None,
+            saturated_vnni=False,
+            single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](c, a, b)
 
