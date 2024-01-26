@@ -15,6 +15,26 @@ from .session import InferenceSession
 
 @value
 @register_passable("trivial")
+struct FrameworkFormat:
+    """Enum-like struct indicating the model framework."""
+
+    alias MAXGraph = FrameworkFormat(0)
+
+    var value: UInt8
+
+
+@value
+@register_passable("trivial")
+struct ModelSource:
+    """Model source representation that is ABI compatible with the C API's `M_ModelSource`.
+    """
+
+    var source: Pointer[NoneType]
+    var format: FrameworkFormat
+
+
+@value
+@register_passable("trivial")
 struct CCompileConfig:
     """Mojo representation of Engine's CompileConfig pointer.
     This doesn't free the memory on destruction. For memory managed
@@ -24,9 +44,15 @@ struct CCompileConfig:
     var ptr: DTypePointer[DType.invalid]
 
     alias FreeCompileConfigFnName = "M_freeCompileConfig"
+    alias SetModelSourceFnName = "M_setModelSource"
     alias SetModelPathFnName = "M_setModelPath"
     alias ReplaceOpsFnName = "M_useKernelsFrom"
     alias SetDeviceFnName = "M_setDevice"
+
+    fn set_model_source(
+        self, model_source: ModelSource, borrowed lib: DLHandle
+    ):
+        call_dylib_func(lib, Self.SetModelSourceFnName, self, model_source)
 
     fn set_model_path(self, path: StringRef, borrowed lib: DLHandle):
         """Sets the path of model to compile."""
@@ -60,6 +86,11 @@ struct CompileConfig:
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = existing.ptr
         self.lib = existing.lib
+
+    fn set_model_source(self, model_source: ModelSource):
+        __get_address_as_lvalue(self.ptr.address).set_model_source(
+            model_source, self.lib
+        )
 
     fn set_model_path(self, path: StringRef):
         """Sets the path of model to compile."""
