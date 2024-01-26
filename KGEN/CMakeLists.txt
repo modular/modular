@@ -124,21 +124,6 @@ macro(_setup_debug_flags)
   endif()
 endmacro()
 
-
-# This function reads MODULAR_USE_NATIVE_ARCH / BUILD_ARCH and respects it to
-# pass in the appropriate flags to the kgen compiler.
-macro(_setup_arch)
-  if (NOT CMAKE_APPLE_SILICON_PROCESSOR AND NOT "${CPU_BUILD_ARCH}" STREQUAL "")
-    if (CPU_BUILD_ARCH STREQUAL "neoverse-n1")
-      set(MOJO_ARCH_FLAGS "-mcpu" "neoverse-n1")
-    elseif(MOJO_BUILD_ARCH STREQUAL "arm64")
-      set(MOJO_ARCH_FLAGS "-march" "arm64")
-    else()
-      set(MOJO_ARCH_FLAGS "-march" "${CPU_BUILD_ARCH}")
-    endif()
-  endif()
-endmacro()
-
 # This function reads the cmake configuration and constructs the `-D` flags it
 # needs to pass in to Mojo and KGEN.
 macro(_setup_defines)
@@ -297,7 +282,6 @@ function(add_kgen_library target)
     ${ARGN})
 
   _setup_libs()
-  _setup_arch()
   _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
@@ -368,7 +352,6 @@ function(add_kgen_kernel target)
                         "KERNELS;DEPENDS;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
-  _setup_arch()
   _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
