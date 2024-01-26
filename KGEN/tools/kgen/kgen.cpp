@@ -243,6 +243,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Tag the module with the environment parsed from the defines.
   ctx->loadDialect<KGENDialect>();
+
+  // Set the environment (defines) for the module.
+  setModularEnvAttr(*theModule);
+
+  // Now parse defines that the user passed in.
   ErrorOr<EnvAttr> env = EnvAttr::parseDefines(ctx, clOptions.defines);
   if (env.isError())
     return failure(clOptions.reportError(env.takeError().get()));
