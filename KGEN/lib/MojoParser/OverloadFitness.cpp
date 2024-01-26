@@ -893,6 +893,8 @@ diagnoseKeywordOperands(LITSignatureType signature,
   StringSet<> argNames;
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
+
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
            signature.getArgNames(), signature.getArgPassingKinds())) {
     if (argPassingKind == PassingKind::PosOnly) {
@@ -901,6 +903,7 @@ diagnoseKeywordOperands(LITSignatureType signature,
       continue;
     }
     if (argPassingKind == PassingKind::KwOnly &&
+        !defaultHandler.getKwOnlyDefault(argIdx) &&
         !callOperands.findKwArg(argName)) {
       missingKwOnly.emplace_back(argName);
       continue;
