@@ -451,7 +451,7 @@ fn gather[
             fn input_indices_get[unrolled_i: Int]():
                 if unrolled_i == int(axis):
                     data_indices[unrolled_i] = int(
-                        normalize_neg_index(data_index, input_shape[int(axis)])
+                        normalize_neg_index(data_index, input_shape[axis])
                     )
                 elif unrolled_i > int(axis):
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
@@ -599,7 +599,7 @@ async fn async_gather[
             fn input_indices_get[unrolled_i: Int]():
                 if unrolled_i == int(axis):
                     data_indices[unrolled_i] = int(
-                        normalize_neg_index(data_index, input_shape[int(axis)])
+                        normalize_neg_index(data_index, input_shape[axis])
                     )
                 elif unrolled_i > int(axis):
                     # Skip over any extra indices dimensions. These are essentially new dimensions.
