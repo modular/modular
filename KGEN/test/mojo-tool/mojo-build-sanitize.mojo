@@ -15,16 +15,16 @@
 # TODO: Mac requires using a non-apple clang, as our sanitizers are different.
 # UNSUPPORTED: darwin
 
-# RUN: not mojo build %mojo_cpu_build_arch %s --sanitize unknown -o %t 2>&1 | FileCheck %s --check-prefix=ERROR
+# RUN: not mojo build %s --sanitize unknown -o %t 2>&1 | FileCheck %s --check-prefix=ERROR
 
 # ERROR: error: invalid sanitizer 'unknown', expected one of: `address` or `thread`
 
 # Check that we have the expected sanitizer symbols in our built executables.
 
-# RUN: mojo build %mojo_cpu_build_arch %s --sanitize=address -o %t
+# RUN: mojo build %s --sanitize=address -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s --check-prefix=ASAN
 
-# RUN: mojo build %mojo_cpu_build_arch %s --sanitize thread -o %t
+# RUN: mojo build %s --sanitize thread -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s --check-prefix=TSAN
 
 # ASAN: __asan_init
