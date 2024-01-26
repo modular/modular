@@ -28,8 +28,10 @@ add_modular_unittest(
   TensorTest.cpp
   ModelCollectionTest.cpp
   AssertTest.cpp
+  ValueTest.cpp
 
   LINK_LIBS PRIVATE
+  GenericMLFormatYAML
   GenericMLSupport
   GenericMLSupportGlobals
   LLCLRuntime
