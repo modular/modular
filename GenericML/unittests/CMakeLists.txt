@@ -31,7 +31,6 @@ add_modular_unittest(
   ValueTest.cpp
 
   LINK_LIBS PRIVATE
-  GenericMLFormatYAML
   GenericMLSupport
   GenericMLSupportGlobals
   LLCLRuntime
