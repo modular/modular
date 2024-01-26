@@ -647,9 +647,9 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
         },
         [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
   }
-  if (dtype->isIndex()) {
-    // Cast to index like it's a 64-bit integer. Index-to-index cast is handled
-    // by the early exit above.
+  if (dtype->isIndex() || dtype->isAddress()) {
+    // Cast to index or address like it's a 64-bit integer. Index-to-index cast
+    // is handled by the early exit above.
     return foldSIMDOpResult<::detail::kNoIndex>(
         adaptor.getOperands(), *dtype,
         [](const APSInt &in) { return in.getSExtValue(); },
