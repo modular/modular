@@ -124,25 +124,6 @@ macro(_setup_debug_flags)
   endif()
 endmacro()
 
-# This function reads the cmake configuration and constructs the `-D` flags it
-# needs to pass in to Mojo and KGEN.
-macro(_setup_defines)
-  string(TOLOWER ${CMAKE_BUILD_TYPE} build_type)
-  string(TOLOWER ${MODULAR_KERNELS_BUILD_TYPE} kernels_build_type)
-  set(MOJO_DEFINES)
-  if (MODULAR_PARANOID)
-    list(APPEND MOJO_DEFINES "-D" "MODULAR_PARANOID")
-  endif()
-  if (MODULAR_RELEASE_PACKAGE_BUILD)
-    list(APPEND MOJO_DEFINES "-D" "MODULAR_RELEASE_PACKAGE_BUILD")
-  endif()
-  list(APPEND MOJO_DEFINES
-    "-D" "MODULAR_LLCL_MAX_PROFILING_LEVEL=${MODULAR_LLCL_MAX_PROFILING_LEVEL}")
-  list(APPEND MOJO_DEFINES
-    "-D" "BUILD_TYPE=${build_type}")
-  list(APPEND MOJO_DEFINES
-    "-D" "KERNELS_BUILD_TYPE=${kernels_build_type}")
-endmacro()
 
 # Add the necessary tool dependencies to the mojo-sdk target.
 add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
@@ -174,7 +155,6 @@ function(add_mojo_package target visibility)
                         "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
-  _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
 
@@ -229,7 +209,6 @@ function(add_mojo_package target visibility)
     OUTPUT ${package_file_name}
 
     COMMAND $<TARGET_FILE:mojo> package
-    ${MOJO_DEFINES}
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
     ${KGEN_SANITIZER_OPTIONS}
@@ -282,7 +261,6 @@ function(add_kgen_library target)
     ${ARGN})
 
   _setup_libs()
-  _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
 
@@ -300,7 +278,6 @@ function(add_kgen_library target)
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
-      ${MOJO_DEFINES}
       $<$<BOOL:${KGEN_DISABLE_PREBUILT_PACKAGES}>:-disable-prebuilt-packages>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${kgen_output_rel}
@@ -351,7 +328,6 @@ function(add_kgen_kernel target)
                         "KERNELS;DEPENDS;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
-  _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
 
@@ -366,7 +342,6 @@ function(add_kgen_kernel target)
     OUTPUT ${header_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
-    ${MOJO_DEFINES}
     -enable-search
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
@@ -395,7 +370,6 @@ function(add_kgen_kernel target)
     OUTPUT ${archive_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit
-    ${MOJO_DEFINES}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     -enable-search
     -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}

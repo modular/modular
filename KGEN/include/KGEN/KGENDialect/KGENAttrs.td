@@ -763,6 +763,10 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
     /// Parse a defines list and create the environment from that.
     static ErrorOr<EnvAttr> parseDefines(MLIRContext *ctx,
                                          ArrayRef<std::string> defines);
+
+    /// Extends the EnvAttr with another one. If the keys conflict, then the
+    /// extended value would take precedence.
+    EnvAttr extend(EnvAttr attr);
   }];
 }
 

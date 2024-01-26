@@ -1162,13 +1162,18 @@ bool KGEN::isTypeExprType(Type type) { return isa<TypeType>(type); }
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
-void KGEN::setModularEnvAttr(ModuleOp moduleOp) {
-  MLIRContext *ctx = moduleOp.getContext();
-
+KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
   NamedAttrList envAttrs;
+
+#ifdef MODULAR_RELEASE_PACKAGE_BUILD
+  envAttrs.set("MODULAR_RELEASE_PACKAGE_BUILD",
+               IntegerAttr::get(IndexType::get(ctx), 1));
+#endif // MODULAR_RELEASE_PACKAGE_BUILD
+
 #ifdef MODULAR_PARANOID
   envAttrs.set("MODULAR_PARANOID", IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_PARANOID
+
   envAttrs.set("BUILD_TYPE", StringAttr::get(STRINGIFY(BUILD_TYPE),
                                              KGEN::StringType::get(ctx)));
   envAttrs.set("KERNELS_BUILD_TYPE",
@@ -1177,8 +1182,22 @@ void KGEN::setModularEnvAttr(ModuleOp moduleOp) {
   envAttrs.set(
       "MODULAR_LLCL_MAX_PROFILING_LEVEL",
       IntegerAttr::get(IndexType::get(ctx), MODULAR_LLCL_MAX_PROFILING_LEVEL));
+
+  return KGEN::EnvAttr::get(envAttrs.getDictionary(ctx));
+}
+
+static KGEN::EnvAttr getModuleEnvAttr(ModuleOp moduleOp) {
+  if (moduleOp->hasAttrOfType<KGEN::EnvAttr>(KGEN::EnvAttr::getEnvAttrName()))
+    return moduleOp->getAttrOfType<KGEN::EnvAttr>(
+        KGEN::EnvAttr::getEnvAttrName());
+
+  return EnvAttr::get(DictionaryAttr::get(moduleOp.getContext()));
+}
+
+void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp) {
   moduleOp->setAttr(KGEN::EnvAttr::getEnvAttrName(),
-                    KGEN::EnvAttr::get(envAttrs.getDictionary(ctx)));
+                    KGEN::getModularEnvAttr(moduleOp.getContext())
+                        .extend(getModuleEnvAttr(moduleOp)));
 }
 
 //===----------------------------------------------------------------------===//

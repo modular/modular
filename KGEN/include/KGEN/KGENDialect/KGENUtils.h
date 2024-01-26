@@ -89,10 +89,16 @@ bool isTypeExprType(Type type);
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
 
-/// Sets a common Modular environment attribute (also known as `-D` defines) for
-/// the given module. This includes things like `MODULAR_PARANOID`,
+/// Gets the common Modular environment attribute (also known as `-D` defines)
+/// for the given module. This includes things like `MODULAR_PARANOID`,
 /// `BUILD_TYPE`, LLCL profiling level, etc.
-void setModularEnvAttr(ModuleOp moduleOp);
+EnvAttr getModularEnvAttr(MLIRContext *ctx);
+
+/// Extends the module EnvAttr with common Modular environment attribute (also
+/// known as `-D` defines) for the given module. This includes things like
+/// `MODULAR_PARANOID`, `BUILD_TYPE`, LLCL profiling level, etc. Note that the
+/// existing EnvAttr module values take precedence here.
+void extendWithModularEnvAttr(ModuleOp moduleOp);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
