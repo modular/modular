@@ -23,7 +23,7 @@ from memory.buffer import DynamicRankBuffer, NDBuffer
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
-alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
+alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
 ) capturing -> None
 

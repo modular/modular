@@ -10,7 +10,7 @@ from utils._optional import Optional
 
 from utils.index import Index
 from utils.list import Dim, DimList
-from MatmulUtils import elementwise_lambda_fn_sig_type
+from MatmulUtils import elementwise_epilogue_type
 
 
 # Parallelized version of Gemv
@@ -25,7 +25,7 @@ fn gemv[
     a_type: DType,
     b_size: Dim,
     b_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: Buffer[c_size, c_type],
     a_buf: NDBuffer[2, a_shape, a_type],

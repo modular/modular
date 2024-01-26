@@ -36,7 +36,7 @@ from MatmulUtils import (
     _get_tile_n_k,
     calculate_tile_n_k,
     dispatch_is_critical_stride,
-    elementwise_lambda_fn_sig_type,
+    elementwise_epilogue_type,
     get_min_task_size,
     get_packB_unroll_factor,
     get_partitioned_matmul,
@@ -2305,7 +2305,7 @@ fn _small_matmul[
     b_shape: DimList,
     c_shape: DimList,
     transpose_b: Bool,
-    epilogue_wrapper: Optional[elementwise_lambda_fn_sig_type],
+    epilogue_wrapper: Optional[elementwise_epilogue_type],
 ](
     a: NDBuffer[2, a_shape, type],
     b: NDBuffer[2, b_shape, type],
@@ -2444,7 +2444,7 @@ fn sgemm_warp_tiling_kernel[
     TM: Scalar[indexing_integral_dtype],
     TN: Scalar[indexing_integral_dtype],
     NUM_THREADS: Scalar[indexing_integral_dtype],
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[2, c_shape, c_type],
     mat_a: NDBuffer[2, a_shape, a_type],
@@ -2681,7 +2681,7 @@ fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: DTypePointer[c_type],
     a: DTypePointer[a_type],
@@ -2732,7 +2732,7 @@ fn gevm_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: DTypePointer[c_type],
     a: DTypePointer[a_type],
@@ -2792,7 +2792,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_ptr: DTypePointer[c_type],
     a_ptr: DTypePointer[a_type],
@@ -2904,7 +2904,7 @@ fn matmul_kernel_naive[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_ptr: DTypePointer[c_type],
     a_ptr: DTypePointer[a_type],
@@ -2946,7 +2946,7 @@ fn _matmul_gpu[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
@@ -3037,7 +3037,7 @@ fn _matmul_gpu_dispatch[
     c_type: DType,
     c_shape: DimList,
     indexing_integral_dtype: DType,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
@@ -3247,7 +3247,7 @@ fn _matmul_cpu[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
@@ -3416,7 +3416,7 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
@@ -3455,7 +3455,7 @@ fn _submatmul_sequential_sync[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
 ](
@@ -3527,7 +3527,7 @@ fn _submatmul_sequential_sync[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
     c: NDBuffer[2, c_shape, c_type],

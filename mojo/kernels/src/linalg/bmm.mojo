@@ -22,7 +22,7 @@ from MatmulUtils import (
     get_partitioned_matmul,
     is_critical_stride,
     partition_work,
-    elementwise_lambda_fn_sig_type as matmul_2d_epilogue_sig_type,
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
@@ -31,6 +31,10 @@ from runtime.llcl import Runtime
 from utils.index import StaticIntTuple
 from utils.list import DimList
 from utils._optional import Optional
+
+alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
+    StaticIntTuple[rank], SIMD[c_type, width]
+) capturing -> None
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -80,14 +84,11 @@ fn _reshape_nd_buffer_with_batch_to_3d[
 
 @always_inline
 fn _small_batched_matmul[
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: fn[c_type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
-    ) capturing -> None,
     rank: Int,
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -134,10 +135,9 @@ fn _small_batched_matmul[
                 out_type: DType, width: Int, r: Int
             ](i: StaticIntTuple[r], value: SIMD[out_type, width]):
                 @parameter
-                if elementwise_epilogue_enabled:
-                    elementwise_epilogue_fn[out_type, width, rank](
-                        indices, value
-                    )
+                if elementwise_epilogue_fn:
+                    alias func = elementwise_epilogue_fn.value()
+                    func[out_type, width, rank](indices, value)
                 else:
                     # This will store only once as it is a 1D reduction.
                     # Just use the original [B, B1,...,BN, 0, 0] indices.
@@ -199,7 +199,7 @@ fn _small_batched_matmul[
                     vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
 
             @parameter
-            if elementwise_epilogue_enabled:
+            if elementwise_epilogue_fn:
                 for m in range(M):
                     indices[rank - 2] = m
 
@@ -208,9 +208,8 @@ fn _small_batched_matmul[
                     fn apply_epilogue[width: Int](n: Int):
                         indices[rank - 1] = n
                         let val = c_buf.simd_load[width](indices)
-                        elementwise_epilogue_fn[c_type, width, rank](
-                            indices, val
-                        )
+                        alias func = elementwise_epilogue_fn.value()
+                        func[c_type, width, rank](indices, val)
 
                     vectorize_unroll[simd_width, 1, apply_epilogue](N)
 
@@ -225,12 +224,9 @@ fn batched_matmul[
     c_type: DType,
     adj_a: Bool,
     adj_b: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: fn[c_type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
-    ) capturing -> None,
-    saturated_vnni: Bool,
-    single_thread_blocking_override: Bool,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
@@ -246,67 +242,12 @@ fn batched_matmul[
         and target == "cpu"
     ):
         return _small_batched_matmul[
-            elementwise_epilogue_enabled, elementwise_epilogue_fn
+            rank,
+            a_type,
+            b_type,
+            c_type,
+            elementwise_epilogue_fn,
         ](c_buf, a_buf, b_buf)
-
-    fn null_rowwise_epilogue(
-        start_row: Int,
-        num_rows: Int,
-        c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    ):
-        pass
-
-    @parameter
-    if single_thread_blocking_override and target == "cpu":
-        # Any error thrown by this kernel will get swallowed by this chain.
-        # (It doesn't presently have any _mark_error_old's)
-        batched_matmul[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            adj_a,
-            adj_b,
-            elementwise_epilogue_enabled,
-            elementwise_epilogue_fn,
-            rowwise_epilogue_enabled=False,
-            saturated_vnni=saturated_vnni,
-            target=target,
-        ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
-    else:
-        batched_matmul[
-            rank,
-            a_type,
-            b_type,
-            c_type,
-            adj_a,
-            adj_b,
-            elementwise_epilogue_enabled,
-            elementwise_epilogue_fn,
-            rowwise_epilogue_enabled=False,
-            saturated_vnni=saturated_vnni,
-            target=target,
-        ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
-
-
-@always_inline
-fn batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
-](
-    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
-    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
-    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
-):
-    @parameter
-    fn null_elementwise_epilogue[
-        c_type: DType, width: Int, rank: Int
-    ](out_coords: StaticIntTuple[rank], out_val: SIMD[c_type, width]):
-        pass
 
     fn null_rowwise_epilogue(
         start_row: Int,
@@ -322,9 +263,10 @@ fn batched_matmul[
         c_type,
         adj_a,
         adj_b,
-        False,
-        null_elementwise_epilogue,
-        False,
+        elementwise_epilogue_fn,
+        rowwise_epilogue_enabled=False,
+        saturated_vnni=saturated_vnni,
+        target=target,
     ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
 
 
@@ -336,12 +278,9 @@ fn _batched_matmul_cpu[
     c_type: DType,
     adj_a: Bool,
     adj_b: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: fn[c_type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
-    ) capturing -> None,
-    rowwise_epilogue_enabled: Bool,
-    saturated_vnni: Bool,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    rowwise_epilogue_enabled: Bool = False,
+    saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -446,13 +385,16 @@ fn _batched_matmul_cpu[
                 # the caller provided the elementwise epilogue fn over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
-                var coords = _get_start_indices_of_nth_subvolume[rank, 2](
-                    batch, c_buf.get_shape()
-                )
-                coords[rank - 1] = out_coords[1]
-                coords[rank - 2] = out_coords[0]
+                @parameter
+                if elementwise_epilogue_fn:
+                    var coords = _get_start_indices_of_nth_subvolume[rank, 2](
+                        batch, c_buf.get_shape()
+                    )
+                    coords[rank - 1] = out_coords[1]
+                    coords[rank - 2] = out_coords[0]
 
-                elementwise_epilogue_fn[c_type, width, rank](coords, out_val)
+                    alias func = elementwise_epilogue_fn.value()
+                    func[c_type, width, rank](coords, out_val)
 
             fn rowwise_closure(start_row: Int, num_rows: Int):
                 rowwise_epilogue(start_row, num_rows, c_view)
@@ -476,9 +418,9 @@ fn _batched_matmul_cpu[
                 transpose_a=False,
                 transpose_b=adj_b,
                 b_packed=False,
-                elementwise_lambda_fn = Optional[matmul_2d_epilogue_sig_type](
-                    elementwise_lambda_2d
-                ) if elementwise_epilogue_enabled else None,
+                elementwise_lambda_fn = Optional[
+                    matmul_elementwise_epilogue_type
+                ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 rowwise_epilogue_enabled=rowwise_epilogue_enabled,
                 saturated_vnni=saturated_vnni,
             ](
@@ -493,48 +435,6 @@ fn _batched_matmul_cpu[
     sync_parallelize[task_func](num_tasks)
 
 
-@always_inline
-fn batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: fn[c_type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[c_type, width]
-    ) capturing -> None,
-    rowwise_epilogue_enabled: Bool,
-    target: StringLiteral = "cpu",
-](
-    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
-    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
-    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
-    rowwise_epilogue: fn (
-        Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
-    ) escaping -> None,
-):
-    constrained[target == "cpu", "only valid on CPUs"]()
-    batched_matmul[
-        rank,
-        a_type,
-        b_type,
-        c_type,
-        adj_a,
-        adj_b,
-        elementwise_epilogue_enabled,
-        elementwise_epilogue_fn,
-        rowwise_epilogue_enabled,
-        saturated_vnni=False,
-    ](c_buf, a_buf, b_buf, rowwise_epilogue)
-
-
-alias bmm_epilogue_sig_type = fn[c_type: DType, width: Int, rank: Int] (
-    StaticIntTuple[rank], SIMD[c_type, width]
-) capturing -> None
-
-
 fn batched_matmul_kernel[
     rank: Int,
     c_type: DType,
@@ -543,7 +443,7 @@ fn batched_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    elementwise_lambda_fn: Optional[bmm_epilogue_sig_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buff: NDBuffer[3, c_shape, c_type],
     a_buff: NDBuffer[3, a_shape, a_type],
@@ -586,10 +486,9 @@ fn _batched_matmul_gpu[
     c_type: DType,
     adj_a: Bool,
     adj_b: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: bmm_epilogue_sig_type,
-    rowwise_epilogue_enabled: Bool,
-    saturated_vnni: Bool,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    rowwise_epilogue_enabled: Bool = False,
+    saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -654,10 +553,9 @@ fn batched_matmul[
     c_type: DType,
     adj_a: Bool,
     adj_b: Bool,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: bmm_epilogue_sig_type,
-    rowwise_epilogue_enabled: Bool,
-    saturated_vnni: Bool,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    rowwise_epilogue_enabled: Bool = False,
+    saturated_vnni: Bool = False,
     target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
@@ -676,7 +574,6 @@ fn batched_matmul[
         c_type,
         adj_a,
         adj_b,
-        elementwise_epilogue_enabled,
         elementwise_epilogue_fn,
         rowwise_epilogue_enabled,
         saturated_vnni,
