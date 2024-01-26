@@ -23,7 +23,6 @@ class Chain;
 class EncodedLocation;
 class EncodedDiagnostic;
 class LocationDecoder;
-class GenericUniquePtrSet;
 
 // LLCL/Runtime Declarations
 class Allocator;
@@ -44,7 +43,6 @@ namespace M {
 using LLCL::Chain;
 using LLCL::EncodedDiagnostic;
 using LLCL::EncodedLocation;
-using LLCL::GenericUniquePtrSet;
 using LLCL::LocationDecoder;
 
 // LLCL/Runtime Declarations

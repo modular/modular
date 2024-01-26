@@ -15,4 +15,10 @@ add_modular_unittest(
   SupportADTTests
 
   SmartVariantTest.cpp
+  GenericRCRefTest.cpp
+  GenericUniquePtrTest.cpp
+
+  LINK_LIBS PRIVATE
+  MSupport
+  MSupportGlobals
 )

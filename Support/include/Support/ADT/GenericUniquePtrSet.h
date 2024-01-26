@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_GENERICUNIQUEPTRSET_H
-#define LLCL_SUPPORT_GENERICUNIQUEPTRSET_H
+#ifndef SUPPORT_ADT_GENERICUNIQUEPTRSET_H
+#define SUPPORT_ADT_GENERICUNIQUEPTRSET_H
 
-#include "LLCL/Support/GenericUniquePtr.h"
+#include "Support/ADT/GenericUniquePtr.h"
 
 #include "Support/ErrorOr.h"
 #include "Support/ReferenceCounted.h"
@@ -15,7 +15,7 @@
 
 #include <mutex>
 
-namespace M::LLCL {
+namespace M {
 
 /// A set of type-erased GenericUniquePts. Pointers may be added and retrieved.
 /// The set may contain at most one pointer per concrete pointer type.
@@ -120,6 +120,6 @@ class SharedGenericUniquePtrSet
       public ReferenceCounted<SharedGenericUniquePtrSet> {};
 using GenericUniquePtrSetRef = RCRef<SharedGenericUniquePtrSet>;
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_GENERICUNIQUEPTRSET_H
+#endif // SUPPORT_ADT_GENERICUNIQUEPTRSET_H

@@ -4,13 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Support/GenericRCRef.h"
+#include "Support/ADT/GenericRCRef.h"
 #include "Support/ReferenceCounted.h"
 
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace M::LLCL;
 
 namespace {
 struct TypeA : public ReferenceCounted<TypeA> {
