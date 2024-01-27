@@ -18,11 +18,21 @@ alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
 
 @value
 @register_passable("trivial")
+struct AllocatorType:
+    var value: Int32
+    # This needs to map M_AllocatorType enum on the c++ side.
+    alias CACHING = Int32(0)
+    alias SYSTEM = Int32(1)
+
+
+@value
+@register_passable("trivial")
 struct CRuntimeConfig:
     var ptr: DTypePointer[DType.invalid]
 
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
     alias SetNumThreadsFnName = "M_setNumThreads"
+    alias SetAllocatorTypeFnName = "M_setAllocatorType"
     alias SetDeviceFnName = "M_setDevice"
 
     fn set_num_threads(self, lib: DLHandle, num_threads: Int):
@@ -33,6 +43,11 @@ struct CRuntimeConfig:
 
     fn set_device(self, borrowed lib: DLHandle, device: StringRef):
         call_dylib_func(lib, Self.SetDeviceFnName, self, device.data, 0)
+
+    fn set_allocator_type(
+        self, borrowed lib: DLHandle, allocator_type: AllocatorType
+    ):
+        call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
 
 
 struct RuntimeConfig:
@@ -46,6 +61,7 @@ struct RuntimeConfig:
         lib: DLHandle,
         device: StringRef = "cpu",
         num_threads: Optional[Int] = None,
+        allocator_type: AllocatorType = AllocatorType.SYSTEM,
     ):
         self.ptr = call_dylib_func[CRuntimeConfig](
             lib, Self.NewRuntimeConfigFnName
@@ -53,6 +69,8 @@ struct RuntimeConfig:
         if num_threads:
             self.ptr.set_num_threads(lib, num_threads.value())
         self.lib = lib
+
+        self.ptr.set_allocator_type(self.lib, allocator_type)
 
         @parameter
         if MODULAR_RELEASE_PACKAGE_BUILD:
