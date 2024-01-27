@@ -60,7 +60,7 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
-    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$params,
     ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
@@ -85,6 +85,7 @@ def LIT_FuncOp : LITOp<"func", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
+    ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
@@ -121,7 +122,7 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
-    SmallVector<ParamDeclAttr> collectAllInputParams(bool includeImplLifetimes);
+    SmallVector<ParamDeclAttr> collectAllParams(bool includeImplLifetimes);
 
     /// Return whether the function is compiler generated or not.
     bool isSynthetic();
@@ -404,7 +405,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
-    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
     TypeLineageArrayAttr:$parentTypes,
     UnitAttr:$isSynthetic,
@@ -420,7 +421,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name ``
-    custom<StructParameterSpec>($inputParams, $signature, $parentTypes)
+    custom<StructParameterSpec>($params, $signature, $parentTypes)
     custom<TypeConvention>($convention) attr-dict-with-keyword
     custom<OptionalDecorators>($decorators) $fields
   }];
@@ -431,8 +432,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     auto field_begin() { return getFieldDecls().begin(); }
     auto field_end() { return getFieldDecls().end(); }
 
-    /// Struct declarations have no result parameters.
+    /// Struct declarations just have input parameters.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+    ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
 
     TypeConvention getConvention() { return getProperties().convention; }
     void setConvention(TypeConvention value) {
@@ -644,7 +646,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
-    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString
@@ -654,12 +656,13 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
 
   let assemblyFormat = [{
     $sym_name ``
-    custom<StructParameterSpec>($inputParams, $signature, $parentTypes)
+    custom<StructParameterSpec>($params, $signature, $parentTypes)
     attr-dict-with-keyword $fields
   }];
 
   let extraClassDeclaration = [{
-    /// Trait declarations have no result parameters.
+    /// Trait declarations only have input parameters.
+    ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
     /// Get a bound reference to the Trait type.

@@ -452,29 +452,29 @@ ParseResult ParsedParamSignature::parseOptionalParameterSignature(
 }
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
-/// add the parameter declarations to the function input parameters.
+/// add the parameter declarations to the function parameters.
 static ASTType
 addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
                       const ParsedArgument &arg,
-                      SmallVectorImpl<StringAttr> &inputParamNames,
-                      SmallVectorImpl<PassingKind> &inputParamPassingKinds,
-                      SmallVectorImpl<ParamDeclAttr> &inputParamDecls) {
+                      SmallVectorImpl<StringAttr> &paramNames,
+                      SmallVectorImpl<PassingKind> &paramPassingKinds,
+                      SmallVectorImpl<ParamDeclAttr> &paramDecls) {
   // Check if the type has unbound parameters.
   auto metatype = dyn_cast_or_null<MetaTypeType>(type.getMetaType());
   if (!metatype)
     return type;
-  ArrayRef<Type> inputParams = metatype.getSignature().getInputParamTypes();
-  if (inputParams.empty())
+  ArrayRef<Type> params = metatype.getSignature().getParamTypes();
+  if (params.empty())
     return type;
 
   SmallVector<TypedAttr> paramValues;
-  for (Type type : inputParams) {
+  for (Type type : params) {
     auto funcDecl = ParamDeclAttr::get(
         declScope.getUniqueParamNameNew(arg.name, /*isUserDefinedDecl=*/false),
         type);
-    inputParamNames.push_back(StringAttr::get(type.getContext()));
-    inputParamPassingKinds.push_back(PassingKind::Implicit);
-    inputParamDecls.push_back(funcDecl);
+    paramNames.push_back(StringAttr::get(type.getContext()));
+    paramPassingKinds.push_back(PassingKind::Implicit);
+    paramDecls.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
   }
   return BindTypeAttr::get(PValue(type), paramValues);
@@ -482,12 +482,11 @@ addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
 
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
-    SmallVectorImpl<StringAttr> &inputParamNames,
-    SmallVectorImpl<PassingKind> &inputParamPassingKinds,
-    SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-    const ExprNode *resultTypeExpr, FnEffects &effects,
-    SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-    SmallVectorImpl<TypedAttr> &defaultPosArgs,
+    SmallVectorImpl<StringAttr> &paramNames,
+    SmallVectorImpl<PassingKind> &paramPassingKinds,
+    SmallVectorImpl<ParamDeclAttr> &paramDecls, const ExprNode *resultTypeExpr,
+    FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
+    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaultPosArgs,
     SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef, SMLoc resultLoc,
     ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
   SharedState &shared = typeEmitter.shared;
@@ -521,8 +520,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     ASTType type;
     if (arg.typeExpr) {
       // Emit the argument type. Allow argument types to be "automatically"
-      // parameterized: if the type is fully unbound, its input parameters are
-      // appended to the function input parameters.
+      // parameterized: if the type is fully unbound, its parameters are
+      // appended to the function parameters.
       type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
 
       // If the type couldn't be emitted, mark this argument erroneous (so uses
@@ -535,8 +534,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         type = shared.getTypeCheckErrorType();
         arg.isErroneous = true;
       }
-      type = addImplicitTypeParams(shared, sigDecl, type, arg, inputParamNames,
-                                   inputParamPassingKinds, inputParamDecls);
+      type = addImplicitTypeParams(shared, sigDecl, type, arg, paramNames,
+                                   paramPassingKinds, paramDecls);
     } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
       // If this is the 'self' argument in a struct, default the type to Self.
       type = selfType;

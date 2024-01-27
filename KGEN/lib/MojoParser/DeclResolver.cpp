@@ -284,7 +284,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 
         LITSignatureType declSignature = declOp.getFullSignature();
         LITSignatureType existingSignature = existingOp.getFullSignature();
-        // If the value input types match exactly *and* the input parameter
+        // If the value input types match exactly *and* the parameter
         // types match exactly, then we don't want to merge this decl into the
         // set. We also need to remove the by-ref result type from the
         // input types, so that aliasing is strictly based on the actual
@@ -304,8 +304,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 
         if (getActualValueInputs(declSignature) ==
                 getActualValueInputs(existingSignature) &&
-            declSignature.getInputParamTypes() ==
-                existingSignature.getInputParamTypes())
+            declSignature.getParamTypes() == existingSignature.getParamTypes())
           return false;
 
         // We can merge the decl into the set.
@@ -702,7 +701,7 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
   LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
-  SignatureType userMainSignature = userMainFn.getSignature();
+  LITSignatureType userMainSignature = userMainFn.getSignature();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
   Location loc = userMainFn.getLoc();
 
@@ -718,7 +717,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   MainKind mainKind = kNonRaisingNoneMain;
 
   // Validate that main has the expected signature.
-  if (!userMainSignature.getInputParamTypes().empty() ||
+  if (!userMainSignature.getParamTypes().empty() ||
       !userMainSignature.getResultParamTypes().empty()) {
     shared.emitError(loc, "expected 'main' function to have no parameters");
     return;
@@ -820,7 +819,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   FuncOp mainWrapperFn = cast<FuncOp>(*mainWrapperDecl);
 
   // Generate a reference to the main wrapper function, which expects the user
-  // main to be provided via an input parameter.
+  // main to be provided via an parameter.
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
       {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
@@ -842,17 +841,17 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 // Decl Helpers
 
 StringAttr DeclResolver::getMangledName(StringAttr baseName,
-                                        SignatureType signature) {
+                                        LITSignatureType signature) {
   // TODO(#16040): Struct names mangled into the signature should be parameter
   // name-erased.
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
   llvm::raw_svector_ostream os(mangledName);
-  ArrayRef<Type> inputParams = signature.getInputParamTypes();
-  if (!inputParams.empty()) {
+  ArrayRef<Type> params = signature.getParamTypes();
+  if (!params.empty()) {
     os << '[';
     llvm::interleave(
-        inputParams, os,
+        params, os,
         [&](ASTType type) {
           os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
         },

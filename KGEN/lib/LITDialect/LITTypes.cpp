@@ -217,7 +217,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   TypeSignatureType sig = getSignature();
-  auto sigRange = llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
+  auto sigRange = llvm::enumerate(sig.getParamTypes(), sig.getParamNames(),
                                   sig.getParamPassingKinds());
   auto sigIt = sigRange.begin();
 
@@ -619,7 +619,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     p << '[' << numLifetimeDecls << ']';
 
   printOptionalParamSignature(
-      p, signature.getInputParamTypes(), signature.getResultParamTypes(),
+      p, signature.getParamTypes(), /*no result params*/ {},
       signature.getParamNames(), signature.getParamPassingKinds(),
       signature.getDefaultPosParams(), signature.getDefaultKwOnlyParams());
 
@@ -714,8 +714,8 @@ LITSignatureType LITSignatureType::dropParamValues() {
                           getDefaultPosArgs(), /*defaultPosParams=*/{},
                           getDefaultKwOnlyArgs(), /*defaultKwOnlyParams=*/{},
                           /*numImplicitLifetimeDecls=*/0);
-  return get(getValues(), /*inputParamTypes=*/{}, getResultParamTypes(),
-             getInputConventions(), getFnEffects(), metadata);
+  return get(getValues(), /*inputParamTypes=*/{}, getInputConventions(),
+             getFnEffects(), metadata);
 }
 
 FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
@@ -770,8 +770,8 @@ SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
       lifetimes,
       []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
 
-  return SignatureType::get(newFnType, getInputParamTypes(),
-                            getResultParamTypes(), getInputConventions(),
+  return SignatureType::get(newFnType, getParamTypes(),
+                            /*no result params*/ {}, getInputConventions(),
                             getFnEffects());
 }
 
@@ -856,20 +856,18 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
   SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
   auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds,
                                       numImplicitLifetimeDecls);
-  return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
-                               /*resultParamTypes=*/{},
+  return LITSignatureType::get(funcType, /*paramTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
 }
 
 LITSignatureType LITSignatureType::get(FunctionType values,
-                                       ArrayRef<Type> inputParamTypes,
-                                       ArrayRef<Type> resultParamTypes,
+                                       ArrayRef<Type> paramTypes,
                                        ArrayRef<ValueInputConvention> convs,
                                        FnEffects effects,
                                        FnMetadataAttr metadata) {
   assert(metadata && "LITSignatureType must have non-null metadata");
   assert(countImplicitLifetimes(convs) ==
          metadata.getNumImplicitLifetimeDecls());
-  return SignatureType::get(values, inputParamTypes, resultParamTypes, convs,
+  return SignatureType::get(values, paramTypes, /*resultParamTypes=*/{}, convs,
                             effects, metadata);
 }

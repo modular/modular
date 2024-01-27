@@ -85,7 +85,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   if (func.getInlineLevel() == InlineLevel::Automatic)
     return Error("function is not always_inline");
   LITSignatureType fullSig = func.getFullSignature();
-  if (!fullSig.getInputParamTypes().empty() ||
+  if (!fullSig.getParamTypes().empty() ||
       !fullSig.getResultParamTypes().empty())
     return Error("function is parametric");
 

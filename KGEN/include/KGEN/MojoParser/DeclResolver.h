@@ -208,7 +208,7 @@ public:
 
   /// Create a name from a signature by appending argument types into the name.
   static StringAttr getMangledName(StringAttr baseName,
-                                   SignatureType signature);
+                                   LITSignatureType signature);
 
   /// Given a fully resolved signature, compute the final types and KGEN input
   /// conventions of the arguments. This function also ensures that self
@@ -220,7 +220,7 @@ public:
 
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with
-  /// no external references by inserting an input parameter for every captured
+  /// no external references by inserting an parameter for every captured
   /// parameter declaration. Return the captured parameter references.
   static std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
   createSelfContainedSignature(LITSignatureType original);

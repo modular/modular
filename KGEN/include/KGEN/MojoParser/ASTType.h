@@ -70,10 +70,10 @@ public:
   /// binding set - incomplete bindings (missing bindings) are valid.
   ArrayRef<TypedAttr> getParamBindings() const;
 
-  /// Get the types of any unbound input parameters of the type.
-  ArrayRef<Type> getInputParameters() const;
+  /// Get the types of any unbound parameters of the type.
+  ArrayRef<Type> getParameters() const;
 
-  /// Get the default values for the unbound input parameters of the type.
+  /// Get the default values for the unbound parameters of the type.
   ArrayRef<TypedAttr> getDefaultPosParams() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to

@@ -740,7 +740,7 @@ void LowerLITTypesPass::runOnOperation() {
       structDecls.decls.insert(
           {structOp.getNameAttr(),
            {structOp.getSourceNameAttr(), std::move(fields),
-            structOp.getInputParamsAttr(), structOp.isRegisterPassable()}});
+            structOp.getParamsAttr(), structOp.isRegisterPassable()}});
       analysis.getTopLevelSymbolTable().erase(structOp);
     } else if (isa<TraitDeclOp>(op)) {
       analysis.getTopLevelSymbolTable().erase(&op);

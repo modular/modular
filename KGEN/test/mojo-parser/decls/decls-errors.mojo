@@ -46,7 +46,7 @@ fn testThingWithStaticMethod():
 
 
 def top_level_fn(a: Int):
-    # expected-error @below {{TODO: closures cannot have input parameters}}
+    # expected-error @below {{TODO: closures cannot have parameters}}
     fn bar[b: Int]() -> Int:
       return a
 
@@ -173,15 +173,15 @@ fn badCalls(arg: Int):
 
   # FIXME(#11803): These diagnostics could be improved.
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
+  # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
   parameterizedVariadic()
   # expected-error @+1 {{could not deduce parameter #0 ('T') of parent struct ParameterizedStruct}}
   let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
-  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
+  # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
   parameterizedVariadic(1, 2.0)
 
-  # expected-error @below {{callee expects 3 input parameters, but 2 were specified}}
+  # expected-error @below {{callee expects 3 parameters, but 2 were specified}}
   TestTuple[Int, Float32]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
@@ -258,7 +258,7 @@ fn badPackCalls(value: Int):
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
   examplePack(packArgOverload)
-  # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 input parameters, but 0 were specified}}
+  # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 parameters, but 0 were specified}}
   first_and_rest(value)
 
 ##===----------------------------------------------------------------------===##
@@ -661,7 +661,7 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 input parameter, but 0 were specified}}
+  x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 parameter, but 0 were specified}}
 
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
@@ -699,7 +699,7 @@ fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
     pass
 
 fn dont_crash_pvalue_convert(x: CFMStructFail):
-    trait_fn_infer(x) # expected-error {{invalid call to 'trait_fn_infer': callee expects 1 input parameter, but 0 were specified}}
+    trait_fn_infer(x) # expected-error {{invalid call to 'trait_fn_infer': callee expects 1 parameter, but 0 were specified}}
 
 trait GrandFather: # expected-note {{trait 'GrandFather' declared here}}
     fn foo(self): # expected-note {{required function 'foo' is not implemented}}

@@ -70,29 +70,27 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
 }
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
-                                 ArrayRef<ParamDeclAttr> inputParams) {
+                                 ArrayRef<ParamDeclAttr> params) {
   OpBuilder b(module.getRegion());
-  SmallVector<StringAttr> inputParamNames(inputParams.size(),
-                                          StringAttr::get(b.getContext()));
+  SmallVector<StringAttr> paramNames(params.size(),
+                                     StringAttr::get(b.getContext()));
   // TODO: The type may contain decl references that need to be remapped.
-  SmallVector<PassingKind> passingKinds(inputParams.size(),
-                                        PassingKind::PosOnly);
+  SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
 
   StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), nameAttr);
   declOp.setIsSynthetic(true);
 
   // Set attributes in bulk.
   NamedAttrList attrs = declOp->getAttrDictionary();
-  attrs.set(declOp.getInputParamsAttrName(),
-            b.getAttr<ParamDeclArrayAttr>(inputParams));
-  SmallVector<Type> inputParamTypes = llvm::map_to_vector(
-      inputParams, [](ParamDeclAttr decl) { return decl.getType(); });
+  attrs.set(declOp.getParamsAttrName(), b.getAttr<ParamDeclArrayAttr>(params));
+  SmallVector<Type> paramTypes = llvm::map_to_vector(
+      params, [](ParamDeclAttr decl) { return decl.getType(); });
   auto sig = TypeSignatureType::remapToSignature(
       [&]() -> InFlightDiagnostic {
         llvm_unreachable("unexpected invalid signature");
       },
-      ParamDeclArrayAttr::get(b.getContext(), inputParams), inputParamNames,
-      passingKinds, /*defaultPosParams=*/{}, /*defaultKwOnlyParams=*/{},
+      ParamDeclArrayAttr::get(b.getContext(), params), paramNames, passingKinds,
+      /*defaultPosParams=*/{}, /*defaultKwOnlyParams=*/{},
       /*paramVarArg=*/false);
   attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
   declOp->setAttrs(attrs.getDictionary(module.getContext()));
@@ -147,9 +145,8 @@ static LITSignatureType addClosureSelfArgToFunctionSignature(
       callMemberArgNames, callMemberArgPassingKinds);
   return SignatureType::get(
       FunctionType::get(ctx, callMemberSignatureInputs, sig.getValueResults()),
-      sig.getInputParamTypes(), sig.getResultParamTypes(),
-      callMemberInputConventions, sig.getFnEffects().setEscaping(false),
-      metadata);
+      sig.getParamTypes(), /*no result params*/ {}, callMemberInputConventions,
+      sig.getFnEffects().setEscaping(false), metadata);
 }
 
 /// ```mojo
@@ -228,7 +225,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   Value fnPtr = b.create<POP::PointerBitcastOp>(
       fnPtrType, callImpl.getArgument(fnPtrType.hasMemoryOnlyResult()));
   SmallVector<TypedAttr> lifetimes;
-  for (ParamDeclAttr lifetimeDecl : callImpl.getInputParams())
+  for (ParamDeclAttr lifetimeDecl : callImpl.getParams())
     lifetimes.push_back(ParamDeclRefAttr::get(lifetimeDecl));
   SmallVector<Value> callArgs;
   llvm::append_range(callArgs, callImpl.getArguments());
@@ -256,7 +253,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   ParameterEvaluator evaluator;
   SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
-       llvm::enumerate(dependentSignatureType.getInputParamTypes())) {
+       llvm::enumerate(dependentSignatureType.getParamTypes())) {
     wrapperDecls.push_back(
         ParamDeclAttr::get(StringAttr::get(getContext(), "p" + Twine(i)),
                            evaluator.getReboundType(type)));
@@ -459,7 +456,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // closure struct.
   FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
   wrapperSig = nestedFn.getSignature();
-  if (wrapperSig.getNumInputParams()) {
+  if (wrapperSig.getNumParams()) {
     shared.emitError(
         location,
         "add parameters of nested function to parent function and capture "
@@ -818,31 +815,30 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // parameter references captured only in the body to the signature of the
   // constructor. Pass the ones captured in the signature from the wrapper to
   // the impl type.
-  SmallVector<TypedAttr> totalInputParams;
+  SmallVector<TypedAttr> totalParams;
   SmallVector<TypedAttr> wrapperParams;
   SmallVector<ParamDeclAttr> initParams;
   // We know from the walk order that the first N impl parameters are the
   // wrapper parameters.
-  ArrayRef<ParamDeclAttr> wrapperParamDecls = closureWrapper.getInputParams();
+  ArrayRef<ParamDeclAttr> wrapperParamDecls = closureWrapper.getParams();
   for (ParamDeclAttr param : wrapperParamDecls) {
     auto ref = ParamDeclRefAttr::get(param);
-    totalInputParams.push_back(ref);
+    totalParams.push_back(ref);
     wrapperParams.push_back(ref);
   }
   for (ParamDeclAttr param :
-       closureImpl.getInputParams().drop_front(wrapperParamDecls.size())) {
-    totalInputParams.push_back(ParamDeclRefAttr::get(param));
+       closureImpl.getParams().drop_front(wrapperParamDecls.size())) {
+    totalParams.push_back(ParamDeclRefAttr::get(param));
     initParams.push_back(param);
   }
 
   // Bind the impl struct to the declared parameters.
-  ASTType closureImplType =
-      makeClosureImplSelfType(closureImpl, totalInputParams);
+  ASTType closureImplType = makeClosureImplSelfType(closureImpl, totalParams);
   auto closureImplRefType =
       closureImplType.getRefForArgument("existing", /*mut=*/true);
 
-  SmallVector<PassingKind> paramPassingKinds(
-      closureImpl.getInputParams().size(), PassingKind::PosOnly);
+  SmallVector<PassingKind> paramPassingKinds(closureImpl.getParams().size(),
+                                             PassingKind::PosOnly);
 
   // Create unique names for parameters.
   if (auto init = findInitInStruct(closureWrapper, closureImplRefType))
@@ -900,7 +896,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
                        Type fieldType) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(
-        ParameterExprArrayAttr::get(ctx, totalInputParams));
+        ParameterExprArrayAttr::get(ctx, totalParams));
     if (funcSymbol.getType() != fieldType)
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
     auto createClosure =
@@ -910,33 +906,33 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   // Create the top level copy constructor.
   // The copy constructor takes the Wrapper instance and the impl of the other.
-  SmallVector<ParamDeclAttr> topLevelInputParams;
-  for (TypedAttr param : totalInputParams) {
+  SmallVector<ParamDeclAttr> topLevelParams;
+  for (TypedAttr param : totalParams) {
     auto declRef = cast<ParamDeclRefAttr>(param);
-    topLevelInputParams.push_back(ParamDeclAttr::get(declRef));
+    topLevelParams.push_back(ParamDeclAttr::get(declRef));
   }
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
-      generateName("_copyinit_"), topLevelInputParams, paramPassingKinds,
+      generateName("_copyinit_"), topLevelParams, paramPassingKinds,
       {opaquePtrType}, {ValueInputConvention::OwnedInReg}, {otherName},
       {PassingKind::PosOnly}, opaquePtrType, SpecialFunctionKind::kNormal, loc,
       builder);
 
-  SmallVector<TypedAttr> topLevelInputParamRefs;
-  for (auto [i, p] : llvm::enumerate(totalInputParams))
-    topLevelInputParamRefs.push_back(
-        ParamDeclRefAttr::get(topLevelCopyInit.getInputParams()[i]));
+  SmallVector<TypedAttr> topLevelParamRefs;
+  for (auto [i, p] : llvm::enumerate(totalParams))
+    topLevelParamRefs.push_back(
+        ParamDeclRefAttr::get(topLevelCopyInit.getParams()[i]));
   auto closureImplTopLevelType =
-      makeClosureImplSelfType(closureImpl, topLevelInputParamRefs);
+      makeClosureImplSelfType(closureImpl, topLevelParamRefs);
   auto closureImplTopLevelPtrType = PointerType::get(closureImplTopLevelType);
 
   // Populate copy init body.
   {
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(),
                                                topLevelCopyInit.getBody());
-    SmallVector<PassingKind> paramPassingKinds(topLevelInputParams.size(),
+    SmallVector<PassingKind> paramPassingKinds(topLevelParams.size(),
                                                PassingKind::PosOnly);
     Block *body = topLevelCopyInit.getBody();
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -975,10 +971,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelDtor = createFunction(
-      generateName("_dtor_"), topLevelInputParams, paramPassingKinds,
-      opaquePtrType, ValueInputConvention::OwnedInReg, selfName,
-      PassingKind::PosOnly, noneType, SpecialFunctionKind::kNormal, loc,
-      builder);
+      generateName("_dtor_"), topLevelParams, paramPassingKinds, opaquePtrType,
+      ValueInputConvention::OwnedInReg, selfName, PassingKind::PosOnly,
+      noneType, SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.
   {
@@ -1021,7 +1016,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       opaquePtrType, ValueInputConvention::BorrowedInReg, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
   closureSignature = closureSignature.getSpecializedSignature(
-      ArrayRef(topLevelInputParamRefs).take_front(wrapperParamDecls.size()),
+      ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),
       translateLocation(loc));
 
   Type resultType = closureSignature.getValueResults().front();
@@ -1029,7 +1024,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
-      generateName("_call_"), topLevelInputParams, paramPassingKinds,
+      generateName("_call_"), topLevelParams, paramPassingKinds,
       closureSignature.getValueInputs(), closureSignature.getInputConventions(),
       closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
       resultType, SpecialFunctionKind::kNormal, loc, builder,
@@ -1072,8 +1067,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
          i < e; ++i)
       args.push_back(topLevelCall.getArgument(i));
 
-    SymbolConstantAttr typedSymbol =
-        createTypedSymbol(symbol, topLevelInputParams);
+    SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, topLevelParams);
 
     SmallVector<TypedAttr> implicitLifetimes;
     auto finalSig = cast<SignatureType>(typedSymbol.getType());

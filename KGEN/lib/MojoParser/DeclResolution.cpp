@@ -695,7 +695,7 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
 static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
-                                 ArrayRef<ParamDeclAttr> inputParamDecls) {
+                                 ArrayRef<ParamDeclAttr> paramDecls) {
   // Any function that contains a capturing closure as a parameter is itself
   // capturing, include parent struct parameters.
   mlir::AttrTypeWalker walker;
@@ -705,8 +705,8 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
     return WalkResult::advance();
   });
   return llvm::any_of(
-      llvm::concat<const ParamDeclAttr>(
-          inputParamDecls, parent ? parent.getInputParams() : std::nullopt),
+      llvm::concat<const ParamDeclAttr>(paramDecls, parent ? parent.getParams()
+                                                           : std::nullopt),
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
@@ -1009,7 +1009,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
-  auto inputParamsAttr =
+  auto paramsArrayAttr =
       builder.getAttr<ParamDeclArrayAttr>(paramSignature.paramDeclAttrs);
 
   // Compute the signature of the function.
@@ -1021,7 +1021,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       paramSignature.defaultPosParams, defaultKwOnlyArgs,
       paramSignature.defaultKwOnlyParams, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParamsAttr, {}, functionType, inputConventions, effects, metadata,
+      paramsArrayAttr, {}, functionType, inputConventions, effects, metadata,
       silenceErrors(getContext()));
   if (!signature)
     return failure();
@@ -1034,15 +1034,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // The implicitLifetimeDecls don't affect the signature, but they do get
-  // prepended onto the inputParamDecls list.
+  // prepended onto the paramDecls list.
   if (!implicitLifetimeDecls.empty()) {
-    SmallVector<ParamDeclAttr> mergedInputParams(implicitLifetimeDecls.begin(),
-                                                 implicitLifetimeDecls.end());
-    llvm::append_range(mergedInputParams, paramSignature.paramDeclAttrs);
-    inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(mergedInputParams);
+    SmallVector<ParamDeclAttr> mergedParams(implicitLifetimeDecls.begin(),
+                                            implicitLifetimeDecls.end());
+    llvm::append_range(mergedParams, paramSignature.paramDeclAttrs);
+    paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
   }
 
-  attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
+  attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
@@ -1113,7 +1113,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
           !shared.getCaptureRangeInScope(decl).empty()) {
         if (!paramSignature.paramDeclAttrs.empty())
           return emitError(funcOp.getLoc(),
-                           "TODO: closures cannot have input parameters");
+                           "TODO: closures cannot have parameters");
 
         // Emit closure structures necessary for instantiating an escaping
         // closure
@@ -1807,11 +1807,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
 
-  auto inputParams =
+  auto paramsArrayAttr =
       ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
-  structOp.setInputParamsAttr(inputParams);
+  structOp.setParamsAttr(paramsArrayAttr);
   auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), inputParams, paramSignature.names,
+      silenceErrors(getContext()), paramsArrayAttr, paramSignature.names,
       paramSignature.passingKinds, paramSignature.defaultPosParams,
       paramSignature.defaultKwOnlyParams, paramSignature.isVarArgs);
   if (!sig)
@@ -2092,12 +2092,12 @@ static void processRegisterPassableDecorator(
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<LITSignatureType, InputParamBindings>
+static std::pair<LITSignatureType, ParamBindings>
 getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
                           ASTType structSelfType) {
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
-  ArrayRef<Type> inputParamTypes = signature.getInputParamTypes();
+  ArrayRef<Type> paramTypes = signature.getParamTypes();
 
   // Add trait's MT replacement.
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
@@ -2107,9 +2107,9 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
   ParameterEvaluator evaluator(params);
-  auto bindings = InputParamBindings::getForDeclaredType(
+  auto bindings = ParamBindings::getForDeclaredType(
       emitter.declScope, emitter.shared, structSelfType.getMetaType());
-  for (Type type : inputParamTypes.drop_front(2)) {
+  for (Type type : paramTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
     bindings.addPrechecked(params.back());
@@ -2194,8 +2194,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
 
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
-      traitSig.getInputParamTypes(), traitSig.getResultParamTypes(),
-      conventions, fnEffects,
+      traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
+      fnEffects,
       FnMetadataAttr::get(
           traitSig.getContext(),
           traitSig.getArgNames().drop_front(replacedResult),
@@ -2216,22 +2216,21 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
                                         TypedAttr callee,
                                         LITSignatureType memSig) {
   // Synthesize input and result parameter decls.
-  SmallVector<ParamDeclAttr> inputParamDecls;
+  SmallVector<ParamDeclAttr> paramDecls;
   Builder b(shared.getContext());
   for (auto [i, type, name] :
-       llvm::enumerate(memSig.getInputParamTypes(), memSig.getParamNames())) {
-    // The input parameter names are derived from the decl name.
-    inputParamDecls.push_back(ParamDeclAttr::get(
+       llvm::enumerate(memSig.getParamTypes(), memSig.getParamNames())) {
+    // The parameter names are derived from the decl name.
+    paramDecls.push_back(ParamDeclAttr::get(
         name.empty() ? b.getStringAttr("i" + Twine(i)) : name, type));
   }
 
   // Synthesize the method inside the struct.
   auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, inputParamDecls, memSig.getParamPassingKinds(),
-      memSig.getValueInputs(), memSig.getInputConventions(),
-      memSig.getArgNames(), memSig.getArgPassingKinds(), memSig.getResultType(),
-      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      "`thunk_");
+      name, paramDecls, memSig.getParamPassingKinds(), memSig.getValueInputs(),
+      memSig.getInputConventions(), memSig.getArgNames(),
+      memSig.getArgPassingKinds(), memSig.getResultType(), structDecl,
+      SpecialFunctionInfo::getKind(name), memSig.getFnEffects(), "`thunk_");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2247,8 +2246,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // The callee is partially bound, containing only its parent struct
   // parameters. Bind the rest of them here.
   SmallVector<TypedAttr> bindSigInputs{callee};
-  for (ParamDeclAttr inputParam : inputParamDecls)
-    bindSigInputs.push_back(ParamDeclRefAttr::get(inputParam));
+  for (ParamDeclAttr param : paramDecls)
+    bindSigInputs.push_back(ParamDeclRefAttr::get(param));
   callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
 
   // Treat the `init_self` argument like a result slot.
@@ -2694,8 +2693,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   auto mtRef = ParamDeclAttr::get(
       "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
 
-  auto inputParams = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
-  traitOp.setInputParams(inputParams);
+  auto params = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
+  traitOp.setParams(params);
   SmallVector<StringAttr> paramNames{StringAttr::get(decl.getContext(), ""),
                                      StringAttr::get(decl.getContext(), "")};
   SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
@@ -2703,7 +2702,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
   auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
+      silenceErrors(getContext()), params, paramNames, paramPassingKinds,
       defaultPosParams, defaultKwOnlyParams, /*paramVarArg=*/false);
   if (!sig)
     return failure();

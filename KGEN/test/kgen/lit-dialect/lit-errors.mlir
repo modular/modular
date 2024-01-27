@@ -14,7 +14,7 @@ lit.struct.decl @SomeStruct {
     decorators = #kgen<decorators[]>,
     signature = !lit.type_signature,
     parentTypes = #lit<type_lineage.array[]>,
-    inputParams = #kgen<param.decls[]>
+    params = #kgen<param.decls[]>
     } : () -> ()
 
 // -----

@@ -53,6 +53,10 @@ public:
   /// Get the function's (unmangled) parameter names.
   ArrayRef<StringAttr> getParamNames();
 
+  /// Mojo only has input parameters.
+  ArrayRef<Type> getParamTypes() { return getInputParamTypes(); }
+  size_t getNumParams() { return getParamTypes().size(); }
+
   /// Get the function parameter passing kinds (e.g. keyword-only).
   ArrayRef<PassingKind> getParamPassingKinds();
 
@@ -104,9 +108,7 @@ public:
   static LITSignatureType get(MLIRContext *ctx, TypeRange inputs,
                               TypeRange results,
                               size_t numImplicitLifetimeDecls);
-  static LITSignatureType get(FunctionType values,
-                              ArrayRef<Type> inputParamTypes,
-                              ArrayRef<Type> resultParamTypes,
+  static LITSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
                               ArrayRef<ValueInputConvention> convs,
                               FnEffects effects, FnMetadataAttr metadata);
 };

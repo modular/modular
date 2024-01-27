@@ -100,7 +100,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
   // parameters to the expected types.
   SmallVector<TypedAttr> unboundBindings;
   ParameterEvaluator evaluator;
-  for (auto [binding, type] : llvm::zip(bindings, type.getInputParamTypes())) {
+  for (auto [binding, type] : llvm::zip(bindings, type.getParamTypes())) {
     TypedAttr value = binding;
     Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
@@ -491,16 +491,15 @@ static void printImplicitLifetimeMutability(AsmPrinter &p, LifetimeType type) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "sym_name",    "exportKind",     "isCExported",  "constraints",
-    "implements",  "signature",      "functionType", "sym_name",
-    "argNames",    "paramNames",     "evaluator",    "defaultImpl",
-    "inlineLevel", "paramDecl",      "inputParams",  "resultParams",
-    "decorators",  "argPassingKinds"};
+    "sym_name",   "exportKind",     "isCExported", "constraints", "implements",
+    "signature",  "functionType",   "sym_name",    "argNames",    "paramNames",
+    "evaluator",  "defaultImpl",    "inlineLevel", "paramDecl",   "params",
+    "decorators", "argPassingKinds"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
-    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, LITSignatureType &signature) {
+    ParamDeclArrayAttr &params, FunctionType &functionType,
+    LITSignatureType &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   SmallVector<ParamDeclAttr> lifetimeDecls;
@@ -518,14 +517,18 @@ static ParseResult parseLITFunctionSignature(
                                 parseLifetimeDecl))
     return failure();
 
+  ParamDeclArrayAttr resultParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<PassingKind> paramPassingKinds;
-  if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
+  if (parseOptionalParameterSpec(p, params, resultParams, paramNames,
                                  paramPassingKinds, defaultPosParams,
                                  defaultKwOnlyParams))
     return failure();
+
+  if (!resultParams.empty())
+    return p.emitError(startLoc, "expected no result parameters");
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
@@ -593,8 +596,8 @@ static ParseResult parseLITFunctionSignature(
       defaultPosArgs, defaultPosParams, defaultKwOnlyArgs, defaultKwOnlyParams,
       lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
-      inputParams, resultParams, functionType, inputConventions, effects,
-      metadata, [&] { return p.emitError(startLoc); });
+      params, resultParams, functionType, inputConventions, effects, metadata,
+      [&] { return p.emitError(startLoc); });
   if (!signature)
     return failure();
 
@@ -603,19 +606,18 @@ static ParseResult parseLITFunctionSignature(
   signature = signature.replaceImplicitLifetimesWithIndexes(lifetimeDecls);
 
   // Prepend the lifetime declarations.
-  llvm::append_range(lifetimeDecls, inputParams);
-  inputParams = ParamDeclArrayAttr::get(p.getContext(), lifetimeDecls);
+  llvm::append_range(lifetimeDecls, params);
+  params = ParamDeclArrayAttr::get(p.getContext(), lifetimeDecls);
   return success();
 }
 
 static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<StringAttr> argNames,
-                                      ArrayRef<ParamDeclAttr> inputParams,
-                                      ArrayRef<ParamDeclAttr> resultParams,
+                                      ArrayRef<ParamDeclAttr> params,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
   ArrayRef<ParamDeclAttr> lifetimeDecls =
-      inputParams.drop_back(signature.getNumInputParams());
+      params.drop_back(signature.getNumParams());
   if (!lifetimeDecls.empty()) {
     p << '[';
     llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
@@ -626,8 +628,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   }
 
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, inputParams.drop_front(lifetimeDecls.size()),
-                             resultParams, signature.getParamPassingKinds(),
+  printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
+                             /*resultParams=*/{},
+                             signature.getParamPassingKinds(),
                              signature.getDefaultPosParams(),
                              signature.getDefaultKwOnlyParams(), evaluator);
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
@@ -693,11 +696,11 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // Parse the function signature.
   SmallVector<OpAsmParser::Argument> entryArgs;
-  ParamDeclArrayAttr inputParams, resultParams;
+  ParamDeclArrayAttr params;
   FunctionType functionType;
   LITSignatureType signature;
-  if (parseLITFunctionSignature(parser, entryArgs, inputParams, resultParams,
-                                functionType, signature))
+  if (parseLITFunctionSignature(parser, entryArgs, params, functionType,
+                                signature))
     return failure();
 
   // Parse additional function attributes.
@@ -711,7 +714,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   result.addAttribute(getInlineLevelAttrName(result.name), inlineLevel);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
   result.addAttribute(getDecoratorsAttrName(result.name), decorators);
-  result.addAttribute(getInputParamsAttrName(result.name), inputParams);
+  result.addAttribute(getParamsAttrName(result.name), params);
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(functionType));
   if (isParamDecl)
@@ -760,8 +763,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   // Print the function arguments. Here we need all the use defined names.
   printLITFunctionSignature(p, &getBodyRegion(), getSignature().getArgNames(),
-                            getInputParams(), getResultParams(),
-                            getFunctionType(), getSignature());
+                            getParams(), getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());
@@ -829,14 +831,14 @@ LogicalResult LIT::FuncOp::verify() {
     }
   }
 
-  // Verify the correct number of input parameters.
-  if (getSignature().getNumInputParams() +
+  // Verify the correct number of parameters.
+  if (getSignature().getNumParams() +
           getSignature().getNumImplicitLifetimeDecls() !=
       getInputParams().size())
     return emitOpError("incorrect number of input params: have ")
-           << getInputParams().size() << ", but expected "
+           << getParams().size() << ", but expected "
            << getSignature().getNumImplicitLifetimeDecls()
-           << " implicit lifetimes and " << getSignature().getNumInputParams()
+           << " implicit lifetimes and " << getSignature().getNumParams()
            << " input params";
 
   return success();
@@ -878,15 +880,14 @@ static void collectContextParameters(Operation *op,
 }
 
 SmallVector<ParamDeclAttr>
-LIT::FuncOp::collectAllInputParams(bool includeImplLifetimes) {
+LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
   SmallVector<ParamDeclAttr> result;
   collectContextParameters(getOperation()->getParentOp(), result);
 
-  auto inputParams = getInputParams();
+  auto params = getParams();
   if (!includeImplLifetimes)
-    inputParams =
-        inputParams.drop_front(getSignature().getNumImplicitLifetimeDecls());
-  llvm::append_range(result, inputParams);
+    params = params.drop_front(getSignature().getNumImplicitLifetimeDecls());
+  llvm::append_range(result, params);
   return result;
 }
 
@@ -895,12 +896,12 @@ LITSignatureType LIT::FuncOp::getFullSignature() {
 
   // Collect contextual params, if there are none, the full signature is the
   // same as the local signature.
-  SmallVector<ParamDeclAttr> inputParams;
-  collectContextParameters(getOperation()->getParentOp(), inputParams);
-  if (inputParams.empty())
+  SmallVector<ParamDeclAttr> params;
+  collectContextParameters(getOperation()->getParentOp(), params);
+  if (params.empty())
     return signature;
 
-  return SignatureType::prependParams(signature, inputParams);
+  return SignatureType::prependParams(signature, params);
 }
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
@@ -933,7 +934,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       TypeAttr::get(signatureType));
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(signatureType.getValues()));
-  result.addAttribute(getInputParamsAttrName(result.name),
+  result.addAttribute(getParamsAttrName(result.name),
                       ParamDeclArrayAttr::get(ctx, {}));
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(ctx, {}));
@@ -958,7 +959,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
   mlir::UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()),
-        /*inputParams=*/ParamDeclArrayAttr::get(ctx, {}),
+        /*params=*/ParamDeclArrayAttr::get(ctx, {}),
         ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
         /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
@@ -991,7 +992,7 @@ static void printTypeConvention(AsmPrinter &p, Operation *op,
 }
 
 static ParseResult parseStructParameterSpec(AsmParser &p,
-                                            ParamDeclArrayAttr &inputParams,
+                                            ParamDeclArrayAttr &params,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
   SmallVector<TypedAttr> defaultPosParams;
@@ -1000,7 +1001,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
+  if (parseOptionalParameterSpec(p, params, resultParams, paramNames,
                                  paramPassingKinds, defaultPosParams,
                                  defaultKwOnlyParams))
     return failure();
@@ -1026,8 +1027,8 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
   parentTypes = TypeLineageArrayAttr::get(p.getContext(), parentTypeExprs);
 
   auto sig = TypeSignatureType::remapToSignature(
-      [&] { return p.emitError(loc); }, inputParams, paramNames,
-      paramPassingKinds, defaultPosParams, defaultKwOnlyParams, paramVarArg);
+      [&] { return p.emitError(loc); }, params, paramNames, paramPassingKinds,
+      defaultPosParams, defaultKwOnlyParams, paramVarArg);
   if (!sig)
     return failure();
   signature = TypeAttr::get(sig);
@@ -1035,12 +1036,12 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 }
 
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
-                                     ArrayRef<ParamDeclAttr> inputParamDecls,
+                                     ArrayRef<ParamDeclAttr> params,
                                      TypeAttr signature,
                                      ArrayRef<TypeLineageAttr> parentTypes) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamPassingKinds(),
+  printOptionalParameterSpec(p, params, {}, sig.getParamPassingKinds(),
                              sig.getDefaultPosParams(),
                              sig.getDefaultKwOnlyParams(), evaluator);
   if (sig.getParamVarArg())
@@ -1070,7 +1071,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
     // Create a fully unbound reference to the type.
     SmallVector<TypedAttr> unbound;
     ParameterEvaluator evaluator;
-    for (Type type : sig.getInputParamTypes()) {
+    for (Type type : sig.getParamTypes()) {
       unbound.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
       evaluator.addInputValue(unbound.back());
     }
@@ -1088,8 +1089,8 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 
   auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   for (auto [i, value, type, name, kind] :
-       llvm::enumerate(paramValues, sig.getInputParamTypes(),
-                       sig.getParamNames(), sig.getParamPassingKinds())) {
+       llvm::enumerate(paramValues, sig.getParamTypes(), sig.getParamNames(),
+                       sig.getParamPassingKinds())) {
     if (::isa<UnboundAttr>(value)) {
       newParamTypes.push_back(type);
       newParamNames.push_back(name);
@@ -1197,7 +1198,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
   if (structSelfType.getParamValues().empty())
     return getType();
-  ParameterEvaluator evaluator(getParentOp().getInputParams(),
+  ParameterEvaluator evaluator(getParentOp().getParams(),
                                structSelfType.getParamValues());
   return evaluator.getReboundType(getType());
 }
@@ -1228,7 +1229,7 @@ lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
     user->emitOpError("expected to find a struct decl for ") << ref;
     return {};
   }
-  ParameterEvaluator evaluator(decl.getInputParams(), ref.getParamValues());
+  ParameterEvaluator evaluator(decl.getParams(), ref.getParamValues());
   return {decl, std::move(evaluator)};
 }
 

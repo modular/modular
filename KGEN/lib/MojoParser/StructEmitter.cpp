@@ -29,7 +29,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 LIT::FuncOp StructEmitter::createFunction(
-    StringRef name, ArrayRef<ParamDeclAttr> inputParams,
+    StringRef name, ArrayRef<ParamDeclAttr> params,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
@@ -43,11 +43,11 @@ LIT::FuncOp StructEmitter::createFunction(
 
   // This starts with implicit lifetimes and then gets explicitly declared input
   // params.
-  SmallVector<ParamDeclAttr> fullInputParams;
+  SmallVector<ParamDeclAttr> fullParams;
 
   // The caller specifies all the input types, which means that all the input
   // reference types that carry implicit lifetimes will already have them
-  // specified with names, so dig those out and use them as input parameters.
+  // specified with names, so dig those out and use them as parameters.
   // If the caller provided indexed inputs, rewrite them to named inputs as our
   // body will expect.
   SmallVector<Type> adjustedArgTypes;
@@ -79,12 +79,12 @@ LIT::FuncOp StructEmitter::createFunction(
       auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
       adjustedArgTypes.back() = refArgType.getWithLifetime(newLifetime);
     }
-    fullInputParams.push_back(decl);
+    fullParams.push_back(decl);
   }
-  size_t numImplicitLifetimeDecls = fullInputParams.size();
+  size_t numImplicitLifetimeDecls = fullParams.size();
 
   SmallVector<StringAttr> parameterNames;
-  for (ParamDeclAttr p : inputParams) {
+  for (ParamDeclAttr p : params) {
     parameterNames.push_back(
         StringAttr::get(getContext(), demangleParameterName(p.getName())));
   }
@@ -98,12 +98,12 @@ LIT::FuncOp StructEmitter::createFunction(
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParams, {}, functionType, argConventions, fnEffects, metadata,
+      params, {}, functionType, argConventions, fnEffects, metadata,
       [&] { return mlir::emitError(location); });
   // Strip off the named lifetime decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
-  signature = signature.replaceImplicitLifetimesWithIndexes(fullInputParams);
+  signature = signature.replaceImplicitLifetimesWithIndexes(fullParams);
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
@@ -117,10 +117,10 @@ LIT::FuncOp StructEmitter::createFunction(
 
   // Figure out the full set of parameter declarations, this is the implicit
   // lifetimes + explicit parameter declarations.
-  fullInputParams.append(inputParams.begin(), inputParams.end());
-  if (!fullInputParams.empty()) {
-    attrs.set(funcOp.getInputParamsAttrName(),
-              builder.getAttr<ParamDeclArrayAttr>(fullInputParams));
+  fullParams.append(params.begin(), params.end());
+  if (!fullParams.empty()) {
+    attrs.set(funcOp.getParamsAttrName(),
+              builder.getAttr<ParamDeclArrayAttr>(fullParams));
   }
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
@@ -142,14 +142,14 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
     FnEffects effects, StringRef prefix) {
-  return synthesizeMethodInStruct(
-      name, /*inputParams=*/{}, /*paramPassingKinds=*/{}, argTypes,
-      argConventions, argNames, argPassingKinds, resultType, structDecl,
-      specialFnID, effects, prefix);
+  return synthesizeMethodInStruct(name, /*params=*/{}, /*paramPassingKinds=*/{},
+                                  argTypes, argConventions, argNames,
+                                  argPassingKinds, resultType, structDecl,
+                                  specialFnID, effects, prefix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
-    StringRef name, ArrayRef<ParamDeclAttr> inputParams,
+    StringRef name, ArrayRef<ParamDeclAttr> params,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
@@ -159,7 +159,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
   LIT::FuncOp funcOp = createFunction(
-      name, inputParams, paramPassingKinds, argTypes, argConventions, argNames,
+      name, params, paramPassingKinds, argTypes, argConventions, argNames,
       argPassingKinds, resultType, specialFnID, structDecl.getLoc(), builder,
       effects.setParamVarArgs(effects.hasParamVarArgs() ||
                               structOp.getSignature().getParamVarArg()),
@@ -386,11 +386,11 @@ LIT::FuncOp StructEmitter::addVoidMethod(
     ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    SpecialFunctionKind kind, ArrayRef<ParamDeclAttr> inputParams,
+    SpecialFunctionKind kind, ArrayRef<ParamDeclAttr> params,
     ArrayRef<PassingKind> paramPassingKinds) {
   auto [func, _] = synthesizeMethodInStruct(
-      prefix, inputParams, paramPassingKinds, argTypes, argConventions,
-      argNames, argPassingKinds, shared.getNoneType(), structDecl, kind);
+      prefix, params, paramPassingKinds, argTypes, argConventions, argNames,
+      argPassingKinds, shared.getNoneType(), structDecl, kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())

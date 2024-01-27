@@ -37,59 +37,59 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-InputParamBindings::InputParamBindings(ExprEmitter &emitter)
-    : InputParamBindings(emitter.declScope, emitter.shared) {}
+ParamBindings::ParamBindings(ExprEmitter &emitter)
+    : ParamBindings(emitter.declScope, emitter.shared) {}
 
-InputParamBindings InputParamBindings::getForDeclaredType(ASTDecl &declScope,
-                                                          SharedState &shared,
-                                                          ASTType type) {
-  InputParamBindings inputParamBindings(declScope, shared);
-  ArrayRef<Type> inputParams = type.getInputParameters();
-  inputParamBindings.numCtadParams = inputParams.size();
-  inputParamBindings.defaultTypeParams = type.getDefaultPosParams();
+ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
+                                                SharedState &shared,
+                                                ASTType type) {
+  ParamBindings paramBindings(declScope, shared);
+  ArrayRef<Type> params = type.getParameters();
+  paramBindings.numCtadParams = params.size();
+  paramBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast<TraitType>(type.getMetaTypeOrSelf())) {
-    inputParamBindings.addPrechecked(
+    paramBindings.addPrechecked(
         TypeConstantAttr::get(trait, TypeType::get(trait.getContext())));
-    inputParamBindings.addPrechecked(TypeConstantAttr::get(type, trait));
+    paramBindings.addPrechecked(TypeConstantAttr::get(type, trait));
   }
 
-  ArrayRef<TypedAttr> paramBindings = type.getParamBindings();
-  for (TypedAttr binding : paramBindings)
-    inputParamBindings.addPrechecked(binding);
-  return inputParamBindings;
+  ArrayRef<TypedAttr> paramValues = type.getParamBindings();
+  for (TypedAttr value : paramValues)
+    paramBindings.addPrechecked(value);
+  return paramBindings;
 }
 
-void InputParamBindings::addPrechecked(TypedAttr precheckedBinding) {
+void ParamBindings::addPrechecked(TypedAttr precheckedBinding) {
   posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
 }
 
-void InputParamBindings::addPrechecked(TypedAttr precheckedBinding,
-                                       StringAttr name) {
+void ParamBindings::addPrechecked(TypedAttr precheckedBinding,
+                                  StringAttr name) {
   auto [_, addedNew] = kwBindings.try_emplace(
       name, Binding{nullptr, precheckedBinding, /*typeChecked=*/true});
   assert(addedNew && "duplicate keyword parameter");
 }
 
-void InputParamBindings::add(const ExprNode *expr, TypedAttr value) {
+void ParamBindings::add(const ExprNode *expr, TypedAttr value) {
   posBindings.push_back({expr, value, /*typeChecked=*/false});
 }
 
-void InputParamBindings::add(const ExprNode *expr, TypedAttr value,
-                             StringAttr name) {
+void ParamBindings::add(const ExprNode *expr, TypedAttr value,
+                        StringAttr name) {
   auto [_, addedNew] =
       kwBindings.try_emplace(name, Binding{expr, value, /*typeChecked=*/false});
   assert(addedNew && "duplicate keyword parameter");
 }
 
 //===----------------------------------------------------------------------===//
-// InputParamBindings Implementation
+// ParamBindings Implementation
 //===----------------------------------------------------------------------===//
 
 /// Check a single binding and emit a parameter value if possible. If an
 /// implicit conversion is required, the provided counter is incremented.
-static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
+static PValue emitSingleParameterValue(ParamBindings::Binding binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
@@ -120,14 +120,16 @@ static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
   return {};
 };
 
-std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(
-    ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
-    ArrayRef<PassingKind> paramPassingKinds,
-    ArrayRef<TypedAttr> defaultPosParams,
-    ArrayRef<TypedAttr> defaultKwOnlyParams, bool hasParamVarArgs,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    const DiagEmitter &diagEmitter, bool allowPartiallyBound) const {
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
+                              ArrayRef<StringAttr> paramNames,
+                              ArrayRef<PassingKind> paramPassingKinds,
+                              ArrayRef<TypedAttr> defaultPosParams,
+                              ArrayRef<TypedAttr> defaultKwOnlyParams,
+                              bool hasParamVarArgs,
+                              ParameterInferenceHookTy parameterInferenceHook,
+                              bool isPackVarArg, const DiagEmitter &diagEmitter,
+                              bool allowPartiallyBound) const {
   DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
                                      defaultKwOnlyParams);
 
@@ -429,15 +431,15 @@ InputParamBindings::verifyBindings(
           fitness};
 }
 
-std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                                   ArrayRef<StringAttr> paramNames,
-                                   ArrayRef<PassingKind> paramPassingKinds,
-                                   ArrayRef<TypedAttr> defaultPosParams,
-                                   ArrayRef<TypedAttr> defaultKwOnlyParams,
-                                   bool hasParamVarArgs, StringRef baseName,
-                                   Location opLoc, llvm::SMLoc exprLoc,
-                                   bool allowPartiallyBound) const {
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
+                              ArrayRef<StringAttr> paramNames,
+                              ArrayRef<PassingKind> paramPassingKinds,
+                              ArrayRef<TypedAttr> defaultPosParams,
+                              ArrayRef<TypedAttr> defaultKwOnlyParams,
+                              bool hasParamVarArgs, StringRef baseName,
+                              Location opLoc, llvm::SMLoc exprLoc,
+                              bool allowPartiallyBound) const {
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = shared.emitError(exprLoc, "'") << baseName << "'";
@@ -445,14 +447,14 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           emitWrongArgOrParamCount(
               diag, /*minRequired=*/countNumPosOnly(paramPassingKinds),
               /*maxAllowed=*/expectedParamTypes.size(), /*numActual=*/numActual,
-              "positional input parameter");
+              "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
                                defaultPosParams.size() -
                                defaultKwOnlyParams.size();
           emitWrongArgOrParamCount(diag, minRequired,
                                    /*maxAllowed=*/expectedParamTypes.size(),
-                                   numActual, "input parameter");
+                                   numActual, "parameter");
         }
 
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
@@ -505,22 +507,23 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                         diagEmitter, allowPartiallyBound);
 }
 
-std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(
-    LITSignatureType sig, const DiagEmitter &diagEmitter,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
-  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(LITSignatureType sig,
+                              const DiagEmitter &diagEmitter,
+                              ParameterInferenceHookTy parameterInferenceHook,
+                              bool isPackVarArg) const {
+  return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultPosParams(),
                         sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
                         parameterInferenceHook, isPackVarArg, diagEmitter,
                         /*allowPartiallyBound=*/false);
 }
 
-std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(LITSignatureType sig) const {
+std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
+ParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr};
-  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+  return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultPosParams(),
                         sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
                         /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
@@ -528,11 +531,11 @@ InputParamBindings::verifyBindings(LITSignatureType sig) const {
 }
 
 ParameterExprArrayAttr
-InputParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
-                                   llvm::SMLoc exprLoc,
-                                   bool allowPartiallyBound) const {
+ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
+                              llvm::SMLoc exprLoc,
+                              bool allowPartiallyBound) const {
   auto [bindingValuesAttr, _] = verifyBindings(
-      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
       sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
       sig.getParamVarArg(), structOp.getName(), structOp.getLoc(), exprLoc,
       allowPartiallyBound);
@@ -540,10 +543,10 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
 }
 
 ParameterExprArrayAttr
-InputParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
-                                   Location opLoc, llvm::SMLoc exprLoc) const {
+ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
+                              Location opLoc, llvm::SMLoc exprLoc) const {
   auto [newBindings, _] = verifyBindings(
-      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
       sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
       sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
@@ -554,19 +557,18 @@ InputParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
 //===----------------------------------------------------------------------===//
 
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         InputParamBindings &&inputParamBindings,
-                         const ExprNode *expr, CallSyntax syntax)
+                         ParamBindings &&paramBindings, const ExprNode *expr,
+                         CallSyntax syntax)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
-      inputParamBindings(std::move(inputParamBindings)), expr(expr),
-      syntax(syntax) {}
+      paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax) {}
 
 /// Utility function to perform substitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-static TypedAttr
-getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
-                     const InputParamBindings &inputParamBindings,
-                     const ExprNode *expr) {
+static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
+                                      StringRef baseName,
+                                      const ParamBindings &paramBindings,
+                                      const ExprNode *expr) {
   // Try to dig out a trait base value.
   auto getIfTrait = [](ASTType type) -> ASTType {
     if (isa_and_nonnull<TraitType>(type.getMetaType()))
@@ -575,14 +577,14 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
   };
   ASTType trait = getIfTrait(baseType);
   if (!trait) {
-    // If there are no input parameters specified and if we allow unbound
+    // If there are no parameters specified and if we allow unbound
     // symbols, just return the unbound symbol.
-    if (inputParamBindings.empty())
+    if (paramBindings.empty())
       return funcOp.getBoundReference();
 
     // Check that the signature can be rebound with our set of bindings.
     LITSignatureType signature = funcOp.getFullSignature();
-    ParameterExprArrayAttr newBindings = inputParamBindings.verifyBindings(
+    ParameterExprArrayAttr newBindings = paramBindings.verifyBindings(
         signature, baseName, funcOp.getLoc(), expr->getLoc());
     if (!newBindings)
       return {};
@@ -596,14 +598,14 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
   // parameters.
   // FIXME(#25492): The implicit trait parameters probably need a rethink.
   LITSignatureType signature = funcOp.getFullSignature();
-  InputParamBindings bindings = inputParamBindings;
+  ParamBindings bindings = paramBindings;
   assert(bindings.posBindings.size() >= 2);
   auto it = bindings.posBindings.begin();
   SmallVector<TypedAttr> paramValues({it->value, (it + 1)->value});
   bindings.posBindings.erase(it, it + 2);
-  for (Type type : signature.getInputParamTypes().drop_front(2))
+  for (Type type : signature.getParamTypes().drop_front(2))
     paramValues.push_back(UnboundAttr::get(type));
-  auto loc = inputParamBindings.shared.translateLocation(expr->getLoc());
+  auto loc = paramBindings.shared.translateLocation(expr->getLoc());
   signature = signature.getSpecializedSignature(paramValues, loc);
 
   TypedAttr fnRef = ParamOperatorAttr::get(
@@ -625,13 +627,11 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
 
 /// Resolve the callee into a single PValue callee.
 static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
-                        StringRef baseName,
-                        const InputParamBindings &inputParamBindings,
+                        StringRef baseName, const ParamBindings &paramBindings,
                         const ExprNode *expr) {
   assert(fnDecls.size() == 1 && "expected a single resolved callee");
   auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-  return getBoundConstAttrFor(baseType, funcOp, baseName, inputParamBindings,
-                              expr);
+  return getBoundConstAttrFor(baseType, funcOp, baseName, paramBindings, expr);
 }
 
 /// Return if the given fitness is valid, and drop the diagnostics otherwise.
@@ -753,7 +753,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // If we found exactly one viable candidate then we succeed.
   if (newFnDecls.size() == 1) {
     // On success, wrap things up into one callee.
-    InputParamBindings newBindings(inputParamBindings.declScope, getShared());
+    ParamBindings newBindings(paramBindings.declScope, getShared());
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
     return getCallee(baseType, newFnDecls, baseName, newBindings, expr);
@@ -818,7 +818,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
     // TODO(#22771): Parameter inference.
-    auto [newBindings, _] = inputParamBindings.verifyBindings(candidateType);
+    auto [newBindings, _] = paramBindings.verifyBindings(candidateType);
     return newBindings;
   };
 
@@ -828,7 +828,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    if (!inputParamBindings.empty()) {
+    if (!paramBindings.empty()) {
       auto newBindings = getBindingsForSignature(candidateType);
       if (!newBindings)
         return false; // If there is an error, return the problem.
@@ -860,14 +860,14 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
-    if (inputParamBindings.empty())
-      return getCallee(baseType, validCandidates, baseName, inputParamBindings,
+    if (paramBindings.empty())
+      return getCallee(baseType, validCandidates, baseName, paramBindings,
                        expr);
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
-    InputParamBindings newBindings(inputParamBindings.declScope, getShared());
+    ParamBindings newBindings(paramBindings.declScope, getShared());
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
     return getCallee(baseType, validCandidates, baseName, newBindings, expr);
@@ -914,7 +914,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
   }
 
   return getBoundConstAttrFor(baseType, cast<LIT::FuncOp>(*fnDecls[0]),
-                              baseName, inputParamBindings, expr);
+                              baseName, paramBindings, expr);
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
@@ -950,10 +950,9 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
     return OverloadSet(declScope, shared, expr, syntax);
 
-  OverloadSet result(
-      methodName, resultDecls,
-      InputParamBindings::getForDeclaredType(declScope, shared, type), expr,
-      syntax);
+  OverloadSet result(methodName, resultDecls,
+                     ParamBindings::getForDeclaredType(declScope, shared, type),
+                     expr, syntax);
   result.baseType = type;
   return result;
 }
@@ -1003,7 +1002,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
-    if (inputParamBindings.empty())
+    if (paramBindings.empty())
       return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
 
     // Bind the parameters.
@@ -1031,7 +1030,7 @@ PValue OverloadSet::getIfPValue() const {
     return {};
 
   return getBoundConstAttrFor(baseType, cast<LIT::FuncOp>(*fnDecls[0]),
-                              baseName, inputParamBindings, expr);
+                              baseName, paramBindings, expr);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
@@ -1191,8 +1190,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, InputParamBindings(*this),
-                       callExpr, CallSyntax::kIndirectCall};
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(*this), callExpr,
+                       CallSyntax::kIndirectCall};
   auto fitness = OverloadFitness::evaluate(calleeSig, bindings, callOperands,
                                            /*allowImplicitConversions=*/true);
   if (!fitness.isValid()) {

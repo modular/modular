@@ -642,8 +642,7 @@ private:
         /*numImplicitLifetimeDecls*/ 0);
 
     auto newLitSig = LIT::LITSignatureType::get(
-        newLitFunctionType, oldLitSig->getInputParamTypes(),
-        oldLitSig->getResultParamTypes(),
+        newLitFunctionType, oldLitSig->getParamTypes(),
         /*inputConventions=*/{}, oldSig.getFnEffects(), metadata);
 
     slicedShapeFunction.setSignature(newSig);

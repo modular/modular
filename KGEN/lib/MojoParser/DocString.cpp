@@ -615,7 +615,7 @@ private:
                     ValidationKind validation) {
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (ParamDeclAttr decl : structOp.getInputParams())
+    for (ParamDeclAttr decl : structOp.getParams())
       seenParameters.insert({demangleIfNeeded(decl).getName(), nullptr});
 
     // Process the sections of the doc string.
