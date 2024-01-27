@@ -88,6 +88,9 @@ private:
 /// Create an allocator that just calls malloc/free.
 std::unique_ptr<Allocator> createMallocAllocator();
 
+/// Create an allocator that uses tcmalloc
+std::unique_ptr<Allocator> createTCMallocAllocator();
+
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
 std::unique_ptr<Allocator>

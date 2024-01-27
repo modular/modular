@@ -219,6 +219,7 @@ struct RuntimeOptions {
   std::string_view poolName = "🔥 Thread";
   bool paranoid = false;
   bool leakCheckedAllocator = false;
+  bool tcmallocAllocator = false;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
 
@@ -236,6 +237,11 @@ struct RuntimeOptions {
   RuntimeOptions &
   withLeakCheckedAllocator(bool newLeakCheckedAllocator = true) {
     leakCheckedAllocator = newLeakCheckedAllocator;
+    return *this;
+  }
+
+  RuntimeOptions &withTCMallocAllocator(bool newTcmallocAllocator = true) {
+    tcmallocAllocator = newTcmallocAllocator;
     return *this;
   }
 

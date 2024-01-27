@@ -40,6 +40,8 @@ protected:
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
+    /// Allocator that calls tc_new/delete for bufferRefs.
+    kTCMalloc,
     /// Allocator that does leak checking.
     kLeakChecker,
     /// Allocator that does profiling (and leak checking).
@@ -77,6 +79,8 @@ protected:
       "allocator", llvm::cl::desc("Specify allocator type:"),
       llvm::cl::values(
           clEnumValN(AllocatorType::kMalloc, "malloc", "System malloc/free"),
+          clEnumValN(AllocatorType::kTCMalloc, "tcmalloc",
+                     "TCMalloc new/delete. Not available on all targets"),
           clEnumValN(AllocatorType::kLeakChecker, "leak-checker",
                      "Allocator with leak checking"),
           clEnumValN(AllocatorType::kProfiler, "profiler",
@@ -232,6 +236,9 @@ public:
     switch (allocatorType) {
     case AllocatorType::kMalloc:
       printf("malloc");
+      break;
+    case AllocatorType::kTCMalloc:
+      printf("tcmalloc");
       break;
     case AllocatorType::kLeakChecker:
       printf("leak check");

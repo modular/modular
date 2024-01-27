@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
-
+include(AddTCMalloc)
 set(SOURCES
   Config.cpp
   Globals.cpp
@@ -71,7 +71,9 @@ if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
   # on clangBasic.
   add_static_dep_lib(clangBasic)
 endif()
-
+if (TCMALLOC_LIBRARY)
+  add_static_dep_lib(libtcmalloc)
+endif()  
 add_static_dep_lib(LLVMSupport)
 add_static_dep_lib(LLVMDemangle)
 add_static_dep_lib(LLVMTargetParser)
