@@ -15,6 +15,9 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
   switch (allocatorType) {
   case AllocatorType::kMalloc:
     break;
+  case AllocatorType::kTCMalloc:
+    runtimeOptions.tcmallocAllocator = true;
+    break;
   case AllocatorType::kLeakChecker:
     runtimeOptions.leakCheckedAllocator = true;
     break;

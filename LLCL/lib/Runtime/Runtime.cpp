@@ -112,11 +112,14 @@ static std::unique_ptr<Runtime>
 createRuntimeImpl(const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
-  std::unique_ptr<Allocator> allocator = options.useAfterFreeAllocator
-                                             ? createUseAfterFreeAllocator()
-                                             : createMallocAllocator();
+  std::unique_ptr<Allocator> allocator =
+      options.useAfterFreeAllocator ? createUseAfterFreeAllocator()
+      : options.tcmallocAllocator   ? createTCMallocAllocator()
+                                    : createMallocAllocator();
 #else
-  std::unique_ptr<Allocator> allocator = createMallocAllocator();
+  std::unique_ptr<Allocator> allocator = options.tcmallocAllocator
+                                             ? createTCMallocAllocator()
+                                             : createMallocAllocator();
 #endif
   if (options.leakCheckedAllocator)
     allocator = createLeakCheckAllocator(std::move(allocator));

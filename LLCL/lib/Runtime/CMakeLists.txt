@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 find_package(Threads)
-
+include(AddTCMalloc)
 add_modular_library(LLCLRuntime
   STATIC OBJECT # Always generate an obj.${name} target.
 
@@ -13,6 +13,7 @@ add_modular_library(LLCLRuntime
   CompactRuntimePtr.cpp
   DebuggingAllocators.cpp
   MallocAllocator.cpp
+  TCMallocAllocator.cpp
   Runtime.cpp
   RuntimeCLOptions.cpp
   SingleThreadWorkQueue.cpp
@@ -25,5 +26,9 @@ add_modular_library(LLCLRuntime
   MProfiling
   Threads::Threads
 )
+if (TCMALLOC_LIBRARY)
+  target_link_libraries(LLCLRuntime PUBLIC libtcmalloc)
+  target_include_directories(LLCLRuntime PUBLIC ${TCMALLOC_PATH}/include)
+endif()
 
 add_subdirectory(Globals)
