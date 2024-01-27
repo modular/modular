@@ -155,12 +155,13 @@ public:
   SharedState &shared;
   ASTDecl &declScope;
 
+  /// The full ParsedArgument for each parameter.
+  SmallVector<ParsedArgument> parsedParams;
+
+  // These are the results of type checking 'params' in typeCheck.
   bool isVarArgs = false;
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
-
-  /// The full ParsedArgument for each parameter.
-  SmallVector<ParsedArgument> args;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -171,10 +172,19 @@ public:
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
   /// param_list   ::= argument_list | "(" ")"
   /// param_result_types ::= expression ("," expression)*
-  ParseResult parseOptionalParameterSignature(ParserBase &p);
+  ParseResult
+  parseOptionalParameterSignature(ParserBase &p,
+                                  ParsedArgument::ArgListKind kind) {
+    return parseOptionalParameterSignature(p, parsedParams, kind);
+  }
+  static ParseResult
+  parseOptionalParameterSignature(ParserBase &p,
+                                  SmallVectorImpl<ParsedArgument> &parsedParams,
+                                  ParsedArgument::ArgListKind kind);
 
-  /// Resolve each of the parameters.
-  void processParameterInputArgs();
+  /// Resolve each of the parameters from 'parsedParams' into their decomposed
+  /// representation.
+  void typeCheck();
 };
 
 } // namespace M::KGEN::LIT

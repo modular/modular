@@ -889,10 +889,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (paramSignature.parseOptionalParameterSignature(p))
+  if (paramSignature.parseOptionalParameterSignature(
+          p, ParsedArgument::ArgListKind::kParamList))
     return failure();
 
-  paramSignature.processParameterInputArgs();
+  paramSignature.typeCheck();
 
   // Set up the known effects.
   FnEffects effects;
@@ -1793,14 +1794,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      paramSignature.parseOptionalParameterSignature(p) ||
+      paramSignature.parseOptionalParameterSignature(
+          p, ParsedArgument::ArgListKind::kParamList) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
     return failure();
 
-  paramSignature.processParameterInputArgs();
+  paramSignature.typeCheck();
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);

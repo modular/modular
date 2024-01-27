@@ -2865,10 +2865,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
   ParsedParamSignature paramSignature(emitter.shared, dummyScope);
-  llvm::append_range(paramSignature.args, inputParams);
+  llvm::append_range(paramSignature.parsedParams, parsedParams);
 
   // Process the parameters we have.
-  paramSignature.processParameterInputArgs();
+  paramSignature.typeCheck();
 
   FnEffects effects = this->effects;
   if (paramSignature.isVarArgs)
@@ -2876,7 +2876,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
-  SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
+  SmallVector<ParsedArgument> args = llvm::to_vector(parsedArgs);
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;

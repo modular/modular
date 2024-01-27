@@ -362,13 +362,13 @@ static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
 }
 
 /// Core implementation of the parameter argument parsing logic.
-void ParsedParamSignature::processParameterInputArgs() {
+void ParsedParamSignature::typeCheck() {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
 
   bool seenPosInitExpr = false;
   bool seenKwOnlyInitExpr = false;
-  for (const ParsedArgument &arg : args) {
+  for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
 
@@ -437,24 +437,16 @@ void ParsedParamSignature::processParameterInputArgs() {
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult
-ParsedParamSignature::parseOptionalParameterSignature(ParserBase &p) {
+ParseResult ParsedParamSignature::parseOptionalParameterSignature(
+    ParserBase &p, SmallVectorImpl<ParsedArgument> &params,
+    ParsedArgument::ArgListKind kind) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
-  // Parse the meta parameters.  We either have () or a parameter list.
-  if (p.consumeIf(Token::l_paren)) {
-    if (p.parseToken(Token::r_paren,
-                     "expected ')' in empty parameter list; try dropping the "
-                     "'(' if you have parameters"))
-      return failure();
-  } else {
-    // Parse an actual parameter list.
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, args, ParsedArgument::ArgListKind::kParamList))
-      return failure();
-  }
+  // Parse an actual parameter list.
+  if (ParsedArgument::parseAndResolvePresentArgumentList(p, params, kind))
+    return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
