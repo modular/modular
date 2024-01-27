@@ -21,10 +21,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Signatures.h"
+
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
-#include "Signatures.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -965,34 +966,9 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   return success();
 }
 
-/// Parse the input and result parameters, if they are present.
-static ParseResult
-parseOptionalFunctionParameters(ParserBase &p,
-                                SmallVectorImpl<ParsedArgument> &inputParams) {
-  if (!p.consumeIf(Token::l_square))
-    return success();
-  // Handle '[]'.
-  if (p.consumeIf(Token::r_square))
-    return success();
-
-  if (p.consumeIf(Token::l_paren)) {
-    if (p.parseToken(Token::r_paren,
-                     "expected ')' in empty parameter list; try dropping the "
-                     "'(' if you have parameters"))
-      return failure();
-  } else {
-    // Parse an actual parameter list.
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, inputParams, ParsedArgument::ArgListKind::kFnTypeParamList))
-      return failure();
-  }
-
-  return p.parseToken(Token::r_square, "expected ']' for parameter list");
-}
-
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
-  SmallVector<ParsedArgument> inputParams, arguments;
+  SmallVector<ParsedArgument> parsedParams, parsedArgs;
   ExprNode *resultTypeExpr = nullptr;
   FnEffects effects;
   bool isDef = false;
@@ -1005,9 +981,10 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   // Parameter signature, argument list and the function effects next.
-  if (parseOptionalFunctionParameters(*this, inputParams) ||
+  if (ParsedParamSignature::parseOptionalParameterSignature(
+          *this, parsedParams, ParsedArgument::ArgListKind::kFnTypeParamList) ||
       ParsedArgument::parseAndResolveParenthesizedArgumentList(
-          *this, arguments, ParsedArgument::ArgListKind::kFnTypeArgList,
+          *this, parsedArgs, ParsedArgument::ArgListKind::kFnTypeArgList,
           effects))
     return failure();
 
@@ -1021,8 +998,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   result = alloc<FunctionTypeNode>(
-      baseLoc, copyArrayRef<ParsedArgument>(inputParams),
-      copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc,
+      baseLoc, copyArrayRef<ParsedArgument>(parsedParams),
+      copyArrayRef<ParsedArgument>(parsedArgs), resultTypeExpr, effects, endLoc,
       isDef, resultLoc);
   return success();
 }
@@ -1031,12 +1008,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
-  SmallVector<ParsedArgument> inputParams, arguments;
+  SmallVector<ParsedArgument> arguments;
   FnEffects effects;
-
-  // Parameter signature, argument list and the function effects next.
-  if (parseOptionalFunctionParameters(*this, inputParams))
-    return failure();
 
   // Mojo supports naked parameters without type annotations for compatibility
   // with Python, but also supports parethesized ones.  We can only support
