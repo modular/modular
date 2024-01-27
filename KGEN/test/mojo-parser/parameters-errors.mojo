@@ -26,7 +26,7 @@ struct Thing[a: Int, b: Int]:
 fn GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-# expected-error @below {{Thing' expects 0 input parameters, but 1 was specified}}
+# expected-error @below {{Thing' expects 0 parameters, but 1 was specified}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
@@ -56,9 +56,9 @@ fn testTestParamStruct(a: Parameterized[4]):
   # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
-  a.method[2, 7] # expected-error {{'method' expects 2 input parameters, but 3 were specified}}
+  a.method[2, 7] # expected-error {{'method' expects 2 parameters, but 3 were specified}}
 
-  var partial_var_type: Thing[1] # expected-error {{'Thing' expects 2 input parameters, but 1 was specified}}
+  var partial_var_type: Thing[1] # expected-error {{'Thing' expects 2 parameters, but 1 was specified}}
 
 
 struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
@@ -81,7 +81,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.index]():
-  # expected-error @below {{parametric callable expects 2 input parameters}}
+  # expected-error @below {{parametric callable expects 2 parameters}}
   return callable[a]
 
 # expected-note @+1 {{function declared here}}
@@ -89,7 +89,7 @@ def generic_fn[a: DType, b: Int](c : Int):
   pass
 
 def call_generic[dt: DType]():
-  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters, but 3 were specified}}
+  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
   generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'DType'}}
 
 fn meta_param_then_param_redef[
@@ -172,7 +172,7 @@ struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]: pass
 struct DefaultParams2[a: Int, b: Int = 7]: pass  # expected-note {{declared here}}
 
 fn test_default_param_struct():
-    # expected-error @+1 {{expects at most 2 input parameters, but 3 were specified}}
+    # expected-error @+1 {{expects at most 2 parameters, but 3 were specified}}
     alias S = DefaultParams2[1, 3, 4]
 
 
@@ -215,17 +215,17 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{expects at least 2 positional input parameters, but 1 was specified}}
+    # expected-error @below {{expects at least 2 positional parameters, but 1 was specified}}
     has_pos_only[1, c=9]
 
 fn indirect_callable_pos_only[
     callable: fn[a: Int, b: Int, /, c: Int = 9] () -> None
 ]():
-    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 1 was specified}}
+    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
     _ = callable[0, b=1, c=2]
-    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 0 were specified}}
+    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 0 were specified}}
     _ = callable[b=1, a=3, c=2]
-    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 1 was specified}}
+    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
     _ = callable[1, c=9]
 
 ##===----------------------------------------------------------------------===##

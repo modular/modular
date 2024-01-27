@@ -41,7 +41,7 @@ enum VarArgKind {
   KWVarArg
 };
 
-/// Parsing support for a function argument and input parameter:
+/// Parsing support for a function argument and parameter:
 ///
 /// argument_list      ::= argument ("," argument)*
 /// argument           ::= "/" | "*"
@@ -126,9 +126,9 @@ struct ParsedArgument {
   /// the argument conventions.
   static ASTType emitFunctionArgumentsAndResults(
       function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
-      SmallVectorImpl<StringAttr> &inputParamNames,
-      SmallVectorImpl<PassingKind> &inputParamPassingKinds,
-      SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+      SmallVectorImpl<StringAttr> &paramNames,
+      SmallVectorImpl<PassingKind> &paramPassingKinds,
+      SmallVectorImpl<ParamDeclAttr> &paramDecls,
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
       SmallVectorImpl<TypedAttr> &defaultPosArgs,

@@ -314,8 +314,8 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 
 // -----
 
-// kgen.func isn't allowed to call generators that take input parameters,
-// but they are allowed to call generators with no input parameters.
+// kgen.func isn't allowed to call generators that take parameters,
+// but they are allowed to call generators with no parameters.
 
 kgen.generator @hasInputParam<param>() {
   kgen.return

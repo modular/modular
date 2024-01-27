@@ -113,7 +113,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // argument names, parameter names, or implicit lifetimes.
   if (from.getArgNames().size() != to.getArgNames().size())
     return false;
-  if (from.getNumInputParams() != to.getNumInputParams())
+  if (from.getNumParams() != to.getNumParams())
     return false;
   if (from.getInputConventions() != to.getInputConventions())
     return false;
@@ -130,7 +130,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
 
   // Result types, and input/result parameter types must match exactly.
   if (from.getValueResults() != to.getValueResults() ||
-      from.getInputParamTypes() != to.getInputParamTypes() ||
+      from.getParamTypes() != to.getParamTypes() ||
       from.getResultParamTypes() != to.getResultParamTypes() ||
       from.getFnEffects() != to.getFnEffects())
     return false;

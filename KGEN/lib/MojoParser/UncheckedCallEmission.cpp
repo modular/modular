@@ -832,7 +832,7 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
       // Check to see if all parameters match.
       if (allIdentical) {
         SmallVector<ParamDeclAttr> paramDecls =
-            callerFunc.collectAllInputParams(/*includeImplLifetimes=*/false);
+            callerFunc.collectAllParams(/*includeImplLifetimes=*/false);
         assert(symbol.getParamValues().size() == paramDecls.size() &&
                "parameter mismatch");
         for (auto [paramValue, paramDecl] :

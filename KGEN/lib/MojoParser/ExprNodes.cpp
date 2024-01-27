@@ -895,7 +895,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Build an overload set of all matching function declarations.
     auto result =
         ORValue::create(spelling, memberDecls,
-                        InputParamBindings::getForDeclaredType(
+                        ParamBindings::getForDeclaredType(
                             emitter.declScope, emitter.shared, baseRVType),
                         this, CallSyntax::kDirectCall);
     result->baseType = baseVal.getRValueType();
@@ -960,7 +960,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType)) {
       for (auto [name, value] :
-           llvm::zip(cast<StructDeclOp>(typeDecl).getInputParams(),
+           llvm::zip(cast<StructDeclOp>(typeDecl).getParams(),
                      baseDecl.getParamValues())) {
         // If this binding is for this parameter propagate the bound
         // parameter.
@@ -1349,8 +1349,8 @@ static PValue substituteParametersIntoUserDefinedType(
   emitter.shared.notifyListenerOnParameterBinding(
       typeDecl, subscript.rsquareLoc, subscript.operands);
 
-  // Build up a InputParamBindings set to validate and check the bindings.
-  InputParamBindings paramBindings(emitter);
+  // Build up a ParamBindings set to validate and check the bindings.
+  ParamBindings paramBindings(emitter);
   for (const Operand &operand : subscript.operands) {
     auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
@@ -1378,9 +1378,9 @@ static PValue substituteParametersIntoUserDefinedType(
 /// Returns the next expected parameter type for a function candidate given a
 /// set of bindings.
 static Type getNextParamType(ASTDecl *fnDecl,
-                             const InputParamBindings &inputParamBindings) {
+                             const ParamBindings &paramBindings) {
   LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] = inputParamBindings.verifyBindings(signature);
+  const auto &[_, fitness] = paramBindings.verifyBindings(signature);
   return fitness.lastExpectedType;
 }
 
@@ -1402,11 +1402,10 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     // use it for parameter type inference.
     ASTType paramType;
     if (operand.isPositional() && !value->fnDecls.empty()) {
-      paramType =
-          getNextParamType(value->fnDecls[0], value->inputParamBindings);
+      paramType = getNextParamType(value->fnDecls[0], value->paramBindings);
       auto hasDifferentNextParam = [&](ASTDecl *decl) {
         return !paramType.isEqualCanon(
-            getNextParamType(decl, value->inputParamBindings));
+            getNextParamType(decl, value->paramBindings));
       };
       if (paramType && value->fnDecls.size() != 1 &&
           llvm::any_of(value->fnDecls, hasDifferentNextParam))
@@ -1423,9 +1422,9 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     // emitted for something.  This allow us to use the provided parameters to
     // filter down the overload set.
     if (operand.isKeyword())
-      value->inputParamBindings.add(operand.value, val.get(), operand.name);
+      value->paramBindings.add(operand.value, val.get(), operand.name);
     else
-      value->inputParamBindings.add(operand.value, val.get());
+      value->paramBindings.add(operand.value, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return value;
@@ -1464,9 +1463,9 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
   ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
   auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   size_t posIdx = 0;
-  size_t numParams = sig.getNumInputParams();
+  size_t numParams = sig.getNumParams();
   for (auto [idx, paramType, paramName, paramPassingKind] : llvm::enumerate(
-           sig.getInputParamTypes(), sig.getParamNames(), passingKinds)) {
+           sig.getParamTypes(), sig.getParamNames(), passingKinds)) {
     // Emit positional operands while possible.
     if (posIdx < numPosOperands) {
       if (failed(addBoundOperand(posOperands[posIdx++], paramType)))
@@ -1483,7 +1482,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
       InflightDiag diag = emitter.emitError(range.getStart())
                           << "parametric callable";
       emitWrongArgOrParamCount(diag, numPosOnly, numParams, numPosOperands,
-                               "positional input parameter");
+                               "positional parameter");
       return {};
     }
 
@@ -1503,8 +1502,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     InflightDiag diag = emitter.emitError(range.getStart())
                         << "parametric callable";
     emitWrongArgOrParamCount(diag, numParams, numParams,
-                             numPosOperands + kwOperands.size(),
-                             "input parameter");
+                             numPosOperands + kwOperands.size(), "parameter");
     diag << range;
     return {};
   }
@@ -1765,9 +1763,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // limited to being keywords.  The values may be arbitrary RValues
   // though, and are emitted in lexical order.
 
-  // Perform parameter substitution if there are input parameters.
+  // Perform parameter substitution if there are parameters.
   ParserParamEvaluator paramEvaluator(emitter.getDeclResolver(),
-                                      structOp.getInputParams(),
+                                      structOp.getParams(),
                                       initType.getParamBindings());
 
   // Build a mapping of field names to field decls for fast lookup.

@@ -70,7 +70,7 @@ public:
                             ArrayRef<StringAttr> argNames,
                             ArrayRef<PassingKind> argPassingKinds,
                             SpecialFunctionKind kind,
-                            ArrayRef<ParamDeclAttr> inputParams = {},
+                            ArrayRef<ParamDeclAttr> params = {},
                             ArrayRef<PassingKind> paramPassingKinds = {});
 
   /// Return the initializer method with the specified signature if it exists
@@ -80,14 +80,16 @@ public:
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `prefix` is prepended to the mangled function name.
-  LIT::FuncOp createFunction(
-      StringRef name, ArrayRef<ParamDeclAttr> inputParams,
-      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-      ArrayRef<ValueInputConvention> argConventions,
-      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-      Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-      ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects(),
-      StringRef prefix = "");
+  LIT::FuncOp createFunction(StringRef name, ArrayRef<ParamDeclAttr> params,
+                             ArrayRef<PassingKind> paramPassingKinds,
+                             ArrayRef<Type> argTypes,
+                             ArrayRef<ValueInputConvention> argConventions,
+                             ArrayRef<StringAttr> argNames,
+                             ArrayRef<PassingKind> argPassingKinds,
+                             Type resultType, SpecialFunctionKind specialFnID,
+                             SMLoc loc, ImplicitLocOpBuilder &builder,
+                             FnEffects effects = FnEffects(),
+                             StringRef prefix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -104,7 +106,7 @@ public:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `prefix` is prepended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
-      StringRef name, ArrayRef<ParamDeclAttr> inputParams,
+      StringRef name, ArrayRef<ParamDeclAttr> params,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
       ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,

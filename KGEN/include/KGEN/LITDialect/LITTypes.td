@@ -115,10 +115,10 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
       using std::nullopt;
       return $_get($_ctxt, nullopt, nullopt, nullopt, nullopt, nullopt, false);
     }]>,
-    TypeBuilder<(ins "ArrayRef<Type>":$inputParams,
+    TypeBuilder<(ins "ArrayRef<Type>":$params,
                      "ArrayRef<StringAttr>":$paramNames,
                      "ArrayRef<PassingKind>":$passingKinds), [{
-      return $_get($_ctxt, inputParams, paramNames, passingKinds,
+      return $_get($_ctxt, params, paramNames, passingKinds,
                    std::nullopt, std::nullopt, false);
     }]>
   ];
@@ -130,10 +130,10 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     ArrayRef<Type> getResultParamTypes() const { return {}; }
 
     /// Get the number of input parameters.
-    size_t getNumInputParams() { return getInputParamTypes().size(); }
+    size_t getNumParams() { return getParamTypes().size(); }
     /// Return true if the parameter at the given index is a vararg.
     bool isVarArg(size_t index) {
-      return index + 1 == getNumInputParams() && getParamVarArg();
+      return index + 1 == getNumParams() && getParamVarArg();
     }
 
     /// Construct a type signature from named parameter declarations. This

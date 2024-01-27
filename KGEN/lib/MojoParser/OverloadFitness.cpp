@@ -453,10 +453,10 @@ struct DiagEmitter : public SharedStateUser {
         callSyntax(callSyntax) {}
 
   InflightDiag unexpectedKwArgs(StringSet<> &unknownKwOperands) const;
-  InflightDiag wrongParamType(const InputParamBindings::Binding &actualBinding,
+  InflightDiag wrongParamType(const ParamBindings::Binding &actualBinding,
                               size_t paramIdx, ASTType expectedType) const;
-  InflightDiag wrongParamCount(size_t expectedNumParams, size_t actualNumParams,
-                               StringRef inputOrResult) const;
+  InflightDiag wrongParamCount(size_t expectedNumParams,
+                               size_t actualNumParams) const;
   InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
                              size_t numOperands) const;
   InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t numOperands,
@@ -517,7 +517,7 @@ DiagEmitter::unexpectedKwArgs(StringSet<> &unknownKwOperands) const {
 }
 
 InflightDiag
-DiagEmitter::wrongParamType(const InputParamBindings::Binding &actualBinding,
+DiagEmitter::wrongParamType(const ParamBindings::Binding &actualBinding,
                             size_t paramIdx, ASTType expectedType) const {
   return initDiag() << "callee parameter #" << paramIdx << " has "
                     << ASTType(expectedType) << " type, but value has type "
@@ -526,12 +526,11 @@ DiagEmitter::wrongParamType(const InputParamBindings::Binding &actualBinding,
 }
 
 InflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
-                                          size_t actualNumParams,
-                                          StringRef inputOrResult) const {
+                                          size_t actualNumParams) const {
   InflightDiag diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, /*minRequired=*/expectedNumParams,
                            /*maxAllowed=*/expectedNumParams, actualNumParams,
-                           Twine(inputOrResult) + " parameter");
+                           "parameter");
   return diag;
 }
 
@@ -950,13 +949,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
   InflightDiag diag = shared.emitError(callLoc);
-  InputParamBindings::DiagEmitter bindingDiag{
+  ParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
         if (posOnly) {
           size_t numPosOnly = countNumPosOnly(signature.getParamPassingKinds());
-          diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual,
-                                               "input parameter");
+          diag =
+              emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual, "parameter");
         } else {
           // Hide the implicit trait parameters from the diagnostic.
           // FIXME(#25492): This is awkward and the model should be reworked.
@@ -964,18 +963,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (ASTType type = callable.baseType)
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 2;
-          size_t numExpected = signature.getNumInputParams() - hidden;
-          diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden,
-                                             "input");
+          size_t numExpected = signature.getNumParams() - hidden;
+          diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
       },
       /*emitPosType=*/
-      [&](size_t paramIdx, const InputParamBindings::Binding &binding,
+      [&](size_t paramIdx, const ParamBindings::Binding &binding,
           ASTType expectedType) {
         diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
       },
       /*emitKwType=*/
-      [&](StringAttr paramName, const InputParamBindings::Binding &binding,
+      [&](StringAttr paramName, const ParamBindings::Binding &binding,
           ASTType expectedType) {
         diag << "callee parameter '" << paramName << "' has "
              << ASTType(expectedType) << " type, but value has type "
@@ -1013,10 +1011,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       return inferred;
     return PValue(defaultParam);
   };
-  auto [newBindings, bindingFitness] =
-      callable.inputParamBindings.verifyBindings(
-          signature, bindingDiag, parameterInferenceHook,
-          /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
+  auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
+      signature, bindingDiag, parameterInferenceHook,
+      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
   // If there is an error, we just forward the diagnostics.
   if (!newBindings)
@@ -1102,7 +1099,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                            numImplicitConversions, numMismatchedConventions,
                            hasNonmaterializableConversion,
                            allowImplicitConversions, loc,
-                           callable.inputParamBindings.declScope, shared);
+                           callable.paramBindings.declScope, shared);
   };
 
   // We collect missing arguments (in case the argument count check didn't catch

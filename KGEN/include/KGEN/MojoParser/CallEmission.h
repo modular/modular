@@ -27,7 +27,7 @@ class TypeSignatureType;
 enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
-// InputParamBindings
+// ParamBindings
 //===----------------------------------------------------------------------===//
 
 /// This class holds a work-in-progress set of parameter bindings for a type or
@@ -43,7 +43,7 @@ enum class PassingKind : uint32_t;
 /// will be bound as the TypedAttr value of param2.  We cannot type check the
 /// bindings until overload resolution has resolved which 'method' we are
 /// talking about and when inference is complete, so we keep a flag.
-class InputParamBindings {
+class ParamBindings {
 public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
@@ -68,10 +68,10 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
-  /// This contains a list of bound input parameters given positionally.
+  /// This contains a list of bound parameters given positionally.
   SmallVector<Binding> posBindings;
 
-  /// This contains the bound input parameters given by a keyword.
+  /// This contains the bound parameters given by a keyword.
   SmallDenseMap<StringAttr, Binding> kwBindings;
 
   /// A list of all default parameter values declared for a type, if these are
@@ -82,17 +82,17 @@ public:
   /// overload set on a method.
   size_t numCtadParams = 0;
 
-  /// Initialize InputParamBindings with a declscope to perform lookups against
+  /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
-  InputParamBindings(ExprEmitter &emitter);
-  InputParamBindings(ASTDecl &declScope, SharedState &shared)
+  ParamBindings(ExprEmitter &emitter);
+  ParamBindings(ASTDecl &declScope, SharedState &shared)
       : declScope(declScope), shared(shared) {}
 
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static InputParamBindings
-  getForDeclaredType(ASTDecl &declScope, SharedState &shared, ASTType type);
+  static ParamBindings getForDeclaredType(ASTDecl &declScope,
+                                          SharedState &shared, ASTType type);
 
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
@@ -121,7 +121,7 @@ public:
       size_t, ArrayRef<TypedAttr>, TypedAttr, ParserParamEvaluator &)>;
 
   /// Describe how closely the given parameter bindings match the specified
-  /// input parameters and call operands.
+  /// parameters and call operands.
   struct Fitness {
     /// The number of implicit conversion in the parameter bindings.
     size_t numImplicitConversions;
@@ -186,7 +186,7 @@ public:
 private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
-  /// information on how closely the bindings fit the input parameters, or why
+  /// information on how closely the bindings fit the parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
@@ -201,7 +201,7 @@ private:
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
-  /// information on how closely the bindings fit the input parameters, or why
+  /// information on how closely the bindings fit the parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not
   /// work, this emits diagnostics using the locations and `baseName` provided.
@@ -301,8 +301,8 @@ public:
   /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
-  /// Any bound input parameters.
-  InputParamBindings inputParamBindings;
+  /// Any bound parameters.
+  ParamBindings paramBindings;
 
   /// This is information about where this overload set was formed.
   const ExprNode *expr;
@@ -311,7 +311,7 @@ public:
   /// Form an overload set with the specified function overloads and the given
   /// parameter bindings. The parameter bindings are taken ownership of.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-              InputParamBindings &&inputParamBindings, const ExprNode *expr,
+              ParamBindings &&paramBindings, const ExprNode *expr,
               CallSyntax syntax);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,
@@ -339,7 +339,7 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  SharedState &getShared() const { return inputParamBindings.shared; }
+  SharedState &getShared() const { return paramBindings.shared; }
 
   /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
@@ -390,7 +390,7 @@ public:
 private:
   OverloadSet(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
               CallSyntax syntax)
-      : inputParamBindings(declScope, shared), expr(expr), syntax(syntax) {}
+      : paramBindings(declScope, shared), expr(expr), syntax(syntax) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

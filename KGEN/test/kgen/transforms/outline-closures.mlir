@@ -254,7 +254,7 @@ kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> in
   kgen.return %0 : index
 }
 
-// COM: We should not try and capture input parameters.
+// COM: We should not try and capture parameters.
 // CHECK-LABEL: @dontBindInputParameters_fn<T: type, N>
 kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index fn, I)]()

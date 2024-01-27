@@ -631,7 +631,7 @@ ASTType SharedState::lookupNonparameterizedNamedType(StringRef name,
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
     return {};
   }
-  if (!structOp.getInputParams().empty()) {
+  if (!structOp.getParams().empty()) {
     auto diag = emitError(loc, "'")
                 << name << "' resolves to a parameterized type";
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
@@ -1090,8 +1090,8 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   // Get the pack parameter from the Tuple type.
   ASTDecl &tupleLiteralDecl = *tupleType.getDecl(*this);
   auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
-  assert(tupleLiteralStruct.getInputParams().size() == 1);
-  ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
+  assert(tupleLiteralStruct.getParams().size() == 1);
+  ParamDeclAttr tupleParam = tupleLiteralStruct.getParams()[0];
 
   // Bind the correct element types for the tuple to the tuple type.
   SmallVector<TypedAttr> eltTypes;
@@ -1730,7 +1730,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             .Case([&](StructDeclOp structOp) {
               // Resolve the types of any parameters.
               typeWalker.walk<mlir::WalkOrder::PreOrder>(
-                  structOp.getInputParamsAttr());
+                  structOp.getParamsAttr());
               typeWalker.walk<mlir::WalkOrder::PreOrder>(
                   structOp.getParentTypesAttr());
               if (TypeAttr nmTarget = structOp.getNonmaterializableTargetAttr())
@@ -1738,7 +1738,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               return success();
             })
             .Case([&](TraitDeclOp traitOp) {
-              // TODO(traits): Resolve input parameter types, when they exist.
+              // TODO(traits): Resolve parameter types, when they exist.
               return success();
             })
             .Case([&](UnresolvedImportOp unresolvedImport) {
@@ -1845,8 +1845,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
             structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(op));
-            for (ParamDeclAttr param : op.getInputParams()) {
-              // Add the input parameters as accessible member decls. Make sure
+            for (ParamDeclAttr param : op.getParams()) {
+              // Add the parameters as accessible member decls. Make sure
               // to demangle the parameter name.
               declResolver->addFullyResolvedDecl(
                   PValue(ParamDeclRefAttr::get(param)),
@@ -1857,7 +1857,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
             traitDecl.setSelfType(ASTDecl::computeSelfTypeForTrait(op));
-            // TODO(traits): Add decls for input parameters, when they exist.
+            // TODO(traits): Add decls for parameters, when they exist.
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),

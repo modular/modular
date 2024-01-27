@@ -80,13 +80,13 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
-ArrayRef<Type> ASTType::getInputParameters() const {
+ArrayRef<Type> ASTType::getParameters() const {
   // Query the metatype for the parameter signature.
   if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
-    return metaType.getSignature().getInputParamTypes();
+    return metaType.getSignature().getParamTypes();
   if (MetaTypeType metaType =
           dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
-    return metaType.getSignature().getInputParamTypes();
+    return metaType.getSignature().getParamTypes();
   return {};
 }
 
@@ -443,13 +443,12 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     if (sig.isAsync())
       os << "async ";
     os << "fn";
-    if (!sig.getInputParamTypes().empty() ||
-        !sig.getResultParamTypes().empty()) {
+    if (!sig.getParamTypes().empty() || !sig.getResultParamTypes().empty()) {
       os << '[';
-      if (!sig.getInputParamTypes().empty()) {
+      if (!sig.getParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (sig.hasParamVarArgs() && i == sig.getNumInputParams() - 1) {
+          if (sig.hasParamVarArgs() && i == sig.getNumParams() - 1) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
                 .print(os, forDiag);
@@ -457,7 +456,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
             ASTType(type).print(os, forDiag);
           }
         };
-        llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
+        llvm::interleaveComma(llvm::enumerate(sig.getParamTypes()), os,
                               printFn);
       } else {
         os << "()";

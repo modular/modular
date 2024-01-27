@@ -1320,15 +1320,16 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // enter method can consume the value... unless __enter__ takes self byref.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
         signature && !signature.getInputConventions().empty()) {
-      auto firstArgConvention = signature.getInputConventions()[0];
-      if (firstArgConvention != ValueInputConvention::ByRef && !hasExitMethod)
+      auto firstValueInputConvention = signature.getInputConventions()[0];
+      if (firstValueInputConvention != ValueInputConvention::ByRef &&
+          !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in check lifetimes, so cut that off here.
-      if ((firstArgConvention == ValueInputConvention::OwnedInReg ||
-           firstArgConvention == ValueInputConvention::OwnedInMem) &&
+      if ((firstValueInputConvention == ValueInputConvention::OwnedInReg ||
+           firstValueInputConvention == ValueInputConvention::OwnedInMem) &&
           hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")

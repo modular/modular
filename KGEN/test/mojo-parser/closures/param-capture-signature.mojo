@@ -20,12 +20,12 @@ fn foo[Z: Int, W: Int]() -> Int:
     return Z * W
 
 
-# COM: Closure Impl has correct input parameters.
+# COM: Closure Impl has correct parameters.
 # CHECK: lit.struct.decl @"`_CI_
 # CHECK-SAME: <[[b:.*]]: !Int, [[a:.*]]: !Int, [[Y:.*]]: !Int, |>
 
 
-# COM: Closure Wrapper has correct input parameters and initializer parameters
+# COM: Closure Wrapper has correct parameters and initializer parameters
 # CHECK: lit.struct.decl @"fn
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 # CHECK: lit.func @"__init__{{.*}}<[[Y:.*]]: !Int, |>

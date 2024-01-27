@@ -571,8 +571,8 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   if (auto signature = dyn_cast<LITSignatureType>(attr.getType())) {
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
-    if (!signature.getInputParamTypes().empty()) {
-      InputParamBindings paramBindings(*this);
+    if (!signature.getParamTypes().empty()) {
+      ParamBindings paramBindings(*this);
       auto [bindingAttr, _] = paramBindings.verifyBindings(signature);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
@@ -965,9 +965,9 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
       SmallVector<TypedAttr> fnParams = selfParams;
       LITSignatureType sig = traitFn.getFullSignature();
       ParameterEvaluator evaluator(selfParams);
-      auto bindings = InputParamBindings::getForDeclaredType(
-          declScope, shared, ASTType(typeValue));
-      for (Type type : sig.getInputParamTypes().drop_front(2)) {
+      auto bindings = ParamBindings::getForDeclaredType(declScope, shared,
+                                                        ASTType(typeValue));
+      for (Type type : sig.getParamTypes().drop_front(2)) {
         fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
         evaluator.addInputValue(fnParams.back());
         bindings.addPrechecked(fnParams.back());
@@ -1478,9 +1478,9 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (!structDecl)
     return type;
 
-  // Build up a InputParamBindings set to validate and check the bindings. Skip
+  // Build up a ParamBindings set to validate and check the bindings. Skip
   // unbound values.
-  InputParamBindings paramBindings(*this);
+  ParamBindings paramBindings(*this);
   for (TypedAttr binding : type.getParamBindings())
     if (!isa<UnboundAttr>(binding))
       paramBindings.addPrechecked(binding);
@@ -1671,14 +1671,14 @@ PValue ExprEmitter::resolveAliasDeclareValue(
 
       // Disallow accessing alias members of an unbound type.
       // TODO: This should return a parametric alias instead.
-      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getInputParams();
+      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getParams();
       size_t numParams = llvm::count_if(*paramValues, [](TypedAttr value) {
         return !isa<UnboundAttr>(value);
       });
       if (paramDecls.size() != numParams) {
         shared.emitError(errLoc,
                          "incorrect number of type parameters: expected ")
-            << structDecl.getInputParams().size() << " but got " << numParams;
+            << structDecl.getParams().size() << " but got " << numParams;
         return PValue();
       }
 
@@ -1703,8 +1703,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, InputParamBindings(*this),
-                                  expr, CallSyntax::kDirectCall);
+    auto result = ORValue::create(spelling, decls, ParamBindings(*this), expr,
+                                  CallSyntax::kDirectCall);
     return emitResult(result, expr, dest);
   }
 
@@ -1941,7 +1941,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   // Bind the Tuple type parameters.
-  getDecl.inputParamBindings.addPrechecked(packVariadic);
+  getDecl.paramBindings.addPrechecked(packVariadic);
 
   // Ok, we have a tuple with the right number of elements, extract each element
   // and store into the corresponding lvalue.
@@ -1949,9 +1949,9 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     // Bind the i/T parameters.  Int implicitly constructs from index type.
     TypedAttr iParam =
         IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    getDecl.inputParamBindings.posBindings.resize(1);
-    getDecl.inputParamBindings.add(expr, iParam);
-    getDecl.inputParamBindings.add(expr, packVariadic.getValues()[index]);
+    getDecl.paramBindings.posBindings.resize(1);
+    getDecl.paramBindings.add(expr, iParam);
+    getDecl.paramBindings.add(expr, packVariadic.getValues()[index]);
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
