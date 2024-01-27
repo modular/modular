@@ -15,6 +15,7 @@ fn compile_code[
     func_type: AnyRegType,
     func: func_type,
     /,
+    *,
     emission_kind: StringLiteral = "asm",
 ]() -> StringLiteral:
     """Compiles the function passed in to the assembly instruction. This is
