@@ -247,3 +247,12 @@ TEST(TensorShape, copyAssignmentDoesntLeak) {
   a = b;
   // LSAN should now fail if this caused a leak.
 }
+
+TEST(TensorShape, copyAssignSelf) {
+  TensorShape a{1, 2, 3, 4, 5, 6, 7};
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wself-assign-overloaded"
+  a = a;
+#pragma GCC diagnostic pop
+  EXPECT_EQ(a, TensorShape({1, 2, 3, 4, 5, 6, 7}));
+}
