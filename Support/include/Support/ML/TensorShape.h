@@ -109,6 +109,8 @@ public:
     operator=(other);
   }
   void operator=(const TensorShapeStorage &other) {
+    if (&other == this)
+      return;
     if (isOutOfLine())
       delete[] representation.repOutOfLine.dims;
     memcpy(&representation, &other.representation, sizeof(representation));
