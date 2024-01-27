@@ -93,6 +93,10 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype,
   case DType::invalid:
     return DIUnspecifiedType::get(ctx, "void");
 
+  case KGENDType::address:
+    return buildIntFpDebugType<DIBasicUIntType>(ctx, "address", indexWidth,
+                                                indexWidth);
+
   case KGENDType::index:
     return buildIntFpDebugType<DIBasicUIntType>(ctx, "index", indexWidth,
                                                 indexWidth);

@@ -205,11 +205,9 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
     return ::detail::foldSIMDOpDType<bool>(
         [](const DTypeValue &val) { return val.getBoolVal(); }, operands,
         resultDType, std::forward<OpFns>(ops)...);
-  if constexpr (indexFoldType != kNoIndex) {
-    if (inputDType.isIndex())
-      return ::detail::foldSIMDOpIndex<indexFoldType>(
-          operands, resultDType, std::forward<OpFns>(ops)...);
-  }
+  if (inputDType.isIndex() || inputDType.isAddress())
+    return ::detail::foldSIMDOpIndex<indexFoldType>(
+        operands, resultDType, std::forward<OpFns>(ops)...);
   llvm_unreachable("unhandled dtype");
 }
 } // namespace detail
@@ -648,9 +646,8 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
         [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
   }
   if (dtype->isIndex() || dtype->isAddress()) {
-    // Cast to index or address like it's a 64-bit integer. Index-to-index cast
-    // is handled by the early exit above.
-    return foldSIMDOpResult<::detail::kNoIndex>(
+    // Cast to index like it's a 64-bit integer. Address is handled like index.
+    return foldSIMDOpResult<::detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
         [](const APSInt &in) { return in.getSExtValue(); },
         [](const APFloat &in) -> std::optional<int64_t> {
@@ -662,6 +659,10 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
           return iv.getSExtValue();
         },
         [](bool in) { return static_cast<int64_t>(in); });
+  }
+  if (dtype->isInvalid()) {
+    // Invalid is not inhabitable.
+    return {};
   }
   assert(dtype->isBool());
   return foldSIMDOpResult<::detail::kOtherResult>(

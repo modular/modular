@@ -552,6 +552,42 @@ kgen.func @cast_index_to_index() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
+// CHECK-LABEL: @cast_int_to_address
+kgen.func @cast_int_to_address() -> !pop.scalar<address> {
+  // CHECK-NEXT: scalar<address> = <62>
+  // CHECK-NOT: pop.cast
+  %0 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<62>>
+  %1 = pop.cast %0 : !pop.scalar<si32> to !pop.scalar<address>
+  kgen.return %1 : !pop.scalar<address>
+}
+
+// CHECK-LABEL: @cast_address_to_int
+kgen.func @cast_address_to_int() -> !pop.scalar<ui64> {
+  // CHECK-NEXT: scalar<ui64> = <78>
+  // CHECK-NOT: pop.cast
+  %0 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<78>>
+  %1 = pop.cast %0 : !pop.scalar<address> to !pop.scalar<ui64>
+  kgen.return %1 : !pop.scalar<ui64>
+}
+
+// CHECK-LABEL: @cast_index_to_address
+kgen.func @cast_index_to_address() -> !pop.scalar<address> {
+  // CHECK-NEXT: scalar<address> = <88>
+  // CHECK-NOT: pop.cast
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<88>>
+  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<address>
+  kgen.return %1 : !pop.scalar<address>
+}
+
+// CHECK-LABEL: @cast_address_to_index
+kgen.func @cast_address_to_index() -> !pop.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <95>
+  // CHECK-NOT: pop.cast
+  %0 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<95>>
+  %1 = pop.cast %0 : !pop.scalar<address> to !pop.scalar<index>
+  kgen.return %1 : !pop.scalar<index>
+}
+
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   // CHECK-NEXT: <20>
