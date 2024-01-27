@@ -254,17 +254,6 @@ fn graph_new_op(
 
 
 # ===----------------------------------------------------------------------===#
-# Module support
-# ===----------------------------------------------------------------------===#
-
-
-fn module_to_bytecode(module: mlir.Module, file_name: String) -> Bool:
-    return cfunc[fn (mlir._c.IR.MlirModule, StringRef) -> Bool](
-        "MAXG_moduleToBytecode"
-    )(module._c, file_name._strref_dangerous())
-
-
-# ===----------------------------------------------------------------------===#
 # Symbol support
 # ===----------------------------------------------------------------------===#
 

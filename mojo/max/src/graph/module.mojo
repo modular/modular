@@ -42,9 +42,8 @@ struct Module:
             raise "Module did not verify"
 
     fn save_to_file(self, path: Path) raises:
-        # TODO: high-level bytecode writer API
-        if not capi.module_to_bytecode(self.m, str(path)):
-            raise "Error writing to file"
+        with open(path, "w") as file:
+            self.m.as_op().write(file)
 
     # ===------------------------------------------------------------------=== #
     # Location factories
