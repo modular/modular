@@ -20,12 +20,12 @@ add_modular_library(MojoParser
   Lexer.cpp
   MojoUtils.cpp
   OverloadFitness.cpp
-  ParsedArgument.cpp
   ParserBase.cpp
   ParserExprs.cpp
   ParserParamEvaluator.cpp
   ParserStmts.cpp
   SharedState.cpp
+  Signatures.cpp
   StructEmitter.cpp
   UncheckedCallEmission.cpp
 

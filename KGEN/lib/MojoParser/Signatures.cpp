@@ -3,8 +3,14 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This contains logic for parsing and type checking and IR building of function
+// signatures.  This is used both for fn/def declarations, but also for function
+// type syntax.
+//
+//===----------------------------------------------------------------------===//
 
-#include "ParsedArgument.h"
+#include "Signatures.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -356,13 +362,10 @@ static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
 }
 
 /// Core implementation of the parameter argument parsing logic.
-static void processParameterArgs(
-    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-    SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
-    SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams,
-    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool isResultParams,
-    bool &paramVarArg) {
+void ParsedParamSignature::processParameterInputArgs() {
+  // Resolve each of the parameter declarations.
+  ExprEmitter emitter(shared, declScope, EC_Type);
+
   bool seenPosInitExpr = false;
   bool seenKwOnlyInitExpr = false;
   for (const ParsedArgument &arg : args) {
@@ -378,15 +381,13 @@ static void processParameterArgs(
       type = emitter.shared.getTypeCheckErrorType();
 
     VarArgKind vararg = arg.vararg;
-    if (vararg != VarArgKind::None && isResultParams)
-      emitter.emitError(arg.loc, "result parameters may not be variadic");
     if (vararg == VarArgKind::PackVarArg)
       emitter.emitError(arg.loc, "parameters may not be variadic packs");
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
       type = VariadicType::get(type, ValueInputConvention::BorrowedInReg);
-      paramVarArg = true;
+      isVarArgs = true;
     }
 
     if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly)
@@ -406,10 +407,6 @@ static void processParameterArgs(
         seenPosInitExpr = true;
       }
 
-      if (isResultParams) {
-        emitter.emitError(arg.loc,
-                          "unexpected default value for result parameter");
-      }
     } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
       emitOptionalAfterRequired(emitter, arg, "parameter")
           << arg.typeExpr->getRange();
@@ -424,14 +421,12 @@ static void processParameterArgs(
     // the location so that parameter names in mojo are unique in the IR.
     auto newDecl =
         ParamDeclAttr::get(declScope.getUniqueParamNameNew(arg.name), type);
-    params.push_back(newDecl);
+    paramDeclAttrs.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
-    if (!isResultParams) {
-      passingKinds.emplace_back(
-          ParsedArgument::mapToPassingKind(arg.kwArgHandling));
-      names.push_back(arg.name);
-    }
+    passingKinds.emplace_back(
+        ParsedArgument::mapToPassingKind(arg.kwArgHandling));
+    names.push_back(arg.name);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
@@ -439,31 +434,14 @@ static void processParameterArgs(
   }
 }
 
-void ParsedArgument::processParameterInputArgs(
-    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-    SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
-    SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams,
-    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg) {
-  processParameterArgs(emitter, declScope, args, params, names, passingKinds,
-                       defaultPosParams, defaultKwOnlyParams,
-                       /*isResultParams=*/false, paramVarArg);
-}
-
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult LIT::impl::parseOptionalParameterSignature(
-    ParserBase &p, ASTDecl &declScope,
-    SmallVectorImpl<ParamDeclAttr> &inputParams,
-    SmallVectorImpl<StringAttr> &names,
-    SmallVectorImpl<PassingKind> &passingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams,
-    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg) {
+ParseResult
+ParsedParamSignature::parseOptionalParameterSignature(ParserBase &p) {
+  // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
-
-  SmallVector<ParsedArgument> args;
 
   // Parse the meta parameters.  We either have () or a parameter list.
   if (p.consumeIf(Token::l_paren)) {
@@ -478,11 +456,6 @@ ParseResult LIT::impl::parseOptionalParameterSignature(
       return failure();
   }
 
-  // Resolve each of the parameter declarations.
-  ExprEmitter emitter(p.shared, declScope, EC_Type);
-  ParsedArgument::processParameterInputArgs(
-      emitter, declScope, args, inputParams, names, passingKinds,
-      defaultPosParams, defaultKwOnlyParams, paramVarArg);
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 

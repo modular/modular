@@ -281,20 +281,6 @@ private:
   DeclResolver &operator=(const DeclResolver &) = delete;
 };
 
-namespace impl {
-/// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
-/// param_list   ::= argument_list | "(" ")"
-/// param_result_types ::= expression ("," expression)*
-ParseResult
-parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
-                                SmallVectorImpl<ParamDeclAttr> &inputParams,
-                                SmallVectorImpl<StringAttr> &names,
-                                SmallVectorImpl<PassingKind> &passingKinds,
-                                SmallVectorImpl<TypedAttr> &defaultPosParams,
-                                SmallVectorImpl<TypedAttr> &defaultKwOnlyParams,
-                                bool &paramVarArg);
-} // namespace impl
-
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_DECLRESOLVER_H

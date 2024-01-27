@@ -3,9 +3,14 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This contains logic for parsing and type checking and IR building of
+// signatures for structs, functions, and function types.
+//
+//===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_PARSEDARGUMENT_H
-#define KGEN_MOJOPARSER_PARSEDARGUMENT_H
+#ifndef KGEN_MOJOPARSER_SIGNATURES_H
+#define KGEN_MOJOPARSER_SIGNATURES_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -18,6 +23,7 @@ class ASTType;
 class ExprEmitter;
 class ExprNode;
 class ParserBase;
+class SharedState;
 
 //===----------------------------------------------------------------------===//
 // Argument and Parameter List Parsing
@@ -44,6 +50,9 @@ enum VarArgKind {
 /// argument_convention ::= "owned" | "borrowed" | "inout"
 /// argument_variadic  ::= "*" | "**"
 /// argument_type      ::= ":" star_expression
+///
+/// Note that this  type is stored in a bump pointer allocated ExprNode, so
+/// it cannot have a destructor!
 struct ParsedArgument {
   SMLoc loc;
   LexerCursor cursor;
@@ -113,17 +122,6 @@ struct ParsedArgument {
       ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
       FnEffects &fnEffects);
 
-  /// Process parsed parameter arguments into input parameters by determining
-  /// the correct parameter types, conventions, and default parameter values.
-  /// The unmangled parameter names are also collected.
-  static void processParameterInputArgs(
-      ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-      SmallVectorImpl<ParamDeclAttr> &params,
-      SmallVectorImpl<StringAttr> &names,
-      SmallVectorImpl<PassingKind> &passingKinds,
-      SmallVectorImpl<TypedAttr> &defaultPosParams,
-      SmallVectorImpl<TypedAttr> &defaultKwOnlyParams, bool &paramVarArg);
-
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
   static ASTType emitFunctionArgumentsAndResults(
@@ -142,6 +140,43 @@ struct ParsedArgument {
   static PassingKind mapToPassingKind(KWArgHandling handling);
 };
 
+//===----------------------------------------------------------------------===//
+// ParsedParamSignature
+//===----------------------------------------------------------------------===//
+
+/// This is all the state built up when parsing the parameter signature for a
+/// parameterized declaration, (e.g. a function or struct).  This also includes
+/// various whole-signature utilities.
+class ParsedParamSignature {
+public:
+  ParsedParamSignature(SharedState &shared, ASTDecl &declScope)
+      : shared(shared), declScope(declScope) {}
+
+  SharedState &shared;
+  ASTDecl &declScope;
+
+  bool isVarArgs = false;
+  /// One ParamDeclAttr for each parameter being declared.
+  SmallVector<ParamDeclAttr> paramDeclAttrs;
+
+  /// The full ParsedArgument for each parameter.
+  SmallVector<ParsedArgument> args;
+  SmallVector<StringAttr> names;
+  SmallVector<PassingKind> passingKinds;
+  SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
+
+  /// Parse a parameter signature if present.
+  ///
+  /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
+  /// param_list   ::= argument_list | "(" ")"
+  /// param_result_types ::= expression ("," expression)*
+  ParseResult parseOptionalParameterSignature(ParserBase &p);
+
+  /// Resolve each of the parameters.
+  void processParameterInputArgs();
+};
+
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_MOJOPARSER_PARSEDARGUMENT_H
+#endif // KGEN_MOJOPARSER_SIGNATURES_H
