@@ -44,6 +44,12 @@ def custom_ops_package_path(request) -> Path:
     return Path(request.config.getoption("--custom-ops-path"))
 
 
+@pytest.fixture
+def mo_listio_model_path(modular_path: Path) -> Path:
+    """Returns the path to the generated model with list I/O."""
+    return modular_path / "All" / "test" / "API" / "c" / "mo-list-io-model.api"
+
+
 def test_execute_success(mo_model_path: Path):
     session = me.InferenceSession()
     model = session.load(mo_model_path)
@@ -92,6 +98,21 @@ def test_custom_ops(
         output["output"],
         np.array([4.0]).astype(np.float32),
     )
+
+
+def test_list_io(mo_listio_model_path: Path):
+    session = me.InferenceSession()
+    options = me.CommonLoadOptions()
+    model_with_list_io = session.load(mo_listio_model_path, options)
+    output = model_with_list_io.execute(
+        input_list=[np.zeros(2)], input_tensor=np.ones(5)
+    )
+    assert "output_list" in output
+    output_list = output["output_list"]
+    assert len(output_list) == 3
+    assert np.allclose(output_list[0], np.zeros(2))
+    assert np.allclose(output_list[1], np.array([1.0, 2.0, 3.0]))
+    assert np.allclose(output_list[2], np.ones(5))
 
 
 def test_dynamic_rank_spec():
