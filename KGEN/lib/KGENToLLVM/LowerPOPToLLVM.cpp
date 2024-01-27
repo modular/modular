@@ -167,11 +167,13 @@ public:
   matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getLhs().getType().getResolvedDType();
-    if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
+        dtype.isAddress()) {
       rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
           op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
           adaptor.getRhs());
     } else {
+      assert(dtype.isFloat());
       Type i1Type = rewriter.getI1Type();
       if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType())) {
         auto size = *simd.getResolvedSize();
