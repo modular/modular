@@ -16,7 +16,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "MojoUtils.h"
-#include "ParsedArgument.h"
+#include "Signatures.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -2863,29 +2863,27 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // dummy declaration.
   ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
-  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
-  bool paramVarArg = false;
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  ParsedArgument::processParameterInputArgs(
-      typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
-      paramPassingKinds, defaultPosParams, defaultKwOnlyParams, paramVarArg);
+  ParsedParamSignature paramSignature(emitter.shared, dummyScope);
+  llvm::append_range(paramSignature.args, inputParams);
+
+  // Process the parameters we have.
+  paramSignature.processParameterInputArgs();
 
   FnEffects effects = this->effects;
-  if (paramVarArg)
+  if (paramSignature.isVarArgs)
     effects.setParamVarArgs();
+
+  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      [&] { return failure(); }, typeEmitter, paramNames, paramPassingKinds,
-      inputParamDecls, resultTypeExpr, effects, args, argTypes, defaultPosArgs,
+      [&] { return failure(); }, typeEmitter, paramSignature.names,
+      paramSignature.passingKinds, paramSignature.paramDeclAttrs,
+      resultTypeExpr, effects, args, argTypes, defaultPosArgs,
       defaultKwOnlyArgs, isDef, resultLoc);
   if (!resultType)
     return {};
@@ -2920,10 +2918,12 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   FunctionType functionType =
       b.getFunctionType(argTypes, {resultType.mlirType});
   LITSignatureType signature = SignatureType::remapToSignature(
-      inputParamDecls, {}, functionType, inputConventions, effects,
-      FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, defaultPosArgs, defaultPosParams,
-                          defaultKwOnlyArgs, defaultKwOnlyParams,
+      paramSignature.paramDeclAttrs, {}, functionType, inputConventions,
+      effects,
+      FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds,
+                          paramSignature.names, paramSignature.passingKinds,
+                          defaultPosArgs, paramSignature.defaultPosParams,
+                          defaultKwOnlyArgs, paramSignature.defaultKwOnlyParams,
                           implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {

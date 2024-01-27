@@ -19,7 +19,7 @@
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "MojoUtils.h"
-#include "ParsedArgument.h"
+#include "Signatures.h"
 
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -353,7 +353,9 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
         return;
 
       // It is ok if it is an explicit !lit.ref to the underlying type.
-      // TODO: Users should not be exposed to this!
+      // TODO(references): Users should not be exposed to this!  This should go
+      // away when we have lifetimeof(self) and have a way to express parametric
+      // mutability.
       auto selfArgRefType = dyn_cast<RefType>(selfArgType);
       if (selfArgRefType &&
           selfType.isEqualCanon(selfArgRefType.getElementType())) {
@@ -865,10 +867,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  FnEffects effects;
-  effects.setAsync(p.consumeIf(Token::kw_async));
-  if (p.getToken().is(Token::kw_def))
-    effects.setThrows();
+  bool isAsync = p.consumeIf(Token::kw_async);
+  bool isDef = p.getToken().is(Token::kw_def);
   p.consumeToken();
 
   StringAttr baseName;
@@ -881,37 +881,37 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  // If the parent struct has param varargs, any member functions will too.
-  bool paramVarArg = false;
-  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
-  if (structDecl)
-    paramVarArg = structDecl.getSignature().getParamVarArg();
-
   // Parse declared meta parameters and add them to the current scope.
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<ParsedArgument> args;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
+  ParsedParamSignature paramSignature(shared, sigDecl);
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (impl::parseOptionalParameterSignature(
-          p, sigDecl, inputParamDecls, paramNames, paramPassingKinds,
-          defaultPosParams, defaultKwOnlyParams, paramVarArg))
+  if (paramSignature.parseOptionalParameterSignature(p))
     return failure();
 
+  paramSignature.processParameterInputArgs();
+
+  // Set up the known effects.
+  FnEffects effects;
+  if (isAsync)
+    effects.setAsync(true);
+  if (isDef)
+    effects.setThrows();
+
+  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
+  if (paramSignature.isVarArgs ||
+      // If the parent struct has param varargs, any member functions will too.
+      (structDecl && structDecl.getSignature().getParamVarArg()))
+    effects.setParamVarArgs();
+
   // Parse the argument list next if present.
+  SmallVector<ParsedArgument> args;
   if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
           p, args, ParsedArgument::ArgListKind::kArgList, effects))
     return failure();
-
-  if (paramVarArg)
-    effects.setParamVarArgs();
 
   // Parse the result type if present.
   ExprNode *resultTypeExpr = nullptr;
@@ -939,13 +939,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
+      reportError, typeEmitter, paramSignature.names,
+      paramSignature.passingKinds, paramSignature.paramDeclAttrs,
       resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      defaultKwOnlyArgs, funcOp.getIsDef(), resultLoc, &decl, fnInfo);
+      defaultKwOnlyArgs, isDef, resultLoc, &decl, fnInfo);
   if (!resultType)
     return failure();
 
-  if (isCapturingByDefault(funcOp, structDecl, inputParamDecls))
+  if (isCapturingByDefault(funcOp, structDecl, paramSignature.paramDeclAttrs))
     effects.setCapturing();
 
   // Now that we have figured out the lexical structure, allow decorators to
@@ -1007,15 +1008,17 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
-  auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
+  auto inputParamsAttr =
+      builder.getAttr<ParamDeclArrayAttr>(paramSignature.paramDeclAttrs);
 
   // Compute the signature of the function.
   FunctionType functionType =
       builder.getFunctionType(argTypes, {resultType.mlirType});
   auto metadata = FnMetadataAttr::get(
-      builder.getContext(), argNames, argPassingKinds, paramNames,
-      paramPassingKinds, defaultPosArgs, defaultPosParams, defaultKwOnlyArgs,
-      defaultKwOnlyParams, implicitLifetimeDecls.size());
+      builder.getContext(), argNames, argPassingKinds, paramSignature.names,
+      paramSignature.passingKinds, defaultPosArgs,
+      paramSignature.defaultPosParams, defaultKwOnlyArgs,
+      paramSignature.defaultKwOnlyParams, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, {}, functionType, inputConventions, effects, metadata,
       silenceErrors(getContext()));
@@ -1034,7 +1037,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!implicitLifetimeDecls.empty()) {
     SmallVector<ParamDeclAttr> mergedInputParams(implicitLifetimeDecls.begin(),
                                                  implicitLifetimeDecls.end());
-    mergedInputParams.append(inputParamDecls.begin(), inputParamDecls.end());
+    llvm::append_range(mergedInputParams, paramSignature.paramDeclAttrs);
     inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(mergedInputParams);
   }
 
@@ -1107,10 +1110,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       // runtime value.
       if (signature.isEscaping() ||
           !shared.getCaptureRangeInScope(decl).empty()) {
-        if (!inputParamDecls.empty()) {
+        if (!paramSignature.paramDeclAttrs.empty())
           return emitError(funcOp.getLoc(),
                            "TODO: closures cannot have input parameters");
-        }
 
         // Emit closure structures necessary for instantiating an escaping
         // closure
@@ -1783,36 +1785,33 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
+  ParsedParamSignature paramSignature(shared, sigDecl);
   SmallVector<TypeLineageAttr> parentTypes;
 
-  bool paramVarArgs = false;
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      impl::parseOptionalParameterSignature(
-          p, sigDecl, inputParamDecls, paramNames, paramPassingKinds,
-          defaultPosParams, defaultKwOnlyParams, paramVarArgs) ||
+      paramSignature.parseOptionalParameterSignature(p) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
     return failure();
 
+  paramSignature.processParameterInputArgs();
+
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
 
-  auto inputParams = ParamDeclArrayAttr::get(getContext(), inputParamDecls);
+  auto inputParams =
+      ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
   structOp.setInputParamsAttr(inputParams);
   auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      defaultPosParams, defaultKwOnlyParams, paramVarArgs);
+      silenceErrors(getContext()), inputParams, paramSignature.names,
+      paramSignature.passingKinds, paramSignature.defaultPosParams,
+      paramSignature.defaultKwOnlyParams, paramSignature.isVarArgs);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
