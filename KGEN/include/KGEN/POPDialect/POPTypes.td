@@ -176,6 +176,11 @@ def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<
 def UnboundOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, IntDType, BoolDType, FloatDType]>>,
     "whose element type is either unbound, integral, bool or float dtype">;
+def UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<
+      [IndexDType, AddressDType, IntDType, BoolDType, FloatDType]>>,
+    "whose element type is either unbound, address, integral, bool or float "
+      "dtype">;
 
 /// A "scalar" type is a SIMD of size 1.
 def ScalarType : ConfinedType<POP_SIMDType,

@@ -345,8 +345,8 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
   }];
 
   let arguments = (ins POP_CmpPredicateAttr:$pred,
-                       UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
-                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
+                       UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs BoolSIMD:$result);
 
   let assemblyFormat = [{
@@ -560,8 +560,8 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
     ```
   }];
 
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$input);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
+  let arguments = (ins UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$input);
+  let results = (outs UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to`  qualified(type($output))
   }];
