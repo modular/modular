@@ -126,6 +126,9 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return whether the function is compiler generated or not.
     bool isSynthetic();
+
+    /// Return true if this was defined as a 'def', not a 'fn'.
+    bool isDef() { return getIsDef(); }
   }];
 
   let builders = [
