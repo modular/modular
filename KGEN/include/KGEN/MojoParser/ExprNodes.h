@@ -593,9 +593,10 @@ struct FunctionTypeNode final : public ExprNode {
 /// __get_lvalue_as_address(some_ptr)      # returns !kgen.pointer
 /// __get_address_as_lvalue(some_ptr)      # returns !kgen.pointer
 /// __get_address_as_owned_value(some_ptr) # returns RValue
-struct AddressConvertNode final : public ExprNode {
-  AddressConvertNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
-                     SMLoc rparenLoc)
+/// __lifetime_of(decl)                    # returns !lit.lifetime<mut>
+struct MagicFunctionNode final : public ExprNode {
+  MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
+                    SMLoc rparenLoc)
       : ExprNode(kind), baseLoc(baseLoc), subExpr(subExpr),
         rparenLoc(rparenLoc) {
     assert(classof(this) && "Kind is wrong");
@@ -606,12 +607,14 @@ struct AddressConvertNode final : public ExprNode {
   const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) {
-    return node->kind >= kFirstAddressConvert &&
-           node->kind <= kLastAddressConvert;
+    return node->kind >= kFirstMagicFunction &&
+           node->kind <= kLastMagicFunction;
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, rparenLoc}; }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+
+  AnyValue emitLifetimeOf(ValueDest &dest, ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

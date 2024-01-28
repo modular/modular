@@ -2909,8 +2909,11 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(ASTType(signature), this, dest);
 }
 
-AnyValue AddressConvertNode::emitIR(ValueDest &dest,
-                                    ExprEmitter &emitter) const {
+AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
+                                   ExprEmitter &emitter) const {
+  if (kind == kLifetimeOf)
+    return emitLifetimeOf(dest, emitter);
+
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
@@ -3013,4 +3016,22 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
   return emitter.emitResult(MLValue(exprVal), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
+                                           ExprEmitter &emitter) const {
+  AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
+  if (!subExprValue)
+    return {};
+
+  // __lifetime_of(someMValue) -> PValue.
+  if (!subExprValue.isMValue()) {
+    emitter.emitError(getLoc())
+        << "value doesn't have a memory type" << getRange();
+    return {};
+  }
+
+  Value mvalue = subExprValue.getMValueReference();
+  auto lifetime = cast<RefType>(mvalue.getType()).getLifetime();
+  return emitter.emitResult(PValue(lifetime), this, dest);
 }

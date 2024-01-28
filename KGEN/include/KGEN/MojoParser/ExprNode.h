@@ -58,14 +58,15 @@ public:
     kChainedCmp,     // a < b <= c
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
 
-    // Address conversions
+    // Magic functions
     kGetRefFromValue,          // __get_ref_from_value(x): like `&x` in C.
     kGetLValueAsAddress,       // __get_lvalue_as_address(x)
     kGetAddressAsLValue,       // __get_address_as_lvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
-    kFirstAddressConvert = kGetRefFromValue,
-    kLastAddressConvert = kGetAddressAsOwned,
+    kLifetimeOf,               // __lifetime_of(x)
+    kFirstMagicFunction = kGetRefFromValue,
+    kLastMagicFunction = kLifetimeOf,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x
