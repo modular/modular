@@ -31,17 +31,17 @@ struct A[x: Int, x_0: Int]:
     # CHECK-LABEL: lit.func @"foo
     # CHECK-SAME: <*"x`2x0", x_1>
     fn foo[x: Int, x_1: Int](self):
-        # CHECK: lit.alias.decl *"z`2x0" = <2>
+        # CHECK: lit.alias.decl *"z`2x1" = <2>
         alias z = __mlir_attr.`2: index`
-        # CHECK: lit.alias.decl *"y`2x1" = <12>
+        # CHECK: lit.alias.decl *"y`2x2" = <12>
         alias y = __mlir_attr.`12: index`
-        # CHECK: lit.alias.decl *"yy`2x2" = <22>
+        # CHECK: lit.alias.decl *"yy`2x3" = <22>
         alias yy = __mlir_attr.`22: index`
 
         # CHECK-LABEL: lit.func *"bar
         # CHECK-SAME: <*"x`3x0", x_2>
         fn bar[x: Int, x_2: Int]():
-            # CHECK: lit.alias.decl *"z`3x0" = <3>
+            # CHECK: lit.alias.decl *"z`3x1" = <3>
             alias z = __mlir_attr.`3: index`
 
 
