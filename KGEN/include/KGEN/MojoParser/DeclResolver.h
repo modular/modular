@@ -210,14 +210,6 @@ public:
   static StringAttr getMangledName(StringAttr baseName,
                                    LITSignatureType signature);
 
-  /// Given a fully resolved signature, compute the final types and KGEN input
-  /// conventions of the arguments. This function also ensures that self
-  /// arguments are marked as positional-only.
-  void computeArgumentConventions(
-      MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
-      SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls,
-      ASTDecl &declScope);
-
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with
   /// no external references by inserting an parameter for every captured
