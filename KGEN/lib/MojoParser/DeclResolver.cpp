@@ -284,26 +284,25 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 
         LITSignatureType declSignature = declOp.getFullSignature();
         LITSignatureType existingSignature = existingOp.getFullSignature();
-        // If the value input types match exactly *and* the parameter
+        // If the argument types match exactly *and* the parameter
         // types match exactly, then we don't want to merge this decl into the
         // set. We also need to remove the by-ref result type from the
         // input types, so that aliasing is strictly based on the actual
         // inputs.
-        auto getActualValueInputs =
-            [](SignatureType signature) -> ArrayRef<mlir::Type> {
-          ArrayRef<Type> inputTypes = signature.getValueInputs();
-          ArrayRef<ValueInputConvention> inputConventions =
-              signature.getInputConventions();
+        auto getActualArgs =
+            [](LITSignatureType signature) -> ArrayRef<mlir::Type> {
+          ArrayRef<Type> inputTypes = signature.getArguments();
+          ArrayRef<ArgConvention> argConventions =
+              signature.getArgConventions();
           // If there's a by-ref result type, it'll be the first argument.
-          if (!inputConventions.empty() &&
-              inputConventions.front() == ValueInputConvention::ByRefResult) {
+          if (!argConventions.empty() &&
+              argConventions.front() == ArgConvention::ByRefResult) {
             inputTypes = inputTypes.drop_front();
           }
           return inputTypes;
         };
 
-        if (getActualValueInputs(declSignature) ==
-                getActualValueInputs(existingSignature) &&
+        if (getActualArgs(declSignature) == getActualArgs(existingSignature) &&
             declSignature.getParamTypes() == existingSignature.getParamTypes())
           return false;
 
@@ -723,7 +722,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     return;
   }
   ASTType userResultType(userMainFn.getUserResultType());
-  ArrayRef<Type> valueInputs = userMainSignature.getValueInputs();
+  ArrayRef<Type> argTypes = userMainSignature.getArguments();
 
   // Process a main returning none.
   if (userResultType.isNoneType()) {
@@ -741,15 +740,15 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     }
     mainKind = kRaisingObjectMain;
 
-    // Drop the result type from the value inputs.
-    valueInputs = valueInputs.drop_front();
+    // Drop the result type from the argument list.
+    argTypes = argTypes.drop_front();
 
     // Otherwise, this is an unrecognized main.
   } else {
     shared.emitError(loc, "expected 'main' function to return 'None'");
     return;
   }
-  if (!valueInputs.empty()) {
+  if (!argTypes.empty()) {
     shared.emitError(loc, "expected 'main' function to have no arguments");
     return;
   }
@@ -861,9 +860,9 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
 
   mangledName += '(';
   for (auto [argNo, convention, argType] : llvm::enumerate(
-           signature.getInputConventions(), signature.getValueInputs())) {
+           signature.getArgConventions(), signature.getArguments())) {
     // We do not mangle byref results into the signature.
-    if (convention == ValueInputConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult)
       continue;
 
     // Update the mangled name for this argument.
@@ -886,20 +885,20 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::OwnedInMem:
-    case ValueInputConvention::BorrowedInReg:
-    case ValueInputConvention::BorrowedInMem:
+    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedInMem:
+    case ArgConvention::BorrowedInReg:
+    case ArgConvention::BorrowedInMem:
       break;
-    case ValueInputConvention::ByRef:
+    case ArgConvention::ByRef:
       mangledName += '&';
       break;
-    case ValueInputConvention::InitSelf:
+    case ArgConvention::InitSelf:
       mangledName += "=&";
       break;
-    case ValueInputConvention::ByRefResult:
+    case ArgConvention::ByRefResult:
       llvm_unreachable("byref_result should be skipped");
-    case ValueInputConvention::None:
+    case ArgConvention::None:
       llvm_unreachable("none convention not permitted in lit");
     }
 

@@ -110,12 +110,12 @@ inline FnEffects operator|=(FnEffects &lhs, FnEffects rhs) {
 } // namespace impl
 
 //===----------------------------------------------------------------------===//
-// ValueInputConvention
+// ArgConvention
 //===----------------------------------------------------------------------===//
 
 template <typename StreamT>
-inline StreamT &operator<<(StreamT &os, ValueInputConvention convention) {
-  os << stringifyValueInputConvention(convention);
+inline StreamT &operator<<(StreamT &os, ArgConvention convention) {
+  os << stringifyArgConvention(convention);
   return os;
 }
 

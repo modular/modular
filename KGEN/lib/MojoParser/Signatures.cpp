@@ -386,7 +386,7 @@ void ParsedParamSignature::typeCheck() {
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
-      type = VariadicType::get(type, ValueInputConvention::BorrowedInReg);
+      type = VariadicType::get(type, ArgConvention::BorrowedInReg);
       isVarArgs = true;
     }
 
@@ -696,7 +696,7 @@ void DeclResolver::computeArgumentConventions(
 
     // Switch to a convention that is supportable.
     arg.convention = ParsedArgument::kConventionBorrowed;
-    arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+    arg.kgenConvention = ArgConvention::BorrowedInReg;
     return true;
   };
 
@@ -708,30 +708,30 @@ void DeclResolver::computeArgumentConventions(
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
       if (ASTType(argType).isRegisterPassable(arg.loc, shared)) {
-        arg.kgenConvention = ValueInputConvention::OwnedInReg;
+        arg.kgenConvention = ArgConvention::OwnedInReg;
         rejectVariadic(i, "owned");
       } else {
-        arg.kgenConvention = ValueInputConvention::OwnedInMem;
+        arg.kgenConvention = ArgConvention::OwnedInMem;
       }
       break;
     case ParsedArgument::kConventionBorrowed:
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
       if (ASTType(argType).isRegisterPassable(arg.loc, shared))
-        arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+        arg.kgenConvention = ArgConvention::BorrowedInReg;
       else
-        arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+        arg.kgenConvention = ArgConvention::BorrowedInMem;
       break;
     case ParsedArgument::kConventionInOut:
-      arg.kgenConvention = ValueInputConvention::ByRef;
+      arg.kgenConvention = ArgConvention::ByRef;
       break;
     case ParsedArgument::kConventionInOutResult:
-      arg.kgenConvention = ValueInputConvention::ByRefResult;
+      arg.kgenConvention = ArgConvention::ByRefResult;
       break;
     case ParsedArgument::kConventionInitSelfResult:
       // We also force the passing kind of self to positional-only.
       arg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
-      arg.kgenConvention = ValueInputConvention::InitSelf;
+      arg.kgenConvention = ArgConvention::InitSelf;
       break;
     }
 
@@ -767,7 +767,7 @@ void DeclResolver::computeArgumentConventions(
     // value, we're passing the array of pointers by value.
     if (arg.vararg == VarArgKind::VarArg) {
       argType = VariadicType::get(argType, arg.kgenConvention);
-      arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+      arg.kgenConvention = ArgConvention::BorrowedInReg;
     }
   }
 }

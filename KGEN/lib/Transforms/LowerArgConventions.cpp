@@ -3,6 +3,20 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This pass performs the lowering of argument input conventions of concrete
+// functions. This pass must run before inlining, but after elaboration. This
+// pass will:
+//
+// 1. Move register passable types passed as `{owned,borrowed}_in_mem` to be
+//    passed in register.
+// 2. TODO(#20700): Promote register passable `byref_result` and `init_self`
+//    arguments to function results.
+//    - TODO(#20700): This also handles functions that throw.
+// 3. TODO(#20700):Sets all argument conventions to `none`, i.e. only `none`
+//    conventions are legal after this in the pipeline.
+//
+//===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -16,13 +30,13 @@ using namespace M;
 using namespace KGEN;
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERINPUTCONVENTIONS
+#define GEN_PASS_DEF_LOWERARGCONVENTIONS
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerInputConventionsPass
-    : KGEN::impl::LowerInputConventionsBase<LowerInputConventionsPass> {
+struct LowerArgConventionsPass
+    : KGEN::impl::LowerArgConventionsBase<LowerArgConventionsPass> {
   void runOnOperation() override;
 };
 } // namespace
@@ -51,29 +65,29 @@ static Type lowerPointerType(Type type) {
 /// changed, in which case the new signature will no longer have that argument.
 static std::tuple<SignatureType, SmallVector<size_t>, bool>
 lowerSignature(SignatureType sig) {
-  ArrayRef<ValueInputConvention> oldConvs = sig.getInputConventions();
-  SmallVector<ValueInputConvention> newConvs(oldConvs);
+  ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
+  SmallVector<ArgConvention> newConvs(oldConvs);
 
-  ArrayRef<Type> oldInputTypes = sig.getValueInputs();
+  ArrayRef<Type> oldInputTypes = sig.getArguments();
   SmallVector<Type> newInputTypes(oldInputTypes);
 
-  ArrayRef<Type> oldResTypes = sig.getValueResults();
+  ArrayRef<Type> oldResTypes = sig.getResults();
   SmallVector<Type> newResTypes(oldResTypes);
 
   bool changedRes = false;
   SmallVector<size_t> changedIndices;
   for (auto [idx, argTy, convention] :
-       llvm::enumerate(sig.getValueInputs(), oldConvs)) {
-    if (convention == ValueInputConvention::BorrowedInMem ||
-        convention == ValueInputConvention::OwnedInMem) {
+       llvm::enumerate(sig.getArguments(), oldConvs)) {
+    if (convention == ArgConvention::BorrowedInMem ||
+        convention == ArgConvention::OwnedInMem) {
       if (Type newArgTy = lowerPointerType(argTy)) {
         // Update the info needed for the new signature.
-        newConvs[idx] = ValueInputConvention::None;
+        newConvs[idx] = ArgConvention::None;
         newInputTypes[idx] = newArgTy;
         changedIndices.push_back(idx);
       }
-    } else if (convention == ValueInputConvention::ByRefResult ||
-               convention == ValueInputConvention::InitSelf) {
+    } else if (convention == ArgConvention::ByRefResult ||
+               convention == ArgConvention::InitSelf) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;
@@ -100,8 +114,7 @@ lowerSignature(SignatureType sig) {
         sig.getContext(), ArrayRef<Type>(newInputTypes).drop_front(changedRes),
         newResTypes);
     newSig = SignatureType::get(
-        newFnType,
-        ArrayRef<ValueInputConvention>(newConvs).drop_front(changedRes),
+        newFnType, ArrayRef<ArgConvention>(newConvs).drop_front(changedRes),
         sig.getFnEffects(), sig.getMetadata());
   }
 
@@ -137,7 +150,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       auto cond = b.create<VariantIsOp>(res, 1);
       auto ifOp = b.create<HLCF::IfOp>(oldVariantTy, cond);
       res.replaceAllUsesExcept(ifOp.getResult(0), cond);
-      res.setType(newSig.getValueResults()[0]);
+      res.setType(newSig.getResults()[0]);
 
       // Populate the then branch (normal return).
       Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
@@ -163,7 +176,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       }
 
       // Then just store the new callee result into the old byref result.
-      res.setType(newSig.getValueResults()[0]);
+      res.setType(newSig.getResults()[0]);
       b.create<POP::StoreOp>(res, oldOperands[0]);
     }
   }
@@ -192,7 +205,7 @@ static void lowerCallSignatureOp(CallSignatureOp callOp) {
   if (!newSig)
     return;
 
-  callOp->setOperands(1, oldSig.getNumInputs(), newOperands);
+  callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
   callee.setType(newSig);
 }
 
@@ -270,7 +283,7 @@ static void lowerFuncOp(FuncOp funcOp) {
     Location loc = addDI(arg.getLoc());
     auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType(), 1);
     auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
-    arg.setType(newSig.getValueInputs()[idx - changedRes]);
+    arg.setType(newSig.getArguments()[idx - changedRes]);
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
@@ -288,7 +301,7 @@ static void lowerFuncOp(FuncOp funcOp) {
       if (newSig.isThrows()) {
         // If the function throws, we need to potentially unpack and repack the
         // result/error variant.
-        auto newVariantTy = cast<VariantType>(newSig.getValueResults()[0]);
+        auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
         Value newRetVal =
             repackFuncVariantResult(returnOp, newVariantTy, newResPtr);
         returnOp.setOperand(0, newRetVal);
@@ -303,7 +316,7 @@ static void lowerFuncOp(FuncOp funcOp) {
   funcOp.setSignature(newSig);
 }
 
-static void lowerInputConventions(Operation &op) {
+static void lowerArgConventions(Operation &op) {
   if (auto funcOp = dyn_cast<FuncOp>(op)) {
     lowerFuncOp(funcOp);
 
@@ -336,7 +349,7 @@ static void lowerInputConventions(Operation &op) {
   }
 }
 
-void LowerInputConventionsPass::runOnOperation() {
+void LowerArgConventionsPass::runOnOperation() {
   mlir::parallelForEach(&getContext(), getOperation().getOps(),
-                        lowerInputConventions);
+                        lowerArgConventions);
 }

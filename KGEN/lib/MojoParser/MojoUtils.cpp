@@ -24,7 +24,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 PackType LIT::getIfPackType(SignatureType sig, size_t index) {
-  return sig.isPackVarArg(index) ? ::cast<PackType>(sig.getValueInputs()[index])
+  return sig.isPackVarArg(index) ? ::cast<PackType>(sig.getArguments()[index])
                                  : nullptr;
 }
 
@@ -115,7 +115,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     return false;
   if (from.getNumParams() != to.getNumParams())
     return false;
-  if (from.getInputConventions() != to.getInputConventions())
+  if (from.getArgConventions() != to.getArgConventions())
     return false;
 
   // Pos-or-kw arguments can be passed positionally.
@@ -129,16 +129,15 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   }
 
   // Result types, and input/result parameter types must match exactly.
-  if (from.getValueResults() != to.getValueResults() ||
+  if (from.getResults() != to.getResults() ||
       from.getParamTypes() != to.getParamTypes() ||
       from.getResultParamTypes() != to.getResultParamTypes() ||
       from.getFnEffects() != to.getFnEffects())
     return false;
 
   // The input argument types may have different implicit lifetimes.
-  for (auto [fromTy, toTy, conv] :
-       llvm::zip(from.getValueInputs(), to.getValueInputs(),
-                 from.getInputConventions())) {
+  for (auto [fromTy, toTy, conv] : llvm::zip(
+           from.getArguments(), to.getArguments(), from.getArgConventions())) {
     Type fromTyCmp = fromTy;
     Type toTyCmp = toTy;
     if (SignatureType::hasAddress(conv)) {

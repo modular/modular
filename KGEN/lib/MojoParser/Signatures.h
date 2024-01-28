@@ -67,7 +67,7 @@ struct ParsedArgument {
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.
-  ValueInputConvention kgenConvention = ValueInputConvention(128);
+  ArgConvention kgenConvention = ArgConvention(128);
 
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;

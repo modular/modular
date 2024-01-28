@@ -223,14 +223,13 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 ParamDeclPrintHookTy printInputElt = {});
 
 /// Parse an optional argument convention, or use the given default.
-ParseResult parseInputConvention(
-    AsmParser &p, ValueInputConvention &convention,
-    ValueInputConvention defaultConvention = ValueInputConvention::None);
+ParseResult
+parseArgConvention(AsmParser &p, ArgConvention &convention,
+                   ArgConvention defaultConvention = ArgConvention::None);
 
 /// Print an argument convention if not the given default.
-void printInputConvention(
-    AsmPrinter &p, ValueInputConvention convention,
-    ValueInputConvention defaultConvention = ValueInputConvention::None);
+void printArgConvention(AsmPrinter &p, ArgConvention convention,
+                        ArgConvention defaultConvention = ArgConvention::None);
 
 /// Print the parameter type signature if there are any input or result types.
 /// If the input type printing hook is provided, it is called by the given

@@ -412,11 +412,11 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     assert(sig.getNumResults() == 1);
 
     // Get the result type without any error handling in the way.
-    Type resultType = sig.getValueResults()[0];
+    Type resultType = sig.getResults()[0];
     if (sig.isThrows())
       resultType = cast<VariantType>(resultType).getType(1);
 
-    if (sig.getValueInputs().empty() && isImplicitlyIgnorableType(resultType)) {
+    if (sig.getArguments().empty() && isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
           << expr->getRange()
@@ -1319,17 +1319,16 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self byref.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
-        signature && !signature.getInputConventions().empty()) {
-      auto firstValueInputConvention = signature.getInputConventions()[0];
-      if (firstValueInputConvention != ValueInputConvention::ByRef &&
-          !hasExitMethod)
+        signature && !signature.getArgConventions().empty()) {
+      auto firstArgConvention = signature.getArgConventions()[0];
+      if (firstArgConvention != ArgConvention::ByRef && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in check lifetimes, so cut that off here.
-      if ((firstValueInputConvention == ValueInputConvention::OwnedInReg ||
-           firstValueInputConvention == ValueInputConvention::OwnedInMem) &&
+      if ((firstArgConvention == ArgConvention::OwnedInReg ||
+           firstArgConvention == ArgConvention::OwnedInMem) &&
           hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")

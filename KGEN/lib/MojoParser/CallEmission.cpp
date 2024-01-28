@@ -1061,17 +1061,17 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // to apply to it.  Partially apply it to form a result closure.
   auto calleeSignature =
       cast<SignatureType>(directSymbolAttr.getType().mlirType);
-  Type firstArgIRType = calleeSignature.getValueInputs()[0];
-  ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
+  Type firstArgIRType = calleeSignature.getArguments()[0];
+  ArgConvention selfConvention = calleeSignature.getArgConvention(0);
   Value firstArgValue;
 
   assert(!calleeSignature.isVarArg(0) && !calleeSignature.isKWVarArg(0) &&
          "Error: self shouldn't be varargs");
 
   switch (selfConvention) {
-  case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::OwnedInMem:
-  case ValueInputConvention::BorrowedInMem: {
+  case ArgConvention::ByRefResult:
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem: {
     auto diag =
         emitter.emitError(
             loc, "TODO: partial application requires closure generation ")
@@ -1081,8 +1081,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
     return {};
   }
 
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::InitSelf: {
+  case ArgConvention::ByRef:
+  case ArgConvention::InitSelf: {
     ValueDest baseLVDest(dest.getContext());
     LValue baseLV = emitter.emitLValue(baseValue, baseLVDest);
     if (!baseLV)
@@ -1095,8 +1095,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
         << baseValue.expr->getRange();
     return {};
   }
-  case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg:
+  case ArgConvention::OwnedInReg:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
     firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
@@ -1106,7 +1106,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
     // TODO: Partial application isn't handling ownership right at all, we
     // should probably disable it.
     break;
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
 
@@ -1462,7 +1462,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   // exposed.
   auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
   auto firstArgRVType =
-      ASTType(calleeSig.getValueInputs()[0]).getReferenceElementType();
+      ASTType(calleeSig.getArguments()[0]).getReferenceElementType();
 
   // For an initialization of a memory-only type, we need to replace the
   // destination buffer with the actual destination lvalue to use.

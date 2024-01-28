@@ -282,8 +282,8 @@ ASTType ASTType::getVariadicElementType() const {
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
   auto sigType = cast<SignatureType>(mlirType);
-  return LIT::getSignatureUserResultType(sigType, sigType.getValueInputs(),
-                                         sigType.getValueResults().front());
+  return LIT::getSignatureUserResultType(sigType, sigType.getArguments(),
+                                         sigType.getResults().front());
 }
 
 /// Pretty print a symbol reference.
@@ -473,13 +473,13 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     Type inMemResult;
     PassingKindPrinter passingKindPrinter(os, sig.getArgPassingKinds());
     for (auto [i, type, convention, name, passingKind] :
-         llvm::enumerate(sig.getValueInputs(), sig.getInputConventions(),
+         llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
       passingKindPrinter.printOptionalStarSlash(i);
 
       if (i > (inMemResult ? 1 : 0))
         os << ", ";
-      if (convention == ValueInputConvention::ByRefResult) {
+      if (convention == ArgConvention::ByRefResult) {
         // Print this later.
         inMemResult = type;
         continue;
@@ -488,11 +488,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         os << name.getValue() << " = ";
 
       bool needSpace = false;
-      if (convention == ValueInputConvention::OwnedInMem ||
-          convention == ValueInputConvention::OwnedInReg) {
+      if (convention == ArgConvention::OwnedInMem ||
+          convention == ArgConvention::OwnedInReg) {
         os << "owned";
         needSpace = true;
-      } else if (convention == ValueInputConvention::ByRef) {
+      } else if (convention == ArgConvention::ByRef) {
         os << "inout";
         needSpace = true;
       }
@@ -540,7 +540,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
-    Type resultType = sig.getValueResults().front();
+    Type resultType = sig.getResults().front();
     if (inMemResult) {
       ASTType(cast<RefType>(inMemResult).getElementType()).print(os, forDiag);
     } else if (isa<KGEN::NoneType>(resultType)) {

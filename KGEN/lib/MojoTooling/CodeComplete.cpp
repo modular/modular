@@ -270,7 +270,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       if (!declView)
         continue;
       if (auto *fnView = dyn_cast<FunctionDeclView>(declView.get())) {
-        if (operands.posOperands.size() > fnView->getArgs().size())
+        if (operands.posOperands.size() > fnView->getArguments().size())
           continue;
 
         // If this is the first function and it's a method, bump the active
@@ -283,7 +283,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
         signature.label = fnView->getDeclarationSnippet(
             /*parameterOffsets=*/nullptr, &argOffsets);
         addDeclDocAndParametersToSignature(signature, *fnView,
-                                           fnView->getArgs(), argOffsets);
+                                           fnView->getArguments(), argOffsets);
         result.signatures.emplace_back(std::move(signature));
       }
     }

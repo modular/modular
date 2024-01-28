@@ -677,7 +677,7 @@ LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<TypedAttr> defaultsKwOnly,
                                   ArrayRef<PassingKind> passingKinds,
                                   ArrayRef<Type> types, StringRef argOrParam,
-                                  ArrayRef<ValueInputConvention> convs) {
+                                  ArrayRef<ArgConvention> convs) {
   size_t numTypes = types.size();
   auto emitTooManyDefaults = [&](size_t numDefaults, StringRef kindStr) {
     return emitError() << "there are more default " << kindStr << " "

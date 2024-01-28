@@ -100,15 +100,16 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
 /// Given a signature of a function, create a new signature by inserting a
 /// closure argument at index 0 or 1 (depending on the result type) with the
 /// given convention.
-static LITSignatureType addClosureSelfArgToFunctionSignature(
-    Type closureType, ValueInputConvention convention, LITSignatureType sig) {
+static LITSignatureType
+addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
+                                     LITSignatureType sig) {
   MLIRContext *ctx = sig.getContext();
 
-  unsigned callArgCount = sig.getNumInputs() + 1;
+  unsigned callArgCount = sig.getNumArguments() + 1;
   SmallVector<Type> callMemberSignatureInputs;
   callMemberSignatureInputs.reserve(callArgCount);
-  SmallVector<ValueInputConvention> callMemberInputConventions;
-  callMemberInputConventions.reserve(callArgCount);
+  SmallVector<ArgConvention> callMemberArgConventions;
+  callMemberArgConventions.reserve(callArgCount);
   SmallVector<StringAttr> callMemberArgNames;
   callMemberArgNames.reserve(callArgCount);
   SmallVector<PassingKind> callMemberArgPassingKinds;
@@ -117,21 +118,21 @@ static LITSignatureType addClosureSelfArgToFunctionSignature(
   // Add result slot if necessary.
   bool hasResultSlot = sig.hasMemoryOnlyResult();
   if (hasResultSlot) {
-    callMemberSignatureInputs.push_back(sig.getValueInputs()[0]);
-    callMemberInputConventions.push_back(ValueInputConvention::ByRefResult);
+    callMemberSignatureInputs.push_back(sig.getArguments()[0]);
+    callMemberArgConventions.push_back(ArgConvention::ByRefResult);
     callMemberArgNames.push_back(StringAttr::get(ctx));
     callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
   }
   // Add self.
   callMemberSignatureInputs.push_back(closureType);
-  callMemberInputConventions.push_back(convention);
+  callMemberArgConventions.push_back(convention);
   callMemberArgNames.push_back(StringAttr::get(ctx));
   callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
   // Add the rest of the arguments.
   llvm::append_range(callMemberSignatureInputs,
-                     sig.getValueInputs().drop_front(hasResultSlot));
-  llvm::append_range(callMemberInputConventions,
-                     sig.getInputConventions().drop_front(hasResultSlot));
+                     sig.getArguments().drop_front(hasResultSlot));
+  llvm::append_range(callMemberArgConventions,
+                     sig.getArgConventions().drop_front(hasResultSlot));
   llvm::append_range(callMemberArgNames,
                      sig.getArgNames().drop_front(hasResultSlot));
   llvm::append_range(callMemberArgPassingKinds,
@@ -140,12 +141,12 @@ static LITSignatureType addClosureSelfArgToFunctionSignature(
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
 
-  assert(callMemberArgNames.size() == callMemberInputConventions.size());
+  assert(callMemberArgNames.size() == callMemberArgConventions.size());
   FnMetadataAttr metadata = sig.getMetadata().cloneWith(
       callMemberArgNames, callMemberArgPassingKinds);
   return SignatureType::get(
-      FunctionType::get(ctx, callMemberSignatureInputs, sig.getValueResults()),
-      sig.getParamTypes(), /*no result params*/ {}, callMemberInputConventions,
+      FunctionType::get(ctx, callMemberSignatureInputs, sig.getResults()),
+      sig.getParamTypes(), /*no result params*/ {}, callMemberArgConventions,
       sig.getFnEffects().setEscaping(false), metadata);
 }
 
@@ -173,7 +174,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   LIT::FuncOp func = createFunction(
       "__init__", {}, {},
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
-      {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInReg},
+      {ArgConvention::InitSelf, ArgConvention::OwnedInReg},
       {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw},
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
   shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
@@ -203,11 +204,11 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 
   // Generate the 'call_impl' function that performs the indirect call.
   LITSignatureType callImplType = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ValueInputConvention::BorrowedInReg, fnPtrType);
+      opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   LIT::FuncOp callImpl = createFunction(
-      lambdaName, {}, {}, callImplType.getValueInputs(),
-      callImplType.getInputConventions(), callImplType.getArgNames(),
+      lambdaName, {}, {}, callImplType.getArguments(),
+      callImplType.getArgConventions(), callImplType.getArgNames(),
       callImplType.getArgPassingKinds(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
   auto paramDecl = ParamDeclAttr::get(lambdaName, callImpl.getSignature());
@@ -271,7 +272,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtorMetadata = FnMetadataAttr::get(
       ctx, {selfName}, {PassingKind::PosOnly}, /*numImplicitLifetimeDecls=*/0);
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
-                                    ValueInputConvention::OwnedInReg,
+                                    ArgConvention::OwnedInReg,
                                     /*effects=*/{}, dtorMetadata);
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
@@ -281,7 +282,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto metadata = FnMetadataAttr::get(ctx, {otherName}, {PassingKind::PosOnly},
                                       /*numImplicitLifetimeDecls=*/0);
   auto cpySignatureType = SignatureType::get(
-      fnType, {ValueInputConvention::OwnedInReg}, /*effects=*/{}, metadata);
+      fnType, {ArgConvention::OwnedInReg}, /*effects=*/{}, metadata);
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
@@ -291,18 +292,18 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       FnMetadataAttr::get(ctx, dependentSignatureType.getArgNames(),
                           dependentSignatureType.getArgPassingKinds(),
                           dependentSignatureType.getNumImplicitLifetimeDecls());
-  Type resultType = dependentSignatureType.getValueResults().front();
+  Type resultType = dependentSignatureType.getResults().front();
   FunctionType functionType =
-      b.getFunctionType(dependentSignatureType.getValueInputs(), resultType);
+      b.getFunctionType(dependentSignatureType.getArguments(), resultType);
   LITSignatureType signatureType = SignatureType::get(
-      functionType, {}, {}, dependentSignatureType.getInputConventions(),
+      functionType, {}, {}, dependentSignatureType.getArgConventions(),
       dependentSignatureType.getFnEffects(), sigMetadata);
 
   // Add the call member
   bool hasResultSlot = dependentSignatureType.hasMemoryOnlyResult();
   LITSignatureType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(
-          opaquePtrType, ValueInputConvention::BorrowedInReg, signatureType);
+          opaquePtrType, ArgConvention::BorrowedInReg, signatureType);
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType);
 
@@ -394,10 +395,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
-          refToSelfType, ValueInputConvention::BorrowedInMem, signatureType);
+          refToSelfType, ArgConvention::BorrowedInMem, signatureType);
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
-      "__call__", closureMethodSignatureType.getValueInputs(),
-      closureMethodSignatureType.getInputConventions(),
+      "__call__", closureMethodSignatureType.getArguments(),
+      closureMethodSignatureType.getArgConventions(),
       closureMethodSignatureType.getArgNames(),
       closureMethodSignatureType.getArgPassingKinds(), resultType, astDecl,
       SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
@@ -428,8 +429,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
     SmallVector<TypedAttr> implicitLifetimes;
     auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
-    for (auto [arg, conv] :
-         llvm::zip(arguments, calleeSig.getInputConventions()))
+    for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
       if (SignatureType::hasAddress(conv))
         implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
@@ -498,10 +498,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Build the call signature from the closure signature. This means inserting
   // the self argument in the correct location.
-  unsigned callArgCount = wrapperSig.getNumInputs() + 1;
+  unsigned callArgCount = wrapperSig.getNumArguments() + 1;
   SmallVector<Type> callInputTypes;
   callInputTypes.reserve(callArgCount);
-  SmallVector<ValueInputConvention> callConventions;
+  SmallVector<ArgConvention> callConventions;
   callConventions.reserve(callArgCount);
   SmallVector<StringAttr> callNames;
   callNames.reserve(callArgCount);
@@ -511,10 +511,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Move by ref result argument to front before self argument.
   bool hasByRefReturn = wrapperSig.hasMemoryOnlyResult();
   if (hasByRefReturn) {
-    assert(wrapperSig.getInputConvention(0) ==
-           ValueInputConvention::ByRefResult);
+    assert(wrapperSig.getArgConvention(0) == ArgConvention::ByRefResult);
     callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
-    callConventions.push_back(ValueInputConvention::ByRefResult);
+    callConventions.push_back(ArgConvention::ByRefResult);
     callNames.push_back(StringAttr::get(ctx));
     callPassingKinds.push_back(PassingKind::PosOnly);
   }
@@ -524,23 +523,22 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
-  callConventions.push_back(ValueInputConvention::BorrowedInMem);
+  callConventions.push_back(ArgConvention::BorrowedInMem);
   callNames.push_back(StringAttr::get(ctx));
   callPassingKinds.push_back(PassingKind::PosOnly);
 
   llvm::append_range(
       callInputTypes,
       nestedFn.getFunctionType().getInputs().drop_front(hasByRefReturn));
-  llvm::append_range(
-      callConventions,
-      wrapperSig.getInputConventions().drop_front(hasByRefReturn));
+  llvm::append_range(callConventions,
+                     wrapperSig.getArgConventions().drop_front(hasByRefReturn));
   llvm::append_range(callNames,
                      wrapperSig.getArgNames().drop_front(hasByRefReturn));
   llvm::append_range(
       callPassingKinds,
       wrapperSig.getArgPassingKinds().drop_front(hasByRefReturn));
 
-  Type closureResultType = wrapperSig.getValueResults().front();
+  Type closureResultType = wrapperSig.getResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
   auto [callFunc, _] = synthesizeMethodInStruct(
@@ -565,20 +563,19 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SmallVector<StringAttr> initSigNames{selfName};
   SmallVector<Type> initSigTypes{
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true)};
-  SmallVector<ValueInputConvention> initSigConventions{
-      ValueInputConvention::InitSelf};
+  SmallVector<ArgConvention> initSigConventions{ArgConvention::InitSelf};
   unsigned fieldNameIdx = 0;
   for (auto &[decl, capture] : captures) {
     bool move = capture.isMoveCapture();
     ASTType rvalueType = capture.getValue().getRValueType();
     initSigNames.push_back(StringAttr::get(ctx, "fld" + Twine(fieldNameIdx++)));
     if (rvalueType.isRegisterPassable(decl->getLoc(), shared)) {
-      initSigConventions.push_back(move ? ValueInputConvention::OwnedInReg
-                                        : ValueInputConvention::BorrowedInReg);
+      initSigConventions.push_back(move ? ArgConvention::OwnedInReg
+                                        : ArgConvention::BorrowedInReg);
       initSigTypes.push_back(rvalueType);
     } else {
-      initSigConventions.push_back(move ? ValueInputConvention::OwnedInMem
-                                        : ValueInputConvention::BorrowedInMem);
+      initSigConventions.push_back(move ? ArgConvention::OwnedInMem
+                                        : ArgConvention::BorrowedInMem);
       initSigTypes.push_back(rvalueType.getRefForArgument(
           initSigNames.back().str(), /*isMut=*/move));
     }
@@ -848,8 +845,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       wrapperType.getRefForArgument("self", /*mut=*/true), closureImplRefType};
 
   // Then build all other information needed for the __init__ signature.
-  SmallVector<ValueInputConvention> argConventions{
-      ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem};
+  SmallVector<ArgConvention> argConventions{ArgConvention::InitSelf,
+                                            ArgConvention::OwnedInMem};
   SmallVector<StringAttr> argNames{selfName, StringAttr::get(ctx, "impl")};
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
@@ -916,7 +913,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
       generateName("_copyinit_"), topLevelParams, paramPassingKinds,
-      {opaquePtrType}, {ValueInputConvention::OwnedInReg}, {otherName},
+      {opaquePtrType}, {ArgConvention::OwnedInReg}, {otherName},
       {PassingKind::PosOnly}, opaquePtrType, SpecialFunctionKind::kNormal, loc,
       builder);
 
@@ -972,8 +969,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelDtor = createFunction(
       generateName("_dtor_"), topLevelParams, paramPassingKinds, opaquePtrType,
-      ValueInputConvention::OwnedInReg, selfName, PassingKind::PosOnly,
-      noneType, SpecialFunctionKind::kNormal, loc, builder);
+      ArgConvention::OwnedInReg, selfName, PassingKind::PosOnly, noneType,
+      SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.
   {
@@ -1013,19 +1010,19 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
          "The closure signature should have been set at creation time");
   SignatureType functionSignature = *closureWrapper.getClosureSignature();
   LITSignatureType closureSignature = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ValueInputConvention::BorrowedInReg, functionSignature);
-  assert(closureSignature.getValueResults().size() == 1);
+      opaquePtrType, ArgConvention::BorrowedInReg, functionSignature);
+  assert(closureSignature.getResults().size() == 1);
   closureSignature = closureSignature.getSpecializedSignature(
       ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),
       translateLocation(loc));
 
-  Type resultType = closureSignature.getValueResults().front();
+  Type resultType = closureSignature.getResults().front();
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
       generateName("_call_"), topLevelParams, paramPassingKinds,
-      closureSignature.getValueInputs(), closureSignature.getInputConventions(),
+      closureSignature.getArguments(), closureSignature.getArgConventions(),
       closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
       resultType, SpecialFunctionKind::kNormal, loc, builder,
       closureSignature.getFnEffects());
@@ -1063,7 +1060,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       args.push_back(topLevelCall.getArgument(0));
     args.push_back(implRef);
     for (unsigned i = hasMemoryOnlyResult + 1 /*implPtr*/,
-                  e = closureSignature.getNumInputs();
+                  e = closureSignature.getNumArguments();
          i < e; ++i)
       args.push_back(topLevelCall.getArgument(i));
 
@@ -1071,7 +1068,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
     SmallVector<TypedAttr> implicitLifetimes;
     auto finalSig = cast<SignatureType>(typedSymbol.getType());
-    for (auto [arg, conv] : llvm::zip(args, finalSig.getInputConventions()))
+    for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
       if (SignatureType::hasAddress(conv))
         implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 

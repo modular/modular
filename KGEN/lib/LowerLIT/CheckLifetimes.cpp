@@ -1537,10 +1537,9 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   // Emit their destructor calls at the start of the function by acting as
   // though there is a use.
   for (auto [argValue, conv] : llvm::zip(
-           func.getArguments(), func.getSignature().getInputConventions())) {
+           func.getArguments(), func.getSignature().getArgConventions())) {
     // Ignore undef-on-input values.
-    if (conv == ValueInputConvention::ByRefResult ||
-        conv == ValueInputConvention::InitSelf)
+    if (conv == ArgConvention::ByRefResult || conv == ArgConvention::InitSelf)
       continue;
 
     bool isIndirect = SignatureType::hasAddress(conv);
@@ -2329,8 +2328,8 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
     // The argument convention for the callee must be consuming, not
     // initializing or anything else.
     auto convention =
-        user.getCalleeType().getInputConvention(operand.getOperandNumber());
-    if (convention != ValueInputConvention::OwnedInMem)
+        user.getCalleeType().getArgConvention(operand.getOperandNumber());
+    if (convention != ArgConvention::OwnedInMem)
       return false;
 
     // Ok, scan to check that nothing between the copyinit and the user of
@@ -2482,14 +2481,14 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   auto refValue = cast<RefType>(value.getType());
 #ifndef NDEBUG
   auto moveSig = cast<SignatureType>(moveCtor.getType());
-  assert(moveSig.getNumInputs() == 2);
-  assert(moveSig.getInputConvention(0) == ValueInputConvention::InitSelf);
-  assert(moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem);
+  assert(moveSig.getNumArguments() == 2);
+  assert(moveSig.getArgConvention(0) == ArgConvention::InitSelf);
+  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedInMem);
   auto valueEltType = refValue.getElementType();
-  auto moveValueInputs = moveSig.getValueInputs();
-  auto moveValue1Ref = cast<RefType>(moveValueInputs[1]);
+  auto moveArgs = moveSig.getArguments();
+  auto moveValue1Ref = cast<RefType>(moveArgs[1]);
   // refValue is immutable here because it was passed to a copy.
-  assert(cast<RefType>(moveValueInputs[0]).getElementType() == valueEltType &&
+  assert(cast<RefType>(moveArgs[0]).getElementType() == valueEltType &&
          moveValue1Ref.getElementType() == valueEltType &&
          moveValue1Ref.isMutableKnown(true) && refValue.isMutableKnown(false));
 
@@ -2539,35 +2538,35 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   auto signature = cast<SignatureType>(dtor.getType());
   assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
-  assert(signature.getNumInputs() == 1 && "dtor should have one operand");
+  assert(signature.getNumArguments() == 1 && "dtor should have one operand");
 
   // We may have a @register_passable value indirect (e.g. because it is in a
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
   if (auto ref = dyn_cast<RefType>(valueToDestroy.getType()))
-    if (signature.getValueInputs()[0] == ref.getElementType())
+    if (signature.getArguments()[0] == ref.getElementType())
       valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
 
   // If the dtor takes a reference, then this the dtor for a memory type.  Bind
   // the implicit lifetime of __del__'s self to the lifetime of the reference we
   // have.
   SmallVector<TypedAttr> implicitLifetimes;
-  if (auto delSelfTy = dyn_cast<RefType>(signature.getValueInputs()[0])) {
+  if (auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0])) {
     valueToDestroy =
         getMutableRefForPossiblyImmutValue(valueToDestroy, builder);
     auto argRef = cast<RefType>(valueToDestroy.getType());
     assert(delSelfTy.getElementType() == argRef.getElementType());
     implicitLifetimes.push_back(argRef.getLifetime());
   } else {
-    assert(signature.getValueInputs()[0] == valueToDestroy.getType());
+    assert(signature.getArguments()[0] == valueToDestroy.getType());
   }
 
   // Emit the call to the destructor.
   if (auto directDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
-    builder.create<LIT::CallOp>(signature.getValueResults()[0], directDtor,
+    builder.create<LIT::CallOp>(signature.getResults()[0], directDtor,
                                 implicitLifetimes, valueToDestroy);
   } else {
-    builder.create<LIT::CallParamOp>(signature.getValueResults()[0], dtor,
+    builder.create<LIT::CallParamOp>(signature.getResults()[0], dtor,
                                      implicitLifetimes, valueToDestroy);
   }
 }

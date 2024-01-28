@@ -112,8 +112,8 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure_" +
                                     Twine(nameCounter++));
   // TODO: What conventions do we use for captures.
-  SmallVector<ValueInputConvention> conventions(body.getArgumentTypes().size(),
-                                                ValueInputConvention::None);
+  SmallVector<ArgConvention> conventions(body.getArgumentTypes().size(),
+                                         ArgConvention::None);
   auto sig = SignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getType()), conventions);
   auto lifted = b.create<FuncOp>(name, sig, InlineLevel::Never);
@@ -168,9 +168,9 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   // We need to ensure we have conventions for each argument.
   // TODO: what convention do we use for the captures?
   SignatureType oldSig = op.getType();
-  SmallVector<ValueInputConvention> newConventions(
-      body.getArguments().size() - numArgs, ValueInputConvention::None);
-  ArrayRef<ValueInputConvention> oldConventions = oldSig.getInputConventions();
+  SmallVector<ArgConvention> newConventions(
+      body.getArguments().size() - numArgs, ArgConvention::None);
+  ArrayRef<ArgConvention> oldConventions = oldSig.getArgConventions();
   assert(oldConventions.size() == numArgs);
   newConventions.append(oldConventions.begin(), oldConventions.end());
 
@@ -178,7 +178,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   MLIRContext *ctx = op.getContext();
   ImplicitLocOpBuilder b(op.getLoc(), ctx);
   FunctionType functionType =
-      b.getFunctionType(body.getArgumentTypes(), oldSig.getValueResults());
+      b.getFunctionType(body.getArgumentTypes(), oldSig.getResults());
   auto sig = SignatureType::get(functionType, /*inputParamTypes=*/{},
                                 /*resultParamTypes=*/{}, newConventions,
                                 oldSig.getFnEffects());
@@ -240,9 +240,9 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
     // Update the function result type.
     SignatureType origSig = func.getSignature();
-    func.setSignature(SignatureType::get(
-        b.getFunctionType(origSig.getValueInputs(), coroType),
-        origSig.getInputConventions()));
+    func.setSignature(
+        SignatureType::get(b.getFunctionType(origSig.getArguments(), coroType),
+                           origSig.getArgConventions()));
     // It is no longer valid to inline this function.
     func.setInlineLevel(InlineLevel::Never);
   }
@@ -261,11 +261,11 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
       SignatureType origSig = callee.getType();
       auto coroType =
-          CoroutineType::get(op->getContext(), origSig.getValueResults());
+          CoroutineType::get(op->getContext(), origSig.getResults());
 
       auto asyncSig = SignatureType::get(
-          b.getFunctionType(origSig.getValueInputs(), coroType),
-          origSig.getInputConventions());
+          b.getFunctionType(origSig.getArguments(), coroType),
+          origSig.getArgConventions());
       auto newCall = b.create<CallOp>(
           call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
           call.getOperands());

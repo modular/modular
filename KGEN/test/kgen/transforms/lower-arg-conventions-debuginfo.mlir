@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-input-conventions -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -lower-arg-conventions -mlir-print-debuginfo %s | FileCheck %s
 
 #sp = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 

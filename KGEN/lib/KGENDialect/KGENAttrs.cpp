@@ -487,7 +487,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     declSignature = SignatureType::getSpecializedSignature(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
         remapper.replace(baseSig.getResultParamTypes()),
-        remapper.replace(baseSig.getValues()), baseSig.getInputConventions(),
+        remapper.replace(baseSig.getValues()), baseSig.getArgConventions(),
         baseSig.getFnEffects(), metadata);
   }
   if (!declSignature)
@@ -836,7 +836,7 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   // Verify the inputs.
   // Drop the callee and the result slot type for apply_result.
   operands = operands.drop_front();
-  ArrayRef<Type> inputTypes = sig.getValueInputs();
+  ArrayRef<Type> inputTypes = sig.getArguments();
   if (isApplyResult)
     inputTypes = inputTypes.drop_front();
 
@@ -863,9 +863,9 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
 
   // Verify the result.
   auto sig = cast<SignatureType>(operands.front().getType());
-  if (sig.getValueResults().size() != 1)
+  if (sig.getResults().size() != 1)
     return emitError() << "'apply' function must return one result";
-  Type resultType = upbindApplyResult(sig.getValueResults().front());
+  Type resultType = upbindApplyResult(sig.getResults().front());
   if (type != resultType)
     return emitError() << "'apply' function result type must be " << type
                        << " but got " << resultType;
@@ -881,7 +881,7 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 
   auto sig = cast<SignatureType>(operands.front().getType());
   // TODO: Cannot check !lit.ref reference types in KGEN.
-  if (auto resultPtr = dyn_cast<PointerType>(sig.getValueInputs()[0])) {
+  if (auto resultPtr = dyn_cast<PointerType>(sig.getArguments()[0])) {
     auto expectedResult = resultPtr.getElementType();
     if (expectedResult != type)
       return emitError() << "'apply_result' function result type must be "
@@ -1981,11 +1981,11 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     auto block = std::make_unique<Block>();
     SmallVector<Value> fakeOperands;
     auto loc = UnknownLoc::get(func.getContext());
-    for (Type type : opExpr.getType().getValueInputs())
+    for (Type type : opExpr.getType().getArguments())
       fakeOperands.push_back(block->addArgument(type, loc));
     OwningOpRef<Operation *> op =
         Operation::create(loc, {opExpr.getName(), func.getContext()},
-                          opExpr.getType().getValueResults(), fakeOperands,
+                          opExpr.getType().getResults(), fakeOperands,
                           opExpr.getAttrs(), /*properties=*/nullptr);
     block->push_back(*op);
     // Verify the operation. Fail to fold if the operation is invalid. Silence

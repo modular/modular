@@ -29,7 +29,7 @@ def SignatureType : DialectType<(type
   TypeArray:$inputParamTypes,
   TypeArray:$resultParamTypes,
   ConcreteType<"FunctionType">:$values,
-  EnumAttrArray<"ValueInputConvention">:$inputConventions,
+  EnumAttrArray<"ArgConvention">:$argConventions,
   Custom<"FnEffects">:$fnEffects,
   ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
 )>;
@@ -47,7 +47,7 @@ def DeclRefType : DialectType<(type
 
 def VariadicType : DialectType<(type
   Type:$elementType,
-  EnumAttr<"ValueInputConvention">:$convention
+  EnumAttr<"ArgConvention">:$convention
 )>;
 
 def NoneType : DialectType<(type)>;

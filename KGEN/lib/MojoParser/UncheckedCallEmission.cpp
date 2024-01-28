@@ -46,7 +46,7 @@ public:
 
   /// Emit IR for a single argument, according to its convention.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
-                         ValueInputConvention convention, Type expectedType,
+                         ArgConvention convention, Type expectedType,
                          size_t sequenceIndex = 0);
 
   /// Emit all arguments and return their values in a vector. This function
@@ -64,7 +64,7 @@ public:
   /// the list of pre-emitted argument values to check aliasing with the result
   /// slot.
   Value emitPreemittedArgumentAsDynamicValue(
-      ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
+      ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
       ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// If this is a call to a @always_inline function (and there's only one
@@ -145,7 +145,7 @@ private:
   /// appending to the given argument value vector.
   LogicalResult emitRemainingPosOperands(
       size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
-      ValueInputConvention convention, Type expectedType,
+      ArgConvention convention, Type expectedType,
       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
 
@@ -165,8 +165,7 @@ void CallEmitter::AfterCallActions::emit() {
 }
 
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
-                                    unsigned argIdx,
-                                    ValueInputConvention convention,
+                                    unsigned argIdx, ArgConvention convention,
                                     Type expectedType, size_t sequenceIndex) {
   if (calleeSig.isVarArg(argIdx)) {
     auto variadic = cast<VariadicType>(expectedType);
@@ -182,22 +181,22 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   }
 
   switch (convention) {
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::InitSelf:
+  case ArgConvention::ByRef:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
     // By-ref arguments, must be lvalues.
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
     return operand.ir;
-  case ValueInputConvention::OwnedInReg:
-  case ValueInputConvention::OwnedInMem:
-  case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::BorrowedInMem: {
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInReg:
+  case ArgConvention::BorrowedInMem: {
     // by-val arguments are converted to the expected r-value type.
     if (SignatureType::hasAddress(convention))
       expectedType = cast<RefType>(expectedType).getElementType();
 
-    if (convention == ValueInputConvention::OwnedInReg ||
-        convention == ValueInputConvention::OwnedInMem)
+    if (convention == ArgConvention::OwnedInReg ||
+        convention == ArgConvention::OwnedInMem)
       return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
     // If this is a low-level !lit.ref passed by value, we can bind either to a
@@ -206,7 +205,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // overloading, we could get rid of this special case.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       if (auto cValue = operand.ir.getIfCValue())
-        if (convention == ValueInputConvention::BorrowedInReg &&
+        if (convention == ArgConvention::BorrowedInReg &&
             ASTType(cValue.getRValueType())
                 .isEqualCanon(expectedRef.getElementType())) {
           // We don't currently support non-MValues.  We could dump them into
@@ -233,15 +232,15 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
-  llvm_unreachable("unknown value input convention");
+  llvm_unreachable("unknown argument convention");
 }
 
 LogicalResult CallEmitter::emitRemainingPosOperands(
     size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
-    ValueInputConvention convention, Type expectedType,
+    ArgConvention convention, Type expectedType,
     SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
   // Emit all of the remaining values to make sure they're converted to the
   // right type.
@@ -363,12 +362,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   size_t posOperandIdx = 0;
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
-  argumentValues.reserve(calleeSig.getNumInputs());
+  argumentValues.reserve(calleeSig.getNumArguments());
 
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(calleeSig);
   for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
-       llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
-                       calleeSig.getInputConventions(),
+       llvm::enumerate(calleeSig.getArgNames(), calleeSig.getArguments(),
+                       calleeSig.getArgConventions(),
                        calleeSig.getArgPassingKinds())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
@@ -380,7 +379,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // ValueDest into this, but we need information about each argument being
     // emitted before we can do that.  As such, we just use a var decl and
     // replace it opportunistically later if we can.
-    if (convention == ValueInputConvention::ByRefResult && builder) {
+    if (convention == ArgConvention::ByRefResult && builder) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
       assert(passingKind == PassingKind::PosOnly);
 
@@ -394,8 +393,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Memory-only result slots are allocated automatically by the apply
     // operator.
-    if (!builder && (convention == ValueInputConvention::ByRefResult ||
-                     convention == ValueInputConvention::InitSelf))
+    if (!builder && (convention == ArgConvention::ByRefResult ||
+                     convention == ArgConvention::InitSelf))
       continue;
 
     // If we ran out of operands, fulfill this with a keyword argument, default
@@ -431,7 +430,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // have a default argument for each missing operand.
       auto defaultOr = defaultHandler.getDefault(argIdx);
       assert(defaultOr.has_value());
-      assert(convention != ValueInputConvention::ByRef &&
+      assert(convention != ArgConvention::ByRef &&
              "by_ref argument cannot have defaults");
       argumentValues.push_back({PValue(*defaultOr), callExpr});
       continue;
@@ -481,9 +480,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   // Drop the first argument which is the return slot.
-  ArrayRef<ValueInputConvention> argConventions =
-      calleeSig.getInputConventions();
-  assert(argConventions[0] == ValueInputConvention::ByRefResult);
+  ArrayRef<ArgConvention> argConventions = calleeSig.getArgConventions();
+  assert(argConventions[0] == ArgConvention::ByRefResult);
   argConventions = argConventions.drop_front();
   argumentValues = argumentValues.drop_front();
 
@@ -555,18 +553,18 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 }
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
-    ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
+    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
 
   Value arg;
   switch (convention) {
-  case ValueInputConvention::OwnedInReg:
+  case ArgConvention::OwnedInReg:
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
-  case ValueInputConvention::OwnedInMem:
+  case ArgConvention::OwnedInMem:
     // Promote PValue's if needed.
     return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
-  case ValueInputConvention::BorrowedInReg:
+  case ArgConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
 
@@ -581,7 +579,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     arg = argValAndExpr.ir.getIfSBValue();
     assert(arg && "unknown BValue");
     break;
-  case ValueInputConvention::BorrowedInMem: {
+  case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
@@ -609,7 +607,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;
   }
-  case ValueInputConvention::ByRefResult: {
+  case ArgConvention::ByRefResult: {
     MLValue resultSlotRef = argValAndExpr.ir.getIfMLValue();
     assert(resultSlotRef && "byref_result value start in a temp slot");
     auto rvalueType = resultSlotRef.getRValueType();
@@ -631,8 +629,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Use the preferred location of the destination slot.
     return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::InitSelf: {
+  case ArgConvention::ByRef:
+  case ArgConvention::InitSelf: {
     // We know that the operand is an LValue, but it might be
     // dynamic/computed.
     LValue lv = argValAndExpr.ir.getIfLValue();
@@ -657,7 +655,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         {std::move(dlvBuffer), mlvBuffer});
     return mlvBuffer;
   }
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
   if (!arg) {
@@ -726,8 +724,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
       boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
   for (auto [argIdx, argValAndExpr, calleeArgType, convention] :
        llvm::enumerate(
-           argumentValues, boundSigType.getValueInputs().drop_front(dropFirst),
-           boundSigType.getInputConventions().drop_front(dropFirst))) {
+           argumentValues, boundSigType.getArguments().drop_front(dropFirst),
+           boundSigType.getArgConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
@@ -741,8 +739,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
       // If handling a variadic memory argument, put each element into memory.
       auto varType = cast<VariadicType>(arg.getType());
       if (SignatureType::hasAddress(varType.getConvention())) {
-        bool isMut =
-            varType.getConvention() != ValueInputConvention::BorrowedInMem;
+        bool isMut = varType.getConvention() != ArgConvention::BorrowedInMem;
         auto varElType = RefType::getImmortal(varType.getElementType(), isMut);
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
@@ -759,10 +756,9 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   bool hasResultSlot =
       boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
-  Type resultType = hasResultSlot
-                        ? ASTType(boundSigType.getValueInputs().front())
-                              .getReferenceElementType()
-                        : ASTType(boundSigType.getValueResults().front());
+  Type resultType = hasResultSlot ? ASTType(boundSigType.getArguments().front())
+                                        .getReferenceElementType()
+                                  : ASTType(boundSigType.getResults().front());
   TypedAttr result = ParamOperatorAttr::get(
       hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
   return result;
@@ -927,16 +923,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   SmallVector<Value, 1> byRefResults;
   SmallVector<TypedAttr> implicitLifetimes;
   for (auto [argIdx, argValAndExpr, conventionX, calleeArgType] :
-       llvm::enumerate(argumentValues, calleeSig.getInputConventions(),
-                       calleeSig.getValueInputs())) {
-    ValueInputConvention convention = conventionX;
+       llvm::enumerate(argumentValues, calleeSig.getArgConventions(),
+                       calleeSig.getArguments())) {
+    ArgConvention convention = conventionX;
 
     // If this is a variadic operation, the N operands have already been emitted
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
     if (calleeSig.isVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
-      convention = ValueInputConvention::OwnedInReg;
+      convention = ArgConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
         argValAndExpr, convention, argumentValues);
@@ -970,8 +966,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       if (arg.getType() != adjustedCalleeArgType)
         arg = builder->create<RebindOp>(loc, adjustedCalleeArgType, arg);
     }
-    if (conventionX == ValueInputConvention::ByRefResult ||
-        conventionX == ValueInputConvention::InitSelf)
+    if (conventionX == ArgConvention::ByRefResult ||
+        conventionX == ArgConvention::InitSelf)
       byRefResults.push_back(arg);
     callArgs.push_back(arg);
   }

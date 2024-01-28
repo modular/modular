@@ -142,7 +142,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRefParameter<"Type">:$inputParamTypes,
     ArrayRefParameter<"Type">:$resultParamTypes,
     "FunctionType":$values,
-    ArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    ArrayRefParameter<"ArgConvention">:$argConventions,
     "FnEffects":$fnEffects,
     "FnMetadataAttrInterface":$metadata
   );
@@ -154,10 +154,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
         "FunctionType":$values,
         CArg<"ArrayRef<Type>", "{}">:$inputParamTypes,
         CArg<"ArrayRef<Type>", "{}">:$resultParamTypes,
-        CArg<"ArrayRef<ValueInputConvention>", "{}">:$inputConvs,
+        CArg<"ArrayRef<ArgConvention>", "{}">:$argConvs,
         CArg<"FnEffects", "{}">:$effects,
         CArg<"Attribute", "{}">:$metadata), [{
-      SmallVector<ValueInputConvention> convs = llvm::to_vector(inputConvs);
+      SmallVector<ArgConvention> convs = llvm::to_vector(argConvs);
       convs.resize(values.getNumInputs());
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
                    values, convs, effects,
@@ -165,21 +165,21 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     }]>,
     TypeBuilderWithInferredContext<(ins
         "FunctionType":$values,
-        "ArrayRef<ValueInputConvention>":$inputConvs,
+        "ArrayRef<ArgConvention>":$argConvs,
         CArg<"FnEffects", "{}">:$effects,
         CArg<"Attribute", "{}">:$metadata), [{
       SmallVector<Type> inputParamTypes, resultParamTypes;
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
-                   values, inputConvs, effects,
+                   values, argConvs, effects,
                    ::cast_or_null<FnMetadataAttrInterface>(metadata));
     }]>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
 
   let extraClassDeclaration = [{
-    /// Helper to return the value input and result types.
-    ArrayRef<Type> getValueInputs() const;
-    ArrayRef<Type> getValueResults() const;
+    /// Helper to return the argument and result types.
+    ArrayRef<Type> getArguments() const;
+    ArrayRef<Type> getResults() const;
 
     /// Returns true if the argument at this index is a vararg.
     bool isVarArg(size_t index);
@@ -205,9 +205,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return getFnEffects().hasOwnedRegisterResult();
     }
 
-    /// Return the convention for the specified value input argument.
-    ValueInputConvention getInputConvention(size_t inputNo) {
-      return getInputConventions()[inputNo];
+    /// Return the convention for the specified value argument.
+    ArgConvention getArgConvention(size_t inputNo) {
+      return getArgConventions()[inputNo];
     }
 
     /// Set a function convention.
@@ -215,7 +215,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
-    /// bindings affects the type signature of the value input and outputs, and
+    /// bindings affects the type signature of the argument and results, and
     /// also can remap the signature in the parameter list itself.
     ///
     /// If an error occurs making the substitution, report it with emitErrorFn
@@ -232,7 +232,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn,
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-      FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+      FunctionType values, ArrayRef<ArgConvention> argConventions,
       FnEffects effects, FnMetadataAttrInterface metadata);
 
     /// Return this signature type with the value signature replaced.
@@ -246,13 +246,13 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return the number of result parameters.
     size_t getNumResultParams() { return getResultParamTypes().size(); }
     /// Return the number of arguments.
-    size_t getNumInputs() { return getValueInputs().size(); }
+    size_t getNumArguments() { return getArguments().size(); }
     /// Return the number of results.
-    size_t getNumResults() { return getValueResults().size(); }
+    size_t getNumResults() { return getResults().size(); }
 
     /// Determine whether an argument with the given input convention expects to
     /// have a pointer or reference type.
-    static bool hasAddress(ValueInputConvention conv);
+    static bool hasAddress(ArgConvention conv);
 
     /// Construct a signature from named parameter declarations, a function
     /// type, and metadata. This helper is used to convert between a named
@@ -261,7 +261,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     remapToSignature(ArrayRef<ParamDeclAttr> inputParams,
                      ArrayRef<ParamDeclAttr> resultParams,
                      FunctionType functionType,
-                     ArrayRef<ValueInputConvention> inputConventions = {},
+                     ArrayRef<ArgConvention> argConventions = {},
                      FnEffects effects = {}, Attribute metadata = {},
                      function_ref<InFlightDiagnostic()> emitError = {});
 
@@ -276,9 +276,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 }
 
 def CalleeArgumentTypes : TypesMatchWith<"operands match callee argument types",
-    "callee", "operands", "cast<SignatureType>($_self).getValueInputs()">;
+    "callee", "operands", "cast<SignatureType>($_self).getArguments()">;
 def CalleeResultTypes : TypesMatchWith<"results match callee result types",
-    "callee", "results", "cast<SignatureType>($_self).getValueResults()">;
+    "callee", "results", "cast<SignatureType>($_self).getResults()">;
 
 //===----------------------------------------------------------------------===//
 // PointerType
@@ -430,7 +430,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   }];
 
   let parameters = (ins "Type":$elementType,
-                        "ValueInputConvention":$convention);
+                        "ArgConvention":$convention);
   let assemblyFormat = [{
     `<`custom<ParamType>($elementType)
       `` custom<VariadicConvention>($convention) `>`
@@ -438,7 +438,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "ValueInputConvention":$convention), [{
+                                        "ArgConvention":$convention), [{
       return $_get(elementType.getContext(), elementType, convention);
     }]>,
   ];

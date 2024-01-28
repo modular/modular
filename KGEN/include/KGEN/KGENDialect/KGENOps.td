@@ -1026,7 +1026,7 @@ def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
 
 def KGEN_CallSignatureOp : KGENOp<"call_signature", [
     TypesMatchWith<"operands match callee argument types", "callee",
-    "arguments", "cast<SignatureType>($_self).getValueInputs()">,
+    "arguments", "cast<SignatureType>($_self).getArguments()">,
     CalleeResultTypes]> {
   let summary = "Call a signature typed instance";
   let description = [{

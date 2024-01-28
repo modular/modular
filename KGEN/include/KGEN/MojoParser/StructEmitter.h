@@ -66,7 +66,7 @@ public:
   /// terminators.
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
-                            ArrayRef<ValueInputConvention> argConventions,
+                            ArrayRef<ArgConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
                             ArrayRef<PassingKind> argPassingKinds,
                             SpecialFunctionKind kind,
@@ -80,16 +80,13 @@ public:
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `prefix` is prepended to the mangled function name.
-  LIT::FuncOp createFunction(StringRef name, ArrayRef<ParamDeclAttr> params,
-                             ArrayRef<PassingKind> paramPassingKinds,
-                             ArrayRef<Type> argTypes,
-                             ArrayRef<ValueInputConvention> argConventions,
-                             ArrayRef<StringAttr> argNames,
-                             ArrayRef<PassingKind> argPassingKinds,
-                             Type resultType, SpecialFunctionKind specialFnID,
-                             SMLoc loc, ImplicitLocOpBuilder &builder,
-                             FnEffects effects = FnEffects(),
-                             StringRef prefix = "");
+  LIT::FuncOp createFunction(
+      StringRef name, ArrayRef<ParamDeclAttr> params,
+      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
+      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+      ArrayRef<PassingKind> argPassingKinds, Type resultType,
+      SpecialFunctionKind specialFnID, SMLoc loc, ImplicitLocOpBuilder &builder,
+      FnEffects effects = FnEffects(), StringRef prefix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -97,27 +94,27 @@ public:
   /// method for memory-only types where not all fields are initialized, though
   /// this requires manual modification of the returned FuncOp to initialize any
   /// omitted fields.
-  LIT::FuncOp
-  synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
-                           ArrayRef<ValueInputConvention> argConventions,
-                           ArrayRef<StringAttr> argNames,
-                           ArrayRef<PassingKind> argPassingKinds);
+  LIT::FuncOp synthesizeMemberwiseInit(ASTDecl &structDecl,
+                                       ArrayRef<Type> argTypes,
+                                       ArrayRef<ArgConvention> argConventions,
+                                       ArrayRef<StringAttr> argNames,
+                                       ArrayRef<PassingKind> argPassingKinds);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `prefix` is prepended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-      ArrayRef<ValueInputConvention> argConventions,
-      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-      Type resultType, ASTDecl &structDecl,
+      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+      ArrayRef<PassingKind> argPassingKinds, Type resultType,
+      ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects effects = FnEffects(), StringRef prefix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
-      ArrayRef<ValueInputConvention> argConventions,
-      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-      Type resultType, ASTDecl &structDecl,
+      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+      ArrayRef<PassingKind> argPassingKinds, Type resultType,
+      ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects effects = FnEffects(), StringRef prefix = "");
 

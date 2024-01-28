@@ -31,10 +31,10 @@ using namespace M::KGEN::LIT;
 LIT::FuncOp StructEmitter::createFunction(
     StringRef name, ArrayRef<ParamDeclAttr> params,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef prefix) {
+    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+    ArrayRef<PassingKind> argPassingKinds, Type resultType,
+    SpecialFunctionKind specialFnID, SMLoc loc, ImplicitLocOpBuilder &builder,
+    FnEffects fnEffects, StringRef prefix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -138,10 +138,9 @@ LIT::FuncOp StructEmitter::createFunction(
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects effects, StringRef prefix) {
+    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+    ArrayRef<PassingKind> argPassingKinds, Type resultType, ASTDecl &structDecl,
+    SpecialFunctionKind specialFnID, FnEffects effects, StringRef prefix) {
   return synthesizeMethodInStruct(name, /*params=*/{}, /*paramPassingKinds=*/{},
                                   argTypes, argConventions, argNames,
                                   argPassingKinds, resultType, structDecl,
@@ -151,10 +150,9 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects effects, StringRef prefix) {
+    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+    ArrayRef<PassingKind> argPassingKinds, Type resultType, ASTDecl &structDecl,
+    SpecialFunctionKind specialFnID, FnEffects effects, StringRef prefix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -213,8 +211,8 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds) {
+    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+    ArrayRef<PassingKind> argPassingKinds) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
   bool isMemoryOnly = !structOp.isRegisterPassable();
@@ -257,16 +255,16 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       switch (argConventions[idx + 1]) {
       default:
         llvm_unreachable("unknown convention");
-      case ValueInputConvention::OwnedInReg:
+      case ArgConvention::OwnedInReg:
         argVal = SRValue(arg);
         break;
-      case ValueInputConvention::BorrowedInReg:
+      case ArgConvention::BorrowedInReg:
         argVal = SBValue(arg);
         break;
-      case ValueInputConvention::OwnedInMem:
+      case ArgConvention::OwnedInMem:
         argVal = MRValue(arg);
         break;
-      case ValueInputConvention::BorrowedInMem:
+      case ArgConvention::BorrowedInMem:
         argVal = MBValue(arg);
         break;
       }
@@ -384,10 +382,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 /// ```
 LIT::FuncOp StructEmitter::addVoidMethod(
     ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-    SpecialFunctionKind kind, ArrayRef<ParamDeclAttr> params,
-    ArrayRef<PassingKind> paramPassingKinds) {
+    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
+    ArrayRef<PassingKind> argPassingKinds, SpecialFunctionKind kind,
+    ArrayRef<ParamDeclAttr> params, ArrayRef<PassingKind> paramPassingKinds) {
   auto [func, _] = synthesizeMethodInStruct(
       prefix, params, paramPassingKinds, argTypes, argConventions, argNames,
       argPassingKinds, shared.getNoneType(), structDecl, kind);
@@ -461,8 +458,8 @@ struct ValueInfo {
       if (!func)
         continue;
       auto signature = func.getSignature();
-      ArrayRef<Type> inputTypes = signature.getValueInputs();
-      ArrayRef<ValueInputConvention> convs = signature.getInputConventions();
+      ArrayRef<Type> inputTypes = signature.getArguments();
+      ArrayRef<ArgConvention> convs = signature.getArgConventions();
       if (isMemoryOnly) {
         inputTypes = inputTypes.drop_front();
         convs = convs.drop_front();
@@ -480,8 +477,8 @@ struct ValueInfo {
            llvm::zip(inputTypes, convs, structDeclOp.getFieldDecls())) {
         // Strip the pointer type if present.
         Type argType = type;
-        if (conv != ValueInputConvention::OwnedInReg &&
-            conv != ValueInputConvention::BorrowedInReg)
+        if (conv != ArgConvention::OwnedInReg &&
+            conv != ArgConvention::BorrowedInReg)
           argType = ASTType(argType).getReferenceElementType();
         StructFieldOp op = field;
         if (argType != op.getType()) {
@@ -528,12 +525,12 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   LIT::FuncOp init;
   if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {
     SmallVector<Type> argTypes;
-    SmallVector<ValueInputConvention> argConventions;
+    SmallVector<ArgConvention> argConventions;
     SmallVector<StringAttr> argNames;
     SmallVector<PassingKind> argPassingKinds;
     if (isMemoryOnly) {
       argTypes.push_back(refToSelf);
-      argConventions.push_back(ValueInputConvention::InitSelf);
+      argConventions.push_back(ArgConvention::InitSelf);
       argNames.push_back(StringAttr::get(shared.getContext()));
       argPassingKinds.push_back(PassingKind::PosOnly);
     }
@@ -543,18 +540,18 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     // RValue.
     for (auto fieldOp : declOp.getFieldDecls()) {
       ASTType fieldType = fieldOp.getType();
-      ValueInputConvention conv;
+      ArgConvention conv;
       switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
       case TypeConvention::MemoryOnly:
         fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
                                                 /*isMut=*/true);
-        conv = ValueInputConvention::OwnedInMem;
+        conv = ArgConvention::OwnedInMem;
         break;
       case TypeConvention::RegisterPassable:
-        conv = ValueInputConvention::OwnedInReg;
+        conv = ArgConvention::OwnedInReg;
         break;
       case TypeConvention::RegisterPassableTrivial:
-        conv = ValueInputConvention::BorrowedInReg;
+        conv = ArgConvention::BorrowedInReg;
         break;
       }
       argTypes.push_back(fieldType);
@@ -598,8 +595,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     // from the type checking logic.
     if (needsDtor && isMemoryOnly) {
       destructorFunc = addVoidMethod(
-          structDecl, "__del__", refToSelf, ValueInputConvention::OwnedInMem,
-          selfName, PassingKind::PosOnly, SpecialFunctionKind::kDel);
+          structDecl, "__del__", refToSelf, ArgConvention::OwnedInMem, selfName,
+          PassingKind::PosOnly, SpecialFunctionKind::kDel);
     }
   }
 
@@ -622,18 +619,17 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     if (isMemoryOnly) {
       Type refToExisting =
           ASTType(selfType).getRefForArgument("existing", /*isMut=*/false);
-      copyFunc = addVoidMethod(
-          structDecl, "__copyinit__", {refToSelf, refToExisting},
-          {ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem},
-          {selfName, existingName},
-          {PassingKind::PosOnly, PassingKind::PosOnly},
-          SpecialFunctionKind::kCopyInit);
+      copyFunc =
+          addVoidMethod(structDecl, "__copyinit__", {refToSelf, refToExisting},
+                        {ArgConvention::InitSelf, ArgConvention::BorrowedInMem},
+                        {selfName, existingName},
+                        {PassingKind::PosOnly, PassingKind::PosOnly},
+                        SpecialFunctionKind::kCopyInit);
     } else {
-      copyFunc = synthesizeMethodInStruct("__copyinit__", selfType,
-                                          ValueInputConvention::BorrowedInReg,
-                                          existingName, PassingKind::PosOnly,
-                                          selfType, structDecl,
-                                          SpecialFunctionKind::kCopyInitReg)
+      copyFunc = synthesizeMethodInStruct(
+                     "__copyinit__", selfType, ArgConvention::BorrowedInReg,
+                     existingName, PassingKind::PosOnly, selfType, structDecl,
+                     SpecialFunctionKind::kCopyInitReg)
                      .first;
     }
   }
@@ -645,16 +641,16 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
       Type refToExisting =
           ASTType(selfType).getRefForArgument("existing", /*isMut=*/true);
-      moveFunc = addVoidMethod(
-          structDecl, "__moveinit__", {refToSelf, refToExisting},
-          {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
-          {selfName, existingName},
-          {PassingKind::PosOnly, PassingKind::PosOnly},
-          SpecialFunctionKind::kMoveInit);
+      moveFunc =
+          addVoidMethod(structDecl, "__moveinit__", {refToSelf, refToExisting},
+                        {ArgConvention::InitSelf, ArgConvention::OwnedInMem},
+                        {selfName, existingName},
+                        {PassingKind::PosOnly, PassingKind::PosOnly},
+                        SpecialFunctionKind::kMoveInit);
     } else {
       addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
       moveFunc = synthesizeMethodInStruct(
-                     "__moveinit__", selfType, ValueInputConvention::OwnedInReg,
+                     "__moveinit__", selfType, ArgConvention::OwnedInReg,
                      existingName, PassingKind::PosOnly, selfType, structDecl,
                      SpecialFunctionKind::kMoveInitReg)
                      .first;
@@ -683,8 +679,8 @@ LIT::FuncOp StructEmitter::findInitInStruct(StructDeclOp structOp,
       bool isMatch = true;
       for (auto [existing, proposed] :
            llvm::zip(structOp.isRegisterPassable()
-                         ? candidate.getSignature().getValueInputs()
-                         : candidate.getSignature().getValueInputs().slice(1),
+                         ? candidate.getSignature().getArguments()
+                         : candidate.getSignature().getArguments().slice(1),
                      operands)) {
         if (existing != proposed) {
           isMatch = false;

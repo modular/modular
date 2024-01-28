@@ -98,7 +98,7 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "function_ref<InFlightDiagnostic()>":$emitError,
       "ArrayRef<Type>":$inputParamTypes, "ArrayRef<Type>":$resultParamTypes,
       "FunctionType":$values,
-      "ArrayRef<ValueInputConvention>":$inputConventions,
+      "ArrayRef<ArgConvention>":$argConventions,
       "FnEffects":$effects)>,
     InterfaceMethod<[{
       Request the custom metadata attribute print the provided signature.

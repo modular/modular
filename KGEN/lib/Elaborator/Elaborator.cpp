@@ -2063,7 +2063,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   auto newFunc = b.create<FuncOp>(
       gen.getLoc(), mangledName,
       SignatureType::get(gen.getFunctionType(),
-                         gen.getSignature().getInputConventions(),
+                         gen.getSignature().getArgConventions(),
                          gen.getSignature().getFnEffects()),
       gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
       /*sourceName,*/ gen.getLLVMMetadata());

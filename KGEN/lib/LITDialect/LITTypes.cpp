@@ -531,7 +531,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
 
   PassingKindParser passingKindParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
@@ -546,15 +546,15 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
     if (p.parseType(type) ||
-        parseInputConvention(p, inputConventions.emplace_back(),
-                             ValueInputConvention::OwnedInReg))
+        parseArgConvention(p, argConventions.emplace_back(),
+                           ArgConvention::OwnedInReg))
       return failure();
 
     // Parse an optional default value.
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, type,
-            SignatureType::hasAddress(inputConventions.back()))))
+            SignatureType::hasAddress(argConventions.back()))))
       return failure();
     if (defaultVal) {
       if (passingKindParser.isCurrentKwOnly())
@@ -578,7 +578,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   MLIRContext *ctx = p.getContext();
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
-      resultParamTypes, inputConventions, effects,
+      resultParamTypes, argConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
                           paramPassingKinds, defaultPosArgs, defaultPosParams,
                           defaultKwOnlyArgs, defaultKwOnlyParams,
@@ -634,10 +634,10 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
       p << ": ";
     }
 
-    p << signature.getValueInputs()[i];
+    p << signature.getArguments()[i];
 
-    printInputConvention(p, signature.getInputConvention(i),
-                         ValueInputConvention::OwnedInReg);
+    printArgConvention(p, signature.getArgConvention(i),
+                       ArgConvention::OwnedInReg);
 
     if (auto defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
@@ -714,7 +714,7 @@ LITSignatureType LITSignatureType::dropParamValues() {
                           getDefaultPosArgs(), /*defaultPosParams=*/{},
                           getDefaultKwOnlyArgs(), /*defaultKwOnlyParams=*/{},
                           /*numImplicitLifetimeDecls=*/0);
-  return get(getValues(), /*inputParamTypes=*/{}, getInputConventions(),
+  return get(getValues(), /*inputParamTypes=*/{}, getArgConventions(),
              getFnEffects(), metadata);
 }
 
@@ -771,7 +771,7 @@ SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
       []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
 
   return SignatureType::get(newFnType, getParamTypes(),
-                            /*no result params*/ {}, getInputConventions(),
+                            /*no result params*/ {}, getArgConventions(),
                             getFnEffects());
 }
 
@@ -837,8 +837,7 @@ bool LITSignatureType::classof(Type type) {
 
 // Determine how many implicit lifetimes a signature with the specified input
 // values should have.
-size_t
-LITSignatureType::countImplicitLifetimes(ArrayRef<ValueInputConvention> convs) {
+size_t LITSignatureType::countImplicitLifetimes(ArrayRef<ArgConvention> convs) {
   size_t result = 0;
   for (auto conv : convs)
     if (SignatureType::hasAddress(conv))
@@ -862,7 +861,7 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
 
 LITSignatureType LITSignatureType::get(FunctionType values,
                                        ArrayRef<Type> paramTypes,
-                                       ArrayRef<ValueInputConvention> convs,
+                                       ArrayRef<ArgConvention> convs,
                                        FnEffects effects,
                                        FnMetadataAttr metadata) {
   assert(metadata && "LITSignatureType must have non-null metadata");

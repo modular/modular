@@ -32,7 +32,7 @@ public:
   /// Get the function input argument names.
   ArrayRef<StringAttr> getArgNames();
 
-  /// Return the name for the specified value input argument.
+  /// Return the name for the specified argument.
   StringAttr getArgName(size_t inputNo);
 
   /// Get the function argument passing kinds (e.g. keyword-only).
@@ -64,7 +64,7 @@ public:
   size_t getNumImplicitLifetimeDecls();
 
   /// LIT-level signatures always have one result type.
-  Type getResultType() { return getValueResults().front(); }
+  Type getResultType() { return getResults().front(); }
 
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
@@ -99,7 +99,7 @@ public:
 
   // Determine how many implicit lifetimes a signature with the specified input
   // values should have.
-  static size_t countImplicitLifetimes(ArrayRef<ValueInputConvention> convs);
+  static size_t countImplicitLifetimes(ArrayRef<ArgConvention> convs);
 
   /// A `SignatureType` is a LIT signature if it contains function metadata.
   static bool classof(SignatureType type);
@@ -109,8 +109,8 @@ public:
                               TypeRange results,
                               size_t numImplicitLifetimeDecls);
   static LITSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
-                              ArrayRef<ValueInputConvention> convs,
-                              FnEffects effects, FnMetadataAttr metadata);
+                              ArrayRef<ArgConvention> convs, FnEffects effects,
+                              FnMetadataAttr metadata);
 };
 } // namespace M::KGEN::LIT
 
