@@ -453,7 +453,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   if (effects.isThrows() && fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
     // Specialize the error if raising is implicit because it was defined as a
     // def.
-    if (funcOp.getIsDef()) {
+    if (funcOp.isDef()) {
       emitError() << "cannot define " << name
                   << " as 'def'; 'def' implicitly raises"
                   << FixIt::replaceToken(decl.getLoc(), "fn");
@@ -835,8 +835,8 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   return closureWrapperInstance.getIfMRValue();
 }
 
-PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
-  switch (handling) {
+PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
+  switch (kwArgHandling) {
   case KWArgHandling::kPositionalOnly:
     return PassingKind::PosOnly;
   case KWArgHandling::kKeywordOnly:
@@ -845,16 +845,6 @@ PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
     return PassingKind::PosOrKw;
   }
   llvm_unreachable("unhandled KWArgHandling");
-}
-
-/// Silence internal verifier errors when constructing types from the parser. We
-/// don't want to show these to the user.
-static auto silenceErrors(MLIRContext *ctx) {
-  return [ctx] {
-    InFlightDiagnostic diag = mlir::emitError(UnknownLoc::get(ctx));
-    diag.abandon();
-    return diag;
-  };
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
@@ -991,34 +981,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
-  SmallVector<Location> argLocs;
-  SmallVector<StringAttr> argNames;
-  SmallVector<PassingKind> argPassingKinds;
-  SmallVector<ArgConvention> argConventions;
-  for (const ParsedArgument &arg : fnSignature.parsedArgs) {
-    argLocs.push_back(shared.diags.translateLocation(arg.loc));
-    argPassingKinds.emplace_back(
-        ParsedArgument::mapToPassingKind(arg.kwArgHandling));
-    argNames.push_back(arg.name);
-    argConventions.push_back(arg.kgenConvention);
-  }
-
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
-  auto paramsArrayAttr =
-      builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
 
   // Compute the signature of the function.
-  FunctionType functionType = builder.getFunctionType(
-      tcSignature.argTypes, {tcSignature.resultType.mlirType});
-  auto metadata = FnMetadataAttr::get(
-      builder.getContext(), argNames, argPassingKinds, paramList.names,
-      paramList.passingKinds, tcSignature.defaultPosArgs,
-      paramList.defaultPosParams, tcSignature.defaultKwOnlyArgs,
-      paramList.defaultKwOnlyParams, implicitLifetimeDecls.size());
-  LITSignatureType signature = SignatureType::remapToSignature(
-      paramsArrayAttr, {}, functionType, argConventions, fnSignature.effects,
-      metadata, silenceErrors(getContext()));
+  LITSignatureType signature =
+      tcSignature.getLITSignatureType(implicitLifetimeDecls.size());
   if (!signature)
     return failure();
 
@@ -1031,7 +999,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // The implicitLifetimeDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
-  if (!implicitLifetimeDecls.empty()) {
+  ParamDeclArrayAttr paramsArrayAttr;
+  if (implicitLifetimeDecls.empty()) {
+    paramsArrayAttr =
+        builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
+  } else {
     SmallVector<ParamDeclAttr> mergedParams(implicitLifetimeDecls.begin(),
                                             implicitLifetimeDecls.end());
     llvm::append_range(mergedParams, paramList.paramDeclAttrs);
@@ -1039,7 +1011,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
-  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+  attrs.set(funcOp.getFunctionTypeAttrName(),
+            TypeAttr::get(tcSignature.getFunctionType()));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
   // lifetimes, we strip off the named lifetime decl references and replace them
@@ -1091,6 +1064,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   shared.setLocationDebugScope(diScopeGuard, funcOp);
 
+  SmallVector<Location> argLocs;
+  for (const ParsedArgument &arg : fnSignature.parsedArgs)
+    argLocs.push_back(shared.diags.translateLocation(arg.loc));
   funcOp.getBody()->addArguments(tcSignature.argTypes, argLocs);
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
@@ -1211,7 +1187,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       // No default return needed if we ended in a return.
       (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
     makeNoneReturn();
-  } else if (func.getIsDef() && func.getSignature().hasMemoryOnlyResult()) {
+  } else if (func.isDef() && func.getSignature().hasMemoryOnlyResult()) {
     // If this `def` returns an object but is missing a return, insert one
     // automatically.
     auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
@@ -1767,6 +1743,16 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
   }
   // Not handled in signature phase.
   return failure();
+}
+
+/// Silence internal verifier errors when constructing types from the parser. We
+/// don't want to show these to the user.
+static auto silenceErrors(MLIRContext *ctx) {
+  return [ctx] {
+    InFlightDiagnostic diag = mlir::emitError(UnknownLoc::get(ctx));
+    diag.abandon();
+    return diag;
+  };
 }
 
 /// structdef ::=

@@ -160,7 +160,7 @@ struct StmtParser : public ParserBase {
     // If we are parsing into a 'def', then we need a position to synthesize
     // variable definitions at the top of the function.
     if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
-      if (funcOp.getIsDef()) {
+      if (funcOp.isDef()) {
         // The operation builder inserts before its insertion point, but for a
         // stable insertion point, keep the previous iterator position.
         varDeclCursor = OpBuilder(builder.getInsertionBlock(),
@@ -657,7 +657,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   // Emit a warning if the result is a value we should warn when unused.
   auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  if (!funcOp || !funcOp.getIsDef())
+  if (!funcOp || !funcOp.isDef())
     diagnoseIgnoredResult(expr, result, shared);
   return success();
 }
@@ -1126,7 +1126,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     SmallVector<ScopeDecl> decls;
     if (errName) {
       auto func = dyn_cast<LIT::FuncOp>(parentDecl);
-      if (func && func.getIsDef()) {
+      if (func && func.isDef()) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
         VarLetDeclOp varDecl = getEmitter().emitVarLetDecl(
@@ -1224,7 +1224,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // on our view of what `python superset` or `python++` means.
   bool useLexicalScope = true;
   if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
-    if (funcOp.getIsDef())
+    if (funcOp.isDef())
       useLexicalScope = false;
   }
 
@@ -1938,10 +1938,10 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   consumeIf(Token::kw_async);
+  SMLoc loc = getToken().getLoc();
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(Token::kw_def);
-  SMLoc loc = getToken().getLoc();
-  consumeToken();
+  consumeToken(); // Consume either 'def' or 'fn'.
 
   StringAttr baseName;
   if (parseIdentifier(baseName, "expected function name"))

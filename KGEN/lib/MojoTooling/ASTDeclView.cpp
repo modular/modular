@@ -690,7 +690,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   isAsyncFlag = funcOp.isAsync();
   isStaticFlag = funcOp.getIsStatic();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
-  isDefFlag = funcOp.getIsDef();
+  isDefFlag = funcOp.isDef();
 }
 
 //===----------------------------------------------------------------------===//

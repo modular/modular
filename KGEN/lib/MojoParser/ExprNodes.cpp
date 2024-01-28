@@ -472,7 +472,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // not in `fn`, structs, or top level.
     auto funcContext =
         dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
-    if (!funcContext || !funcContext.getIsDef()) {
+    if (!funcContext || !funcContext.isDef()) {
       auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
                                               << spelling << "'" << getRange();
       if (funcContext)
@@ -2880,18 +2880,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       argList.parsedArgs, tcSignature.argTypes, implicitLifetimeDecls,
       dummyScope);
 
-  Builder b(emitter.getContext());
-  SmallVector<ArgConvention> argConventions =
-      llvm::map_to_vector(argList.parsedArgs, [](const ParsedArgument &arg) {
-        return arg.kgenConvention;
-      });
-  SmallVector<PassingKind> argPassingKinds =
-      llvm::map_to_vector(argList.parsedArgs, [](const ParsedArgument &arg) {
-        return ParsedArgument::mapToPassingKind(arg.kwArgHandling);
-      });
-  SmallVector<StringAttr> argNames = llvm::map_to_vector(
-      argList.parsedArgs, [&](const ParsedArgument &arg) { return arg.name; });
-
   if (argList.effects.isThrows()) {
     Type errorType =
         emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);
@@ -2907,17 +2895,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Compute the signature of the function.
-  FunctionType functionType = b.getFunctionType(
-      tcSignature.argTypes, {tcSignature.resultType.mlirType});
-  LITSignatureType signature = SignatureType::remapToSignature(
-      paramList.paramDeclAttrs, {}, functionType, argConventions,
-      argList.effects,
-      FnMetadataAttr::get(
-          b.getContext(), argNames, argPassingKinds, paramList.names,
-          paramList.passingKinds, tcSignature.defaultPosArgs,
-          paramList.defaultPosParams, tcSignature.defaultKwOnlyArgs,
-          paramList.defaultKwOnlyParams, implicitLifetimeDecls.size()),
-      [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
+  LITSignatureType signature =
+      tcSignature.getLITSignatureType(implicitLifetimeDecls.size());
   if (!signature)
     return {}; // Error already emitted.
 

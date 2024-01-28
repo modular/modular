@@ -378,8 +378,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     paramDeclAttrs.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
-    passingKinds.emplace_back(
-        ParsedArgument::mapToPassingKind(arg.kwArgHandling));
+    passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     names.push_back(arg.name);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
@@ -504,7 +503,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                const ExprNode *resultTypeExpr,
                                                SMLoc resultLoc, bool isDef,
                                                ASTDecl *fnDecl,
-                                               SpecialFunctionInfo fnInfo) {
+                                               SpecialFunctionInfo fnInfo)
+    : paramList(paramList), argList(argList) {
 
   SharedState &shared = paramList.shared;
   ASTDecl &declScope = paramList.declScope;
@@ -627,24 +627,18 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
   }
 
-  // Compute the result type. If it is memory-only, insert it into the argument
-  // list to be added to the signature.
+  // Compute the result type.
   if (!resultTypeExpr) {
+    // If the result type wasn't specified, we default to either "None" or
+    // "object" depending on whether this is a def.
     resultType = shared.getNoneType();
-    // Don't insert the return value for certain special functions.
-    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      // Insert an object memory-only result type.
-      ParsedArgument resultArg;
-      resultArg.loc = resultLoc;
-      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
-      argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
 
-      auto objectType = shared.lookupObjectType(resultLoc, declScope);
-      if (!objectType)
-        objectType = shared.getTypeCheckErrorType();
-      argTypes.insert(argTypes.begin(), objectType);
+    // If this is a 'def', then we want to default to 'object' unless this is a
+    // known function that doesn't support that.
+    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
+      resultType = shared.lookupObjectType(resultLoc, declScope);
+      if (!resultType)
+        resultType = shared.getTypeCheckErrorType();
     }
   } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
     // If the result type is a `None` literal, then convert it to NoneType.
@@ -656,31 +650,73 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     // calls to this function though.
     if (!resultType)
       resultType = shared.getTypeCheckErrorType();
-
-    // Memory-only types get passed as the first argument to the function
-    // by-reference.
-    TypeConvention rp =
-        resultType.getRegisterPassability(resultTypeExpr->getLoc(), shared);
-    if (rp == TypeConvention::MemoryOnly) {
-      // Synthesize a result argument for this, and use None as the actual
-      // function result.
-      ParsedArgument resultArg;
-      resultArg.loc = resultTypeExpr->getLoc();
-      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
-      resultArg.typeExpr = resultTypeExpr;
-      argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
-      argTypes.insert(argTypes.begin(), resultType);
-      resultType = shared.getNoneType();
-    } else if (rp != TypeConvention::RegisterPassableTrivial) {
-      // We know the result type of the function is register passable (because
-      // otherwise it would be promoted to an argument).  If the result of the
-      // function is a non-trivial type, mark the function effect as having an
-      // owned result so ownership tracking will notice it.
-      argList.effects.setOwnedRegisterResult();
-    }
   }
+
+  // If it is memory-only, pass it indirectly as the first argument to the
+  // function by-reference.
+  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
+  if (rp == TypeConvention::MemoryOnly) {
+    // Synthesize a result argument for this, and use None as the actual
+    // function result.
+    ParsedArgument resultArg;
+    resultArg.loc = resultLoc;
+    resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+    resultArg.convention = ParsedArgument::kConventionInOutResult;
+    resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
+    resultArg.typeExpr = resultTypeExpr;
+    argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
+    argTypes.insert(argTypes.begin(), resultType);
+    resultType = shared.getNoneType();
+  } else if (rp != TypeConvention::RegisterPassableTrivial) {
+    // We know the result type of the function is register passable (because
+    // otherwise it would be promoted to an argument).  If the result of the
+    // function is a non-trivial type, mark the function effect as having an
+    // owned result so ownership tracking will notice it.
+    argList.effects.setOwnedRegisterResult();
+  }
+}
+
+FunctionType TypeCheckedFnSignature::getFunctionType() const {
+  auto resultMLIRType = resultType.mlirType;
+  return FunctionType::get(resultMLIRType.getContext(), argTypes,
+                           {resultMLIRType});
+}
+
+/// Form a LIT signature packaging up all the stuff we need to know about this
+/// type checked function.
+LITSignatureType TypeCheckedFnSignature::getLITSignatureType(
+    size_t numImplicitLifetimeDecls) const {
+  MLIRContext *ctx = paramList.shared.getContext();
+
+  SmallVector<StringAttr> argNames;
+  SmallVector<PassingKind> argPassingKinds;
+  SmallVector<ArgConvention> argConventions;
+  argNames.reserve(argList.parsedArgs.size());
+  argPassingKinds.reserve(argList.parsedArgs.size());
+  argConventions.reserve(argList.parsedArgs.size());
+  for (const ParsedArgument &arg : argList.parsedArgs) {
+    argPassingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
+    argNames.push_back(arg.name);
+    argConventions.push_back(arg.kgenConvention);
+  }
+
+  auto metadata = FnMetadataAttr::get(
+      ctx, argNames, argPassingKinds, paramList.names, paramList.passingKinds,
+      defaultPosArgs, paramList.defaultPosParams, defaultKwOnlyArgs,
+      paramList.defaultKwOnlyParams, numImplicitLifetimeDecls);
+
+  /// Silence internal verifier errors when constructing types from the parser.
+  /// We don't want to show these to the user.
+  auto silenceErrors = [ctx] {
+    InFlightDiagnostic diag = mlir::emitError(UnknownLoc::get(ctx));
+    diag.abandon();
+    return diag;
+  };
+
+  FunctionType functionType = getFunctionType();
+  return SignatureType::remapToSignature(
+      paramList.paramDeclAttrs, {}, functionType, argConventions,
+      argList.effects, metadata, silenceErrors);
 }
 
 void DeclResolver::computeArgumentConventions(

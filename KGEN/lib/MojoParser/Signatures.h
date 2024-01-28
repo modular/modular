@@ -23,6 +23,7 @@ class ASTDecl;
 class ASTType;
 class ExprEmitter;
 class ExprNode;
+class LITSignatureType;
 class ParserBase;
 class SharedState;
 
@@ -106,7 +107,7 @@ struct ParsedArgument {
                     ArgListKind kind);
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
-  static PassingKind mapToPassingKind(KWArgHandling handling);
+  PassingKind getKWArgHandlingAsPassingKind() const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -172,16 +173,25 @@ public:
   ///
   /// 'fnDecl' will be null when this is a function type, which doesn't have a
   /// declaration.
-  TypeCheckedFnSignature(TypeCheckedParamList &params,
+  TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *resultTypeExpr, SMLoc resultLoc,
                          bool isDef, ASTDecl *fnDecl,
                          SpecialFunctionInfo fnInfo);
+  TypeCheckedParamList &paramList;
+  ParsedArgumentList &argList;
 
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType;
+
+  /// Return a FunctionType with the specified argTypes and resultType.
+  FunctionType getFunctionType() const;
+
+  /// Form a LIT signature packaging up all the stuff we need to know about this
+  /// type checked function.
+  LITSignatureType getLITSignatureType(size_t numImplicitLifetimeDecls) const;
 };
 
 } // namespace M::KGEN::LIT
