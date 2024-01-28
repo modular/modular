@@ -59,6 +59,17 @@ struct Symbol(CollectionElement, Stringable):
         return capi.symbol_to_string(self.s)
 
     # ===------------------------------------------------------------------=== #
+    # Overloaded operators
+    # ===------------------------------------------------------------------=== #
+
+    fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
+        let g = self.graph()
+        return self[g.scalar(Int64(i)), axis=axis]
+
+    fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
+        return ops.slice(self, i, axis=axis)
+
+    # ===------------------------------------------------------------------=== #
     # ... to tidy up ...
     # ===------------------------------------------------------------------=== #
 

@@ -49,7 +49,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
 
 
 # TODO: Come up with a satisfactory name for this single-slice thing
-def slice(input: Symbol, idx: Int, axis: Int = 0) -> Symbol:
+def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
     var g = input.graph()
     let input_type = input.tensor_type()
     let rank = input_type.rank()
@@ -65,12 +65,12 @@ def slice(input: Symbol, idx: Int, axis: Int = 0) -> Symbol:
     for i in range(rank):
         if i == axis:
             slice_dims.append(1)
-            start.append(g.scalar(Int64(idx)))
-            stop.append(g.scalar(Int64(idx + 1)))
+            start.append(idx)
+            stop.append(idx + 1)
         else:
             slice_dims.append(input_type.dims[i])
             start.append(g.scalar(Int64(0)))
-            stop.append(slice(input_shape, i))
+            stop.append(slice(input_shape, g.scalar(Int64(i))))
         step.append(1)
 
     let slice = g.op(
@@ -109,7 +109,7 @@ def slice(input: Symbol, *slices: SymbolTuple) -> Symbol:
             steps.push_back(g.scalar(Int64((1))))
     for dim in range(len(slices), input_t.rank()):
         starts.push_back(g.scalar(Int64(0)))
-        stops.push_back(slice(input_shape, dim))
+        stops.push_back(input_shape[dim])
         steps.push_back(g.scalar(Int64((1))))
 
     let start = stack(starts, axis=0)
