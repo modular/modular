@@ -314,9 +314,10 @@ static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
 }
 
 /// Core implementation of the parameter argument parsing logic.
-TypeCheckedParamSignature::TypeCheckedParamSignature(
+TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
-    SharedState &shared) {
+    SharedState &shared)
+    : declScope(declScope), shared(shared) {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
 
@@ -325,7 +326,6 @@ TypeCheckedParamSignature::TypeCheckedParamSignature(
   for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
-
     ASTType type;
     if (arg.typeExpr)
       type = emitter.emitExprType(arg.typeExpr);
@@ -391,14 +391,14 @@ TypeCheckedParamSignature::TypeCheckedParamSignature(
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult ParsedParamSignature::parseOptionalParameters(ParserBase &p,
-                                                          ArgListKind kind) {
+ParseResult ParsedParamList::parseOptionalParameters(ParserBase &p,
+                                                     ArgListKind kind) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, parsedParams, kind))
+  if (parseArgOrParamList(p, params, kind))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -406,12 +406,9 @@ ParseResult ParsedParamSignature::parseOptionalParameters(ParserBase &p,
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function parameters.
-static ASTType
-addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
-                      const ParsedArgument &arg,
-                      SmallVectorImpl<StringAttr> &paramNames,
-                      SmallVectorImpl<PassingKind> &paramPassingKinds,
-                      SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
+                                     ASTType type, const ParsedArgument &arg,
+                                     TypeCheckedParamList &paramList) {
   // Check if the type has unbound parameters.
   auto metatype = dyn_cast_or_null<MetaTypeType>(type.getMetaType());
   if (!metatype)
@@ -425,9 +422,9 @@ addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
     auto funcDecl = ParamDeclAttr::get(
         declScope.getUniqueParamNameNew(arg.name, /*isUserDefinedDecl=*/false),
         type);
-    paramNames.push_back(StringAttr::get(type.getContext()));
-    paramPassingKinds.push_back(PassingKind::Implicit);
-    paramDecls.push_back(funcDecl);
+    paramList.names.push_back(StringAttr::get(type.getContext()));
+    paramList.passingKinds.push_back(PassingKind::Implicit);
+    paramList.paramDeclAttrs.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
   }
   return BindTypeAttr::get(PValue(type), paramValues);
@@ -439,9 +436,8 @@ addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
 
 /// Parse an argument list, including the parentheses around them.  This also
 /// parses 'raises' and other effects.
-ParseResult
-ParsedFunctionSignature::parseArgumentListAndEffects(ParserBase &p,
-                                                     ArgListKind kind) {
+ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
+                                                            ArgListKind kind) {
 
   // If this is a bare lambda argument list, it won't be parenthesized and won't
   // have effects.
@@ -498,17 +494,22 @@ ParsedFunctionSignature::parseArgumentListAndEffects(ParserBase &p,
   return success();
 }
 
-ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
-    function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
-    SmallVectorImpl<StringAttr> &paramNames,
-    SmallVectorImpl<PassingKind> &paramPassingKinds,
-    SmallVectorImpl<ParamDeclAttr> &paramDecls, const ExprNode *resultTypeExpr,
-    FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
-    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaultPosArgs,
-    SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef, SMLoc resultLoc,
-    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
-  SharedState &shared = typeEmitter.shared;
-  ASTDecl &sigDecl = typeEmitter.declScope;
+/// Emit the argument types, default values, and result type and determine
+/// the argument conventions.
+///
+/// 'fnDecl' will be null when this is a function type, which doesn't have a
+/// declaration.
+TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
+                                               ParsedArgumentList &argList,
+                                               const ExprNode *resultTypeExpr,
+                                               SMLoc resultLoc, bool isDef,
+                                               ASTDecl *fnDecl,
+                                               SpecialFunctionInfo fnInfo) {
+
+  SharedState &shared = paramList.shared;
+  ASTDecl &declScope = paramList.declScope;
+  ExprEmitter typeEmitter(shared, paramList.declScope, EC_Type);
+
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   if (fnDecl) {
@@ -534,7 +535,7 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
   // that could not be correctly resolved.
   bool seenPosInitExpr = false;
   bool seenKwOnlyInitExpr = false;
-  for (auto [idx, arg] : llvm::enumerate(args)) {
+  for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     ASTType type;
     if (arg.typeExpr) {
       // Emit the argument type. Allow argument types to be "automatically"
@@ -547,22 +548,17 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       // mark the function erroneous so calls to it won't resolve.  Put in a
       // placeholder type so we can continue type checking.
       if (!type) {
-        if (reportError())
-          return {};
         type = shared.getTypeCheckErrorType();
         arg.isErroneous = true;
       }
-      type = addImplicitTypeParams(shared, sigDecl, type, arg, paramNames,
-                                   paramPassingKinds, paramDecls);
+      type = addImplicitTypeParams(shared, declScope, type, arg, paramList);
     } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
       // If this is the 'self' argument in a struct, default the type to Self.
       type = selfType;
     } else if (isDef) {
       // In 'def', arguments with no types default to 'object'.
-      type = shared.lookupObjectType(arg.loc, sigDecl);
+      type = shared.lookupObjectType(arg.loc, declScope);
       if (!type) {
-        if (reportError())
-          return {};
         type = shared.getTypeCheckErrorType();
         arg.isErroneous = true;
       }
@@ -570,8 +566,6 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       // In an 'fn' we report an error.
       shared.emitError(arg.loc, "'fn' argument type must be specified")
           << SourceRange(arg.loc, arg.loc);
-      if (reportError())
-        return {};
       type = shared.getTypeCheckErrorType();
       arg.isErroneous = true;
     }
@@ -580,11 +574,11 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
 
     // Determine the required function effects from the conventions.
     if (arg.vararg == VarArgKind::VarArg)
-      effects.setVarArgs();
+      argList.effects.setVarArgs();
     else if (arg.vararg == VarArgKind::PackVarArg)
-      effects.setPackVarArgs();
+      argList.effects.setPackVarArgs();
     else if (arg.vararg == VarArgKind::KWVarArg)
-      effects.setKWVarArgs();
+      argList.effects.setKWVarArgs();
 
     // If no convention was explicitly specified, provide a default.  We default
     // to borrowed in an 'fn' or owned in a 'def'.
@@ -605,8 +599,10 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
     if (const ExprNode *initExpr = arg.initExpr) {
       PValue value =
           typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
-      if (!value)
-        return {};
+      if (!value) {
+        arg.isErroneous = true;
+        value = PValue(UnknownAttr::get(type));
+      }
       if (arg.kwArgHandling == KWArgHandling::kKeywordOnly) {
         defaultKwOnlyArgs.push_back(value);
         seenKwOnlyInitExpr = true;
@@ -617,7 +613,6 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
     } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
       InflightDiag diag =
           emitOptionalAfterRequired(typeEmitter, arg, "argument");
-      // Depending on `reportError`, the type might also be missing.
       if (arg.typeExpr)
         diag << arg.typeExpr->getRange();
     }
@@ -634,7 +629,6 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
 
   // Compute the result type. If it is memory-only, insert it into the argument
   // list to be added to the signature.
-  ASTType resultType;
   if (!resultTypeExpr) {
     resultType = shared.getNoneType();
     // Don't insert the return value for certain special functions.
@@ -645,14 +639,12 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
       resultArg.convention = ParsedArgument::kConventionInOutResult;
       resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
-      args.insert(args.begin(), resultArg);
-      argTypes.insert(argTypes.begin(),
-                      shared.lookupObjectType(resultLoc, sigDecl));
-      if (!argTypes.front()) {
-        if (reportError())
-          return {};
-        argTypes.front() = shared.getTypeCheckErrorType();
-      }
+      argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
+
+      auto objectType = shared.lookupObjectType(resultLoc, declScope);
+      if (!objectType)
+        objectType = shared.getTypeCheckErrorType();
+      argTypes.insert(argTypes.begin(), objectType);
     }
   } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
     // If the result type is a `None` literal, then convert it to NoneType.
@@ -662,11 +654,8 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
     // On error, a diagnostic will be emitted, but we don't want to kill the
     // entire function definition.  We won't be able to correctly type check any
     // calls to this function though.
-    if (!resultType) {
-      if (reportError())
-        return {};
+    if (!resultType)
       resultType = shared.getTypeCheckErrorType();
-    }
 
     // Memory-only types get passed as the first argument to the function
     // by-reference.
@@ -681,7 +670,7 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       resultArg.convention = ParsedArgument::kConventionInOutResult;
       resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
       resultArg.typeExpr = resultTypeExpr;
-      args.insert(args.begin(), resultArg);
+      argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
       argTypes.insert(argTypes.begin(), resultType);
       resultType = shared.getNoneType();
     } else if (rp != TypeConvention::RegisterPassableTrivial) {
@@ -689,10 +678,9 @@ ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       // otherwise it would be promoted to an argument).  If the result of the
       // function is a non-trivial type, mark the function effect as having an
       // owned result so ownership tracking will notice it.
-      effects.setOwnedRegisterResult();
+      argList.effects.setOwnedRegisterResult();
     }
   }
-  return resultType;
 }
 
 void DeclResolver::computeArgumentConventions(

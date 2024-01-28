@@ -2863,68 +2863,63 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
   // Type check any parameters we have.
-  TypeCheckedParamSignature paramSignature(parsedParams, dummyScope,
-                                           emitter.shared);
+  TypeCheckedParamList paramList(parsedParams, dummyScope, emitter.shared);
 
-  FnEffects effects = this->effects;
-  if (paramSignature.isVarArgs)
-    effects.setParamVarArgs();
+  ParsedArgumentList argList;
+  argList.parsedArgs = llvm::to_vector(parsedArgs);
+  argList.effects = this->effects;
+  if (paramList.isVarArgs)
+    argList.effects.setParamVarArgs();
 
-  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
+  TypeCheckedFnSignature tcSignature(paramList, argList, resultTypeExpr,
+                                     resultLoc, isDef, /*fnDecl=*/nullptr,
+                                     SpecialFunctionInfo());
 
-  SmallVector<ParsedArgument> args = llvm::to_vector(parsedArgs);
-  SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> defaultPosArgs;
-  SmallVector<TypedAttr> defaultKwOnlyArgs;
-  ASTType resultType = ParsedFunctionSignature::emitFunctionArgumentsAndResults(
-      [&] { return failure(); }, typeEmitter, paramSignature.names,
-      paramSignature.passingKinds, paramSignature.paramDeclAttrs,
-      resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      defaultKwOnlyArgs, isDef, resultLoc);
-  if (!resultType)
-    return {};
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
   emitter.getDeclResolver().computeArgumentConventions(
-      args, argTypes, implicitLifetimeDecls, dummyScope);
+      argList.parsedArgs, tcSignature.argTypes, implicitLifetimeDecls,
+      dummyScope);
 
   Builder b(emitter.getContext());
-  SmallVector<ArgConvention> argConventions = llvm::map_to_vector(
-      args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
+  SmallVector<ArgConvention> argConventions =
+      llvm::map_to_vector(argList.parsedArgs, [](const ParsedArgument &arg) {
+        return arg.kgenConvention;
+      });
   SmallVector<PassingKind> argPassingKinds =
-      llvm::map_to_vector(args, [](const ParsedArgument &arg) {
+      llvm::map_to_vector(argList.parsedArgs, [](const ParsedArgument &arg) {
         return ParsedArgument::mapToPassingKind(arg.kwArgHandling);
       });
   SmallVector<StringAttr> argNames = llvm::map_to_vector(
-      args, [&](const ParsedArgument &arg) { return arg.name; });
+      argList.parsedArgs, [&](const ParsedArgument &arg) { return arg.name; });
 
-  if (effects.isThrows()) {
+  if (argList.effects.isThrows()) {
     Type errorType =
         emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);
     if (!errorType)
       return {};
 
-    resultType = VariantType::get({errorType, resultType});
+    tcSignature.resultType =
+        VariantType::get({errorType, tcSignature.resultType});
 
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.
-    effects.setOwnedRegisterResult();
+    argList.effects.setOwnedRegisterResult();
   }
 
   // Compute the signature of the function.
-  FunctionType functionType =
-      b.getFunctionType(argTypes, {resultType.mlirType});
+  FunctionType functionType = b.getFunctionType(
+      tcSignature.argTypes, {tcSignature.resultType.mlirType});
   LITSignatureType signature = SignatureType::remapToSignature(
-      paramSignature.paramDeclAttrs, {}, functionType, argConventions, effects,
-      FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds,
-                          paramSignature.names, paramSignature.passingKinds,
-                          defaultPosArgs, paramSignature.defaultPosParams,
-                          defaultKwOnlyArgs, paramSignature.defaultKwOnlyParams,
-                          implicitLifetimeDecls.size()),
+      paramList.paramDeclAttrs, {}, functionType, argConventions,
+      argList.effects,
+      FnMetadataAttr::get(
+          b.getContext(), argNames, argPassingKinds, paramList.names,
+          paramList.passingKinds, tcSignature.defaultPosArgs,
+          paramList.defaultPosParams, tcSignature.defaultKwOnlyArgs,
+          paramList.defaultKwOnlyParams, implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
-  if (!signature) {
-    typeEmitter.emitError(getLoc(), "failed to construct signature type");
-    return {};
-  }
+  if (!signature)
+    return {}; // Error already emitted.
 
   // The parsed SignatureType is set to the pretty type that includes implicit
   // lifetimes, we strip off the named lifetime decl references and replace them
@@ -2932,7 +2927,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   signature =
       signature.replaceImplicitLifetimesWithIndexes(implicitLifetimeDecls);
 
-  if (effects.isEscaping()) {
+  if (argList.effects.isEscaping()) {
     // Create a self contained signature type that represents the closure.
     auto [capturedRefs, wrapperSig] =
         DeclResolver::createSelfContainedSignature(signature);
