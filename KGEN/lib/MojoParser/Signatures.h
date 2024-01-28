@@ -197,6 +197,10 @@ public:
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
 
+  // This is the result type + variant for throwing functions.  This is what
+  // finally gets treated as the ABI for the function.
+  ASTType fullResultType;
+
   /// Return a FunctionType with the specified argTypes and resultType.
   FunctionType getFunctionType() const;
 

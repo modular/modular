@@ -755,10 +755,24 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
       resultType = shared.getTypeCheckErrorType();
   }
 
+  // Remember the user-declared result type.
+  tcSignature.resultType = resultType;
+
+  // Now that we have the user's result type, compute the full type of the
+  // result, which can can be different when memory only, when throwing, etc.
+  ASTType fullResultType = resultType;
+
   // If it is memory-only, pass it indirectly as the first argument to the
   // function by-reference.
   TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
   if (rp == TypeConvention::MemoryOnly) {
+    // FIXME(#26008): Async functions with memory-only do not work.
+    if (tcSignature.argList.effects.isAsync()) {
+      shared.emitError(
+          resultLoc, "async functions do not support memory-only results yet");
+      tcSignature.argList.effects.setAsync(false);
+    }
+
     // Synthesize a result argument for this, and use None as the actual
     // function result.
     ParsedArgument resultArg;
@@ -779,16 +793,24 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
         tcSignature.implicitLifetimeDecls.begin(), lifetimeDecl);
     tcSignature.fullArgTypes.insert(tcSignature.fullArgTypes.begin(), refType);
 
-    resultType = shared.getNoneType();
-  } else if (rp != TypeConvention::RegisterPassableTrivial) {
-    // We know the result type of the function is register passable (because
-    // otherwise it would be promoted to an argument).  If the result of the
-    // function is a non-trivial type, mark the function effect as having an
-    // owned result so ownership tracking will notice it.
-    tcSignature.argList.effects.setOwnedRegisterResult();
+    // We know the ABI result will be None now, which is trivial.
+    fullResultType = shared.getNoneType();
+    rp = TypeConvention::RegisterPassableTrivial;
   }
 
-  tcSignature.resultType = resultType;
+  if (tcSignature.argList.effects.isThrows()) {
+    Type errorType = shared.getBuiltinErrorType(declScope, resultLoc);
+    fullResultType = VariantType::get({errorType, fullResultType});
+    // The result is always owned because the function returns a variant
+    // containing an Error, which is nontrivial.
+    rp = TypeConvention::RegisterPassable;
+  }
+  tcSignature.fullResultType = fullResultType;
+
+  // If the result of the function is a non-trivial type, mark the function
+  // effect as having an owned result so ownership tracking will notice it.
+  if (rp != TypeConvention::RegisterPassableTrivial)
+    tcSignature.argList.effects.setOwnedRegisterResult();
 }
 
 /// Emit the argument types, default values, and result type and determine
@@ -885,9 +907,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {
-  auto resultMLIRType = resultType.mlirType;
-  return FunctionType::get(resultMLIRType.getContext(), fullArgTypes,
-                           {resultMLIRType});
+  return FunctionType::get(fullResultType.mlirType.getContext(), fullArgTypes,
+                           {fullResultType.mlirType});
 }
 
 /// Form a LIT signature packaging up all the stuff we need to know about this

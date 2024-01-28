@@ -272,6 +272,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
   LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
 
   ArrayRef<ParsedArgument> parsedArgs = tcSignature.argList.parsedArgs;
+  ArrayRef<Type> argTypes = tcSignature.argTypes;
   auto &shared = tcSignature.paramList.shared;
 
   // On any semantic error we mark the declaration erroneous - so references to
@@ -289,23 +290,23 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     return shared.emitError(funcOp.getLoc(), message);
   };
 
-  // This is true if the declared result type is modeled as the first argument
-  // because it is returned in memory.
-  bool hasMemoryResult =
-      !parsedArgs.empty() &&
-      parsedArgs[0].convention == ParsedArgument::kConventionInOutResult;
+  // If the argument list has a byref result, ignore it for type checking
+  // purposes.
+  if (!parsedArgs.empty() &&
+      parsedArgs[0].convention == ParsedArgument::kConventionInOutResult) {
+    parsedArgs = parsedArgs.drop_front();
+    argTypes = argTypes.drop_front();
+  }
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
-  ssize_t selfArgNumber = -1;
+  constexpr size_t kSelfArgNo = 0;
   if (ASTDecl *parent = decl.getParentDecl();
       parent && isa<StructDeclOp, TraitDeclOp>(*parent)) {
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::fully);
     selfType = parent->getSelfType();
-    // If there is an in-memory result, self is passed as arg #1 otherwise #0.
-    selfArgNumber = hasMemoryResult ? 1 : 0;
   }
 
   // Check any special function information.
@@ -314,8 +315,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
   if (selfType && !funcOp.getIsStatic()) {
     // Implement this as a lambda so we can early exit with 'return'.
     auto checkSelf = [&]() {
-      Type selfArgType = tcSignature.argTypes[selfArgNumber];
-      const ParsedArgument &selfArg = parsedArgs[selfArgNumber];
+      Type selfArgType = argTypes[kSelfArgNo];
+      const ParsedArgument &selfArg = parsedArgs[kSelfArgNo];
 
       // Don't check broken args, becaue we don't want redundant diagnostics.
       if (selfArg.isErroneous)
@@ -353,13 +354,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
       // Otherwise, this is an unrecognized self type.
       auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ")
                   << selfType << " but actually has type "
-                  << ASTType(tcSignature.argTypes[selfArgNumber]);
+                  << ASTType(argTypes[kSelfArgNo]);
       selfArg.isErroneous = true;
       if (selfArg.typeExpr)
         diag << selfArg.typeExpr->getRange();
     };
 
-    if (selfArgNumber >= ssize_t(tcSignature.argTypes.size())) {
+    if (argTypes.empty()) {
       // TODO('def' allows unused arguments): We can/should relax this for
       // 'def' declarations in the future, they should be able to implicit
       // ignore arguments like Python does.
@@ -371,8 +372,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
 
   // Verify the argument count lines up.
   if (fnInfo.kind != SpecialFunctionKind::kNormal) {
-    size_t numActualArgs =
-        parsedArgs.size() - std::max(selfArgNumber, ssize_t(0));
+    size_t numActualArgs = parsedArgs.size();
     size_t numMin = fnInfo.minNumArguments;
     ssize_t numMax = fnInfo.maxNumArguments;
     if (numMin == size_t(numMax) && numActualArgs != numMin) {
@@ -395,17 +395,15 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
       if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
         emitError("special method may not be a static method");
     } else if (fnInfo.requiresOwnedSelfInstMethod() &&
-               parsedArgs[selfArgNumber].convention !=
+               parsedArgs[kSelfArgNo].convention !=
                    ParsedArgument::kConventionOwned) {
-      emitErrorLoc(parsedArgs[selfArgNumber].loc,
-                   "self argument must be 'owned'")
-          << FixIt::insertBeforeToken(parsedArgs[selfArgNumber].loc, "owned ");
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc, "self argument must be 'owned'")
+          << FixIt::insertBeforeToken(parsedArgs[kSelfArgNo].loc, "owned ");
     }
   }
 
-  ASTType declaredResultType = hasMemoryResult
-                                   ? ASTType(tcSignature.argTypes[0])
-                                   : tcSignature.resultType;
+  // Get the user-declared result type, which might be a memory-only type.
+  ASTType declaredResultType = tcSignature.resultType;
 
   // Some functions like __new__ require a Self result type.
   if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
@@ -438,13 +436,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     emitError("'__new__' is not supported on structs; use '__init__' instead");
     break;
   case SpecialFunctionKind::kMLIRI1:
-    if (!tcSignature.resultType.mlirType.isSignlessInteger(1))
+    if (!declaredResultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
   case SpecialFunctionKind::kCopyInitReg:
     // Check that these are defined correctly.
     if (parsedArgs[0].convention != ParsedArgument::kConventionBorrowed)
-      emitErrorLoc(parsedArgs[selfArgNumber].loc,
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
                    "self argument cannot be passed by reference");
     break;
   case SpecialFunctionKind::kInit:
@@ -928,21 +926,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Finally now that the full signature has been resolved, build our IR.
 
-  // First, handle function effects. If the function raises, it implicitly gets
-  // a variant result type.
-  if (fnSignature.effects.isThrows()) {
-    ASTType errorType =
-        shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc());
-    if (errorType.isTypeCheckErrorType())
-      decl.hasReferenceError = true;
-
-    tcSignature.resultType =
-        VariantType::get({errorType, tcSignature.resultType});
-    // The result is always owned because the function returns a variant
-    // containing an Error, which is nontrivial.
-    fnSignature.effects.setOwnedRegisterResult();
-  }
-
   // Handle argument effects and build the ASTDecls for the arguments.
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
@@ -951,13 +934,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   LITSignatureType signature = tcSignature.getLITSignatureType();
   if (!signature)
     return failure();
-
-  // FIXME(#26008): Async functions with memory-only do not work.
-  if (signature.isAsync() && signature.hasMemoryOnlyResult()) {
-    return emitError(
-        resultTypeExpr ? resultTypeExpr->getLoc() : decl.getLoc(),
-        "TODO: async functions do not support memory-only results yet");
-  }
 
   // The implicitLifetimeDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
