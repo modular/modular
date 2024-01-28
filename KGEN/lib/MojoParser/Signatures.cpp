@@ -500,6 +500,34 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   return success();
 }
 
+/// This function creates a new anonymous lifetime decl for the specified
+/// argument, and wraps the type with a reference using that lifetime.
+static std::pair<ParamDeclAttr, RefType>
+getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
+                                    ASTDecl &declScope) {
+  // Given a memory argument named "foo" we give the implicit lifetime a
+  // name of "`foo".  We do this because of Rust precedent, but also
+  // because you can't spell this identifier in Mojo, even with backticks!
+  StringAttr lifetimeName;
+  if (arg.name) {
+    lifetimeName = declScope.getAnonymousLifetimeFor(
+        arg.name.str(), /*dontRenameOutermost=*/true);
+  } else { // Used by function types, for example.
+    lifetimeName =
+        declScope.getAnonymousLifetimeFor(Twine(llvm::utostr(idx)) + "_unnamed",
+                                          /*dontRenameOutermost=*/true);
+  }
+
+  // The reference is immutable when borrowing, mutable otherwise.
+  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
+  auto lifetimeDecl = ParamDeclAttr::get(
+      lifetimeName, LifetimeType::get(lifetimeName.getContext(), isMutable));
+
+  auto refType = RefType::get(
+      type, ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
+  return {lifetimeDecl, refType};
+}
+
 /// Type check each argument in turn, resolving their type and default
 /// initializer value.  Arguments in Mojo can refer to previous arguments in
 /// their type+default value expressions as PValues, so we need to ensure that
@@ -607,6 +635,72 @@ typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
   }
 
+  // Now that we have the declared type and default value sorted, apply the
+  // argument convention to compute the full type for the argument.
+  switch (arg.convention) {
+  case ParsedArgument::kConventionUnspec:
+    llvm_unreachable("should be resolved by now");
+  case ParsedArgument::kConventionInOutResult:
+    llvm_unreachable("shouldn't occur in an argument list");
+  case ParsedArgument::kConventionOwned:
+    // Memory-only owned argument are passed with a layer of indirection and
+    // use a specific convention to model this.
+    if (!type.isRegisterPassable(arg.loc, shared)) {
+      arg.kgenConvention = ArgConvention::OwnedInMem;
+      break;
+    }
+    arg.kgenConvention = ArgConvention::OwnedInReg;
+
+    // Reject variadic owned register arguments, we can't support them yet.
+    // TODO(ownership): Enable 'owned' @register_passable variadics.
+    if (arg.vararg != VarArgKind::None) {
+      // Emit an error and remember this error.
+      if (!arg.isErroneous) {
+        shared.emitError(arg.loc)
+            << "'owned' @register_passable arguments cannot be variadic";
+        arg.isErroneous = true;
+      }
+
+      // Switch to a convention that is supportable.
+      arg.convention = ParsedArgument::kConventionBorrowed;
+      arg.kgenConvention = ArgConvention::BorrowedInReg;
+    }
+    break;
+  case ParsedArgument::kConventionBorrowed:
+    if (type.isRegisterPassable(arg.loc, shared))
+      arg.kgenConvention = ArgConvention::BorrowedInReg;
+    else
+      arg.kgenConvention = ArgConvention::BorrowedInMem;
+    break;
+  case ParsedArgument::kConventionInOut:
+    arg.kgenConvention = ArgConvention::ByRef;
+    break;
+  case ParsedArgument::kConventionInitSelfResult:
+    arg.kgenConvention = ArgConvention::InitSelf;
+    break;
+  }
+
+  // Values passed by memory need an associated lifetime parameter, and
+  // need to be passed by reference.
+  Type fullType;
+  if (!SignatureType::hasAddress(arg.kgenConvention)) {
+    fullType = type;
+  } else {
+    auto [lifetimeDecl, refType] =
+        getRefAndLifetimeForAddressArgument(arg, idx, type, declScope);
+    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+    fullType = refType;
+  }
+
+  // If this is a valid vararg argument, then we pass it as a variadic type.
+  // The convention is to pass as a register value, in the case of a memory
+  // value, we're passing the array of pointers by value.
+  if (arg.vararg == VarArgKind::VarArg) {
+    fullType = VariadicType::get(fullType, arg.kgenConvention);
+    arg.kgenConvention = ArgConvention::BorrowedInReg;
+  }
+  tcSignature.fullArgTypes.push_back(fullType);
+
   // Add the declaration for the argument, now that is has been resolved. Use
   // a placeholder value to allow the value to be referenced, but in function
   // body resolution, it will be replaced with the actual function argument
@@ -671,11 +765,20 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     resultArg.loc = resultLoc;
     resultArg.name = StringAttr::get(shared.getContext(), "__result__");
     resultArg.convention = ParsedArgument::kConventionInOutResult;
+    resultArg.kgenConvention = ArgConvention::ByRefResult;
     resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
     resultArg.typeExpr = resultTypeExpr;
     tcSignature.argList.parsedArgs.insert(
         tcSignature.argList.parsedArgs.begin(), resultArg);
     tcSignature.argTypes.insert(tcSignature.argTypes.begin(), resultType);
+
+    // Compute the full type for this new argument and a lifetime for it.
+    auto [lifetimeDecl, refType] = getRefAndLifetimeForAddressArgument(
+        resultArg, 0, resultType, declScope);
+    tcSignature.implicitLifetimeDecls.insert(
+        tcSignature.implicitLifetimeDecls.begin(), lifetimeDecl);
+    tcSignature.fullArgTypes.insert(tcSignature.fullArgTypes.begin(), refType);
+
     resultType = shared.getNoneType();
   } else if (rp != TypeConvention::RegisterPassableTrivial) {
     // We know the result type of the function is register passable (because
@@ -821,96 +924,4 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   return SignatureType::remapToSignature(
       paramList.paramDeclAttrs, {}, functionType, argConventions,
       argList.effects, metadata, silenceErrors);
-}
-
-void TypeCheckedFnSignature::computeArgumentConventions(ASTDecl &declScope) {
-  DeclResolver &resolver = *paramList.shared.declResolver;
-
-  fullArgTypes.reserve(argTypes.size());
-
-  for (auto [i, arg, argType] : llvm::enumerate(argList.parsedArgs, argTypes)) {
-    switch (arg.convention) {
-    case ParsedArgument::kConventionUnspec:
-      llvm_unreachable("should be resolved by now");
-    case ParsedArgument::kConventionOwned:
-      // Memory-only owned argument are passed with a layer of indirection and
-      // use a specific convention to model this.
-      if (!ASTType(argType).isRegisterPassable(arg.loc, paramList.shared)) {
-        arg.kgenConvention = ArgConvention::OwnedInMem;
-        break;
-      }
-      arg.kgenConvention = ArgConvention::OwnedInReg;
-
-      // Reject variadic owned register arguments, we can't support them yet.
-      if (arg.vararg != VarArgKind::None) {
-        // Emit an error and remember this error.
-        if (!arg.isErroneous) {
-          resolver.emitError(arg.loc)
-              << "'owned' @register_passable arguments cannot be variadic";
-          arg.isErroneous = true;
-        }
-
-        // Switch to a convention that is supportable.
-        arg.convention = ParsedArgument::kConventionBorrowed;
-        arg.kgenConvention = ArgConvention::BorrowedInReg;
-      }
-      break;
-    case ParsedArgument::kConventionBorrowed:
-      // Memory-only owned argument are passed with a layer of indirection and
-      // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, paramList.shared))
-        arg.kgenConvention = ArgConvention::BorrowedInReg;
-      else
-        arg.kgenConvention = ArgConvention::BorrowedInMem;
-      break;
-    case ParsedArgument::kConventionInOut:
-      arg.kgenConvention = ArgConvention::ByRef;
-      break;
-    case ParsedArgument::kConventionInOutResult:
-      arg.kgenConvention = ArgConvention::ByRefResult;
-      break;
-    case ParsedArgument::kConventionInitSelfResult:
-      arg.kgenConvention = ArgConvention::InitSelf;
-      break;
-    }
-
-    // Values passed by memory need an associated lifetime parameter, and
-    // need to be passed by reference.
-    Type fullArgType = argType;
-    if (SignatureType::hasAddress(arg.kgenConvention)) {
-      // Given a memory argument named "foo" we give the implicit lifetime a
-      // name of "`foo".  We do this because of Rust precedent, but also
-      // because you can't spell this identifier in Mojo, even with backticks!
-      StringAttr lifetimeName;
-      if (arg.name) {
-        lifetimeName = declScope.getAnonymousLifetimeFor(
-            arg.name.str(), /*dontRenameOutermost=*/true);
-      } else { // Used by function types, for example.
-        lifetimeName = declScope.getAnonymousLifetimeFor(
-            Twine(llvm::utostr(i)) + "_unnamed",
-            /*dontRenameOutermost=*/true);
-      }
-
-      // The reference is immutable when borrowing, mutable otherwise.
-      bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
-
-      auto lifetimeDecl = ParamDeclAttr::get(
-          lifetimeName,
-          LifetimeType::get(lifetimeName.getContext(), isMutable));
-      implicitLifetimeDecls.push_back(lifetimeDecl);
-
-      fullArgType = RefType::get(
-          fullArgType,
-          ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
-    }
-
-    // If this is a valid vararg argument, then we pass it as a variadic type.
-    // The convention is to pass as a register value, in the case of a memory
-    // value, we're passing the array of pointers by value.
-    if (arg.vararg == VarArgKind::VarArg) {
-      fullArgType = VariadicType::get(fullArgType, arg.kgenConvention);
-      arg.kgenConvention = ArgConvention::BorrowedInReg;
-    }
-    fullArgTypes.push_back(fullArgType);
-  }
 }

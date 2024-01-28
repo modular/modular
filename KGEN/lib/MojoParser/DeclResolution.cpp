@@ -840,9 +840,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   // The function signature is a self-contained scope where the input and result
-  // parameters of the function are visible by all types.
-  ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
-                                          decl.getParentDecl());
+  // parameters of the function are visible by all types.  We must use a
+  // temporary declaration here (with an empty name) because we don't want
+  // references to the function itself to resolve to a fully-resolved decl, but
+  // we need a fully-resolved decl for incremental lookups within the scope to
+  // work out.
+  ASTDecl &sigDecl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(),
+                                          decl.getLoc(), decl.getParentDecl());
 
   // Parse declared meta parameters and add them to the current scope.
   ParsedParamList parsedParamList;
@@ -878,26 +882,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ExprNode *resultTypeExpr = nullptr;
   SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
-    if (p.parseExpression(resultTypeExpr))
-      return failure();
+    // Parse a result expression. If this fails, then we just continue on as if
+    // none was specified.
+    (void)p.parseExpression(resultTypeExpr);
   }
-
-  // Check for a missing colon now, but don't yet bail out. We want to be able
-  // to diagnose errors in the signature before we bail out, users often haven't
-  // finished writing the signature when they hit the missing colon.
-  ParseResult missingColon =
-      p.parseToken(Token::colon, "expected ':' in function definition");
 
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
   TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultTypeExpr,
                                      resultLoc, isDef, &decl, fnInfo);
-
-  // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types and KGEN conventions.  This also introduces
-  // implicit lifetime parameters for borrows/inout/owned arguments.
-  tcSignature.computeArgumentConventions(decl);
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.
@@ -929,7 +923,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   verifyFunctionNameBinding(decl, baseName, tcSignature, fnInfo);
 
   // Now that we've processed the signature, bail if we had a missing colon.
-  if (missingColon)
+  if (p.parseToken(Token::colon, "expected ':' in function definition"))
     return failure();
 
   // Finally now that the full signature has been resolved, build our IR.
@@ -1731,10 +1725,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
 
-  // The signature of a struct is a self-contained decl where types can
-  // reference the struct parameters.
-  ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
-                                          decl.getParentDecl());
+  // The struct signature is a self-contained scope where the input and result
+  // parameters of the function are visible by all types.  We must use a
+  // temporary declaration here (with an empty name) because we don't want
+  // references to the function itself to resolve to a fully-resolved decl, but
+  // we need a fully-resolved decl for incremental lookups within the scope to
+  // work out.
+  ASTDecl &sigDecl = addFullyResolvedDecl(structOp.getOperation(), StringAttr(),
+                                          decl.getLoc(), decl.getParentDecl());
 
   ParsedParamList parsedParams;
   SmallVector<TypeLineageAttr> parentTypes;
