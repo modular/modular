@@ -2862,11 +2862,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
-  ParsedParamSignature paramSignature(emitter.shared, dummyScope);
-  llvm::append_range(paramSignature.parsedParams, parsedParams);
-
-  // Process the parameters we have.
-  paramSignature.typeCheck();
+  // Type check any parameters we have.
+  TypeCheckedParamSignature paramSignature(parsedParams, dummyScope,
+                                           emitter.shared);
 
   FnEffects effects = this->effects;
   if (paramSignature.isVarArgs)
@@ -2878,7 +2876,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
-  ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
+  ASTType resultType = ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, typeEmitter, paramSignature.names,
       paramSignature.passingKinds, paramSignature.paramDeclAttrs,
       resultTypeExpr, effects, args, argTypes, defaultPosArgs,

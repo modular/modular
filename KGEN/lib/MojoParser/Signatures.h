@@ -29,6 +29,27 @@ class SharedState;
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
 
+/// This specifies the handling of keyword arguments in a list.
+enum class KWArgHandling {
+  kPositionalOnly,      //< before a standalone '/'
+  kPositionalOrKeyword, //< before a standalone '*'
+  kKeywordOnly          //< after a standalone '*'
+};
+
+enum class KWArgMarkerInfo {
+  kNotMarker, //< This is a normal argument.
+  kSlash,     //< This argument is a standalone '/' marker.
+  kStar,      //< This argument is a standalone '*' marker.
+};
+
+enum class ArgListKind {
+  kParamList,         //< parameter list like `[x: Int, y: Int]`
+  kArgList,           //< argument list like `(x: Int, y: Int)`
+  kFnTypeArgList,     //< fn type, like `fn (Int, y: Float)`
+  kFnTypeParamList,   //< fn type, like `fn [Int, y: Float](x: Int)`
+  kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
+};
+
 /// Specify variadic argument kind, e.g. `*x` or `**x`.
 enum VarArgKind {
   /// Not a variadic argument, e.g. `x` or `x: Int`.
@@ -78,49 +99,65 @@ struct ParsedArgument {
   /// prevent subsequent references to this argument.
   bool isErroneous = false;
 
-  /// This specifies the handling of keyword arguments in a list.
-  enum class KWArgHandling {
-    kPositionalOnly,      //< before a standalone '/'
-    kPositionalOrKeyword, //< before a standalone '*'
-    kKeywordOnly          //< after a standalone '*'
-  } kwArgHandling = KWArgHandling::kPositionalOrKeyword;
-
-  enum class KWArgMarkerInfo {
-    kNotMarker, //< This is a normal argument.
-    kSlash,     //< This argument is a standalone '/' marker.
-    kStar,      //< This argument is a standalone '*' marker.
-  };
-
-  enum class ArgListKind {
-    kParamList,         //< parameter list like `[x: Int, y: Int]`
-    kArgList,           //< argument list like `(x: Int, y: Int)`
-    kFnTypeArgList,     //< fn type, like `fn (Int, y: Float)`
-    kFnTypeParamList,   //< fn type, like `fn [Int, y: Float](x: Int)`
-    kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
-  };
+  KWArgHandling kwArgHandling = KWArgHandling::kPositionalOrKeyword;
 
   ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
                     ArgListKind kind);
 
-  /// This method handles the function argument list for a Python function.
-  /// Python has some pretty interesting rules where standalone '*' and '/'
-  /// markers (when used in place of an argument) actually change the
-  /// interpretation of other argument definitions by specifying how they behave
-  /// w.r.t. keyword arguments.  We resolve these here so the client doesn't
-  /// have to deal with them.
-  ///
-  /// This classification logic is described here:
-  ///   https://peps.python.org/pep-0570/#how-to-teach-this
-  ///
-  static ParseResult parseAndResolvePresentArgumentList(
-      ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind);
+  /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
+  static PassingKind mapToPassingKind(KWArgHandling handling);
+};
 
-  /// Parse an argument list, including the parentheses around them.  The
-  /// argument list is allowed to be empty.  If `fnEffects` is non-null, then
-  /// this parses 'raises' and other effects.
-  static ParseResult parseAndResolveParenthesizedArgumentList(
-      ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
-      FnEffects &fnEffects);
+//===----------------------------------------------------------------------===//
+// ParsedParamSignature
+//===----------------------------------------------------------------------===//
+
+/// This is all the state built up when parsing the parameter signature for a
+/// parameterized declaration, (e.g. a function or struct).
+class ParsedParamSignature {
+public:
+  /// The full ParsedArgument for each parameter.
+  SmallVector<ParsedArgument> parsedParams;
+
+  /// Parse a parameter signature if present.
+  ///
+  /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
+  /// param_list   ::= argument_list | "(" ")"
+  /// param_result_types ::= expression ("," expression)*
+  ParseResult parseOptionalParameters(ParserBase &p, ArgListKind kind);
+};
+
+/// This contains the result state from type checking a parameter signature.
+class TypeCheckedParamSignature {
+public:
+  /// Type check each of the parameters from 'parsedParams' into their
+  /// decomposed representation.
+  TypeCheckedParamSignature(ArrayRef<ParsedArgument> parsedParams,
+                            ASTDecl &declScope, SharedState &shared);
+
+  // These are the results of type checking 'params' in typeCheck.
+  bool isVarArgs = false;
+  /// One ParamDeclAttr for each parameter being declared.
+  SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<StringAttr> names;
+  SmallVector<PassingKind> passingKinds;
+  SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
+};
+
+//===----------------------------------------------------------------------===//
+// ParsedFunctionSignature
+//===----------------------------------------------------------------------===//
+
+/// This is all the state built up when parsing a function signature.
+class ParsedFunctionSignature {
+public:
+  SmallVector<ParsedArgument> parsedArgs;
+  FnEffects effects;
+
+  /// Parse an argument list, including the parentheses around them. This also
+  /// parses 'raises' and other effects.
+  ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);
 
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
@@ -135,58 +172,7 @@ struct ParsedArgument {
       SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef,
       SMLoc resultLoc, ASTDecl *fnDecl = nullptr,
       SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
-
-  /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
-  static PassingKind mapToPassingKind(KWArgHandling handling);
 };
-
-//===----------------------------------------------------------------------===//
-// ParsedParamSignature
-//===----------------------------------------------------------------------===//
-
-/// This is all the state built up when parsing the parameter signature for a
-/// parameterized declaration, (e.g. a function or struct).  This also includes
-/// various whole-signature utilities.
-class ParsedParamSignature {
-public:
-  ParsedParamSignature(SharedState &shared, ASTDecl &declScope)
-      : shared(shared), declScope(declScope) {}
-
-  SharedState &shared;
-  ASTDecl &declScope;
-
-  /// The full ParsedArgument for each parameter.
-  SmallVector<ParsedArgument> parsedParams;
-
-  // These are the results of type checking 'params' in typeCheck.
-  bool isVarArgs = false;
-  /// One ParamDeclAttr for each parameter being declared.
-  SmallVector<ParamDeclAttr> paramDeclAttrs;
-  SmallVector<StringAttr> names;
-  SmallVector<PassingKind> passingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-
-  /// Parse a parameter signature if present.
-  ///
-  /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
-  /// param_list   ::= argument_list | "(" ")"
-  /// param_result_types ::= expression ("," expression)*
-  ParseResult
-  parseOptionalParameterSignature(ParserBase &p,
-                                  ParsedArgument::ArgListKind kind) {
-    return parseOptionalParameterSignature(p, parsedParams, kind);
-  }
-  static ParseResult
-  parseOptionalParameterSignature(ParserBase &p,
-                                  SmallVectorImpl<ParsedArgument> &parsedParams,
-                                  ParsedArgument::ArgListKind kind);
-
-  /// Resolve each of the parameters from 'parsedParams' into their decomposed
-  /// representation.
-  void typeCheck();
-};
-
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_SIGNATURES_H

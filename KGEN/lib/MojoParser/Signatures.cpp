@@ -129,8 +129,19 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   return success();
 }
 
-ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
-    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind) {
+/// This method handles the function argument list for a Python function.
+/// Python has some pretty interesting rules where standalone '*' and '/'
+/// markers (when used in place of an argument) actually change the
+/// interpretation of other argument definitions by specifying how they behave
+/// w.r.t. keyword arguments.  We check these here so the client doesn't
+/// have to deal with them.
+///
+/// This classification logic is described here:
+///   https://peps.python.org/pep-0570/#how-to-teach-this
+///
+static ParseResult
+parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
+                    ArgListKind kind) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -177,14 +188,14 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
           << argOrParam << " list";
       return;
     }
-    if (args.empty()) {
+    if (parsedArgs.empty()) {
       p.emitError(loc, "'/' marker cannot be used at the start of the ")
           << argOrParam << " list";
     }
 
     // Ok, process it by changing all arguments we've seen to be positional
     // only.  The remaining ones will stay kPositionalOrKeyword though.
-    for (ParsedArgument &arg : args)
+    for (ParsedArgument &arg : parsedArgs)
       arg.kwArgHandling = KWArgHandling::kPositionalOnly;
     hasSlashMarker = true;
   };
@@ -210,7 +221,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   // This parses either an argument or a keyword argument specifier.
   bool foundName = false;
   auto parseArgument = [&]() -> ParseResult {
-    KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
+    auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
     if (arg.parse(p, marker, kind))
@@ -223,14 +234,13 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
       return handleStarMarker(arg.loc, /*isMarker=*/true), success();
 
     if (arg.name.empty()) {
-      if (foundName) {
+      if (foundName)
         return p.emitError(arg.loc, "unnamed ")
                << argOrParam << " cannot follow named " << argOrParam;
-      }
-      if (hasSlashMarker || hasStarMarker) {
+
+      if (hasSlashMarker || hasStarMarker)
         return p.emitError(arg.loc, "unnamed ")
                << argOrParam << " cannot follow '/' or '*'";
-      }
     } else {
       foundName = true;
     }
@@ -252,7 +262,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
       p.emitError(arg.loc, "variadic keyword argument not supported yet");
 
     // Otherwise just remember the argument.
-    args.push_back(arg);
+    parsedArgs.push_back(arg);
     return success();
   };
 
@@ -265,7 +275,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   // the argument names are omitted, i.e. `fn(Int, Int) -> Int` is the same as
   // `fn(Int, Int, /) -> Int`.
   bool allUnnamedPosOnly = !foundName && !hasSlashMarker && !hasStarMarker;
-  for (ParsedArgument &arg : args) {
+  for (ParsedArgument &arg : parsedArgs) {
     if (!arg.name.empty() ||
         arg.kwArgHandling == KWArgHandling::kPositionalOnly || arg.vararg)
       continue;
@@ -277,69 +287,12 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
   // TODO(#21950): we currently don't allow keyword-only args after variadics.
   auto hasVarArg = [](const ParsedArgument &arg) { return arg.vararg; };
-  if (!args.empty() &&
-      args.back().kwArgHandling == KWArgHandling::kKeywordOnly &&
-      llvm::any_of(args, hasVarArg)) {
-    p.emitError(args.back().loc,
+  if (!parsedArgs.empty() &&
+      parsedArgs.back().kwArgHandling == KWArgHandling::kKeywordOnly &&
+      llvm::any_of(parsedArgs, hasVarArg)) {
+    p.emitError(parsedArgs.back().loc,
                 "keyword-only arguments after variadics not supported yet");
   }
-  return success();
-}
-
-/// Parse an argument list, including the parentheses around them.  The
-/// argument list is allowed to be empty.  If `fnEffects` is non-null, then this
-/// parses 'raises' and other effects.
-ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
-    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
-    FnEffects &fnEffects) {
-
-  if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
-    return failure();
-
-  if (!p.consumeIf(Token::r_paren)) {
-    if (parseAndResolvePresentArgumentList(p, args, kind) ||
-        p.parseToken(Token::r_paren, "expected ')' in argument list"))
-      return failure();
-  }
-
-  // If the client supports function effects, parse them as well.
-  // Parse other function effects.
-  while (p.getToken().isIdentifier()) {
-    SMLoc loc = p.getToken().getLoc();
-    StringRef spelling = p.getToken().getSpelling();
-
-    auto handleEffect = [&](auto hasFn, auto setFn) {
-      if ((fnEffects.*hasFn)())
-        p.emitError(loc, "function effect '")
-            << spelling << "' was already specified";
-      (fnEffects.*setFn)(true);
-    };
-
-    if (spelling == "raises") {
-      handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
-    } else if (spelling == "capturing") {
-      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
-    } else if (spelling == "escaping") {
-      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
-    } else {
-      // If this isn't a known effect, then it could be an error like a missing
-      // colon at the end of a function declaration.  If so, emit a nice error
-      // and recover cleanly.
-      if (p.getToken().isStartOfLine() && kind == ArgListKind::kArgList) {
-        // Otherwise maybe it was misspelled, just eat it.
-        p.emitError(p.getTokenLocOrEndOfPreviousLineIfOnNewLine(),
-                    "missing ':' at end of function signature");
-        return failure();
-      }
-
-      // Otherwise maybe it was misspelled, just eat it.
-      p.emitError(loc, "unknown function effect '")
-          << spelling << "', expected 'raises', 'capturing', or 'escaping'";
-    }
-
-    p.consumeIdentifier();
-  }
-
   return success();
 }
 
@@ -352,17 +305,18 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
 static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
                                               const ParsedArgument &arg,
                                               StringRef argOrParam) {
-  std::string kindStr =
-      arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly
-          ? "keyword-only"
-          : "positional";
+  std::string kindStr = arg.kwArgHandling == KWArgHandling::kKeywordOnly
+                            ? "keyword-only"
+                            : "positional";
   return emitter.emitError(arg.loc, "required ")
          << kindStr << " " << argOrParam << " follows optional " << kindStr
          << " " << argOrParam;
 }
 
 /// Core implementation of the parameter argument parsing logic.
-void ParsedParamSignature::typeCheck() {
+TypeCheckedParamSignature::TypeCheckedParamSignature(
+    ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
+    SharedState &shared) {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
 
@@ -390,7 +344,7 @@ void ParsedParamSignature::typeCheck() {
       isVarArgs = true;
     }
 
-    if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly)
+    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
       seenPosInitExpr = false;
 
     if (const ExprNode *initExpr = arg.initExpr) {
@@ -399,7 +353,7 @@ void ParsedParamSignature::typeCheck() {
           emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
       if (!value)
         return;
-      if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kKeywordOnly) {
+      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly) {
         defaultKwOnlyParams.push_back(value);
         seenKwOnlyInitExpr = true;
       } else {
@@ -437,15 +391,14 @@ void ParsedParamSignature::typeCheck() {
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult ParsedParamSignature::parseOptionalParameterSignature(
-    ParserBase &p, SmallVectorImpl<ParsedArgument> &params,
-    ParsedArgument::ArgListKind kind) {
+ParseResult ParsedParamSignature::parseOptionalParameters(ParserBase &p,
+                                                          ArgListKind kind) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
   // Parse an actual parameter list.
-  if (ParsedArgument::parseAndResolvePresentArgumentList(p, params, kind))
+  if (parseArgOrParamList(p, parsedParams, kind))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -480,7 +433,72 @@ addImplicitTypeParams(SharedState &shared, ASTDecl &declScope, ASTType type,
   return BindTypeAttr::get(PValue(type), paramValues);
 }
 
-ASTType ParsedArgument::emitFunctionArgumentsAndResults(
+//===----------------------------------------------------------------------===//
+// Function Signature Parsing
+//===----------------------------------------------------------------------===//
+
+/// Parse an argument list, including the parentheses around them.  This also
+/// parses 'raises' and other effects.
+ParseResult
+ParsedFunctionSignature::parseArgumentListAndEffects(ParserBase &p,
+                                                     ArgListKind kind) {
+
+  // If this is a bare lambda argument list, it won't be parenthesized and won't
+  // have effects.
+  if (kind == ArgListKind::kBareLambdaArgList)
+    return parseArgOrParamList(p, parsedArgs, kind);
+
+  if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
+    return failure();
+
+  if (!p.consumeIf(Token::r_paren)) {
+    if (parseArgOrParamList(p, parsedArgs, kind) ||
+        p.parseToken(Token::r_paren, "expected ')' in argument list"))
+      return failure();
+  }
+
+  // If the client supports function effects, parse them as well.
+  // Parse other function effects.
+  while (p.getToken().isIdentifier()) {
+    SMLoc loc = p.getToken().getLoc();
+    StringRef spelling = p.getToken().getSpelling();
+
+    auto handleEffect = [&](auto hasFn, auto setFn) {
+      if ((effects.*hasFn)())
+        p.emitError(loc, "function effect '")
+            << spelling << "' was already specified";
+      (effects.*setFn)(true);
+    };
+
+    if (spelling == "raises") {
+      handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
+    } else if (spelling == "capturing") {
+      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
+    } else if (spelling == "escaping") {
+      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+    } else {
+      // If this isn't a known effect, then it could be an error like a missing
+      // colon at the end of a function declaration.  If so, emit a nice error
+      // and recover cleanly.
+      if (p.getToken().isStartOfLine() && kind == ArgListKind::kArgList) {
+        // Otherwise maybe it was misspelled, just eat it.
+        p.emitError(p.getTokenLocOrEndOfPreviousLineIfOnNewLine(),
+                    "missing ':' at end of function signature");
+        return failure();
+      }
+
+      // Otherwise maybe it was misspelled, just eat it.
+      p.emitError(loc, "unknown function effect '")
+          << spelling << "', expected 'raises', 'capturing', or 'escaping'";
+    }
+
+    p.consumeIdentifier();
+  }
+
+  return success();
+}
+
+ASTType ParsedFunctionSignature::emitFunctionArgumentsAndResults(
     function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
     SmallVectorImpl<StringAttr> &paramNames,
     SmallVectorImpl<PassingKind> &paramPassingKinds,
@@ -626,7 +644,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.loc = resultLoc;
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
       resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+      resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
       args.insert(args.begin(), resultArg);
       argTypes.insert(argTypes.begin(),
                       shared.lookupObjectType(resultLoc, sigDecl));
@@ -661,7 +679,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.loc = resultTypeExpr->getLoc();
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
       resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+      resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
       resultArg.typeExpr = resultTypeExpr;
       args.insert(args.begin(), resultArg);
       argTypes.insert(argTypes.begin(), resultType);
@@ -730,7 +748,7 @@ void DeclResolver::computeArgumentConventions(
       break;
     case ParsedArgument::kConventionInitSelfResult:
       // We also force the passing kind of self to positional-only.
-      arg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
       arg.kgenConvention = ArgConvention::InitSelf;
       break;
     }

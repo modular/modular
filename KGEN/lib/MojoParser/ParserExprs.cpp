@@ -968,24 +968,25 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
-  SmallVector<ParsedArgument> parsedParams, parsedArgs;
+
+  ParsedParamSignature paramSignature;
+  ParsedFunctionSignature fnSignature;
+
   ExprNode *resultTypeExpr = nullptr;
-  FnEffects effects;
   bool isDef = false;
 
   // Parse the function effects from the leading keyword.
-  effects.setAsync(consumeIf(Token::kw_async));
+  fnSignature.effects.setAsync(consumeIf(Token::kw_async));
   if (consumeToken().is(Token::kw_def)) {
-    effects.setThrows();
+    fnSignature.effects.setThrows();
     isDef = true;
   }
 
   // Parameter signature, argument list and the function effects next.
-  if (ParsedParamSignature::parseOptionalParameterSignature(
-          *this, parsedParams, ParsedArgument::ArgListKind::kFnTypeParamList) ||
-      ParsedArgument::parseAndResolveParenthesizedArgumentList(
-          *this, parsedArgs, ParsedArgument::ArgListKind::kFnTypeArgList,
-          effects))
+  if (paramSignature.parseOptionalParameters(*this,
+                                             ArgListKind::kFnTypeParamList) ||
+      fnSignature.parseArgumentListAndEffects(*this,
+                                              ArgListKind::kFnTypeArgList))
     return failure();
 
   // Parse the result type.
@@ -998,9 +999,9 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   result = alloc<FunctionTypeNode>(
-      baseLoc, copyArrayRef<ParsedArgument>(parsedParams),
-      copyArrayRef<ParsedArgument>(parsedArgs), resultTypeExpr, effects, endLoc,
-      isDef, resultLoc);
+      baseLoc, copyArrayRef<ParsedArgument>(paramSignature.parsedParams),
+      copyArrayRef<ParsedArgument>(fnSignature.parsedArgs), resultTypeExpr,
+      fnSignature.effects, endLoc, isDef, resultLoc);
   return success();
 }
 
@@ -1008,22 +1009,20 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
-  SmallVector<ParsedArgument> arguments;
-  FnEffects effects;
+  ParsedFunctionSignature parsedSignature;
 
   // Mojo supports naked parameters without type annotations for compatibility
   // with Python, but also supports parethesized ones.  We can only support
   // type annotations in parentheses since we'd otherwise have ambiguity with
   // the ":" in the lambda expression.
-  if (getToken().is(Token::l_paren)) {
-    // Parse general parenthesized argument list.
-    if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
-            *this, arguments, ParsedArgument::ArgListKind::kArgList, effects))
-      return failure();
-  } else if (getToken().isNot(Token::colon)) {
-    // Parse non-typed non-parenthesized argument list.
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            *this, arguments, ParsedArgument::ArgListKind::kBareLambdaArgList))
+  if (getToken().is(Token::colon)) {
+    // Nothing to parse.
+  } else {
+    // Parse general parenthesized argument list if a paren is present,
+    // otherwise a bare identifier list.
+    auto kind = getToken().is(Token::l_paren) ? ArgListKind::kArgList
+                                              : ArgListKind::kBareLambdaArgList;
+    if (parsedSignature.parseArgumentListAndEffects(*this, kind))
       return failure();
   }
 

@@ -498,7 +498,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     // Regardless force it to init_self so recovery follows the fix-it.
     args[0].convention = ParsedArgument::kConventionInitSelfResult;
     // We also force the passing kind of self to positional-only.
-    args[0].kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+    args[0].kwArgHandling = KWArgHandling::kPositionalOnly;
 
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
       if (args[1].convention != ParsedArgument::kConventionBorrowed)
@@ -837,14 +837,14 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 
 PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
   switch (handling) {
-  case ParsedArgument::KWArgHandling::kPositionalOnly:
+  case KWArgHandling::kPositionalOnly:
     return PassingKind::PosOnly;
-  case ParsedArgument::KWArgHandling::kKeywordOnly:
+  case KWArgHandling::kKeywordOnly:
     return PassingKind::KwOnly;
-  case ParsedArgument::KWArgHandling::kPositionalOrKeyword:
+  case KWArgHandling::kPositionalOrKeyword:
     return PassingKind::PosOrKw;
   }
-  llvm_unreachable("unhandled ParsedArgument::KWArgHandling");
+  llvm_unreachable("unhandled KWArgHandling");
 }
 
 /// Silence internal verifier errors when constructing types from the parser. We
@@ -882,36 +882,34 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                           decl.getParentDecl());
 
   // Parse declared meta parameters and add them to the current scope.
-  ParsedParamSignature paramSignature(shared, sigDecl);
+  ParsedParamSignature parsedParamSignature;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (paramSignature.parseOptionalParameterSignature(
-          p, ParsedArgument::ArgListKind::kParamList))
+  if (parsedParamSignature.parseOptionalParameters(p, ArgListKind::kParamList))
     return failure();
+  TypeCheckedParamSignature paramSignature(parsedParamSignature.parsedParams,
+                                           sigDecl, shared);
 
-  paramSignature.typeCheck();
-
+  // Parse the function signature next.
+  ParsedFunctionSignature fnSignature;
   // Set up the known effects.
-  FnEffects effects;
   if (isAsync)
-    effects.setAsync(true);
+    fnSignature.effects.setAsync(true);
   if (isDef)
-    effects.setThrows();
+    fnSignature.effects.setThrows();
 
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (paramSignature.isVarArgs ||
       // If the parent struct has param varargs, any member functions will too.
       (structDecl && structDecl.getSignature().getParamVarArg()))
-    effects.setParamVarArgs();
+    fnSignature.effects.setParamVarArgs();
 
   // Parse the argument list next if present.
-  SmallVector<ParsedArgument> args;
-  if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
-          p, args, ParsedArgument::ArgListKind::kArgList, effects))
+  if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
     return failure();
 
   // Parse the result type if present.
@@ -939,23 +937,24 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
 
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
-  ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
+  ASTType resultType = ParsedFunctionSignature::emitFunctionArgumentsAndResults(
       reportError, typeEmitter, paramSignature.names,
       paramSignature.passingKinds, paramSignature.paramDeclAttrs,
-      resultTypeExpr, effects, args, argTypes, defaultPosArgs,
-      defaultKwOnlyArgs, isDef, resultLoc, &decl, fnInfo);
+      resultTypeExpr, fnSignature.effects, fnSignature.parsedArgs, argTypes,
+      defaultPosArgs, defaultKwOnlyArgs, isDef, resultLoc, &decl, fnInfo);
   if (!resultType)
     return failure();
 
   if (isCapturingByDefault(funcOp, structDecl, paramSignature.paramDeclAttrs))
-    effects.setCapturing();
+    fnSignature.effects.setCapturing();
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  FnDecorators fnDecorators(decl, sigDecl, shared, baseName, effects);
+  FnDecorators fnDecorators(decl, sigDecl, shared, baseName,
+                            fnSignature.effects);
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return fnDecorators.apply(decorator, effects);
+        return fnDecorators.apply(decorator, fnSignature.effects);
       });
 
   // Propagate errors and the parsed decls in the signature.
@@ -965,14 +964,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
-                            effects, shared, fnInfo);
+  verifyFunctionNameBinding(decl, funcOp, baseName, fnSignature.parsedArgs,
+                            argTypes, resultType, fnSignature.effects, shared,
+                            fnInfo);
 
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
-  computeArgumentConventions(args, argTypes, implicitLifetimeDecls, decl);
+  computeArgumentConventions(fnSignature.parsedArgs, argTypes,
+                             implicitLifetimeDecls, decl);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (missingColon)
@@ -982,7 +983,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // First, handle function effects. If the function raises, it implicitly gets
   // a variant result type.
-  if (effects.isThrows()) {
+  if (fnSignature.effects.isThrows()) {
     ASTType errorType =
         shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc());
     if (errorType.isTypeCheckErrorType())
@@ -991,7 +992,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     resultType = VariantType::get({errorType, resultType});
     // The result is always owned because the function returns a variant
     // containing an Error, which is nontrivial.
-    effects.setOwnedRegisterResult();
+    fnSignature.effects.setOwnedRegisterResult();
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
@@ -999,7 +1000,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<StringAttr> argNames;
   SmallVector<PassingKind> argPassingKinds;
   SmallVector<ArgConvention> argConventions;
-  for (const ParsedArgument &arg : args) {
+  for (const ParsedArgument &arg : fnSignature.parsedArgs) {
     argLocs.push_back(shared.diags.translateLocation(arg.loc));
     argPassingKinds.emplace_back(
         ParsedArgument::mapToPassingKind(arg.kwArgHandling));
@@ -1021,8 +1022,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       paramSignature.defaultPosParams, defaultKwOnlyArgs,
       paramSignature.defaultKwOnlyParams, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
-      paramsArrayAttr, {}, functionType, argConventions, effects, metadata,
-      silenceErrors(getContext()));
+      paramsArrayAttr, {}, functionType, argConventions, fnSignature.effects,
+      metadata, silenceErrors(getContext()));
   if (!signature)
     return failure();
 
@@ -1786,7 +1787,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  ParsedParamSignature paramSignature(shared, sigDecl);
+  ParsedParamSignature parsedParams;
   SmallVector<TypeLineageAttr> parentTypes;
 
   SMLoc identifierLoc;
@@ -1794,15 +1795,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      paramSignature.parseOptionalParameterSignature(
-          p, ParsedArgument::ArgListKind::kParamList) ||
+      parsedParams.parseOptionalParameters(p, ArgListKind::kParamList) ||
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
     return failure();
 
-  paramSignature.typeCheck();
+  TypeCheckedParamSignature paramSignature(parsedParams.parsedParams, sigDecl,
+                                           shared);
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
