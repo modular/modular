@@ -718,16 +718,13 @@ LITSignatureType LITSignatureType::dropParamValues() {
              getFnEffects(), metadata);
 }
 
+/// Substitute the specified implicit lifetime references into the specified
+/// type, replacing them with `values` if they are at depth 0, or decrementing
+/// their depth if not.  This returns the resultant FunctionType on success,
+/// and invokes 'emitError'+returns null on error.
 FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
     ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
-  return cast_or_null<FunctionType>(
-      substituteImplicitLifetimes(getValues(), values, emitError));
-}
 
-/// Substitute implicit lifetime references in an attribute or type.
-Type LITSignatureType::substituteImplicitLifetimes(
-    Type value, ArrayRef<TypedAttr> values,
-    function_ref<InFlightDiagnostic()> emitError) {
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
@@ -753,8 +750,8 @@ Type LITSignatureType::substituteImplicitLifetimes(
   } substitutor;
   substitutor.values = values;
   substitutor.emitError = emitError;
-  Type result = substitutor.replace(value);
-  return substitutor.hadError ? Type() : result;
+  FunctionType result = substitutor.replace(getValues());
+  return substitutor.hadError ? FunctionType() : result;
 }
 
 /// Get this signature with all the implicit lifetimes bound to #lit.lifetime
