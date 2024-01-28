@@ -920,11 +920,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
-  SmallVector<Value, 1> byRefResults;
   SmallVector<TypedAttr> implicitLifetimes;
-  for (auto [argIdx, argValAndExpr, conventionX, calleeArgType] :
-       llvm::enumerate(argumentValues, calleeSig.getArgConventions(),
-                       calleeSig.getArguments())) {
+  for (auto [argIdx, argValAndExpr, conventionX] :
+       llvm::enumerate(argumentValues, calleeSig.getArgConventions())) {
     ArgConvention convention = conventionX;
 
     // If this is a variadic operation, the N operands have already been emitted
@@ -948,31 +946,33 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       if (auto refType = dyn_cast<RefType>(eltType))
         implicitLifetimes.push_back(refType.getLifetime());
     }
+
     // TODO: What about pack types?
-
-    // Make sure the parameters of an argument line up by emitting a rebind
-    // operation.
-    if (arg.getType() != calleeArgType) {
-      // If the types disagree, one reason may be implicit lifetimes.  Try
-      // substituting them out.
-      Type adjustedCalleeArgType = calleeArgType;
-      if (!implicitLifetimes.empty()) {
-        adjustedCalleeArgType = LITSignatureType::substituteImplicitLifetimes(
-            calleeArgType, implicitLifetimes,
-            [&]() -> InFlightDiagnostic { llvm_unreachable("bad call"); });
-      }
-
-      // Check to see if they are equal now.
-      if (arg.getType() != adjustedCalleeArgType)
-        arg = builder->create<RebindOp>(loc, adjustedCalleeArgType, arg);
-    }
-    if (conventionX == ArgConvention::ByRefResult ||
-        conventionX == ArgConvention::InitSelf)
-      byRefResults.push_back(arg);
     callArgs.push_back(arg);
   }
 
-  Type resultType = calleeSig.getResultType();
+  // Now that we have the lifetimes for the arguments, we can calculate what the
+  // substituted signature should be:
+  FunctionType expectedCalleeType =
+      calleeSig.substituteImplicitLifetimesIntoValues(
+          implicitLifetimes,
+          [&]() -> InFlightDiagnostic { llvm_unreachable("bad call"); });
+
+  // Now that all of the arguments have been emitted, coerce them to the
+  // expected type if needed.  We do this after the first pass above, because
+  // there can be forward refefences from the result slot to the later
+  // arguments' lifetimes.
+  for (auto [arg, expectedType] :
+       llvm::zip(callArgs, expectedCalleeType.getInputs())) {
+    // Make sure the parameters of an argument line up by emitting a rebind
+    // operation.
+    if (arg.getType() != expectedType)
+      arg = builder->create<RebindOp>(loc, expectedType, arg);
+  }
+
+  assert(expectedCalleeType.getResults().size() == 1 &&
+         "All mojo functions return one value");
+  Type resultType = expectedCalleeType.getResults()[0];
   Value callResult;
   if (auto target = callee.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
@@ -1010,14 +1010,20 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       callResult = call.getResult(0);
     }
   } else {
-    auto call = builder->create<CallSignatureOp>(
-        loc, resultType, callee.getIfSRValue(), implicitLifetimes, callArgs);
+    Value calleeVal = callee.getIfSRValue();
+    assert(calleeVal && "don't have a callee of expected type");
+    auto call = builder->create<CallSignatureOp>(loc, resultType, calleeVal,
+                                                 implicitLifetimes, callArgs);
     callResult = call.getResult(0);
   }
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
   callEmitter.emitAfterCallActions();
+
+  SmallVector<Value, 1> byRefResults;
+  if (calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult())
+    byRefResults.push_back(callArgs[0]);
 
   // If the callee can raise an error, it will be represented as a variant: try
   // to unwrap it. If the callee is async, the error is propagated later.

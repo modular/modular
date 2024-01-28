@@ -71,13 +71,8 @@ public:
 
   /// Substitute the specified implicit lifetime references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
-  /// their depth if not.  This invokes 'emitError' on error.
-  static Type
-  substituteImplicitLifetimes(Type value, ArrayRef<TypedAttr> values,
-                              function_ref<InFlightDiagnostic()> emitError);
-
-  /// Invoke substituteImplicitLifetimes on the values FunctionType from this
-  /// signature.
+  /// their depth if not.  This returns the resultant FunctionType on success,
+  /// and invokes 'emitError'+returns null on error.
   FunctionType substituteImplicitLifetimesIntoValues(
       ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
 
