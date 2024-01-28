@@ -2871,14 +2871,12 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (paramList.isVarArgs)
     argList.effects.setParamVarArgs();
 
+  SpecialFunctionInfo fnInfo; // Not a named function.
   TypeCheckedFnSignature tcSignature(paramList, argList, resultTypeExpr,
                                      resultLoc, isDef, /*fnDecl=*/nullptr,
-                                     SpecialFunctionInfo());
+                                     fnInfo);
 
-  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
-  emitter.getDeclResolver().computeArgumentConventions(
-      argList.parsedArgs, tcSignature.argTypes, implicitLifetimeDecls,
-      dummyScope);
+  tcSignature.computeArgumentConventions(dummyScope);
 
   if (argList.effects.isThrows()) {
     Type errorType =
@@ -2895,16 +2893,15 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Compute the signature of the function.
-  LITSignatureType signature =
-      tcSignature.getLITSignatureType(implicitLifetimeDecls.size());
+  LITSignatureType signature = tcSignature.getLITSignatureType();
   if (!signature)
     return {}; // Error already emitted.
 
   // The parsed SignatureType is set to the pretty type that includes implicit
   // lifetimes, we strip off the named lifetime decl references and replace them
   // with indices.
-  signature =
-      signature.replaceImplicitLifetimesWithIndexes(implicitLifetimeDecls);
+  signature = signature.replaceImplicitLifetimesWithIndexes(
+      tcSignature.implicitLifetimeDecls);
 
   if (argList.effects.isEscaping()) {
     // Create a self contained signature type that represents the closure.

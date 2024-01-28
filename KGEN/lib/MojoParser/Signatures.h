@@ -99,7 +99,7 @@ struct ParsedArgument {
 
   /// This gets set to true when there is a /diagnosed/ error that should
   /// prevent subsequent references to this argument.
-  bool isErroneous = false;
+  mutable bool isErroneous = false;
 
   KWArgHandling kwArgHandling = KWArgHandling::kPositionalOrKeyword;
 
@@ -177,21 +177,32 @@ public:
                          ParsedArgumentList &argList,
                          const ExprNode *resultTypeExpr, SMLoc resultLoc,
                          bool isDef, ASTDecl *fnDecl,
-                         SpecialFunctionInfo fnInfo);
+                         SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 
+  // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType;
+
+  // This is the type cheked argument types with argument conventions and
+  // lifetimes applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
+  SmallVector<Type> fullArgTypes;
+  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
 
   /// Return a FunctionType with the specified argTypes and resultType.
   FunctionType getFunctionType() const;
 
   /// Form a LIT signature packaging up all the stuff we need to know about this
   /// type checked function.
-  LITSignatureType getLITSignatureType(size_t numImplicitLifetimeDecls) const;
+  LITSignatureType getLITSignatureType() const;
+
+  /// Given a fully resolved signature, compute the final types and KGEN input
+  /// conventions of the arguments. This function also ensures that self
+  /// arguments are marked as positional-only.
+  void computeArgumentConventions(ASTDecl &declScope);
 };
 
 } // namespace M::KGEN::LIT

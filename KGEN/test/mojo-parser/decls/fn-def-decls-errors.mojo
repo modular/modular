@@ -37,11 +37,11 @@ fn implicit_var_decl(a: Int):
     # expected-error @+1 {{use of unknown declaration 'c', 'fn' declarations require explicit variable declarations}}
     c = a
 
-# expected-error @+1 {{special function '__add__' must have 2 operands}}
+# expected-error @+1 {{'__add__' requires 2 operands}}
 fn __add__():
     pass
 
-# expected-error @+1 {{special function must be a method}}
+# expected-error @+1 {{'__sub__' must be a method}}
 fn __sub__(self: Int, a: Int):
     pass
 

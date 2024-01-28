@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-
 ##===----------------------------------------------------------------------===##
 # Functions
 ##===----------------------------------------------------------------------===##
@@ -137,10 +136,10 @@ fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
-# expected-error @+1 {{'owned' arguments cannot be variadic}}
+# expected-error @+1 {{'owned' @register_passable arguments cannot be variadic}}
 fn ownedPack[*Ts: __mlir_type.`!kgen.type`](owned *args: *Ts): pass
 fn ownedVariadic(owned *args: Inner): pass
-# expected-error @+1 {{'owned' arguments cannot be variadic}}
+# expected-error @+1 {{'owned' @register_passable arguments cannot be variadic}}
 fn ownedVariadicReg(owned *args: WrongType): pass
 
 
@@ -400,7 +399,7 @@ fn decoratorTest():
 @invalidDec # expected-error {{use of unknown declaration 'invalidDec'}}
 def BadDecorator(): pass
 
-@staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
+@staticmethod # expected-error {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
 struct DecoratorSameLine:
@@ -448,7 +447,7 @@ struct SpecialFunctions:
   fn __new__() -> Self:
     pass
 
-  # expected-error @+1 {{special function '__add__' must have 2 operands}}
+  # expected-error @+1 {{'__add__' requires 2 operands}}
   fn __add__(self):
     pass
 
@@ -475,7 +474,7 @@ struct WrongType:
   # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
   def __init__() -> Int: pass
 
-  # expected-error @+1 {{special function '__copyinit__' must have 1 operand}}
+  # expected-error @+1 {{'__copyinit__' requires 1 operand}}
   fn __copyinit__(inout self, inout existing: Int): pass
 
   # expected-error @+1 {{self argument cannot be passed by reference}}
@@ -491,20 +490,20 @@ struct WrongSelfType[a: Int]:
   fn goodMethod(inout self: WrongSelfType[a]): pass
 
   # Issue #13358
-  # expected-error @+1 {{special function '__copyinit__' must have 2 operands}}
+  # expected-error @+1 {{'__copyinit__' requires 2 operands}}
   fn __copyinit__(inout self, other: Self, moar: Int): pass
 
-  # expected-error @+1 {{special function '__add__' must have 2 operands}}
+  # expected-error @+1 {{'__add__' requires 2 operands}}
   fn __add__(self): pass
 
   fn __pow__(self, exp: Int): pass
 
   fn __pow__(self, exp: Int, mod: Int): pass
 
-  # expected-error @+1 {{special function '__pow__' must have at least 2 operands}}
+  # expected-error @+1 {{'__pow__' requires at least 2 operands}}
   fn __pow__(self): pass
 
-  # expected-error @+1 {{special function '__pow__' must have at most 3 operands}}
+  # expected-error @+1 {{'__pow__' requires at most 3 operands}}
   fn __pow__(self, exp: Int, mod: Int, extra: Int): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen

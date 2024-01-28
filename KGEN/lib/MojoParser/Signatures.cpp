@@ -113,7 +113,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (p.parseExpression(initExpr))
       return failure();
 
-    if (convention == kConventionInOut) {
+    if (convention == kConventionInOut ||
+        convention == kConventionInitSelfResult) {
       p.emitError(equalLoc, "inout arguments may not have defaults")
           << initExpr->getRange();
       initExpr = nullptr;
@@ -503,7 +504,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                const ExprNode *resultTypeExpr,
                                                SMLoc resultLoc, bool isDef,
                                                ASTDecl *fnDecl,
-                                               SpecialFunctionInfo fnInfo)
+                                               SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList) {
 
   SharedState &shared = paramList.shared;
@@ -521,6 +522,53 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       selfType = parent->getSelfType();
     }
   }
+
+  // If this is a well-known function like `__init__`, perform early semantic
+  // checks and clarify what special function it really is.
+
+  // __*init__ methods are weird - for memory-only results we define
+  // init in convention Python style, but for @register_passable values, we
+  // return it.  We handle this by mapping them to different enumerators so
+  // things downstream have stronger invariants.
+  //
+  // This logic happens before type checking, so we need to be very careful
+  // to only process it if defined correctly.  We let downstream checks diagnose
+  // the errors.
+  if ((fnInfo.kind == SpecialFunctionKind::kInit ||
+       fnInfo.kind == SpecialFunctionKind::kCopyInit ||
+       fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
+      selfType) {
+    // If this is a memory-only type, then the self argument is actually passed
+    // with a special thing, it is written inout, but it isn't really.
+    if (!selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
+      if (!argList.parsedArgs.empty() && argList.parsedArgs[0].convention ==
+                                             ParsedArgument::kConventionInOut) {
+        auto &selfArg = argList.parsedArgs[0];
+        selfArg.convention = ParsedArgument::kConventionInitSelfResult;
+        // We also force the passing kind of self to positional-only.
+        if (selfArg.kwArgHandling == KWArgHandling::kPositionalOrKeyword)
+          selfArg.kwArgHandling = KWArgHandling::kPositionalOnly;
+      }
+    } else {
+      if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
+        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
+      else if (fnInfo.kind == SpecialFunctionKind::kInit)
+        fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
+      else {
+        assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
+        fnDecl->hasReferenceError = true;
+        paramList.shared.emitError(fnDecl->getLoc(), "'")
+            << fnInfo.name
+            << "' is not supported for @register_passable types, they "
+               "are always movable by copying a register";
+        fnInfo = SpecialFunctionInfo();
+      }
+    }
+  }
+
+  // __new__ and __init__ in register types are implicitly static.
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
+    cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
 
   // HACK: Create a dummy value to assign to argument declarations during
   // argument and result type emission.
@@ -554,6 +602,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       type = addImplicitTypeParams(shared, declScope, type, arg, paramList);
     } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
       // If this is the 'self' argument in a struct, default the type to Self.
+      // FIXME: This is incorrect, the @static_method decorators haven't been
+      // applied yet.  How can this work?
       type = selfType;
     } else if (isDef) {
       // In 'def', arguments with no types default to 'object'.
@@ -678,14 +728,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {
   auto resultMLIRType = resultType.mlirType;
-  return FunctionType::get(resultMLIRType.getContext(), argTypes,
+  return FunctionType::get(resultMLIRType.getContext(), fullArgTypes,
                            {resultMLIRType});
 }
 
 /// Form a LIT signature packaging up all the stuff we need to know about this
 /// type checked function.
-LITSignatureType TypeCheckedFnSignature::getLITSignatureType(
-    size_t numImplicitLifetimeDecls) const {
+LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   MLIRContext *ctx = paramList.shared.getContext();
 
   SmallVector<StringAttr> argNames;
@@ -703,7 +752,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType(
   auto metadata = FnMetadataAttr::get(
       ctx, argNames, argPassingKinds, paramList.names, paramList.passingKinds,
       defaultPosArgs, paramList.defaultPosParams, defaultKwOnlyArgs,
-      paramList.defaultKwOnlyParams, numImplicitLifetimeDecls);
+      paramList.defaultKwOnlyParams, implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.
@@ -719,47 +768,42 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType(
       argList.effects, metadata, silenceErrors);
 }
 
-void DeclResolver::computeArgumentConventions(
-    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
-    SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls, ASTDecl &declScope) {
-  // This closure is called for argument conventions that don't allow
-  // variadics.
-  auto rejectVariadic = [&](size_t argNo, const char *kind) -> bool {
-    auto &arg = args[argNo];
-    // If the arg isn't variadic, then it's fine.
-    if (arg.vararg == VarArgKind::None)
-      return false;
-    // Emit an error and remember this error.
-    if (!arg.isErroneous) {
-      shared.emitError(arg.loc)
-          << "'" << kind << "' arguments cannot be variadic";
-      arg.isErroneous = true;
-    }
+void TypeCheckedFnSignature::computeArgumentConventions(ASTDecl &declScope) {
+  DeclResolver &resolver = *paramList.shared.declResolver;
 
-    // Switch to a convention that is supportable.
-    arg.convention = ParsedArgument::kConventionBorrowed;
-    arg.kgenConvention = ArgConvention::BorrowedInReg;
-    return true;
-  };
+  fullArgTypes.reserve(argTypes.size());
 
-  for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
+  for (auto [i, arg, argType] : llvm::enumerate(argList.parsedArgs, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
       llvm_unreachable("should be resolved by now");
     case ParsedArgument::kConventionOwned:
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, shared)) {
-        arg.kgenConvention = ArgConvention::OwnedInReg;
-        rejectVariadic(i, "owned");
-      } else {
+      if (!ASTType(argType).isRegisterPassable(arg.loc, paramList.shared)) {
         arg.kgenConvention = ArgConvention::OwnedInMem;
+        break;
+      }
+      arg.kgenConvention = ArgConvention::OwnedInReg;
+
+      // Reject variadic owned register arguments, we can't support them yet.
+      if (arg.vararg != VarArgKind::None) {
+        // Emit an error and remember this error.
+        if (!arg.isErroneous) {
+          resolver.emitError(arg.loc)
+              << "'owned' @register_passable arguments cannot be variadic";
+          arg.isErroneous = true;
+        }
+
+        // Switch to a convention that is supportable.
+        arg.convention = ParsedArgument::kConventionBorrowed;
+        arg.kgenConvention = ArgConvention::BorrowedInReg;
       }
       break;
     case ParsedArgument::kConventionBorrowed:
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+      if (ASTType(argType).isRegisterPassable(arg.loc, paramList.shared))
         arg.kgenConvention = ArgConvention::BorrowedInReg;
       else
         arg.kgenConvention = ArgConvention::BorrowedInMem;
@@ -771,14 +815,13 @@ void DeclResolver::computeArgumentConventions(
       arg.kgenConvention = ArgConvention::ByRefResult;
       break;
     case ParsedArgument::kConventionInitSelfResult:
-      // We also force the passing kind of self to positional-only.
-      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
       arg.kgenConvention = ArgConvention::InitSelf;
       break;
     }
 
     // Values passed by memory need an associated lifetime parameter, and
     // need to be passed by reference.
+    Type fullArgType = argType;
     if (SignatureType::hasAddress(arg.kgenConvention)) {
       // Given a memory argument named "foo" we give the implicit lifetime a
       // name of "`foo".  We do this because of Rust precedent, but also
@@ -797,19 +840,22 @@ void DeclResolver::computeArgumentConventions(
       bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
 
       auto lifetimeDecl = ParamDeclAttr::get(
-          lifetimeName, LifetimeType::get(shared.getContext(), isMutable));
+          lifetimeName,
+          LifetimeType::get(lifetimeName.getContext(), isMutable));
       implicitLifetimeDecls.push_back(lifetimeDecl);
 
-      argType = RefType::get(
-          argType, ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
+      fullArgType = RefType::get(
+          fullArgType,
+          ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
     }
 
     // If this is a valid vararg argument, then we pass it as a variadic type.
     // The convention is to pass as a register value, in the case of a memory
     // value, we're passing the array of pointers by value.
     if (arg.vararg == VarArgKind::VarArg) {
-      argType = VariadicType::get(argType, arg.kgenConvention);
+      fullArgType = VariadicType::get(fullArgType, arg.kgenConvention);
       arg.kgenConvention = ArgConvention::BorrowedInReg;
     }
+    fullArgTypes.push_back(fullArgType);
   }
 }

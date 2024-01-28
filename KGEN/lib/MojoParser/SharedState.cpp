@@ -991,7 +991,8 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
     return shared.getTypeCheckErrorType();
   }
 
-  shared.emitError(loc, "could not find builtin '") << typeName << "' type";
+  if (!lookup.isErroneous())
+    shared.emitError(loc, "could not find builtin '") << typeName << "' type";
   return shared.getTypeCheckErrorType();
 }
 

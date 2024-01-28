@@ -260,23 +260,20 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
               exportABI.has_value());
 }
 
-/// Now that all the structural properties are determined, perform any
-/// name-binding specific checks over the declaration.  This happens after
-/// decorator processing because that is how defs work in Python.  This also
-/// fills in any implicitly declared types, performs name mangling, and sets up
-/// the signature correctly.
+/// Now that all the structural properties are determined, perform any special
+/// checks over the declaration based on its name.  This happens after
+/// decorator processing because that is how defs work in Python.
 ///
-/// This allows magic behavior (like __new__ being static, checking of method
-/// self requirements and enforcement of other invariants.
-///
-/// This returns failure (after emitting an error) when a type checking problem
-/// is detected.
-static void
-verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
-                          SmallVector<ParsedArgument> &args,
-                          ArrayRef<Type> argTypes, ASTType &resultType,
-                          const FnEffects &effects, SharedState &shared,
-                          SpecialFunctionInfo fnInfo) {
+/// If this function detects a problem, it marks the decl as erroneous and
+/// resets the SpecialFunctionInfo.
+static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
+                                      TypeCheckedFnSignature &tcSignature,
+                                      SpecialFunctionInfo &fnInfo) {
+  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
+
+  ArrayRef<ParsedArgument> parsedArgs = tcSignature.argList.parsedArgs;
+  auto &shared = tcSignature.paramList.shared;
+
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -295,8 +292,8 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   // This is true if the declared result type is modeled as the first argument
   // because it is returned in memory.
   bool hasMemoryResult =
-      !args.empty() &&
-      args[0].convention == ParsedArgument::kConventionInOutResult;
+      !parsedArgs.empty() &&
+      parsedArgs[0].convention == ParsedArgument::kConventionInOutResult;
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
@@ -311,38 +308,14 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     selfArgNumber = hasMemoryResult ? 1 : 0;
   }
 
-  // __*init__ methods are weird - for memory-only results we define
-  // init in convention Python style, but for @register_passable values, we
-  // return it.  We handle this by mapping them to different enumerators so
-  // things downstream have stronger invariants.
-  if ((fnInfo.kind == SpecialFunctionKind::kInit ||
-       fnInfo.kind == SpecialFunctionKind::kCopyInit ||
-       fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
-      selfType && ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
-    if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
-      fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
-    else if (fnInfo.kind == SpecialFunctionKind::kInit)
-      fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
-    else {
-      assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
-      emitError() << name
-                  << " is not supported for @register_passable types, they "
-                     "are always movable by copying a register";
-    }
-  }
-
   // Check any special function information.
-
-  // __new__ and similar methods are implicitly static.
-  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    funcOp.setIsStatic(true);
 
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
     // Implement this as a lambda so we can early exit with 'return'.
     auto checkSelf = [&]() {
-      Type selfArgType = argTypes[selfArgNumber];
-      ParsedArgument &selfArg = args[selfArgNumber];
+      Type selfArgType = tcSignature.argTypes[selfArgNumber];
+      const ParsedArgument &selfArg = parsedArgs[selfArgNumber];
 
       // Don't check broken args, becaue we don't want redundant diagnostics.
       if (selfArg.isErroneous)
@@ -380,13 +353,13 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
       // Otherwise, this is an unrecognized self type.
       auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ")
                   << selfType << " but actually has type "
-                  << ASTType(argTypes[selfArgNumber]);
+                  << ASTType(tcSignature.argTypes[selfArgNumber]);
       selfArg.isErroneous = true;
       if (selfArg.typeExpr)
         diag << selfArg.typeExpr->getRange();
     };
 
-    if (selfArgNumber >= ssize_t(argTypes.size())) {
+    if (selfArgNumber >= ssize_t(tcSignature.argTypes.size())) {
       // TODO('def' allows unused arguments): We can/should relax this for
       // 'def' declarations in the future, they should be able to implicit
       // ignore arguments like Python does.
@@ -396,47 +369,43 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     }
   }
 
-  if (funcOp.getIsStatic() && !selfType) {
-    emitError("only methods on structs may be declared static");
-    funcOp.setIsStatic(false);
-  }
-
   // Verify the argument count lines up.
   if (fnInfo.kind != SpecialFunctionKind::kNormal) {
-    size_t numActualArgs = args.size() - std::max(selfArgNumber, ssize_t(0));
+    size_t numActualArgs =
+        parsedArgs.size() - std::max(selfArgNumber, ssize_t(0));
     size_t numMin = fnInfo.minNumArguments;
     ssize_t numMax = fnInfo.maxNumArguments;
     if (numMin == size_t(numMax) && numActualArgs != numMin) {
-      emitError("special function ")
-          << name << " must have " << numMin << " operand" << plural(numMin);
+      emitError() << name << " requires " << numMin << " operand"
+                  << plural(numMin);
     } else if (numActualArgs < numMin) {
-      emitError("special function ") << name << " must have at least " << numMin
-                                     << " operand" << plural(numMin);
+      emitError() << name << " requires at least " << numMin << " operand"
+                  << plural(numMin);
     } else if (numMax != -1 && numActualArgs > size_t(numMax)) {
-      emitError("special function ")
-          << name << " must have at most " << size_t(numMax) << " operand"
-          << plural(numMax);
+      emitError() << name << " requires at most " << size_t(numMax)
+                  << " operand" << plural(numMax);
     }
   }
 
   // Check other invariants based on method flags.
   if (fnInfo.isInstMethod()) {
     if (!selfType) {
-      emitError("special function must be a method");
+      emitError() << name << " must be a method";
     } else if (funcOp.getIsStatic()) {
       if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
         emitError("special method may not be a static method");
-    } else if (fnInfo.requiresOwnedSelfInstMethod()) {
-      if (args[selfArgNumber].convention != ParsedArgument::kConventionOwned) {
-        emitErrorLoc(args[selfArgNumber].loc, "self argument must be 'owned'")
-            << FixIt::insertBeforeToken(args[selfArgNumber].loc, "owned ");
-        args[selfArgNumber].convention = ParsedArgument::kConventionOwned;
-      }
+    } else if (fnInfo.requiresOwnedSelfInstMethod() &&
+               parsedArgs[selfArgNumber].convention !=
+                   ParsedArgument::kConventionOwned) {
+      emitErrorLoc(parsedArgs[selfArgNumber].loc,
+                   "self argument must be 'owned'")
+          << FixIt::insertBeforeToken(parsedArgs[selfArgNumber].loc, "owned ");
     }
   }
 
-  ASTType declaredResultType =
-      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
+  ASTType declaredResultType = hasMemoryResult
+                                   ? ASTType(tcSignature.argTypes[0])
+                                   : tcSignature.resultType;
 
   // Some functions like __new__ require a Self result type.
   if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
@@ -444,13 +413,12 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     emitError() << name << " result type must be " << selfType;
 
   // If the function is required to return None, verify that.
-  if (fnInfo.hasNoneResult() && !declaredResultType.isNoneType()) {
+  if (fnInfo.hasNoneResult() && !declaredResultType.isNoneType())
     emitError() << name << " result type must be elided (or None)";
-    resultType = shared.getNoneType();
-  }
 
   // Reject special functions declared as throwing when that is invalid.
-  if (effects.isThrows() && fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
+  if (tcSignature.argList.effects.isThrows() &&
+      fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
     // Specialize the error if raising is implicit because it was defined as a
     // def.
     if (funcOp.isDef()) {
@@ -470,13 +438,13 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     emitError("'__new__' is not supported on structs; use '__init__' instead");
     break;
   case SpecialFunctionKind::kMLIRI1:
-    if (!resultType.mlirType.isSignlessInteger(1))
+    if (!tcSignature.resultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
   case SpecialFunctionKind::kCopyInitReg:
     // Check that these are defined correctly.
-    if (args[0].convention != ParsedArgument::kConventionBorrowed)
-      emitErrorLoc(args[selfArgNumber].loc,
+    if (parsedArgs[0].convention != ParsedArgument::kConventionBorrowed)
+      emitErrorLoc(parsedArgs[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
     break;
   case SpecialFunctionKind::kInit:
@@ -485,28 +453,23 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     // The first/self argument is syntactically declared as a by-ref argument,
     // but we need to change it to InitSelf since it is not initialized coming
     // in.
-    assert(!args.empty() && "arg count already checked above");
-    SMLoc selfArgLoc = args[0].loc;
-    // __init__ methods must take their self argument by-ref syntactically.
-    if (args[0].convention != ParsedArgument::kConventionInOut) {
+    assert(!parsedArgs.empty() && "arg count already checked above");
+    SMLoc selfArgLoc = parsedArgs[0].loc;
+    // __init__ methods must take their self argument 'inout' syntactically.
+    if (parsedArgs[0].convention != ParsedArgument::kConventionInitSelfResult) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
-                  << name << " must be passed as mutable reference";
-      if (args[0].convention == ParsedArgument::kConventionUnspec)
+                  << name << " must be passed 'inout'";
+      if (parsedArgs[0].convention == ParsedArgument::kConventionUnspec)
         diag << FixIt::insertBeforeToken(selfArgLoc, "inout ");
     }
 
-    // Regardless force it to init_self so recovery follows the fix-it.
-    args[0].convention = ParsedArgument::kConventionInitSelfResult;
-    // We also force the passing kind of self to positional-only.
-    args[0].kwArgHandling = KWArgHandling::kPositionalOnly;
-
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
-      if (args[1].convention != ParsedArgument::kConventionBorrowed)
-        emitErrorLoc(args[1].loc,
+      if (parsedArgs[1].convention != ParsedArgument::kConventionBorrowed)
+        emitErrorLoc(parsedArgs[1].loc,
                      "existing value argument must be passed as borrowed");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (args[1].convention != ParsedArgument::kConventionOwned)
-        emitErrorLoc(args[1].loc,
+      if (parsedArgs[1].convention != ParsedArgument::kConventionOwned)
+        emitErrorLoc(parsedArgs[1].loc,
                      "existing value argument must be passed as owned");
     }
     break;
@@ -530,6 +493,7 @@ struct FnDecorators : public SharedStateUser {
   LogicalResult apply(ExprNode *decorator, FnEffects &effects);
 
 private:
+  void applyStaticMethod(const DeclRefNode &node);
   void applyMoveCapture(const CallNode &node);
   void applyCopyCapture(const CallNode &node);
   void applyLLVMMetadata(const CallNode &node);
@@ -549,7 +513,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
       applyExport(decorator->getLoc(), shared, decl, baseName, baseName,
                   funcOp);
     else if (declRef->spelling == "staticmethod")
-      funcOp.setIsStatic(true);
+      applyStaticMethod(*declRef);
     else if (declRef->spelling == "always_inline")
       funcOp.setInlineLevel(InlineLevel::Always);
     else if (declRef->spelling == "no_inline")
@@ -584,6 +548,15 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
     }
   }
   return failure();
+}
+
+void FnDecorators::applyStaticMethod(const DeclRefNode &node) {
+  // This decorator only applies to methods of structs and traits.
+  if (!isa<StructDeclOp, TraitDeclOp>(*decl.getParentDecl())) {
+    emitError(node.getLoc(), "only methods on structs may be declared static");
+    return;
+  }
+  funcOp.setIsStatic(true);
 }
 
 void FnDecorators::applyMoveCapture(const CallNode &node) {
@@ -921,6 +894,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultTypeExpr,
                                      resultLoc, isDef, &decl, fnInfo);
 
+  // Now that all the types and signature information have been resolved,
+  // compute the final MLIR types and KGEN conventions.  This also introduces
+  // implicit lifetime parameters for borrows/inout/owned arguments.
+  tcSignature.computeArgumentConventions(decl);
+
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.
   if (isa<TypeCheckErrorType>(tcSignature.resultType.mlirType) ||
@@ -948,16 +926,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  verifyFunctionNameBinding(decl, funcOp, baseName, fnSignature.parsedArgs,
-                            tcSignature.argTypes, tcSignature.resultType,
-                            fnSignature.effects, shared, fnInfo);
-
-  // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types and KGEN conventions.  This also introduces
-  // implicit lifetime parameters for borrows/inout/owned arguments.
-  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
-  computeArgumentConventions(fnSignature.parsedArgs, tcSignature.argTypes,
-                             implicitLifetimeDecls, decl);
+  verifyFunctionNameBinding(decl, baseName, tcSignature, fnInfo);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (missingColon)
@@ -985,8 +954,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   // Compute the signature of the function.
-  LITSignatureType signature =
-      tcSignature.getLITSignatureType(implicitLifetimeDecls.size());
+  LITSignatureType signature = tcSignature.getLITSignatureType();
   if (!signature)
     return failure();
 
@@ -1000,12 +968,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // The implicitLifetimeDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
   ParamDeclArrayAttr paramsArrayAttr;
-  if (implicitLifetimeDecls.empty()) {
+  if (tcSignature.implicitLifetimeDecls.empty()) {
     paramsArrayAttr =
         builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
   } else {
-    SmallVector<ParamDeclAttr> mergedParams(implicitLifetimeDecls.begin(),
-                                            implicitLifetimeDecls.end());
+    SmallVector<ParamDeclAttr> mergedParams;
+    llvm::append_range(mergedParams, tcSignature.implicitLifetimeDecls);
     llvm::append_range(mergedParams, paramList.paramDeclAttrs);
     paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
   }
@@ -1017,8 +985,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that the FunctionType is set to the pretty type that includes implicit
   // lifetimes, we strip off the named lifetime decl references and replace them
   // with indices.
-  signature =
-      signature.replaceImplicitLifetimesWithIndexes(implicitLifetimeDecls);
+  signature = signature.replaceImplicitLifetimesWithIndexes(
+      tcSignature.implicitLifetimeDecls);
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
@@ -1067,7 +1035,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<Location> argLocs;
   for (const ParsedArgument &arg : fnSignature.parsedArgs)
     argLocs.push_back(shared.diags.translateLocation(arg.loc));
-  funcOp.getBody()->addArguments(tcSignature.argTypes, argLocs);
+  funcOp.getBody()->addArguments(tcSignature.fullArgTypes, argLocs);
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.
