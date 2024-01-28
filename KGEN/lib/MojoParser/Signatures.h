@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+#include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/Lexer.h"
 
 namespace M::KGEN::LIT {
@@ -109,15 +110,15 @@ struct ParsedArgument {
 };
 
 //===----------------------------------------------------------------------===//
-// ParsedParamSignature
+// ParsedParamList
 //===----------------------------------------------------------------------===//
 
 /// This is all the state built up when parsing the parameter signature for a
 /// parameterized declaration, (e.g. a function or struct).
-class ParsedParamSignature {
+class ParsedParamList {
 public:
   /// The full ParsedArgument for each parameter.
-  SmallVector<ParsedArgument> parsedParams;
+  SmallVector<ParsedArgument> params;
 
   /// Parse a parameter signature if present.
   ///
@@ -128,12 +129,15 @@ public:
 };
 
 /// This contains the result state from type checking a parameter signature.
-class TypeCheckedParamSignature {
+class TypeCheckedParamList {
 public:
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation.
-  TypeCheckedParamSignature(ArrayRef<ParsedArgument> parsedParams,
-                            ASTDecl &declScope, SharedState &shared);
+  TypeCheckedParamList(ArrayRef<ParsedArgument> parsedParams,
+                       ASTDecl &declScope, SharedState &shared);
+
+  ASTDecl &declScope;
+  SharedState &shared;
 
   // These are the results of type checking 'params' in typeCheck.
   bool isVarArgs = false;
@@ -146,11 +150,11 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// ParsedFunctionSignature
+// ParsedArgumentList
 //===----------------------------------------------------------------------===//
 
 /// This is all the state built up when parsing a function signature.
-class ParsedFunctionSignature {
+class ParsedArgumentList {
 public:
   SmallVector<ParsedArgument> parsedArgs;
   FnEffects effects;
@@ -158,21 +162,28 @@ public:
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
   ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);
+};
 
+/// This contains the result state from type checking a parameter signature.
+class TypeCheckedFnSignature {
+public:
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
-  static ASTType emitFunctionArgumentsAndResults(
-      function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
-      SmallVectorImpl<StringAttr> &paramNames,
-      SmallVectorImpl<PassingKind> &paramPassingKinds,
-      SmallVectorImpl<ParamDeclAttr> &paramDecls,
-      const ExprNode *resultTypeExpr, FnEffects &effects,
-      SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
-      SmallVectorImpl<TypedAttr> &defaultPosArgs,
-      SmallVectorImpl<TypedAttr> &defaultKwOnlyArgs, bool isDef,
-      SMLoc resultLoc, ASTDecl *fnDecl = nullptr,
-      SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
+  ///
+  /// 'fnDecl' will be null when this is a function type, which doesn't have a
+  /// declaration.
+  TypeCheckedFnSignature(TypeCheckedParamList &params,
+                         ParsedArgumentList &argList,
+                         const ExprNode *resultTypeExpr, SMLoc resultLoc,
+                         bool isDef, ASTDecl *fnDecl,
+                         SpecialFunctionInfo fnInfo);
+
+  SmallVector<Type> argTypes;
+  SmallVector<TypedAttr> defaultPosArgs;
+  SmallVector<TypedAttr> defaultKwOnlyArgs;
+  ASTType resultType;
 };
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_SIGNATURES_H

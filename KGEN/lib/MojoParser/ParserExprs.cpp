@@ -969,8 +969,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
 
-  ParsedParamSignature paramSignature;
-  ParsedFunctionSignature fnSignature;
+  ParsedParamList paramList;
+  ParsedArgumentList fnSignature;
 
   ExprNode *resultTypeExpr = nullptr;
   bool isDef = false;
@@ -983,8 +983,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   // Parameter signature, argument list and the function effects next.
-  if (paramSignature.parseOptionalParameters(*this,
-                                             ArgListKind::kFnTypeParamList) ||
+  if (paramList.parseOptionalParameters(*this, ArgListKind::kFnTypeParamList) ||
       fnSignature.parseArgumentListAndEffects(*this,
                                               ArgListKind::kFnTypeArgList))
     return failure();
@@ -999,7 +998,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   }
 
   result = alloc<FunctionTypeNode>(
-      baseLoc, copyArrayRef<ParsedArgument>(paramSignature.parsedParams),
+      baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs), resultTypeExpr,
       fnSignature.effects, endLoc, isDef, resultLoc);
   return success();
@@ -1009,7 +1008,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
-  ParsedFunctionSignature parsedSignature;
+  ParsedArgumentList parsedSignature;
 
   // Mojo supports naked parameters without type annotations for compatibility
   // with Python, but also supports parethesized ones.  We can only support
