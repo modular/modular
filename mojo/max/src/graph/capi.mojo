@@ -119,7 +119,7 @@ fn cfunc[T: AnyRegType](name: StringRef) -> T:
 fn attr_new_tensor[
     T: CollectionElement
 ](
-    module: mlir.Module,
+    m: mlir.Module,
     name: StringRef,
     data: DynamicVector[T],
     type: mlir.Type,
@@ -127,17 +127,13 @@ fn attr_new_tensor[
 ) -> mlir.NamedAttribute:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule,
-            StringRef,
-            AnyPointer[T],
-            mlir._c.IR.MlirType,
-            Bool,
-        ) -> mlir._c.IR.MlirNamedAttribute
-    ]("MAXG_attrNewTensor")(module._c, name, data.data, type._c, is_owned)
+            mlir.Module.c_type, StringRef, AnyPointer[T], mlir.Type.c_type, Bool
+        ) -> mlir.NamedAttribute.c_type
+    ]("MAXG_attrNewTensor")(m.c, name, data.data, type.c, is_owned)
 
 
 fn attr_new_tensor(
-    module: mlir.Module,
+    m: mlir.Module,
     name: StringRef,
     data: DTypePointer[DType.invalid],
     type: mlir.Type,
@@ -145,38 +141,33 @@ fn attr_new_tensor(
 ) -> mlir.NamedAttribute:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule,
+            mlir.Module.c_type,
             StringRef,
             DTypePointer[DType.invalid],
-            mlir._c.IR.MlirType,
+            mlir.Type.c_type,
             Bool,
-        ) -> mlir._c.IR.MlirNamedAttribute
-    ]("MAXG_attrNewTensor")(module._c, name, data, type._c, is_owned)
+        ) -> mlir.NamedAttribute.c_type
+    ]("MAXG_attrNewTensor")(m.c, name, data, type.c, is_owned)
 
 
 fn attr_new_tensor_from_file(
-    module: mlir.Module,
-    name: StringRef,
-    file_name: StringRef,
-    type: mlir.Type,
+    m: mlir.Module, name: StringRef, file_name: StringRef, type: mlir.Type
 ) -> mlir.NamedAttribute:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule, StringRef, StringRef, mlir._c.IR.MlirType
-        ) -> mlir._c.IR.MlirNamedAttribute
-    ]("MAXG_attrNewTensorFromFile")(module._c, name, file_name, type._c)
+            mlir.Module.c_type, StringRef, StringRef, mlir.Type.c_type
+        ) -> mlir.NamedAttribute.c_type
+    ]("MAXG_attrNewTensorFromFile")(m.c, name, file_name, type.c)
 
 
 fn attr_new_string(
-    module: mlir.Module,
-    name: StringRef,
-    value: StringRef,
+    m: mlir.Module, name: StringRef, value: StringRef
 ) -> mlir.NamedAttribute:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule, StringRef, StringRef
-        ) -> mlir._c.IR.MlirNamedAttribute
-    ]("MAXG_attrNewString")(module._c, name, value)
+            mlir.Module.c_type, StringRef, StringRef
+        ) -> mlir.NamedAttribute.c_type
+    ]("MAXG_attrNewString")(m.c, name, value)
 
 
 # ===----------------------------------------------------------------------===#
@@ -189,9 +180,9 @@ fn attr_map_new() -> AttrMapPtr:
 
 
 fn attr_map_add_attr(m: AttrMapPtr, a: mlir.NamedAttribute):
-    return cfunc[fn (AttrMapPtr, mlir._c.IR.MlirNamedAttribute) -> NoneType](
+    return cfunc[fn (AttrMapPtr, mlir.NamedAttribute.c_type) -> NoneType](
         "MAXG_attrMapAddAttr"
-    )(m, a._c())
+    )(m, a.c())
 
 
 fn attr_map_size(m: AttrMapPtr) -> Int:
@@ -204,53 +195,60 @@ fn attr_map_size(m: AttrMapPtr) -> Int:
 
 
 fn graph_new(
-    module: mlir.Module,
+    m: mlir.Module,
     loc: mlir.Location,
     name: StringRef,
-    inTypes: ArityPtr,
-    outTypes: ArityPtr,
+    in_types: ArityPtr,
+    out_types: ArityPtr,
 ) -> GraphPtr:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule,
-            mlir._c.IR.MlirLocation,
+            mlir.Module.c_type,
+            mlir.Location.c_type,
             StringRef,
             ArityPtr,
             ArityPtr,
         ) -> GraphPtr
-    ]("MAXG_graphNew")(module._c, loc._c, name, inTypes, outTypes)
+    ]("MAXG_graphNew")(m.c, loc.c, name, in_types, out_types)
 
 
-fn graph_get_module(graph: GraphPtr) -> mlir.Module:
-    return cfunc[fn (GraphPtr) -> mlir._c.IR.MlirModule]("MAXG_graphGetModule")(
-        graph
-    )
+fn graph_get_module(g: GraphPtr) -> mlir.Module:
+    return cfunc[fn (GraphPtr) -> mlir.Module.c_type]("MAXG_graphGetModule")(g)
 
 
-fn graph_get_arg(graph: GraphPtr, pos: UInt32) -> SymbolPtr:
-    return cfunc[fn (GraphPtr, UInt32) -> SymbolPtr]("MAXG_graphGetArg")(
-        graph, pos
-    )
+fn graph_get_arg(g: GraphPtr, pos: UInt32) -> SymbolPtr:
+    return cfunc[fn (GraphPtr, UInt32) -> SymbolPtr]("MAXG_graphGetArg")(g, pos)
 
 
 fn graph_new_op(
-    graph: GraphPtr,
+    g: GraphPtr,
     loc: mlir.Location,
     name: StringRef,
     inputs: TuplePtr,
-    outTypes: ArityPtr,
+    out_types: ArityPtr,
     attrs: AttrMapPtr,
 ) -> TuplePtr:
     return cfunc[
         fn (
             GraphPtr,
-            mlir._c.IR.MlirLocation,
+            mlir.Location.c_type,
             StringRef,
             TuplePtr,
             ArityPtr,
             AttrMapPtr,
         ) -> TuplePtr
-    ]("MAXG_graphNewOp")(graph, loc._c, name, inputs, outTypes, attrs)
+    ]("MAXG_graphNewOp")(g, loc.c, name, inputs, out_types, attrs)
+
+
+# ===----------------------------------------------------------------------===#
+# Module support
+# ===----------------------------------------------------------------------===#
+
+
+fn module_to_bytecode(m: mlir.Module, file_name: String) -> Bool:
+    return cfunc[fn (mlir.Module.c_type, StringRef) -> Bool](
+        "MAXG_moduleToBytecode"
+    )(m.c, file_name._strref_dangerous())
 
 
 # ===----------------------------------------------------------------------===#
@@ -258,15 +256,15 @@ fn graph_new_op(
 # ===----------------------------------------------------------------------===#
 
 
-fn symbol_get_graph(symbol: SymbolPtr) -> GraphPtr:
-    return cfunc[fn (SymbolPtr) -> GraphPtr]("MAXG_symbolGetGraph")(symbol)
+fn symbol_get_graph(s: SymbolPtr) -> GraphPtr:
+    return cfunc[fn (SymbolPtr) -> GraphPtr]("MAXG_symbolGetGraph")(s)
 
 
-fn symbol_to_string(symbol: SymbolPtr) -> String:
+fn symbol_to_string(s: SymbolPtr) -> String:
     var len: Int64 = 0
     let ret = cfunc[fn (SymbolPtr, Pointer[Int64]) -> Pointer[Int8]](
         "MAXG_symbolToString"
-    )(symbol, Pointer[Int64].address_of(len))
+    )(s, Pointer[Int64].address_of(len))
     return String(ret, len.to_int())
 
 
@@ -274,18 +272,18 @@ fn tuple_new() -> TuplePtr:
     return cfunc[fn () -> TuplePtr]("MAXG_tupleNew")()
 
 
-fn tuple_size(tup: TuplePtr) -> Int:
-    return cfunc[fn (TuplePtr) -> Int]("MAXG_tupleSize")(tup)
+fn tuple_size(t: TuplePtr) -> Int:
+    return cfunc[fn (TuplePtr) -> Int]("MAXG_tupleSize")(t)
 
 
-fn tuple_append_symbol(tup: TuplePtr, symbol: SymbolPtr):
+fn tuple_append_symbol(t: TuplePtr, symbol: SymbolPtr):
     return cfunc[fn (TuplePtr, SymbolPtr) -> NoneType](
         "MAXG_tupleAppendSymbol"
-    )(tup, symbol)
+    )(t, symbol)
 
 
-fn tuple_get_symbol(tup: TuplePtr, pos: UInt32) -> SymbolPtr:
-    return cfunc[fn (TuplePtr, UInt32) -> SymbolPtr]("MAXG_getSymbol")(tup, pos)
+fn tuple_get_symbol(t: TuplePtr, pos: UInt32) -> SymbolPtr:
+    return cfunc[fn (TuplePtr, UInt32) -> SymbolPtr]("MAXG_getSymbol")(t, pos)
 
 
 # ===----------------------------------------------------------------------===#
@@ -294,9 +292,9 @@ fn tuple_get_symbol(tup: TuplePtr, pos: UInt32) -> SymbolPtr:
 
 
 fn dtype_new(m: mlir.Module, dtype: DType) -> mlir.Type:
-    return cfunc[fn (mlir._c.IR.MlirModule, UInt8) -> mlir._c.IR.MlirType](
+    return cfunc[fn (mlir.Module.c_type, UInt8) -> mlir.Type.c_type](
         "MAXG_dTypeNew"
-    )(m._c, dtype._as_i8())
+    )(m.c, dtype._as_i8())
 
 
 fn dim_type_new_dynamic() -> Int64:
@@ -308,14 +306,10 @@ fn tensor_type_new(
 ) -> mlir.Type:
     return cfunc[
         fn (
-            mlir._c.IR.MlirModule,
-            mlir._c.IR.MlirType,
-            Bool,
-            Pointer[Int64],
-            Int32,
-        ) -> mlir._c.IR.MlirType
+            mlir.Module.c_type, mlir.Type.c_type, Bool, Pointer[Int64], Int32
+        ) -> mlir.Type.c_type
     ]("MAXG_tensorTypeNew")(
-        m._c, dtype._c, ranked, Pointer[Int64](dims.data.value), len(dims)
+        m.c, dtype.c, ranked, Pointer[Int64](dims.data.value), len(dims)
     )
 
 
@@ -343,11 +337,11 @@ fn arity_new() -> ArityPtr:
     return cfunc[fn () -> ArityPtr]("MAXG_arityNew")()
 
 
-fn arity_size(tup: ArityPtr) -> Int:
-    return cfunc[fn (ArityPtr) -> Int]("MAXG_aritySize")(tup)
+fn arity_size(a: ArityPtr) -> Int:
+    return cfunc[fn (ArityPtr) -> Int]("MAXG_aritySize")(a)
 
 
-fn arity_append_type(arity: ArityPtr, t: mlir.Type):
-    return cfunc[fn (ArityPtr, mlir._c.IR.MlirType) -> NoneType](
+fn arity_append_type(a: ArityPtr, t: mlir.Type):
+    return cfunc[fn (ArityPtr, mlir.Type.c_type) -> NoneType](
         "MAXG_arityAppendType"
-    )(arity, t._c)
+    )(a, t.c)

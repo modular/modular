@@ -95,7 +95,7 @@ struct _InferenceSessionImpl(Movable):
         if user_defined_ops_path:
             config.set_replace_ops_path(user_defined_ops_path.value())
         config.set_model_source(
-            ModelSource(module.m._c.ptr, FrameworkFormat.MAXGraph)
+            ModelSource(module.m.c.ptr, FrameworkFormat.MAXGraph)
         )
 
         return self._compile_model_from_config(config, session ^)
