@@ -711,11 +711,42 @@ typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // it, because they can't be named.
   if (!arg.name.empty()) {
     MLIRContext *ctx = shared.getContext();
-    auto op = OpBuilder(ctx).create<ParamConstantOp>(UnknownLoc::get(ctx),
-                                                     UnboundAttr::get(type));
+    auto op = OpBuilder(ctx).create<ParamConstantOp>(
+        UnknownLoc::get(ctx), UnboundAttr::get(fullType));
+    // Make sure these get deallocated.
     argVals.emplace_back(op);
+
+    // TODO: dedupe logic with DeclResolver::resolveBody(LIT::FuncOp
+    DeclIRValue argIRValue;
+    switch (arg.kgenConvention) {
+    case ArgConvention::ByRef:
+    case ArgConvention::InitSelf:
+    case ArgConvention::ByRefResult:
+    case ArgConvention::OwnedInMem:
+      // OwnedInMem passes ownership of the argument into the callee so we
+      // can directly mutate it if we want to.
+      argIRValue = MLValue(op);
+      break;
+    case ArgConvention::OwnedInReg:
+      // NOTE: we're treating this as an SRValue, even though it will get
+      // wrapped and turned into an SLValue within the body.
+      argIRValue = SRValue(op);
+      break;
+    case ArgConvention::BorrowedInReg:
+      argIRValue = SBValue(op);
+      break;
+    case ArgConvention::BorrowedInMem:
+      argIRValue = MBValue(op);
+      break;
+    case ArgConvention::None:
+      llvm_unreachable("none convention not permitted in lit");
+    }
+
+    // FIXME: This is not setting the correct type for Variadics.  We shouldn't
+    // expose something like !kgen.variadic to subsequent arguments, we should
+    // expose VariadicListMem.
     typeEmitter.getDeclResolver().addFullyResolvedDecl(
-        SRValue(op.getResult()), arg.name, arg.loc, &typeEmitter.declScope);
+        argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
   }
 }
 

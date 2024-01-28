@@ -117,7 +117,7 @@ private:
   ParseResult parseFunctionType(ExprNode *&result);
   ParseResult parseLambda(ExprNode *&result);
   ParseResult parseReferenceType(ExprNode *&result);
-  ParseResult parseAddressConvert(ExprNode *&result);
+  ParseResult parseMagicFunction(ExprNode *&result);
 
   /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
   /// adhere to the Python grammar. Positional operands cannot appear after
@@ -408,6 +408,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_lvalue_as_address:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
+  case Token::kw___lifetime_of:
     return true;
   default:
     return false;
@@ -559,7 +560,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_lvalue_as_address:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
-    if (failed(parseAddressConvert(result)))
+  case Token::kw___lifetime_of:
+    if (failed(parseMagicFunction(result)))
       return failure();
     break;
 
@@ -1073,7 +1075,7 @@ ParseResult ExprParser::parseReferenceType(ExprNode *&result) {
   return success();
 }
 
-ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
+ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
   ExprNode::Kind nodeKind;
   switch (getToken().getKind()) {
   default:
@@ -1093,6 +1095,9 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
   case Token::kw___get_address_as_owned_value:
     nodeKind = ExprNode::kGetAddressAsOwned;
     break;
+  case Token::kw___lifetime_of:
+    nodeKind = ExprNode::kLifetimeOf;
+    break;
   }
   SMLoc baseLoc = consumeToken().getLoc();
 
@@ -1102,7 +1107,7 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
       parseToken(Token::r_paren, "expected ')'", &rpLoc))
     return failure();
 
-  result = alloc<AddressConvertNode>(nodeKind, baseLoc, subExpr, rpLoc);
+  result = alloc<MagicFunctionNode>(nodeKind, baseLoc, subExpr, rpLoc);
   return success();
 }
 

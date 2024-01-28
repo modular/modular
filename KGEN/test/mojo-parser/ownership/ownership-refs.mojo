@@ -226,3 +226,11 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind mutably to b
   # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<1> *"b`">(%b)
   _ = b.method()
+
+
+# CHECK-LABEL: lit.func @"testLifetimeOf
+# CHECK-SAME: (%a: !lit.ref<!SelfRefTest, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: Reference<{{.*}}, :i1 0, :lifetime<0> *"a`">
+fn testLifetimeOf(a: SelfRefTest) ->
+  Reference[SelfRefTest, __mlir_attr.`0: i1`, __lifetime_of(a)]:
+  return a
