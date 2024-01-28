@@ -2876,8 +2876,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      resultLoc, isDef, /*fnDecl=*/nullptr,
                                      fnInfo);
 
-  tcSignature.computeArgumentConventions(dummyScope);
-
   if (argList.effects.isThrows()) {
     Type errorType =
         emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);

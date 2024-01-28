@@ -203,11 +203,6 @@ public:
   /// Form a LIT signature packaging up all the stuff we need to know about this
   /// type checked function.
   LITSignatureType getLITSignatureType() const;
-
-  /// Given a fully resolved signature, compute the final types and KGEN input
-  /// conventions of the arguments. This function also ensures that self
-  /// arguments are marked as positional-only.
-  void computeArgumentConventions(ASTDecl &declScope);
 };
 
 } // namespace M::KGEN::LIT
