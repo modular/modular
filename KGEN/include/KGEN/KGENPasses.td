@@ -564,23 +564,14 @@ def LowerCallingConvention : Pass<"lower-calling-convention", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerInputConventions
+// LowerArgConventions
 //===----------------------------------------------------------------------===//
 
-def LowerInputConventions : Pass<"lower-input-conventions", "ModuleOp"> {
-  let summary = "Lower argument value input conventions after elaboration.";
+def LowerArgConventions : Pass<"lower-arg-conventions", "ModuleOp"> {
+  let summary = "Lower argument argument conventions after elaboration.";
   let description = [{
     This pass performs the lowering of argument input conventions of concrete
-    functions. This pass must run before inlining, but after elaboration. This
-    pass will:
-
-    1. Move register passable types passed as `{owned,borrowed}_in_mem` to be
-       passed in register.
-    2. TODO(#20700): Promote register passable `byref_result` and `init_self`
-       arguments to function results.
-       - TODO(#20700): This also handles functions that throw.
-    3. TODO(#20700):Sets all value input conventions to `none`, i.e. only `none`
-       conventions are legal after this in the pipeline.
+    functions. This pass must run before inlining, but after elaboration.
   }];
 
   let dependentDialects = [

@@ -143,7 +143,7 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
 LogicalResult FnMetadataAttr::verifySignature(
     function_ref<InFlightDiagnostic()> emitError,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+    FunctionType values, ArrayRef<ArgConvention> argConventions,
     FnEffects effects) const {
   if (getParamNames().size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
@@ -151,15 +151,15 @@ LogicalResult FnMetadataAttr::verifySignature(
   }
 
   // Verify input conventions.
-  size_t numInputConv = inputConventions.size();
-  if (getArgNames().size() != numInputConv) {
+  size_t numArgConv = argConventions.size();
+  if (getArgNames().size() != numArgConv) {
     return emitError() << "number of argument names does not match number of "
                           "input conventions: "
-                       << getArgNames().size() << " != " << numInputConv;
+                       << getArgNames().size() << " != " << numArgConv;
   }
 
   for (auto [i, argType, conv] :
-       llvm::enumerate(values.getInputs(), inputConventions)) {
+       llvm::enumerate(values.getInputs(), argConventions)) {
     Type type = argType;
     // Verify variadics.
     if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
@@ -186,8 +186,7 @@ LogicalResult FnMetadataAttr::verifySignature(
 
   if (failed(verifyDefaults(emitError, getDefaultPosArgs(),
                             getDefaultKwOnlyArgs(), getArgPassingKinds(),
-                            values.getInputs(), "argument",
-                            inputConventions)) ||
+                            values.getInputs(), "argument", argConventions)) ||
       failed(verifyDefaults(emitError, getDefaultPosParams(),
                             getDefaultKwOnlyParams(), getParamPassingKinds(),
                             inputParamTypes, "parameter")))

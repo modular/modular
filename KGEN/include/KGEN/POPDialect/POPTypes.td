@@ -267,7 +267,7 @@ def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
 
   let extraClassDeclaration = [{
     /// Get the result types of the coroutine.
-    ArrayRef<Type> getResultTypes() { return getSignature().getValueResults(); }
+    ArrayRef<Type> getResultTypes() { return getSignature().getResults(); }
   }];
 }
 

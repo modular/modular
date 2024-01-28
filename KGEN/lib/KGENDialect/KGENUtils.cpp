@@ -142,11 +142,11 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
   if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes)))
     return failure();
 
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the argument type and its input convention.
     if (p.parseType(argTypes.emplace_back()) ||
-        parseInputConvention(p, inputConventions.emplace_back()))
+        parseArgConvention(p, argConventions.emplace_back()))
       return failure();
     return success();
   };
@@ -158,7 +158,7 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
   if (result.has_value() && succeeded(*result)) {
     signature = SignatureType::getChecked(
         [&] { return p.emitError(loc); }, functionType, inputParamTypes,
-        resultParamTypes, inputConventions, effects, {});
+        resultParamTypes, argConventions, effects, {});
     if (!signature)
       return failure();
   }
@@ -650,7 +650,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     // Parse each operand, inferring its type from the signature type.
     IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
-    for (Type type : sig.getValueInputs())
+    for (Type type : sig.getArguments())
       if (p.parseComma() ||
           parseParamValue(p, operands.emplace_back(), adjuster.replace(type)))
         return failure();
@@ -663,12 +663,12 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                          "expected a signature type for 'apply_result_slot'");
     if (parseParamValue(p, operands.emplace_back(), sig))
       return failure();
-    if (sig.getNumInputs() < 1)
+    if (sig.getNumArguments() < 1)
       return p.emitError(
           p.getCurrentLocation(),
           "'apply_result_slot' callee must have at least one result");
     // Parse each operand besides the result slot.
-    for (Type type : llvm::drop_begin(sig.getValueInputs()))
+    for (Type type : llvm::drop_begin(sig.getArguments()))
       if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
         return failure();
     return success();
@@ -1204,16 +1204,14 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp) {
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-ParseResult KGEN::parseInputConvention(AsmParser &p,
-                                       ValueInputConvention &convention,
-                                       ValueInputConvention defaultConvention) {
+ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention,
+                                     ArgConvention defaultConvention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
   convention = defaultConvention;
   if (succeeded(p.parseOptionalKeyword(&effectStr))) {
-    if (std::optional<ValueInputConvention> conv =
-            symbolizeValueInputConvention(effectStr)) {
+    if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
     } else {
       return p.emitError(loc, "expected a valid input convention");
@@ -1222,10 +1220,10 @@ ParseResult KGEN::parseInputConvention(AsmParser &p,
   return success();
 }
 
-void KGEN::printInputConvention(AsmPrinter &p, ValueInputConvention convention,
-                                ValueInputConvention defaultConvention) {
+void KGEN::printArgConvention(AsmPrinter &p, ArgConvention convention,
+                              ArgConvention defaultConvention) {
   if (convention != defaultConvention)
-    p << ' ' << stringifyValueInputConvention(convention);
+    p << ' ' << stringifyArgConvention(convention);
 }
 
 ParseResult KGEN::parseSignatureValues(
@@ -1246,7 +1244,7 @@ void KGEN::printSignatureValues(AsmPrinter &p,
                                 bool optionalResultList) {
   p << '(';
   llvm::interleaveComma(
-      llvm::seq<unsigned>(0, signature.getInputConventions().size()), p,
+      llvm::seq<unsigned>(0, signature.getArgConventions().size()), p,
       printElt);
   p << ')';
 
@@ -1269,7 +1267,7 @@ ParseResult KGEN::parseFunctionSignature(
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return failure();
 
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the argument type and its input convention.
     OpAsmParser::Argument &arg = args.emplace_back();
@@ -1280,7 +1278,7 @@ ParseResult KGEN::parseFunctionSignature(
     if (!result.has_value() && p.parseType(arg.type))
       return failure();
 
-    if (parseInputConvention(p, inputConventions.emplace_back()))
+    if (parseArgConvention(p, argConventions.emplace_back()))
       return failure();
 
     argTypes.push_back(arg.type);
@@ -1293,7 +1291,7 @@ ParseResult KGEN::parseFunctionSignature(
     return failure();
 
   signature = SignatureType::remapToSignature(
-      inputParams, resultParams, functionType, inputConventions, effects, {},
+      inputParams, resultParams, functionType, argConventions, effects, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -1310,7 +1308,7 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
     else
       p.printRegionArgument(region->getArgument(i));
 
-    printInputConvention(p, signature.getInputConvention(i));
+    printArgConvention(p, signature.getArgConvention(i));
   };
 
   printOptionalParameterSpec(p, inputParams, resultParams);
@@ -1411,8 +1409,8 @@ void KGEN::printSignature(AsmPrinter &p, Type signatureType) {
                               signature.getResultParamTypes());
 
   auto printElt = [&](unsigned i) {
-    p << signature.getValueInputs()[i];
-    printInputConvention(p, signature.getInputConvention(i));
+    p << signature.getArguments()[i];
+    printArgConvention(p, signature.getArgConvention(i));
   };
 
   printSignatureValues(p, printElt, signature.getValues(), signature,
@@ -1430,10 +1428,10 @@ ParseResult KGEN::parseKGENSignature(AsmParser &p,
   llvm::SMLoc loc = p.getCurrentLocation();
 
   SmallVector<StringAttr> argNames;
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     if (p.parseType(argTypes.emplace_back()) ||
-        parseInputConvention(p, inputConventions.emplace_back()))
+        parseArgConvention(p, argConventions.emplace_back()))
       return failure();
     return success();
   };
@@ -1453,14 +1451,14 @@ ParseResult KGEN::parseKGENSignature(AsmParser &p,
       return p.emitError(loc, "expected a KGEN signature");
     functionType = signature.getValues();
     signature = SignatureType::remapToSignature(
-        {}, resultParamDecls, functionType, signature.getInputConventions(),
+        {}, resultParamDecls, functionType, signature.getArgConventions(),
         signature.getFnEffects(), signature.getMetadata(),
         [&] { return p.emitError(loc); });
     return success();
   }
 
   signature = SignatureType::remapToSignature(
-      {}, resultParamDecls, functionType, inputConventions, effects, {},
+      {}, resultParamDecls, functionType, argConventions, effects, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -1475,7 +1473,7 @@ void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
 
   auto printElt = [&](unsigned i) {
     p << functionType.getInput(i);
-    printInputConvention(p, signature.getInputConvention(i));
+    printArgConvention(p, signature.getArgConvention(i));
   };
 
   printSignatureValues(p, printElt, functionType, signature,
@@ -1965,9 +1963,9 @@ KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
                           lhsLoc, rhsName, rhsLoc, "argument", "type") ||
       verifyMatchingLists(lhsType.getResults(), rhsType.getResults(), lhsName,
                           lhsLoc, rhsName, rhsLoc, "result", "type") ||
-      verifyMatchingLists(lhsSig.getInputConventions(),
-                          rhsSig.getInputConventions(), lhsName, lhsLoc,
-                          rhsName, rhsLoc, "argument", "convention"))
+      verifyMatchingLists(lhsSig.getArgConventions(),
+                          rhsSig.getArgConventions(), lhsName, lhsLoc, rhsName,
+                          rhsLoc, "argument", "convention"))
     return failure();
 
   if (lhsSig.getFnEffects() != rhsSig.getFnEffects()) {

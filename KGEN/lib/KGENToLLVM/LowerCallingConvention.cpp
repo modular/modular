@@ -41,20 +41,19 @@ static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
 /// signature. This will also set the signature to non-throwing, and erase
 /// `byref_result` argument conventions.
 static SignatureType lowerResult(SignatureType signature) {
-  auto [anyNone, newResults] = removeNoneTypes(signature.getValueResults());
+  auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
   // Micro-optimization: don't hash a new type if it won't change.
   if (!anyNone)
     return signature;
-  SmallVector<ValueInputConvention> maybeNewConventions;
-  ArrayRef<ValueInputConvention> conventions = signature.getInputConventions();
-  if (!conventions.empty() &&
-      conventions[0] == ValueInputConvention::ByRefResult) {
+  SmallVector<ArgConvention> maybeNewConventions;
+  ArrayRef<ArgConvention> conventions = signature.getArgConventions();
+  if (!conventions.empty() && conventions[0] == ArgConvention::ByRefResult) {
     llvm::append_range(maybeNewConventions, conventions);
-    maybeNewConventions[0] = ValueInputConvention::None;
+    maybeNewConventions[0] = ArgConvention::None;
     conventions = maybeNewConventions;
   }
   return SignatureType::get(
-      FunctionType::get(signature.getContext(), signature.getValueInputs(),
+      FunctionType::get(signature.getContext(), signature.getArguments(),
                         newResults),
       conventions, signature.getFnEffects().setThrows(false));
 }

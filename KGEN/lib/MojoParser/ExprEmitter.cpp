@@ -1607,8 +1607,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
     // in a box and we want to treat the box as the thing that we track.
     // CheckLifetimes doesn't track register values field sensitively, so there
     // is no way to say that the full object bit is dead in a SRValue.
-    if (func.getSignature().getInputConvention(0) ==
-        ValueInputConvention::OwnedInReg) {
+    if (func.getSignature().getArgConvention(0) == ArgConvention::OwnedInReg) {
       // Find the single thing that got stored to, ignoring debug.value ops.
       Value storedMem;
       for (auto user : selfArg.getUsers()) {

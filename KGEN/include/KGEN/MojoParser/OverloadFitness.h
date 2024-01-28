@@ -110,7 +110,7 @@ private:
   /// problems with the operand type and also returns the type to be used for
   /// error propagation.
   static std::pair<ArgTypeMismatchKind, ASTType> checkOneOperand(
-      ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
+      ASTExprAnd<AnyValue> operand, ArgConvention expectedConvention,
       ASTType expectedType, size_t &numImplicitConversions,
       size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
       bool allowImplicitConversions, SMLoc loc, ASTDecl &declScope,

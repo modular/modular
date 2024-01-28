@@ -246,7 +246,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     if (!resultRewrites.empty()) {
       SignatureType sig = func.getSignature();
       // Rewrite the function type.
-      auto fnType = FunctionType::get(&getContext(), sig.getValueInputs(),
+      auto fnType = FunctionType::get(&getContext(), sig.getArguments(),
                                       returns.front()->getOperandTypes());
       func.setSignature(sig.getWithValuesReplaced(fnType));
       rewrites.try_emplace(func.getSymNameAttr(), std::move(resultRewrites));
@@ -264,7 +264,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     OpBuilder b(&getContext());
     b.setInsertionPointAfter(call);
     // Update the result types in the signature.
-    SmallVector<Type> types(call.getCallee().getType().getValueResults());
+    SmallVector<Type> types(call.getCallee().getType().getResults());
     // Wrap rewritten results and change their type.
     for (auto [idx, typeIndex] : it->second) {
       OpResult result = call->getOpResult(idx);
@@ -276,8 +276,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       result.setType(type);
       types[idx] = type;
     }
-    auto valueType = FunctionType::get(
-        callee.getContext(), callee.getType().getValueInputs(), types);
+    auto valueType = FunctionType::get(callee.getContext(),
+                                       callee.getType().getArguments(), types);
     call.setCalleeAttr(SymbolConstantAttr::get(
         callee.getSymbol(), callee.getType().getWithValuesReplaced(valueType)));
   }

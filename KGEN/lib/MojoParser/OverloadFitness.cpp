@@ -49,10 +49,10 @@ private:
   void matchTypes(Type actualType, Type expectedType);
   void matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult checkOneOperand(AnyValue value, ASTType expectedType,
-                                ValueInputConvention expectedConvention);
+                                ArgConvention expectedConvention);
   LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
-                                ValueInputConvention expectedConvention);
+                                ArgConvention expectedConvention);
 
   SharedState &shared;
   size_t parameterIndex;
@@ -217,20 +217,20 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
              llvm::errs() << parameterIndex << "\n");
 }
 
-LogicalResult ParameterInferenceState::checkOneOperand(
-    AnyValue value, ASTType expectedType,
-    ValueInputConvention expectedConvention) {
+LogicalResult
+ParameterInferenceState::checkOneOperand(AnyValue value, ASTType expectedType,
+                                         ArgConvention expectedConvention) {
   // We'll bind the next provided value.
   switch (expectedConvention) {
-  case ValueInputConvention::InitSelf:
+  case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
     // checking, just let it pass.
     if (PValue pValue = value.getIfPValue())
       if (isa<UnknownAttr>(pValue.get()))
         return success();
     [[fallthrough]];
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult: {
+  case ArgConvention::ByRef:
+  case ArgConvention::ByRefResult: {
     // The actual value must be an lvalue if callee takes things by-ref.
     LValue argVal = value.getIfLValue();
     if (!argVal)
@@ -241,14 +241,14 @@ LogicalResult ParameterInferenceState::checkOneOperand(
     return success();
   }
 
-  case ValueInputConvention::OwnedInMem:
-  case ValueInputConvention::BorrowedInMem:
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem:
     // Otherwise,we expect an r-value to match up, ignoring the reference type
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
     [[fallthrough]];
-  case ValueInputConvention::OwnedInReg:
-  case ValueInputConvention::BorrowedInReg: {
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg: {
     Type actualType;
     // TODO: Consider implicit conversions?
     if (CValue cValue = value.getIfCValue())
@@ -264,7 +264,7 @@ LogicalResult ParameterInferenceState::checkOneOperand(
     // borrowed register value, then we allow matching it to its underlying
     // element type.
     if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
-      if (expectedConvention == ValueInputConvention::BorrowedInReg &&
+      if (expectedConvention == ArgConvention::BorrowedInReg &&
           !isa<RefType>(actualType)) {
         // Infer element, addrspace, and lifetime.
         if (value.isMValue()) {
@@ -291,15 +291,16 @@ LogicalResult ParameterInferenceState::checkOneOperand(
     matchTypes(actualType, expectedType);
     return success();
   }
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
-  llvm_unreachable("invalid value input convention");
+  llvm_unreachable("invalid argument convention");
 };
 
-LogicalResult ParameterInferenceState::checkOneOperand(
-    ASTExprAnd<AnyValue> operand, ASTType expectedType,
-    ValueInputConvention expectedConvention) {
+LogicalResult
+ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                         ASTType expectedType,
+                                         ArgConvention expectedConvention) {
   return checkOneOperand(operand.ir, expectedType, expectedConvention);
 }
 
@@ -321,12 +322,11 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
   size_t posOperandIdx = 0;
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
-       llvm::enumerate(signature.getValueInputs(),
-                       signature.getInputConventions(),
+       llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames())) {
 
     // There is no provided operand for a by-ref result.
-    if (expectedConvention == ValueInputConvention::ByRefResult)
+    if (expectedConvention == ArgConvention::ByRefResult)
       continue;
 
     // Handle case when there are no more provided positional operands.
@@ -689,9 +689,9 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
   size_t minRequiredArgs = 0;
   size_t maxAllowedArgs = 0;
   for (auto [idx, convention] :
-       llvm::enumerate(signature.getInputConventions())) {
+       llvm::enumerate(signature.getArgConventions())) {
     // Ignore the return slot if present.
-    if (convention == ValueInputConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult)
       continue;
 
     // VarArgs arguments don't require a value, but allow any number of them.
@@ -724,7 +724,7 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
 
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
 OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
-                                 ValueInputConvention expectedConvention,
+                                 ArgConvention expectedConvention,
                                  ASTType expectedType,
                                  size_t &numImplicitConversions,
                                  size_t &numMismatchedConventions,
@@ -732,15 +732,15 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  bool allowImplicitConversions, SMLoc loc,
                                  ASTDecl &declScope, SharedState &shared) {
   switch (expectedConvention) {
-  case ValueInputConvention::InitSelf:
+  case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
     // checking, just let it pass.
     if (auto pValue = operand.ir.getIfPValue())
       if (isa<UnknownAttr>(pValue.get()))
         break;
     [[fallthrough]];
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult: {
+  case ArgConvention::ByRef:
+  case ArgConvention::ByRefResult: {
     // The actual value must be an lvalue if callee takes things by-ref.
     auto argVal = operand.ir.getIfLValue();
     if (!argVal)
@@ -754,8 +754,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
     break;
   }
-  case ValueInputConvention::BorrowedInMem:
-  case ValueInputConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem:
+  case ArgConvention::OwnedInMem:
     // Ignore the pointer type on memory conventions when matching types.
     // Note: Should do not support overloading on borrow/owned currently,
     // but we could add this if there is a reason to.
@@ -763,8 +763,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If a register-passable type is being passed in-memory, remember this.
     numMismatchedConventions += expectedType.isRegisterPassable(loc, shared);
     [[fallthrough]];
-  case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::OwnedInReg: {
+  case ArgConvention::BorrowedInReg:
+  case ArgConvention::OwnedInReg: {
     // If the argument is an overload set, see if it can be resolve to the
     // right type.
     CValue argVal;
@@ -836,7 +836,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Otherwise this is the wrong type for the argument.
     return {kWrongType, expectedType};
   }
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
 
@@ -1027,7 +1027,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
-  for (Type outputType : signature.getValueResults()) {
+  for (Type outputType : signature.getResults()) {
     if (!ASTType(outputType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.resultGenericMemType(outputType);
     // `!kgen.variant` is a special case.  We use it to wrap the result
@@ -1060,14 +1060,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   }
   auto isPosOnlyArg = [](auto p) {
     auto [kind, convention] = p;
-    if (convention == ValueInputConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult)
       return false;
     return kind == PassingKind::PosOnly;
   };
-  size_t numPosOnlyArgs =
-      llvm::count_if(llvm::zip(signature.getArgPassingKinds(),
-                               signature.getInputConventions()),
-                     isPosOnlyArg);
+  size_t numPosOnlyArgs = llvm::count_if(
+      llvm::zip(signature.getArgPassingKinds(), signature.getArgConventions()),
+      isPosOnlyArg);
   if (numPosOperands < numPosOnlyArgs) {
     return emitDiagFor.wrongPosOnlyCount(numPosOnlyArgs, numPosOperands,
                                          "argument");
@@ -1093,7 +1092,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   size_t numMismatchedConventions = 0;
 
   auto checkAnOperand = [&](ASTExprAnd<AnyValue> operand,
-                            ValueInputConvention expectedConvention,
+                            ArgConvention expectedConvention,
                             ASTType expectedType) {
     return checkOneOperand(operand, expectedConvention, expectedType,
                            numImplicitConversions, numMismatchedConventions,
@@ -1112,15 +1111,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
              passingKind] :
-       llvm::enumerate(signature.getValueInputs(),
-                       signature.getInputConventions(), signature.getArgNames(),
+       llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
+                       signature.getArgNames(),
                        signature.getArgPassingKinds())) {
     assert(!signature.isKWVarArg(expectedArgIdx) &&
            "`**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
     Type expectedType = evaluator.refineType(unboundExpectedType);
-    if (expectedConvention == ValueInputConvention::ByRefResult) {
+    if (expectedConvention == ArgConvention::ByRefResult) {
       numMismatchedConventions += ASTType(expectedType)
                                       .getReferenceElementType()
                                       .isRegisterPassable(loc, shared);
@@ -1175,7 +1174,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     /// index.
     auto processPositionalOperand =
         [&](ASTType expectedType,
-            ValueInputConvention conv) -> std::optional<InflightDiag> {
+            ArgConvention conv) -> std::optional<InflightDiag> {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
       auto [kind, ty] = checkAnOperand(operand, conv, expectedType);
       if (kind != kValidType)

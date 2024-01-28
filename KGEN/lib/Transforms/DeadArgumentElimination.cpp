@@ -515,7 +515,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
   SmallVector<BlockArgument> liveArguments;
   SmallVector<unsigned> liveResultIndices;
   llvm::SmallSet<Operation *, 4> opsToErase;
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
 
   SignatureType currSig = func.getSignature();
   for (BlockArgument arg : func.getArguments()) {
@@ -524,8 +524,8 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
       continue;
     }
     inputTypes.emplace_back(arg.getType());
-    inputConventions.emplace_back(
-        currSig.getInputConventions()[arg.getArgNumber()]);
+    argConventions.emplace_back(
+        currSig.getArgConventions()[arg.getArgNumber()]);
     liveArguments.emplace_back(arg);
   }
 
@@ -563,7 +563,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
 
   SignatureType newSig = SignatureType::get(
       func.getContext(), currSig.getInputParamTypes(),
-      currSig.getResultParamTypes(), newFuncType, inputConventions,
+      currSig.getResultParamTypes(), newFuncType, argConventions,
       currSig.getFnEffects(), currSig.getMetadata());
 
   auto newFunc = b.create<FuncOp>(

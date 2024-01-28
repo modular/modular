@@ -619,7 +619,7 @@ private:
     SignatureType newSig = SignatureType::remapToSignature(
         slicedShapeFunction.getInputParams(),
         slicedShapeFunction.getResultParams(), newFuncType,
-        /*inputConventions=*/{}, oldSig.getFnEffects(),
+        /*argConventions=*/{}, oldSig.getFnEffects(),
         /*metadata*/ {});
 
     // Replace the parameter refs with their actual values.
@@ -643,7 +643,7 @@ private:
 
     auto newLitSig = LIT::LITSignatureType::get(
         newLitFunctionType, oldLitSig->getParamTypes(),
-        /*inputConventions=*/{}, oldSig.getFnEffects(), metadata);
+        /*argConventions=*/{}, oldSig.getFnEffects(), metadata);
 
     slicedShapeFunction.setSignature(newSig);
     slicedShapeFunction.setFunctionType(newSig.getValues());

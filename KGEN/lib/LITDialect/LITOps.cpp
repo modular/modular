@@ -533,7 +533,7 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
 
   PassingKindParser passingKindParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
@@ -562,15 +562,15 @@ static ParseResult parseLITFunctionSignature(
     // input convention.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseInputConvention(p, inputConventions.emplace_back(),
-                             ValueInputConvention::OwnedInReg))
+        parseArgConvention(p, argConventions.emplace_back(),
+                           ArgConvention::OwnedInReg))
       return failure();
 
     // Parse an optional default value.
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, arg.type,
-            SignatureType::hasAddress(inputConventions.back()))))
+            SignatureType::hasAddress(argConventions.back()))))
       return failure();
     if (defaultVal) {
       if (passingKindParser.isCurrentKwOnly())
@@ -596,7 +596,7 @@ static ParseResult parseLITFunctionSignature(
       defaultPosArgs, defaultPosParams, defaultKwOnlyArgs, defaultKwOnlyParams,
       lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
-      params, resultParams, functionType, inputConventions, effects, metadata,
+      params, resultParams, functionType, argConventions, effects, metadata,
       [&] { return p.emitError(startLoc); });
   if (!signature)
     return failure();
@@ -661,8 +661,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     // Then we print the optional location before and input convention.
     p.printOptionalLocationSpecifier(arg.getLoc());
-    printInputConvention(p, signature.getInputConvention(i),
-                         ValueInputConvention::OwnedInReg);
+    printArgConvention(p, signature.getArgConvention(i),
+                       ArgConvention::OwnedInReg);
 
     if (auto defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
@@ -1799,8 +1799,8 @@ LogicalResult AsyncCallOp::verify() {
 
   if (auto litSig = dyn_cast<LITSignatureType>(sig)) {
     if (failed(verifyLifetimeParams(*this, litSig)) ||
-        failed(verifyCallOp(*this, litSig, getOperands(),
-                            resultSig.getValueResults())))
+        failed(
+            verifyCallOp(*this, litSig, getOperands(), resultSig.getResults())))
       return failure();
   }
   return success();

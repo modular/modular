@@ -1,4 +1,4 @@
-// RUN: kgen-opt -allow-unregistered-dialect -lower-input-conventions -verify-parameters %s | FileCheck %s
+// RUN: kgen-opt -allow-unregistered-dialect -lower-arg-conventions -verify-parameters %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32 borrow)
 kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32 borrow) -> si32 {

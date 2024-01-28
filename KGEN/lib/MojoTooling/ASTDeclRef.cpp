@@ -142,10 +142,11 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     // adjust the arg index accordingly.
     size_t index = bbArg.getArgNumber();
     auto funcOp = cast<FuncOp>(parentDecl.getIfOperation());
-    if (funcOp.getSignature().getInputConvention(0) ==
-        KGEN::ValueInputConvention::ByRefResult)
+    if (funcOp.getSignature().getArgConvention(0) ==
+        KGEN::ArgConvention::ByRefResult)
       --index;
-    return std::make_unique<ArgumentDeclView>(functionView->getArgs()[index]);
+    return std::make_unique<ArgumentDeclView>(
+        functionView->getArguments()[index]);
   }
 
   // Now we inspect the IR checking for a parameter.

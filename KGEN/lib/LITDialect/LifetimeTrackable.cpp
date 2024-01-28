@@ -169,12 +169,12 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   LITSignatureType signature = func.getSignature();
 
   unsigned argIdx = bbArg.getArgNumber();
-  switch (signature.getInputConvention(argIdx)) {
-  case ValueInputConvention::BorrowedInReg:
+  switch (signature.getArgConvention(argIdx)) {
+  case ArgConvention::BorrowedInReg:
     // This is immutable so don't need to be tracked.
     return;
 
-  case ValueInputConvention::BorrowedInMem:
+  case ArgConvention::BorrowedInMem:
     // This is actually a register value passed to VariadicListMem - it
     // doesn't need to be tracked.
     if (isa<VariadicType>(bbArg.getType()))
@@ -188,7 +188,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = false;
     break;
 
-  case ValueInputConvention::OwnedInReg:
+  case ArgConvention::OwnedInReg:
     // TODO(#21861): support variadic arguments
     assert(!isa<VariadicType>(bbArg.getType()) &&
            "variadic OwnedInMem not supported yet");
@@ -196,7 +196,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = false;
     endsUninit = true;
     break;
-  case ValueInputConvention::OwnedInMem:
+  case ArgConvention::OwnedInMem:
     // TODO(#21861): support variadic arguments
     assert(!isa<VariadicType>(bbArg.getType()) &&
            "variadic OwnedInMem not supported yet");
@@ -204,7 +204,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = false;
     endsUninit = true;
     break;
-  case ValueInputConvention::ByRefResult:
+  case ArgConvention::ByRefResult:
     // __result__ slots in raising functions do not properly model the behavior
     // when an error is thrown, so we don't track them here, they get special
     // support in CheckLifetimes.
@@ -214,7 +214,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = true;
     endsUninit = false;
     break;
-  case ValueInputConvention::InitSelf:
+  case ArgConvention::InitSelf:
     // Unlike byref-result, we allow memberwise initialization of 'self' in an
     // init method to construct a full value.
     isIndirect = true;
@@ -222,7 +222,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = false;
     isFullObjectLiveOnEntry = true;
     break;
-  case ValueInputConvention::ByRef:
+  case ArgConvention::ByRef:
     // TODO(#21861): support variadic inout arguments
     assert(!isa<VariadicType>(bbArg.getType()) &&
            "variadic inout not supported yet");
@@ -230,7 +230,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = false;
     endsUninit = false;
     break;
-  case ValueInputConvention::None:
+  case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
 
@@ -286,12 +286,12 @@ getCallOpEffects(Operation &op,
                  SmallVectorImpl<TypedAttr> &lifetimes) {
   SignatureType signature;
   OperandRange callArguments = op.getOperands();
-  ArrayRef<ValueInputConvention> conventions;
+  ArrayRef<ArgConvention> conventions;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
     signature = directCall.getCalleeType();
-    conventions = signature.getInputConventions();
+    conventions = signature.getArgConventions();
 
     // CreateClosureOp has a subset of the operands of a call.
     if (isa<CreateClosureOp>(op))
@@ -301,41 +301,40 @@ getCallOpEffects(Operation &op,
   } else {
     auto call = cast<LIT::CallSignatureOp>(op);
     signature = call.getCallee().getType();
-    conventions = signature.getInputConventions();
+    conventions = signature.getArgConventions();
 
     // We use the callee value, and process the rest as operands.
     operands.push_back({op.getOperand(0), OperandEffect::regUse});
-    assert(signature.getInputConventions().size() == op.getNumOperands() - 1);
+    assert(signature.getArgConventions().size() == op.getNumOperands() - 1);
     callArguments = callArguments.drop_front();
   }
 
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
-  auto getOperandEffectForConvention =
-      [](ValueInputConvention conv) -> OperandEffect {
+  auto getOperandEffectForConvention = [](ArgConvention conv) -> OperandEffect {
     switch (conv) {
-    case ValueInputConvention::OwnedInReg:
+    case ArgConvention::OwnedInReg:
       return OperandEffect::regConsume;
-    case ValueInputConvention::OwnedInMem:
+    case ArgConvention::OwnedInMem:
       return OperandEffect::memConsume;
-    case ValueInputConvention::BorrowedInReg:
+    case ArgConvention::BorrowedInReg:
       return OperandEffect::regUse;
-    case ValueInputConvention::BorrowedInMem:
+    case ArgConvention::BorrowedInMem:
       return OperandEffect::memLoad;
-    case ValueInputConvention::ByRef:
+    case ArgConvention::ByRef:
       return OperandEffect::memInOut;
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::InitSelf:
+    case ArgConvention::ByRefResult:
+    case ArgConvention::InitSelf:
       return OperandEffect::memStoreOwned;
-    case ValueInputConvention::None:
+    case ArgConvention::None:
       llvm_unreachable("none convention not permited in Mojo");
     }
     llvm_unreachable("invalid input convention");
   };
 
   SmallVector<Type> typesAccessibleByCallee;
-  auto addArgument = [&](Value arg, ValueInputConvention conv) {
+  auto addArgument = [&](Value arg, ArgConvention conv) {
     // Get normal argument effect.
     auto effect = getOperandEffectForConvention(conv);
     Type argType = arg.getType();
@@ -344,7 +343,7 @@ getCallOpEffects(Operation &op,
     // an explicitly declared low-level reference.
     // TODO(references): This is a hack because we can't get lifetime of self.
     bool isIndirect = SignatureType::hasAddress(conv);
-    if (conv == ValueInputConvention::BorrowedInReg)
+    if (conv == ArgConvention::BorrowedInReg)
       if (auto ref = dyn_cast<RefType>(argType)) {
         effect = ref.isMutableKnown(false) ? OperandEffect::memLoad
                                            : OperandEffect::memInOut;

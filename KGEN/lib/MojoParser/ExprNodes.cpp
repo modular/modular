@@ -746,17 +746,17 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = posOperands.size() + sigType.hasMemoryOnlyResult();
-    if (sigType.getNumInputs() <= setValueIdx) {
+    if (sigType.getNumArguments() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
       diag.attachNote(setter.fnDecls[0]->getLoc())
           << setterName << " declared here";
       return {};
     }
-    elementType = sigType.getValueInputs()[setValueIdx];
-    auto setValueConvention = sigType.getInputConvention(setValueIdx);
-    if (setValueConvention != ValueInputConvention::OwnedInReg &&
-        setValueConvention != ValueInputConvention::BorrowedInReg)
+    elementType = sigType.getArguments()[setValueIdx];
+    auto setValueConvention = sigType.getArgConvention(setValueIdx);
+    if (setValueConvention != ArgConvention::OwnedInReg &&
+        setValueConvention != ArgConvention::BorrowedInReg)
       elementType = elementType.getReferenceElementType();
   }
 
@@ -2890,7 +2890,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       args, argTypes, implicitLifetimeDecls, dummyScope);
 
   Builder b(emitter.getContext());
-  SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
+  SmallVector<ArgConvention> argConventions = llvm::map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
   SmallVector<PassingKind> argPassingKinds =
       llvm::map_to_vector(args, [](const ParsedArgument &arg) {
@@ -2916,8 +2916,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   FunctionType functionType =
       b.getFunctionType(argTypes, {resultType.mlirType});
   LITSignatureType signature = SignatureType::remapToSignature(
-      paramSignature.paramDeclAttrs, {}, functionType, inputConventions,
-      effects,
+      paramSignature.paramDeclAttrs, {}, functionType, argConventions, effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds,
                           paramSignature.names, paramSignature.passingKinds,
                           defaultPosArgs, paramSignature.defaultPosParams,

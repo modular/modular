@@ -32,7 +32,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class ParameterEvaluator;
 class ParameterExprArrayAttr;
-enum class ValueInputConvention : uint32_t;
+enum class ArgConvention : uint32_t;
 
 namespace LIT {
 class LITSignatureType;
@@ -313,7 +313,7 @@ LogicalResult verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
                              ArrayRef<TypedAttr> defaultsKwOnly,
                              ArrayRef<PassingKind> passingKinds,
                              ArrayRef<Type> types, StringRef argOrParam,
-                             ArrayRef<ValueInputConvention> convs = {});
+                             ArrayRef<ArgConvention> convs = {});
 
 } // namespace LIT
 } // namespace KGEN

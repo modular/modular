@@ -998,13 +998,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
   SmallVector<PassingKind> argPassingKinds;
-  SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<ArgConvention> argConventions;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(shared.diags.translateLocation(arg.loc));
     argPassingKinds.emplace_back(
         ParsedArgument::mapToPassingKind(arg.kwArgHandling));
     argNames.push_back(arg.name);
-    inputConventions.push_back(arg.kgenConvention);
+    argConventions.push_back(arg.kgenConvention);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1021,7 +1021,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       paramSignature.defaultPosParams, defaultKwOnlyArgs,
       paramSignature.defaultKwOnlyParams, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
-      paramsArrayAttr, {}, functionType, inputConventions, effects, metadata,
+      paramsArrayAttr, {}, functionType, argConventions, effects, metadata,
       silenceErrors(getContext()));
   if (!signature)
     return failure();
@@ -1259,9 +1259,9 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // parameters and adding them to the symbol table.
   for (auto [argName, bbArg, convention] :
        llvm::zip(funcSignature.getArgNames(), funcOp.getBody()->getArguments(),
-                 funcSignature.getInputConventions())) {
+                 funcSignature.getArgConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (convention == ValueInputConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult)
       continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.
@@ -1309,27 +1309,27 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     DeclIRValue argIRValue;
     switch (convention) {
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::InitSelf:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::OwnedInMem:
+    case ArgConvention::ByRef:
+    case ArgConvention::InitSelf:
+    case ArgConvention::ByRefResult:
+    case ArgConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
       argIRValue = MLValue(bbArg);
       break;
-    case ValueInputConvention::OwnedInReg:
+    case ArgConvention::OwnedInReg:
       argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, emitter,
                                         argDecl.getLoc());
       break;
 
-    case ValueInputConvention::BorrowedInReg:
+    case ArgConvention::BorrowedInReg:
       argIRValue = SBValue(bbArg);
       break;
 
-    case ValueInputConvention::BorrowedInMem:
+    case ArgConvention::BorrowedInMem:
       argIRValue = MBValue(bbArg);
       break;
-    case ValueInputConvention::None:
+    case ArgConvention::None:
       llvm_unreachable("none convention not permitted in lit");
     }
 
@@ -1905,10 +1905,10 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // type for register passable things, or indirect for a memory-only type.
   ASTType selfType = structDecl.getSelfType();
   // The argument is always owned.
-  ValueInputConvention convention = ValueInputConvention::OwnedInReg;
+  ArgConvention convention = ArgConvention::OwnedInReg;
   if (!selfType.isRegisterPassable(structDecl.getLoc(), resolver.shared)) {
     selfType = selfType.getRefForArgument("self", /*isMut*/ true);
-    convention = ValueInputConvention::OwnedInMem;
+    convention = ArgConvention::OwnedInMem;
   }
 
   StringAttr selfName = builder.getStringAttr("self");
@@ -1931,7 +1931,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // is what lifetime tracking expects.  It does not track the individual
   // fields of register passable values since they cannot be transfered and
   // cannot be lit.ownership.mark_destroyed.
-  if (convention == ValueInputConvention::OwnedInReg) {
+  if (convention == ArgConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);
     ExprEmitter emitter(shared, funcDecl, builder);
     (void)makeArgLValueVarSlot(SRValue(arg), selfName, emitter,
@@ -2128,17 +2128,16 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   // moves it to the return, mindful of error handling, and if it is found in
   // any arguments, it is taken out of memory as appropriate.
   SmallVector<Type> argTypes;
-  SmallVector<ValueInputConvention> conventions;
+  SmallVector<ArgConvention> conventions;
   bool replacedResult = false;
   Type resultType = traitSig.getResultType();
   FnEffects fnEffects = traitSig.getFnEffects();
   size_t numImplicitLifetimeDecls = traitSig.getNumImplicitLifetimeDecls();
 
   for (auto [type, conv] :
-       llvm::zip(traitSig.getValueInputs(), traitSig.getInputConventions())) {
+       llvm::zip(traitSig.getArguments(), traitSig.getArgConventions())) {
     // Check for a `Self`-type result.
-    if (conv == ValueInputConvention::ByRefResult ||
-        conv == ValueInputConvention::InitSelf) {
+    if (conv == ArgConvention::ByRefResult || conv == ArgConvention::InitSelf) {
       if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
@@ -2170,8 +2169,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     }
 
     // Check for a `Self`-type argument. It would always be in-memory.
-    if (conv == ValueInputConvention::OwnedInMem ||
-        conv == ValueInputConvention::BorrowedInMem) {
+    if (conv == ArgConvention::OwnedInMem ||
+        conv == ArgConvention::BorrowedInMem) {
       if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
@@ -2183,9 +2182,9 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
 
       // Unwrap the pointer type and update the convention.
       argTypes.push_back(selfType);
-      conventions.push_back(conv == ValueInputConvention::OwnedInMem
-                                ? ValueInputConvention::OwnedInReg
-                                : ValueInputConvention::BorrowedInReg);
+      conventions.push_back(conv == ArgConvention::OwnedInMem
+                                ? ArgConvention::OwnedInReg
+                                : ArgConvention::BorrowedInReg);
       continue;
     }
     argTypes.push_back(type);
@@ -2227,8 +2226,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Synthesize the method inside the struct.
   auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, paramDecls, memSig.getParamPassingKinds(), memSig.getValueInputs(),
-      memSig.getInputConventions(), memSig.getArgNames(),
+      name, paramDecls, memSig.getParamPassingKinds(), memSig.getArguments(),
+      memSig.getArgConventions(), memSig.getArgNames(),
       memSig.getArgPassingKinds(), memSig.getResultType(), structDecl,
       SpecialFunctionInfo::getKind(name), memSig.getFnEffects(), "`thunk_");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2261,23 +2260,23 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   SmallDenseMap<StringAttr, FuncOperand> kwOperands;
   for (auto [arg, kind, conv, name] : llvm::drop_begin(
            llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
-                     memSig.getInputConventions(), memSig.getArgNames()),
+                     memSig.getArgConventions(), memSig.getArgNames()),
            hasResultSlot)) {
     AnyValue value;
     switch (conv) {
-    case ValueInputConvention::ByRef:
+    case ArgConvention::ByRef:
       value = MLValue(arg);
       break;
-    case ValueInputConvention::OwnedInMem:
+    case ArgConvention::OwnedInMem:
       value = MRValue(arg);
       break;
-    case ValueInputConvention::OwnedInReg:
+    case ArgConvention::OwnedInReg:
       value = SRValue(arg);
       break;
-    case ValueInputConvention::BorrowedInReg:
+    case ArgConvention::BorrowedInReg:
       value = SBValue(arg);
       break;
-    case ValueInputConvention::BorrowedInMem:
+    case ArgConvention::BorrowedInMem:
       value = MBValue(arg);
       break;
     default:
@@ -2361,31 +2360,31 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // want check lifetimes to insert a call to the real destructor here, if it
     // has one.
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
-        "__del__", selfRefType, ValueInputConvention::OwnedInMem, empty,
+        "__del__", selfRefType, ArgConvention::OwnedInMem, empty,
         PassingKind::PosOnly, shared.getNoneType(), structDecl, kind,
         FnEffects(), "`thunk_");
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
-    ValueInputConvention existingConv;
+    ArgConvention existingConv;
     switch (kind) {
     case SpecialFunctionKind::kCopyInit:
-      existingConv = ValueInputConvention::BorrowedInMem;
+      existingConv = ArgConvention::BorrowedInMem;
       break;
     case SpecialFunctionKind::kMoveInit:
-      existingConv = ValueInputConvention::OwnedInMem;
+      existingConv = ArgConvention::OwnedInMem;
       break;
     default:
       llvm_unreachable("unexpected special function kind to synthesize");
     }
     StringRef name = SpecialFunctionInfo::get(kind).name;
     Type existingType;
-    bool isMut = existingConv == ValueInputConvention::OwnedInMem;
+    bool isMut = existingConv == ArgConvention::OwnedInMem;
     existingType =
         structDecl.getSelfType().getRefForArgument("existing", isMut);
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
-        {ValueInputConvention::InitSelf, existingConv}, {empty, empty},
+        {ArgConvention::InitSelf, existingConv}, {empty, empty},
         {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
         structDecl, kind, FnEffects(), "`thunk_");
     func = ctor;

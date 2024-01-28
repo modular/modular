@@ -71,9 +71,9 @@ static size_t getIndentationLevel(StringRef str) {
 /// Generate a user-readable representation of the given type, with an optional
 /// value convention, parent struct "Self" type. It also prepends * to variadic
 /// types.
-static std::string generateTypeString(
-    Type type, std::optional<ASTType> selfType = std::nullopt,
-    std::optional<ValueInputConvention> convention = std::nullopt) {
+static std::string
+generateTypeString(Type type, std::optional<ASTType> selfType = std::nullopt,
+                   std::optional<ArgConvention> convention = std::nullopt) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
   ASTType astType(type);
@@ -635,8 +635,8 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
   ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
-  ArrayRef<ValueInputConvention> argConventions =
-      funcOp.getSignature().getInputConventions();
+  ArrayRef<ArgConvention> argConventions =
+      funcOp.getSignature().getArgConventions();
   ASTType resultType = funcOp.getUserResultType();
   ArrayRef<PassingKind> argPassingKinds =
       funcOp.getSignature().getArgPassingKinds();
@@ -645,7 +645,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   // (as it needs to be passed through memory), and we don't want to include
   // it in the normal argument list.
   if (!argConventions.empty() &&
-      argConventions.front() == ValueInputConvention::ByRefResult) {
+      argConventions.front() == ArgConvention::ByRefResult) {
     argTypes = argTypes.drop_front();
     argNames = argNames.drop_front();
     argConventions = argConventions.drop_front();
@@ -663,10 +663,10 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
         passingKind,
-        /*inout=*/convention == ValueInputConvention::ByRef ||
-            convention == ValueInputConvention::InitSelf,
-        /*owned=*/convention == ValueInputConvention::OwnedInMem ||
-            convention == ValueInputConvention::OwnedInReg));
+        /*inout=*/convention == ArgConvention::ByRef ||
+            convention == ArgConvention::InitSelf,
+        /*owned=*/convention == ArgConvention::OwnedInMem ||
+            convention == ArgConvention::OwnedInReg));
 
   // Grab the types of the parameters to the function.
   size_t numImplicitLifetimes =

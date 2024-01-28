@@ -351,9 +351,8 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
   }
   SignatureType sig = func.getSignature();
   // TODO: what conventions should we use here?
-  SmallVector<ValueInputConvention> convs(i, ValueInputConvention::None);
-  convs.append(sig.getInputConventions().begin(),
-               sig.getInputConventions().end());
+  SmallVector<ArgConvention> convs(i, ArgConvention::None);
+  convs.append(sig.getArgConventions().begin(), sig.getArgConventions().end());
   assert(body->getNumArguments() == convs.size());
 
   // Update the function signature.

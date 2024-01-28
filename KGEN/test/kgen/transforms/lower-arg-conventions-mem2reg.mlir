@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-input-conventions -verify-parameters -mem-2-reg %s | FileCheck %s
+// RUN: kgen-opt -lower-arg-conventions -verify-parameters -mem-2-reg %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @lower_args_mem_2_reg(%arg0: index, %arg1: !kgen.struct<(index, index)>) {
 kgen.func @lower_args_mem_2_reg(

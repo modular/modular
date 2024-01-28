@@ -579,7 +579,7 @@ static void lowerAttributesAndTypes(
   replacer.addReplacement([](SignatureType sig) {
     return SignatureType::get(sig.getValues(), sig.getInputParamTypes(),
                               sig.getResultParamTypes(),
-                              sig.getInputConventions(), sig.getFnEffects());
+                              sig.getArgConventions(), sig.getFnEffects());
   });
 
   replacer.recursivelyReplaceElementsIn(

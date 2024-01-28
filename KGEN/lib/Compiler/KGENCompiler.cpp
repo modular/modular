@@ -135,7 +135,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   wrapper.setExported();
   wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
   Block *entry =
-      b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
+      b.createBlock(&wrapper.getBodyRegion(), {}, sig.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
                                         [](Value v) { return v.getLoc(); }));
 
@@ -145,7 +145,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     b.create<ParamDeclareOp>(decl, value);
 
   auto call =
-      b.create<CallOp>(sig.getValueResults(),
+      b.create<CallOp>(sig.getResults(),
                        SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
                                                symbol.getParamValues(), sig),
                        entry->getArguments());
@@ -188,7 +188,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
   auto sig = SignatureType::get(b.getFunctionType(nonePtr, noneType),
-                                ValueInputConvention::BorrowedInReg,
+                                ArgConvention::BorrowedInReg,
                                 FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
@@ -199,7 +199,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   // `always_inline`, so this is okay.
   // FIXME: This does not account for copy constructors, obviously.
   Block *body = b.createBlock(&func->getBodyRegion());
-  Value argPtrs = body->addArgument(sig.getValueInputs().front(), b.getLoc());
+  Value argPtrs = body->addArgument(sig.getArguments().front(), b.getLoc());
   for (auto [i, type, capture] : llvm::enumerate(
            sliced.getArgumentTypes().take_front(captures.size()), captures)) {
     // ```

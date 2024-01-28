@@ -264,7 +264,7 @@ static ParseResult parseParamForkOpValue(OpAsmParser &p,
       parseParamValue(p, value,
                       VariadicType::get(valTy,
                                         // FIXME: Support other element types?
-                                        ValueInputConvention::BorrowedInReg)) ||
+                                        ArgConvention::BorrowedInReg)) ||
       p.parseGreater())
     return failure();
 
@@ -303,7 +303,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
       p.getCurrentLocation(&sigLoc) || parseParamValue(p, callee, calleeType) ||
       p.parseRSquare() || p.parseLParen() ||
       failableInterleave(
-          calleeType.getValueInputs(),
+          calleeType.getArguments(),
           [&](Type type) {
             return parseParamValue(p, operandValues.emplace_back(), type);
           },
@@ -312,8 +312,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
     return failure();
   if (calleeType.getNumResults() != 1)
     return p.emitError(sigLoc, "expected callee to have 1 result");
-  paramDecl =
-      ParamDeclAttr::get(paramName, calleeType.getValueResults().front());
+  paramDecl = ParamDeclAttr::get(paramName, calleeType.getResults().front());
   operands = ParameterExprArrayAttr::get(p.getContext(), operandValues);
   return success();
 }
@@ -392,7 +391,7 @@ static ParseResult parseParamEvaluateOp(AsmParser &p, ParamDeclAttr &paramDecl,
       parseParamValue(p, candidates,
                       VariadicType::get(paramDecl.getType(),
                                         // TODO: Other conventions?
-                                        ValueInputConvention::BorrowedInReg)) ||
+                                        ArgConvention::BorrowedInReg)) ||
       p.parseKeyword("with") || p.parseLSquare() ||
       parseKGENType(p, evaluatorType) || p.parseColon() ||
       parseParamValue(p, evaluator, evaluatorType) || p.parseRSquare())
@@ -984,23 +983,22 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   }
 
   unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumInputs()) {
+  if (numCaptures > sig.getNumArguments()) {
     return mlir::emitOptionalError(loc, "provided ", numCaptures,
                                    " operands but callee only has ",
-                                   sig.getNumInputs(), " to bind");
+                                   sig.getNumArguments(), " to bind");
   }
 
-  ArrayRef<Type> newArgTypes = sig.getValueInputs().drop_front(numCaptures);
-  ArrayRef<ValueInputConvention> newInputConvs =
-      sig.getInputConventions().drop_front(numCaptures);
+  ArrayRef<Type> newArgTypes = sig.getArguments().drop_front(numCaptures);
+  ArrayRef<ArgConvention> newArgConvs =
+      sig.getArgConventions().drop_front(numCaptures);
 
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
     effects.setCapturing();
   results.push_back(SignatureType::get(
-      OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
-      sig.getInputParamTypes(), sig.getResultParamTypes(), newInputConvs,
-      effects,
+      OpBuilder(ctx).getFunctionType(newArgTypes, sig.getResults()),
+      sig.getInputParamTypes(), sig.getResultParamTypes(), newArgConvs, effects,
       sig.getMetadata() ? sig.getMetadata().getWithBoundPosArgs(numCaptures)
                         : nullptr));
   return mlir::success();
@@ -1017,13 +1015,13 @@ parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
   }
 
   unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumInputs()) {
+  if (numCaptures > sig.getNumArguments()) {
     return p.emitError(p.getCurrentLocation(), "provided ")
            << numCaptures << " operands but callee only has "
-           << sig.getNumInputs() << " to bind";
+           << sig.getNumArguments() << " to bind";
   }
 
-  ArrayRef<mlir::Type> inputs = sig.getValueInputs().take_front(numCaptures);
+  ArrayRef<mlir::Type> inputs = sig.getArguments().take_front(numCaptures);
   captureTypes.append(inputs.begin(), inputs.end());
   return success();
 }
@@ -1034,21 +1032,21 @@ static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
 
 LogicalResult CreateClosureOp::verify() {
   SignatureType sig = getCalleeType();
-  if (getNumOperands() > sig.getNumInputs()) {
+  if (getNumOperands() > sig.getNumArguments()) {
     return emitOpError("provided ")
            << getNumOperands() << " operands but callee only has "
-           << sig.getNumInputs() << " to bind";
+           << sig.getNumArguments() << " to bind";
   }
-  unsigned expectedArgs = sig.getNumInputs() - getNumOperands();
-  if (getType().getNumInputs() != expectedArgs) {
+  unsigned expectedArgs = sig.getNumArguments() - getNumOperands();
+  if (getType().getNumArguments() != expectedArgs) {
     return emitOpError("result signature has ")
-           << getType().getNumInputs() << " arguments but expected "
+           << getType().getNumArguments() << " arguments but expected "
            << expectedArgs;
   }
 
   for (auto [i, type, argType] :
        llvm::enumerate(getOperandTypes(),
-                       sig.getValueInputs().take_front(getNumOperands()))) {
+                       sig.getArguments().take_front(getNumOperands()))) {
     if (type != argType) {
       return emitOpError("operand #")
              << i << " has type " << type
@@ -1056,8 +1054,8 @@ LogicalResult CreateClosureOp::verify() {
     }
   }
   for (auto [i, type, argType] :
-       llvm::enumerate(getType().getValueInputs(),
-                       sig.getValueInputs().drop_front(getNumOperands()))) {
+       llvm::enumerate(getType().getArguments(),
+                       sig.getArguments().drop_front(getNumOperands()))) {
     if (type != argType) {
       return emitOpError("result signature argument #")
              << i << " type is " << argType << " but expected to be " << type;

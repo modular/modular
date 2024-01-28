@@ -235,43 +235,41 @@ SignatureType SignatureType::get(MLIRContext *context, TypeRange inputs,
 
 SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
   return SignatureType::get(getValues(), getInputParamTypes(),
-                            getResultParamTypes(), getInputConventions(),
-                            effects, getMetadata());
+                            getResultParamTypes(), getArgConventions(), effects,
+                            getMetadata());
 }
 
 bool SignatureType::isVarArg(size_t index) {
   if (!getFnEffects().hasVarArgs())
     return false;
-  return getFnEffects().isVarArg(getNumInputs(), index);
+  return getFnEffects().isVarArg(getNumArguments(), index);
 }
 
 bool SignatureType::isPackVarArg(size_t index) {
   if (!getFnEffects().hasPackVarArgs())
     return false;
-  return getFnEffects().isVarArg(getNumInputs(), index);
+  return getFnEffects().isVarArg(getNumArguments(), index);
 }
 
 bool SignatureType::isKWVarArg(size_t index) {
   if (!getFnEffects().hasKWVarArgs())
     return false;
-  return index + 1 == getNumInputs();
+  return index + 1 == getNumArguments();
 }
 
 bool SignatureType::hasMemoryOnlyResult() {
-  ArrayRef<ValueInputConvention> conventions = getInputConventions();
-  return !conventions.empty() &&
-         conventions[0] == ValueInputConvention::ByRefResult;
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() && conventions[0] == ArgConvention::ByRefResult;
 }
 
 bool SignatureType::hasInitSelfResult() {
-  ArrayRef<ValueInputConvention> conventions = getInputConventions();
-  return !conventions.empty() &&
-         conventions[0] == ValueInputConvention::InitSelf;
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
 }
 
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
-/// bindings affects the type signature of the value input and outputs, and
+/// bindings affects the type signature of the arguments and results, and
 /// also can remap the signature in the parameter list itself.
 ///
 /// If an error occurs making the substitution, report it with emitErrorFn
@@ -283,7 +281,7 @@ SignatureType SignatureType::getSpecializedSignature(
     return *this;
   return getSpecializedSignature(inputParamValues, emitErrorFn,
                                  getInputParamTypes(), getResultParamTypes(),
-                                 getValues(), getInputConventions(),
+                                 getValues(), getArgConventions(),
                                  getFnEffects(), getMetadata());
 }
 
@@ -299,7 +297,7 @@ SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+    FunctionType values, ArrayRef<ArgConvention> argConventions,
     FnEffects effects, FnMetadataAttrInterface metadata) {
   CompilerTimeTraceScope traceScope("SignatureType::getSpecializedSignature");
 
@@ -307,7 +305,7 @@ SignatureType SignatureType::getSpecializedSignature(
   // perform.
   if (inputParamValues.empty()) {
     return SignatureType::get(values, inputParamTypes, resultParamTypes,
-                              inputConventions, effects, metadata);
+                              argConventions, effects, metadata);
   }
 
   // We need to substitute and simplify expressions that occur in the argument
@@ -394,22 +392,21 @@ SignatureType SignatureType::getSpecializedSignature(
   }
   return SignatureType::get(
       FunctionType::get(values.getContext(), inputTypes, resultTypes),
-      unboundParamTypes, newParamResultTypes, inputConventions, effects,
+      unboundParamTypes, newParamResultTypes, argConventions, effects,
       metadata);
 }
 
-ArrayRef<Type> SignatureType::getValueInputs() const {
+ArrayRef<Type> SignatureType::getArguments() const {
   return getValues().getInputs();
 }
-ArrayRef<Type> SignatureType::getValueResults() const {
+ArrayRef<Type> SignatureType::getResults() const {
   return getValues().getResults();
 }
 
 /// Return this signature type with the value signature replaced.
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
   return SignatureType::get(fnType, getInputParamTypes(), getResultParamTypes(),
-                            getInputConventions(), getFnEffects(),
-                            getMetadata());
+                            getArgConventions(), getFnEffects(), getMetadata());
 }
 
 bool SignatureType::isConcrete() {
@@ -430,30 +427,30 @@ void SignatureType::print(AsmPrinter &printer) const {
   printer << '>';
 }
 
-bool SignatureType::hasAddress(ValueInputConvention conv) {
+bool SignatureType::hasAddress(ArgConvention conv) {
   switch (conv) {
-  case ValueInputConvention::None:
-  case ValueInputConvention::OwnedInReg:
-  case ValueInputConvention::BorrowedInReg:
+  case ArgConvention::None:
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg:
     return false;
-  case ValueInputConvention::OwnedInMem:
-  case ValueInputConvention::BorrowedInMem:
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::InitSelf:
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem:
+  case ArgConvention::ByRef:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
     return true;
   }
-  llvm_unreachable("invalid value input convention");
+  llvm_unreachable("invalid argument convention");
 }
 
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ArrayRef<Type> inputParamTypes,
                       ArrayRef<Type> resultParamTypes, FunctionType values,
-                      ArrayRef<ValueInputConvention> inputConventions,
-                      FnEffects effects, FnMetadataAttrInterface metadata) {
+                      ArrayRef<ArgConvention> argConventions, FnEffects effects,
+                      FnMetadataAttrInterface metadata) {
   // Check we have the right number of conventions.
-  if (inputConventions.size() != values.getInputs().size())
+  if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
   unsigned minNumArgs = effects.hasAnyVarArgs() + effects.hasKWVarArgs();
@@ -467,13 +464,13 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Otherwise, run the standard KGEN signature verification.
   if (metadata) {
     return metadata.verifySignature(emitError, inputParamTypes,
-                                    resultParamTypes, values, inputConventions,
+                                    resultParamTypes, values, argConventions,
                                     effects);
   }
 
   // Verify input convention and argument types.
   for (auto [i, argType, conv] :
-       llvm::enumerate(values.getInputs(), inputConventions)) {
+       llvm::enumerate(values.getInputs(), argConventions)) {
     Type type = argType;
     // Verify variadics.
     if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
@@ -511,8 +508,8 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     if (numResults != 1 || !::isa<VariantType>(values.getResult(0)))
       return emitError() << "a throwing function should have 1 variant result";
 
-  if (!inputConventions.empty() &&
-      inputConventions[0] == ValueInputConvention::ByRefResult) {
+  if (!argConventions.empty() &&
+      argConventions[0] == ArgConvention::ByRefResult) {
     if (effects.isThrows()) {
       // We already checked this above
       auto variantTy = ::cast<VariantType>(values.getResult(0));
@@ -551,7 +548,7 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
 /// signature structure to a nameless `SignatureType` representation.
 SignatureType SignatureType::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
-    FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
+    FunctionType functionType, ArrayRef<ArgConvention> argConventions,
     FnEffects effects, Attribute metadata,
     function_ref<InFlightDiagnostic()> emitError) {
   IndexRefRemapper remapper(inputParams, resultParams);
@@ -569,7 +566,7 @@ SignatureType SignatureType::remapToSignature(
 
   return SignatureType::getChecked(
       emitError, remapper.replace(functionType), inputParamTypes,
-      resultParamTypes, inputConventions, effects,
+      resultParamTypes, argConventions, effects,
       metadata ? remapper.replace(metadata) : nullptr);
 }
 
@@ -592,7 +589,7 @@ SignatureType::prependParams(SignatureType sig,
 
   return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
                             remapper.replace(sig.getResultParamTypes()),
-                            sig.getInputConventions(), sig.getFnEffects(),
+                            sig.getArgConventions(), sig.getFnEffects(),
                             metadata);
 }
 
@@ -886,17 +883,16 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
-static void printVariadicConvention(AsmPrinter &p, ValueInputConvention conv) {
+static void printVariadicConvention(AsmPrinter &p, ArgConvention conv) {
   // Default to borrowed_in_reg
-  if (conv != ValueInputConvention::BorrowedInReg)
-    p << ", " << stringifyValueInputConvention(conv);
+  if (conv != ArgConvention::BorrowedInReg)
+    p << ", " << stringifyArgConvention(conv);
 }
 
-static ParseResult parseVariadicConvention(AsmParser &p,
-                                           ValueInputConvention &conv) {
+static ParseResult parseVariadicConvention(AsmParser &p, ArgConvention &conv) {
   // Default to borrowed_in_reg
   if (!succeeded(p.parseOptionalComma())) {
-    conv = ValueInputConvention::BorrowedInReg;
+    conv = ArgConvention::BorrowedInReg;
     return success();
   }
 
@@ -904,7 +900,7 @@ static ParseResult parseVariadicConvention(AsmParser &p,
   llvm::SMLoc loc = p.getCurrentLocation();
   if (p.parseKeyword(&name))
     return failure();
-  auto convVal = symbolizeValueInputConvention(name);
+  auto convVal = symbolizeArgConvention(name);
   if (!convVal.has_value()) {
     p.emitError(loc, "expected convention");
     return failure();
@@ -1108,8 +1104,7 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
   auto anyRegTypeType = TypeType::get(p.getContext());
-  Type type =
-      VariadicType::get(anyRegTypeType, ValueInputConvention::BorrowedInReg);
+  Type type = VariadicType::get(anyRegTypeType, ArgConvention::BorrowedInReg);
   if (succeeded(p.parseOptionalColon()))
     if (parseKGENType(p, type))
       return failure();

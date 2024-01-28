@@ -60,7 +60,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     for (Type type : sig.getInputParamTypes())
       paramTypes.push_back(getSourceName(type));
     for (auto [i, t, conv] : llvm::drop_begin(
-             llvm::enumerate(sig.getValueInputs(), sig.getInputConventions()),
+             llvm::enumerate(sig.getArguments(), sig.getArgConventions()),
              sig.hasMemoryOnlyResult())) {
       Type type = t;
       // Unwrap variadics pointers if necessary.

@@ -107,8 +107,8 @@ def KGEN_ExportKind : I32EnumAttr<"ExportKind", "export kind", [
 
 /// This describes the encoding of input argument calling conventions, stored
 /// in the metadata of a SignatureType.
-def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
-    "Function value input convention", [
+def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
+    "Function argument convention", [
   /// This is used to represent conventions that should no longer be relevant,
   /// i.e. non-generic arguments before calling convention lowering.
   I32EnumAttrCase<"None", 0, "none">,

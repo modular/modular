@@ -302,7 +302,7 @@ public:
   bool isMethod() const { return isMethodFlag; }
 
   /// Return the list of arguments of this function.
-  ArrayRef<ArgumentDeclView> getArgs() const { return args; }
+  ArrayRef<ArgumentDeclView> getArguments() const { return args; }
 
   std::string getDeclarationSnippet() const override;
 
