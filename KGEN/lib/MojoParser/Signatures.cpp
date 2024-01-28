@@ -322,8 +322,6 @@ TypeCheckedParamList::TypeCheckedParamList(
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
 
-  bool seenPosInitExpr = false;
-  bool seenKwOnlyInitExpr = false;
   for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -345,26 +343,34 @@ TypeCheckedParamList::TypeCheckedParamList(
       isVarArgs = true;
     }
 
-    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
-      seenPosInitExpr = false;
-
     if (const ExprNode *initExpr = arg.initExpr) {
       Type paramType = type;
       PValue value =
           emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
-      if (!value)
-        return;
-      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly) {
-        defaultKwOnlyParams.push_back(value);
-        seenKwOnlyInitExpr = true;
-      } else {
-        defaultPosParams.push_back(value);
-        seenPosInitExpr = true;
+      if (!value) {
+        arg.isErroneous = true;
+        value = PValue(UnknownAttr::get(paramType));
       }
 
-    } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
-      emitOptionalAfterRequired(emitter, arg, "parameter")
-          << arg.typeExpr->getRange();
+      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
+        defaultKwOnlyParams.push_back(value);
+      else
+        defaultPosParams.push_back(value);
+
+    } else {
+      // Diagnose an invalid missing default argument: if we have any positional
+      // defaults, then we require all the rest to have defaults until the
+      // keyword-only section.
+      //
+      // If we've had any in the keyword-only section, we continue to require
+      // them.  FIXME: Why? There is no ambiguity with some keyword-only
+      // arguments having defaults.
+      if ((!defaultPosParams.empty() &&
+           arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
+          !defaultKwOnlyParams.empty()) {
+        emitOptionalAfterRequired(emitter, arg, "parameter")
+            << arg.typeExpr->getRange();
+      }
     }
 
     // TODO: Parameter decls should support conventions at some point.
@@ -494,6 +500,194 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   return success();
 }
 
+/// Type check each argument in turn, resolving their type and default
+/// initializer value.  Arguments in Mojo can refer to previous arguments in
+/// their type+default value expressions as PValues, so we need to ensure that
+/// they are emitted and have declarations registered in the scope so that later
+/// lookups can find them.
+static void
+typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
+                     bool isStaticMethod,
+                     SmallVectorImpl<OwningOpRef<Operation *>> &argVals,
+                     TypeCheckedFnSignature &tcSignature) {
+  auto &arg = tcSignature.argList.parsedArgs[idx];
+
+  ASTDecl &declScope = tcSignature.paramList.declScope;
+  SharedState &shared = tcSignature.paramList.shared;
+  ExprEmitter typeEmitter(shared, declScope, EC_Type);
+
+  // Start by computing the declared type of the argument.
+  ASTType type;
+  if (arg.typeExpr) {
+    // Emit the argument type. Allow argument types to be "automatically"
+    // parameterized: if the type is fully unbound, its parameters are
+    // appended to the function parameters.
+    type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+
+    // If the type couldn't be emitted, mark this argument erroneous (so uses
+    // within the body of the function don't trigger secondary errors) and
+    // mark the function erroneous so calls to it won't resolve.  Put in a
+    // placeholder type so we can continue type checking.
+    if (!type) {
+      type = shared.getTypeCheckErrorType();
+      arg.isErroneous = true;
+    }
+    type = addImplicitTypeParams(shared, declScope, type, arg,
+                                 tcSignature.paramList);
+  } else if (idx == 0 && selfType &&
+             // FIXME: This is incorrect, the @static_method decorators haven't
+             // been applied yet.
+             !isStaticMethod) {
+    // If this is the 'self' argument in a struct, default the type to Self.
+    type = selfType;
+  } else if (isDef) {
+    // In 'def', arguments with no types default to 'object'.
+    type = shared.lookupObjectType(arg.loc, declScope);
+    if (!type) {
+      type = shared.getTypeCheckErrorType();
+      arg.isErroneous = true;
+    }
+  } else {
+    // In an 'fn' we report an error.
+    shared.emitError(arg.loc, "'fn' argument type must be specified")
+        << SourceRange(arg.loc, arg.loc);
+    type = shared.getTypeCheckErrorType();
+    arg.isErroneous = true;
+  }
+  assert(type && "must have an argument type");
+  tcSignature.argTypes.push_back(type);
+
+  // Determine the required function effects from the conventions.
+  if (arg.vararg == VarArgKind::VarArg)
+    tcSignature.argList.effects.setVarArgs();
+  else if (arg.vararg == VarArgKind::PackVarArg)
+    tcSignature.argList.effects.setPackVarArgs();
+  else if (arg.vararg == VarArgKind::KWVarArg)
+    tcSignature.argList.effects.setKWVarArgs();
+
+  // If no convention was explicitly specified, provide a default.  We default
+  // to borrowed in an 'fn' or owned in a 'def'.
+  if (arg.convention == ParsedArgument::kConventionUnspec) {
+    arg.convention = isDef ? ParsedArgument::kConventionOwned
+                           : ParsedArgument::kConventionBorrowed;
+
+    // FIXME(owned varargs): we don't support owned varargs, so pass varargs
+    // as borrowed instead for def's for now to hackaround this.
+    if (isDef && arg.vararg != VarArgKind::None)
+      arg.convention = ParsedArgument::kConventionBorrowed;
+  }
+
+  // Emit default argument values if present.
+  if (const ExprNode *initExpr = arg.initExpr) {
+    PValue value =
+        typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
+    if (!value) {
+      arg.isErroneous = true;
+      value = PValue(UnknownAttr::get(type));
+    }
+    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
+      tcSignature.defaultKwOnlyArgs.push_back(value);
+    else
+      tcSignature.defaultPosArgs.push_back(value);
+  } else {
+    // Diagnose an invalid missing default argument: if we have any positional
+    // defaults, then we require all the rest to have defaults until the
+    // keyword-only section.
+    //
+    // If we've had any in the keyword-only section, we continue to require
+    // them.  FIXME: Why? There is no ambiguity with some keyword-only
+    // arguments having defaults.
+    if ((!tcSignature.defaultPosArgs.empty() &&
+         arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
+        !tcSignature.defaultKwOnlyArgs.empty()) {
+      InflightDiag diag =
+          emitOptionalAfterRequired(typeEmitter, arg, "argument");
+      if (arg.typeExpr)
+        diag << arg.typeExpr->getRange();
+    }
+  }
+
+  // Add the declaration for the argument, now that is has been resolved. Use
+  // a placeholder value to allow the value to be referenced, but in function
+  // body resolution, it will be replaced with the actual function argument
+  // SSA value.
+  //
+  // Names are always present for function bodies, but can be missing in
+  // function types.  In that case, there are obviously no dependent values on
+  // it, because they can't be named.
+  if (!arg.name.empty()) {
+    MLIRContext *ctx = shared.getContext();
+    auto op = OpBuilder(ctx).create<ParamConstantOp>(UnknownLoc::get(ctx),
+                                                     UnboundAttr::get(type));
+    argVals.emplace_back(op);
+    typeEmitter.getDeclResolver().addFullyResolvedDecl(
+        SRValue(op.getResult()), arg.name, arg.loc, &typeEmitter.declScope);
+  }
+}
+
+/// Type check the result type for the function.  `resultTypeExpr` will be
+/// non-null if explicitly specified in source code, and the `resultLoc` will
+/// always be valid point for end of the argument list.
+static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
+                            bool isDef, const SpecialFunctionInfo &fnInfo,
+                            TypeCheckedFnSignature &tcSignature) {
+  ASTDecl &declScope = tcSignature.paramList.declScope;
+  SharedState &shared = tcSignature.paramList.shared;
+
+  ASTType resultType;
+  if (!resultTypeExpr) {
+    // If the result type wasn't specified, we default to either "None" or
+    // "object" depending on whether this is a def.
+    resultType = shared.getNoneType();
+
+    // If this is a 'def', then we want to default to 'object' unless this is a
+    // known function that doesn't support that.
+    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
+      resultType = shared.lookupObjectType(resultLoc, declScope);
+      if (!resultType)
+        resultType = shared.getTypeCheckErrorType();
+    }
+  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
+    // If the result type is a `None` literal, then convert it to NoneType.
+    resultType = shared.getNoneType();
+  } else {
+    ExprEmitter typeEmitter(shared, declScope, EC_Type);
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+
+    // On error, a diagnostic will be emitted, but we don't want to kill the
+    // entire function definition.  We won't be able to correctly type check any
+    // calls to this function though.
+    if (!resultType)
+      resultType = shared.getTypeCheckErrorType();
+  }
+
+  // If it is memory-only, pass it indirectly as the first argument to the
+  // function by-reference.
+  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
+  if (rp == TypeConvention::MemoryOnly) {
+    // Synthesize a result argument for this, and use None as the actual
+    // function result.
+    ParsedArgument resultArg;
+    resultArg.loc = resultLoc;
+    resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+    resultArg.convention = ParsedArgument::kConventionInOutResult;
+    resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
+    resultArg.typeExpr = resultTypeExpr;
+    tcSignature.argList.parsedArgs.insert(
+        tcSignature.argList.parsedArgs.begin(), resultArg);
+    tcSignature.argTypes.insert(tcSignature.argTypes.begin(), resultType);
+    resultType = shared.getNoneType();
+  } else if (rp != TypeConvention::RegisterPassableTrivial) {
+    // We know the result type of the function is register passable (because
+    // otherwise it would be promoted to an argument).  If the result of the
+    // function is a non-trivial type, mark the function effect as having an
+    // owned result so ownership tracking will notice it.
+    tcSignature.argList.effects.setOwnedRegisterResult();
+  }
+
+  tcSignature.resultType = resultType;
+}
+
 /// Emit the argument types, default values, and result type and determine
 /// the argument conventions.
 ///
@@ -508,7 +702,6 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     : paramList(paramList), argList(argList) {
 
   SharedState &shared = paramList.shared;
-  ASTDecl &declScope = paramList.declScope;
   ExprEmitter typeEmitter(shared, paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
@@ -570,160 +763,22 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
 
+  // True if this is a static method.
+  // FIXME: This is completely wrong, @static_method decorator hasn't been
+  // applied yet.
+  bool isStaticMethod = selfType && cast<LIT::FuncOp>(fnDecl).getIsStatic();
+
   // HACK: Create a dummy value to assign to argument declarations during
   // argument and result type emission.
-  MLIRContext *ctx = typeEmitter.shared.getContext();
-  SmallVector<OwningOpRef<ParamConstantOp>> argVals;
-  auto makeDummy = [&](Type type) -> Value {
-    return *argVals.emplace_back(OpBuilder(ctx).create<ParamConstantOp>(
-        UnknownLoc::get(ctx), UnboundAttr::get(type)));
-  };
+  SmallVector<OwningOpRef<Operation *>> argVals;
 
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
-  bool seenPosInitExpr = false;
-  bool seenKwOnlyInitExpr = false;
-  for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
-    ASTType type;
-    if (arg.typeExpr) {
-      // Emit the argument type. Allow argument types to be "automatically"
-      // parameterized: if the type is fully unbound, its parameters are
-      // appended to the function parameters.
-      type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
-      // If the type couldn't be emitted, mark this argument erroneous (so uses
-      // within the body of the function don't trigger secondary errors) and
-      // mark the function erroneous so calls to it won't resolve.  Put in a
-      // placeholder type so we can continue type checking.
-      if (!type) {
-        type = shared.getTypeCheckErrorType();
-        arg.isErroneous = true;
-      }
-      type = addImplicitTypeParams(shared, declScope, type, arg, paramList);
-    } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
-      // If this is the 'self' argument in a struct, default the type to Self.
-      // FIXME: This is incorrect, the @static_method decorators haven't been
-      // applied yet.  How can this work?
-      type = selfType;
-    } else if (isDef) {
-      // In 'def', arguments with no types default to 'object'.
-      type = shared.lookupObjectType(arg.loc, declScope);
-      if (!type) {
-        type = shared.getTypeCheckErrorType();
-        arg.isErroneous = true;
-      }
-    } else {
-      // In an 'fn' we report an error.
-      shared.emitError(arg.loc, "'fn' argument type must be specified")
-          << SourceRange(arg.loc, arg.loc);
-      type = shared.getTypeCheckErrorType();
-      arg.isErroneous = true;
-    }
-    assert(type && "must have an argument type");
-    argTypes.push_back(type);
-
-    // Determine the required function effects from the conventions.
-    if (arg.vararg == VarArgKind::VarArg)
-      argList.effects.setVarArgs();
-    else if (arg.vararg == VarArgKind::PackVarArg)
-      argList.effects.setPackVarArgs();
-    else if (arg.vararg == VarArgKind::KWVarArg)
-      argList.effects.setKWVarArgs();
-
-    // If no convention was explicitly specified, provide a default.  We default
-    // to borrowed in an 'fn' or owned in a 'def'.
-    if (arg.convention == ParsedArgument::kConventionUnspec) {
-      arg.convention = isDef ? ParsedArgument::kConventionOwned
-                             : ParsedArgument::kConventionBorrowed;
-
-      // FIXME(owned varargs): we don't support owned varargs, so pass varargs
-      // as borrowed instead for def's for now to hackaround this.
-      if (isDef && arg.vararg != VarArgKind::None)
-        arg.convention = ParsedArgument::kConventionBorrowed;
-    }
-
-    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
-      seenPosInitExpr = false;
-
-    // Emit default argument values.
-    if (const ExprNode *initExpr = arg.initExpr) {
-      PValue value =
-          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
-      if (!value) {
-        arg.isErroneous = true;
-        value = PValue(UnknownAttr::get(type));
-      }
-      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly) {
-        defaultKwOnlyArgs.push_back(value);
-        seenKwOnlyInitExpr = true;
-      } else {
-        defaultPosArgs.push_back(value);
-        seenPosInitExpr = true;
-      }
-    } else if (seenPosInitExpr || seenKwOnlyInitExpr) {
-      InflightDiag diag =
-          emitOptionalAfterRequired(typeEmitter, arg, "argument");
-      if (arg.typeExpr)
-        diag << arg.typeExpr->getRange();
-    }
-
-    // Add the declaration for the argument, now that is has been resolved. Use
-    // a placeholder value to allow the value to be referenced, but in function
-    // body resolution, it will be replaced with the actual function argument
-    // SSA value.
-    if (!arg.name.empty()) {
-      typeEmitter.getDeclResolver().addFullyResolvedDecl(
-          SRValue(makeDummy(type)), arg.name, arg.loc, &typeEmitter.declScope);
-    }
-  }
+  for (size_t i = 0, e = argList.parsedArgs.size(); i != e; ++i)
+    typeCheckOneArgument(i, selfType, isDef, isStaticMethod, argVals, *this);
 
   // Compute the result type.
-  if (!resultTypeExpr) {
-    // If the result type wasn't specified, we default to either "None" or
-    // "object" depending on whether this is a def.
-    resultType = shared.getNoneType();
-
-    // If this is a 'def', then we want to default to 'object' unless this is a
-    // known function that doesn't support that.
-    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      resultType = shared.lookupObjectType(resultLoc, declScope);
-      if (!resultType)
-        resultType = shared.getTypeCheckErrorType();
-    }
-  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
-    // If the result type is a `None` literal, then convert it to NoneType.
-    resultType = shared.getNoneType();
-  } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
-    // On error, a diagnostic will be emitted, but we don't want to kill the
-    // entire function definition.  We won't be able to correctly type check any
-    // calls to this function though.
-    if (!resultType)
-      resultType = shared.getTypeCheckErrorType();
-  }
-
-  // If it is memory-only, pass it indirectly as the first argument to the
-  // function by-reference.
-  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
-  if (rp == TypeConvention::MemoryOnly) {
-    // Synthesize a result argument for this, and use None as the actual
-    // function result.
-    ParsedArgument resultArg;
-    resultArg.loc = resultLoc;
-    resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-    resultArg.convention = ParsedArgument::kConventionInOutResult;
-    resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
-    resultArg.typeExpr = resultTypeExpr;
-    argList.parsedArgs.insert(argList.parsedArgs.begin(), resultArg);
-    argTypes.insert(argTypes.begin(), resultType);
-    resultType = shared.getNoneType();
-  } else if (rp != TypeConvention::RegisterPassableTrivial) {
-    // We know the result type of the function is register passable (because
-    // otherwise it would be promoted to an argument).  If the result of the
-    // function is a non-trivial type, mark the function effect as having an
-    // owned result so ownership tracking will notice it.
-    argList.effects.setOwnedRegisterResult();
-  }
+  typeCheckResult(resultTypeExpr, resultLoc, isDef, fnInfo, *this);
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {

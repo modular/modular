@@ -146,7 +146,10 @@ public:
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
+
+  /// Default values for positional and positionalOrKeyword params.
   SmallVector<TypedAttr> defaultPosParams;
+  /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
 };
 
@@ -183,7 +186,9 @@ public:
 
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
+  /// Default values for positional and positionalOrKeyword args.
   SmallVector<TypedAttr> defaultPosArgs;
+  /// Default values for keyword-only arguments.
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType;
 
