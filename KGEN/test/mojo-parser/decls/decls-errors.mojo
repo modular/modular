@@ -78,7 +78,7 @@ struct MemType:
     pass
 
 # FIXME(#26008): Async functions with memory-only do not work.
-# expected-error @below {{TODO: async functions do not support memory-only results yet}}
+# expected-error @below {{async functions do not support memory-only results yet}}
 async fn async_mem_result() -> MemType:
   pass
 

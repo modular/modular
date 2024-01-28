@@ -2876,20 +2876,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      resultLoc, isDef, /*fnDecl=*/nullptr,
                                      fnInfo);
 
-  if (argList.effects.isThrows()) {
-    Type errorType =
-        emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);
-    if (!errorType)
-      return {};
-
-    tcSignature.resultType =
-        VariantType::get({errorType, tcSignature.resultType});
-
-    // The result is always owned because the function returns a variant
-    // containing an Error, which is nontrivial.
-    argList.effects.setOwnedRegisterResult();
-  }
-
   // Compute the signature of the function.
   LITSignatureType signature = tcSignature.getLITSignatureType();
   if (!signature)
