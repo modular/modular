@@ -46,6 +46,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
     for (ASTDecl *child : children)
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
+  counter = src.counter;
 }
 
 StringAttr ASTDecl::getUniqueParamNameNew(StringAttr name,
