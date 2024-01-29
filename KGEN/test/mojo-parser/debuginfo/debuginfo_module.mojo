@@ -7,7 +7,7 @@
 # This file is imported by 'import-debuginfo.mojo' and does not include any
 # tests itself.
 
-
+# Don't move things around in this file, or else location info will break.
 fn imported_fn():
     return
 
