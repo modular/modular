@@ -61,7 +61,7 @@ alias num_micro_tile = div_ceil(F, micro_kernel_f_size)
 
 
 @export(ABI="C")
-fn static_conv(
+def static_conv(
     output: NDBuffer[4, DimList(N, HO, WO, F), value_type],
     input: NDBuffer[4, DimList(N, H, W, C), value_type],
     filter: NDBuffer[
@@ -94,7 +94,7 @@ fn static_conv(
     ):
         pass
 
-    let instance = ConvDirectNHWC[
+    ConvDirectNHWC[
         4,
         5,
         4,
@@ -107,22 +107,11 @@ fn static_conv(
         True,
         conv_attr,
         False,
-    ](
-        output,
-        input,
-        filter,
-        conv_shape,
-        Index(0, 0, 0, 0),
-        Index(N, C, F, HO),
-        tile_size,
-        direct_null_elementwise_epilogue,
-    )
-
-    instance._n_loop()
+    ].run(output, input, filter, conv_shape)
 
 
 # CHECK-LABEL: test_static_conv
-fn test_static_conv():
+def test_static_conv():
     print("== test_static_conv")
 
     let output = NDBuffer[
@@ -145,5 +134,5 @@ fn test_static_conv():
     print(output[0, 0, 0, 0])
 
 
-fn main():
+def main():
     test_static_conv()
