@@ -72,6 +72,31 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
   return SymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
 }
 
+/// This processes the specified function, extracting implicit lifetimes and
+/// substituting them into the function type.  This returns the set of implicit
+/// lifetimes, the set of normal input parameters, and the modified function
+/// type.
+static std::tuple<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>,
+                  FunctionType>
+extractImplicitLifetimeParams(LIT::FuncOp func) {
+  ArrayRef<ParamDeclAttr> inputParams = func.getInputParams();
+  // Drop the implicit lifetime decls and append the rest.
+  size_t numImplicitLifetimes =
+      func.getSignature().getNumImplicitLifetimeDecls();
+  ArrayRef<ParamDeclAttr> implicitLifetimes =
+      inputParams.take_front(numImplicitLifetimes);
+  inputParams = inputParams.drop_front(implicitLifetimes.size());
+
+  // Switch the function type on the decl to the FunctionType used in the
+  // signature, which has the implicit lifetimes represented with indices.  We
+  // cannot use the FunctionType from the signature directly, because that would
+  // drop ALL named input parameters.
+  auto newFunctionType =
+      cast<FunctionType>(LITSignatureType::replaceImplicitLifetimesWithIndexes(
+          func.getFunctionType(), implicitLifetimes));
+  return {implicitLifetimes, inputParams, newFunctionType};
+}
+
 //===----------------------------------------------------------------------===//
 // Op Lowering
 //===----------------------------------------------------------------------===//
@@ -235,7 +260,35 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
-      b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
+      // The result type may be affected by implicit lifetime substitution.  If
+      // so, insert a cast of the operand.  Get the nearest enclosing function.
+      // This recursively blasts through all nested functions, so the nearest
+      // function may not be 'func'.
+      auto parentFunc = returnOp->getParentOfType<LIT::FuncOp>();
+      auto [implicitLifetimes, genParams, newFunctionType] =
+          extractImplicitLifetimeParams(parentFunc);
+      Value newOperand =
+          castValue(returnOp.getVariant(), newFunctionType.getResult(0),
+                    returnOp.getLoc(), b);
+      b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, newOperand);
+    } else if (auto returnOp = dyn_cast<KGEN::ReturnOp>(op)) {
+      // The result type may be affected by implicit lifetime substitution.  If
+      // so, insert a cast of the operand.  Get the nearest enclosing function.
+      // This recursively blasts through all nested functions, so the nearest
+      // function may not be 'func'.
+      auto parentFunc = returnOp->getParentOfType<LIT::FuncOp>();
+
+      // The result type may be affected by implicit lifetime substitution.  If
+      // so, insert a cast of the operand.
+      auto [implicitLifetimes, genParams, newFunctionType] =
+          extractImplicitLifetimeParams(parentFunc);
+
+      for (size_t i = 0, e = returnOp.getNumOperands(); i != e; ++i) {
+        Value newOperand =
+            castValue(returnOp.getOperand(i), newFunctionType.getResult(i),
+                      returnOp.getLoc(), b);
+        returnOp.setOperand(i, newOperand);
+      }
     } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
       Value newAddr = b.create<GlobalAddressOp>(
           op->getLoc(), globalRefOp.getType().getAsPointerType(),
@@ -274,31 +327,6 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
   op.setName(mangled.mangled);
   symbolTable.insert(op, symbolTableIt);
   return mangled.mangled;
-}
-
-/// This processes the specified function, extracting implicit lifetimes and
-/// substituting them into the function type.  This returns the set of implicit
-/// lifetimes, the set of normal input parameters, and the modified function
-/// type.
-static std::tuple<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>,
-                  FunctionType>
-extractImplicitLifetimeParams(LIT::FuncOp func) {
-  ArrayRef<ParamDeclAttr> inputParams = func.getInputParams();
-  // Drop the implicit lifetime decls and append the rest.
-  size_t numImplicitLifetimes =
-      func.getSignature().getNumImplicitLifetimeDecls();
-  ArrayRef<ParamDeclAttr> implicitLifetimes =
-      inputParams.take_front(numImplicitLifetimes);
-  inputParams = inputParams.drop_front(implicitLifetimes.size());
-
-  // Switch the function type on the decl to the FunctionType used in the
-  // signature, which has the implicit lifetimes represented with indices.  We
-  // cannot use the FunctionType from the signature directly, because that would
-  // drop ALL named input parameters.
-  auto newFunctionType =
-      cast<FunctionType>(LITSignatureType::replaceImplicitLifetimesWithIndexes(
-          func.getFunctionType(), implicitLifetimes));
-  return {implicitLifetimes, inputParams, newFunctionType};
 }
 
 /// When a function is rewritten, its implicit lifetimes are dropped and the
