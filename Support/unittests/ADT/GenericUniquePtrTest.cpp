@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ADT/GenericUniquePtr.h"
+#include "llvm/Support/Casting.h"
 
 #include "gtest/gtest.h"
 
@@ -56,5 +57,12 @@ TEST(GenericUniquePtr, IllTyped_ExpectDeath) {
                             "mismatch between actual and expected type ids");
 }
 #endif
+
+TEST(GenericUniquePtr, Casting) {
+  auto ptr = makeGenericUniquePtr<TypeA>(32);
+  ASSERT_TRUE(llvm::isa<TypeA>(ptr));
+  ASSERT_TRUE(llvm::isa_and_present<TypeA>(ptr));
+  ASSERT_EQ(llvm::dyn_cast<TypeA>(ptr)->i, 32);
+}
 
 } // namespace
