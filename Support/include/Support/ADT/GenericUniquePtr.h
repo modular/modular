@@ -143,4 +143,36 @@ inline GenericUniquePtr makeGenericUniquePtr(Args &&...args) {
 
 } // namespace M
 
+namespace llvm {
+template <typename T>
+struct CastInfo<T, M::GenericUniquePtr> {
+  static bool isPossible(const M::GenericUniquePtr &ptr) {
+    return ptr.getTypeID() == M::TypeID::get<T>();
+  }
+
+  static T *doCast(M::GenericUniquePtr &f) { return f.get<T>(); }
+
+  static T *castFailed() { return nullptr; }
+
+  static T *doCastIfPossible(M::GenericUniquePtr &f) {
+    if (!isPossible(f))
+      return nullptr;
+    return doCast(f);
+  }
+};
+
+// Provide casting for const pointers.
+template <typename T>
+struct CastInfo<T, const M::GenericUniquePtr>
+    : public ConstStrippingForwardingCast<T, const M::GenericUniquePtr,
+                                          CastInfo<T, M::GenericUniquePtr>> {};
+
+template <>
+struct ValueIsPresent<M::GenericUniquePtr> {
+  using UnwrappedType = M::GenericUniquePtr;
+  static inline bool isPresent(const M::GenericUniquePtr &t) { return bool(t); }
+  static inline decltype(auto) unwrapValue(M::GenericUniquePtr &t) { return t; }
+};
+} // namespace llvm
+
 #endif // SUPPORT_ADT_GENERICUNIQUEPTR_H
