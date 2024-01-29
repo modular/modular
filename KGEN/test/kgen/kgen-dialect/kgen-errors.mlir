@@ -719,9 +719,8 @@ kgen.generator @variadic_get() {
 
 // -----
 
-// expected-note @below {{see function here}}
 kgen.generator @bad_return() -> index {
-  // expected-error @below {{'kgen.return' op specifies 0 results but surrounding function expects 1}}
+  // expected-error @below {{'kgen.return' op expected 1 operands, but given 0}}
   kgen.return
 }
 

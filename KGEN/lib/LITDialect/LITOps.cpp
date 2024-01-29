@@ -1958,7 +1958,11 @@ LogicalResult ErrorReturnOp::verify() {
   if (getVariant().getType().getNumTypes() != 2)
     return emitOpError(
         "expected two types in the variant: an error type and a success type.");
-  return success();
+
+  auto func = (*this)->getParentOfType<LIT::FuncOp>();
+  if (!func)
+    return emitOpError("expected to be nested inside a `lit.func` operation");
+  return checkOperandTypes(*this, func.getResultTypes());
 }
 
 bool ErrorReturnOp::isParentNode(Operation *op) { return isa<LIT::FuncOp>(op); }

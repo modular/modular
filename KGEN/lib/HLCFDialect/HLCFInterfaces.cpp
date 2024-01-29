@@ -105,10 +105,8 @@ static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
 
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modeled differently. Handle them here.
-  if (op->hasTrait<OpTrait::ReturnLike>()) {
-    return verifyReturnTypes(op->getOperandTypes(), root.getResultTypes(), op,
-                             root);
-  }
+  if (op->hasTrait<OpTrait::ReturnLike>())
+    return success();
 
   ControlFlowNode parent = findNearestParentFor(op);
   if (!parent) {
@@ -177,14 +175,8 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   // Special case `kgen.return` and `kgen.unreachable`. These are the only
   // terminators allowed for a function-like.
   if ((op->hasTrait<OpTrait::ReturnLike>() || isa<KGEN::UnreachableOp>(op)) &&
-      isa<KGEN::FunctionLike>(parent)) {
-    if (isa<KGEN::UnreachableOp>(op))
-      return success();
-    // Verify return types.
-    return verifyReturnTypes(op->getOperandTypes(),
-                             cast<KGEN::FunctionLike>(parent).getResultTypes(),
-                             op, parent);
-  }
+      isa<KGEN::FunctionLike>(parent))
+    return success();
 
   return (op->emitOpError("expected parent operation to be a control-flow "
                           "operation but got '")
