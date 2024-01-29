@@ -22,6 +22,10 @@ from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
 
+alias a_type = DType.uint8
+alias b_type = DType.int8
+alias c_type = DType.int32
+
 
 fn gemm_naive[
     a_type: DType, b_type: DType, c_type: DType
@@ -179,18 +183,18 @@ fn test_matmul[bPacked: Bool, saturated: Bool]() -> Int:
                     errors += test_matmul[
                         False,  # transpose_b
                         bPacked,  # b_packed
-                        DType.uint8,
-                        DType.int8,
-                        DType.int32,
+                        a_type,
+                        b_type,
+                        c_type,
                         saturated=saturated,
                     ](m, n, k)
     else:
         errors += test_matmul[
             False,  # transpose_b
             bPacked,  # b_packed
-            DType.uint8,
-            DType.int8,
-            DType.int32,
+            a_type,
+            b_type,
+            c_type,
             saturated=saturated,
         ](M, N, K)
 
