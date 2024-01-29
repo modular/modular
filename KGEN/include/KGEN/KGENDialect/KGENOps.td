@@ -794,6 +794,7 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
   let builders = [
     OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
   ];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

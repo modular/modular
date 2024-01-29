@@ -1161,7 +1161,6 @@ def LIT_ReturnOp : LITOp<"return",
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
-
   let hasVerifier = 1;
 }
 

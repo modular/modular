@@ -11,20 +11,18 @@ kgen.func @loop_args() {
 
 // -----
 
-// expected-note @below {{see function here}}
 kgen.func @return_mismatch_result_count(%arg0: i32) {
   hlcf.loop {
-    // expected-error @below {{'kgen.return' op specifies 1 results but surrounding function expects 0}}
+    // expected-error @below {{'kgen.return' op expected 0 operands, but given 1}}
     kgen.return %arg0 : i32
   }
 }
 
 // -----
 
-// expected-note @below {{see function here}}
 kgen.func @return_mismatch_result_count(%arg0: i32) -> i64 {
   hlcf.loop {
-    // expected-error @below {{'kgen.return' op operand #0 type 'i32' does not match expected result type 'i64'}}
+    // expected-error @below {{'kgen.return' op operand #0 has type 'i32' but expected 'i64'}}
     kgen.return %arg0 : i32
   }
 }

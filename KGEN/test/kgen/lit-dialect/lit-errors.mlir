@@ -351,11 +351,18 @@ lit.func @declareWrongType() {
 
 // -----
 
-// expected-note @below {{see function here}}
-lit.func @wrong_error_return(%arg0: i32) -> !kgen.variant<index> {
+lit.func @wrong_error_return1(%arg0: i32) -> !kgen.variant<index> {
   %var = kgen.variant.create %arg0, 0 : <i32>
-  // expected-error @below {{'lit.error_return' op operand #0 type '!kgen.variant<i32>' does not match expected result type '!kgen.variant<index>'}}
+  // expected-error @below {{'lit.error_return' op expected two types in the variant: an error type and a success type}}
   lit.error_return %var : !kgen.variant<i32>
+}
+
+// -----
+
+lit.func @wrong_error_return2(%arg0: i32) -> !kgen.variant<index> {
+  %var = kgen.variant.create %arg0, 0 : <i32, index>
+  // expected-error @below {{'lit.error_return' op operand #0 has type '!kgen.variant<i32, index>' but expected '!kgen.variant<index>'}}
+  lit.error_return %var : !kgen.variant<i32, index>
 }
 
 // -----
