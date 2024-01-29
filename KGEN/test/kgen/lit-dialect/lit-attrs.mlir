@@ -1,6 +1,17 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
+// CHECK: "some.arg_param_list"
+// CHECK-SAME: {arg_param_list = #lit.arg_param_list<
+// CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64]>}
+"some.arg_param_list"() {arg_param_list = #lit.arg_param_list<
+  ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.2 : f32], [1: i64]
+>} : () -> ()
+
+// CHECK: "empty.arg_param_list"
+// CHECK-SAME: {arg_param_list = #lit.arg_param_list<[], [], [], []>}
+"empty.arg_param_list"() {arg_param_list = #lit.arg_param_list<[], [], [], []>} : () -> ()
+
 // CHECK: #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw], [13 : index], [3.140000e+00 : f32], [17 : i64], [], 2>
 "some.op"() {metadata = #lit.fn_metadata<
   ["someRef", "v"], [pos, kw],

@@ -84,6 +84,13 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
+def ArgParamListAttr : DialectAttribute<(attr
+  StringAttrArray:$names,
+  EnumAttrArray<"PassingKind">:$passingKinds,
+  TypedAttrArray:$defaultPos,
+  TypedAttrArray:$defaultKwOnly
+)>;
+
 def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$argNames,
   EnumAttrArray<"PassingKind">:$argPassingKinds,
@@ -174,6 +181,7 @@ def VarLetDeclKindAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
+    ArgParamListAttr,
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,

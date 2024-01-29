@@ -29,6 +29,54 @@ class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []
     : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
+// ArgParamListAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
+  let summary = "Argument or parameter list metadata.";
+  let description = [{
+    The `#lit.arg_param_list` attribute contains metadata about an argument or
+    parameter list of a function, including names, passing kinds, and default
+    values. The positional default values correspond to the trailing positional
+    (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
+    values similarly correspond to the trailing keyword-only args/params.
+
+    Example:
+
+    ```mlir
+    // Metadata specifying arg/param names "a", "b", "c", "d" in order; "a" is
+    // positional-only, "b" is positional-or-keyword, and "c" and "d" are
+    // keyword-only. The last positional arg/param ("b") has a default value of
+    // `4.2`, and the last keyword-only arg/param ("d") has a default value of 1.
+    #lit.arg_param_list<
+      ["a", "b", "c", "d"],
+      [pos, pos_or_kw, kw, kw],
+      [4.2 : f32],
+      [1: i64]
+    >
+    ```
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"StringAttr">:$names,
+    OptionalArrayRefParameter<"PassingKind">:$passingKinds,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly
+  );
+
+  let assemblyFormat = [{
+    `<` `[` (`]`) : ($names^         `]`)? `,`
+        `[` (`]`) : ($passingKinds^  `]`)? `,`
+        `[` (`]`) : ($defaultPos^    `]`)? `,`
+        `[` (`]`) : ($defaultKwOnly^ `]`)? `>`
+  }];
+
+  let builders = [
+    AttrBuilder<(ins)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
