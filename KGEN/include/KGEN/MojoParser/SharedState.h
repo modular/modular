@@ -174,6 +174,11 @@ public:
   /// declared in the same MLIR scope, then return the conflicting operation.
   Operation *setResolvedDeclSymbol(Operation *declOp);
 
+  /// Shared state maintains an MLIR Block and deallocates it when the parser is
+  /// torn down.  This can be used to allocate BlockArgument's that may or may
+  /// not get used in the future.
+  Block &getArgumentOwningBlock();
+
   //===--------------------------------------------------------------------===//
   // Name Lookup
 

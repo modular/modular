@@ -533,11 +533,9 @@ getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
 /// their type+default value expressions as PValues, so we need to ensure that
 /// they are emitted and have declarations registered in the scope so that later
 /// lookups can find them.
-static void
-typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
-                     bool isStaticMethod,
-                     SmallVectorImpl<OwningOpRef<Operation *>> &argVals,
-                     TypeCheckedFnSignature &tcSignature) {
+static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
+                                 bool isStaticMethod, ASTDecl *fnDecl,
+                                 TypeCheckedFnSignature &tcSignature) {
   auto &arg = tcSignature.argList.parsedArgs[idx];
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
@@ -709,45 +707,49 @@ typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // Names are always present for function bodies, but can be missing in
   // function types.  In that case, there are obviously no dependent values on
   // it, because they can't be named.
-  if (!arg.name.empty()) {
-    MLIRContext *ctx = shared.getContext();
-    auto op = OpBuilder(ctx).create<ParamConstantOp>(
-        UnknownLoc::get(ctx), UnboundAttr::get(fullType));
-    // Make sure these get deallocated.
-    argVals.emplace_back(op);
+  if (arg.name.empty())
+    return;
 
-    // TODO: dedupe logic with DeclResolver::resolveBody(LIT::FuncOp
-    DeclIRValue argIRValue;
-    switch (arg.kgenConvention) {
-    case ArgConvention::ByRef:
-    case ArgConvention::InitSelf:
-    case ArgConvention::ByRefResult:
-    case ArgConvention::OwnedInMem:
-      // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.
-      argIRValue = MLValue(op);
-      break;
-    case ArgConvention::OwnedInReg:
-      // NOTE: we're treating this as an SRValue, even though it will get
-      // wrapped and turned into an SLValue within the body.
-      argIRValue = SRValue(op);
-      break;
-    case ArgConvention::BorrowedInReg:
-      argIRValue = SBValue(op);
-      break;
-    case ArgConvention::BorrowedInMem:
-      argIRValue = MBValue(op);
-      break;
-    case ArgConvention::None:
-      llvm_unreachable("none convention not permitted in lit");
-    }
+  // Create the block argument that will eventually represent this function
+  // argument.  If we're generating this argument for a function, put it into
+  // its entry block. Otherwise it is a function type:We allocate the argument
+  // into a holding block owned by SharedState so it isn't leaked.
+  Block &blockOwningArg = fnDecl ? *cast<LIT::FuncOp>(fnDecl).getBody()
+                                 : shared.getArgumentOwningBlock();
+  BlockArgument blockArg =
+      blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
-    // FIXME: This is not setting the correct type for Variadics.  We shouldn't
-    // expose something like !kgen.variadic to subsequent arguments, we should
-    // expose VariadicListMem.
-    typeEmitter.getDeclResolver().addFullyResolvedDecl(
-        argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
+  DeclIRValue argIRValue;
+  switch (arg.kgenConvention) {
+  case ArgConvention::ByRef:
+  case ArgConvention::InitSelf:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::OwnedInMem:
+    // OwnedInMem passes ownership of the argument into the callee so we
+    // can directly mutate it if we want to.
+    argIRValue = MLValue(blockArg);
+    break;
+  case ArgConvention::OwnedInReg:
+    // NOTE: we're treating this as an SRValue, even though it will get
+    // wrapped and turned into an SLValue within the body.
+    argIRValue = SRValue(blockArg);
+    break;
+  case ArgConvention::BorrowedInReg:
+    argIRValue = SBValue(blockArg);
+    break;
+  case ArgConvention::BorrowedInMem:
+    argIRValue = MBValue(blockArg);
+    break;
+  case ArgConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
+
+  // FIXME: This is not setting the correct type for Variadics.  We shouldn't
+  // expose something like !kgen.variadic to subsequent arguments, we should
+  // expose VariadicListMem.  This will require moving the VariadicList
+  // formation to the caller side.
+  typeEmitter.getDeclResolver().addFullyResolvedDecl(
+      argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
 }
 
 /// Type check the result type for the function.  `resultTypeExpr` will be
@@ -755,6 +757,7 @@ typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 /// always be valid point for end of the argument list.
 static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
                             bool isDef, const SpecialFunctionInfo &fnInfo,
+                            ASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
@@ -813,6 +816,9 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     resultArg.kgenConvention = ArgConvention::ByRefResult;
     resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
     resultArg.typeExpr = resultTypeExpr;
+
+    // Insert this into the FRONT of the argument list.
+    // TODO(#30134): pass byref result at the end of the list.
     tcSignature.argList.parsedArgs.insert(
         tcSignature.argList.parsedArgs.begin(), resultArg);
     tcSignature.argTypes.insert(tcSignature.argTypes.begin(), resultType);
@@ -823,6 +829,16 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     tcSignature.implicitLifetimeDecls.insert(
         tcSignature.implicitLifetimeDecls.begin(), lifetimeDecl);
     tcSignature.fullArgTypes.insert(tcSignature.fullArgTypes.begin(), refType);
+
+    // If this is for a lit.func declaration (as opposed to a function type),
+    // add a block argument for this.  We don't register this for name lookup
+    // though, we don't want it to conflict with user identifiers, and it is
+    // never looked up directly.
+    if (fnDecl) {
+      Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
+      (void)body.insertArgument(0U, refType,
+                                shared.translateLocation(resultLoc));
+    }
 
     // We know the ABI result will be None now, which is trivial.
     fullResultType = shared.getNoneType();
@@ -924,17 +940,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // applied yet.
   bool isStaticMethod = selfType && cast<LIT::FuncOp>(fnDecl).getIsStatic();
 
-  // HACK: Create a dummy value to assign to argument declarations during
-  // argument and result type emission.
-  SmallVector<OwningOpRef<Operation *>> argVals;
-
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
   for (size_t i = 0, e = argList.parsedArgs.size(); i != e; ++i)
-    typeCheckOneArgument(i, selfType, isDef, isStaticMethod, argVals, *this);
+    typeCheckOneArgument(i, selfType, isDef, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(resultTypeExpr, resultLoc, isDef, fnInfo, *this);
+  typeCheckResult(resultTypeExpr, resultLoc, isDef, fnInfo, fnDecl, *this);
 }
 
 FunctionType TypeCheckedFnSignature::getFunctionType() const {

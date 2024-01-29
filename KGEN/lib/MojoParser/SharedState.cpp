@@ -90,6 +90,14 @@ struct SharedState::Impl {
   }
   virtual ~Impl() = default;
 
+  /// This MLIR block is owned by SharedState, and vended to clients that have a
+  /// need to build Arguments that are potentially unused.  This happens during
+  /// function signature type checking, where the arguments are needed to
+  /// satisfy lookup requests later in the signature, but where the body may not
+  /// actually be generated.  If generated, the arguments are removed from this
+  /// block and installed in the actual function.
+  Block argumentOwningBlock;
+
   SymbolTableCollection symbolTables;
 
   /// Source name collector.
@@ -267,6 +275,13 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
 
   // Top level is fully resolved now.
   topLevelDecl.resolvedness = DeclResolvedness::fully;
+}
+
+/// Shared state maintains an MLIR Block and deallocates it when the parser is
+/// torn down.  This can be used to allocate BlockArgument's that may or may
+/// not get used in the future.
+Block &SharedState::getArgumentOwningBlock() {
+  return impl->argumentOwningBlock;
 }
 
 ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }

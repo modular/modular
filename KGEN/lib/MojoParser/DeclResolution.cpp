@@ -1002,10 +1002,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   shared.setLocationDebugScope(diScopeGuard, funcOp);
 
-  SmallVector<Location> argLocs;
-  for (const ParsedArgument &arg : fnSignature.parsedArgs)
-    argLocs.push_back(shared.diags.translateLocation(arg.loc));
-  funcOp.getBody()->addArguments(tcSignature.fullArgTypes, argLocs);
+  // Change the location to be in the debug scope of the function.
+  // FIXME: Would be great to move this into the signature type checking, but
+  // doing so requires knowing the mangled name at that point.
+  for (auto [parsedArg, bbArg] :
+       llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
+    bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.
@@ -1180,21 +1182,15 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
            "Argument should be added by signature resolution");
     ASTDecl &argDecl = *argDeclList[0];
 
+    // The argDecl is already set up with a basic representation when the
+    // function signature was type checked.  We have to hack it a bit for
+    // variadics and other cases that aren't modeled right.
+    // TODO: Move variadics to be formed on the caller side not the callee side.
+
     // This function sets the argument decl to be fully resolved with the
     // specified IR representation.
     auto setDecl = [&](DeclIRValue value) {
       argDecl.setIRValue(value);
-      argDecl.resolvedness = DeclResolvedness::fully;
-      if (auto rv = argDecl.getIfRValue()) {
-        if (rv.getType().isTypeCheckErrorType())
-          argDecl.hasReferenceError = true;
-      } else if (auto lv = argDecl.getIfMLValue()) {
-        if (lv.getRValueType().isTypeCheckErrorType())
-          argDecl.hasReferenceError = true;
-      } else if (auto bv = argDecl.getIfBValue()) {
-        if (bv.getRValueType().isTypeCheckErrorType())
-          argDecl.hasReferenceError = true;
-      }
       shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
     };
 
@@ -1217,35 +1213,17 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
     }
 
-    DeclIRValue argIRValue;
-    switch (convention) {
-    case ArgConvention::ByRef:
-    case ArgConvention::InitSelf:
-    case ArgConvention::ByRefResult:
-    case ArgConvention::OwnedInMem:
-      // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.
-      argIRValue = MLValue(bbArg);
-      break;
-    case ArgConvention::OwnedInReg:
-      argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, emitter,
-                                        argDecl.getLoc());
-      break;
-
-    case ArgConvention::BorrowedInReg:
-      argIRValue = SBValue(bbArg);
-      break;
-
-    case ArgConvention::BorrowedInMem:
-      argIRValue = MBValue(bbArg);
-      break;
-    case ArgConvention::None:
-      llvm_unreachable("none convention not permitted in lit");
+    // If this is an owned argument in a register, we project it into a vardecl
+    // so that it is mutable in the callee.
+    if (convention == ArgConvention::OwnedInReg) {
+      setDecl(makeArgLValueVarSlot(SRValue(bbArg), argName, emitter,
+                                   argDecl.getLoc())
+                  .getOperation());
+      continue;
     }
 
-    // Ok, now that we've figured out the IR representation of the ASTDecl,
-    // install it.
-    setDecl(argIRValue);
+    // Otherwise, nothing fancy is needed.
+    shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
   }
 
   Block *body = funcOp.getBody();
