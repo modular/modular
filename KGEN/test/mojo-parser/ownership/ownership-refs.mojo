@@ -229,17 +229,44 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
 
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
-# CHECK-SAME: (%a: !lit.ref<!SelfRefTest, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
 # CHECK-SAME: Reference<{{.*}}, :i1 0, :lifetime<0> *"a`">
-fn testLifetimeOf1(a: SelfRefTest) ->
-  Reference[SelfRefTest, __mlir_attr.`0: i1`, __lifetime_of(a)]:
+fn testLifetimeOf1(a: MemExample) ->
+  Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a
 
 # CHECK-LABEL: lit.func @"testLifetimeOf2
-# CHECK-SAME: (%a: !lit.ref<!SelfRefTest, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: !lit.ref<!SelfRefTest, imm *"a`">
-fn testLifetimeOf2(a: SelfRefTest) -> _LITRef[
-        SelfRefTest,  __mlir_attr.`0: i1`, __lifetime_of(a)].type:
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
+fn testLifetimeOf2(a: MemExample) -> _LITRef[
+        MemExample,  __mlir_attr.`0: i1`, __lifetime_of(a)].type:
 
-  # CHECK: kgen.return {{.*}} : !lit.ref<!SelfRefTest, imm *"a`">
+  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Reference(a).value
+
+# CHECK-LABEL: lit.func @"callByRefResultLifetime
+fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
+  # CHECK: lit.varlet.decl "l1" var : !lit.ref<@"$ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
+  var l1 = returnOneArgLifetime(x)
+
+  # CHECK: lit.varlet.decl "l2" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`")>
+  var l2 = returnTwoArgLifetimes(x, y)
+  # CHECK: %l3 = lit.varlet.decl "l3" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
+  var l3 = returnTwoArgLifetimes(x, x)
+  # CHECK: %l4 = lit.varlet.decl "l4" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`", :lifetime<0> *"z`">
+  var l4 = returnTwoArgLifetimes(z, z)
+
+fn returnOneArgLifetime(a: MemExample)
+  -> OneLifetime[__lifetime_of(a)]:
+  return OneLifetime[__lifetime_of(a)]()
+
+fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
+  -> TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]:
+  return TwoLifetimes[__lifetime_of(a), __lifetime_of(b)]()
+
+struct OneLifetime[a_lifetime: ImmLifetime]:
+  fn __init__(inout self): pass
+
+struct TwoLifetimes[a_lifetime: ImmLifetime,
+                    b_lifetime: ImmLifetime]:
+  fn __init__(inout self): pass

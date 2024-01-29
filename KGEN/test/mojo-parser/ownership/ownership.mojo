@@ -349,8 +349,8 @@ fn test_result_optimization():
 
   # Direct reuse of the result slot forces a temporary.
 
-  # CHECK: %__call_result_tmp__ = lit.varlet.decl
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl
   # CHECK-NEXT: lit.call @"$ownership{{.*}}(%__call_result_tmp__, [[IMMREF]])
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
@@ -360,9 +360,9 @@ fn test_result_optimization():
 
   # Aliased reuse of part of the result slot forces a temporary.
 
-  # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
-  # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
+  # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
   # CHECK-NEXT: lit.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, [[IMMREF]])
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger [[IMMREF]][f1]
