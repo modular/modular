@@ -7,6 +7,7 @@
 #include "mojo-doc.h"
 #include "../Common/Telemetry.h"
 
+#include "Config/Version.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
@@ -126,7 +127,16 @@ static int doc(const State &state) {
     return state.reportError("could not generate documentation");
 
   llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
-  jsonOS.value(declView->toJSON(parserContext));
+
+  ModularVersion version = getModularVersion();
+  jsonOS.value(llvm::json::Object({
+      {"decl", declView->toJSON(parserContext)},
+      {"version",
+       llvm::formatv("{0}.{1}.{2}{3} ({4})", version.major, version.minor,
+                     version.patch, version.label, version.revision)
+           .str()},
+  }));
+
   out->keep();
   return EXIT_SUCCESS;
 }
