@@ -291,10 +291,6 @@ void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
 
 ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
   ErrorTree err(gen.getLoc(), "no viable expansions found");
-  if (constraintError) {
-    err.addCause(constraintError->copy());
-    return std::move(err);
-  }
   for (ImplNode &impl : llvm::make_pointee_range(impls)) {
     if (!impl.error)
       return success();
@@ -731,8 +727,7 @@ private:
   /// complete, then the function returns `advance` and the concrete functions
   /// can be retrieved from the node. Otherwise, the function returns
   /// `skipNode`, indicating that elaboration of the current function should be
-  /// suspended. It returns `error` if the generator constraints were not
-  /// satisfied.
+  /// suspended.
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
                                        ParamNode *from, bool addWaiter);
 
@@ -918,8 +913,6 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
-  if (result.isError())
-    return node->constraintError->copy();
   if (result.shouldSkipNode())
     return std::nullopt;
   return node->getFirstConcreteFunc();
@@ -943,8 +936,6 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
       /*depth=*/0);
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
-  if (result.isError())
-    return node->constraintError->copy();
   if (result.shouldSkipNode())
     return std::nullopt;
   node->getAllConcreteFuncs(funcs);
@@ -1191,11 +1182,6 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
       g.getOrCreate(runtime, inputParamKey, gen, parent->parent->depth + 1);
   ElaborationState result = specializeGenerator(
       parent, calleeNode, parent->parent, shouldWait(calleeNode));
-  if (result.isError()) {
-    assert(calleeNode->constraintError && "expected a constraint failure");
-    parent->setToError(calleeNode->constraintError->copy());
-    return ElaborationState::error();
-  }
   if (result.shouldSkipNode())
     return ElaborationState::skipNode();
 
@@ -1294,10 +1280,7 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
         return wasSkipped = !genNode->gen.getResultParams().empty() ||
                             isa<ParamApplyOp>(user);
       });
-  if (result.isError() ||
-      (result.shouldSkipNode() &&
-       // Don't skip when a constraint suspended.
-       (wasSkipped || calleeNode->state.getValue() == ParamNodeState::FRESH)))
+  if (result.isError() || (result.shouldSkipNode() && wasSkipped))
     return result;
 
   for (auto [i, resultType] : llvm::enumerate(user->getResultTypes())) {
@@ -1924,18 +1907,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                                                      ParamNode *genNode,
                                                      ParamNode *from,
                                                      bool addWaiter) {
-  // The status of the node is updated after constraint evaluation suspends,
-  // meaning this can potentially result in a race.
-  SpinWaiter<> waiter;
-  while (genNode->inConstraint)
-    waiter.wait();
-
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
-    // If this generator instantiation is already known to always be invalid,
-    // indicate an error.
-    if (genNode->constraintError)
-      return ElaborationState::error();
     return ElaborationState::advance();
   case ParamNodeState::IN_PROGRESS:
     // If the worker hit a parameter node that is already in progress, this
@@ -2002,25 +1975,6 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   IREvaluator evaluator(*this);
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setOrOverwriteParameterValue(decl, val);
-
-  // If the gen's constraints don't satisfy, set an error and move on.
-  genNode->inConstraint = true;
-  std::optional<ErrorTreeOrSuccess> constraintResult =
-      KGEN::evaluateConstraints(inode, gen.getConstraints(), evaluator);
-  if (!constraintResult) {
-    genNode->state.refresh();
-    genNode->inConstraint = false;
-    return ElaborationState::skipNode();
-  }
-  genNode->inConstraint = false;
-  if (constraintResult->isError()) {
-    // This node is complete. It can never be valid. Mark the node as `DONE` and
-    // add its waiter count before emplacing its completion chain.
-    genNode->constraintError = constraintResult->takeError();
-    g.numWorkItems.fetch_add(genNode->state.markDone());
-    genNode->emplace();
-    return ElaborationState::error();
-  }
 
   CompilerTimeTraceScope traceScope(
       "specializeGenerator:" + tryGettingShortName(gen.getName()).str(),

@@ -21,8 +21,8 @@ kgen.generator @genItf2<x>() {
 // CHECK-NEXT:   "impl.0"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
-kgen.generator @genItf2_impl0<x>()
-  constraints <[eq(x, 0), "x must be zero"]> {
+kgen.generator @genItf2_impl0<x>() {
+  kgen.param.assert <eq(x, 0)>, "x must be zero"
   "impl.0"() : () -> ()
   kgen.return
 }
@@ -32,8 +32,8 @@ kgen.generator @genItf2_impl0<x>()
 // CHECK-NEXT:   "impl.1"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
-kgen.generator @genItf2_impl1<x>()
-  constraints <[eq(x, 1), "x must be 1"]> {
+kgen.generator @genItf2_impl1<x>() {
+  kgen.param.assert <eq(x, 1)>, "x must be 1"
   "impl.1"() : () -> ()
   kgen.return
 }
@@ -57,14 +57,14 @@ kgen.generator @use_Itf2one() {
 
 // -----
 
-// COM: First instantiation of `@fwd` is inside a constraint.
+// COM: First instantiation of `@fwd` is inside an assert.
 
 kgen.generator @fwd(%a: i1) -> i1 {
   kgen.return %a : i1
 }
 
-kgen.generator @f()
-    constraints <[apply(:(i1) -> i1 @fwd, 1), "true"]> {
+kgen.generator @f() {
+  kgen.param.assert <apply(:(i1) -> i1 @fwd, 1)>, "true"
   kgen.return
 }
 

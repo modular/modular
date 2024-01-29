@@ -61,7 +61,6 @@ def LIT_FuncOp : LITOp<"func", [
     TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
-    ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
@@ -378,18 +377,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
       lit.struct.field size : index
       lit.struct.field ptr : !kgen.pointer<scalar<dtype>>
       lit.struct.field dtype : !kgen.dtype
-    }
-    ```
-
-    The parameters of the declaration can be constraints with optional
-    constraints.
-
-    Example:
-
-    ```mlir
-    lit.struct.decl @SmallString<size>
-        constraints <[le(size, 8), "string must be small"]> {
-      lit.struct.field data : !pop.array<size, scalar<si8>>
     }
     ```
 

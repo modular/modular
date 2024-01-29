@@ -103,17 +103,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// evaluateConstraints implementation.
-//===----------------------------------------------------------------------===//
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues. If the constraints are met, return
-/// success, otherwise return why they aren't.
-std::optional<ErrorTreeOrSuccess>
-evaluateConstraints(ImplNode *parent, ArrayRef<ConstraintAttr> constraints,
-                    IREvaluator &evaluator);
-
-//===----------------------------------------------------------------------===//
 // ImplNode
 //===----------------------------------------------------------------------===//
 
@@ -327,11 +316,6 @@ struct ParamNode {
   /// order of the callgraph.
   size_t depth;
 
-  /// Generators fail immediately if their constrants are not satisfied.
-  /// Constraints are only functions of the input parameters. Save the error
-  /// here if that happens.
-  std::optional<ErrorTree> constraintError;
-
   /// The children of a node are specializations. They may not be fully concrete
   /// in the case of e.g. an interface - where the children are generators that
   /// themselves have children.
@@ -344,12 +328,6 @@ struct ParamNode {
 
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
-
-  /// This flag is needed to prevent a rare race condition that occurs when
-  /// evaluating a constraint results in a suspension.
-  /// FIXME: Spinning is bad. Constraint handling should be refactored to avoid
-  /// this.
-  std::atomic<bool> inConstraint = false;
 
   /// This flag is used by cycle detection, which runs DFS and checks for
   /// already-visited nodes. In order to know when to invalidate the visited

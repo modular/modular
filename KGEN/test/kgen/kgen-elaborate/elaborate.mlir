@@ -195,8 +195,8 @@ kgen.generator @track_expansions(%arg0: si32) {
 // CHECK:    %[[V2:.*]] = pop.cast_from_builtin %[[V1]] : f32 to !pop.scalar<f32>
 // CHECK:    kgen.return %[[V2]] : !pop.scalar<f32>
 
-kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !pop.scalar<DT>
-  constraints <[eq(:dtype DT, f32), "float please"]>  {
+kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !pop.scalar<DT> {
+  kgen.param.assert <eq(:dtype DT, f32)>, "float please"
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = pop.cast_from_builtin %1: f32 to !pop.scalar<DT>
@@ -430,8 +430,8 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 // -----
 
 // CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=\22foo\22"
-kgen.generator @takeStringParameter<SomeString: string>()
-    constraints <[eq(:string SomeString, "foo"), "I want foo"]> {
+kgen.generator @takeStringParameter<SomeString: string>() {
+  kgen.param.assert <eq(:string SomeString, "foo")>, "I want foo"
   kgen.return
 }
 

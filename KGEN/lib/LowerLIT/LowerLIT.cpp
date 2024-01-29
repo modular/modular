@@ -416,10 +416,9 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
         newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
-        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getConstraintsAttr(),
-        gen.getDecoratorsAttr(), gen.getInlineLevelAttr(),
-        gen.getExportKindAttr(), gen.getLLVMMetadata(),
-        PreservedAttr::get(TypeAttr::get(signature)));
+        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getDecoratorsAttr(),
+        gen.getInlineLevelAttr(), gen.getExportKindAttr(),
+        gen.getLLVMMetadata(), PreservedAttr::get(TypeAttr::get(signature)));
     result = newGen;
 
     // Move over the body.
@@ -454,10 +453,8 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
 
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), newFunctionType, inputParams,
-      func.getResultParams(), ArrayRef<ConstraintAttr>(),
-      /*isolated=*/false, func.getInlineLevel());
+      func.getResultParams(), /*isolated=*/false, func.getInlineLevel());
   region.getBodyRegion().takeBody(func.getBodyRegion());
-
   // Revise the inputs for implicit lifetimes.
   rewriteImplicitLifetimeDeclsAndArgs(region.getBody(), implicitLifetimes,
                                       newFunctionType, func.getLoc());

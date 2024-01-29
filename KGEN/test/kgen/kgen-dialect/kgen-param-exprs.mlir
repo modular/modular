@@ -462,10 +462,9 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
-kgen.generator @type_params<dt: dtype, typeParam: type>()
-// CHECK: constraints <[eq(:type typeParam, scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
-   constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
- {
+kgen.generator @type_params<dt: dtype, typeParam: type>() {
+  // CHECK: assert <eq(:type typeParam, scalar<f32>)>, "f32 scalarzzz"
+  kgen.param.assert <eq(:type typeParam, !pop.scalar<f32>)>, "f32 scalarzzz"
   // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
   kgen.param.declare ty1: type = <scalar<f32>>
 
@@ -485,13 +484,13 @@ kgen.generator @type_params<dt: dtype, typeParam: type>()
 
 // STRING TYPES
 // CHECK-LABEL: kgen.generator @string_params<a: string, b: string>()
-kgen.generator @string_params<a: string, b: string>()
-// CHECK: constraints <
-// CHECK-NEXT: [eq(:string a, b), "samesies only", #loc{{.*}}],
-// CHECK-NEXT: [in(:string a, [b, "foo"]), "samesies or foo", #loc{{.*}}]> {
-   constraints <[eq(:string a, b), "samesies only"],
-                 [in(:string a, [b, "foo"]), "samesies or foo"]>
- {
+kgen.generator @string_params<a: string, b: string>() {
+  // CHECK: kgen.param.assert <eq(:string a, b)>, "samesies only"
+  kgen.param.assert <eq(:string a, b)>, "samesies only"
+
+  // CHECK: kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
+  kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
+
   // CHECK: kgen.param.declare s1: string = <"exciting">
   kgen.param.declare s1: string = <"exciting">
 
@@ -503,34 +502,33 @@ kgen.generator @string_params<a: string, b: string>()
 // COM: TARGET TYPES
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
-kgen.generator @target_params2<t0: target>()
-  // CHECK: constraints <[eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>),
-  constraints <[eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>), "must support target!!"]> {
+kgen.generator @target_params2<t0: target>() {
+  // CHECK: assert <eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>)>
+  kgen.param.assert <eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>)>, "must support target!!"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_has_feature<t0: target>()
-kgen.generator @target_has_feature<t0: target>()
-  constraints <[target_has_feature(t0, "avx"), "must support avx!"]> {
+kgen.generator @target_has_feature<t0: target>() {
+  kgen.param.assert <target_has_feature(t0, "avx")>, "must support avx!"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_cuda_triple<t0: target>()
-kgen.generator @target_is_cuda_triple<t0: target>()
-  constraints <[eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda"),
-     "triple must be nvptx64-nvidia-cuda"]> {
+kgen.generator @target_is_cuda_triple<t0: target>() {
+  kgen.param.assert <eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda")>, "triple must be nvptx64-nvidia-cuda"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
-kgen.generator @target_is_os<t0: target>()
-  constraints <[eq(:string target_get_field(t0, "os"), "darwin"), "os must be darwin"]> {
+kgen.generator @target_is_os<t0: target>() {
+  kgen.param.assert <eq(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_little_endian<t0: target>()
-kgen.generator @target_is_little_endian<t0: target>()
-  constraints <[eq(:string target_get_field(t0, "endianness"), "little"), "target must be little endian"]> {
+kgen.generator @target_is_little_endian<t0: target>() {
+  kgen.param.assert <eq(:string target_get_field(t0, "endianness"), "little")>, "target must be little endian"
   kgen.return
 }
 

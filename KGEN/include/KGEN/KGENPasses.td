@@ -458,19 +458,6 @@ def InlineParametric : Pass<"inline-param", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ConstraintReduction
-//===----------------------------------------------------------------------===//
-
-def ConstraintReduction : Pass<"constraint-reduction", "KGEN::GeneratorOp"> {
-  let summary = "Use a constraint set to reduce generator constraints.";
-  let description = [{
-    This pass analyses equivalence and equality constraints on a generator to
-    determine whether there are redundant constraints that can be removed or
-    whether the generator has a contradiction in its constraint set.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // ForceInline
 //===----------------------------------------------------------------------===//
 

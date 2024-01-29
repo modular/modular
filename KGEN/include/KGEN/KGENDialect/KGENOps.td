@@ -196,7 +196,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_ParamDeclArrayAttr:$resultParams,
-    ConstraintArrayAttr:$constraints,
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
@@ -216,8 +215,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
-            resultParams, /*constraints=*/{}, /*decorators=*/{},
-            InlineLevel::Automatic, ExportKind::NotExported,
+            resultParams, /*decorators=*/{}, InlineLevel::Automatic,
+            ExportKind::NotExported,
             DictionaryAttr::get(name.getContext()), {});
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
@@ -548,18 +547,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     }
     ```
 
-    The declared region can also define constraints and result parameters.
-
-    Example:
-
-    ```mlir
-    kgen.param.declare.region LessThan2 = <N -> index>()
-        constraints <[lt(N, 2), "must be less than 2"]> {
-      kgem.param.result_bind<add(N, 2)>
-      kgen.return
-    }
-    ```
-
     The operation carries an extra bit `isolated` to indicate that they are
     parametrically isolated from above.
   }];
@@ -570,7 +557,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_ParamDeclArrayAttr:$resultParams,
-    ConstraintArrayAttr:$constraints,
     UnitAttr:$isolated,
     KGEN_InlineLevelAttr:$inlineLevel
   );
@@ -578,8 +564,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let assemblyFormat = [{
     custom<RegionDeclaration>($paramDecl, $inputParams, $resultParams,
-                              $functionType, $signature, $constraints,
-                              $inlineLevel, $bodyRegion)
+                              $functionType, $signature, $inlineLevel,
+                              $bodyRegion)
     attr-dict
   }];
 

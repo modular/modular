@@ -264,22 +264,6 @@ kgen.generator @region_cycle() {
 
 // -----
 
-// expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
-kgen.generator @constrained<width, height>()
-  constraints <[eq(width, 42), "thing"], [eq(he1ght, 42), "other"]> {
-  kgen.return
-}
-
-// -----
-
-// expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
-kgen.generator @constrained<width, height>()
-  constraints <[eq(width, 42), "width"], [eq(he1ght, 42), "height"]> {
-  kgen.return
-}
-
-// -----
-
 // expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "ty2"}}
 kgen.generator @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>) {
   kgen.return
@@ -513,9 +497,9 @@ kgen.generator @caller(%arg: !kgen.pointer<i32> owned) {
 
 // -----
 
-kgen.generator @target_params2<t0: target>()
+kgen.generator @target_params2<t0: target>() {
  // expected-error @below {{expected '='}}
-  constraints <[eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
+  kgen.param.assert <eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>)>, "must support target!!"
   kgen.return
 }
 

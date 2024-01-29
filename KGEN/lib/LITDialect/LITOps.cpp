@@ -704,15 +704,12 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
 
   // Parse additional function attributes.
-  ConstraintArrayAttr constraints;
   InlineLevelAttr inlineLevel;
   DecoratorsAttr decorators;
   if (parseOptionalInline(parser, inlineLevel) ||
-      parseOptionalConstraints(parser, constraints) ||
       parseOptionalDecorators(parser, decorators))
     return failure();
   result.addAttribute(getInlineLevelAttrName(result.name), inlineLevel);
-  result.addAttribute(getConstraintsAttrName(result.name), constraints);
   result.addAttribute(getDecoratorsAttrName(result.name), decorators);
   result.addAttribute(getParamsAttrName(result.name), params);
   result.addAttribute(getFunctionTypeAttrName(result.name),
@@ -765,7 +762,6 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   printLITFunctionSignature(p, &getBodyRegion(), getSignature().getArgNames(),
                             getParams(), getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
-  printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());
 
   // Don't print the following in lit.func.
@@ -936,8 +932,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       TypeAttr::get(signatureType.getValues()));
   result.addAttribute(getParamsAttrName(result.name),
                       ParamDeclArrayAttr::get(ctx, {}));
-  result.addAttribute(getConstraintsAttrName(result.name),
-                      ConstraintArrayAttr::get(ctx, {}));
   result.addAttribute(getDecoratorsAttrName(result.name),
                       DecoratorsAttr::get(ctx, {}));
   result.addAttribute(getSpecialFnKindAttrName(result.name),
@@ -960,9 +954,9 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()),
         /*params=*/ParamDeclArrayAttr::get(ctx, {}),
-        ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
-        /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
+        DecoratorsAttr::get(ctx, {}), /*isStatic=*/none, /*isDef=*/none,
+        /*isInherited=*/none, /*isSynthetic=*/none,
+        ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), StringAttr(), sourceName, DocStringAttr(),

@@ -254,19 +254,6 @@ kgen.generator export @entry() {
 
 // -----
 
-// expected-error @below {{no viable expansions found}}
-kgen.generator export @export_constraint()
-    // expected-note @below {{constraint failed: False}}
-    constraints <[apply(:(i1) -> i1 @pass, 0), "False"]> {
-  kgen.return
-}
-
-kgen.generator @pass(%arg0: i1) -> i1 {
-  kgen.return %arg0: i1
-}
-
-// -----
-
 // expected-error @below {{primary generator with more than one successful implementation}}
 // expected-note @below {{select one implementation using search or remove forks in the implementation}}
 kgen.generator export @multiversioned() {
