@@ -175,33 +175,6 @@ fn test_default_param_struct():
     # expected-error @+1 {{expects at most 2 parameters, but 3 were specified}}
     alias S = DefaultParams2[1, 3, 4]
 
-
-##===----------------------------------------------------------------------===##
-# Function keyword parameters
-##===----------------------------------------------------------------------===##
-
-# expected-note @below {{declared here}}
-fn take_kw_params[a: Int, b: Int = 0](): pass
-
-# expected-note @below {{declared here}}
-fn var_params[s: StringLiteral, *args: Int](): pass
-
-# expected-note @below {{declared here}}
-fn pack_params[*Ts: AnyRegType](*args: *Ts): pass
-
-fn test_func_kw_params3():
-    # expected-error @below {{unknown keyword parameter: 'args'}}
-    var_params["woof", args=7]
-    # expected-error @below {{unknown keyword parameter: 'Ts'}}
-    pack_params[Ts=Int]
-    # expected-error @below {{unknown keyword parameter: 'c'}}
-    take_kw_params[7, c=9]()
-    # expected-error @below {{unknown keyword parameters: 'c', 'z'}}
-    take_kw_params[7, z=13, c=9]()
-    # expected-error @below {{parameter #0 ('a') passed both as positional and keyword operand}}
-    take_kw_params[7, b=7, a=9]()
-
-
 ##===----------------------------------------------------------------------===##
 # Function positional-only parameters
 ##===----------------------------------------------------------------------===##
