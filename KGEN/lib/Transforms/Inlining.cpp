@@ -417,16 +417,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   SmallVector<Value> argVals =
       rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
 
-  // Materialize any constraints on the callee as asserts.
-  for (ConstraintAttr constraint : callee.getConstraints()) {
-    auto assertOp = b.create<ParamAssertOp>(
-        constraint.getLoc(), constraint.getExpr(),
-        StringAttr::get(constraint.getMessage().getValue(),
-                        StringType::get(b.getContext())));
-    if (needsMangling)
-      mangler.mangleElementsIn(assertOp);
-  }
-
   // Map the callee inputs.
   IRMapping map;
   for (auto [value, arg] : llvm::zip(argVals, callee.getArguments()))

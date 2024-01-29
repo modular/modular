@@ -291,12 +291,6 @@ void printFunctionSignature(OpAsmPrinter &p, Region *region,
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);
 void printOptionalInline(AsmPrinter &p, InlineLevel level);
 
-/// Parse and print a constraint specification if present.
-ParseResult parseOptionalConstraints(OpAsmParser &p,
-                                     ConstraintArrayAttr &constraints);
-void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                              ArrayRef<ConstraintAttr> constraints);
-
 /// Parse and print a decorator list if present.
 ParseResult parseOptionalDecorators(AsmParser &p, DecoratorsAttr &decorators);
 void printOptionalDecorators(OpAsmPrinter &p, Operation *op,

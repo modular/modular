@@ -281,7 +281,6 @@ int main(int argc, char **argv) {
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerCheckRecursiveStructs();
-  KGEN::registerConstraintReduction();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerExternalizePrecompiledFunctions();
   KGEN::registerFoldGlobalConstLoads();

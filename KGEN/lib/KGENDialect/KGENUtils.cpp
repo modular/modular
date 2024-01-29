@@ -1480,49 +1480,6 @@ void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
                        /*optionalResultList=*/false);
 }
 
-/// Parse a constraint specification if
-/// present. constraints-spec ::=
-///    `constraints` `<` attribute-value
-///    (`,` attribute-value)? `>`
-ParseResult KGEN::parseOptionalConstraints(OpAsmParser &parser,
-                                           ConstraintArrayAttr &result) {
-  SmallVector<ConstraintAttr> constraints;
-
-  if (succeeded(parser.parseOptionalKeyword("constraints"))) {
-    auto parseConstraint = [&]() -> ParseResult {
-      ConstraintAttr constraint;
-      if (parser.parseCustomAttributeWithFallback(constraint))
-        return failure();
-      constraints.push_back(constraint);
-      return success();
-    };
-
-    if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::LessGreater,
-                                       parseConstraint))
-      return failure();
-  }
-  result = ConstraintArrayAttr::get(parser.getContext(), constraints);
-  return success();
-}
-
-/// Print a constraint list for a generator or interface.
-void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                                    ArrayRef<ConstraintAttr> constraints) {
-  if (constraints.empty())
-    return;
-
-  p.printNewline();
-  p << "  constraints <";
-  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    if (constraints.size() > 1) {
-      p.printNewline();
-      p << "    ";
-    }
-    constraint.print(p);
-  });
-  p << ">";
-}
-
 ParseResult KGEN::parseOptionalDecorators(AsmParser &p,
                                           DecoratorsAttr &decorators) {
   SmallVector<TypedAttr> decoVals;
@@ -1638,14 +1595,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     return failure();
   result.addAttribute("inlineLevel", inlineLevel);
 
-  // Funcs cannot have constraint specifications.
-  if (opKind != GeneratorOrFuncKind::func) {
-    ConstraintArrayAttr constraints;
-    if (parseOptionalConstraints(parser, constraints))
-      return failure();
-    result.addAttribute("constraints", constraints);
-  }
-
   DecoratorsAttr decorators;
   if (parseOptionalDecorators(parser, decorators))
     return failure();
@@ -1708,7 +1657,6 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   if (op->getAttr("LLVMMetadata") == DictionaryAttr::get(op->getContext()))
     ignoredAttrs.push_back("LLVMMetadata");
 
-  printOptionalConstraints(p, op, cast<DeclInterface>(*op).getConstraints());
   printOptionalDecorators(p, op, op.getDecorators());
 
   p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);

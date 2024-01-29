@@ -70,21 +70,6 @@ def DeclInterface : OpInterface<"DeclInterface"> {
       circular reference to these parameters only. These parameters must be
       defined by an operation inside the sopce.
     }], "ArrayRef<ParamDeclAttr>", "getResultParams">,
-
-    InterfaceMethod<[{
-      Return the constraints on the input parameters at this `DeclInterface`
-      operation.
-    }], "ArrayRef<ConstraintAttr>", "getConstraints", (ins), [{}], [{
-      return {};
-    }]>,
-
-    InterfaceMethod<[{
-      Set the constraint attribute.
-    }], "void", "setConstraints",
-    (ins "ArrayRef<ConstraintAttr>":$constraints), [{}], [{
-      llvm_unreachable("by default ops don't have input parameters to add "
-                       "constraints to");
-    }]>,
   ];
 }
 

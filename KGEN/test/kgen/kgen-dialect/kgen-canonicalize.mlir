@@ -80,24 +80,11 @@ kgen.generator @producesResultParam<() -> r1>() {
 
 
 // CHECK-LABEL: kgen.generator @param_assert_simplify<p1: i1, p2>()
-// CHECK-NEXT: constraints <
-// CHECK-NEXT:   [p1, "this is a constraint!", #
-// CHECK-NEXT:   [eq(add(p2, 4), 17), "also a constraint", #
 kgen.generator @param_assert_simplify<p1 : i1, p2>() {
-
-  kgen.param.assert <p1>, "this is a constraint!"
-  kgen.param.assert <eq(add(p2, 4), 17)>, "also a constraint"
-
+  // CHECK-NOT: assert <1>
   kgen.param.assert <1>, "this is pointless"
-
-  // CHECK-NEXT:   kgen.param.assert <0>, "failing asserts must be kept"
+  // CHECK-NEXT: kgen.param.assert <0>, "failing asserts must be kept"
   kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
-
-  // CHECK-NEXT: kgen.call @producesResultParam
-  kgen.call @producesResultParam<[] -> result>() : () -> ()
-
-  // CHECK-NEXT: kgen.param.assert <eq(result, 12)>, "this stays"
-  kgen.param.assert <eq(result, 12)>, "this stays"
   kgen.return
 }
 

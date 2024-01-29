@@ -70,7 +70,6 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createSCCP());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
-    pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
 
   pm.addPass(MOGGPreElab::createSliceMOGGFuncs());

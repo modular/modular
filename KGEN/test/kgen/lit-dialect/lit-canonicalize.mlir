@@ -3,13 +3,6 @@
 // This shouldn't crash.
 // https://github.com/modularml/modular/issues/2480
 
-// CHECK-LABEL: lit.func @numeric_limits.digits.i32
-// CHECK-NEXT: constraints <[eq(:dtype type, si32), "this only works for si32", #
-lit.func @numeric_limits.digits.i32<type: dtype>() {
-  kgen.param.assert <eq(:dtype type, si32)>, "this only works for si32"
-  kgen.return
-}
-
 lit.struct.decl @FooStruct {
   lit.struct.field a : index
   lit.struct.field b : index

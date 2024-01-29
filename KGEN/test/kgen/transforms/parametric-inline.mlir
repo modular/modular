@@ -779,21 +779,6 @@ kgen.generator @mid<rank, shape: array<rank, index>>() always_inline {
 
 // -----
 
-// CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent() {
-  // CHECK: declare A = <2>
-  // CHECK-NEXT: assert <eq(A, 1)>, "A == 1"
-  kgen.call @callee<2>() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
-  kgen.return
-}
-
-// -----
-
 #subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.paramref<T>>
 

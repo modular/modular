@@ -182,12 +182,10 @@ LogicalResult ParamDeclareOp::verify() {
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
-                       ParamDeclArrayAttr &inputParams,
-                       ParamDeclArrayAttr &resultParams, TypeAttr &functionType,
-                       TypeAttr &signature, ConstraintArrayAttr &constraints,
-                       InlineLevelAttr &inlineLevel, Region &body) {
+static ParseResult parseRegionDeclaration(
+    OpAsmParser &p, ParamDeclAttr &paramDecl, ParamDeclArrayAttr &inputParams,
+    ParamDeclArrayAttr &resultParams, TypeAttr &functionType,
+    TypeAttr &signature, InlineLevelAttr &inlineLevel, Region &body) {
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
@@ -196,9 +194,8 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   if (parseParamName(p, paramName) || p.parseEqual() ||
       parseFunctionSignature(p, args, inputParams, resultParams,
                              functionTypeValue, signatureType) ||
-      parseOptionalInline(p, inlineLevel) ||
-      parseOptionalConstraints(p, constraints) ||
-      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
+      parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
+      p.parseRegion(body, args))
     return failure();
 
   // Form the Signature.
@@ -216,7 +213,6 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclArrayAttr inputParams,
                                    ParamDeclArrayAttr resultParams,
                                    TypeAttr functionType, TypeAttr signature,
-                                   ConstraintArrayAttr constraints,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
@@ -224,7 +220,6 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
-  printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
@@ -509,40 +504,6 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
     rewriter.eraseOp(op);
     return success();
   }
-
-  // Check to see if this operation only depends on expressions known in the
-  // signature of the generator.  If so, we can fold it into the constraint
-  // list.
-  SmallVector<ParamDeclRefAttr> parameterRefs;
-  auto parent = op->getParentOfType<DeclInterface>();
-  // FIXME: `kgen.param.if` should get constraints.
-  if (!parent || isa<ParamIfOp>(parent))
-    return failure();
-
-  bool unused;
-  collectParameterReferences(cond, parameterRefs, unused);
-  ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParams();
-
-  // Check to see if the parameters referenced by the condition are all
-  // defined by the generator.  If so, we can fold this into the constraint
-  // list.
-  if (llvm::all_of(parameterRefs, [&](ParamDeclRefAttr declRef) -> bool {
-        return llvm::any_of(generatorInputParams, [&](ParamDeclAttr decl) {
-          return decl.getName() == declRef.getName();
-        });
-      })) {
-    // Ok, great, add this to the trait list of the enclosing operation.
-    SmallVector<ConstraintAttr> constraints(parent.getConstraints());
-    auto typedStringAttr = dyn_cast<StringAttr>(op.getMessageAttr());
-    if (!typedStringAttr)
-      return failure();
-    auto msg = StringAttr::get(op->getContext(), typedStringAttr.getValue());
-    constraints.push_back(ConstraintAttr::get(cond, msg, op.getLoc()));
-    parent.setConstraints(constraints);
-    op.erase();
-    return success();
-  }
-
   return failure();
 }
 

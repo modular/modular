@@ -74,13 +74,6 @@ kgen.generator @lift_from_bind_signature<
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @isolated_constraints
-// CHECK-NEXT: constraints <[eq(apply
-kgen.generator @isolated_constraints()
-    constraints <[eq(apply(:(index) -> index @pass, 1), 1), "1"]> {
-  kgen.return
-}
-
 kgen.generator @bad() -> index {
   kgen.unreachable
 }
