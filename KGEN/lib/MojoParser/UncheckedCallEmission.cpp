@@ -38,7 +38,7 @@ class CallEmitter {
 public:
   CallEmitter(CRValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
               ValueDest &dest)
-      : callee(callee), callExpr(callExpr), emitter(emitter),
+      : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())),
         evaluator(emitter.getDeclResolver()), dest(dest),
         calleeSig(cast<SignatureType>(callee.getType().mlirType)),
@@ -53,7 +53,7 @@ public:
   /// iterates by expected arguments since we're building the argument list of
   /// the call. Default arguments are applied (if available and an operand isn't
   /// provided for the arg), and variadics (including packs) are collected from
-  /// the operand list and amitter as the appropriate variadic/pack type to the
+  /// the operand list and emitted as the appropriate variadic/pack type to the
   /// callee.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
   emitArgValues(const CallOperands &operands);
@@ -84,13 +84,27 @@ public:
   void emitDirectCallWarnings(LIT::CallOp call,
                               const CallOperands &callOperands);
 
+  /// The underlying expression emitter instance.
+  ExprEmitter &emitter;
+
+  /// Given a call to a function with a memory only result and the desired value
+  /// destination, decide if it is safe to directly emit into the slot.  Doing
+  /// so requires a form of alias analysis to determine whether any input
+  /// arguments could alias the result slot.  We cannot emit into the result
+  /// slot when passing the value as an argument like 'x = foo(x)' or 'x = x +
+  /// 1'.
+  ///
+  /// At this point, we've already applied implicit conversions and converted
+  /// things to RValues or BValues as required by the argument convention, but
+  /// things may still be in parameter space.
+  bool isSafeToUseValueDestForDirectResult(
+      ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+
 private:
   /// The (type-checked and resolved) callee we are emitting the call to.
   CRValue callee;
   /// The call's expression node.
   const ExprNode *callExpr;
-  /// The underlying expression emitter instance.
-  ExprEmitter &emitter;
   /// The mlir location of the call expression above, stored for convenience.
   Location loc;
   /// A parameter evaluator used to simplify parameter expression and fold the
@@ -127,19 +141,6 @@ private:
         lvalueWritebacks.pop_back_val().first.resetForError();
     }
   } afterCallActions;
-
-  /// Given a call to a function with a memory only result and the desired value
-  /// destination, decide if it is safe to directly emit into the slot.  Doing
-  /// so requires a form of alias analysis to determine whether any input
-  /// arguments could alias the result slot.  We cannot emit into the result
-  /// slot when passing the value as an argument like 'x = foo(x)' or 'x = x +
-  /// 1'.
-  ///
-  /// At this point, we've already applied implicit conversions and converted
-  /// things to RValues or BValues as required by the argument convention, but
-  /// things may still be in parameter space.
-  bool isSafeToUseValueDestForDirectResult(
-      ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit the given (remaining) operands as a variadic or pack sequence,
   /// appending to the given argument value vector.
@@ -375,27 +376,21 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     std::optional<OpBuilder> &builder = emitter.builder;
 
-    // If this is the return slot for a call, we want to propagate the
-    // ValueDest into this, but we need information about each argument being
-    // emitted before we can do that.  As such, we just use a var decl and
-    // replace it opportunistically later if we can.
-    if (convention == ArgConvention::ByRefResult && builder) {
-      assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
-      assert(passingKind == PassingKind::PosOnly);
-
-      expectedType = cast<RefType>(expectedType).getElementType();
-      auto resultTmp =
-          emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc,
-                                 VarLetDeclKind::Synthesized);
-      argumentValues.push_back({MLValue(resultTmp), callExpr});
-      continue;
-    }
-
     // Memory-only result slots are allocated automatically by the apply
     // operator.
     if (!builder && (convention == ArgConvention::ByRefResult ||
                      convention == ArgConvention::InitSelf))
       continue;
+
+    // If this is the return slot for a call, we need a temporary to emit into,
+    // but don't know the type until the arguments (and their lifetimes) are all
+    // emitted. Just skip over it for now.
+    if (convention == ArgConvention::ByRefResult && builder) {
+      assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
+      assert(passingKind == PassingKind::PosOnly);
+      argumentValues.push_back({AnyValue(), callExpr});
+      continue;
+    }
 
     // If we ran out of operands, fulfill this with a keyword argument, default
     // value, empty variadic list, or empty pack.
@@ -558,6 +553,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   Value arg;
   switch (convention) {
+  case ArgConvention::ByRefResult:
+    llvm_unreachable("this is handled specially during call emission");
   case ArgConvention::OwnedInReg:
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -606,28 +603,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       result = emitter.builder->create<RefImmutOp>(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;
-  }
-  case ArgConvention::ByRefResult: {
-    MLValue resultSlotRef = argValAndExpr.ir.getIfMLValue();
-    assert(resultSlotRef && "byref_result value start in a temp slot");
-    auto rvalueType = resultSlotRef.getRValueType();
-
-    // Often the result of the call will be directly assigned into a
-    // user-defined var or other location with existing storage.  In these
-    // cases, we really want to assign directly into the existing slot.
-    //
-    // However, we cannot do that if the destination slot is also being passed
-    // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
-    // In these cases we really do need a temporary+copy in the var slot.
-    // At this point we've got enough information about the arguments to make
-    // that assessment in a correct way.
-    if (!isSafeToUseValueDestForDirectResult(rvalueType, argumentValues))
-      return resultSlotRef;
-    // Okay it is safe to use, so remove the temporary allocation we aren't
-    // going to use.
-    resultSlotRef.getDefiningOp<VarLetDeclOp>()->erase();
-    // Use the preferred location of the destination slot.
-    return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
   case ArgConvention::ByRef:
   case ArgConvention::InitSelf: {
@@ -925,6 +900,19 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
        llvm::enumerate(argumentValues, calleeSig.getArgConventions())) {
     ArgConvention convention = conventionX;
 
+    // If this is a byref_result slot, we will have emitted a null value for
+    // this.  We can't know the type of it until we emit all the operands and
+    // collect their lifetimes.
+    // TODO(#30134): This should be at the end of the argument list instead of
+    // the beginning!
+    if (convention == ArgConvention::ByRefResult) {
+      // Don't know the right thing yet, use a placeholder.
+      callArgs.push_back(Value());
+      implicitLifetimes.push_back(
+          LifetimeAttr::get(getContext(), /*isMutable*/ true));
+      continue;
+    }
+
     // If this is a variadic operation, the N operands have already been emitted
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
@@ -952,11 +940,45 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   }
 
   // Now that we have the lifetimes for the arguments, we can calculate what the
-  // substituted signature should be:
+  // substituted signature should be.  This will take in the wrong byref-result
+  // lifetime as an input, but we know that it cannot be referenced in the type
+  // anyway, because there is no way to name it in the Mojo program.
   FunctionType expectedCalleeType =
       calleeSig.substituteImplicitLifetimesIntoValues(
           implicitLifetimes,
           [&]() -> InFlightDiagnostic { llvm_unreachable("bad call"); });
+
+  // With that done, we can know what type the byref result slot should have.
+  // We see if we can emit directly into the ValueDest slot, and if not, we
+  // create a VarDecl temporary and allow emitResult to copy it over to the
+  // destination.
+  if (calleeSig.hasMemoryOnlyResult()) {
+    auto resultRValueType =
+        cast<RefType>(expectedCalleeType.getInput(0)).getElementType();
+
+    // Often the result of the call will be directly assigned into a
+    // user-defined var or other location with existing storage.  In these
+    // cases, we really want to assign directly into the existing slot.
+    //
+    // However, we cannot do that if the destination slot is also being passed
+    // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
+    // In these cases we really do need a temporary+copy in the var slot.
+    // At this point we've got enough information about the arguments to make
+    // that assessment in a correct way.
+    if (callEmitter.isSafeToUseValueDestForDirectResult(resultRValueType,
+                                                        argumentValues)) {
+      // Use the preferred location of the destination slot.
+      callArgs[0] = dest.getMLValueForResult(
+          callExpr->getLoc(), resultRValueType, callEmitter.emitter);
+    } else {
+      // Create a temporary.
+      callArgs[0] = callEmitter.emitter.emitVarLetDecl(
+          "__call_result_tmp__", resultRValueType, loc,
+          VarLetDeclKind::Synthesized);
+    }
+
+    implicitLifetimes[0] = cast<RefType>(callArgs[0].getType()).getLifetime();
+  }
 
   // Now that all of the arguments have been emitted, coerce them to the
   // expected type if needed.  We do this after the first pass above, because
@@ -966,8 +988,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
        llvm::zip(callArgs, expectedCalleeType.getInputs())) {
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.
-    if (arg.getType() != expectedType)
-      arg = builder->create<RebindOp>(loc, expectedType, arg);
+    if (arg.getType() == expectedType)
+      continue;
+
+    // Ignore the byref result slot - we know its lifetime differs but we're ok
+    // with that.
+    if (arg == callArgs[0] && calleeSig.hasMemoryOnlyResult())
+      continue;
+
+    // Insert a rebind.
+    arg = builder->create<RebindOp>(loc, expectedType, arg);
   }
 
   assert(expectedCalleeType.getResults().size() == 1 &&
