@@ -429,3 +429,7 @@ trait Trait:
     fn f(self: Self):
         """This is a trait function doc."""
         ...
+
+
+# Check that we include version information in the generated JSON.
+# CHECK: "version":
