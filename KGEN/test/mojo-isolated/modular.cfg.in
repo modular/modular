@@ -1,0 +1,10 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# This file contains only configurations necessary for executing Mojo parser
+# tests.
+
+[mojo]
+import_path = @MOJO_PARSER_BUILTIN_PATH@;

@@ -57,7 +57,8 @@ public:
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
       std::vector<std::string> linkDirs = {},
-      DebugInfoLanguage debugInfoLanguage = kLangMojo);
+      DebugInfoLanguage debugInfoLanguage = kLangMojo,
+      std::string searchPaths = "");
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -93,6 +94,7 @@ public:
 
   std::string saveTempsPrefix = "";
   bool emitAllElaboratorDiags = false;
+  std::string searchPaths = "";
 };
 } // namespace M::KGEN
 
