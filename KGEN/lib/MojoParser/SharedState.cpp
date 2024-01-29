@@ -183,7 +183,14 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       parsingStandardLibrary(config.parsingStandardLibrary),
       useBuiltinModule(config.useBuiltinModule),
       impl(std::make_unique<Impl>(*this, config.moduleCachingLevel)) {
-  collectDefaultImportPaths(impl->autoImportDirs);
+  if (!options.searchPaths.empty()) {
+    SmallVector<StringRef> paths;
+    StringRef(options.searchPaths)
+        .split(paths, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+    llvm::append_range(impl->autoImportDirs, paths);
+  } else {
+    collectDefaultImportPaths(impl->autoImportDirs);
+  }
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
 

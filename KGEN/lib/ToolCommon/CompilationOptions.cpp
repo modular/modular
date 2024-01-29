@@ -17,14 +17,15 @@ CompilationOptions::CompilationOptions(
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
     bool enableXRayInstrumentation, std::string targetTriple,
     std::string targetCpu, std::string targetFeatures,
-    std::vector<std::string> linkDirs, DebugInfoLanguage debugInfoLanguage)
+    std::vector<std::string> linkDirs, DebugInfoLanguage debugInfoLanguage,
+    std::string searchPaths)
     : enableSearch(enableSearch), optimizationLevel(optimizationLevel),
       debugLevel(debugLevel), debugAtLevel(debugAtLevel),
       sanitizers(sanitizers),
       enableXRayInstrumentation(enableXRayInstrumentation),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)), linkDirs(std::move(linkDirs)),
-      debugInfoLanguage(debugInfoLanguage) {}
+      debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths) {}
 
 llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
   if (auto level = llvm::CodeGenOpt::getLevel(optimizationLevel))

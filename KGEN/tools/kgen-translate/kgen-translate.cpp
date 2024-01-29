@@ -69,6 +69,12 @@ int main(int argc, char *argv[]) {
       cl::desc("If specified, the parser output is also printed as bytecode."),
       cl::init("")};
 
+  cl::opt<std::string> parserSearchPaths{
+      "mojo-search-paths",
+      cl::desc("If specified, the `mojo.import_path` field of modular.cfg is "
+               "overwritten with this value."),
+      cl::init("")};
+
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr,
@@ -87,6 +93,7 @@ int main(int argc, char *argv[]) {
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
+        options.searchPaths = parserSearchPaths.getValue();
         LIT::ParserConfig config(context, *runtime, options);
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
