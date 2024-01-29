@@ -117,3 +117,12 @@ z.push_back(3)
 # CHECK:   }
 # CHECK: }
 a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
+
+# CHECK: (String) s1 = "let_string"
+# CHECK: (String) s2 = "012345678910111213141
+# CHECK: (String) s3 = ""
+let s1 = String("let_string")
+var s2 = String()
+for i in range(0, 100):
+    s2 += str(i)
+var s3 = String()

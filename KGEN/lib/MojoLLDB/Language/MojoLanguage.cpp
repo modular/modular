@@ -44,6 +44,56 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   }
 }
 
+static bool
+builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
+                             const TypeSummaryOptions &summaryOptions) {
+  // If we fail to read the string, we show some placeholder error text.
+  // Otherwise, if we return false, for example, LLDB would print the contents
+  // of the inner DynamicVector.
+  auto onError = [&stream]() {
+    stream << "<invalid string>";
+    return true;
+  };
+
+  std::optional<std::pair<ValueObjectSP, size_t>> parsed =
+      MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
+          valobj.GetChildMemberWithName("_buffer"));
+  if (!parsed)
+    return onError();
+
+  size_t size = parsed->second;
+
+  if (size == 0) {
+    stream << "\"\"";
+    return true;
+  }
+
+  ValueObjectSP &dataPointer = parsed->first;
+  StringPrinter::ReadBufferAndDumpToStreamOptions options(valobj);
+
+  if (summaryOptions.GetCapping() == TypeSummaryCapping::eTypeSummaryCapped) {
+    size_t maxSize = valobj.GetTargetSP()->GetMaximumSizeOfStringSummary();
+    if (size > maxSize) {
+      size = maxSize;
+      options.SetIsTruncated(true);
+    }
+  }
+
+  DataExtractor extractor;
+  const size_t bytesRead = dataPointer->GetPointeeData(extractor, 0, size);
+  if (bytesRead < size)
+    return onError();
+
+  options.SetData(std::move(extractor));
+  options.SetStream(&stream);
+  options.SetPrefixToken(nullptr);
+  options.SetQuote('"');
+  options.SetSourceSize(size);
+  options.SetBinaryZeroIsTerminator(true);
+  return StringPrinter::ReadBufferAndDumpToStream<
+      StringPrinter::StringElementType::ASCII>(options);
+}
+
 /// The None type is rendered nicely if its summary is the "None" string.
 static bool kgenNoneSummaryProvider(ValueObject &valobj, Stream &stream,
                                     const TypeSummaryOptions &summaryOptions) {
@@ -181,6 +231,18 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, popScalarBoolSummaryProvider,
                 "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
                 summaryFlags, /*regex=*/false);
+  // For the REPL
+  AddCXXSummary(
+      mojoCategorySP, builtinStringSummaryProvider,
+      "$builtin::string::String summary provider",
+      R"(!kgen.declref<@"$stdlib"::@"$builtin"::@"$string"::@String, !lit.metatype<@"$stdlib"::@"$builtin"::@"$string"::@String>>)",
+      summaryFlags, /*regex=*/false);
+  // For DWARF
+  AddCXXSummary(
+      mojoCategorySP, builtinStringSummaryProvider,
+      "$builtin::string::String summary provider",
+      R"(!kgen.declref<@"$builtin"::@"$string"::@String, !lit.metatype<@"$builtin"::@"$string"::@String>>)",
+      summaryFlags, /*regex=*/false);
   AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
                 "REPLResultRefType summary provider", kREPLResultRegex,
                 summaryFlags, /*regex=*/true);
