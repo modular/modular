@@ -122,8 +122,13 @@ export class InlineLocalVariablesProvider implements
     let displayName = variable.evaluateName;
     const range = new vscode.Range(line, column, line,
                                    column + variable.evaluateName.length);
-    return new vscode.InlineValueText(range,
-                                      `${displayName} = ${variable.value}`);
+    // The value cannot be extremely long, so we cap it.
+    const inlineVariableValueLengthCap = 50;
+    const value =
+        variable.value.length >= inlineVariableValueLengthCap
+            ? variable.value.substring(0, inlineVariableValueLengthCap) + "..."
+            : variable.value;
+    return new vscode.InlineValueText(range, `${displayName} = ${value}`);
   }
 
   /**

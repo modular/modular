@@ -36,47 +36,73 @@ MojoDynamicVectorSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
 }
 
 bool MojoDynamicVectorSyntheticFrontEnd::Update() {
-  // Extract data pointer.
-  lldb::ValueObjectSP dataField = m_backend.GetChildMemberWithName("data");
-  if (!dataField)
+  std::optional<std::pair<ValueObjectSP, size_t>> parsed =
+      MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(m_backend.GetSP());
+  if (!parsed)
     return false;
 
-  // The REPL sees a struct around a pointer, but DWARF shows directly the
-  // pointer.
-  lldb::ValueObjectSP kgenPointer =
-      dataField->IsPointerType() ? dataField
-                                 : dataField->GetChildMemberWithName("value");
+  ValueObjectSP data = parsed->first;
+  start = data->GetPointerValue();
+  elementType = data->GetCompilerType().GetPointeeType();
+  if (elementType.IsValid()) {
+    auto exeCtxScope = ExecutionContext(m_backend.GetExecutionContextRef())
+                           .GetBestExecutionContextScope();
+    if (auto eltSize = elementType.GetByteSize(exeCtxScope)) {
+      elementSize = eltSize.value();
+      // This means that we were able to parse everything we needed, so this is
+      // where we set the size.
+      size = parsed->second;
+      return false;
+    }
+  }
+  return false;
+}
 
-  if (!kgenPointer || !kgenPointer->IsPointerType())
-    return false;
+std::optional<std::pair<ValueObjectSP, size_t>>
+MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
+    lldb::ValueObjectSP valobj) {
+  valobj = valobj->GetNonSyntheticValue();
+  if (!valobj || !valobj->GetError().Success())
+    return {};
 
-  start = kgenPointer->GetPointerValue();
-  if (start == LLDB_INVALID_ADDRESS)
-    return false;
-
-  // Get element type and size.
-  elementType = kgenPointer->GetCompilerType().GetPointeeType();
-  auto exeCtxScope = ExecutionContext(m_backend.GetExecutionContextRef())
-                         .GetBestExecutionContextScope();
-  if (auto eltSize = elementType.GetByteSize(exeCtxScope))
-    elementSize = eltSize.value();
-  else
-    return false;
-
-  // Get the size of the collection.
-  lldb::ValueObjectSP sizeField = m_backend.GetChildMemberWithName("size");
-  if (!sizeField)
-    return false;
+  ValueObjectSP sizeField = valobj->GetChildMemberWithName("size");
+  if (!sizeField || !sizeField->GetError().Success())
+    return {};
 
   // The REPL sees a struct around an int, but DWARF shows directly the int.
   lldb::ValueObjectSP sizeVal =
       sizeField->IsScalarType() ? sizeField
                                 : sizeField->GetChildMemberWithName("value");
-  if (!sizeVal)
-    return false;
+  if (!sizeVal || !sizeVal->GetError().Success())
+    return {};
 
-  size = sizeVal->GetValueAsUnsigned(0);
-  return false;
+  bool success = true;
+  size_t size = sizeVal->GetValueAsUnsigned(0, &success);
+  if (!success)
+    return {};
+
+  ValueObjectSP dataVal = valobj->GetChildMemberWithName("data");
+  if (!dataVal || !dataVal->GetError().Success())
+    return {};
+
+  // The REPL sees a struct around a pointer, but DWARF shows directly the
+  // pointer.
+  ValueObjectSP dataPointer = dataVal->IsPointerType()
+                                  ? dataVal
+                                  : dataVal->GetChildMemberWithName("value");
+
+  if (!dataPointer || !dataPointer->GetError().Success())
+    return {};
+
+  // If the size is 0, the data address might be invalid.
+  if (size == 0)
+    return std::make_pair(dataPointer, size);
+
+  lldb::addr_t data = dataPointer->GetPointerValue();
+  if (!data || data == LLDB_INVALID_ADDRESS)
+    return {};
+
+  return std::make_pair(dataPointer, size);
 }
 
 bool MojoDynamicVectorSyntheticFrontEnd::MightHaveChildren() { return true; }
