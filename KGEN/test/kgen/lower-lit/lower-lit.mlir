@@ -560,3 +560,13 @@ lit.func @callThing[mut *"__result__`"](%__result__: !lit.ref<!Mem, mut *"__resu
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
+
+// CHECK-LABEL: kgen.generator @testLifetimeOf2
+// Verify that we remap the returns as well as the operands.
+lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> borrow_in_mem) -> !lit.ref<!Mem, imm *"a`">{
+  // CHECK-NEXT: kgen.param.declare *"a`"
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem : metatype<@Mem>, imm *[0,0]> to !lit.ref<@Mem : metatype<@Mem>, imm *"a`">
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem : metatype<@Mem>, imm *"a`"> to !lit.ref<@Mem : metatype<@Mem>, imm *[0,0]>
+  // CHECK-NEXT: kgen.return %1
+  kgen.return %a : !lit.ref<!Mem, imm *"a`">
+}

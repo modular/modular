@@ -228,9 +228,18 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   _ = b.method()
 
 
-# CHECK-LABEL: lit.func @"testLifetimeOf
+# CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!SelfRefTest, imm *"a`"> borrow_in_mem) ->
 # CHECK-SAME: Reference<{{.*}}, :i1 0, :lifetime<0> *"a`">
-fn testLifetimeOf(a: SelfRefTest) ->
+fn testLifetimeOf1(a: SelfRefTest) ->
   Reference[SelfRefTest, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a
+
+# CHECK-LABEL: lit.func @"testLifetimeOf2
+# CHECK-SAME: (%a: !lit.ref<!SelfRefTest, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: !lit.ref<!SelfRefTest, imm *"a`">
+fn testLifetimeOf2(a: SelfRefTest) -> _LITRef[
+        SelfRefTest,  __mlir_attr.`0: i1`, __lifetime_of(a)].type:
+
+  # CHECK: kgen.return {{.*}} : !lit.ref<!SelfRefTest, imm *"a`">
+  return Reference(a).value

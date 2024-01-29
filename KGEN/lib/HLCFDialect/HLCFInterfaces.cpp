@@ -80,29 +80,6 @@ ControlFlowVerifier::findNearestParentFor(ControlFlowTerminator op) {
   return nullptr;
 }
 
-/// Verify two type ranges match between a return operation and a function.
-static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
-                                       Operation *op, Operation *parent) {
-  if (lhs.size() != rhs.size()) {
-    return (op->emitOpError("specifies ")
-            << lhs.size() << " results but surrounding function expects "
-            << rhs.size())
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  for (auto [idx, lhsType, rhsType] :
-       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
-    if (lhsType == rhsType)
-      continue;
-    return (op->emitOpError("operand #")
-            << idx << " type " << lhsType
-            << " does not match expected result type " << rhsType)
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  return success();
-}
-
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modeled differently. Handle them here.
   if (op->hasTrait<OpTrait::ReturnLike>())
