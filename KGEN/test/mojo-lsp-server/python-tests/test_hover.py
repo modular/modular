@@ -542,7 +542,7 @@ async def test_function_call(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-fn print(x: StringRef):
+fn print(x: StringLiteral):
     pass
 
 fn print(x: Bool):
@@ -565,14 +565,14 @@ fn function[type: AnyRegType](arg: type):
     await assert_hover(
         'print("',
         """```mojo
-(function) fn print(x: StringRef)
+(function) fn print(x: StringLiteral)
 ```""",
     )
 
     await assert_hover(
         "print(arg",
         """```mojo
-(function) fn print(x: StringRef)
+(function) fn print(x: StringLiteral)
 ```
 ---
 
