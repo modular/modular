@@ -12,15 +12,14 @@
 using namespace M;
 
 std::unique_ptr<llvm::ToolOutputFile>
-CommonCLOptions::getOutputFile(bool hasBinaryOutput,
-                               StringRef fileExtension) const {
+CommonOptions::getOutputFile(bool hasBinaryOutput,
+                             StringRef fileExtension) const {
   // We generally listen to the `-o filename` command, unless we're being
   // asked to emit a binary file format to the console.  In that case, we
   // default to emitting a variant of the input filename.
-  std::string outFile = outputFilename.getValue();
-  if (hasBinaryOutput && inputFilename != "-" &&
-      outputFilename.getNumOccurrences() == 0) {
-    outFile = inputFilename.getValue() + fileExtension.str();
+  std::string outFile = outputFilename;
+  if (hasBinaryOutput && inputFilename != "-" && outFile.empty()) {
+    outFile = inputFilename + fileExtension.str();
     llvm::outs() << "Emitting binary file to " << outFile << ".\n";
   }
 
@@ -47,7 +46,7 @@ CommonCLOptions::getOutputFile(bool hasBinaryOutput,
 }
 
 std::unique_ptr<llvm::ToolOutputFile>
-CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
+CommonOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
   if (!saveTemps)
     return nullptr;
   std::string outFile = (inputName + ext).str();
@@ -57,8 +56,8 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
     // Unconditionally create the dir, this simply returns a bool if the
     // directory already exists.
     std::error_code errorCode;
-    std::filesystem::create_directories(tempsDir.getValue(), errorCode);
-    outFile = (std::filesystem::path(tempsDir.getValue()) /
+    std::filesystem::create_directories(tempsDir, errorCode);
+    outFile = (std::filesystem::path(tempsDir) /
                std::filesystem::path(inputName.str()).filename())
                   .replace_extension(ext.str())
                   .string();
@@ -82,7 +81,7 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
   return result;
 }
 
-LogicalResult CommonCLOptions::emitArchive(StringRef object) const {
+LogicalResult CommonOptions::emitArchive(StringRef object) const {
   std::unique_ptr<llvm::ToolOutputFile> outFile =
       getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)

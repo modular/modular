@@ -28,43 +28,44 @@ using namespace KGEN;
 
 int main(int argc, char *argv[]) {
   KGENCommonOptions clOptions;
+  KGENCommonCLOptions parser(clOptions);
 
-  cl::opt<bool> disableBuiltinModule{
+  M::cl::MOpt<bool> disableBuiltinModule{
       "mojo-disable-builtins",
       cl::desc("Don't auto-import the builtin module. WARNING: A bunch of "
                "stuff will break!"),
       cl::init(false)};
 
-  cl::opt<bool> disableParserCaching{
+  M::cl::MOpt<bool> disableParserCaching{
       "mojo-disable-parser-caching",
       cl::desc("Disable caching when parsing the input Mojo file."),
       cl::init(false)};
 
-  cl::opt<bool> enablePrebuiltPackages{
+  M::cl::MOpt<bool> enablePrebuiltPackages{
       "mojo-enable-prebuilt-packages",
       cl::desc("Use prebuilt packages when parsing the input Mojo file."),
       cl::init(false)};
 
-  cl::opt<bool> warnMissingDocStrings{
+  M::cl::MOpt<bool> warnMissingDocStrings{
       "mojo-warn-missing-doc-strings",
       cl::desc("Emit warnings for partial or missing doc strings."),
       cl::init(false)};
 
-  cl::opt<bool> experimentalLifetimes{
+  M::cl::MOpt<bool> experimentalLifetimes{
       "mojo-experimental-lifetimes",
       cl::desc("Enable experimental new lifetimes generation."),
       cl::init(false)};
 
-  cl::opt<unsigned> maxNotesPerDiagnostic{
+  M::cl::MOpt<unsigned> maxNotesPerDiagnostic{
       "max-notes-per-diagnostic",
       cl::desc("Maximum number of notes emitted per diagnostic."),
       cl::init(10)};
 
-  cl::opt<bool> useMLIRDiagnostics{"use-mlir-diagnostics",
-                                   cl::desc("Whether to use MLIR diagnostics."),
-                                   cl::init(true)};
+  M::cl::MOpt<bool> useMLIRDiagnostics{
+      "use-mlir-diagnostics", cl::desc("Whether to use MLIR diagnostics."),
+      cl::init(true)};
 
-  cl::opt<std::string> parserBytecodeOutput{
+  M::cl::MOpt<std::string> parserBytecodeOutput{
       "bytecode-output",
       cl::desc("If specified, the parser output is also printed as bytecode."),
       cl::init("")};

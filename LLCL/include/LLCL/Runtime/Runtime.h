@@ -211,17 +211,138 @@ private:
 
 /// Collects all the options which influence a runtime.
 struct RuntimeOptions {
+  enum class OnFailure {
+    kContinue,
+    kExit,
+  };
+  enum class AllocatorType {
+    /// Allocator that just calls malloc/free.
+    kMalloc,
+    /// Allocator that calls tc_new/delete for bufferRefs.
+    kTCMalloc,
+    /// Allocator that does leak checking.
+    kLeakChecker,
+    /// Allocator that does profiling (and leak checking).
+    kProfiler,
+    /// Allocator that read/write protects every freed block
+    /// to detect use-after-free errors without ASAN. Nat available
+    /// on all targets.
+    kUseAfterFree,
+  };
+
+  enum class WorkQueueType {
+    /// Autosense work queue type based on # threads.
+    kDefault,
+    /// Workqueue that only ever uses one thread.
+    kSingleThread,
+    /// Default thread pool that uses std::thread and semaphores.
+    kThreadPool,
+  };
   size_t numThreads = 0;
   bool singleThreaded = false;
-  StringRef profileFilename = {};
+  std::string profileFilename = {};
   bool mainWillDonate = true;
-  std::chrono::microseconds threadBusyWaitTime = 200us;
+  // TODO arekay - revert to time units
+  //  std::chrono::microseconds threadBusyWaitTime = 200us;
+  size_t threadBusyWaitTime = 200;
   std::string_view poolName = "🔥 Thread";
   bool paranoid = false;
   bool leakCheckedAllocator = false;
   bool tcmallocAllocator = false;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
+  OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
+  WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kDefault};
+
+  AllocatorType allocatorType{
+#ifdef MODULAR_DEBUG
+      RuntimeOptions::AllocatorType::kLeakChecker
+#else
+      RuntimeOptions::AllocatorType::kMalloc
+#endif
+
+  };
+  const RuntimeOptions::WorkQueueType defaultWorkQueue;
+  RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =
+                     LLCL::RuntimeOptions::WorkQueueType::kThreadPool)
+      : defaultWorkQueue(wq){};
+  /// Explicitly tell runtime to use single threaded workqueue. This is useful
+  /// in situations where computation is performed by some other runtime (for
+  /// eg: ExternalFrameworks in benchmarking)
+  void useSingleThreadedWorkqueue() {
+    numThreads = 1;
+    workQueueType = RuntimeOptions::WorkQueueType::kSingleThread;
+  }
+
+  /// Returns whether an executor should stop when a model returns an error.
+  bool stopOnFirstError() const {
+    return onFailure == RuntimeOptions::OnFailure::kExit;
+  }
+
+  // Return the workqueue type to use, resolving kDefault into a concrete kind.
+  WorkQueueType getWorkQueueType() const {
+    // The default behavior picks a thread count based on the -num-threads
+    // command line setting, but can be overridden. -num-threads=0 means using
+    // the default work queue.
+    if (workQueueType == WorkQueueType::kDefault) {
+      if (numThreads == 0)
+        return defaultWorkQueue;
+      if (numThreads == 1)
+        return WorkQueueType::kSingleThread;
+      return WorkQueueType::kThreadPool;
+    }
+    return workQueueType;
+  }
+
+  /// Print information about the runtime configuration to standard out.
+  void printRuntimeConfig() const {
+    printf("runtime using ");
+    switch (allocatorType) {
+    case RuntimeOptions::AllocatorType::kMalloc:
+      printf("malloc");
+      break;
+    case RuntimeOptions::AllocatorType::kTCMalloc:
+      printf("tcmalloc");
+      break;
+    case RuntimeOptions::AllocatorType::kLeakChecker:
+      printf("leak check");
+      break;
+    case RuntimeOptions::AllocatorType::kProfiler:
+      printf("profiling");
+      break;
+    case RuntimeOptions::AllocatorType::kUseAfterFree:
+      printf("use-after-free");
+      break;
+    }
+    printf(" allocator, and ");
+    switch (getWorkQueueType()) {
+    case RuntimeOptions::WorkQueueType::kDefault:
+      assert(0 && "should be resolved");
+      printf("potential assertion failure");
+      break;
+    case RuntimeOptions::WorkQueueType::kSingleThread:
+      printf("single thread work queue");
+      break;
+    case RuntimeOptions::WorkQueueType::kThreadPool:
+      printf("thread pool work queue");
+      break;
+    }
+
+    switch (numThreads) {
+    case 0:
+      printf(" with autosensed threads.\n");
+      break;
+    default:
+      printf(" with %d thread%s.\n", (int)numThreads, &"s"[numThreads == 1]);
+      break;
+    }
+  }
+
+  /// Return the number of threads specified at the command-line.
+  size_t getNumThreads() const { return numThreads; }
+
+  /// Create a Runtime based on the CL argument specifications.
+  std::unique_ptr<Runtime> createRuntime(StringRef profileName = {}) const;
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;

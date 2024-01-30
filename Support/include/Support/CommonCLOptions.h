@@ -25,17 +25,36 @@ class ToolOutputFile;
 
 namespace M {
 
+class OptionsBase {
+public:
+  StringRef getProgramName() const { return programName; }
+  int reportError(Twine errorMessage) const {
+    llvm::errs() << programName << ": " << errorMessage << "\n";
+    return EXIT_FAILURE;
+  }
+
+  /// This is the value of argv[0] when the program launches, used for reporting
+  /// error messages.
+  StringRef programName;
+  /// This tells LLVM to print stack traces on crashes, and also handles
+  /// multibyte command line options on windows.
+  std::optional<llvm::InitLLVM> llvmInitializer;
+};
+
 /// Contains functionality that's common to all tools.
 class CLOptionsBase {
 public:
+  OptionsBase &options;
   /// When the 'skipInitLLVM' flag is true, this initializer does not call
   /// InitLLVM.
-  CLOptionsBase(int &argc, char **&argv, bool skipInitLLVM = false) {
+  CLOptionsBase(int &argc, char **argv, OptionsBase &o,
+                bool skipInitLLVM = false)
+      : options(o) {
     if (!skipInitLLVM)
-      llvmInitializer.emplace(argc, argv);
+      options.llvmInitializer.emplace(argc, argv);
     // On windows, InitLLVM may mutate argv, so make sure to get the fresh
     // value.
-    programName = argv[0];
+    options.programName = argv[0];
 
     static constexpr StringLiteral bugReportMsg =
         "PLEASE submit a bug report to "
@@ -44,47 +63,16 @@ public:
 
     llvm::setBugReportMsg(bugReportMsg.data());
   }
-
-  StringRef getProgramName() const { return programName; }
-
-  int reportError(Twine errorMessage) const {
-    llvm::errs() << programName << ": " << errorMessage << "\n";
-    return EXIT_FAILURE;
-  }
-
-private:
-  /// This tells LLVM to print stack traces on crashes, and also handles
-  /// multibyte command line options on windows.
-  std::optional<llvm::InitLLVM> llvmInitializer;
-
-  /// This is the value of argv[0] when the program launches, used for reporting
-  /// error messages.
-  StringRef programName;
 };
 
-/// Contains command-line options that are shared among most of our binaries.
-class CommonCLOptions : public CLOptionsBase {
-private:
-  llvm::cl::OptionCategory CommonOptionsCategory{"Common command line options"};
+class CommonOptions : public OptionsBase {
 
 public:
-  using CLOptionsBase::CLOptionsBase;
-
-  cl::opt<bool> verifyDiagnostics{
-      "verify-diagnostics",
-      cl::desc("Check that emitted diagnostics match "
-               "expected-* lines on the corresponding line"),
-      cl::init(false), llvm::cl::cat(CommonOptionsCategory)};
-
+  bool verifyDiagnostics{false};
   // Specify the input file for a given binary
-  cl::opt<std::string> inputFilename{llvm::cl::Positional,
-                                     cl::desc("<input file>"), cl::init("-"),
-                                     llvm::cl::cat(CommonOptionsCategory)};
-
+  std::string inputFilename{"-"};
   // Specify the alignment for a given binary file.
-  cl::opt<int> inputFileAlignment{"input-file-alignment",
-                                  cl::desc("Alignment for opening input file"),
-                                  llvm::cl::cat(CommonOptionsCategory)};
+  int inputFileAlignment{0};
 
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
@@ -117,9 +105,7 @@ public:
   // Emission Options
   //===--------------------------------------------------------------------===//
 
-  cl::opt<std::string> outputFilename{"o", cl::desc("Output filename"),
-                                      cl::value_desc("filename"), cl::init("-"),
-                                      llvm::cl::cat(CommonOptionsCategory)};
+  std::string outputFilename{"-"};
 
   /// Determine an output file name and open it.
   std::unique_ptr<llvm::ToolOutputFile>
@@ -139,11 +125,11 @@ public:
                                           std::forward<BodyFn>(bodyFn));
   }
 
-  /// This method creates an MLIR context with the specified memory buffer as
-  /// the primary file configured in the source mgr.  It configures it for
-  /// diagnostic printing based on the setting of the -verify-diagnostics flag.
-  /// This invokes the `bodyFn` callable with the MLIRContext and SourceMgr that
-  /// is set up.
+  // This method creates an MLIR context with the specified memory buffer as
+  // the primary file configured in the source mgr.  It configures it for
+  // diagnostic printing based on the setting of the -verify-diagnostics flag.
+  // This invokes the `bodyFn` callable with the MLIRContext and SourceMgr that
+  // is set up.
   template <typename BodyFn>
   LogicalResult configureMLIRContextAndSourceMgrAndExecute(
       std::unique_ptr<llvm::MemoryBuffer> &&buffer, BodyFn &&bodyFn) const {
@@ -157,9 +143,9 @@ public:
         });
   }
 
-  /// This method creates an MLIR context and configures it for diagnostic
-  /// printing based on the setting of the -verify-diagnostics flag.  This
-  /// invokes the `bodyFn` callable with the MLIRContext that is set up.
+  // This method creates an MLIR context and configures it for diagnostic
+  // printing based on the setting of the -verify-diagnostics flag.  This
+  // invokes the `bodyFn` callable with the MLIRContext that is set up.
   template <typename BodyFn>
   LogicalResult configureMLIRContextAndExecute(llvm::SourceMgr &sourceMgr,
                                                BodyFn &&bodyFn) const {
@@ -167,7 +153,8 @@ public:
     if (verifyDiagnostics) {
       mlir::SourceMgrDiagnosticVerifierHandler sourceMgrHandler(sourceMgr,
                                                                 &context);
-      // If diagnostic verification is enabled, we don't propagate the result.
+      // If diagnostic verification is enabled, we don't propagate the
+      // result.
       (void)bodyFn(&context);
       return sourceMgrHandler.verify();
     }
@@ -180,19 +167,9 @@ public:
   // Intermediate Files Options
   //===--------------------------------------------------------------------===//
 
-  cl::opt<bool> saveTemps{
-      "save-temps",
-      cl::desc("Store the usual 'temporary' intermediate files permanently in "
-               "the directory specified by -temps-dir (defaults to the output "
-               "directory); name them as auxiliary output files."),
-      llvm::cl::Optional, llvm::cl::cat(CommonOptionsCategory)};
+  bool saveTemps{false};
 
-  cl::opt<std::string> tempsDir{
-      "temps-dir", cl::init(""),
-      cl::desc(
-          "The directory in which to store 'temporary' intermediate files. No "
-          "files will be saved here unless `-save-temps` is also specified."),
-      llvm::cl::Optional, llvm::cl::cat(CommonOptionsCategory)};
+  std::string tempsDir{""};
 
   /// Determine an intermediate file with extension `ext` and open it.
   std::unique_ptr<llvm::ToolOutputFile>
@@ -207,15 +184,84 @@ public:
   // TODO(#20024): Until we have a better solution we need to disable oneDNN
   // optimizations in stock tf since they appear to be incompatible with the
   // tf eager C API.
-  cl::opt<bool> disableTFOneDNN{
-      "disable-tf-onednn",
-      cl::desc("Disable the stock TF oneDNN optimizations."), cl::init(false),
-      llvm::cl::cat(CommonOptionsCategory)};
+  bool disableTFOneDNN{false};
 
 private:
   /// Default alignment for input files.
   /// Used only when both client code and CLI do not specify alignment.
   static constexpr llvm::Align defaultAlignment = llvm::Align::Constant<64>();
+};
+
+/// Contains command-line options that are shared among most of our binaries.
+class CommonCLOptions : public CLOptionsBase {
+public:
+  CommonOptions &options;
+  CommonCLOptions(int argc, char **argv, CommonOptions &o,
+                  bool skipInitLLVM = false)
+      : CLOptionsBase(argc, argv, o, skipInitLLVM), options(o) {}
+
+private:
+  llvm::cl::OptionCategory CommonOptionsCategory{"Common command line options"};
+  M::cl::MOpt<bool, true> verifyDiagnosticsOpt{
+      "verify-diagnostics",
+      cl::desc("Check that emitted diagnostics match "
+               "expected-* lines on the corresponding line"),
+      llvm::cl::location(options.verifyDiagnostics),
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  // Specify the input file for a given binary
+  M::cl::MOpt<std::string, true> inputFilenameOpt{
+      llvm::cl::Positional, cl::desc("<input file>"),
+      llvm::cl::location(options.inputFilename),
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  // Specify the alignment for a given binary file.
+  M::cl::MOpt<int, true> inputFileAlignmentOpt{
+      "input-file-alignment", cl::desc("Alignment for opening input file"),
+      llvm::cl::location(options.inputFileAlignment),
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  //===--------------------------------------------------------------------===//
+  // Emission Options
+  //===--------------------------------------------------------------------===//
+
+  M::cl::MOpt<std::string, true> outputFilenameOpt{
+      "o", cl::desc("Output filename"), cl::value_desc("filename"),
+      llvm::cl::location(options.outputFilename),
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  //===--------------------------------------------------------------------===//
+  // Intermediate Files Options
+  //===--------------------------------------------------------------------===//
+
+  M::cl::MOpt<bool, true> saveTempsOpt{
+      "save-temps",
+      cl::desc("Store the usual 'temporary' intermediate files permanently in "
+               "the directory specified by -temps-dir (defaults to the output "
+               "directory); name them as auxiliary output files."),
+      llvm::cl::Optional, llvm::cl::location(options.saveTemps),
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> tempsDirOpt{
+      "temps-dir",
+      cl::desc(
+          "The directory in which to store 'temporary' intermediate files. No "
+          "files will be saved here unless `-save-temps` is also specified."),
+      llvm::cl::location(options.tempsDir), llvm::cl::Optional,
+      llvm::cl::cat(CommonOptionsCategory)};
+
+  //===--------------------------------------------------------------------===//
+  // Hacks and workarounds
+  //===--------------------------------------------------------------------===//
+
+  // TODO(#20024): Until we have a better solution we need to disable oneDNN
+  // optimizations in stock tf since they appear to be incompatible with the
+  // tf eager C API.
+  M::cl::MOpt<bool, true> disableTFOneDNNOpt{
+      "disable-tf-onednn",
+      cl::desc("Disable the stock TF oneDNN optimizations."),
+      llvm::cl::location(options.disableTFOneDNN),
+      llvm::cl::cat(CommonOptionsCategory)};
 };
 
 } // namespace M

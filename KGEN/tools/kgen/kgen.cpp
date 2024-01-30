@@ -43,35 +43,39 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
-class CLOptions : public KGENCLOptions {
+
+class CLOptions : public KGENOptions {
 public:
-  using KGENCLOptions::KGENCLOptions;
+  KGENCLOptions parser;
 
-  cl::list<std::string> inputFiles{llvm::cl::Positional,
-                                   cl::desc("<input files>")};
+  CLOptions(int argc, char **argv, bool skipInitLLVM = false)
+      : parser(argc, argv, *this, skipInitLLVM) {}
 
-  cl::opt<bool> emitTextualAsm{
+  M::cl::MListOpt<std::string> inputFiles{llvm::cl::Positional,
+                                          cl::desc("<input files>")};
+
+  M::cl::MOpt<bool> emitTextualAsm{
       "S", cl::desc("Print MLIR output files in textual form")};
 
-  cl::opt<bool> ignoreFailures{
+  M::cl::MOpt<bool> ignoreFailures{
       "ignore-failure",
       cl::desc("Ignore execution failures. Any messages are still printed, but "
                "failures don't mean the tool fails to execute.")};
 
-  cl::opt<bool> disablePrebuiltPackages{
+  M::cl::MOpt<bool> disablePrebuiltPackages{
       "disable-prebuilt-packages",
       cl::desc("Disable prebuilt packages when parsing the input Mojo file."),
-      cl::init(false)};
+      llvm::cl::init(false)};
 
-  cl::opt<std::string> dependencyFilename{
+  M::cl::MOpt<std::string> dependencyFilename{
       "d", llvm::cl::desc("Path of the dependency file to generate"),
       llvm::cl::value_desc("filename"), llvm::cl::init("")};
 
   /// We default to printing diagnostics through llvm::SourceMgr to enable
   /// source ranges and fixit hints, but allow disabling this for testing.
-  cl::opt<bool> enableMLIRDiagnostics{
+  M::cl::MOpt<bool> enableMLIRDiagnostics{
       "enable-mlir-diagnostics",
-      cl::desc("Print .mojo diagnostics through MLIR."), cl::init(false)};
+      cl::desc("Print .mojo diagnostics through MLIR."), llvm::cl::init(false)};
 
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
@@ -112,7 +116,7 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   CompilerTimeTraceScope traceScope("emit-module",
                                     theModule.getSymName().value_or(""));
-  if (opts.emitTextualAsm) {
+  if (opts.emitTextualAsm.getValue()) {
     auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false, ".mlir");
     if (!outFile)
       return failure();
@@ -190,7 +194,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   CompilationOptions options = clOptions.getCompilationOptions();
 
   OwningOpRef<ModuleOp> theModule;
-  auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
+  auto inputFileName = llvm::StringRef(clOptions.inputFilename);
 
   // Initialize the timing manager.
   std::unique_ptr<mlir::TimingManager> timingManager;
@@ -207,12 +211,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (failed(applyPassManagerCLOptions(pm)))
     return failure();
   pm.enableTiming(timing);
-  if (clOptions.enableMLIRCrashReproducer.getValue()) {
+  if (clOptions.enableMLIRCrashReproducer) {
     // If the reproducer is enable, turn off all threading.
     ctx->disableMultithreading();
     clOptions.useSingleThreadedWorkqueue();
-    pm.enableCrashReproducerGeneration(clOptions.inputFilename.getValue() +
-                                           ".repro.mlir",
+    pm.enableCrashReproducerGeneration(clOptions.inputFilename + ".repro.mlir",
                                        clOptions.enableLocalMLIRReproducer);
   }
 
@@ -410,8 +413,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
       // Safely process creating the header, taking into account that we may
       // have different processes trying to produce this header in parallel.
-    } else if (ErrorOr<std::filesystem::path> err = writeFileUnderLock(
-                   clOptions.outputFilename.getValue(), writeFn);
+    } else if (ErrorOr<std::filesystem::path> err =
+                   writeFileUnderLock(clOptions.outputFilename, writeFn);
                err.isError()) {
       return failure(clOptions.reportError(err.getError()));
     }

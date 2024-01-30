@@ -30,37 +30,41 @@ namespace {
 using BinaryBlobCacheKey = Keys::VariantTypeKey<BufferRef, StringRef>;
 
 /// Provides the CLOptions for this tool.
-class CLOptions : public CLOptionsBase {
+class CLOptions : public OptionsBase {
+private:
+  CLOptionsBase parser;
+
 public:
-  using CLOptionsBase::CLOptionsBase;
+  CLOptions(int argc, char **argv, bool skipInitLLVM = false)
+      : parser(argc, argv, *this, skipInitLLVM) {}
 
   /// Specify the input file or cached object.
-  cl::opt<std::string> input{"input",
-                             cl::desc("<input file or CAS reference>")};
+  M::cl::MOpt<std::string> input{"input",
+                                 cl::desc("<input file or CAS reference>")};
 
-  cl::opt<std::string> key{
+  M::cl::MOpt<std::string> key{
       "key",
       cl::desc("Explicitly Specify key. In this case instead of binary hash, "
                "this key will be used for adding object to cache.")};
 
-  cl::opt<std::string> backendVersion{
+  M::cl::MOpt<std::string> backendVersion{
       "backend-version", cl::desc("Set the version for the local backend."),
       cl::init("")};
 
   /// Specify the target path for the CAS backend.
-  cl::opt<std::string> fsPath{
+  M::cl::MOpt<std::string> fsPath{
       "base-dir",
       cl::desc("URI for the CAS storage. Defaults to a temporary directory."),
       llvm::cl::init("")};
 
-  cl::opt<std::string> outFile{
+  M::cl::MOpt<std::string> outFile{
       "o", cl::desc("File path to use for program outputs."),
       llvm::cl::init("-")};
 
-  cl::opt<bool> append{"append", cl::desc("Append to the output file."),
-                       cl::init(false)};
+  M::cl::MOpt<bool> append{"append", cl::desc("Append to the output file."),
+                           cl::init(false)};
 
-  cl::opt<bool> outputHex{
+  M::cl::MOpt<bool> outputHex{
       "output-hex",
       cl::desc("write the output hash in hex, rather than base64"),
       cl::init(false)};

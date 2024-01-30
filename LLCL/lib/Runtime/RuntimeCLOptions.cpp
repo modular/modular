@@ -10,42 +10,42 @@
 using namespace M::LLCL;
 
 std::unique_ptr<Runtime>
-RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
-  RuntimeOptions runtimeOptions;
+RuntimeOptions::createRuntime(StringRef profileName) const {
+  RuntimeOptions runtimeOptions; //{*this};
   switch (allocatorType) {
-  case AllocatorType::kMalloc:
+  case RuntimeOptions::AllocatorType::kMalloc:
     break;
-  case AllocatorType::kTCMalloc:
+  case RuntimeOptions::AllocatorType::kTCMalloc:
     runtimeOptions.tcmallocAllocator = true;
     break;
-  case AllocatorType::kLeakChecker:
+  case RuntimeOptions::AllocatorType::kLeakChecker:
     runtimeOptions.leakCheckedAllocator = true;
     break;
-  case AllocatorType::kProfiler:
+  case RuntimeOptions::AllocatorType::kProfiler:
     runtimeOptions.profilingAllocator = true;
     break;
-  case AllocatorType::kUseAfterFree:
+  case RuntimeOptions::AllocatorType::kUseAfterFree:
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
     runtimeOptions.useAfterFreeAllocator = true;
 #else
     llvm::errs() << "The use-after-free allocator is not available for this "
                     "target. Using the leak-checker runtime instead.";
-    runtimeOptions.leakCheckedAllocator = true;
+    options.leakCheckedAllocator = true;
 #endif
     break;
   }
+  // runtimeOptions.workQueueType = getWorkQueueType();
   switch (getWorkQueueType()) {
-  case WorkQueueType::kDefault:
+  case RuntimeOptions::WorkQueueType::kDefault:
     assert(0 && "should be resolved");
-  case WorkQueueType::kSingleThread:
+  case RuntimeOptions::WorkQueueType::kSingleThread:
     runtimeOptions.singleThreaded = true;
     break;
-  case WorkQueueType::kThreadPool:
+  case RuntimeOptions::WorkQueueType::kThreadPool:
     runtimeOptions.numThreads = numThreads;
-    runtimeOptions.threadBusyWaitTime =
-        std::chrono::microseconds(threadBusyWaitTime);
+    runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
 #if MODULAR_PARANOID
-    runtimeOptions.paranoid = paranoid;
+    options.paranoid = paranoid;
 #endif
     break;
   }
@@ -57,8 +57,4 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
   // runtime via the C API when it invokes
   // setupMLIRAndRunWithLeakCheckedRuntime.
   return LLCL::createNestedRuntime(runtimeOptions);
-}
-
-std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {
-  return RuntimeWorkQueueCLOptions::createRuntime(getProfileFilename());
 }
