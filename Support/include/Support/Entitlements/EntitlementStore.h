@@ -65,7 +65,7 @@ public:
   /// certificate does not exist, then return std::nullopt because the enclosing
   /// application should decide what to do in that state. If an actual error
   /// occurs, return the error.
-  static ErrorOr<std::optional<EntitlementStore>> open(HTTPClient &client);
+  static ErrorOr<std::optional<EntitlementStore>> open(HTTPClient *client);
 
   /// Remove an existing certificate from the user's system (if it exists) and
   /// fetch a new one. This always returns an EntitlementStore on success,
