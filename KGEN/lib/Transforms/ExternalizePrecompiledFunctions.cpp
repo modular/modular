@@ -38,8 +38,19 @@ void ExternalizePrecompiledFunctionsPass::runOnOperation() {
 
     // Replace it with a kgen.extern.func.
     b.setInsertionPoint(func);
+    // Remove "Definition" flag & compile unit from debug scope.
+    Location externLoc = cast<Location>(
+        func.getLoc()->replace([](DebugInfo::DISubprogramAttr sp) {
+          return DebugInfo::DISubprogramAttr::get(
+              {}, sp.getScope(), sp.getName(), sp.getLinkageName(),
+              sp.getFile(), sp.getLine(), sp.getScopeLine(),
+              bitEnumClear(sp.getSubprogramFlags(),
+                           DebugInfo::SubprogramFlags::Definition),
+              sp.getType());
+        }));
+
     auto externFunc = b.create<ExternFuncOp>(
-        func.getLoc(), func.getNameAttr(), func.getSignature(),
+        externLoc, func.getNameAttr(), func.getSignature(),
         func.getExportKind(), func.getPrecompiledBodyRefAttr());
     symtab.remove(func);
     symtab.insert(externFunc);
