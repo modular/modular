@@ -576,13 +576,15 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   MLIRContext *ctx = p.getContext();
+  auto metadata = FnMetadataAttr::get(
+      ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
+                            defaultKwOnlyArgs),
+      ArgParamListAttr::get(ctx, paramNames, paramPassingKinds,
+                            defaultPosParams, defaultKwOnlyParams),
+      numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
-      resultParamTypes, argConventions, effects,
-      FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, defaultPosArgs, defaultPosParams,
-                          defaultKwOnlyArgs, defaultKwOnlyParams,
-                          numLifetimeDecls));
+      resultParamTypes, argConventions, effects, metadata);
   return success(!!signature);
 }
 
@@ -708,14 +710,9 @@ size_t LITSignatureType::getNumImplicitLifetimeDecls() {
 }
 
 LITSignatureType LITSignatureType::dropParamValues() {
-  auto metadata =
-      FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
-                          /*paramNames=*/{}, /*paramPassingKinds=*/{},
-                          getDefaultPosArgs(), /*defaultPosParams=*/{},
-                          getDefaultKwOnlyArgs(), /*defaultKwOnlyParams=*/{},
-                          /*numImplicitLifetimeDecls=*/0);
-  return get(getValues(), /*inputParamTypes=*/{}, getArgConventions(),
-             getFnEffects(), metadata);
+  return get(getValues(), /*paramTypes=*/{}, getArgConventions(),
+             getFnEffects(),
+             FnMetadataAttr::get(getMetadata().getArgListAttrs()));
 }
 
 /// Substitute the specified implicit lifetime references into the specified
@@ -850,8 +847,8 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
   size_t numInputs = funcType.getNumInputs();
   SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
   SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
-  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds,
-                                      numImplicitLifetimeDecls);
+  auto newArgAttrs = ArgParamListAttr::get(ctx, argNames, argPassingKinds);
+  auto metadata = FnMetadataAttr::get(newArgAttrs, numImplicitLifetimeDecls);
   return LITSignatureType::get(funcType, /*paramTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
 }

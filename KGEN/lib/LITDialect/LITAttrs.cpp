@@ -41,53 +41,54 @@ ArgParamListAttr ArgParamListAttr::get(MLIRContext *context) {
   return ArgParamListAttr::get(context, {}, {}, {}, {});
 }
 
+ArgParamListAttr ArgParamListAttr::get(MLIRContext *context,
+                                       ArrayRef<StringAttr> names,
+                                       ArrayRef<PassingKind> passingKinds) {
+  return ArgParamListAttr::get(context, names, passingKinds, {}, {});
+}
+
+LogicalResult ArgParamListAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> names,
+    ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
+    ArrayRef<TypedAttr> defaultKwOnly) {
+  if (names.size() != passingKinds.size()) {
+    return emitError()
+           << "number of argument/parameter names and passing kinds must match";
+  }
+  for (StringAttr name : names)
+    if (!name)
+      return emitError() << "argument/parameter name cannot be null";
+  return success();
+}
+
+ArgParamListAttr
+ArgParamListAttr::cloneWith(ArrayRef<StringAttr> names,
+                            ArrayRef<PassingKind> passingKinds) const {
+  return ArgParamListAttr::get(getContext(), names, passingKinds,
+                               getDefaultPos(), getDefaultKwOnly());
+}
+
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
-                                   ArrayRef<StringAttr> argNames,
-                                   ArrayRef<PassingKind> argPassingKinds,
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
+  auto list = ArgParamListAttr::get(context);
+  return FnMetadataAttr::get(context, list, list, 0);
+}
+
+FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
+                                   ArgParamListAttr paramListAttrs,
                                    size_t numImplicitLifetimeDecls) {
-  return get(context, argNames, argPassingKinds, /*paramNames=*/{},
-             /*paramPassingKinds=*/{}, /*defaultPosArgs=*/{},
-             /*defaultPosParams=*/{}, /*defaultKwOnlyArgs=*/{},
-             /*defaultKwOnlyParams=*/{}, numImplicitLifetimeDecls);
+  return get(argListAttrs.getContext(), argListAttrs, paramListAttrs,
+             numImplicitLifetimeDecls);
 }
 
-FnMetadataAttr
-FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
-                          ArrayRef<PassingKind> argPassingKinds) const {
-  ArrayRef<TypedAttr> defaultPosArgs = getDefaultPosArgs();
-  ArrayRef<TypedAttr> defaultKwOnlyArgs = getDefaultKwOnlyArgs();
-  assert(argNames.size() >= defaultPosArgs.size() + defaultKwOnlyArgs.size());
-  return get(getContext(), argNames, argPassingKinds, getParamNames(),
-             getParamPassingKinds(), defaultPosArgs, getDefaultPosParams(),
-             defaultKwOnlyArgs, getDefaultKwOnlyParams(),
-             getNumImplicitLifetimeDecls());
-}
-
-LogicalResult FnMetadataAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
-    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultPosArgs,
-    ArrayRef<TypedAttr> defaultPosParams, ArrayRef<TypedAttr> defaultKwOnlyArgs,
-    ArrayRef<TypedAttr> defaultKwOnlyParams, size_t numImplicitLifetimeDecls) {
-  if (argNames.size() != argPassingKinds.size()) {
-    return emitError()
-           << "number of argument names and passing kinds must match";
-  }
-  if (paramNames.size() != paramPassingKinds.size()) {
-    return emitError()
-           << "number of parameter names and passing kinds must match";
-  }
-  for (StringAttr name : argNames)
-    if (!name)
-      return emitError() << "argument name cannot be null";
-  for (StringAttr name : paramNames)
-    if (!name)
-      return emitError() << "parameter name cannot be null";
-  return success();
+FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
+                                   size_t numImplicitLifetimeDecls) {
+  MLIRContext *ctx = argListAttrs.getContext();
+  return get(ctx, argListAttrs, ArgParamListAttr::get(ctx),
+             numImplicitLifetimeDecls);
 }
 
 FnMetadataAttrInterface
@@ -104,9 +105,10 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   if (numArgs < newDefaultPosArgs.size())
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
-  return get(getContext(), newArgNames, newArgPassingKind, getParamNames(),
-             getParamPassingKinds(), newDefaultPosArgs, getDefaultPosParams(),
-             getDefaultKwOnlyArgs(), getDefaultKwOnlyParams(),
+  auto newArgListAttrs =
+      ArgParamListAttr::get(getContext(), newArgNames, newArgPassingKind,
+                            newDefaultPosArgs, getDefaultKwOnlyArgs());
+  return get(newArgListAttrs, getParamListAttrs(),
              getNumImplicitLifetimeDecls());
 }
 
@@ -129,10 +131,10 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     }
   }
 
-  return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
-             newParamPassingKinds, getDefaultPosArgs(), newDefaultPosParams,
-             getDefaultKwOnlyArgs(), newDefaultKwOnlyParams,
-             getNumImplicitLifetimeDecls());
+  auto newParamAttrs =
+      ArgParamListAttr::get(getContext(), newParamNames, newParamPassingKinds,
+                            newDefaultPosParams, newDefaultKwOnlyParams);
+  return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttrInterface
@@ -142,9 +144,9 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
   llvm::append_range(newParamNames, getParamNames());
   SmallVector<PassingKind> newPassingKinds(numNewParams, PassingKind::PosOnly);
   llvm::append_range(newPassingKinds, getParamPassingKinds());
-  return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
-             newPassingKinds, getDefaultPosArgs(), getDefaultPosParams(),
-             getDefaultKwOnlyArgs(), getDefaultKwOnlyParams(),
+
+  return get(getArgListAttrs(),
+             getParamListAttrs().cloneWith(newParamNames, newPassingKinds),
              getNumImplicitLifetimeDecls());
 }
 

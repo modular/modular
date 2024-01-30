@@ -2092,18 +2092,17 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     conventions.push_back(conv);
   }
 
+  ArgParamListAttr oldArgListAttrs = traitSig.getMetadata().getArgListAttrs();
+  ArgParamListAttr newArgListAttrs = oldArgListAttrs.cloneWith(
+      oldArgListAttrs.getNames().drop_front(replacedResult),
+      oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
+  auto metadata = FnMetadataAttr::get(
+      newArgListAttrs, traitSig.getMetadata().getParamListAttrs(),
+      numImplicitLifetimeDecls);
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
-      fnEffects,
-      FnMetadataAttr::get(
-          traitSig.getContext(),
-          traitSig.getArgNames().drop_front(replacedResult),
-          traitSig.getArgPassingKinds().drop_front(replacedResult),
-          traitSig.getParamNames(), traitSig.getParamPassingKinds(),
-          traitSig.getDefaultPosArgs(), traitSig.getDefaultPosParams(),
-          traitSig.getDefaultKwOnlyArgs(), traitSig.getDefaultKwOnlyParams(),
-          numImplicitLifetimeDecls));
+      fnEffects, metadata);
 }
 
 /// Synthesize a single stub for a register-passable type to meet a conformance

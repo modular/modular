@@ -92,14 +92,8 @@ def ArgParamListAttr : DialectAttribute<(attr
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr
-  StringAttrArray:$argNames,
-  EnumAttrArray<"PassingKind">:$argPassingKinds,
-  StringAttrArray:$paramNames,
-  EnumAttrArray<"PassingKind">:$paramPassingKinds,
-  TypedAttrArray:$defaultPosArgs,
-  TypedAttrArray:$defaultPosParams,
-  TypedAttrArray:$defaultKwOnlyArgs,
-  TypedAttrArray:$defaultKwOnlyParams,
+  ConcreteAttribute<"ArgParamListAttr">:$argListAttrs,
+  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs,
   VarInt:$numImplicitLifetimeDecls
 )>;
 

@@ -72,8 +72,19 @@ def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
   }];
 
   let builders = [
-    AttrBuilder<(ins)>
+    AttrBuilder<(ins)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds)>
   ];
+
+  let extraClassDeclaration = [{
+    /// Create a new arg/paramlist attr with the given names and passking kinds,
+    /// retaining the existing defaults.
+    ArgParamListAttr cloneWith(ArrayRef<StringAttr> names,
+                               ArrayRef<PassingKind> passingKinds) const;
+  }];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -85,63 +96,74 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let summary = "Function metadata.";
   let description = [{
     The `#lit.fn_metadata` attribute contains additional information about a
-    function, such as the argument/parameter names and kinds (e.g. positional or
-    keyword-only) and the default values for positional and keyword-only
-    arguments/parameters.
+    function, such as the argument and parameter list metadata and the number of
+    implicit lifetime declarations.
 
     Example:
 
     ```mlir
-    // Metadata specifying argument #0 is called "a", argument #1 is called "b",
-    // argument #1 has a default value of `4.2`, and the default value for the
-    // parameter with name "p" is equal to 1.
-    #lit.fn_metadata<["a", "b"], ["p"], [4.2 : f32], [1: i64]>
-
-    // Metadata specifying argument names only for arguments #1 and #2, no
-    // default arguments, and no default parameters.
-    #lit.fn_metadata<["", "y", "z"], [], []>
+    // Metadata specifying argument #0 is called "someRef", argument #1 is
+    // called "v", they have positional-only and keyword-only passing kinds, and
+    // default values of `13` and `17`, respectively. Moveover, parameter #0 is
+    // called "someParam", parameter #1 is called "paramWithDefault", they have
+    // positional-only and positional-or-keyword passing kinds respectively, and
+    // the latter has the default value `3.14`. The list keyword-only default
+    // parameter values is empty (since there are no keyword-only parameters).
+    // The signature has two implicit lifetime declarations.
+    #lit.fn_metadata<
+      <["someRef", "v"], [pos, kw], [13 : index], [17 : i64]>,
+      <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.14: f32], []>,
+      2
+    >
     ```
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"StringAttr">:$argNames,
-    OptionalArrayRefParameter<"PassingKind">:$argPassingKinds,
-    OptionalArrayRefParameter<"StringAttr">:$paramNames,
-    OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultPosArgs,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultPosParams,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnlyArgs,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnlyParams,
+    LIT_ArgParamListAttr:$argListAttrs,
+    LIT_ArgParamListAttr:$paramListAttrs,
     "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($argNames^            `]`)? `,`
-        `[` (`]`) : ($argPassingKinds^     `]`)? `,`
-        `[` (`]`) : ($paramNames^          `]`)? `,`
-        `[` (`]`) : ($paramPassingKinds^   `]`)? `,`
-        `[` (`]`) : ($defaultPosArgs^      `]`)? `,`
-        `[` (`]`) : ($defaultPosParams^    `]`)? `,`
-        `[` (`]`) : ($defaultKwOnlyArgs^   `]`)? `,`
-        `[` (`]`) : ($defaultKwOnlyParams^ `]`)? `,`
-        $numImplicitLifetimeDecls
-    `>`
+    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls `>`
   }];
 
   let builders = [
-    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
-                     "ArrayRef<PassingKind>":$argPassingKinds,
-                     "size_t":$numImplicitLifetimeDecls)>
+    AttrBuilder<(ins)>,
+    AttrBuilderWithInferredContext<(ins
+      "ArgParamListAttr":$argListAttrs,
+      "ArgParamListAttr":$paramListAttrs,
+      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
+    AttrBuilderWithInferredContext<(ins
+      "ArgParamListAttr":$argListAttrs,
+      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>
   ];
 
   let extraClassDeclaration = [{
-    /// Create a new metadata attribute with the given argument names. Only use
-    /// this helper if certain that the default arguments do not need to be
-    /// modified (e.g. because prepending a positional-only argument).
-    FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames,
-                             ArrayRef<PassingKind> argPassingKinds) const;
+    ArrayRef<StringAttr> getArgNames() const {
+      return getArgListAttrs().getNames();
+    };
+    ArrayRef<PassingKind> getArgPassingKinds() const {
+      return getArgListAttrs().getPassingKinds();
+    };
+    ArrayRef<StringAttr> getParamNames() const {
+      return getParamListAttrs().getNames();
+    };
+    ArrayRef<PassingKind> getParamPassingKinds() const {
+      return getParamListAttrs().getPassingKinds();
+    };
+    ArrayRef<TypedAttr> getDefaultPosArgs() const {
+      return getArgListAttrs().getDefaultPos();
+    };
+    ArrayRef<TypedAttr> getDefaultKwOnlyArgs() const {
+      return getArgListAttrs().getDefaultKwOnly();
+    };
+    ArrayRef<TypedAttr> getDefaultPosParams() const {
+      return getParamListAttrs().getDefaultPos();
+    };
+    ArrayRef<TypedAttr> getDefaultKwOnlyParams() const {
+      return getParamListAttrs().getDefaultKwOnly();
+    };
   }];
-
-  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -12,17 +12,18 @@
 // CHECK-SAME: {arg_param_list = #lit.arg_param_list<[], [], [], []>}
 "empty.arg_param_list"() {arg_param_list = #lit.arg_param_list<[], [], [], []>} : () -> ()
 
-// CHECK: #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw], [13 : index], [3.140000e+00 : f32], [17 : i64], [], 2>
+// CHECK: #lit.fn_metadata
+// CHECK-SAME: <["someRef", "v"], [pos, kw], [13 : index], [17 : i64]>,
+// CHECK-SAME: <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.140000e+00 : f32], []>,
+// CHECK-SAME: 2>
 "some.op"() {metadata = #lit.fn_metadata<
-  ["someRef", "v"], [pos, kw],
-  ["someParam", "paramWithDefault"], [pos, pos_or_kw],
-  [13 : index], [3.14: f32],
-  [17 : i64], [],
+  <["someRef", "v"], [pos, kw], [13 : index], [17 : i64]>,
+  <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.14: f32], []>,
   2
 >} : () -> ()
 
-// CHECK: #lit.fn_metadata<[], [], [], [], [], [], [], [], 0>
-"some.op"() {metadata = #lit.fn_metadata<[], [], [], [], [], [], [], [], 0>} : () -> ()
+// CHECK: #lit.fn_metadata<<[], [], [], []>, <[], [], [], []>, 0>
+"some.op"() {metadata = #lit.fn_metadata<<[], [], [], []>, <[], [], [], []>, 0>} : () -> ()
 
 // CHECK: #kgen.none : !kgen.none
 "a"() {a = #kgen.none : !kgen.none} : () -> ()

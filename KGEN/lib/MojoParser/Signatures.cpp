@@ -972,9 +972,12 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   }
 
   auto metadata = FnMetadataAttr::get(
-      ctx, argNames, argPassingKinds, paramList.names, paramList.passingKinds,
-      defaultPosArgs, paramList.defaultPosParams, defaultKwOnlyArgs,
-      paramList.defaultKwOnlyParams, implicitLifetimeDecls.size());
+      ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
+                            defaultKwOnlyArgs),
+      ArgParamListAttr::get(ctx, paramList.names, paramList.passingKinds,
+                            paramList.defaultPosParams,
+                            paramList.defaultKwOnlyParams),
+      implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.
