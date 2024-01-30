@@ -656,18 +656,40 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     if (!callResult)
       return {};
 
-    // We expected the refitem method to return a reference (or something we can
-    // achieve one by calling `__mlir_ref__`).  Depending on its mutability, it
-    // will be a MBValue or an MLValue.
-    // TODO: support __mlir_ref__
+    // We expected the refitem method to return an MLIR reference or something
+    // we can achieve one by calling `__mlir_ref__`.  Unless we have a reference
+    // already, invoke the accessor.
     auto resultRefType = dyn_cast<RefType>(callResult.getRValueType());
     if (!resultRefType) {
-      emitter.emitError(node->getLoc())
-          << "the '" << refferName << "' method on " << baseType
-          << " returned a value of " << callResult.getRValueType()
-          << ", expected a reference";
-      return {};
+      // Check to see if the method exists to generate a custom error.
+      if (!emitter.shared.typeHasMember(callResult.getRValueType(),
+                                        "__mlir_ref__", node->getLoc())) {
+        emitter.emitError(node->getLoc())
+            << "the '" << refferName << "' method on " << baseType
+            << " returned a value of " << callResult.getRValueType()
+            << ", expected a reference";
+        return {};
+      }
+      // If it exists, call it.  This checks that the operands line up.
+      CValue mlirRefResult = emitter.emitNamedMethodCall(
+          "__mlir_ref__", CallOperands({{callResult, node}}), refDest,
+          CallSyntax::kImplicitConvert, node);
+      if (!mlirRefResult)
+        return {};
+
+      // Double check this really returned an MLIR reference.
+      resultRefType = dyn_cast<RefType>(mlirRefResult.getRValueType());
+      if (!resultRefType) {
+        emitter.emitError(node->getLoc())
+            << "the '__mlir_ref__' method on " << callResult.getRValueType()
+            << " returned a value of " << mlirRefResult.getRValueType()
+            << ", expected an MLIR reference";
+        return {};
+      }
+      callResult = mlirRefResult;
     }
+
+    // We know it has the right type, get it as a scalar value.
     Value refVal = emitter.emitSRValue({callResult, node}, dest.getContext());
     if (!refVal)
       return {};

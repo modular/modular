@@ -1407,13 +1407,15 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %b_0 = lit.varlet.decl
     # CHECK: %v0 = lit.varlet.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
-    # CHECK: [[B1ADDR:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1ADDR]])
+    # CHECK: [[B1REF:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
+    # CHECK-NEXT: [[B1MEMREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[B1REF]])
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1MEMREF]])
     let v0 = b[1]
     # CHECK: %v1 = lit.varlet.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
-    # CHECK: [[B2ADDR:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2ADDR]])
+    # CHECK: [[B2REF:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
+    # CHECK-NEXT: [[B2MEMREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[B2REF]])
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2MEMREF]])
     var v1 = b[2]
 
 fn takeMemory(a: MemoryType): pass
