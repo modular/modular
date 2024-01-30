@@ -4,34 +4,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Threading/HWInfo.h"
+#include <filesystem>
+
 #include "Support/ErrorOr.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/Format.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 #ifdef _MSC_VER
 #include "llvm/Support/WindowsError.h"
-#include <cpuid.h>
-#include <intrin.h>
-#include <iphlpapi.h>
 #include <windows.h>
-#else
-#include <fcntl.h>
-#include <ifaddrs.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#endif
+#endif // _MSC_VER
 
-#ifdef __APPLE__
-#include <net/if_dl.h>
+#if defined(__APPLE__)
 #include <sys/sysctl.h>
-#endif
-
-#include <filesystem>
+#include <sys/types.h>
+#endif // __APPLE__
 
 #define DEBUG_TYPE "threading-hw-info"
 
@@ -445,50 +435,4 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
       // any).
       ++virtualCoreIndex;
   }
-}
-
-static std::string bytesToHexStr(uint8_t *ptr, int count) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  for (int i = 0; i < count; i++) {
-    if (i > 0)
-      ss << ":";
-    ss << llvm::format_hex_no_prefix(ptr[i], 2, true);
-  }
-  return s;
-}
-
-std::vector<std::string> M::localMACs() {
-  std::vector<std::string> macs;
-#ifdef _MSC_VER
-  IP_ADAPTER_INFO AdapterInfo[32];
-  DWORD dwBufLen = sizeof(AdapterInfo);
-  DWORD dwStatus = GetAdaptersInfo(AdapterInfo, &dwBufLen);
-  if (dwStatus == ERROR_SUCCESS) {
-    PIP_ADAPTER_INFO pAdapterInfo = AdapterInfo;
-    while (pAdapterInfo) {
-      macs.emplace_back(bytesToHexStr(pAdapterInfo->Address, pAdapterInfo->AddressLength);
-      pAdapterInfo = pAdapterInfo->Next;
-    }
-  }
-#else
-#ifdef AF_PACKET
-#define __AF_TYPE AF_PACKET
-#else
-#define __AF_TYPE AF_LINK
-#endif
-  struct ifaddrs *ifap, *ifaptr;
-  if (getifaddrs(&ifap) == 0) {
-    for (ifaptr = ifap; ifaptr != NULL; ifaptr = (ifaptr)->ifa_next) {
-      if (((ifaptr)->ifa_addr)->sa_family == __AF_TYPE) {
-        uint8_t *data = reinterpret_cast<uint8_t *>(
-            (struct sockaddr_dl *)(ifaptr)->ifa_addr);
-        macs.emplace_back(bytesToHexStr(data, 6));
-      }
-    }
-    freeifaddrs(ifap);
-  }
-#undef __AF_TYPE
-#endif
-  return macs;
 }
