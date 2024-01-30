@@ -9,10 +9,7 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Logs.h"
 #include "llvm/Support/MemoryBuffer.h"
-
 #include <thread>
-
-#include <stdlib.h>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -501,21 +498,5 @@ TEST(Telemetry, Resources) {
         EXPECT_TRUE(eventFound) << "expected to find event in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
-}
-
-TEST(Telemetry, LocalIDs) {
-  auto origIDs = createLocalIDs();
-  EXPECT_EXIT(
-      {
-        auto newIDs = createLocalIDs();
-        // The first ID should be machine invariant.
-        if (origIDs.first != newIDs.first)
-          exit(1);
-        // The second one should be process invariant.
-        if (origIDs.second == newIDs.second)
-          exit(1);
-        exit(0); // Success.
-      },
-      testing::ExitedWithCode(0), "");
 }
 #endif // MODULAR_ENABLE_TELEMETRY

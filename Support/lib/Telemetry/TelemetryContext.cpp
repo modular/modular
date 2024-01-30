@@ -7,12 +7,9 @@
 #include "Support/Telemetry/Telemetry.h"
 
 #include "Config/Version.h"
-#include "Support/Base64.h"
 #include "Support/MArchTarget/Host.h"
-#include "Support/Random.h"
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Threading.h"
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -34,8 +31,6 @@
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
-
-#include <algorithm> // For std::sort.
 
 #define DEBUG_TYPE "telemetry-context"
 
@@ -94,45 +89,6 @@ static void configureInternalLogging(Config &cfg) {
         logLevel);
   }
 }
-
-#ifdef AF_PACKET
-#define __AF_TYPE AF_PACKET
-#else
-#define __AF_TYPE AF_LINK
-#endif
-
-/// creates local identifiers; see Telemetry.h.
-std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
-  // Collect all interfaces.
-  std::vector<std::string> macs = localMACs();
-  std::sort(std::begin(macs), std::end(macs));
-
-  // Hash all addresses together.
-  llvm::BLAKE3 hashState{};
-  for (const auto &mac : macs)
-    hashState.update(StringRef(mac));
-
-  // Construct a machine ID.
-  auto hash = hashState.result();
-  std::string machine_id =
-      encodeURLSafeBase64(std::string({hash.begin(), hash.end()}));
-
-  // Mix in some random bytes in order to construct a local session identifier.
-  // This may suffer from a cardinality explosion (and we may choose to rely on
-  // the machineid in the future instead), but we can make that decision in the
-  // backend separately.
-  SecureRandomBytesGenerator rng;
-  std::array<uint8_t, 32> scratchBuf = {};
-  auto err = rng.getRandomBytes(scratchBuf);
-  assert(!err.isError());
-  hashState.update(scratchBuf);
-  hash = hashState.result();
-  std::string session_id =
-      encodeURLSafeBase64(std::string({hash.begin(), hash.end()}));
-
-  // Return the pair.
-  return std::pair<std::string, std::string>(machine_id, session_id);
-}
 #endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::TelemetryContext(
@@ -168,11 +124,6 @@ TelemetryContext::TelemetryContext(
   attrs.SetAttribute("modular.version.label", version.label);
   attrs.SetAttribute("modular.version.revision", version.revision);
   attrs.SetAttribute("modular.version.buildtype", version.buildType);
-
-  // Set the local machineid.
-  static std::pair<std::string, std::string> local_ids = createLocalIDs();
-  attrs.SetAttribute("machineid", local_ids.first);
-  attrs.SetAttribute("sessionid", local_ids.second);
 
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
