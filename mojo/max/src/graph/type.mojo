@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor import TensorSpec
+from utils.variant import Variant
 
 import mlir
 
@@ -38,7 +39,7 @@ struct ElementType(MOType):
 
 
 @value
-struct MOTensor(MOType):
+struct MOTensor(MOType, CollectionElement):
     var dtype: ElementType
     # TODO: This is insufficient. We need a vector of types.
     # To be able to wrap the shape and dims as a type, we need a wrapper over
@@ -155,28 +156,63 @@ struct MOTensor(MOType):
     # TODO: Add shape arithmetics here, or in a separate Shape type.
 
 
+# TODO: Drop this when we get existentials.
+alias AnyMOType = Variant[MOTensor]
+
+
+# TODO: Drop this when we get existentials.
+fn mo_type_to_mlir(t: AnyMOType, m: Module) -> mlir.Type:
+    if t.isa[MOTensor]():
+        return t.get[MOTensor]().to_mlir(m)
+
+    # Use a default that will trap, to appease the checker that wants a return.
+    return t.get[MOTensor]().to_mlir(m)
+
+
 @value
-struct Arity:
-    var a: ArityPtr
+struct TypeTuple(Sized):
+    var data: DynamicVector[AnyMOType]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, *types: mlir.Type):
-        self.a = capi.arity_new()
+    fn __init__(inout self, *types: AnyMOType):
+        self.data = DynamicVector[AnyMOType]()
         for t in types:
-            capi.arity_append_type(self.a, t[])
+            self.data.append(t[])
+
+    # ===------------------------------------------------------------------=== #
+    # Convenience adapters
+    # ===------------------------------------------------------------------=== #
+
+    # TODO: Most should go away when one can express (AnyMOType, AnyMOType)
+
+    fn __init__(inout self, t: MOTensor):
+        self.data = DynamicVector[AnyMOType]()
+        self.data.append(t)
+
+    # ===------------------------------------------------------------------=== #
+    # Basic accessors
+    # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return capi.arity_size(self.a)
+        return len(self.data)
+
+    # ===------------------------------------------------------------------=== #
+    # MLIR conversion
+    # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> ArityPtr:
-        return self.a
+        var a = capi.arity_new()
+        for i in range(len(self.data)):
+            let el = self.data[i]
+            capi.arity_append_type(a, mo_type_to_mlir(el, m))
+        return a
 
     # ===------------------------------------------------------------------=== #
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn append(self, type: mlir.Type):
-        capi.arity_append_type(self.a, type)
+    fn append(inout self, type: AnyMOType) raises:
+        self.data.append(type)

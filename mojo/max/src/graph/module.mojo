@@ -4,13 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tensor import Tensor, TensorSpec, TensorShape
-
-from .type import Arity
-from .symbol import Symbol
-from .type import MOTensor, MOType
+from tensor import Tensor
 
 import mlir
+
+from .type import MOTensor, TypeTuple
 
 
 @value
@@ -22,13 +20,10 @@ struct Module:
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self):
-        var context = mlir.Context()
-        context.load_modular_dialects()
-        context.load_all_available_dialects()
-        self.__init__(context)
-
-    fn __init__(inout self, ctx: mlir.Context):
-        self.__init__(mlir.Module(mlir.Location.unknown(ctx)))
+        var ctx = mlir.Context()
+        ctx.load_modular_dialects()
+        ctx.load_all_available_dialects()
+        self.m = mlir.Module(mlir.Location.unknown(ctx))
 
     fn __str__(self) -> String:
         return str(self.m)
@@ -109,23 +104,7 @@ struct Module:
     # Graph factories
     # ===------------------------------------------------------------------=== #
 
-    fn graph(self, name: StringRef, in_types: Arity, out_types: Arity) -> Graph:
-        let unknown = self.unknown_loc()
-        let g = capi.graph_new(self.m, unknown, name, in_types.a, out_types.a)
-        return Graph(g, self)
-
-    # ===------------------------------------------------------------------=== #
-    # Type convenience helpers
-    # ===------------------------------------------------------------------=== #
-
-    fn i32(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.int32, dims).to_mlir(self)
-
-    fn i64(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.int64, dims).to_mlir(self)
-
-    fn f32(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.float32, dims).to_mlir(self)
-
-    fn bool(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.bool, dims).to_mlir(self)
+    fn graph(
+        self, name: StringRef, in_types: TypeTuple, out_types: TypeTuple
+    ) -> Graph:
+        return Graph(self, name, in_types, out_types)

@@ -97,8 +97,8 @@ struct Symbol(CollectionElement, Stringable):
 
     fn print(self, label: StringRef = "debug_tensor") raises:
         var g = self.graph()
-        let attrs = AttrMap(g.m.string_attr("label", label))
-        _ = g.nvop("mo.debug.tensor.print", self, Arity(), attrs)
+        let attrs = AttrMap(g.module().string_attr("label", label))
+        _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
 
     fn transpose(self) raises -> Symbol:
         return transpose(self, -1, -2)
@@ -298,9 +298,6 @@ struct SymbolTuple(Sized):
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *symbols: Symbol):
-        self.__init__(symbols)
-
-    fn __init__(inout self, symbols: VariadicList[Symbol]):
         self.t = capi.tuple_new()
         for symbol in symbols:
             capi.tuple_append_symbol(self.t, symbol.s)

@@ -134,12 +134,12 @@ def split[
     let norm_axis = axis + x_type.rank() if axis < 0 else axis
 
     var split_sizes = DynamicVector[Int64]()
-    let out_types = Arity()
+    var out_types = TypeTuple()
     for i in range(n):
         split_sizes.append(sizes[i])
         var out_dims = x_type.dims
         out_dims[norm_axis] = sizes[i]
-        out_types.append(MOTensor(x_type.dtype, out_dims).to_mlir(g.m))
+        out_types.append(MOTensor(x_type.dtype, out_dims))
 
     return g.nvop(
         "mo.split",
