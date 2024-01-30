@@ -4,30 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -verify-diagnostics
+# RUN: %translate-with-packages %s -verify-diagnostics
 
-
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias AnyRegType = __mlir_type.`!kgen.type`
-alias Int = __mlir_type.index
-
-alias `1` = __mlir_attr.`1 : index`
-
-struct object: pass
-
-@register_passable
-struct VariadicList[type: AnyRegType]:
-    alias storage_type = __mlir_type[`!kgen.variadic<`, type, `>`]
-
-    fn __init__(value: Self.storage_type) -> Self:
-        return Self {}
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
 
 fn test_never_declared_fn():
     # expected-error @+1 {{use of unknown declaration 'never_declared_fn'}}
