@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
@@ -17,12 +19,21 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size) {
   if (alignment <= 0)
     alignment = kPreferredMemoryAlignment;
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  if (rt)
+    return rt->getAllocator()->allocateBytes(size, alignment);
   return alignedAlloc(alignment, size);
 }
 
 /// Frees memory allocated via KGEN_CompilerRT_AlignedAlloc.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AlignedFree(void *ptr) {
+  auto rt = Runtime::getCurrentRuntimeOrNull();
+  if (rt) {
+    // We do not use size in dealloc for now. May need to
+    // change if sized delete is more performant.
+    return rt->getAllocator()->deallocateBytes(ptr);
+  }
   return alignedFree(ptr);
 }
 

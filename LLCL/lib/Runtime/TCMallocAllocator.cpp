@@ -31,6 +31,7 @@ class TCMallocAllocator : public Allocator {
     return alignedAlloc(alignment, size);
 #endif
   }
+
   // Deallocate the specified pointer that has the specified size.
   void deallocateBytes(void *ptr, size_t size) override {
 
