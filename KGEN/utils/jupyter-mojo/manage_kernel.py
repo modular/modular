@@ -20,6 +20,12 @@ def create_argparser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(help="sub-command help", dest="command")
     common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument(
+        "--mojo-install-channel",
+        type=str,
+        help="The package channel in which Mojo was installed.",
+        default="stable",
+    )
 
     parser_install = subparsers.add_parser(
         "install",
@@ -51,12 +57,19 @@ def create_argparser() -> argparse.ArgumentParser:
     return parser
 
 
-def install_kernel(python: str, user: bool, modular_home: str):
+def install_kernel(
+    python: str,
+    user: bool,
+    modular_home: str,
+    kernel_name: str,
+    config_section: str,
+    install_channel: str,
+):
     """Install the kernel spec."""
     kernel_dir = Path(__file__).parent / "kernel"
     kernel_install_dir = Path(
         KernelSpecManager().install_kernel_spec(
-            str(kernel_dir), "mojo-jupyter-kernel", user=user
+            str(kernel_dir), kernel_name, user
         )
     )
 
@@ -69,7 +82,8 @@ def install_kernel(python: str, user: bool, modular_home: str):
 
     # Generate the kernel.json file.
     kernel_json = {
-        "display_name": "Mojo",
+        "display_name": "Mojo"
+        + (f" ({install_channel})" if install_channel != "stable" else ""),
         "argv": [
             python,
             str(kernel_install_dir / "mojokernel.py"),
@@ -77,6 +91,8 @@ def install_kernel(python: str, user: bool, modular_home: str):
             "{connection_file}",
             "--modular-home",
             str(modular_home),
+            "--mojo-config-section",
+            f"{config_section}",
         ],
         "language": "mojo",
         "codemirror_mode": "mojo",
@@ -95,19 +111,35 @@ def install_kernel(python: str, user: bool, modular_home: str):
     kernel_json_path.write_text(json.dumps(kernel_json, indent=2))
 
 
-def uninstall_kernel():
+def uninstall_kernel(kernel_name: str):
     """Uninstall the kernel spec."""
-    KernelSpecManager().remove_kernel_spec("mojo-jupyter-kernel")
+    KernelSpecManager().remove_kernel_spec(kernel_name)
 
 
 def main():
     parser = create_argparser()
     args = parser.parse_args()
 
+    # Handle the installation channel. If present, prefix the kernel name and
+    # config key with the channel name.
+    if args.mojo_install_channel == "stable":
+        kernel_name = "mojo-jupyter-kernel"
+        config_section = "mojo"
+    else:
+        kernel_name = f"mojo-{args.mojo_install_channel}-jupyter-kernel"
+        config_section = f"mojo-{args.mojo_install_channel}"
+
     if args.command == "install":
-        install_kernel(args.python, args.user, args.modular_home)
+        install_kernel(
+            args.python,
+            args.user,
+            args.modular_home,
+            kernel_name,
+            config_section,
+            args.mojo_install_channel,
+        )
     elif args.command == "uninstall":
-        uninstall_kernel()
+        uninstall_kernel(kernel_name)
     else:
         raise Exception(f"Unknown command {args.command}")
 

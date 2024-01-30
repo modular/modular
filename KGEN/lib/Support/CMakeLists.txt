@@ -11,3 +11,7 @@ add_modular_library(KGENSupport
   LINK_LIBS PUBLIC
   MLIRIR
 )
+
+target_compile_definitions(KGENSupport
+  PRIVATE -DMOJO_CONFIG_SECTION="${MOJO_CONFIG_SECTION}"
+)
