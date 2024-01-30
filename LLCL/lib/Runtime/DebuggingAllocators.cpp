@@ -51,12 +51,26 @@ public:
   void *allocateBytes(size_t size, size_t alignment) override {
     ++numAllocations;
     numBytesAllocated.fetch_add(size);
-    return baseAllocator->allocateBytes(size, alignment);
+    auto ptr = baseAllocator->allocateBytes(size, alignment);
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      sizeMap[ptr] = size;
+    }
+    return ptr;
   }
 
   void deallocateBytes(void *ptr, size_t size) override {
     [[maybe_unused]] ssize_t num = numAllocations--;
     assert(num > 0 && "calls to deallocateBytes not balanced by allocateBytes");
+    size_t storedSize;
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      assert(sizeMap.contains(ptr) &&
+             "deallocating ptr which is not allocated");
+      storedSize = sizeMap[ptr];
+    }
+    assert((size == 0 || size == storedSize) && "size mismatch at dealloc");
+    size = storedSize;
     [[maybe_unused]] ssize_t bytes = numBytesAllocated.fetch_sub(size);
     assert(bytes > 0 &&
            "deallocating more bytes than currently have outstanding");
@@ -78,6 +92,8 @@ protected:
   /// This keeps track of how many bytes/allocations are currently alive.
   /// Uses ssize_t so we can truck double deallocation.
   std::atomic<ssize_t> numBytesAllocated{0}, numAllocations{0};
+  std::mutex mu;
+  llvm::DenseMap<void *, size_t> sizeMap;
 
 private:
   std::unique_ptr<Allocator> baseAllocator;

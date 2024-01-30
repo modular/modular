@@ -39,7 +39,7 @@ public:
   virtual void *allocateBytes(size_t size, size_t alignment) = 0;
 
   /// Deallocate the specified pointer that had the specified size.
-  virtual void deallocateBytes(void *ptr, size_t size) = 0;
+  virtual void deallocateBytes(void *ptr, size_t size = 0) = 0;
 
   /// Allocate memory for one or more entries of type T.
   template <typename T>
