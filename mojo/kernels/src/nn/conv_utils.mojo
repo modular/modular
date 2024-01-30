@@ -25,25 +25,6 @@ from utils.list import DimList, Dim
 from utils._optional_param import OptionalParamInt, OptionalParamInts
 
 
-# conv uses a different kernel than matmul
-fn get_conv_a_row_size() -> Int:
-    @parameter
-    if has_neon():
-        return 8
-    elif has_avx512f():
-        return 5
-    return 3
-
-
-fn get_conv_pack_inner_size() -> Int:
-    @parameter
-    if has_neon():
-        return 2
-    elif has_avx512f():
-        return 4
-    return 4
-
-
 @register_passable("trivial")
 struct ConvShape[rank: Int]:
     """A shape struct describing the convolution dimensions."""
@@ -151,15 +132,23 @@ struct ConvShape[rank: Int]:
 
     @always_inline
     fn matmul_M(self) -> Int:
-        return self.n * self.output_dims.flattened_length()
+        return self.n * self.output_dims.flattened_length() * self.num_groups
 
     @always_inline
     fn matmul_N(self) -> Int:
-        return self.f
+        return self.f // self.num_groups
 
     @always_inline
     fn matmul_K(self) -> Int:
-        return self.c * self.filter_dims.flattened_length()
+        return self.c * self.filter_dims.flattened_length() // self.num_groups
+
+    @always_inline
+    fn padded(self) -> Bool:
+        return (
+            self.pad_w != Index(0, 0)
+            or self.pad_h != Index(0, 0)
+            or self.pad_d != Index(0, 0)
+        )
 
     @always_inline
     fn c_per_group(self) -> Int:
@@ -537,6 +526,40 @@ fn get_micro_kernel_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@value
+@register_passable("trivial")
+struct ConvPartition:
+    """Work range for a partition."""
+
+    # Batch and group dims are merged into one.
+    var ng_offset: Int
+    var ng_size: Int
+
+    # Output channel range.
+    var f_offset: Int
+    var f_size: Int
+
+    # Input dim.
+    # For point-wise conv, ho and wo dims are merged and partitioned.
+    # For others, only ho is partitioned.
+    var ho_or_howo_offset: Int
+    var ho_or_howo_size: Int
+
+    # Input Channel dim.
+    var c_offset: Int
+    var c_size: Int
+
+    @always_inline
+    fn empty(self) -> Bool:
+        # fmt: off
+        return self.ng_size <= 0 or \
+               self.f_size <= 0 or \
+               self.ho_or_howo_size <= 0 or \
+               self.c_size <= 0
+        # fmt: on
+
+
+@always_inline
 fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     # Currently use matmul's min task size but the optimal value
     # for direct conv may be different.
@@ -551,11 +574,13 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
 
 fn get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
-](max_num_tasks: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
+](num_threads: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
     """Partition the worload in (batch, C, F, HOWO) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
     """
+
+    let max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
 
     # Heuristic parameters for partitioning
     # AVX512, partitioning channel can be beneficial for some shapes.
@@ -595,7 +620,7 @@ fn get_conv_num_partitions[
     # Do not partition F when num_groups > 1.
     var max_num_col_tasks = min(
         div_ceil(matmul_N, micro_kernel_f), max_num_tasks
-    ) if conv_shape.num_groups == 1 else 1
+    )
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
         num_row_tasks = max_num_tasks // num_col_tasks
@@ -629,13 +654,63 @@ fn get_conv_num_partitions[
         max_num_tasks // (num_row_tasks * num_col_tasks),
     )
 
-    let num_batch_tasks = min(conv_shape.n, num_row_tasks)
+    let num_batch_group_tasks = min(
+        conv_shape.n * conv_shape.num_groups, num_row_tasks
+    )
 
-    num_row_tasks = num_row_tasks // num_batch_tasks
+    num_row_tasks = num_row_tasks // num_batch_group_tasks
 
     return Index(
-        num_batch_tasks, num_channel_tasks, num_col_tasks, num_row_tasks
+        num_batch_group_tasks, num_channel_tasks, num_col_tasks, num_row_tasks
     )
+
+
+@always_inline
+fn get_partition(
+    task_id: Int,
+    num_partitions: StaticIntTuple[4],
+    conv_shape: ConvShape,
+    micro_kernel_height: Int,
+    micro_kernel_f_size: Int,
+) -> ConvPartition:
+    let task_id_f = task_id % num_partitions[2]
+    var quotient = task_id // num_partitions[2]
+    let task_id_c = quotient % num_partitions[1]
+    quotient = quotient // num_partitions[1]
+    let task_id_howo = quotient % num_partitions[3]
+    let task_id_ng = quotient // num_partitions[3]
+
+    let ng_range = partition_work(
+        task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1
+    )
+
+    let c_range = partition_work(task_id_c, num_partitions[1], conv_shape.c, 1)
+
+    let f_range = partition_work(
+        task_id_f,
+        num_partitions[2],
+        conv_shape.f // conv_shape.num_groups,
+        micro_kernel_f_size,
+    )
+
+    # Merge wo and ho loops when there is no padding.
+    # Otherwise the partition granularity is a row.
+    let work_unit = 1 if conv_shape.padded() else micro_kernel_height
+    let work_load = conv_shape.ho() if conv_shape.padded() else conv_shape.ho() * conv_shape.wo()
+    let howo_range = partition_work(
+        task_id_howo, num_partitions[3], work_load, work_unit
+    )
+
+    return ConvPartition {
+        ng_offset: ng_range[0],
+        ng_size: ng_range[1],
+        f_offset: f_range[0],
+        f_size: f_range[1],
+        ho_or_howo_offset: howo_range[0],
+        ho_or_howo_size: howo_range[1],
+        c_offset: c_range[0],
+        c_size: c_range[1],
+    }
 
 
 # ===----------------------------------------------------------------------===#

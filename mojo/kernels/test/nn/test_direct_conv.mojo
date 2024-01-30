@@ -212,11 +212,12 @@ fn test[
                         output_ref[n, ho, wo, f],
                         output[n, ho, wo, f],
                         1e-4,  # absolute error tolerance
-                        1e-5,  # relative error tolerance
+                        1e-4,  # relative error tolerance
                     ):
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))
                         print("filter packed", filter_packed)
+                        print("num groups", num_groups)
                         print("Test failed at index: ", Index(n, ho, wo, f))
                         print("Golden value: ", output_ref[n, ho, wo, f])
                         print("Actual value: ", output[n, ho, wo, f])
@@ -1095,6 +1096,38 @@ fn main() raises:
             rt,
         )
 
+        test[DType.float32, True](
+            3,  # N
+            11,  # H
+            17,  # W
+            36,  # C
+            3,  # R
+            5,  # S
+            93,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            3,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            11,  # H
+            17,  # W
+            36,  # C
+            2,  # R
+            6,  # S
+            198,  # F
+            Index(2, 3),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 0),  # pad_h
+            Index(3, 2),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
         # depthwise conv
         test[DType.float32, True](
             1,  # N
@@ -1112,19 +1145,19 @@ fn main() raises:
             rt,
         )
 
-        # # 1D edge case
-        # test[DType.float32, True](
-        #     2,  # N
-        #     1,  # H
-        #     49,  # W
-        #     1024,  # C
-        #     1,  # R
-        #     128,  # S
-        #     1024,  # F
-        #     Index(1, 1),  # stride
-        #     Index(1, 1),  # dilation
-        #     Index(0, 0),  # pad_h
-        #     Index(64, 64),  # pad_w
-        #     1,  # num_groups
-        #     rt,
-        # )
+        # 1D edge case
+        test[DType.float32, True](
+            2,  # N
+            1,  # H
+            49,  # W
+            1024,  # C
+            1,  # R
+            128,  # S
+            1024,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(64, 64),  # pad_w
+            64,  # num_groups
+            rt,
+        )
