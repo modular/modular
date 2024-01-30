@@ -384,7 +384,7 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
     EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
-  auto storeOr = EntitlementStore::open(client);
+  auto storeOr = EntitlementStore::open(&client);
   EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
   EXPECT_TRUE(storeOr->has_value()) << "we just generated this...?";
 

@@ -661,7 +661,7 @@ EntitlementStore::getUserID(std::optional<Config> cfg) const {
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::optional<EntitlementStore>>
-EntitlementStore::open(HTTPClient &client) {
+EntitlementStore::open(HTTPClient *client) {
   // Register all the entitlements we have.
   registerAllEntitlements();
 
@@ -690,7 +690,7 @@ EntitlementStore::open(HTTPClient &client) {
   out.clientKeys = std::move(*privKeyOr);
 
   // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(&client))
+  if (auto err = out.verifyAndFlushClientCert(client))
     return err.takeError();
 
   return out;
