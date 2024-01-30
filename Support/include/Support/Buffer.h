@@ -57,6 +57,11 @@ public:
           std::optional<size_t> size = std::nullopt,
           std::optional<size_t> offset = std::nullopt);
 
+  /// Return the location of file in filesystem if the buffer is backed by a
+  /// file or the memory buffer backing the buffer is sourced from a file,
+  /// std::nullopt otherwise.
+  std::optional<std::filesystem::path> getFilePath() const;
+
   /// Take ownership of an `llvm::MemoryBuffer` and use that as the backing
   /// storage for the BufferRef.
   static BufferRef take(std::unique_ptr<llvm::MemoryBuffer> buffer) {
@@ -89,8 +94,11 @@ protected:
 
   /// Construct a buffer with a mapped file region. The buffer takes ownership
   /// of the mapped file region.
-  Buffer(llvm::sys::fs::mapped_file_region &&mapped)
-      : storage{std::move(mapped)} {}
+  Buffer(const std::filesystem::path &path,
+         llvm::sys::fs::mapped_file_region &&mapped)
+      : storage{std::move(mapped)} {
+    cast<MappedBufferStorage>(storage).filePath = path;
+  }
 
   /// Construct a `Buffer` from an `llvm::MemoryBuffer`. The buffer takes
   /// ownership of any storage owned by the `llvm::MemoryBuffer`.
@@ -168,6 +176,9 @@ protected:
     /// The current write pointer. Always starts at the beginning of the
     /// mapping.
     char *write;
+
+    /// Path to mapped file.
+    std::filesystem::path filePath;
 
     MappedBufferStorage(llvm::sys::fs::mapped_file_region &&mapped)
         : mapping(std::move(mapped)), write(mapping.data()) {}
@@ -251,8 +262,9 @@ private:
 
   /// Construct a WriteableBuffer from a mapped file region, and make sure to
   /// set to unbuffered.
-  WriteableBuffer(llvm::sys::fs::mapped_file_region &&mapped)
-      : Buffer(std::move(mapped)) {
+  WriteableBuffer(const std::filesystem::path &path,
+                  llvm::sys::fs::mapped_file_region &&mapped)
+      : Buffer(path, std::move(mapped)) {
     SetUnbuffered();
   }
 };

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Buffer.h"
+#include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringRef.h"
 
 #include "gtest/gtest.h"
@@ -29,6 +30,7 @@ TEST(BufferTest, RefCountingWorks) {
   // And the data should still not have been freed.
   EXPECT_TRUE(buffer2->getBuffer() == "hello");
   EXPECT_TRUE(buffer2->getNumReferences() == 1);
+  EXPECT_FALSE(buffer2->getFilePath()) << "buffer not backed by file";
 }
 
 TEST(BufferTest, TestWrite) {
@@ -78,7 +80,12 @@ TEST(BufferTest, TestReadPWriteFile) {
 }
 
 TEST(BufferTest, TestReadWriteFile) {
-  auto writeOr = WriteableBuffer::getFile("tmpFile", /*size=*/5, /*offset=*/0);
+  std::error_code ec;
+  std::filesystem::path tmpFilePath = std::filesystem::temp_directory_path(ec);
+  ASSERT_FALSE(ec) << ec.message();
+  tmpFilePath /= "tmpFile";
+  auto writeOr =
+      WriteableBuffer::getFile(tmpFilePath, /*size=*/5, /*offset=*/0);
   EXPECT_FALSE(writeOr.isError()) << writeOr.getError();
   WriteableBufferRef write = std::move(*writeOr);
   // We want to write to the start of the file, it'll start at offset 0.
@@ -88,12 +95,27 @@ TEST(BufferTest, TestReadWriteFile) {
   auto wrongBufferOr = Buffer::getFile("aSillyNamedTempFileThatShouldNotExist");
   EXPECT_TRUE(wrongBufferOr.isError()) << "No such file should exist...";
 
-  auto rightBufferOr = Buffer::getFile("tmpFile");
+  auto rightBufferOr = Buffer::getFile(tmpFilePath);
   EXPECT_FALSE(rightBufferOr.isError()) << rightBufferOr.getError();
-  EXPECT_TRUE((*rightBufferOr)->getBuffer() == "hello");
+  BufferRef rightBuffer = rightBufferOr.takeValue();
+  EXPECT_TRUE(rightBuffer->getBuffer() == "hello");
+  auto retrievedPath = rightBuffer->getFilePath();
+  EXPECT_TRUE(retrievedPath) << "buffer backed by file";
+  EXPECT_EQ(retrievedPath, tmpFilePath);
+
+  // Indirect read through memory buffer.
+  std::string errorMsg;
+  std::unique_ptr<llvm::MemoryBuffer> file =
+      mlir::openInputFile(tmpFilePath.string(), {}, &errorMsg);
+  ASSERT_TRUE(errorMsg.empty()) << errorMsg;
+  BufferRef bufferFromMemoryBuffer = Buffer::take(std::move(file));
+  EXPECT_TRUE(bufferFromMemoryBuffer->getBuffer() == "hello");
+  retrievedPath = bufferFromMemoryBuffer->getFilePath();
+  EXPECT_TRUE(retrievedPath) << "buffer backed by file";
+  EXPECT_EQ(retrievedPath, tmpFilePath);
 
   // Clean up the file.
-  llvm::sys::fs::remove("tmpFile");
+  std::filesystem::remove(tmpFilePath, ec);
 }
 
 TEST(BufferTest, AlignmentWorks) {

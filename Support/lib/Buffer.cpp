@@ -81,7 +81,23 @@ ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
   // Close the file, mmap will hold a ref to the descriptor.
   llvm::sys::fs::closeFile(fd);
 
-  return BufferRef::create(std::move(mappedFile));
+  return BufferRef::create(filepath, std::move(mappedFile));
+}
+
+std::optional<std::filesystem::path> Buffer::getFilePath() const {
+
+  if (isa<MappedBufferStorage>(storage))
+    return cast<MappedBufferStorage>(storage).filePath;
+
+  if (isa<MemoryBufferStorage>(storage)) {
+    StringRef filePath =
+        cast<MemoryBufferStorage>(storage).memBuffer->getBufferIdentifier();
+    if (filePath.empty())
+      return std::nullopt;
+    return std::filesystem::path(filePath.str());
+  }
+
+  return std::nullopt;
 }
 
 const char *Buffer::getBufferStart() const {
@@ -198,7 +214,7 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
   // Close the file, mmap will hold a ref to the descriptor.
   llvm::sys::fs::closeFile(fd);
 
-  return WriteableBufferRef::create(std::move(mappedFile));
+  return WriteableBufferRef::create(filepath, std::move(mappedFile));
 }
 
 //===----------------------------------------------------------------------===//
