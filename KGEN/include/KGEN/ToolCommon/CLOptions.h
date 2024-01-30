@@ -44,7 +44,9 @@ enum class Command {
 ///
 /// where name is just a string. Providing the signature is optional.
 struct CommandLineFunc {
+
   std::string name;
+
   std::string signature;
 
   /// Verify that the signature of this func passed in on the command line
@@ -56,6 +58,7 @@ struct CommandLineFunc {
 
 /// Provide a parser for the CommandLineFunc object.
 class CommandLineFuncParser : public llvm::cl::parser<CommandLineFunc> {
+
 public:
   using llvm::cl::parser<CommandLineFunc>::parser;
 
@@ -63,122 +66,51 @@ public:
              CommandLineFunc &val);
 };
 
-//===----------------------------------------------------------------------===//
-// CLOptions
-//===----------------------------------------------------------------------===//
-
-class KGENCommonOptions : public LLCL::RuntimeWorkQueueCLOptions {
-private:
-  llvm::cl::OptionCategory KGENOptionsCategory{"KGEN common options"};
+class KGENCommonOptions : public LLCL::RuntimeOptions {
 
 public:
-  cl::opt<CompilationOptions::DebugInfoLevel> debugInfoLevel{
-      "debug-level",
-      cl::desc("The level of debug information to use during compilation"),
-      cl::values(
-          clEnumValN(CompilationOptions::kNoDebug, "none",
-                     "Disable all debug information."),
-          clEnumValN(CompilationOptions::kSynthetic, "synthetic",
-                     "Generate synthetic debug information."),
-          clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
-                     "Only generate debug information for line number tables."),
-          clEnumValN(CompilationOptions::kFullDebugInfo, "full",
-                     "Generate full debug information.")),
-      cl::init(CompilationOptions::kNoDebug),
-      llvm::cl::cat(KGENOptionsCategory)};
+  KGENCommonOptions()
+      : LLCL::RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType::kThreadPool) {
+  }
 
-  cl::opt<CompilationOptions::DebugAtLevel> debugAtLevel{
-      "debug-at",
-      cl::desc("Generate debug information for the giving abstraction, instead "
-               "of the input"),
-      cl::values(clEnumValN(CompilationOptions::kDebugAtLLVM, "llvm",
-                            "Generate debug information for the LLVM level.")),
-      llvm::cl::cat(KGENOptionsCategory)};
+  CompilationOptions::DebugInfoLevel debugInfoLevel{
+      CompilationOptions::kNoDebug};
 
-  cl::opt<CompilationOptions::DebugInfoLanguage> debugInfoLanguage{
-      "debug-info-language",
-      llvm::cl::desc("The DWARF language to specify in the debug info. "
-                     "Either `C` or `Mojo`. Defaults to `Mojo`."),
-      llvm::cl::values(
-          clEnumValN(CompilationOptions::kLangC, "C", "C language."),
-          clEnumValN(CompilationOptions::kLangMojo, "Mojo", "Mojo language")),
-      llvm::cl::init(CompilationOptions::kLangMojo),
-      llvm::cl::cat(KGENOptionsCategory)};
+  CompilationOptions::DebugAtLevel debugAtLevel{
+      CompilationOptions::kDebugUnset};
 
-  cl::opt<bool> enableXRayInstrumentation{
-      "xray-instrument",
-      cl::desc("Enable XRay instrumentation for the generated code."),
-      cl::init(false), llvm::cl::cat(KGENOptionsCategory)};
+  CompilationOptions::DebugInfoLanguage debugInfoLanguage{
+      CompilationOptions::kLangMojo};
 
-  cl::opt<bool> enableSearch{
-      "enable-search", cl::init(false),
-      cl::desc("Do search when an evaluator is provided."),
-      llvm::cl::cat(KGENOptionsCategory)};
+  bool enableXRayInstrumentation{false};
 
-  cl::list<std::string> includePaths{
-      "I", cl::desc("Path to use to search for included files."),
-      llvm::cl::cat(KGENOptionsCategory)};
+  bool enableSearch{false};
 
-  cl::list<std::string> linkPaths{
-      "L", cl::desc("Path to use to search for linked libraries/objects."),
-      llvm::cl::cat(KGENOptionsCategory)};
+  SmallVector<std::string> includePaths;
 
-  cl::list<std::string> defines{
-      "D",
-      cl::desc("Defines passed into Mojo through the environment parameter."),
-      llvm::cl::cat(KGENOptionsCategory)};
+  std::vector<std::string> linkPaths;
 
-  cl::opt<bool> enableMLIRCrashReproducer{
-      "enable-mlir-crash-repro",
-      cl::desc("Enable MLIR pass manager crash reproducer generation."),
-      cl::init(false), llvm::cl::cat(KGENOptionsCategory)};
+  SmallVector<std::string> defines;
 
-  cl::opt<bool> enableLocalMLIRReproducer{
-      "enable-mlir-local-repro",
-      cl::desc("If set, MLIR will attempt to generate a local reproducer."),
-      cl::init(false), llvm::cl::cat(KGENOptionsCategory)};
+  bool enableMLIRCrashReproducer{false};
 
-  cl::opt<bool> timeTrace{
-      "time-trace",
-      cl::desc("Turn on time profiler. Generates JSON file "
-               "called kgen.trace.json in the derived directory."),
-      llvm::cl::cat(KGENOptionsCategory)};
+  bool enableLocalMLIRReproducer{false};
 
-  cl::opt<int> timeTraceGranularity{
-      "time-trace-granularity",
-      cl::desc("Minimum time granularity (in microseconds) "
-               "traced by time profiler."),
-      cl::init(0), llvm::cl::cat(KGENOptionsCategory)};
+  bool timeTrace{false};
 
-  cl::opt<std::string> targetTriple{
-      "target-triple",
-      cl::desc("Compilation target triple. Defaults to the host target."),
-      cl::init(llvm::sys::getDefaultTargetTriple()),
-      llvm::cl::cat(KGENOptionsCategory)};
+  int timeTraceGranularity{0};
 
-  cl::opt<std::string> targetCpu{
-      "target-cpu",
-      cl::desc("Compilation target CPU. Defaults to the host CPU."),
-      cl::init(llvm::sys::getHostCPUName().str()),
-      llvm::cl::cat(KGENOptionsCategory)};
+  std::string targetTriple{llvm::sys::getDefaultTargetTriple()};
 
-  cl::opt<std::string> targetFeatures{
-      "target-features",
-      cl::desc(
-          "Compilation target CPU features. Defaults to the host features."),
-      cl::init(getHostCPUFeatures()), llvm::cl::cat(KGENOptionsCategory)};
+  std::string targetCpu{llvm::sys::getHostCPUName().str()};
 
-  cl::opt<std::string> march{
-      "march", cl::desc("Architecture to generate code for (see --version)"),
-      llvm::cl::cat(KGENOptionsCategory)};
+  std::string targetFeatures{getHostCPUFeatures()};
 
-  cl::opt<std::string> mcpu{"mcpu", cl::desc("CPU to generate code for"),
-                            llvm::cl::cat(KGENOptionsCategory)};
+  std::string march;
 
-  cl::opt<std::string> mtune{"mtune", cl::desc("CPU to tune code for"),
-                             llvm::cl::cat(KGENOptionsCategory)};
+  std::string mcpu;
 
-  KGENCommonOptions() : RuntimeWorkQueueCLOptions(WorkQueueType::kThreadPool) {}
+  std::string mtune;
 
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
@@ -191,7 +123,7 @@ public:
   }
 
   /// Return a compilation options object based on the command line options.
-  CompilationOptions getCompilationOptions() {
+  CompilationOptions getCompilationOptions() const {
     // Grab the optimization level. For now use an aggressive default.
     unsigned optLevel = 3;
     if (optLevel0)
@@ -203,43 +135,208 @@ public:
 
     // Grab the debug-at level.
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
-    if (debugAtLevel.getNumOccurrences())
+    if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
     return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
-                              sanitizerOptions.getBits(),
-                              enableXRayInstrumentation, targetTriple,
-                              targetCpu, targetFeatures, linkPaths);
+                              sanitizerOptions, enableXRayInstrumentation,
+                              targetTriple, targetCpu, targetFeatures,
+                              linkPaths);
   }
 
+  bool optLevel0{false};
+
+  bool optLevel1{false};
+
+  bool optLevel2{false};
+
+  bool optLevel3{false};
+
+  unsigned sanitizerOptions{0};
+};
+
+//===----------------------------------------------------------------------===//
+// CLOptions
+//===----------------------------------------------------------------------===//
+
+class KGENCommonCLOptions : public LLCL::RuntimeCLOptions {
+public:
+  KGENCommonCLOptions(KGENCommonOptions &opts)
+      : RuntimeCLOptions(opts), options(opts) {}
+  KGENCommonOptions &options;
+
 private:
-  cl::opt<bool> optLevel0{"O0", cl::desc("Disable all optimizations"),
-                          llvm::cl::cat(KGENOptionsCategory)};
-  cl::opt<bool> optLevel1{
-      "O1", cl::desc("Enable optimizations, but favor compilation speed"),
+  llvm::cl::OptionCategory KGENOptionsCategory{"KGEN common options"};
+
+  M::cl::MOpt<CompilationOptions::DebugInfoLevel, true> debugInfoLevel{
+      "debug-level",
+      cl::desc("The level of debug information to use during compilation"),
+      cl::values(
+          clEnumValN(CompilationOptions::kNoDebug, "none",
+                     "Disable all debug information."),
+          clEnumValN(CompilationOptions::kSynthetic, "synthetic",
+                     "Generate synthetic debug information."),
+          clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
+                     "Only generate debug information for line number tables."),
+          clEnumValN(CompilationOptions::kFullDebugInfo, "full",
+                     "Generate full debug information.")),
+      llvm::cl::location(options.debugInfoLevel),
       llvm::cl::cat(KGENOptionsCategory)};
-  cl::opt<bool> optLevel2{"O2", cl::desc("Enable most optimizations"),
-                          llvm::cl::cat(KGENOptionsCategory)};
-  cl::opt<bool> optLevel3{"O3",
-                          cl::desc("Aggressively enable all optimizations"),
-                          llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<CompilationOptions::DebugAtLevel, true> debugAtLevel{
+      "debug-at",
+      cl::desc("Generate debug information for the giving abstraction, instead "
+               "of the input"),
+      cl::values(clEnumValN(CompilationOptions::kDebugAtLLVM, "llvm",
+                            "Generate debug information for the LLVM level.")),
+      llvm::cl::location(options.debugAtLevel),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<CompilationOptions::DebugInfoLanguage, true> debugInfoLanguage{
+      "debug-info-language",
+      llvm::cl::desc("The DWARF language to specify in the debug info. "
+                     "Either `C` or `Mojo`. Defaults to `Mojo`."),
+      llvm::cl::values(
+          clEnumValN(CompilationOptions::kLangC, "C", "C language."),
+          clEnumValN(CompilationOptions::kLangMojo, "Mojo", "Mojo language")),
+      llvm::cl::location(options.debugInfoLanguage),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> enableXRayInstrumentation{
+      "xray-instrument",
+      cl::desc("Enable XRay instrumentation for the generated code."),
+      llvm::cl::location(options.enableXRayInstrumentation),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> enableSearch{
+      "enable-search", cl::desc("Do search when an evaluator is provided."),
+      llvm::cl::location(options.enableSearch),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
+      "I", cl::desc("Path to use to search for included files."),
+      llvm::cl::location(options.includePaths),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MListOpt<std::string, std::vector<std::string>> linkPaths{
+      "L", cl::desc("Path to use to search for linked libraries/objects."),
+      llvm::cl::location(options.linkPaths),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MListOpt<std::string, SmallVector<std::string>> defines{
+      "D",
+      cl::desc("Defines passed into Mojo through the environment parameter."),
+      llvm::cl::location(options.defines), llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> enableMLIRCrashReproducer{
+      "enable-mlir-crash-repro",
+      cl::desc("Enable MLIR pass manager crash reproducer generation."),
+      llvm::cl::location(options.enableMLIRCrashReproducer),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> enableLocalMLIRReproducer{
+      "enable-mlir-local-repro",
+      cl::desc("If set, MLIR will attempt to generate a local reproducer."),
+      llvm::cl::location(options.enableLocalMLIRReproducer),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> timeTrace{
+      "time-trace",
+      cl::desc("Turn on time profiler. Generates JSON file "
+               "called kgen.trace.json in the derived directory."),
+      llvm::cl::location(options.timeTrace),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<int, true> timeTraceGranularity{
+      "time-trace-granularity",
+      cl::desc("Minimum time granularity (in microseconds) "
+               "traced by time profiler."),
+      llvm::cl::location(options.timeTraceGranularity),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> targetTriple{
+      "target-triple",
+      cl::desc("Compilation target triple. Defaults to the host target."),
+      llvm::cl::location(options.targetTriple),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> targetCpu{
+      "target-cpu",
+      cl::desc("Compilation target CPU. Defaults to the host CPU."),
+      llvm::cl::location(options.targetCpu),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> targetFeatures{
+      "target-features",
+      cl::desc(
+          "Compilation target CPU features. Defaults to the host features."),
+      llvm::cl::location(options.targetFeatures),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> march{
+      "march", cl::desc("Architecture to generate code for (see --version)"),
+      llvm::cl::location(options.march), llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> mcpu{
+      "mcpu", cl::desc("CPU to generate code for"),
+      llvm::cl::location(options.mcpu), llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> mtune{
+      "mtune", cl::desc("CPU to tune code for"),
+      llvm::cl::location(options.mtune), llvm::cl::cat(KGENOptionsCategory)};
+
+private:
+  M::cl::MOpt<bool, true> optLevel0{"O0", cl::desc("Disable all optimizations"),
+                                    llvm::cl::location(options.optLevel0),
+                                    llvm::cl::cat(KGENOptionsCategory)};
+  M::cl::MOpt<bool, true> optLevel1{
+      "O1", cl::desc("Enable optimizations, but favor compilation speed"),
+      llvm::cl::location(options.optLevel1),
+      llvm::cl::cat(KGENOptionsCategory)};
+  M::cl::MOpt<bool, true> optLevel2{"O2", cl::desc("Enable most optimizations"),
+                                    llvm::cl::location(options.optLevel2),
+                                    llvm::cl::cat(KGENOptionsCategory)};
+  M::cl::MOpt<bool, true> optLevel3{
+      "O3", cl::desc("Aggressively enable all optimizations"),
+      llvm::cl::location(options.optLevel3),
+      llvm::cl::cat(KGENOptionsCategory)};
 
   using SanitizerKind = Sanitizers::SanitizerKind;
-  llvm::cl::bits<SanitizerKind> sanitizerOptions{
+  M::cl::MBitsOpt<SanitizerKind, unsigned> sanitizerOptions{
       "sanitize", cl::desc("Enable the given sanitizer"),
       cl::values(clEnumValN(SanitizerKind::kAddress, "address",
                             "Enable address sanitizer"),
                  clEnumValN(SanitizerKind::kThread, "thread",
                             "Enable thread sanitizer")),
+      llvm::cl::location(options.sanitizerOptions),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 
-class KGENCLOptions : public KGENCommonOptions, public CommonCLOptions {
-  llvm::cl::OptionCategory KGENCLOptionsCategory{"KGEN Command line options"};
+class KGENOptions : public KGENCommonOptions, public CommonOptions {
+public:
+  Command cmd{/*required*/};
+
+  llvm::SmallVector<CommandLineFunc> funcs{};
+  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
+    auto found = llvm::find_if(
+        funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
+    if (found == funcs.end())
+      return std::nullopt;
+    return *found;
+  }
+};
+
+class KGENCLOptions : public KGENCommonCLOptions, public CommonCLOptions {
 
 public:
-  using CommonCLOptions::CommonCLOptions;
+  KGENOptions &options;
+  KGENCLOptions(int argc, char **argv, KGENOptions &opts,
+                bool skipInitLLVM = false)
+      : KGENCommonCLOptions(opts),
+        CommonCLOptions(argc, argv, opts, skipInitLLVM), options(opts) {}
 
-  cl::opt<Command> cmd{
+private:
+  llvm::cl::OptionCategory KGENCLOptionsCategory{"KGEN Command line options"};
+  M::cl::MOpt<Command, true> cmd{
       cl::desc("The command to execute"),
       cl::values(
           clEnumValN(Command::kGenLibraryFile, "gen-lib",
@@ -249,23 +346,18 @@ public:
           clEnumValN(Command::kEmitAssembly, "emit-asm",
                      "Emit the funcs as assembly."),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
-          clEnumValN(
-              Command::kEmitHeader, "emit-header",
-              "Emit a C header file with declarations of exported functions."),
+          clEnumValN(Command::kEmitHeader, "emit-header",
+                     "Emit a C header file with declarations of "
+                     "exported functions."),
           clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
-      llvm::cl::Required, llvm::cl::cat(KGENCLOptionsCategory)};
-
-  cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
-      "func", cl::desc("Specifies the funcs to execute."),
+      llvm::cl::location(options.cmd), llvm::cl::Required,
       llvm::cl::cat(KGENCLOptionsCategory)};
 
-  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
-    auto found = llvm::find_if(
-        funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
-    if (found == funcs.end())
-      return std::nullopt;
-    return *found;
-  }
+  M::cl::MListOpt<CommandLineFunc, llvm::SmallVector<CommandLineFunc>,
+                  CommandLineFuncParser>
+      funcs{"func", cl::desc("Specifies the funcs to execute."),
+            llvm::cl::location(options.funcs),
+            llvm::cl::cat(KGENCLOptionsCategory)};
 };
 
 //===----------------------------------------------------------------------===//

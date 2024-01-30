@@ -18,7 +18,7 @@ namespace M::LLCL {
 /// according to the command line argument specification.  Encircle this with
 /// a AsyncValue leak checker to catch simple bugs in the test suite.
 template <typename BodyFn>
-auto runWithLeakCheckedRuntime(const RuntimeCLOptions &options,
+auto runWithLeakCheckedRuntime(const RuntimeOptions &options,
                                const char *testName, BodyFn bodyFn) {
   // If we are leak checking, remember how many AsyncValue's we started with.
   ssize_t numStartingLiveAsyncValues = 0;
