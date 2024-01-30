@@ -347,7 +347,10 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),
       [](APSInt a, APSInt b, APSInt c) { return a * b + c; },
-      [](APFloat a, APFloat b, APFloat c) { return a * b + c; });
+      [](APFloat a, APFloat b, APFloat c) {
+        (void)a.fusedMultiplyAdd(b, c, APFloat::rmNearestTiesToEven);
+        return a;
+      });
 }
 
 //===----------------------------------------------------------------------===//
