@@ -250,3 +250,24 @@ fn recursive_lambda_test_target(x: Tensor) -> Tensor[x.type, x.static_shape]:
 
     out.for_each[1, func]()
     return out
+
+
+@mogg_register_override("view_like_custom_op_target", 1000)
+@export
+fn view_like_custom_op_target(
+    x: Tensor, y: Tensor
+) -> Tensor[x.type, x.same_rank_param()]:
+    var new_shape = IntList[x.same_rank_param()]()
+    var new_stride = IntList[x.same_rank_param()]()
+
+    @always_inline
+    @parameter
+    fn body[i: Int]():
+        new_shape[i] = x.shape[i] * y.shape[i]
+        new_stride[i] = 0
+
+    unroll[x.static_rank, body]()
+
+    return Tensor[x.type, x.same_rank_param()](
+        x.data, new_shape, new_stride, x.refcount()
+    )
