@@ -62,6 +62,9 @@ void CompilationOptions::print(raw_ostream &os) const {
     case kDebugAtLLVM:
       os << "llvm";
       break;
+    case kDebugUnset:
+      // do nothing
+      break;
     }
   }
   if (sanitizers) {

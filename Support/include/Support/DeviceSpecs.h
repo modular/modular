@@ -73,7 +73,7 @@ struct TargetInfo {
 /// same or similar target info. The relationship between the device id
 /// used in an #M.device_spec and an actual physical device (eg a CUDA device
 /// id) is determined at runtime.
-using DeviceId = int64_t;
+using DeviceId = uint64_t;
 
 struct DeviceRef {
   std::string label;
