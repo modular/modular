@@ -1976,16 +1976,12 @@ fn gather[
         try:
             _gather[
                 type,
-                in_rank,
                 indices_type,
-                indices_rank,
-                output_rank,
-                simd_width,
-                single_thread_blocking_override,
                 input_0_fn,
                 load_indices,
                 output_0_fn,
                 target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
             ](
                 Axis(axis_buffer[0], in_rank),
                 input_shape,
@@ -2001,7 +1997,6 @@ fn gather[
             indices_type,
             indices_rank,
             output_rank,
-            simd_width,
             input_0_fn,
             load_indices,
             output_0_fn,
