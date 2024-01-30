@@ -160,6 +160,8 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
     custom<Signature>($signature) (`from` $importedFrom^)?
     attr-dict-with-keyword
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

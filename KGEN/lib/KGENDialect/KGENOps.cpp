@@ -614,6 +614,22 @@ ExternFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
+LogicalResult ExternFuncOp::verify() {
+  DebugInfo::DISubprogramAttr subprogram =
+      DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          getLoc(), DebugInfo::ScopeWalkPolicy::CalleePriority);
+  if (subprogram) {
+    if (bitEnumContainsAny(subprogram.getSubprogramFlags(),
+                           DebugInfo::SubprogramFlags::Definition))
+      return emitError("extern functions cannot have debug scope with "
+                       "'DebugInfo::SubprogramFlags::Definition' flag");
+    if (subprogram.getCompileUnit())
+      return emitError(
+          "extern functions cannot have debug scope with a compile unit");
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ExternGeneratorOp
 //===----------------------------------------------------------------------===//
