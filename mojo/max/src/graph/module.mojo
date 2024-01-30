@@ -122,19 +122,3 @@ struct Module:
         let op = capi.graph_new(self.m, loc, name, function_type)
 
         return Graph(op)
-
-    # ===------------------------------------------------------------------=== #
-    # Type convenience helpers
-    # ===------------------------------------------------------------------=== #
-
-    fn i32(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.int32, dims).to_mlir(self)
-
-    fn i64(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.int64, dims).to_mlir(self)
-
-    fn f32(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.float32, dims).to_mlir(self)
-
-    fn bool(self, *dims: Int64) -> mlir.Type:
-        return MOTensor(DType.bool, dims).to_mlir(self)

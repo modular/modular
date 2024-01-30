@@ -5,10 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
-from collections import Optional
-from memory.unsafe import Pointer
-from tensor import TensorShape, TensorSpec
-
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
@@ -35,21 +31,18 @@ struct Graph:
     var g: mlir.Operation
     """A handle to the `Graph`'s internal implementation."""
 
-    fn __init__(inout self, g: mlir.Operation):
-        self.g = g
-
     # ===------------------------------------------------------------------=== #
-    # Constructors and basic accessors
+    # Basic accessors
     # ===------------------------------------------------------------------=== #
 
-    fn module(self) -> Module:
-        try:
-            return Module(mlir.Module.from_op(self.g.parent()))
-        except:
-            trap("Invalid state: Graph has no parent module")
-            return __get_address_as_lvalue(Pointer[Module]().address)
+    fn _body(self) raises -> mlir.Block:
+        return self.g.region(0).first_block()
 
-    fn __getitem__(self, n: Int) -> Symbol:
+    fn module(self) raises -> Module:
+        """Returns the `Module` owning thir `Graph`."""
+        return Module(mlir.Module.from_op(self.g.parent()))
+
+    fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
 
         This allows ops inside the `Graph` to take this argument as input.
@@ -64,28 +57,21 @@ struct Graph:
         # TODO: Add an exmple, after we cleaned up the Arity thing.
         return Symbol(self._body().argument(n))
 
-    fn _body(self) -> mlir.Block:
-        try:
-            return self.g.region(0).first_block()
-        except:
-            trap("Invalid state: Graph has no associated regions")
-            return Optional[mlir.Block](None).value()
-
     # ===------------------------------------------------------------------=== #
     # nvop - the most generic op builder
     # ===------------------------------------------------------------------=== #
 
-    fn nvop(self, name: StringRef, inputs: SymbolTuple) -> SymbolTuple:
+    fn nvop(self, name: StringRef, inputs: SymbolTuple) raises -> SymbolTuple:
         return self.nvop(name, inputs, TypeTuple(), AttrMap())
 
     fn nvop(
         self, name: StringRef, inputs: SymbolTuple, out_types: TypeTuple
-    ) -> SymbolTuple:
+    ) raises -> SymbolTuple:
         return self.nvop(name, inputs, out_types, AttrMap())
 
     fn nvop(
         self, name: StringRef, out_types: TypeTuple, attrs: AttrMap
-    ) -> SymbolTuple:
+    ) raises -> SymbolTuple:
         return self.nvop(name, SymbolTuple(), out_types, attrs)
 
     fn nvop(
@@ -94,7 +80,7 @@ struct Graph:
         inputs: SymbolTuple,
         out_types: TypeTuple,
         attrs: AttrMap,
-    ) -> SymbolTuple:
+    ) raises -> SymbolTuple:
         let ctx = self.g.context()
 
         let op = mlir.Operation(
@@ -116,10 +102,12 @@ struct Graph:
 
     fn op(
         self, name: StringRef, inputs: SymbolTuple, out_type: AnyMOType
-    ) -> Symbol:
+    ) raises -> Symbol:
         return self.nvop(name, inputs, out_type, AttrMap())[0]
 
-    fn op(self, name: StringRef, out_type: AnyMOType, attrs: AttrMap) -> Symbol:
+    fn op(
+        self, name: StringRef, out_type: AnyMOType, attrs: AttrMap
+    ) raises -> Symbol:
         return self.nvop(name, out_type, attrs)[0]
 
     fn op(
@@ -128,7 +116,7 @@ struct Graph:
         inputs: SymbolTuple,
         out_type: AnyMOType,
         attrs: AttrMap,
-    ) -> Symbol:
+    ) raises -> Symbol:
         return self.nvop(name, inputs, out_type, attrs)[0]
 
     # ===------------------------------------------------------------------=== #
