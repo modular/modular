@@ -633,13 +633,9 @@ private:
     SmallVector<KGEN::LIT::PassingKind> passingKinds{
         litFuncInputs.size(), KGEN::LIT::PassingKind::PosOnly};
 
-    auto metadata = LIT::FnMetadataAttr::get(
-        ctx, litArgNames, passingKinds, oldMetadata.getParamNames(),
-        oldMetadata.getParamPassingKinds(),
-        /*defaultPosArgs*/ {}, oldMetadata.getDefaultPosParams(),
-        oldMetadata.getDefaultKwOnlyArgs(),
-        oldMetadata.getDefaultKwOnlyParams(),
-        /*numImplicitLifetimeDecls*/ 0);
+    auto argAttrs = LIT::ArgParamListAttr::get(ctx, litArgNames, passingKinds);
+    auto metadata =
+        LIT::FnMetadataAttr::get(argAttrs, oldMetadata.getParamListAttrs());
 
     auto newLitSig = LIT::LITSignatureType::get(
         newLitFunctionType, oldLitSig->getParamTypes(),

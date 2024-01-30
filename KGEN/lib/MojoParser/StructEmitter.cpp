@@ -86,13 +86,12 @@ LIT::FuncOp StructEmitter::createFunction(
   SmallVector<StringAttr> parameterNames;
   for (ParamDeclAttr p : params) {
     parameterNames.push_back(
-        StringAttr::get(getContext(), demangleParameterName(p.getName())));
+        builder.getStringAttr(demangleParameterName(p.getName())));
   }
 
   auto metadata = FnMetadataAttr::get(
-      builder.getContext(), argNames, argPassingKinds, parameterNames,
-      paramPassingKinds, /*defaultPosArgs=*/{}, /*defaultPosParams=*/{},
-      /*defaultKwOnlyArgs=*/{}, /*defaultKwOnlyParams=*/{},
+      ArgParamListAttr::get(getContext(), argNames, argPassingKinds),
+      ArgParamListAttr::get(getContext(), parameterNames, paramPassingKinds),
       numImplicitLifetimeDecls);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});

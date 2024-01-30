@@ -592,8 +592,10 @@ static ParseResult parseLITFunctionSignature(
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   auto metadata = FnMetadataAttr::get(
-      p.getContext(), argNames, argPassingKinds, paramNames, paramPassingKinds,
-      defaultPosArgs, defaultPosParams, defaultKwOnlyArgs, defaultKwOnlyParams,
+      ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
+                            defaultPosArgs, defaultKwOnlyArgs),
+      ArgParamListAttr::get(p.getContext(), paramNames, paramPassingKinds,
+                            defaultPosParams, defaultKwOnlyParams),
       lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, resultParams, functionType, argConventions, effects, metadata,
