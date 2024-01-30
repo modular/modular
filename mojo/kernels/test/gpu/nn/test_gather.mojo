@@ -94,7 +94,7 @@ fn test_gather() raises:
             DType.float32,
         ](output_device_ptr)
 
-        gather[2, 2, 1, DType.float32, indices_type, 0, 1, "cuda"](
+        gather[axis=0, target="cuda"](
             output_device.make_dims_unknown(),
             input_device.make_dims_unknown(),
             indices_device.make_dims_unknown(),
