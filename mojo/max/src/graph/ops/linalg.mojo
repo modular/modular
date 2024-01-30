@@ -16,9 +16,9 @@ def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
 
 def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     var g = lhs.graph()
-    let broadcast_lhs: Symbol
-    let broadcast_rhs: Symbol
-    broadcast_lhs, broadcast_rhs = matmul_broadcast(lhs, rhs)
+    let broadcast_pair = matmul_broadcast(lhs, rhs)
+    let broadcast_lhs = broadcast_pair.get[0, Symbol]()
+    let broadcast_rhs = broadcast_pair.get[1, Symbol]()
 
     let lhs_type = broadcast_lhs.tensor_type()
     let rhs_type = broadcast_rhs.tensor_type()
@@ -39,7 +39,7 @@ def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
         return matmul_by_matrix(lhs, rhs)
 
 
-def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> (Symbol, Symbol):
+def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     var g = lhs.graph()
     let lhs_type = lhs.tensor_type()
     let rhs_type = rhs.tensor_type()

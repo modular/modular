@@ -40,7 +40,7 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
     return reshape(interleaved, new_shape, new_dims)
 
 
-def as_real(complex: Symbol) -> (Symbol, Symbol):
+def as_real(complex: Symbol) -> SymbolTuple:
     let splits = split[2](complex, (1, 1), axis=-1)
     let real = splits[0]
     let imag = splits[1]
@@ -54,12 +54,12 @@ def as_real(complex: Symbol) -> (Symbol, Symbol):
 
 def mul_complex(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Multiply complex-like real valued tensors."""
-    let l_real: Symbol
-    let l_imag: Symbol
-    let r_real: Symbol
-    let r_imag: Symbol
-    l_real, l_imag = as_real(lhs)
-    r_real, r_imag = as_real(rhs)
+    let lhs_pair = as_real(lhs)
+    let rhs_pair = as_real(lhs)
+    let l_real = lhs_pair.get[0, Symbol]()
+    let l_imag = lhs_pair.get[1, Symbol]()
+    let r_real = rhs_pair.get[0, Symbol]()
+    let r_imag = rhs_pair.get[1, Symbol]()
 
     let out_real = (l_real * r_real) - (l_imag * r_imag)
     let out_imag = (l_real * r_imag) + (l_imag * r_real)

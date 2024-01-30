@@ -4,23 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .capi import AttrMapPtr
-
 import mlir
 
 
 @value
-struct AttrMap:
-    var m: AttrMapPtr
+struct AttrMap(Sized):
+    var attrs: DynamicVector[mlir.NamedAttribute]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *attrs: mlir.NamedAttribute):
-        self.m = capi.attr_map_new()
+        self.attrs = DynamicVector[mlir.NamedAttribute]()
         for attr in attrs:
-            capi.attr_map_add_attr(self.m, attr[])
+            self.attrs.append(attr[])
 
     # TODO: parser crash
     #     self.__init__(attrs)
@@ -35,4 +33,4 @@ struct AttrMap:
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return capi.attr_map_size(self.m)
+        return len(self.attrs)

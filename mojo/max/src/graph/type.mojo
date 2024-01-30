@@ -10,7 +10,6 @@ from utils.variant import Variant
 import mlir
 
 from .module import Module
-from .capi import ArityPtr
 
 
 # TODO: Don't use magic value, return a proper type.
@@ -171,16 +170,16 @@ fn mo_type_to_mlir(t: AnyMOType, m: Module) -> mlir.Type:
 
 @value
 struct TypeTuple(Sized):
-    var data: DynamicVector[AnyMOType]
+    var types: DynamicVector[AnyMOType]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *types: AnyMOType):
-        self.data = DynamicVector[AnyMOType]()
+        self.types = DynamicVector[AnyMOType]()
         for t in types:
-            self.data.append(t[])
+            self.types.append(t[])
 
     # ===------------------------------------------------------------------=== #
     # Convenience adapters
@@ -189,30 +188,29 @@ struct TypeTuple(Sized):
     # TODO: Most should go away when one can express (AnyMOType, AnyMOType)
 
     fn __init__(inout self, t: MOTensor):
-        self.data = DynamicVector[AnyMOType]()
-        self.data.append(t)
+        self.types = DynamicVector[AnyMOType]()
+        self.types.append(t)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return len(self.data)
+        return len(self.types)
 
     # ===------------------------------------------------------------------=== #
     # MLIR conversion
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> ArityPtr:
-        var a = capi.arity_new()
-        for i in range(len(self.data)):
-            let el = self.data[i]
-            capi.arity_append_type(a, mo_type_to_mlir(el, m))
-        return a
+    fn to_mlir(self, m: Module) -> DynamicVector[mlir.Type]:
+        var types = DynamicVector[mlir.Type]()
+        for i in range(len(self.types)):
+            types.append(self.types[i].get[MOTensor]().to_mlir(m))
+        return types
 
     # ===------------------------------------------------------------------=== #
     # Mutators
     # ===------------------------------------------------------------------=== #
 
     fn append(inout self, type: AnyMOType) raises:
-        self.data.append(type)
+        self.types.append(type)

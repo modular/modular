@@ -7,6 +7,8 @@
 from tensor import Tensor
 
 import mlir
+from mlir.builtin_attributes import StringAttr
+from mlir.builtin_types import FunctionType
 
 from .type import MOTensor, TypeTuple
 
@@ -98,7 +100,11 @@ struct Module:
     fn string_attr(
         self, name: StringRef, value: StringRef
     ) -> mlir.NamedAttribute:
-        return capi.attr_new_string(self.m, name, value)
+        let ctx = self.m.context()
+        return mlir.NamedAttribute(
+            name=mlir.Identifier(ctx, name),
+            attr=StringAttr(ctx, value),
+        )
 
     # ===------------------------------------------------------------------=== #
     # Graph factories
@@ -107,4 +113,28 @@ struct Module:
     fn graph(
         self, name: StringRef, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
-        return Graph(self, name, in_types, out_types)
+        let ctx = self.m.context()
+        let loc = mlir.Location.unknown(ctx)
+
+        let function_type = FunctionType(
+            ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+        )
+        let op = capi.graph_new(self.m, loc, name, function_type)
+
+        return Graph(op)
+
+    # ===------------------------------------------------------------------=== #
+    # Type convenience helpers
+    # ===------------------------------------------------------------------=== #
+
+    fn i32(self, *dims: Int64) -> mlir.Type:
+        return MOTensor(DType.int32, dims).to_mlir(self)
+
+    fn i64(self, *dims: Int64) -> mlir.Type:
+        return MOTensor(DType.int64, dims).to_mlir(self)
+
+    fn f32(self, *dims: Int64) -> mlir.Type:
+        return MOTensor(DType.float32, dims).to_mlir(self)
+
+    fn bool(self, *dims: Int64) -> mlir.Type:
+        return MOTensor(DType.bool, dims).to_mlir(self)

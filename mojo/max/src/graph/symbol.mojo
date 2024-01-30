@@ -4,16 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory.unsafe import _LITRef
+from tensor import Tensor, TensorShape, TensorSpec
+
+import mlir
+
 from .attr import AttrMap
 from .graph import Graph
-from .capi import SymbolPtr, TuplePtr
 from .type import *
 from .ops import *
 
-from tensor import Tensor, TensorShape, TensorSpec
-
 # TODO: The overloads are incomplete, and make unverified assumptions about
 # dtype, etc.
+
 
 # TODO: Cull the sea of operator overloads. Should be simplifiable with traits.
 #
@@ -29,16 +32,24 @@ from tensor import Tensor, TensorShape, TensorSpec
 
 
 @value
-@register_passable  # TODO: Use with Tuple shouldn't require reg-only?
 struct Symbol(CollectionElement, Stringable):
-    var s: SymbolPtr
+    var s: mlir.Value
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        return Graph(capi.symbol_get_graph(self.s))
+        let parent = self.s.parent()
+        let block: mlir.Block
+        if parent.isa[mlir.Block]():
+            block = parent.get[mlir.Block]()
+        else:
+            let op = parent.get[mlir.Operation]()
+            block = op.block()
+
+        let graph_op = block.parent()
+        return Graph(graph_op)
 
     # ===------------------------------------------------------------------=== #
     # Type accessors
@@ -56,7 +67,7 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn __str__(self) -> String:
-        return capi.symbol_to_string(self.s)
+        return str(self.s)
 
     # ===------------------------------------------------------------------=== #
     # Overloaded operators
@@ -291,57 +302,85 @@ struct Symbol(CollectionElement, Stringable):
 
 @value
 struct SymbolTuple(Sized):
-    var t: TuplePtr
+    var symbols: DynamicVector[Symbol]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *symbols: Symbol):
-        self.t = capi.tuple_new()
+        self.symbols = DynamicVector[Symbol]()
         for symbol in symbols:
-            capi.tuple_append_symbol(self.t, symbol.s)
+            self.symbols.append(symbol[])
 
-    fn __init__(inout self, symbols: DynamicVector[Symbol]):
-        self.t = capi.tuple_new()
-        for i in range(len(symbols)):
-            capi.tuple_append_symbol(self.t, symbols[i].s)
+    # TODO: issue
+    # fn __init__(inout self, symbols: VariadicListMem[Symbol]):
+    #     self.symbols = DynamicVector[Symbol]()
+    #     for symbol in symbols:
+    #         self.symbols.append(symbol[])
 
     # ===------------------------------------------------------------------=== #
     # Convenience tuple adapters
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, symbols: (Symbol, Symbol)):
-        self.__init__(symbols.get[0, Symbol]().s, symbols.get[1, Symbol]().s)
-
-    fn __init__(inout self, symbols: (Symbol, Symbol, Symbol)):
+    fn __init__(inout self, owned symbols: (Symbol, Symbol)):
+        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
-            symbols.get[0, Symbol]().s,
-            symbols.get[1, Symbol]().s,
-            symbols.get[2, Symbol]().s,
+            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
+            ),
         )
 
-    fn __init__(inout self, symbols: (Symbol, Symbol, Symbol, Symbol)):
+    fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
+        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
-            symbols.get[0, Symbol]().s,
-            symbols.get[1, Symbol]().s,
-            symbols.get[2, Symbol]().s,
-            symbols.get[3, Symbol]().s,
+            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
+            ),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[2]()).bitcast[Symbol]().address
+            ),
         )
+
+    fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
+        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
+        self.__init__(
+            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
+            ),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[2]()).bitcast[Symbol]().address
+            ),
+            __get_address_as_lvalue(
+                ptr.offset(symbols._offset[3]()).bitcast[Symbol]().address
+            ),
+        )
+
+    fn get[idx: Int, T: AnyType](self) -> Symbol:
+        return self.symbols[idx]
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return capi.tuple_size(self.t)
+        return len(self.symbols)
 
-    fn __getitem__(self, pos: UInt32) -> Symbol:
-        return Symbol(capi.tuple_get_symbol(self.t, pos))
+    fn __getitem__(self, idx: Int) -> Symbol:
+        return self.symbols[idx]
+
+    fn as_values(self) -> DynamicVector[mlir.Value]:
+        var values = DynamicVector[mlir.Value]()
+        for i in range(len(self.symbols)):
+            values.append(self.symbols[i].s)
+        return values
 
     # ===------------------------------------------------------------------=== #
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn append(self, s: Symbol):
-        capi.tuple_append_symbol(self.t, s.s)
+    fn append(inout self, symbol: Symbol):
+        self.symbols.append(symbol)
