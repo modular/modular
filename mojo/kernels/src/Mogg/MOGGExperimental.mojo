@@ -252,6 +252,38 @@ fn recursive_lambda_test_target(x: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
+fn multiparam_user(input_rank: Int, indices_rank: Int) -> Int:
+    return 5
+
+
+fn dummy_user(x: Tensor):
+    pass
+
+
+@mogg_register("param_expression_shape_test")
+@always_inline
+@export
+fn param_expression_shape_test(
+    input1: Tensor,
+    input2: Tensor,
+) -> Tensor[
+    input1.type,
+    DimList.create_unknown[
+        multiparam_user(input1.static_rank, input2.static_rank)
+    ](),
+]:
+    var shape = IntList[
+        DimList.create_unknown[
+            multiparam_user(input1.static_rank, input2.static_rank)
+        ]()
+    ](3, 2, 1, 3, 2)
+    let output = empty_tensor[input1.type](shape)
+
+    # Dummy user to make sure mogg has to materialize the toKGEN.
+    dummy_user(output)
+    return output
+
+
 @mogg_register_override("view_like_custom_op_target", 1000)
 @export
 fn view_like_custom_op_target(
