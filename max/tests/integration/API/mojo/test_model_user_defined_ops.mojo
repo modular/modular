@@ -11,6 +11,7 @@ from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
+    LoadOptions,
 )
 from sys import argv
 from tensor import Tensor, TensorShape
@@ -23,9 +24,9 @@ fn test_model_metadata() raises:
     let user_defined_ops_path = args[2]
 
     let session = InferenceSession()
-    let compiled_model = session.load_model(
-        Path(model_path), user_defined_ops_path
-    )
+    var config = LoadOptions()
+    config.set_custom_ops_path(Path(user_defined_ops_path))
+    let compiled_model = session.load_model(Path(model_path), config)
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -57,7 +58,9 @@ fn test_model() raises:
     let user_defined_ops_path = args[2]
 
     let session = InferenceSession()
-    let model = session.load_model(Path(model_path), user_defined_ops_path)
+    var config = LoadOptions()
+    config.set_custom_ops_path(Path(user_defined_ops_path))
+    let model = session.load_model(Path(model_path), config ^)
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
