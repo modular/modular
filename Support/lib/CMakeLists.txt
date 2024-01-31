@@ -82,4 +82,7 @@ add_subdirectory(Entitlements)
 # Telemetry requires Entitlements.
 add_subdirectory(Telemetry)
 
+# Settings requires Entitlements as well
+add_subdirectory(Settings)
+
 add_subdirectory(Frameworks)

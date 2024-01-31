@@ -285,6 +285,12 @@ void Config::getValuesInSection(
   });
 }
 
+void Config::populateEnvOverrides() {
+  if (allowEnvOverride)
+    for (const auto &[k, _] : kv)
+      getValue(k);
+}
+
 void Config::flush(raw_ostream &os) {
   std::vector<std::pair<StringRef, std::vector<std::string>>> sections;
   DenseMap<StringRef, unsigned> sectionNameToID;
