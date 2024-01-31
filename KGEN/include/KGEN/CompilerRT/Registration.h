@@ -82,6 +82,16 @@ void registerRandom(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
+/// Register the support functions.
+void registerSupport(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
+// System.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
 /// Register the system functions.
 void registerSystem(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
