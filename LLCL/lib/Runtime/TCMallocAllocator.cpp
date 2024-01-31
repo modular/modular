@@ -49,5 +49,8 @@ class TCMallocAllocator : public Allocator {
 } // namespace
 
 std::unique_ptr<Allocator> M::LLCL::createTCMallocAllocator() {
+#ifndef USE_TCMALLOC
+  llvm::report_fatal_error("LLCL not built with tcmalloc");
+#endif
   return std::make_unique<TCMallocAllocator>();
 }
