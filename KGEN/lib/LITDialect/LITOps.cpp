@@ -593,9 +593,11 @@ static ParseResult parseLITFunctionSignature(
 
   auto metadata = FnMetadataAttr::get(
       ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
-                            defaultPosArgs, defaultKwOnlyArgs),
+                            defaultPosArgs, defaultKwOnlyArgs,
+                            /*variadicIndices=*/{}, /*packIndices=*/{}),
       ArgParamListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                            defaultPosParams, defaultKwOnlyParams),
+                            defaultPosParams, defaultKwOnlyParams,
+                            /*variadicIndices=*/{}, /*packIndices=*/{}),
       lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, resultParams, functionType, argConventions, effects, metadata,

@@ -61,14 +61,19 @@ def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
     OptionalArrayRefParameter<"StringAttr">:$names,
     OptionalArrayRefParameter<"PassingKind">:$passingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly
+    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
+    OptionalArrayRefParameter<"size_t">:$variadicIndices,
+    OptionalArrayRefParameter<"size_t">:$packIndices
   );
 
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($names^         `]`)? `,`
-        `[` (`]`) : ($passingKinds^  `]`)? `,`
-        `[` (`]`) : ($defaultPos^    `]`)? `,`
-        `[` (`]`) : ($defaultKwOnly^ `]`)? `>`
+    `<` `[` (`]`) : ($names^           `]`)? `,`
+        `[` (`]`) : ($passingKinds^    `]`)? `,`
+        `[` (`]`) : ($defaultPos^      `]`)? `,`
+        `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
+        `[` (`]`) : ($variadicIndices^ `]`)? `,`
+        `[` (`]`) : ($packIndices^     `]`)?
+    `>`
   }];
 
   let builders = [
@@ -79,7 +84,7 @@ def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
 
   let extraClassDeclaration = [{
     /// Create a new arg/paramlist attr with the given names and passking kinds,
-    /// retaining the existing defaults.
+    /// retaining the existing defaults and variadic indices.
     ArgParamListAttr cloneWith(ArrayRef<StringAttr> names,
                                ArrayRef<PassingKind> passingKinds) const;
   }];
