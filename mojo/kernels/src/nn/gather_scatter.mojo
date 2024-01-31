@@ -876,7 +876,7 @@ fn scatter_nd_shape[
     indices: NDBuffer[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
     inputs are compatible.
@@ -899,40 +899,33 @@ fn scatter_nd_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(
-        indices_rank >= 1,
-        "indices cannot be a scalar",
-    )
+    if indices_rank < 1:
+        raise Error("indices cannot be a scalar")
 
     let num_sliced_dims = indices.dim(indices_rank - 1)
-    # TODO(#17512)
-    debug_assert(
-        num_sliced_dims <= input_rank,
-        "cannot slice more dimensions than what input has",
-    )
+    if num_sliced_dims > input_rank:
+        raise Error("cannot slice more dimensions than what input has")
 
-    # TODO(#17512)
-    debug_assert(
-        indices_rank - 1 + input_rank - num_sliced_dims == updates_rank,
-        "invalid rank for the updates tensor",
-    )
+    if indices_rank - 1 + input_rank - num_sliced_dims != updates_rank:
+        raise Error("invalid rank for the updates tensor")
+
+    var foundMismatch = False
 
     @unroll
     for i in range(indices_rank - 1):
-        # TODO(#17512)
-        debug_assert(
-            indices.dim(i) == updates.dim(i),
-            "batch dimensions of indices and updates don't match",
-        )
+        if indices.dim(i) != updates.dim(i):
+            foundMismatch = True
+    if foundMismatch:
+        raise Error("batch dimensions of indices and updates don't match")
+
+    foundMismatch = False
 
     @unroll
     for i in range(input_rank - num_sliced_dims):
-        # TODO(#17512)
-        debug_assert(
-            input.dim(i + num_sliced_dims) == updates.dim(i + indices_rank - 1),
-            "updated dimensions of input and updates don't match",
-        )
+        if input.dim(i + num_sliced_dims) != updates.dim(i + indices_rank - 1):
+            foundMismatch = True
+    if foundMismatch:
+        raise Error("updated dimensions of input and updates don't match")
 
     return input.get_shape()
 
