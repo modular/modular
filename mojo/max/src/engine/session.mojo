@@ -26,7 +26,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn __init__(
         inout self,
-        lib_path: StringRef,
+        lib_path: String,
         device: StringRef = "cpu",
         num_threads: Optional[Int] = None,
     ):
@@ -64,7 +64,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn compile_model(
         self,
-        model_path: StringRef,
+        model_path: String,
         user_defined_ops_path: Optional[StringRef],
         owned session: InferenceSession,
     ) raises -> CompiledModel:
@@ -209,7 +209,7 @@ struct InferenceSession:
 
     @staticmethod
     fn _allocateAndInit(
-        lib_path: StringRef,
+        lib_path: String,
         device: StringRef,
         num_threads: Optional[Int],
     ) raises -> AnyPointer[_InferenceSessionImpl]:

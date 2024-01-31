@@ -54,13 +54,19 @@ struct CCompileConfig:
     ):
         call_dylib_func(lib, Self.SetModelSourceFnName, self, model_source)
 
-    fn set_model_path(self, path: StringRef, borrowed lib: DLHandle):
+    fn set_model_path(self, path: String, borrowed lib: DLHandle):
         """Sets the path of model to compile."""
-        call_dylib_func(lib, Self.SetModelPathFnName, self, path.data)
+        var path_strref = path._strref_dangerous()
+        call_dylib_func(lib, Self.SetModelPathFnName, self, path_strref.data)
+        path._strref_keepalive()
 
-    fn replace_ops(self, path: StringRef, borrowed lib: DLHandle) raises:
+    fn replace_ops(self, path: String, borrowed lib: DLHandle) raises:
         let status = Status(lib)
-        call_dylib_func(lib, Self.ReplaceOpsFnName, self, path.data, status.ptr)
+        var path_strref = path._strref_dangerous()
+        call_dylib_func(
+            lib, Self.ReplaceOpsFnName, self, path_strref.data, status.ptr
+        )
+        path._strref_keepalive()
         if status:
             raise Error(status.__str__())
 
@@ -92,11 +98,11 @@ struct CompileConfig:
             model_source, self.lib
         )
 
-    fn set_model_path(self, path: StringRef):
+    fn set_model_path(self, path: String):
         """Sets the path of model to compile."""
         __get_address_as_lvalue(self.ptr.address).set_model_path(path, self.lib)
 
-    fn set_replace_ops_path(self, path: StringRef) raises:
+    fn set_replace_ops_path(self, path: String) raises:
         """Replace Modular kernels with user-defined kernels."""
         __get_address_as_lvalue(self.ptr.address).replace_ops(path, self.lib)
 

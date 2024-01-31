@@ -43,7 +43,7 @@ struct _EngineImpl:
 
     alias VersionFnName = "M_version"
 
-    fn __init__(inout self, path: StringRef):
+    fn __init__(inout self, path: String):
         self.lib = DLHandle(path)
         self.can_close_lib = True
 
