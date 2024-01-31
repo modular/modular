@@ -938,6 +938,16 @@ kgen.func @select(%arg0: i1, %arg1: i32, %arg2: i32) -> (i32, i32) {
   kgen.return %0, %1 : i32, i32
 }
 
+// CHECK-LABEL: @select_to_cond
+kgen.func @select_to_cond(%cond: i1) -> !pop.scalar<bool> {
+  // CHECK-NEXT: %0 = pop.cast_from_builtin %arg0 : i1 to !pop.scalar<bool>
+  // CHECK-NEXT: kgen.return %0
+  %true = kgen.param.constant: scalar<bool> = <true>
+  %false = kgen.param.constant: scalar<bool> = <false>
+  %0 = pop.select %cond, %true, %false : !pop.scalar<bool>
+  kgen.return %0: !pop.scalar<bool>
+}
+
 // CHECK-LABEL: @string_ops
 kgen.func @string_ops() -> (index, !kgen.string) {
   %str = kgen.param.constant: string = <"four">
