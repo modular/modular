@@ -15,7 +15,11 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+
+#include <string>
+#include <utility>
 #include <variant>
+
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger_provider.h"
 #include "opentelemetry/logs/logger_provider.h"
@@ -43,6 +47,13 @@ constexpr StringRef kTelemetryUrl = "https://telemetry.modular.com:443";
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
+
+/// createLocalIDs creates a machineid (invariant within a given container) and
+/// a sessionid (invariant within a given process).
+///
+/// This function / should only ever be called once and the result memoized, it
+/// may be quite expensive.
+std::pair<std::string, std::string> createLocalIDs();
 
 /// A TelemetryContext provides access to instruments (e.g. Counter, Histogram)
 /// to instrument the code and generate metrics. These metrics will be exported
