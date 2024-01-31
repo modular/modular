@@ -589,7 +589,7 @@ fn batched_matmul_shape[
 ](
     a_buff: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b_buff: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
-) -> StaticIntTuple[rank]:
+) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -609,24 +609,26 @@ fn batched_matmul_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(rank >= 2, "batched_matmul requires rank >= 2")
+    if rank <= 2:
+        raise Error("batched_matmul requires rank >= 2")
 
-    # TODO(#17512)
-    debug_assert(
-        a_buff.dim(rank - 1) == b_buff.dim(rank - 2),
-        "batched_matmul inner dimension must match",
-    )
+    if a_buff.dim(rank - 1) != b_buff.dim(rank - 2):
+        raise Error("batched_matmul inner dimension must match")
+
+    # Check batch dimensions
+    var foundMismatch = False
+
+    # TODO bring this back once `SymbolicizeFallbackShapeFunctions` can handle
+    # multipl asserts.
+    # @unroll
+    # for i in range(rank - 2):
+    #    if a_buff.dim(i) != b_buff.dim(i):
+    #        foundMismatch = True
+
+    if foundMismatch:
+        raise Error("batched_matmul batch dimensions must match")
 
     var output_shape = a_buff.get_shape()
-
-    @unroll
-    for i in range(rank - 2):
-        # TODO(#17512)
-        debug_assert(
-            a_buff.dim(i) == b_buff.dim(i),
-            "batched_matmul batch dimensions must match",
-        )
     output_shape[rank - 1] = b_buff.dim(rank - 1)
 
     return output_shape
