@@ -110,6 +110,19 @@ public:
     return llvm::cast_if_present<EntitlementT>(found->second.get());
   }
 
+  /// Lookup an entitlement by its name.
+  Entitlement *getEntitlement(StringRef name) const {
+    auto foundName = nameToOID.find(name);
+    if (foundName == nameToOID.end())
+      return nullptr;
+
+    auto found = entitlements.find(foundName->second);
+    if (found == entitlements.end())
+      return nullptr;
+
+    return found->second.get();
+  }
+
 private:
   /// This will verify the client's certificate chain and flush it to disk if
   /// and only if it's valid.
@@ -139,6 +152,10 @@ private:
   /// means that we can only have a single instance of a given entitlement at a
   /// time.
   llvm::DenseMap<ASN1::ObjectID, std::unique_ptr<Entitlement>> entitlements;
+
+  /// This maps from entitlement names to their OID. This allows us to look up
+  /// an entitlement by name rather than forcing us to know the OID.
+  llvm::StringMap<ASN1::ObjectID> nameToOID;
 
   /// This holds the client certificate chain. The implementation is hidden to
   /// avoid leaking details through this abstraction.
