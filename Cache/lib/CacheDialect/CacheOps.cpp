@@ -18,6 +18,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
 
@@ -81,8 +82,15 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
       if (!blob)
         return nullptr;
 
-      BufferRef resourceData = Buffer::get(
-          StringRef(blob->getData().data(), blob->getData().size()));
+      // Buffer::get will take ownership and copy the data into its memory.
+      // Here since we are using it synchronously we know the lifetime of data
+      // will exceed the buffer lifetime. So create an alias.
+      std::unique_ptr<llvm::MemoryBuffer> aliasedBuffer =
+          llvm::MemoryBuffer::getMemBuffer(llvm::toStringRef(blob->getData()),
+                                           /*BufferName=*/"",
+                                           /*RequiresNullTerminator=*/false);
+
+      BufferRef resourceData = Buffer::take(std::move(aliasedBuffer));
 
       // We have to make this synchronous for now :(
       auto contains = cache->contains(resourceAttr);
