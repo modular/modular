@@ -93,6 +93,10 @@ public:
   /// Get all the values contained in the config.
   const llvm::StringMap<std::string> &getAllValues() const { return kv; }
 
+  /// Populate the env overrides for any configuration that has one. Does
+  /// nothing if env overrides are disabled.
+  void populateEnvOverrides();
+
   /// Flush the configs to the provided stream.
   // TODO: Preserve user comments.
   void flush(llvm::raw_ostream &os);
