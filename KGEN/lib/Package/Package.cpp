@@ -30,7 +30,8 @@ using namespace KGEN;
 
 LogicalResult
 M::KGEN::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
-                                 SymbolTable &symTab,
+                                 function_ref<bool(StringAttr)> existsFn,
+                                 function_ref<void(Operation *)> insertFn,
                                  const SymbolTable &bytecodeSymTab) {
   if (reader.isMaterializable(op)) {
     if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
@@ -42,21 +43,22 @@ M::KGEN::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
   // it.
   auto extractDependency = [&](StringAttr name) -> Operation * {
     // Don't move the symbol if it already exists in the main module.
-    if (symTab.lookup(name))
+    if (existsFn(name))
       return nullptr;
     Operation *symbol = bytecodeSymTab.lookup(name);
     assert(symbol && "expected valid symbol reference");
 
     // Move the symbol into the main module.
     symbol->moveAfter(op);
-    symTab.insert(symbol);
+    insertFn(symbol);
     return symbol;
   };
 
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](FlatSymbolRefAttr ref) -> WalkResult {
     if (Operation *decl = extractDependency(ref.getAttr()))
-      return loadSymbolsFromBytecode(decl, reader, symTab, bytecodeSymTab);
+      return loadSymbolsFromBytecode(decl, reader, existsFn, insertFn,
+                                     bytecodeSymTab);
     return WalkResult::advance();
   });
   auto result = op->walk([&](Operation *op) {
@@ -74,6 +76,15 @@ M::KGEN::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
     return WalkResult::advance();
   });
   return failure(result.wasInterrupted());
+}
+
+LogicalResult
+M::KGEN::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
+                                 SymbolTable &symTab,
+                                 const SymbolTable &bytecodeSymTab) {
+  return loadSymbolsFromBytecode(
+      op, reader, [&](StringAttr name) -> bool { return symTab.lookup(name); },
+      [&](Operation *op) { symTab.insert(op); }, bytecodeSymTab);
 }
 
 //===----------------------------------------------------------------------===//
