@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(GraphCompiler/CLOptions)
 add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
