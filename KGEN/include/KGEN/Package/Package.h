@@ -27,11 +27,12 @@ namespace M::KGEN {
 class CompilationOptions;
 class PackageLinkOp;
 
-/// Recursive pull dependencies from `bytecodeSymTab` into `symTab`, root at
-/// `op`.
-LogicalResult readFromBytecode(Operation *op, mlir::BytecodeReader &reader,
-                               SymbolTable &symTab,
-                               const SymbolTable &bytecodeSymTab);
+/// Recursively and lazily read dependencies from the module contained by
+/// `bytecodeSymTab` into `symTab`, rooted at `op`.
+LogicalResult loadSymbolsFromBytecode(Operation *op,
+                                      mlir::BytecodeReader &reader,
+                                      SymbolTable &symTab,
+                                      const SymbolTable &bytecodeSymTab);
 
 /// Given the symbol table of an elaborated module for a Mojo package, as well
 /// as that package's name, returns either an attribute to store the module
@@ -47,10 +48,6 @@ ErrorOr<PackageArchiveAttr> createPackageArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols,
     TargetInfoAttr targetInfo, DenseResourceElementsAttr elaboratedBytecode,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime);
-
-/// Load the given bytecode module and return it.
-ErrorOr<OwningOpRef<ModuleOp>>
-loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr);
 
 /// Loads the serialized MLIR bytecode representing a pre-elaborated module for
 /// package off of the given `packageLink` op, elaborates it, and generates a
