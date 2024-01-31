@@ -101,7 +101,7 @@ fn test() raises:
     let output_ptr = DTypePointer[type].alloc(qkv_size)
     let mha_output_ptr = DTypePointer[type].alloc(qkv_size)
 
-    # Q, K, V are randomly initalized.
+    # Q, K, V are randomly initialized.
     rand[type](q_ptr, qkv_size)
     rand[type](k_ptr, qkv_size)
     rand[type](v_ptr, qkv_size)
@@ -124,13 +124,13 @@ fn test() raises:
 
     @parameter
     @always_inline
-    fn test_body[transpose_key: Bool]() raises:
+    fn test_body[transpose_k: Bool]() raises:
         let k_shape = Index(
             batch_size, num_heads, seq_len, depth
-        ) if transpose_key else Index(batch_size, num_heads, depth, seq_len)
+        ) if transpose_k else Index(batch_size, num_heads, depth, seq_len)
         let k = NDBuffer[4, DimList.create_unknown[4](), type](k_ptr, k_shape)
 
-        _naive_attention[type, transpose_key](
+        _naive_attention[type, transpose_k](
             rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
             rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
             rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
@@ -141,6 +141,7 @@ fn test() raises:
 
         fused_attention[
             4,
+            2,
             BHSD,
             DimList.create_unknown[4](),
             BHSD,
@@ -151,7 +152,7 @@ fn test() raises:
             type,
             type,
             type,
-            transpose_key,
+            transpose_k=transpose_k,
             add_attn_mask=True,
         ](mha_output, q, k, v, mask, scale, Float32())
 

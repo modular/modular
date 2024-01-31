@@ -55,6 +55,7 @@ fn null_bmm_lambda[
 
 fn fused_attention[
     rank: Int,
+    mask_rank: Int,
     q_shape: DimList,
     k_shape: DimList,
     v_shape: DimList,
@@ -73,7 +74,7 @@ fn fused_attention[
     q: NDBuffer[rank, q_shape, q_type],
     k: NDBuffer[rank, k_shape, k_type],
     v: NDBuffer[rank, v_shape, v_type],
-    mask: NDBuffer[2, mask_shape, mask_type],
+    mask: NDBuffer[mask_rank, mask_shape, mask_type],
     scale: Float32,
     causal_mask_value: Float32,
 ) raises:
@@ -96,6 +97,7 @@ fn fused_attention[
     """
 
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
+    constrained[mask_rank <= rank, "Mask rank must be a subset of data rank"]()
 
     alias simd_size = simdwidthof[output_type]()
 
@@ -161,10 +163,14 @@ fn fused_attention[
 
         @parameter
         if add_attn_mask:
+            var idx: StaticIntTuple[mask_rank] = 0
+
+            @unroll
+            for i in range(mask_rank):
+                idx[i] = _out_coords[_rank - mask_rank + i]
+
             fused_val += rebind[SIMD[inner_type, width]](
-                mask.simd_load[width](
-                    Index(_out_coords[_rank - 2], _out_coords[_rank - 1])
-                )
+                mask.simd_load[width](idx)
             )
 
         score.simd_store[width](
