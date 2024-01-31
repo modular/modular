@@ -14,7 +14,7 @@ namespace M {
 
 /// ODS helper for parsing an enum.
 template <typename T>
-LogicalResult readEnum(mlir::DialectBytecodeReader &reader, T &result) {
+LogicalResult readIntegral(mlir::DialectBytecodeReader &reader, T &result) {
   uint64_t value;
   if (failed(reader.readVarInt(value)))
     return failure();
@@ -24,22 +24,23 @@ LogicalResult readEnum(mlir::DialectBytecodeReader &reader, T &result) {
 
 /// ODS helper for parsing an array of enums.
 template <typename T>
-LogicalResult readEnumArray(mlir::DialectBytecodeReader &reader,
-                            SmallVectorImpl<T> &result) {
+LogicalResult readIntegralArray(mlir::DialectBytecodeReader &reader,
+                                SmallVectorImpl<T> &result) {
   return reader.readList(
-      result, [&](T &value) { return M::readEnum<T>(reader, value); });
+      result, [&](T &value) { return M::readIntegral<T>(reader, value); });
 }
 
 /// ODS helper for printing an enum.
 template <typename T>
-void writeEnum(mlir::DialectBytecodeWriter &writer, T value) {
+void writeIntegral(mlir::DialectBytecodeWriter &writer, T value) {
   writer.writeVarInt(static_cast<uint64_t>(value));
 }
 
 /// ODS helper for printing an array of enums.
 template <typename T>
-void writeEnumArray(mlir::DialectBytecodeWriter &writer, ArrayRef<T> values) {
-  writer.writeList(values, [&](T value) { writeEnum(writer, value); });
+void writeIntegralArray(mlir::DialectBytecodeWriter &writer,
+                        ArrayRef<T> values) {
+  writer.writeList(values, [&](T value) { writeIntegral(writer, value); });
 }
 
 } // namespace M
