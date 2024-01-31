@@ -813,8 +813,8 @@ private:
   /// The LLCL runtime instance to use.
   LLCL::Runtime &runtime;
 
-  /// Deferred generated functions to append to the module.
-  SmallVector<FuncOp> deferredFunctions;
+  /// Deferred generated symbols to append to the module.
+  SmallVector<mlir::SymbolOpInterface> deferredSymbols;
 
   /// State for a package reader.
   struct PackageReaderState {
@@ -1021,7 +1021,7 @@ void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
   addConcreteFunc(op);
   newSymTab.modify([this, op](SymbolTable &symtab) {
     symtab.insert(op);
-    deferredFunctions.push_back(op);
+    deferredSymbols.push_back(op);
   });
 }
 
@@ -2373,9 +2373,10 @@ void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
     auto newLink =
         b.create<LinkOp>(link.getLoc(), link.getSymNameAttr(),
                          archive.getArchive(), archive.getDependencies());
-    // FIXME: Ensure deterministic insertion order.
-    newSymTab.modify(
-        [newLink](SymbolTable &symtab) { symtab.insert(newLink); });
+    newSymTab.modify([newLink, this](SymbolTable &symtab) {
+      symtab.insert(newLink);
+      deferredSymbols.push_back(newLink);
+    });
   }
 
   mlir::AsmResourceBlob *blob =
@@ -2751,12 +2752,13 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   }
 
   // Sort and then push on all the deferred functions.
-  llvm::sort(deferredFunctions, [](FuncOp lhs, FuncOp rhs) {
-    return lhs.getSymName() < rhs.getSymName();
-  });
-  for (FuncOp func : deferredFunctions) {
-    func->remove();
-    theModule.push_back(func);
+  llvm::sort(deferredSymbols,
+             [](mlir::SymbolOpInterface lhs, mlir::SymbolOpInterface rhs) {
+               return lhs.getName() < rhs.getName();
+             });
+  for (mlir::SymbolOpInterface symbol : deferredSymbols) {
+    symbol->remove();
+    theModule.push_back(symbol);
   }
 
   // Update the symbol table with the new one.

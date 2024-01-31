@@ -21,9 +21,6 @@ from test_package.module import exported_func
 # COM: This integration test tests every important step for packaging and
 # COM: precompilation.
 
-# ELAB: kgen.link dense_resource<{{.*}} as [[PKG:@.*target_dep_package.*]]
-# LAST: kgen.link dense_resource<{{.*}} as [[PKG:@.*target_dep_package.*]]
-
 
 # GENLIB: kgen.generator export @top
 # GENLIB: call @exported_func()
@@ -49,9 +46,9 @@ fn top() -> Int:
 # MATER-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]],
 # MATER-NEXT: kgen.param.if
 # ELAB: kgen.func export package [[TARGET_FN]]
-# ELAB-SAME: precompiledBodyRef = [[PKG]]
+# ELAB-SAME: precompiledBodyRef = [[PKG:@.*target_dep_package.*]]}
 # LAST: kgen.extern.func export package [[TARGET_FN]]
-# LAST-SAME: from [[PKG]]
+# LAST-SAME: from [[PKG:@.*target_dep_package.*]]
 
 # GENLIB: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}}) archives()
 # MATER: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}}) archives()
@@ -60,3 +57,6 @@ fn top() -> Int:
 # MATER: kgen.generator @exported_func()
 # ELAB: kgen.func export package @exported_func()
 # LAST: kgen.extern.func export package @exported_func()
+
+# ELAB: kgen.link dense_resource<{{.*}} as [[PKG]]
+# LAST: kgen.link dense_resource<{{.*}} as [[PKG]]
