@@ -4,38 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
-
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias Int = __mlir_type.index
-
-alias `10` = __mlir_attr.`10 : index`
-alias `42` = __mlir_attr.`42 : index`
-alias `123` = __mlir_attr.`123 : index`
-
-
-# COM: Stubs to allow testing without builtins
-struct Error:
-    pass
-
-
-@register_passable("trivial")
-struct Bool(AnyType):
-    fn __mlir_i1__(self) -> __mlir_type.i1:
-        pass
-
-
-trait AnyType:
-    pass
-
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
-
+# RUN: %translate-with-packages %s | FileCheck %s
 
 fn return_generic_memory_only[T: AnyType]() -> T:
     pass
