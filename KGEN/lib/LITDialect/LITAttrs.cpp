@@ -52,14 +52,21 @@ LogicalResult ArgParamListAttr::verify(
     ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
     ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<size_t> variadicIndices,
     ArrayRef<size_t> packIndices) {
-  // TODO: verify varidic Indices
-  if (names.size() != passingKinds.size()) {
-    return emitError()
-           << "number of argument/parameter names and passing kinds must match";
+  size_t numEl = names.size();
+  if (size_t numPassingKinds = passingKinds.size(); numEl != numPassingKinds) {
+    return emitError() << "number of argument/parameter names and passing "
+                          "kinds does not match: "
+                       << numEl << " vs. " << numPassingKinds;
   }
   for (StringAttr name : names)
     if (!name)
       return emitError() << "argument/parameter name cannot be null";
+
+  if (failed(verifyPassingKinds(emitError, passingKinds, defaultPos.size(),
+                                defaultKwOnly.size(), "arguments/parameter")))
+    return failure();
+
+  // TODO: verify varidic Indices
   return success();
 }
 
@@ -197,12 +204,13 @@ LogicalResult FnMetadataAttr::verifySignature(
     }
   }
 
-  if (failed(verifyDefaults(emitError, getDefaultPosArgs(),
-                            getDefaultKwOnlyArgs(), getArgPassingKinds(),
-                            values.getInputs(), "argument", argConventions)) ||
-      failed(verifyDefaults(emitError, getDefaultPosParams(),
-                            getDefaultKwOnlyParams(), getParamPassingKinds(),
-                            inputParamTypes, "parameter")))
+  if (failed(verifyDefaultTypes(emitError, getDefaultPosArgs(),
+                                getDefaultKwOnlyArgs(), getArgPassingKinds(),
+                                values.getInputs(), "argument",
+                                argConventions)) ||
+      failed(verifyDefaultTypes(
+          emitError, getDefaultPosParams(), getDefaultKwOnlyParams(),
+          getParamPassingKinds(), inputParamTypes, "parameter")))
     return failure();
 
   return success();

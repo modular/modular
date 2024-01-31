@@ -672,32 +672,11 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
-                                  ArrayRef<TypedAttr> defaultsPos,
-                                  ArrayRef<TypedAttr> defaultsKwOnly,
-                                  ArrayRef<PassingKind> passingKinds,
-                                  ArrayRef<Type> types, StringRef argOrParam,
-                                  ArrayRef<ArgConvention> convs) {
-  size_t numTypes = types.size();
-  auto emitTooManyDefaults = [&](size_t numDefaults, StringRef kindStr) {
-    return emitError() << "there are more default " << kindStr << " "
-                       << argOrParam << "s than " << kindStr << " "
-                       << argOrParam << "s: " << numDefaults << " vs. "
-                       << numTypes;
-  };
-
-  size_t numPositional = countNumPositional(passingKinds);
-  size_t numPosDefaults = defaultsPos.size();
-  if (numPosDefaults > numPositional)
-    return emitTooManyDefaults(numPosDefaults, "positional");
-
-  size_t numImplicit = countNumImplicitKinds(passingKinds);
-  size_t numKwOnly = numTypes - numPositional - numImplicit;
-  size_t numKwOnlyDefaults = defaultsKwOnly.size();
-  if (numKwOnlyDefaults > numKwOnly)
-    return emitTooManyDefaults(numKwOnlyDefaults, "keyword-only");
-
-  // NOTE: the number of defaults are now verified so we can use the handler.
+LogicalResult LIT::verifyDefaultTypes(
+    function_ref<InFlightDiagnostic()> emitError,
+    ArrayRef<TypedAttr> defaultsPos, ArrayRef<TypedAttr> defaultsKwOnly,
+    ArrayRef<PassingKind> passingKinds, ArrayRef<Type> types,
+    StringRef argOrParam, ArrayRef<ArgConvention> convs) {
   DefaultValueHandler defaultHandler(passingKinds, defaultsPos, defaultsKwOnly);
   for (size_t idx = 0; idx < passingKinds.size(); ++idx) {
     auto defaultOr = defaultHandler.getDefault(idx);
@@ -724,6 +703,63 @@ LogicalResult LIT::verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
                          << " value has type " << defaultType;
     }
   }
+
+  return success();
+}
+
+LogicalResult
+LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
+                        ArrayRef<PassingKind> passingKinds,
+                        size_t numPosDefaults, size_t numKwOnlyDefaults,
+                        StringRef argOrParam) {
+  // First, verify the order of passing kinds.
+  auto latestKind = PassingKind::PosOnly;
+  auto emitDiag = [&](PassingKind kind) {
+    return emitError() << stringifyPassingKind(kind)
+                       << " passing kind cannot follow "
+                       << stringifyPassingKind(latestKind);
+  };
+
+  for (PassingKind kind : passingKinds) {
+    if (kind == PassingKind::Implicit) {
+      latestKind = kind;
+      continue;
+    }
+    if (latestKind == PassingKind::Implicit)
+      return emitDiag(kind);
+    if (kind == PassingKind::KwOnly) {
+      latestKind = kind;
+      continue;
+    }
+    if (latestKind == PassingKind::KwOnly)
+      return emitDiag(kind);
+    if (kind == PassingKind::PosOrKw) {
+      latestKind = kind;
+      continue;
+    }
+    if (latestKind == PassingKind::PosOrKw)
+      return emitDiag(kind);
+    assert(latestKind == PassingKind::PosOnly);
+  }
+
+  auto emitTooManyDefaults = [&](size_t numDefaults, size_t numPassingKinds,
+                                 StringRef kindStr) {
+    return emitError() << "there are more default " << kindStr << " "
+                       << argOrParam << "s than " << kindStr << " "
+                       << argOrParam << "s: " << numDefaults << " vs. "
+                       << numPassingKinds;
+  };
+
+  // TODO: test this
+  size_t numPos = countNumPositional(passingKinds);
+  if (numPosDefaults > numPos)
+    return emitTooManyDefaults(numPosDefaults, numPos, "positional");
+
+  // TODO: test this
+  size_t numEl = passingKinds.size();
+  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(passingKinds);
+  if (numKwOnlyDefaults > numKwOnly)
+    return emitTooManyDefaults(numKwOnlyDefaults, numKwOnly, "keyword-only");
 
   return success();
 }

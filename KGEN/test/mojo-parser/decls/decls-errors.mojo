@@ -120,6 +120,7 @@ fn defaultArgumentBadType(a: Int = 1.0): pass
 # expected-error @+1 {{inout arguments may not have defaults}}
 fn byref_default(inout x: Int = 2): pass
 
+# expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 
