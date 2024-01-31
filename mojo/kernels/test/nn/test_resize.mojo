@@ -52,7 +52,7 @@ fn test_case_linear[
 
 
 def main():
-    fn test_upsample_sizes_nearest_1():
+    fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
@@ -66,7 +66,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,2.0,2.0,2.0,1.0,1.0,1.0,2.0,2.0,2.0,3.0,3.0,3.0,4.0,4.0,4.0,3.0,3.0,3.0,4.0,4.0,4.0,
     test_upsample_sizes_nearest_1()
 
-    fn test_downsample_sizes_nearest():
+    fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 4)
@@ -83,7 +83,7 @@ def main():
     # CHECK: 1.0,3.0,
     test_downsample_sizes_nearest()
 
-    fn test_upsample_sizes_nearest_2():
+    fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
@@ -98,7 +98,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,
     test_upsample_sizes_nearest_2()
 
-    fn test_upsample_sizes_nearest_floor_align_corners():
+    fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 4, 4)
@@ -118,7 +118,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,13.0,13.0,13.0,14.0,14.0,15.0,15.0,16.0,
     test_upsample_sizes_nearest_floor_align_corners()
 
-    fn test_upsample_sizes_nearest_round_half_up_asymmetric():
+    fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 4, 4)
@@ -138,7 +138,7 @@ def main():
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
     test_upsample_sizes_nearest_round_half_up_asymmetric()
 
-    fn test_upsample_sizes_nearest_ceil_half_pixel():
+    fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 4, 4)
