@@ -38,10 +38,12 @@ class OptionalAttribute<string type> :
   WithPrinter<"$_writer.writeOptionalAttribute($_getter)",
   WithType<type>>>;
 
-class EnumAttr<string type> :
-  WithParser<"succeeded(M::readEnum<" # type # ">($_reader, $_var))",
-  WithPrinter<"M::writeEnum($_writer, $_getter)",
+class IntegralAttr<string type> :
+  WithParser<"succeeded(M::readIntegral<" # type # ">($_reader, $_var))",
+  WithPrinter<"M::writeIntegral($_writer, $_getter)",
   WithType<type>>>;
+
+class EnumAttr<string type> : IntegralAttr<type>;
 
 class ConcreteAttrArray<string type> :
   WithParser<"succeeded($_reader.readAttributes($_var))",
@@ -65,10 +67,12 @@ def StringAttrArray : ConcreteAttrArray<"StringAttr">;
 
 def TypedAttrArray : ConcreteAttrArray<"TypedAttr">;
 
-class EnumAttrArray<string type> :
-  WithParser<"succeeded(M::readEnumArray<" # type # ">($_reader, $_var))",
-  WithPrinter<"M::writeEnumArray($_writer, $_getter)",
+class IntegralAttrArray<string type> :
+  WithParser<"succeeded(M::readIntegralArray<" # type # ">($_reader, $_var))",
+  WithPrinter<"M::writeIntegralArray($_writer, $_getter)",
   WithType<"SmallVector<" # type # ">">>>;
+
+class EnumAttrArray<string type> : IntegralAttrArray<type>;
 
 class Custom<string type> :
   WithParser<"succeeded(read" # type # "($_reader, $_var))",

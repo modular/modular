@@ -84,14 +84,14 @@ using mlir::get;
 static LogicalResult readFnEffects(DialectBytecodeReader &reader,
                                    FnEffects &effects) {
   impl::FnEffects impl;
-  if (failed(M::readEnum(reader, impl)))
+  if (failed(M::readIntegral(reader, impl)))
     return failure();
   effects = impl;
   return success();
 }
 
 static void writeFnEffects(DialectBytecodeWriter &writer, FnEffects effects) {
-  M::writeEnum(writer, effects.getImpl());
+  M::writeIntegral(writer, effects.getImpl());
 }
 
 static LogicalResult readKGENDType(DialectBytecodeReader &reader,
