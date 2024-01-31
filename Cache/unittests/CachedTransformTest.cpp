@@ -15,6 +15,7 @@
 #include "mlir/Pass/PassManager.h"
 
 #include "Cache/CacheDialect/CacheDialect.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "mlir/Parser/Parser.h"
 #include "gtest/gtest.h"
 
@@ -167,4 +168,102 @@ TEST(CachedTransformTest, CacheHits) {
   // Running the pass on IR that has the attr should result in removing the
   // attr.
   EXPECT_FALSE(returnOp->hasAttrOfType<StringAttr>("hello"));
+}
+
+// We can have transform functions that write to a buffer and return a buffer.
+// Here we are testing the transform return value is the value that's returned
+// on a cache miss and output of cacheHitFn on cache hit.
+TEST(CachedTransformTest, BufferReturn) {
+  auto runtime = createRuntimeIfNeeded(RuntimeOptions().forDebug());
+  std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
+  auto transformBackendChainOr =
+      getLocalDefaultBackendChain(*runtime, cacheTestPath / "xform");
+  EXPECT_FALSE(failed(transformBackendChainOr));
+  auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
+      transformBackendChainOr.takeValue());
+
+  static constexpr StringLiteral world = "world";
+  int runCount = 0;
+  auto transform = [&](AnyAsyncValueRef inputChain) mutable {
+    ++runCount;
+    auto outputBuffer =
+        AsyncValueRef<BufferRef>::allocate(runtime->getCompactPtr());
+    auto inner = [&, output = outputBuffer.copy()]() mutable {
+      BufferRef outputBuffer = Buffer::get(world);
+      return std::move(output).emplace(std::move(outputBuffer));
+    };
+    std::move(inputChain).andThenSync(std::move(inner));
+    return outputBuffer;
+  };
+  int hitCount = 0;
+  auto hitFn = [&](BufferRef buf) {
+    ++hitCount;
+    return buf.copy();
+  };
+  const AsyncValueRef<Chain> &inputChain = runtime->getReadyChain();
+  constexpr StringLiteral keyStr = "hello";
+  WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
+  key->write(keyStr.data(), keyStr.size());
+  EncodedLocation loc = LLCL::UnknownLocationDecoder::getEncodedLocation();
+  AnyAsyncValueRef output =
+      cachedTransform(loc.copy(), transformCache.copy(), inputChain.copy(),
+                      key.copy(), transform, hitFn);
+  await(output);
+
+  ASSERT_TRUE(output.isType<BufferRef>());
+  auto &outputBuffer = output.get<BufferRef>();
+  EXPECT_EQ(outputBuffer->getBuffer(), world);
+
+  EXPECT_EQ(runCount, 1);
+
+  const AsyncValueRef<Chain> &inputChain2 = runtime->getReadyChain();
+  AnyAsyncValueRef output2 =
+      cachedTransform(loc.copy(), transformCache.copy(), inputChain2.copy(),
+                      key.copy(), transform, hitFn);
+  await(output2);
+
+  ASSERT_TRUE(output2.isType<BufferRef>());
+  auto &outputBuffer2 = output2.get<BufferRef>();
+  EXPECT_EQ(outputBuffer2->getBuffer(), world);
+
+  EXPECT_EQ(runCount, 1);
+  EXPECT_EQ(hitCount, 1);
+
+  const AsyncValueRef<Chain> &inputChain3 = runtime->getReadyChain();
+  AnyAsyncValueRef output3 =
+      cachedTransform(loc.copy(), transformCache.copy(), inputChain3.copy(),
+                      key.copy(), transform, hitFn);
+  await(output3);
+
+  ASSERT_TRUE(output3.isType<BufferRef>());
+  auto &outputBuffer3 = output3.get<BufferRef>();
+  EXPECT_EQ(outputBuffer3->getBuffer(), world);
+
+  EXPECT_EQ(runCount, 1);
+  EXPECT_EQ(hitCount, 2);
+
+  constexpr llvm::StringLiteral prependStr = " again ";
+  auto anotherHitFn = [&](BufferRef buf) {
+    ++hitCount;
+
+    WriteableBufferRef output = WriteableBuffer::get();
+    output->write(prependStr.data(), prependStr.size());
+    output->write(buf->getBufferStart(), buf->getBufferSize());
+    BufferRef outputBuffer = std::move(output);
+    return outputBuffer;
+  };
+
+  const AsyncValueRef<Chain> &inputChain4 = runtime->getReadyChain();
+  AnyAsyncValueRef output4 =
+      cachedTransform(loc.copy(), transformCache.copy(), inputChain4.copy(),
+                      key.copy(), transform, anotherHitFn);
+  await(output4);
+
+  ASSERT_TRUE(output4.isType<BufferRef>());
+  auto &outputBuffer4 = output4.get<BufferRef>();
+  Twine expectedOut = prependStr + world;
+  EXPECT_EQ(outputBuffer4->getBuffer(), expectedOut.str());
+
+  EXPECT_EQ(runCount, 1);
+  EXPECT_EQ(hitCount, 3);
 }
