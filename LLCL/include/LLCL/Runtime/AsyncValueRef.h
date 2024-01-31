@@ -47,7 +47,7 @@ public:
   template <typename DerivedT,
             std::enable_if_t<std::is_base_of<T, DerivedT>::value, int> = 0>
   AsyncValueRef(AsyncValueRef<DerivedT> &&rhs)
-      : AnyAsyncValueRef(std::move(rhs.value)) {}
+      : AnyAsyncValueRef(std::move(rhs)) {}
 
   /// This constructor forms a reference to the specified pointer, increasing
   /// the underlying reference count by 1.
