@@ -202,7 +202,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
-    OptionalAttr<KGEN_PreservedAttr>:$sourceSignature
+    OptionalAttr<KGEN_PreservedAttr>:$sourceSignature,
+    OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -219,7 +220,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
       build($_builder, $_state, name, signature, functionType, inputParams,
             resultParams, /*decorators=*/{}, InlineLevel::Automatic,
             ExportKind::NotExported,
-            DictionaryAttr::get(name.getContext()), {});
+            DictionaryAttr::get(name.getContext()), {}, {});
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
@@ -257,8 +258,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        KGEN_ExportKindAttr:$exportKind,
-                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef,
-                       OptionalAttr<StrAttr>:$linkageName);
+                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef);
   let regions = (region SizedRegion<0>:$body);
 
   let extraClassDeclaration = [{

@@ -10,8 +10,8 @@ kgen.generator @even_only<param>() {
 }
 
 // This should turn into two variants exactly, not a duplicate for 72.
-// CHECK-LABEL: kgen.func @find_even()
 // CHECK-LABEL: kgen.func @"find_even,value=72"
+// CHECK-LABEL: kgen.func @"find_even,value=16"
 // CHECK-NOT: find_even
 kgen.generator @find_even() {
   kgen.param.fork seventy_two = <[72]>
@@ -130,10 +130,10 @@ kgen.generator export @test() {
 // -----
 
 // We should generate three versions of this function.
-// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=@\22multipleImplsFn,p=2\22"
-// CHECK: kgen.call @"multipleImplsFn,p=2"
 // CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=@\22multipleImplsFn,p=3\22"
 // CHECK: kgen.call @"multipleImplsFn,p=3"
+// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=@\22multipleImplsFn,p=2\22"
+// CHECK: kgen.call @"multipleImplsFn,p=2"
 // CHECK-LABEL: kgen.func @checkGetAllImpls(
 // CHECK: kgen.call @multipleImplsFn(
 kgen.generator @checkGetAllImpls() -> index {
@@ -150,8 +150,8 @@ kgen.generator @checkGetAllImpls() -> index {
 }
 
 // This generator should also produce three versions.
-// CHECK-LABEL: kgen.func @"multipleImplsFn,p=2"
 // CHECK-LABEL: kgen.func @"multipleImplsFn,p=3"
+// CHECK-LABEL: kgen.func @"multipleImplsFn,p=2"
 // CHECK-LABEL: kgen.func @multipleImplsFn(
 kgen.generator @multipleImplsFn() -> index {
   kgen.param.fork p : index = <[1, 2, 3]>

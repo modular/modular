@@ -112,11 +112,22 @@ private:
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
-/// Create an instance of the elaborator pass using the given configuration.
-/// The created elaborator pass uses a default specialization executor that
-/// JITs and executes in-process.
-std::unique_ptr<Pass>
-createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
+/// A default specialization evaluator that JITs and invokes the specialized
+/// functions with the provided evaluator.
+ErrorOr<ElaboratorSearchFn>
+evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
+                        LLCL::Runtime &runtime, TargetInfoAttr target,
+                        const CompilationOptions &options,
+                        ArrayRef<FuncOp> specializations);
+
+/// Given the pre-elaboration function `func` belonging to a module with the
+/// symbol table `symtab`, slice out a standalone module rooted at `func` and
+/// elaborate it and compile to assembly for the provided `target.
+ErrorOr<CrossDeviceFunction>
+compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
+                     StringAttr name, const SymbolTable &symtab,
+                     LLCL::Runtime &runtime, TargetInfoAttr target,
+                     EmissionKind emissionKind, CompilationOptions options);
 
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the target machine, the cache backends, and the execution

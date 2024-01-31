@@ -53,3 +53,8 @@ fn contains_thunk_ref():
 @no_inline
 fn dont_inline_me():
     print("Don't you dare!")
+
+
+@export
+fn exported_func():
+    pass

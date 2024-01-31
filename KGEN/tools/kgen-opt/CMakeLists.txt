@@ -20,6 +20,7 @@ add_modular_tool(kgen-opt
   KGENElaborator
   KGENToLLVM
   KGENTransforms
+  KGENPackage
   LowerLIT
 
   LLCLRuntimeGlobals

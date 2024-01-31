@@ -981,14 +981,14 @@ kgen.generator @someFunc<x>() {
   kgen.return
 }
 
-// CHECK-LABEL: @"constexprIfWithSearch,inParam=2"()
-// CHECK-NEXT:   "should.appear"
-// CHECK-NEXT:   "someFunc,x=2"
-// CHECK-NEXT:   param.constant = <42>
-
 // CHECK-LABEL: @"constexprIfWithSearch,inParam=3"()
 // CHECK-NEXT:   "should.appear"
 // CHECK-NEXT:   "someFunc,x=3"
+// CHECK-NEXT:   param.constant = <42>
+
+// CHECK-LABEL: @"constexprIfWithSearch,inParam=2"()
+// CHECK-NEXT:   "should.appear"
+// CHECK-NEXT:   "someFunc,x=2"
 // CHECK-NEXT:   param.constant = <42>
 
 // CHECK-LABEL: @constexprIfWithSearch()
@@ -1064,14 +1064,14 @@ kgen.generator @someFunc<x -> y>() {
   kgen.return
 }
 
-// CHECK-LABEL: @"constexprIfWithReturnedCondition,inParam=2"()
-// CHECK-NEXT:   "someFunc,x=2"
-// COM: This should be 20 because we have (1 & 2) + 20 == 20
-// CHECK-NEXT:   param.constant = <12>
-
 // CHECK-LABEL: @"constexprIfWithReturnedCondition,inParam=3"()
 // CHECK-NEXT:   "someFunc,x=3"
 // COM: This should be 12 because we have (2 & 2) + 10 == 12
+// CHECK-NEXT:   param.constant = <12>
+
+// CHECK-LABEL: @"constexprIfWithReturnedCondition,inParam=2"()
+// CHECK-NEXT:   "someFunc,x=2"
+// COM: This should be 20 because we have (1 & 2) + 20 == 20
 // CHECK-NEXT:   param.constant = <12>
 
 // CHECK-LABEL: @constexprIfWithReturnedCondition()
@@ -1101,21 +1101,21 @@ kgen.generator @constexprIfWithReturnedCondition() {
 
 // -----
 
-// CHECK-LABEL: kgen.func @"param_if_fork,a=1"
-// CHECK-NEXT: <1>
-// CHECK-NEXT: <5>
-
-// CHECK-LABEL: kgen.func @"param_if_fork,a=1,c=6"
-// CHECK-NEXT: <1>
+// CHECK-LABEL: kgen.func @"param_if_fork,a=1,e=2,c=6"
+// CHECK-NEXT: <2>
 // CHECK-NEXT: <6>
 
 // CHECK-LABEL: kgen.func @"param_if_fork,a=1,e=2"
 // CHECK-NEXT: <2>
 // CHECK-NEXT: <5>
 
-// CHECK-LABEL: kgen.func @"param_if_fork,a=1,e=2,c=6"
-// CHECK-NEXT: <2>
+// CHECK-LABEL: kgen.func @"param_if_fork,a=1,c=6"
+// CHECK-NEXT: <1>
 // CHECK-NEXT: <6>
+
+// CHECK-LABEL: kgen.func @"param_if_fork,a=1"
+// CHECK-NEXT: <1>
+// CHECK-NEXT: <5>
 
 kgen.generator @param_if_fork<a: i1>() {
   kgen.param.if <a -> b> {
@@ -1483,6 +1483,7 @@ kgen.generator @true_inside_false_param_if() {
 
 // CHECK-LABEL: kgen.func @fork_unreachable_blocks
 // CHECK-NEXT: kgen.return
+
 kgen.generator @fork_unreachable_blocks() {
   kgen.param.fork g = <[1, 2]>
   kgen.param.if <eq(g, 2)> {
@@ -1647,8 +1648,8 @@ kgen.generator @make_index_list() -> !kgen.variadic<scalar<index>> {
   kgen.return %1 : !kgen.variadic<scalar<index>>
 }
 
-// CHECK-LABEL: kgen.func @"fork_on_index_list,value=1"
 // CHECK-LABEL: kgen.func @"fork_on_index_list,value=2"
+// CHECK-LABEL: kgen.func @"fork_on_index_list,value=1"
 // CHECK-LABEL: kgen.func @fork_on_index_list()
 
 kgen.generator @fork_on_index_list() {
@@ -1659,14 +1660,14 @@ kgen.generator @fork_on_index_list() {
 
 // COM: We expect 3 nested_param_if functions, each one calling a different fork_on_index_list
 
-// CHECK-LABEL: kgen.func @"nested_param_if,@fork_on_index_list,value=1"
-// CHECK-NEXT: kgen.param.constant = <32>
-// CHECK-NEXT: kgen.call @"fork_on_index_list,value=1"
-// CHECK-NEXT: kgen.return
-
 // CHECK-LABEL: kgen.func @"nested_param_if,@fork_on_index_list,value=2"
 // CHECK-NEXT: kgen.param.constant = <32>
 // CHECK-NEXT: kgen.call @"fork_on_index_list,value=2"
+// CHECK-NEXT: kgen.return
+
+// CHECK-LABEL: kgen.func @"nested_param_if,@fork_on_index_list,value=1"
+// CHECK-NEXT: kgen.param.constant = <32>
+// CHECK-NEXT: kgen.call @"fork_on_index_list,value=1"
 // CHECK-NEXT: kgen.return
 
 // CHECK-LABEL: kgen.func @nested_param_if
@@ -1693,8 +1694,8 @@ kgen.generator @nested_param_if() -> index {
   kgen.return %cst : index
 }
 
-// CHECK-LABEL: kgen.func @"apply_nested_if,@nested_param_if,@fork_on_index_list,value=1"
 // CHECK-LABEL: kgen.func @"apply_nested_if,@nested_param_if,@fork_on_index_list,value=2"
+// CHECK-LABEL: kgen.func @"apply_nested_if,@nested_param_if,@fork_on_index_list,value=1"
 // CHECK-LABEL: kgen.func @apply_nested_if
 
 kgen.generator @apply_nested_if() {
@@ -1885,6 +1886,9 @@ kgen.generator export @main() {
 
 // -----
 
+// CHECK: kgen.global @global_var : f32 [@global_init, @global_dtor](0)
+kgen.global @global_var : f32 [@global_init, @global_dtor](0)
+
 // CHECK: kgen.func @global_init
 kgen.generator @global_init() {
   kgen.return
@@ -1894,9 +1898,6 @@ kgen.generator @global_init() {
 kgen.generator @global_dtor() {
   kgen.return
 }
-
-// CHECK: kgen.global @global_var : f32 [@global_init, @global_dtor](0)
-kgen.global @global_var : f32 [@global_init, @global_dtor](0)
 
 // -----
 

@@ -9,17 +9,97 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Threading.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// loadPreElaboratedBytecodeForLinking
+//===----------------------------------------------------------------------===//
+
+// FIXME: Move the declarations of these functions into a separate util header.
+ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::loadPreElaboratedModuleBytecode(
+    DenseResourceElementsAttr bytecodeAttr) {
+  mlir::AsmResourceBlob *blob = bytecodeAttr.getRawHandle().getBlob();
+  if (!blob)
+    return Error("unable to find the pre-elaborated module blob");
+  ArrayRef<char> bytecode = blob->getData();
+  llvm::MemoryBufferRef bufferRef(StringRef(bytecode.begin(), bytecode.size()),
+                                  "");
+
+  // Read the entirety of the bytecode in the buffer; no lazy loading.
+  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+  mlir::ParserConfig parserConfig(bytecodeAttr.getContext());
+  mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/false,
+                              sourceMgr);
+  Block block;
+  if (failed(reader.readTopLevel(&block)))
+    return Error("unable to read pre-elaborated module blob");
+
+  // Take ownership of the parsed module by removing it from the block so that
+  // we can return it.
+  ModuleOp module = cast<ModuleOp>(block.front());
+  module->remove();
+  return module;
+}
+
+ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::loadPreElaboratedModuleForLinking(
+    DenseResourceElementsAttr bytecodeAttr) {
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      loadPreElaboratedModuleBytecode(bytecodeAttr);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+
+  // Strip the implicit package exports, we don't need these because we're going
+  // to link the package into an existing module as-is.
+  for (ExportInterface op : (*packageModuleOr)->getOps<ExportInterface>())
+    if (op.isPackageExported())
+      op.setNotExported();
+
+  // Materialize all of the dependent packages now, making sure they also
+  // get linked in properly.
+  mlir::PassManager pm((*packageModuleOr)->getContext());
+  pm.addPass(createMaterializePackages());
+  if (failed(pm.run(**packageModuleOr)))
+    return Error("unable to materialize dependent packages");
+
+  return std::move(*packageModuleOr);
+}
+
+ErrorOr<DenseResourceElementsAttr> M::KGEN::loadPreElaboratedBytecodeForLinking(
+    DenseResourceElementsAttr bytecodeAttr) {
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      loadPreElaboratedModuleForLinking(bytecodeAttr);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+
+  // Write the package bytecode to the given buffer. This will be attached to
+  // the exported high level functions.
+  WriteableBufferRef str = WriteableBuffer::get();
+  if (failed(mlir::writeBytecodeToFile(**packageModuleOr, *str)))
+    return Error("could not write bytecode for package module");
+
+  // Hash the bytecode itself - this will give us a unique'd attr name that
+  // shouldn't clash even when a large number of packages get imported - and
+  // if they do clash, they're guaranteed to be exactly the same.
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                        (const uint8_t *)str->getBufferEnd()));
+  return createResourceAttr((*packageModuleOr)->getContext(), str->getBuffer(),
+                            "bytecode_" +
+                                llvm::toHex(hash, /*LowerCase=*/true));
+}
 
 //===----------------------------------------------------------------------===//
 // Registration
@@ -35,10 +115,10 @@ namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 
 /// Read the given operation from bytecode, and pull in any of its dependencies.
-static LogicalResult readFromBytecode(Operation *op,
-                                      mlir::BytecodeReader &reader,
-                                      SymbolTable &symTab,
-                                      const SymbolTable &bytecodeSymTab) {
+LogicalResult M::KGEN::readFromBytecode(Operation *op,
+                                        mlir::BytecodeReader &reader,
+                                        SymbolTable &symTab,
+                                        const SymbolTable &bytecodeSymTab) {
   if (reader.isMaterializable(op)) {
     if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
       return failure();
@@ -91,26 +171,9 @@ namespace {
 class MaterializePackagesPass
     : public impl::MaterializePackagesBase<MaterializePackagesPass> {
 public:
-  explicit MaterializePackagesPass(
-      PackageLinkHandlerFn packageLinkHandlerFn = nullptr)
-      : MaterializePackagesBase(), packageLinkHandlerFn(packageLinkHandlerFn) {}
-
-  LogicalResult initialize(MLIRContext *context) override {
-    if (!packageLinkHandlerFn)
-      packageLinkHandlerFn = [](PackageLinkOp packageLink,
-                                TargetInfoAttr targetInfo) {
-        packageLink.emitError("package link could not be handled for target ")
-            << targetInfo.getTripleStr();
-        return Error("package link handler is null");
-      };
-
-    return success();
-  }
+  using MaterializePackagesBase::MaterializePackagesBase;
 
   void runOnOperation() override;
-
-private:
-  PackageLinkHandlerFn packageLinkHandlerFn;
 };
 } // namespace
 
@@ -126,7 +189,6 @@ void MaterializePackagesPass::runOnOperation() {
     toInflate[func.getPreCompiledModuleRefAttr().getAttr()].emplace_back(func);
 
   mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
-  DenseMap<StringAttr, StringAttr> renamedSymbols;
   for (auto &[moduleRef, funcs] : toInflate) {
     auto packageLink = symtab.lookup<PackageLinkOp>(moduleRef);
     if (!packageLink) {
@@ -134,47 +196,16 @@ void MaterializePackagesPass::runOnOperation() {
       return signalPassFailure();
     }
 
-    TargetInfoAttr target = lookupTargetInfo(theModule);
-
-    // Get the target on the module. If we don't have a target or if the target
-    // doesn't match, check for a pre-elaborated module that we can then compile
-    // on-demand.
-    std::optional<PackageArchiveAttr> archive =
-        packageLink.getArchivesAttr().getTargetArchive(target);
-
-    DenseResourceElementsAttr bytecode;
-    if (archive) {
-      bytecode = archive->getElaboratedModule();
-    } else {
-      // If we don't have a precompiled archive for our target, then we can only
-      // proceed if we have a pre-elaborated module.
-      if (!packageLink.getPreElaborationModuleAttr()) {
-        auto diag =
-            packageLink.emitError(
-                "no precompiled package archives match the current target '")
-            << target
-            << "', archives we precompiled for the following targets: "
-            << packageLink.getArchivesAttr().getTargetsAsString();
-        diag.attachNote() << "no generic fallback was found to recompile "
-                             "package for current target";
-        return signalPassFailure();
-      }
-
-      // The callback function is given the pre-elaborated module and returns
-      // the package module bytecode that is to be imported into the module
-      // currently being built.
-      ErrorOr<DenseResourceElementsAttr> bytecodeOr =
-          packageLinkHandlerFn(packageLink, target);
-      if (bytecodeOr.isError()) {
-        packageLink.emitError(bytecodeOr.getError());
-        return signalPassFailure();
-      }
-      bytecode = *bytecodeOr;
-
-      // If the callback function elaborated and compiled the package module
-      // bytecode, it'll have set it on the `kgen.package_link` op.
-      archive = packageLink.getArchivesAttr().getTargetArchive(target);
+    ErrorOr<DenseResourceElementsAttr> bytecodeOr =
+        loadPreElaboratedBytecodeForLinking(
+            packageLink.getPreElaborationModuleAttr());
+    if (bytecodeOr.isError()) {
+      mlir::emitError(packageLink.getLoc(),
+                      "failed to load precompiled module and its dependencies "
+                      "for this package");
+      return signalPassFailure();
     }
+    DenseResourceElementsAttr bytecode = bytecodeOr.takeValue();
 
     // Get the data for the imported module body.
     mlir::AsmResourceBlob *blob = bytecode.getRawHandle().getBlob();
@@ -202,7 +233,7 @@ void MaterializePackagesPass::runOnOperation() {
     }
 
     // Collect the symbols within the bytecode.
-    SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
+    SymbolTable bytecodeSymtab(bytecodeModule);
 
     // Replace the high level functions with their counter parts in the package
     // bytecode module.
@@ -210,24 +241,20 @@ void MaterializePackagesPass::runOnOperation() {
     for (ExternGeneratorOp func : funcs) {
       // Try the post-elaboration (linkage) name first, and then fallback to the
       // pre-elaboration name.
-      StringAttr linkageName = func.getLinkageNameAttr();
       StringAttr preElaborationName = func.getSymNameAttr();
-      auto result = bytecodeSymtab.lookup<ExportInterface>(linkageName);
+      auto result = bytecodeSymtab.lookup<GeneratorOp>(preElaborationName);
       if (!result) {
-        result = bytecodeSymtab.lookup<ExportInterface>(preElaborationName);
-        if (!result) {
-          (void)reader.finalize();
-          mlir::emitError(func.getLoc(), "unable to find ")
-              << preElaborationName.getValue()
-              << " in imported package bytecode";
-          return signalPassFailure();
-        }
-      } else {
-        // The post-elaboration name is different, so we need to do a rename.
-        renamedSymbols.insert({func.getSymNameAttr(), linkageName});
+        (void)reader.finalize();
+        mlir::emitError(func.getLoc(), "unable to find ")
+            << preElaborationName.getValue() << " in imported package bytecode";
+        return signalPassFailure();
       }
       operationsToInflate.push_back(result);
       result->moveAfter(func);
+
+      // Propagate the precompiled reference to the materialized generator to
+      // indicate that it has an external implementation.
+      result.setPreCompiledModuleRefAttr(func.getPreCompiledModuleRefAttr());
 
       // Replace the original function with the parsed KGEN Func.
       symtab.erase(func);
@@ -244,42 +271,5 @@ void MaterializePackagesPass::runOnOperation() {
     // materialized.
     if (failed(reader.finalize()))
       return signalPassFailure();
-
-    // If we read in the elaborated functions, convert the `kgen.package_link`
-    // op to a `kgen.link` op`, signifying that the package is now linked in as
-    // a library. Otherwise, erase the `kgen.package_link` op altogether -- the
-    // imported functions now exist as part of the module into which they were
-    // imported.
-    if (archive) {
-      // Convert the package link to a kgen link directive, passing along the
-      // transitive dependencies.
-      OpBuilder b(packageLink);
-      auto linkOp = b.create<KGEN::LinkOp>(
-          packageLink.getLoc(), packageLink.getSymNameAttr(),
-          archive->getArchive(), archive->getDependencies());
-      symtab.erase(packageLink);
-      symtab.insert(linkOp);
-    } else {
-      symtab.erase(packageLink);
-    }
   }
-  // Rename post-elaboration references.
-  mlir::parallelForEach(
-      &getContext(), getOperation().getOps(), [&renamedSymbols](Operation &op) {
-        mlir::AttrTypeReplacer replacer;
-        replacer.addReplacement([&renamedSymbols](FlatSymbolRefAttr ref) {
-          if (auto it = renamedSymbols.find(ref.getAttr());
-              it != renamedSymbols.end())
-            return FlatSymbolRefAttr::get(it->second);
-          return ref;
-        });
-        replacer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
-                                              /*replaceLocs=*/false,
-                                              /*replaceTypes=*/true);
-      });
-}
-
-std::unique_ptr<mlir::Pass>
-M::KGEN::createMaterializePackages(PackageLinkHandlerFn packageLinkHandlerFn) {
-  return std::make_unique<MaterializePackagesPass>(packageLinkHandlerFn);
 }

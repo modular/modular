@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Package/Package.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -27,6 +28,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
+#include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
@@ -46,6 +48,32 @@
 using namespace M;
 using namespace KGEN;
 using namespace LLCL;
+
+//===----------------------------------------------------------------------===//
+// Elaborator
+//===----------------------------------------------------------------------===//
+
+static ModuleOp cloneAsEmpty(const SymbolTable &symtab) {
+  ModuleOp newModule = cast<ModuleOp>(symtab.getOp()).cloneWithoutRegions();
+  newModule.getBodyRegion().push_back(new Block);
+  return newModule;
+}
+
+Elaborator::Elaborator(SymbolTable &oldSymTab, TargetInfoAttr target,
+                       const ElaborateGeneratorsOptions &config)
+    : target(target), config(config), newModule(cloneAsEmpty(oldSymTab)),
+      newSymTab(SymbolTable(*newModule)), oldSymTab(oldSymTab),
+      env(oldSymTab.getOp()->getAttrOfType<EnvAttr>(
+          EnvAttr::getEnvAttrName())) {
+  assert(env && "expected an environment attribute");
+}
+
+FuncOp Elaborator::lookupConcreteFunction(SymbolRefAttr symbol) {
+  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+  return newSymTab.read([name](const SymbolTable &symtab) {
+    return symtab.lookup<FuncOp>(name);
+  });
+}
 
 //===----------------------------------------------------------------------===//
 // mangleParameterValues
@@ -546,14 +574,12 @@ namespace {
 class ElaboratorImpl : public Elaborator {
 public:
   ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
-                 TargetInfoAttr target,
-                 EvaluatorExecutorFnRef evaluatorExecutorFn,
-                 ElaboratorCompileAsmFnRef compileAsmFn, LLCL::Runtime &runtime,
+                 TargetInfoAttr target, ElaboratorCallbacks callbacks,
+                 LLCL::Runtime &runtime,
                  const ElaborateGeneratorsOptions &config)
       : Elaborator(symtab, target, config), g(runtime),
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-        evaluatorExecutorFn(evaluatorExecutorFn), compileAsmFn(compileAsmFn),
-        runtime(runtime) {}
+        callbacks(std::move(callbacks)), runtime(runtime) {}
 
   std::optional<ErrorTreeOr<FuncOp>>
   getConcreteFunction(ImplNode *parent, Location loc,
@@ -566,7 +592,7 @@ public:
 
   ElaboratorCompileAsmFnRef
   getCompileAsmFn(Elaborator::ASMFormat format) const override {
-    return compileAsmFn;
+    return callbacks.compileAsmFn;
   }
 
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
@@ -694,9 +720,6 @@ private:
   /// Signal the worklist to tell it a job has completed or has been taken off
   /// the workqueue.
   void signalWorklist() {
-    std::lock_guard<std::mutex> guard(g.worklistMu);
-    if (g.numWorkItems <= 0)
-      return;
     if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
@@ -731,6 +754,15 @@ private:
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
                                        ParamNode *from, bool addWaiter);
 
+  /// Attempt to fulfill specialization of a generator by looking for an
+  /// implementation in a precompiled module.
+  void specializeFromPackage(ImplNode *parent, ParamNode *genNode,
+                             FlatSymbolRefAttr linkRef, bool addWaiter);
+
+  /// Specialize a generator by scheduling an elaboration task.
+  void specializeFromSource(ImplNode *inode, ParamNode *genNode,
+                            bool addWaiter);
+
   /// Process all deferred search functions serially, re-queuing nodes as it
   /// completes. Returns true if there were deferred search functions.
   bool processDeferredSearchFns();
@@ -763,11 +795,8 @@ private:
   /// This is the cached parameter collector analysis.
   ThreadLocalCache<ParameterCollector::Analysis> paramCache;
 
-  /// The functor used for evaluating generator specializations.
-  EvaluatorExecutorFnRef evaluatorExecutorFn;
-
-  /// The functor used to compile a module to assembly.
-  ElaboratorCompileAsmFnRef compileAsmFn;
+  /// Callbacks to use for JIT functionalities.
+  ElaboratorCallbacks callbacks;
 
   /// This struct contains information about a deferred search job.
   struct DeferredSearch {
@@ -786,6 +815,45 @@ private:
 
   /// Deferred generated functions to append to the module.
   SmallVector<FuncOp> deferredFunctions;
+
+  /// State for a package reader.
+  struct PackageReaderState {
+    PackageReaderState(MLIRContext *ctx, mlir::AsmResourceBlob *blob);
+    ~PackageReaderState() {
+      if (failed(reader.finalize()))
+        llvm::report_fatal_error("failed to finalize bytecode reader");
+    }
+
+    LogicalResult initialize();
+
+    std::shared_ptr<llvm::SourceMgr> sourceMgr;
+    mlir::ParserConfig config;
+    mlir::BytecodeReader reader;
+    Block block;
+    ModuleOp module;
+    std::optional<SymbolTable> symtab;
+    llvm::sys::SmartRWMutex<true> mutex;
+  };
+
+  /// This struct represents the state of a package being elaborated.
+  struct PackageState {
+    /// Completion chain of the package state.
+    LLCL::AsyncValueRef<LLCL::Chain> ch;
+
+    /// The package link op.
+    PackageLinkOp link;
+
+    /// An error if the package encountered one during loading.
+    std::optional<Error> error;
+
+    /// The package reader state when the package is ready. If this is nullopt
+    /// when the chain is set, that means no precompiled symbols are
+    /// available.
+    std::unique_ptr<PackageReaderState> reader;
+  };
+
+  /// States for all packages encountered during elaboration.
+  Shared<DenseMap<StringAttr, std::unique_ptr<PackageState>>> packages;
 };
 } // namespace
 
@@ -823,7 +891,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
   // which occur first.
-  symtab.modify([clone, func = cur->func](SymbolTable &symtab) {
+  newSymTab.modify([clone, func = cur->func](SymbolTable &symtab) {
     symtab.insert(clone, std::next(func->getIterator()));
   });
 
@@ -896,14 +964,17 @@ std::optional<ErrorTreeOr<FuncOp>>
 ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
                                     FlatSymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
-  auto gen =
-      symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
-        return symtab.lookup(name);
-      });
-
-  // If the requested function is already concrete, return it.
-  if (auto func = dyn_cast<FuncOp>(gen))
-    return {func};
+  StringAttr name = symbolRef.getAttr();
+  Operation *gen = oldSymTab.lookup(name);
+  // If this doesn't reference anything in the existing module, then it must
+  // refer to a concrete function in the new module.
+  if (!gen) {
+    FuncOp concrete = newSymTab.read([name](const SymbolTable &symtab) {
+      return symtab.lookup<FuncOp>(name);
+    });
+    assert(concrete && "expected to find a concrete function");
+    return concrete;
+  }
 
   auto vals = ParameterExprArrayAttr::get(symbolRef.getContext(), paramValues);
 
@@ -925,10 +996,7 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
 std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
     ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
     ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) {
-  auto gen =
-      symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
-        return symtab.lookup<GeneratorOp>(name);
-      });
+  GeneratorOp gen = oldSymTab.lookup<GeneratorOp>(symbolRef.getAttr());
 
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(
@@ -951,7 +1019,7 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
 void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
   addConcreteFunc(op);
-  symtab.modify([this, op](SymbolTable &symtab) {
+  newSymTab.modify([this, op](SymbolTable &symtab) {
     symtab.insert(op);
     deferredFunctions.push_back(op);
   });
@@ -975,10 +1043,10 @@ ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
 
   // Cheeky copy. The state of the symbol right at this moment is sufficient to
   // produce a standalone object for the functions being JIT'd.
-  SymbolTable symtabCopy = symtab.read(
+  SymbolTable symtabCopy = newSymTab.read(
       [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
   ErrorOr<ElaboratorSearchFn> searchFn =
-      evaluatorExecutorFn(evaluator, symtabCopy, getTarget(), options);
+      callbacks.evaluateFn(evaluator, symtabCopy, getTarget(), options);
   if (searchFn.isError())
     return searchFn.takeError();
   // Suspend elaboration. The search has to be performed in isolation.
@@ -1127,12 +1195,14 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
     std::vector<ImplNode *> &concrete,
     function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
-  auto calleeOp = symtab.read(
-      [name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr()](
-          const SymbolTable &symtab) { return symtab.lookup(name); });
-  assert(calleeOp && "could not find referenced generator, invalid IR?");
+  StringAttr name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr();
+  Operation *calleeOp = oldSymTab.lookup(name);
 
-  if (auto func = dyn_cast<FuncOp>(calleeOp)) {
+  if (!calleeOp) {
+    auto func = newSymTab.read([name](const SymbolTable &symtab) {
+      return symtab.lookup<FuncOp>(name);
+    });
+    assert(func && "could not find referenced generator, invalid IR?");
     ImplNode *node =
         g.concreteNodes.read([func](const DenseMap<FuncOp, ImplNode *> &map) {
           return map.lookup(func);
@@ -1379,7 +1449,6 @@ ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
 /// interpreter on the concrete callee and binding its result.
 static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
                                             FuncOp func) {
-
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
     Attribute value;
@@ -1965,6 +2034,17 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     break;
   }
 
+  // If this generator is from a package, then attempt to find its
+  // specialization within it.
+  if (FlatSymbolRefAttr linkRef = genNode->gen.getPreCompiledModuleRefAttr())
+    specializeFromPackage(inode, genNode, linkRef, addWaiter);
+  else
+    specializeFromSource(inode, genNode, addWaiter);
+  return ElaborationState::skipNode();
+}
+
+void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
+                                          bool addWaiter) {
   GeneratorOp gen = genNode->gen;
 
   // Bind all parameter values in this scope.
@@ -2011,8 +2091,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(gen.getContext());
-  StringAttr mangledName = b.getStringAttr(
-      baseName + Twine(inputParamValues.empty() ? "_concrete" : ""));
+  StringAttr mangledName = b.getStringAttr(baseName);
 
   auto newFunc = b.create<FuncOp>(
       gen.getLoc(), mangledName,
@@ -2020,13 +2099,11 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                          gen.getSignature().getArgConventions(),
                          gen.getSignature().getFnEffects()),
       gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
-      /*sourceName,*/ gen.getLLVMMetadata());
+      gen.getLLVMMetadata());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  symtab.modify([newFunc, it = gen->getIterator()](SymbolTable &symtab) {
-    symtab.insert(newFunc, it);
-  });
+  newSymTab.modify([newFunc](SymbolTable &symtab) { symtab.insert(newFunc); });
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
@@ -2134,7 +2211,185 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   }
   assert(genNode->numActive == 0 && "expected first implementation");
   initialScheduleImplNode(newFuncNode);
-  return ElaborationState::skipNode();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::specializeFromPackage
+//===----------------------------------------------------------------------===//
+
+static llvm::MemoryBufferRef getBufferRef(mlir::AsmResourceBlob *blob) {
+  return llvm::MemoryBufferRef(
+      StringRef(blob->getData().begin(), blob->getData().size()), "");
+}
+
+ElaboratorImpl::PackageReaderState::PackageReaderState(
+    MLIRContext *ctx, mlir::AsmResourceBlob *blob)
+    : sourceMgr(std::make_shared<llvm::SourceMgr>()),
+      config(ctx, /*verifyAfterParse=*/false),
+      reader(getBufferRef(blob), config, /*lazyLoad=*/true, sourceMgr) {}
+
+LogicalResult ElaboratorImpl::PackageReaderState::initialize() {
+  if (failed(reader.readTopLevel(&block)))
+    return failure();
+  module = cast<ModuleOp>(block.front());
+  if (failed(reader.materialize(module)))
+    return failure();
+  symtab.emplace(module);
+  return success();
+}
+
+void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
+                                           FlatSymbolRefAttr linkRef,
+                                           bool addWaiter) {
+  auto [state,
+        inserted] = packages.modify([name = linkRef.getAttr(), this](auto &map)
+                                        -> std::pair<PackageState *, bool> {
+    if (auto it = map.find(name); it != map.end())
+      return {it->second.get(), false};
+    auto state = std::make_unique<PackageState>();
+    state->ch = AsyncValueRef<Chain>::allocate(runtime);
+    return {map.try_emplace(name, std::move(state)).first->second.get(), true};
+  });
+
+  // Keep the workqueue chain alive while this occurs.
+  g.numWorkItems.fetch_add(1);
+  state->ch.andThenAsync([state = state, parent, genNode, addWaiter, this] {
+    // If the package does not have a precompiled module available, then just
+    // specialize from the existing IR.
+    if (!state->error && !state->reader) {
+      specializeFromSource(parent, genNode, addWaiter);
+      signalWorklist();
+      return;
+    }
+
+    // We will complete the ParamNode here, so schedule a waiter if requested.
+    if (addWaiter) {
+      [[maybe_unused]] bool added = genNode->state.addWaiter();
+      assert(added);
+      genNode->andThenSync([parent, this] { scheduleImplNode(parent); });
+    }
+
+    // If the package is in an error state, create a dummy error.
+    if (state->error) {
+      auto impl = std::make_unique<ImplNode>(genNode);
+      impl->setToError(ErrorTree(state->link.getLoc(), state->error->copy()));
+      genNode->impls.push_back(std::move(impl));
+    } else {
+      // Otherwise, we are good to start reading into the concrete module.
+      // First, check if the specialization was already loaded.
+      StringAttr name = genNode->gen.getSymNameAttr();
+      FuncOp func = newSymTab.read([name](const SymbolTable &symtab) {
+        return symtab.lookup<FuncOp>(name);
+      });
+
+      auto addImplNode = [genNode, this](FuncOp func) {
+        assert(genNode->impls.empty() && "could not be already specialized");
+        genNode->impls.push_back(std::make_unique<ImplNode>(
+            func, genNode, ParameterUseDefGraph(/*scope=*/nullptr), "",
+            IREvaluator(*this)));
+        return genNode->impls.back().get();
+      };
+      if (!func) {
+        assert(state->reader && "expected a valid package");
+        PackageReaderState &reader = *state->reader;
+
+        // This function wasn't already pulled in. Load the specialization now
+        // into the concrete module.
+        func = reader.symtab->lookup<FuncOp>(name);
+        assert(func && "missing function in bytecode module");
+        ImplNode *inode = addImplNode(func);
+
+        // FIXME: Avoid locking the symbol table for the whole duration here.
+        auto loadFunc = [func, &reader](SymbolTable &symtab) {
+          llvm::sys::SmartScopedWriter<true> guard(reader.mutex);
+          func->remove();
+          symtab.insert(func);
+          return readFromBytecode(func, reader.reader, symtab, *reader.symtab);
+        };
+        if (failed(newSymTab.modify(loadFunc))) {
+          inode->setToError(
+              ErrorTree(state->link.getLoc(),
+                        Error("failed to read body from bytecode")));
+        }
+      } else if (genNode->impls.empty()) {
+        // The function was pulled in as a transitive dependency of another
+        // function. Just ensure an ImplNode is created for it.
+        addImplNode(func);
+      }
+    }
+
+    // Complete the ParamNode.
+    assert(genNode->numActive == 0 && "counter should always have been 0");
+    g.numWorkItems.fetch_add(genNode->state.markDone());
+    genNode->emplace();
+    signalWorklist();
+  });
+
+  // The first thread to access a package state gets to initialize it. Other
+  // threads will just go wait on the chain.
+  if (!inserted)
+    return;
+
+  // Find the package link operation in the non-concrete module.
+  auto link = oldSymTab.lookup<PackageLinkOp>(linkRef.getAttr());
+  assert(link && "package reference does not refer to a package link op");
+  state->link = link;
+
+  auto setToError = [state = state](Error err) {
+    // Given an error, propagate it to the package state so that waiters can
+    // read it.
+    state->error = std::move(err);
+    // The package is done processing.
+    state->ch.copy().emplace();
+  };
+
+  PackageArchiveAttr archive;
+
+  // If the package link supplies a precompiled package, use it.
+  if (std::optional<PackageArchiveAttr> maybeArchive =
+          link.getArchivesAttr().getTargetArchive(target))
+    archive = *maybeArchive;
+  if (!archive) {
+    // Otherwise, invoke the package handler callback to attempt on-demand
+    // compilation. The callback is at liberty to modify the link op, and only
+    // one thread can access each link op at a time.
+    ErrorOr<PackageArchiveAttr> result =
+        callbacks.packageHandlerFn(link, target);
+    if (result.isError())
+      return setToError(result.takeError());
+    archive = result.takeValue();
+  }
+
+  // Set up the package reader.
+  if (!archive) {
+    // No bytecode is avaiable. Just signal waiters to call into
+    // `specializeFromSource`.
+    state->ch.copy().emplace();
+    return;
+  } else {
+    // Add the concretized link op into the concrete module.
+    OpBuilder b(link.getContext());
+    auto newLink =
+        b.create<LinkOp>(link.getLoc(), link.getSymNameAttr(),
+                         archive.getArchive(), archive.getDependencies());
+    // FIXME: Ensure deterministic insertion order.
+    newSymTab.modify(
+        [newLink](SymbolTable &symtab) { symtab.insert(newLink); });
+  }
+
+  mlir::AsmResourceBlob *blob =
+      archive.getElaboratedModule().getRawHandle().getBlob();
+  if (!blob)
+    return setToError("unable to find the post-elaboration module blob");
+
+  // Prepare the package state for bytecode reading.
+  auto reader = std::make_unique<PackageReaderState>(link.getContext(), blob);
+  if (failed(reader->initialize()))
+    return setToError("failed to read top-level bytecode module");
+  state->reader = std::move(reader);
+
+  // This package state is ready to be read.
+  state->ch.copy().emplace();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2265,7 +2520,7 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
           runtime,
           ParameterExprArrayAttr::get(call.getContext(),
                                       callee.getParamValues()),
-          symtab.get().lookup<GeneratorOp>(
+          oldSymTab.lookup<GeneratorOp>(
               cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr()),
           /*depth=*/0);
       if (visitParamNode(calleeNode)) {
@@ -2331,8 +2586,18 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
-  for (auto func : theModule.getOps<FuncOp>())
-    addConcreteFunc(func);
+  auto moveSymbol = [this](Operation *op) {
+    oldSymTab.remove(op);
+    op->remove();
+    newSymTab.get().insert(op);
+  };
+  for (Operation &op : llvm::make_early_inc_range(theModule.getOps())) {
+    if (auto func = dyn_cast<FuncOp>(op))
+      addConcreteFunc(func);
+    if (!isa<GeneratorOp, PackageLinkOp>(op) &&
+        isa<mlir::SymbolOpInterface>(op))
+      moveSymbol(&op);
+  }
 
   auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
   std::vector<AnyAsyncValueRef> primaryChs;
@@ -2412,21 +2677,24 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
   // generators - everything else we don't care about.
-  DenseMap<StringAttr, StringAttr> funcsToRename;
   {
     CompilerTimeTraceScope traceScope("eraseFuncs");
     LLCL::ForkJoin eraseState(runtime);
-    auto eraseFunc = [&eraseState, this](Operation *op) {
-      symtab.get().remove(op);
+    auto eraseFunc = [&eraseState](Operation *op, SymbolTable &symtab) {
+      symtab.remove(op);
       op->remove();
       eraseState.fork([op] { op->erase(); });
     };
     // Sort instantiations of each generator to ensure we have a deterministic
     // output in multithreaded execution.
-    DenseMap<GeneratorOp,
-             std::vector<std::pair<
-                 std::string, SmallVector<std::pair<StringRef, FuncOp>, 1>>>>
+    struct SuccessfulFuncs {
+      std::string paramStr;
+      SmallVector<std::pair<StringRef, FuncOp>, 1> funcs;
+    };
+    llvm::MapVector<GeneratorOp, std::vector<SuccessfulFuncs>>
         genInstantiations;
+    for (auto gen : theModule.getOps<GeneratorOp>())
+      genInstantiations[gen];
     for (ParamNode &node :
          llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
       CompilerTimeTraceScope traceScope(
@@ -2442,7 +2710,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
               return mlir::emitRemark(loc);
             });
           }
-          eraseFunc(impl.func);
+          eraseFunc(impl.func, newSymTab.get());
           continue;
         }
         if (!first)
@@ -2450,46 +2718,33 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         successfulFuncs.emplace_back(impl.func.getSymName(), impl.func);
       }
 
-      symtab.get().remove(node.gen);
-      auto renameFunc = [&funcsToRename, symtab = &symtab.get()](
-                            FuncOp func, StringAttr newName) {
-        funcsToRename[func.getNameAttr()] = newName;
-        symtab->remove(func);
-        func.setSymNameAttr(newName);
-        symtab->insert(func);
-      };
-
-      Builder b(ctx);
-      if (node.inputParams.empty() && first) {
-        // Rename the first successful function for concrete top-level
-        // generators, if there is one. Sanitize the symbol name if requested.
-        renameFunc(first, node.gen.getSymNameAttr());
-      }
-
       // Sort the successful instantiations, if there are more than 1.
       if (successfulFuncs.size() > 1) {
         llvm::sort(successfulFuncs,
                    [](auto &lhs, auto &rhs) { return lhs.first > rhs.first; });
       }
-      genInstantiations[node.gen].emplace_back(
-          mlir::debugString(node.inputParams), std::move(successfulFuncs));
+      genInstantiations[node.gen].push_back(SuccessfulFuncs{
+          mlir::debugString(node.inputParams), std::move(successfulFuncs)});
     }
 
     // Now reorder all instantiations of each generator to be deterministic.
+    Block *newBlock = newModule->getBody();
     for (auto &[gen, instantiations] : genInstantiations) {
       CompilerTimeTraceScope traceScope(
           "sortInstantiations",
           [name = gen.getSymNameAttr()] { return name.str(); });
-      llvm::sort(instantiations,
-                 [](auto &lhs, auto &rhs) { return lhs.first > rhs.first; });
+      llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
+        return lhs.paramStr < rhs.paramStr;
+      });
       for (auto &[_, implFuncs] : instantiations)
         for (FuncOp func : llvm::make_second_range(implFuncs))
-          func->moveAfter(gen);
+          func->moveBefore(newBlock, newBlock->end());
     }
 
     // Erase all generators.
-    for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>()))
-      eraseFunc(gen);
+    cast<ModuleOp>(oldSymTab.getOp())
+        .getBodyRegion()
+        .takeBody(newModule->getBodyRegion());
 
     eraseState.join();
   }
@@ -2503,33 +2758,10 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     theModule.push_back(func);
   }
 
-  // Perform any renaming at the end.  We cannot use the
-  // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
-  // unregistered operations.  It also doesn't support batch renaming.
-  {
-    CompilerTimeTraceScope traceScope("replaceCallSymbols");
-    mlir::AttrTypeReplacer renamer;
-    renamer.addReplacement([&](SymbolConstantAttr cst) {
-      auto it = funcsToRename.find(cst.getSymbol().getRootReference());
-      if (it == funcsToRename.end())
-        return cst;
-      return SymbolConstantAttr::get(FlatSymbolRefAttr::get(it->second),
-                                     cst.getType());
-    });
-    ThreadLocalCache<mlir::AttrTypeReplacer> renamers(
-        renamer, ctx->isMultithreadingEnabled() ? ctx->getNumThreads() : 1);
-    mlir::parallelForEach(ctx, theModule.getOps<FuncOp>(), [&](FuncOp func) {
-      CompilerTimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
-        return func.getSymName().str();
-      });
-      func.walk([&](Operation *op) {
-        renamers.getThreadLocalCache().replaceElementsIn(
-            op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
-            /*replaceTypes=*/true);
-      });
-    });
-  }
-
+  // Update the symbol table with the new one.
+  oldSymTab = std::move(newSymTab.get());
+  // HACK: Need a `SymbolTable::setOp` to properly avoid recomputing the table.
+  *((Operation **)&oldSymTab) = theModule;
   return success();
 }
 
@@ -2537,24 +2769,22 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 // elaborateGenerators
 //===----------------------------------------------------------------------===//
 
-static LogicalResult
-elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                    ParameterCollector::Analysis &paramCache,
-                    LLCL::Runtime &runtime, TargetInfoAttr target,
-                    ArrayRef<GeneratorOp> primaryGenerators,
-                    EvaluatorExecutorFnRef evaluatorExecutorFn,
-                    ElaboratorCompileAsmFnRef compileAsmFn,
-                    const ElaborateGeneratorsOptions &config) {
+static LogicalResult elaborateGenerators(
+    mlir::SymbolTableAnalysis &symtab, ParameterCollector::Analysis &paramCache,
+    LLCL::Runtime &runtime, TargetInfoAttr target,
+    ArrayRef<GeneratorOp> primaryGenerators, ElaboratorCallbacks callbacks,
+    const ElaborateGeneratorsOptions &config) {
   CompilerTimeTraceScope traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
+  auto noopEvaluator = [](FuncOp, const SymbolTable &, TargetInfoAttr,
+                          ArrayRef<FuncOp>) { return [] { return 0; }; };
+  if (!config.enableSearch)
+    callbacks.evaluateFn = noopEvaluator;
+
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(
-      symtab.getTopLevelSymbolTable(), paramCache, target,
-      config.enableSearch ? evaluatorExecutorFn
-                          : [](FuncOp, const SymbolTable &, TargetInfoAttr,
-                               ArrayRef<FuncOp>) { return [] { return 0; }; },
-      std::move(compileAsmFn), runtime, config);
+  ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
+                      std::move(callbacks), runtime, config);
   return impl.run(theModule, primaryGenerators);
 }
 
@@ -2578,10 +2808,12 @@ public:
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
                           EvaluatorExecutorFn evaluatorExecutorFn = {},
-                          ElaboratorCompileAsmFn compileAsmFn = {})
+                          ElaboratorCompileAsmFn compileAsmFn = {},
+                          PackageLinkHandlerFn packageHandlerFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
         evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
-        compileAsmFn(std::move(compileAsmFn)) {}
+        compileAsmFn(std::move(compileAsmFn)),
+        packageHandlerFn(std::move(packageHandlerFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -2596,16 +2828,22 @@ public:
 
     // Default the evaluator to selecting the first specialization.
     if (!evaluatorExecutorFn) {
-      evaluatorExecutorFn = [](FuncOp, const SymbolTable &, TargetInfoAttr,
-                               ArrayRef<FuncOp>) { return [] { return 0; }; };
+      evaluatorExecutorFn = +[](FuncOp, const SymbolTable &, TargetInfoAttr,
+                                ArrayRef<FuncOp>) { return [] { return 0; }; };
     }
 
     // Default compile assembly hook will just error.
     if (!compileAsmFn) {
-      compileAsmFn = [](GeneratorOp, SymbolConstantAttr, StringAttr,
-                        const SymbolTable &, TargetInfoAttr, EmissionKind) {
+      compileAsmFn = +[](GeneratorOp, SymbolConstantAttr, StringAttr,
+                         const SymbolTable &, TargetInfoAttr, EmissionKind) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
+    }
+
+    // Default package handler does nothing.
+    if (!packageHandlerFn) {
+      packageHandlerFn =
+          +[](PackageLinkOp, TargetInfoAttr) { return PackageArchiveAttr(); };
     }
     return success();
   }
@@ -2663,12 +2901,13 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    if (failed(elaborateGenerators(
-            analysis, paramCache, *rt, target, primaryGenerators,
-            evaluatorExecutorFn, compileAsmFn,
-            ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
-                                       maxDepth, elaborateDebugInfo,
-                                       diagAllFailures})))
+    ElaboratorCallbacks callbacks{evaluatorExecutorFn, compileAsmFn,
+                                  packageHandlerFn};
+    ElaborateGeneratorsOptions config{enableSearch, allowMultiplePrimaryImpls,
+                                      maxDepth, elaborateDebugInfo,
+                                      diagAllFailures};
+    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
+                                   primaryGenerators, callbacks, config)))
       return signalPassFailure();
   }
 
@@ -2681,6 +2920,8 @@ private:
   EvaluatorExecutorFn evaluatorExecutorFn;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFn compileAsmFn;
+  /// The functor used to on-demand compile a package.
+  PackageLinkHandlerFn packageHandlerFn;
 };
 } // namespace
 
@@ -2688,8 +2929,9 @@ std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 const ElaborateGeneratorsOptions &options,
                                 EvaluatorExecutorFn evaluatorExecutorFn,
-                                ElaboratorCompileAsmFn compileAsmFn) {
+                                ElaboratorCompileAsmFn compileAsmFn,
+                                PackageLinkHandlerFn packageHandlerFn) {
   return std::make_unique<ElaborateGeneratorsPass>(
       options, &runtime, target, std::move(evaluatorExecutorFn),
-      std::move(compileAsmFn));
+      std::move(compileAsmFn), std::move(packageHandlerFn));
 }

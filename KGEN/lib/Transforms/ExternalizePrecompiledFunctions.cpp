@@ -50,7 +50,7 @@ void ExternalizePrecompiledFunctionsPass::runOnOperation() {
         }));
 
     auto externFunc = b.create<ExternFuncOp>(
-        externLoc, func.getNameAttr(), func.getSignature(),
+        externLoc, func.getSymNameAttr(), func.getSignature(),
         func.getExportKind(), func.getPrecompiledBodyRefAttr());
     symtab.remove(func);
     symtab.insert(externFunc);

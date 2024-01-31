@@ -313,8 +313,7 @@ PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
   buildGenerateLibraryPipeline(pm, runtime, options);
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       theModule, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), pm,
-      /*deflateTarget=*/false);
+      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();

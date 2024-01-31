@@ -38,13 +38,11 @@ using namespace KGEN;
 // evaluateSpecializations
 //===----------------------------------------------------------------------===//
 
-/// A default specialization evaluator that JITs and invokes the specialized
-/// functions with the provided evaluator.
-static ErrorOr<ElaboratorSearchFn>
-evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
-                        LLCL::Runtime &runtime, TargetInfoAttr target,
-                        const CompilationOptions &options,
-                        ArrayRef<FuncOp> specializations) {
+ErrorOr<ElaboratorSearchFn>
+KGEN::evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
+                              LLCL::Runtime &runtime, TargetInfoAttr target,
+                              const CompilationOptions &options,
+                              ArrayRef<FuncOp> specializations) {
   // TODO(#2717): Cross-compilation and execution for search!
   if (target.getArch() != llvm::sys::getHostCPUName())
     return Error("cross-compilation execution in search is not yet supported");
@@ -273,14 +271,10 @@ static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
   return CrossDeviceFunction{contents, (unsigned)numCaptures, std::move(func)};
 }
 
-/// Given the pre-elaboration function `func` belonging to a module with the
-/// symbol table `symtab`, slice out a standalone module rooted at `func` and
-/// elaborate it and compile to assembly for the provided `target.
-static ErrorOr<CrossDeviceFunction>
-compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
-                     StringAttr name, const SymbolTable &symtab,
-                     LLCL::Runtime &runtime, TargetInfoAttr target,
-                     EmissionKind emissionKind, CompilationOptions options) {
+ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
+    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+    const SymbolTable &symtab, LLCL::Runtime &runtime, TargetInfoAttr target,
+    EmissionKind emissionKind, CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -626,24 +620,6 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
 //===----------------------------------------------------------------------===//
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
-
-std::unique_ptr<Pass>
-KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
-  CompilationOptions options;
-  return createElaborateGenerators(
-      runtime, /*target=*/{}, /*options=*/{},
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      },
-      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
-                    StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind emissionKind) {
-        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    emissionKind, options);
-      });
-}
 
 ErrorOr<std::unique_ptr<ExecutionEngine>>
 KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
