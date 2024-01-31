@@ -28,7 +28,7 @@ add_modular_library(LLCLRuntime
 )
 if (TCMALLOC_LIBRARY)
   target_link_libraries(LLCLRuntime PUBLIC libtcmalloc)
-  target_include_directories(LLCLRuntime PUBLIC ${TCMALLOC_PATH}/include)
+  target_link_libraries(obj.LLCLRuntime PUBLIC libtcmalloc)
 endif()
 
 add_subdirectory(Globals)
