@@ -2275,9 +2275,19 @@ void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
       impl->setToError(ErrorTree(state->link.getLoc(), state->error->copy()));
       genNode->impls.push_back(std::move(impl));
     } else {
+      assert(state->reader && "expected a valid package");
+      PackageReaderState &reader = *state->reader;
+
       // Otherwise, we are good to start reading into the concrete module.
       // First, check if the specialization was already loaded.
       StringAttr name = genNode->gen.getSymNameAttr();
+
+      // Each generator loadable from a package will only hit this code once,
+      // but two generators loadable from the same package where one is a
+      // dependency of the other can hit this code at the same time. Ensure one
+      // such worker cannot query the state of package loading while another is
+      // loading functions from the package.
+      reader.mutex.lock();
       FuncOp func = newSymTab.read([name](const SymbolTable &symtab) {
         return symtab.lookup<FuncOp>(name);
       });
@@ -2290,31 +2300,42 @@ void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
         return genNode->impls.back().get();
       };
       if (!func) {
-        assert(state->reader && "expected a valid package");
-        PackageReaderState &reader = *state->reader;
-
         // This function wasn't already pulled in. Load the specialization now
         // into the concrete module.
         func = reader.symtab->lookup<FuncOp>(name);
         assert(func && "missing function in bytecode module");
-        ImplNode *inode = addImplNode(func);
 
-        // FIXME: Avoid locking the symbol table for the whole duration here.
-        auto loadFunc = [func, &reader](SymbolTable &symtab) {
-          llvm::sys::SmartScopedWriter<true> guard(reader.mutex);
-          func->remove();
-          symtab.insert(func);
-          return loadSymbolsFromBytecode(func, reader.reader, symtab,
-                                         *reader.symtab);
-        };
-        if (failed(newSymTab.modify(loadFunc))) {
+        // Move the function from the bytecode module into the concrete module
+        // and pull in all transitive dependencies. Avoid locking `newSymTab`
+        // for the whole duration because that blocks all other new
+        // instantiations of functions while the bytecode module is being read.
+        LogicalResult result = failure();
+        func->remove();
+        newSymTab.modify([func](auto &symtab) { symtab.insert(func); });
+        result = loadSymbolsFromBytecode(
+            func, reader.reader,
+            [&](StringAttr name) {
+              return newSymTab.read(
+                  [name](auto &symtab) { return symtab.lookup(name); });
+            },
+            [&](Operation *op) {
+              return newSymTab.modify(
+                  [op](auto &symtab) { symtab.insert(op); });
+            },
+            *reader.symtab);
+        // We are done loading functions, so release the mutex.
+        reader.mutex.unlock();
+
+        ImplNode *inode = addImplNode(func);
+        if (failed(result)) {
           inode->setToError(
               ErrorTree(state->link.getLoc(),
                         Error("failed to read body from bytecode")));
         }
-      } else if (genNode->impls.empty()) {
+      } else {
         // The function was pulled in as a transitive dependency of another
         // function. Just ensure an ImplNode is created for it.
+        reader.mutex.unlock();
         addImplNode(func);
       }
     }

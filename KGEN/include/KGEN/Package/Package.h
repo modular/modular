@@ -33,6 +33,14 @@ LogicalResult loadSymbolsFromBytecode(Operation *op,
                                       mlir::BytecodeReader &reader,
                                       SymbolTable &symTab,
                                       const SymbolTable &bytecodeSymTab);
+/// Recursively and lazily read dependencies from the module contained by
+/// `bytecodeSymTab` into `symTab`, rooted at `op`. This version abstracts the
+/// insertion and lookup of symbols from the mutable symbol table.
+LogicalResult loadSymbolsFromBytecode(Operation *op,
+                                      mlir::BytecodeReader &reader,
+                                      function_ref<bool(StringAttr)> existsFn,
+                                      function_ref<void(Operation *)> insertFn,
+                                      const SymbolTable &bytecodeSymTab);
 
 /// Given the symbol table of an elaborated module for a Mojo package, as well
 /// as that package's name, returns either an attribute to store the module
