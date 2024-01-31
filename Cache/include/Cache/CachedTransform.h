@@ -50,21 +50,18 @@ using TransformCache = BlobCache<TransformCacheKey>;
 ///    });
 ///    return result;
 ///  };
-using TransformFn = llvm::unique_function<LLCL::AnyAsyncValueRef(
+using WritingToBufferTransformFn = llvm::unique_function<LLCL::AnyAsyncValueRef(
     WriteableBufferRef, LLCL::AnyAsyncValueRef)>;
 
-/// This is the function that's called on a cache hit. It provides the buffer
-/// that was in the cache for the requested lookup.
-using CacheHitFn = llvm::unique_function<LLCL::AnyAsyncValueRef(BufferRef)>;
+// A transform fn which perform some transformation and returns the buffer to be
+// cached.
+using ReturnBufferTransformFn =
+    llvm::unique_function<LLCL::AsyncValueRef<BufferRef>(
+        LLCL::AnyAsyncValueRef)>;
 
-/// Run the specified transform, using the associated key for caching. When the
-/// transform is run, the result AnyAsyncValueRef is resolved to the result of
-/// the transform. If the transform is *not* run, then the result
-/// AnyAsyncValueRef simply contains a Chain.
-LLCL::AnyAsyncValueRef
-cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
-                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFn transformFn, CacheHitFn cacheHitFn);
+/// This is the function that's called on a cache hit. It provides the
+/// buffer that was in the cache for the requested lookup.
+using CacheHitFn = llvm::unique_function<LLCL::AnyAsyncValueRef(BufferRef)>;
 
 namespace Detail {
 /// These three detectors check for the ErrorOr-style APIs we care about for the
@@ -93,15 +90,125 @@ constexpr bool is_result_error_or_v =
     llvm::is_detected<Detail::HasTakeValue,
                       Detail::ResultT<CacheHitFnT>>::value;
 
+template <typename FnT>
+constexpr bool return_buffer_v =
+    std::is_constructible_v<ReturnBufferTransformFn, FnT>;
+
+template <typename FnT>
+constexpr bool accepts_buffer_v =
+    std::is_constructible_v<WritingToBufferTransformFn, FnT>;
+
 } // namespace Detail
 
-/// This provides a templated version of `cachedTransform` that provides a sync
-/// API for the cache hit function.
-template <typename CacheHitFnT>
+/// Run the specified transform, using the associated key for caching. When the
+/// transform is run, the result AnyAsyncValueRef is resolved to the result of
+/// the transform. If the transform is *not* run, then the result
+/// AnyAsyncValueRef simply contains a Chain.
+template <typename TransformFnT>
 LLCL::AnyAsyncValueRef
 cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFn transformFn, CacheHitFnT cacheHitFn) {
+                TransformFnT transformFn, CacheHitFn cacheHitFn) {
+  TimeTraceScope traceScope(
+      RuntimeCacheProfilerEntry::create("Cache::cachedTransform"));
+  BufferRef keyBuffer = std::move(transformKey);
+
+  // Try to find the key in the cache. The cache hit function should chain off
+  // that and do the right for the cache state.
+  auto foundOr = AsyncValueRef<std::optional<BufferRef>>::allocate(
+      transformCache->getRuntime());
+  chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
+                     transformCache = transformCache.copy(),
+                     loc = std::move(loc)]() mutable {
+    // Find the thing in the cache with the target op's location. This copy of
+    // `keyBuffer` is local, so it's safe to move.
+    auto f = transformCache->find(std::move(keyBuffer), std::move(loc));
+    std::move(f).andThenSync(
+        [foundOr = foundOr.copy()](
+            AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
+          if (f.isError())
+            return std::move(foundOr).setToError(f.takeDiagnostic());
+
+          std::move(foundOr).emplace(std::move(*f));
+        });
+  });
+
+  // Allocate space for the output.
+  AnyAsyncValueRef out =
+      AnyAsyncValueRef::createIndirect(transformCache->getRuntime());
+  std::move(foundOr).andThenSync(
+      [out = out.copy(), transformCache = transformCache.copy(),
+       transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
+       cacheHitFn = std::move(cacheHitFn)](
+          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
+        if (foundOr.isError())
+          return std::move(out).setToError(
+              foundOr.getPointer()->takeDiagnostic());
+
+        if (foundOr->has_value())
+          return std::move(out).resolveIndirect(
+              cacheHitFn(std::move(**foundOr)));
+
+        // No error but no cache hit.
+        AnyAsyncValueRef xform;
+        WriteableBufferRef writeableTransformResult;
+        if constexpr (Detail::accepts_buffer_v<TransformFnT>) {
+          // Run the transform. Use a 1 MB in-memory buffer.
+          WriteableBufferRef transformResult = WriteableBuffer::get(
+              /*size=*/0, /*alignment=*/{}, /*capacity=*/1024 * 1024);
+          auto fn = WritingToBufferTransformFn(std::move(transformFn));
+          xform = fn(transformResult.copy(), std::move(foundOr));
+          writeableTransformResult = transformResult.copy();
+        } else if constexpr (Detail::return_buffer_v<TransformFnT>) {
+          auto fn = ReturnBufferTransformFn(std::move(transformFn));
+          xform = fn(std::move(foundOr));
+        } else {
+          llvm_unreachable("unknown_fn_type");
+        }
+
+        // Insert the transform result into the cache.
+        std::move(xform).andThenSync(
+            [transformCache = transformCache.copy(), out = out.copy(),
+             keyBuffer = std::move(keyBuffer),
+             bufferWrittenInTransform = std::move(writeableTransformResult)](
+                AnyAsyncValueRef &&xform) mutable {
+              if (xform.isError())
+                return std::move(out).setToError(xform.takeDiagnostic());
+
+              // Only at this point (so the transform has finished successfully)
+              // should we change the transform result ref to be read-only.
+              BufferRef bufferToCache;
+              if constexpr (Detail::return_buffer_v<TransformFnT>)
+                bufferToCache = xform.get<BufferRef>().copy();
+              else if constexpr (Detail::accepts_buffer_v<TransformFnT>)
+                bufferToCache = std::move(bufferWrittenInTransform);
+              else
+                llvm_unreachable("unknown_fn_type");
+
+              // Again, this keyBuffer is local, so it's safe to move.
+              AsyncValueRef<std::string> hashOr = transformCache->insert(
+                  std::move(keyBuffer), std::move(bufferToCache));
+              std::move(hashOr).andThenSync(
+                  [out = out.copy(), xform = xform.copy()](
+                      AsyncValueRef<std::string> &&hashOr) mutable {
+                    if (hashOr.isError())
+                      return std::move(out).setToError(hashOr.takeDiagnostic());
+
+                    return std::move(out).resolveIndirect(xform.copy());
+                  });
+            });
+      });
+
+  return out;
+}
+
+/// This provides a templated version of `cachedTransform` that provides a sync
+/// API for the cache hit function.
+template <typename TransformFnT, typename CacheHitFnT>
+LLCL::AnyAsyncValueRef
+cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
+                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                TransformFnT transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
   LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
 
