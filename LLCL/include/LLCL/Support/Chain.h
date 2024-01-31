@@ -13,7 +13,10 @@ namespace M::LLCL {
 /// by turning these side effects into explicitly modeled values.  Its runtime
 /// representation is a zero sized value.
 ///
-class Chain {};
+class Chain {
+public:
+  static void swap(Chain &lhs, Chain &rhs) {}
+};
 
 } // namespace M::LLCL
 
