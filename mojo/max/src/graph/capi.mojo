@@ -184,3 +184,9 @@ fn tensor_type_get_shape(v: mlir.Value) -> DynamicVector[Int64]:
 
 fn tensor_type_is_ranked(v: mlir.Value) -> Bool:
     return cfunc[fn (mlir.Value.c_type) -> Bool]("MAXG_tensorTypeIsRanked")(v.c)
+
+
+fn list_type_new(m: mlir.Module, eltype: mlir.Type) -> mlir.Type:
+    return cfunc[fn (mlir.Module.c_type, mlir.Type.c_type) -> mlir.Type.c_type](
+        "MAXG_listTypeNew"
+    )(m.c, eltype.c)

@@ -155,14 +155,32 @@ struct MOTensor(MOType, CollectionElement):
     # TODO: Add shape arithmetics here, or in a separate Shape type.
 
 
+@value
+struct MOList(MOType, CollectionElement):
+    # TODO: This should really be AnyMOType.
+    var eltype: MOTensor
+
+    # ===------------------------------------------------------------------=== #
+    # MOType trait
+    # ===------------------------------------------------------------------=== #
+
+    fn to_mlir(self, m: Module) -> mlir.Type:
+        return capi.list_type_new(m.m, self.eltype.to_mlir(m))
+
+    fn to_string(self, m: Module) -> String:
+        return str(self.to_mlir(m))
+
+
 # TODO: Drop this when we get existentials.
-alias AnyMOType = Variant[MOTensor]
+alias AnyMOType = Variant[MOTensor, MOList]
 
 
 # TODO: Drop this when we get existentials.
 fn mo_type_to_mlir(t: AnyMOType, m: Module) -> mlir.Type:
     if t.isa[MOTensor]():
         return t.get[MOTensor]().to_mlir(m)
+    elif t.isa[MOList]():
+        return t.get[MOList]().to_mlir(m)
 
     # Use a default that will trap, to appease the checker that wants a return.
     return t.get[MOTensor]().to_mlir(m)
@@ -170,16 +188,16 @@ fn mo_type_to_mlir(t: AnyMOType, m: Module) -> mlir.Type:
 
 @value
 struct TypeTuple(Sized):
-    var types: DynamicVector[AnyMOType]
+    var elts: DynamicVector[AnyMOType]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, *types: AnyMOType):
-        self.types = DynamicVector[AnyMOType]()
-        for t in types:
-            self.types.append(t[])
+    fn __init__(inout self, *elts: AnyMOType):
+        self.elts = DynamicVector[AnyMOType]()
+        for t in elts:
+            self.elts.append(t[])
 
     # ===------------------------------------------------------------------=== #
     # Convenience adapters
@@ -188,29 +206,33 @@ struct TypeTuple(Sized):
     # TODO: Most should go away when one can express (AnyMOType, AnyMOType)
 
     fn __init__(inout self, t: MOTensor):
-        self.types = DynamicVector[AnyMOType]()
-        self.types.append(t)
+        self.elts = DynamicVector[AnyMOType]()
+        self.elts.append(t)
+
+    fn __init__(inout self, t: MOList):
+        self.elts = DynamicVector[AnyMOType]()
+        self.elts.append(t)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
-        return len(self.types)
+        return len(self.elts)
 
     # ===------------------------------------------------------------------=== #
     # MLIR conversion
     # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> DynamicVector[mlir.Type]:
-        var types = DynamicVector[mlir.Type]()
-        for i in range(len(self.types)):
-            types.append(self.types[i].get[MOTensor]().to_mlir(m))
-        return types
+        var retval = DynamicVector[mlir.Type]()
+        for i in range(len(self.elts)):
+            retval.append(mo_type_to_mlir(self.elts[i], m))
+        return retval
 
     # ===------------------------------------------------------------------=== #
     # Mutators
     # ===------------------------------------------------------------------=== #
 
     fn append(inout self, type: AnyMOType) raises:
-        self.types.append(type)
+        self.elts.append(type)
