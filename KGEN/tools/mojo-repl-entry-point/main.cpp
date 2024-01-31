@@ -54,6 +54,7 @@ static void forceLinkCompilerRT() {
                 << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerPython
                 << (void *)&KGEN::registerMemory
                 << (void *)&KGEN::registerRandom
+                << (void *)&KGEN::registerSupport
                 << (void *)&KGEN::registerSystem
                 << (void *)&KGEN::registerTracing;
 }

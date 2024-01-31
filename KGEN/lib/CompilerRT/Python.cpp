@@ -23,7 +23,8 @@ using namespace M;
 // KGEN_CompilerRT_Python_SetPythonPath
 //===----------------------------------------------------------------------===//
 
-const char *KGEN_CompilerRT_Python_SetPythonPath() {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
+KGEN_CompilerRT_Python_SetPythonPath() {
   // `PYTHONPATH` isn't always set, but when it is, respect whatever it's been
   // set to, rather than overwriting or appending to it.
   if (llvm::sys::Process::GetEnv("PYTHONPATH"))

@@ -16,6 +16,7 @@ set(SOURCES
   MojoCallContext.cpp
   Python.cpp
   Random.cpp
+  Support.cpp
   System.cpp
   Tracing.cpp
 )
@@ -73,7 +74,7 @@ if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
 endif()
 if (TCMALLOC_LIBRARY)
   add_static_dep_lib(libtcmalloc)
-endif()  
+endif()
 add_static_dep_lib(LLVMSupport)
 add_static_dep_lib(LLVMDemangle)
 add_static_dep_lib(LLVMTargetParser)
