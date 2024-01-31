@@ -624,6 +624,12 @@ getVersionedFilesystemBackend(LLCL::Runtime &runtime,
   return RCRef<FilesystemBackend>::create(runtime, base, readOnly);
 }
 
+ErrorOr<RCRef<BlobCacheBackend>>
+M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
+                               const std::filesystem::path &cacheDir,
+                               const std::string &version) {
+  return getVersionedFilesystemBackend(runtime, cacheDir, version);
+}
 //===----------------------------------------------------------------------===//
 // FileSystemBackedInMemoryBackend
 //===----------------------------------------------------------------------===//

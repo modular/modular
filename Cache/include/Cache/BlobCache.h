@@ -316,6 +316,15 @@ getFilesystemBackend(LLCL::Runtime &runtime,
                      const std::filesystem::path &basePath = "",
                      bool readOnly = false);
 
+/// Returns a filesystem-based implementation of the BlobCacheBackend. The
+/// `cacheDir` is used to derive a path for use by the filesystem backend. The
+/// `version` specifies the version string of the cache, defaults to
+/// MODULAR_VERSION_STRING if the provided version is empty.
+ErrorOr<RCRef<BlobCacheBackend>>
+getFilesystemBackend(LLCL::Runtime &runtime,
+                     const std::filesystem::path &cacheDir,
+                     const std::string &version);
+
 class S3BackendConfig : public DylibBackendConfig {
 public:
   S3BackendConfig(std::string bucket, std::string prefix,
