@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(KGENPackage
+  MaterializePackages.cpp
   Package.cpp
 
   LINK_LIBS PUBLIC
