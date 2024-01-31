@@ -306,14 +306,23 @@ private:
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
-/// Verify the number and types of parameter or argument defaults, taking into
-/// account their input conventions if applicable.
-LogicalResult verifyDefaults(function_ref<InFlightDiagnostic()> emitError,
-                             ArrayRef<TypedAttr> defaultsPos,
-                             ArrayRef<TypedAttr> defaultsKwOnly,
-                             ArrayRef<PassingKind> passingKinds,
-                             ArrayRef<Type> types, StringRef argOrParam,
-                             ArrayRef<ArgConvention> convs = {});
+/// Verify the types of parameter or argument defaults, taking into account
+/// their input conventions if applicable. This assumes that the passing kinds
+/// and the number of defaults are valid.
+LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
+                                 ArrayRef<TypedAttr> defaultsPos,
+                                 ArrayRef<TypedAttr> defaultsKwOnly,
+                                 ArrayRef<PassingKind> passingKinds,
+                                 ArrayRef<Type> types, StringRef argOrParam,
+                                 ArrayRef<ArgConvention> convs = {});
+
+/// Verify the the order of passing kinds, and that the number of defaults
+/// doesn't exceed the number of corresponding passing kinds.
+LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
+                                 ArrayRef<PassingKind> passingKinds,
+                                 size_t numPosDefaults,
+                                 size_t numKwOnlyDefaults,
+                                 StringRef argOrParam);
 
 } // namespace LIT
 } // namespace KGEN

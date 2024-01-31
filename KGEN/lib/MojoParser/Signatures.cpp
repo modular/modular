@@ -254,13 +254,13 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
     // If we have a **arg then it must be the last argument.
     if (arg.vararg == VarArgKind::KWVarArg && p.getToken().isNot(stopTokens)) {
-      p.emitError(arg.loc, "'**' marker must be at end of ")
-          << argOrParam << " list";
-      arg.vararg = VarArgKind::None;
+      return p.emitError(arg.loc, "'**' marker must be at end of ")
+             << argOrParam << " list";
     }
 
     if (arg.vararg == VarArgKind::KWVarArg)
-      p.emitError(arg.loc, "variadic keyword argument not supported yet");
+      return p.emitError(arg.loc,
+                         "variadic keyword argument not supported yet");
 
     // Otherwise just remember the argument.
     parsedArgs.push_back(arg);
@@ -291,8 +291,9 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   if (!parsedArgs.empty() &&
       parsedArgs.back().kwArgHandling == KWArgHandling::kKeywordOnly &&
       llvm::any_of(parsedArgs, hasVarArg)) {
-    p.emitError(parsedArgs.back().loc,
-                "keyword-only arguments after variadics not supported yet");
+    return p.emitError(
+        parsedArgs.back().loc,
+        "keyword-only arguments after variadics not supported yet");
   }
   return success();
 }

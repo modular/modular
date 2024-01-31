@@ -101,8 +101,13 @@ LogicalResult TypeSignatureType::verify(
     }
   }
 
-  return verifyDefaults(emitError, defaultPosParams, defaultKwOnlyParams,
-                        paramPassingKinds, paramTypes, "parameter");
+  if (failed(verifyPassingKinds(emitError, paramPassingKinds,
+                                defaultPosParams.size(),
+                                defaultKwOnlyParams.size(), "parameter")))
+    return failure();
+
+  return verifyDefaultTypes(emitError, defaultPosParams, defaultKwOnlyParams,
+                            paramPassingKinds, paramTypes, "parameter");
 }
 
 TypeSignatureType TypeSignatureType::remapToSignature(
