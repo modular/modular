@@ -234,6 +234,7 @@ fn test[
     input_ptr.free()
     filter_ptr.free()
     packed_filter_ptr.free()
+    bias_ptr.free()
 
     # Check results, return on the first failed comparison.
     for n in range(N):
