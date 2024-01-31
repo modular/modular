@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # A temporary home for the experimental tensor type.
 
-from algorithm.functional import vectorize_unroll
+from algorithm.functional import vectorize_unroll, elementwise
 from math import fma
 from memory.buffer import NDBuffer
 from MOGGIntList import IntList
@@ -268,6 +268,11 @@ struct Tensor[
         return self.dyn_rank
 
     @always_inline
+    @staticmethod
+    fn has_static_rank() -> Bool:
+        return Self.static_rank != -1
+
+    @always_inline
     fn _compute_flat_index(
         self,
         index: IntList,
@@ -405,6 +410,34 @@ struct Tensor[
     @mogg_elementwise_hook()
     @no_inline
     fn for_each[
+        simd_width: Int,
+        func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
+            _t, _width
+        ],
+    ](inout self):
+        @parameter
+        if not Self.has_static_rank():
+            self._for_each_dynamic_rank[simd_width, func]()
+        else:
+
+            @parameter
+            fn elementwise_fn_wrapper[
+                width: Int, rank: Int
+            ](coords_static: StaticIntTuple[rank]) capturing:
+                alias dims = DimList.create_unknown[Self.static_rank]()
+                let coords = IntList[dims](
+                    rebind[StaticIntTuple[Self.static_rank]](coords_static)
+                )
+                let val = func[width, Self.type, dims](coords)
+                self.store(coords, val)
+
+            elementwise[Self.static_rank, simd_width, elementwise_fn_wrapper](
+                rebind[StaticIntTuple[Self.static_rank]](
+                    self.shape.to_static_tuple()
+                )
+            )
+
+    fn _for_each_dynamic_rank[
         simd_width: Int,
         func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
             _t, _width

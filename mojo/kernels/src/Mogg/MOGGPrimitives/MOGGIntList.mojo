@@ -91,6 +91,13 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
     @always_inline
+    fn __init__[rank: Int](inout self, shape: StaticIntTuple[rank]):
+        constrained[rank == len(static_values)]()
+        self.length = rank
+        self.data = Pointer[Int]()
+        self.stack_alloc_data = rebind[StaticIntTuple[Self._safe_len]](shape)
+
+    @always_inline
     fn __moveinit__(inout self, owned existing: Self):
         self.data = existing.data
         self.stack_alloc_data = existing.stack_alloc_data
@@ -152,6 +159,22 @@ struct IntList[static_values: DimList = DimList()](Sized):
     @always_inline
     fn has_static_length() -> Bool:
         return Self._length != 0
+
+    @always_inline
+    fn to_static_tuple(self) -> StaticIntTuple[Self._safe_len]:
+        constrained[
+            Self.has_static_length(),
+            (
+                "IntList must have statically known length to be converted into"
+                " static tuple"
+            ),
+        ]()
+
+        @parameter
+        if Self.is_fully_static():
+            return StaticIntTuple[Self._safe_len](Self.static_values)
+        else:
+            return self.stack_alloc_data
 
     @always_inline
     fn __getitem__(self, index: Int) -> Int:
