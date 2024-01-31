@@ -4,27 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %translate-with-packages %s | FileCheck %s
 
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias Int = __mlir_type.index
-alias AnyRegType = __mlir_type.`!kgen.type`
-alias StringLiteral = __mlir_type.`!kgen.string`
-
-alias `1` = __mlir_attr.`1 : index`
-
-struct object: pass
-struct Error: pass
-
-trait AnyType:
-    fn __del__(owned self, /): ...
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>>
 trait Trait:
