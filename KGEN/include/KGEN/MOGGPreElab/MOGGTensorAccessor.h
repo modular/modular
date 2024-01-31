@@ -42,8 +42,10 @@ struct MOGGTensorParamAccessor {
   KGEN::ParamIndexRefAttr dtypeAsRef() const { return paramAsRef(DTYPE_IDX); }
 
   KGEN::ParamIndexRefAttr shapeAsRef() const { return paramAsRef(SHAPE_IDX); }
+  TypedAttr shape() const { return params[SHAPE_IDX]; }
 
   KGEN::ParamIndexRefAttr strideAsRef() const { return paramAsRef(STRIDE_IDX); }
+  TypedAttr strides() const { return params[STRIDE_IDX]; }
 
   KGEN::ParamIndexRefAttr inputLambdaAsRef() const {
     return paramAsRef(INPUT_LAMBDA_IDX);

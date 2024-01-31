@@ -51,6 +51,11 @@ constexpr StringLiteral tensorInputFusionHook =
 constexpr StringLiteral tensorOutputFusionHook =
     "$stdlib::$utils::$_annotations::mogg_output_fusion_hook";
 
+// Basic struct to extract the KGEN parameters used in the tensor.
+struct KGENParamsOfTensor {
+  TypedAttr dtype, shape, stride;
+};
+
 template <typename LambdaToApply>
 SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,
                                         LambdaToApply lambda) {
@@ -340,11 +345,11 @@ private:
     }
   }
 
-  void attachMetadataToGenerator(GeneratorOp gen,
-                                 ArrayRef<std::string> inputLambdaNames,
-                                 ArrayRef<std::string> outputLambdaNames,
-                                 CallOp elementwiseOp, GeneratorOp shapeFunc,
-                                 bool isView = false) {
+  void attachMetadataToGenerator(
+      GeneratorOp gen, ArrayRef<std::string> inputLambdaNames,
+      ArrayRef<std::string> outputLambdaNames, CallOp elementwiseOp,
+      GeneratorOp shapeFunc, SmallVector<KGENParamsOfTensor> &kgenTensorParams,
+      bool isView = false) {
     // The new attributes on the generator.
     SmallVector<NamedAttribute> newAttrs;
 
@@ -384,6 +389,25 @@ private:
       auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
       newAttrs.push_back(NamedAttribute{b.getStringAttr("_elementwise_lambda"),
                                         asParam.getName()});
+    }
+
+    auto unit = b.getUnitAttr();
+
+    SmallVector<Attribute> kgenParams;
+    for (KGENParamsOfTensor &params : kgenTensorParams) {
+      SmallVector<Attribute> p(3, unit);
+      if (params.dtype)
+        p[0] = params.dtype;
+      if (params.shape)
+        p[1] = params.shape;
+      if (params.dtype)
+        p[2] = params.stride;
+      kgenParams.push_back(b.getArrayAttr(p));
+    }
+
+    if (!kgenParams.empty()) {
+      newAttrs.push_back(NamedAttribute{b.getStringAttr("_tensor_params"),
+                                        b.getArrayAttr(kgenParams)});
     }
 
     // Tell the graph compiler that this function has an accompanying shape
@@ -555,7 +579,9 @@ private:
     }
   }
 
-  GeneratorOp sliceShapeFunction(Value shape, GeneratorOp funcToSlice) {
+  GeneratorOp
+  sliceShapeFunction(Value shape, GeneratorOp funcToSlice,
+                     SmallVector<KGENParamsOfTensor> &kgenTensorParams) {
     Operation *op = shape.getDefiningOp();
 
     // Identify all ops used to create the shape.
@@ -587,6 +613,10 @@ private:
     SmallVector<Type> funcInputs, litFuncInputs;
     SmallVector<StringAttr> litArgNames;
 
+    // The shape function uses a subset of the original kernel params.
+    SmallVector<KGENParamsOfTensor> shapeTensorParams;
+    shapeTensorParams.reserve(kgenTensorParams.size());
+
     // Identify which of the inputs we are using. This needs to be preserved
     // so MO can know which are used and in which order to map back onto the
     // original kernel.
@@ -599,6 +629,8 @@ private:
         funcInputs.push_back(funcTy.getInputs()[idx]);
         litFuncInputs.push_back(litFuncType.getInputs()[idx]);
         litArgNames.push_back(oldMetadata.getArgNames()[idx]);
+
+        shapeTensorParams.push_back(kgenTensorParams[idx]);
 
         // Subtract one to account for the pass by ref output.
         usedInputsInOrder.push_back(static_cast<int32_t>(idx - 1));
@@ -685,7 +717,7 @@ private:
     // Shape function still needs some metadata to inform the graph compiler
     // about its properties.
     attachMetadataToGenerator(slicedShapeFunction, emptyInputLambdas, {},
-                              nullptr, nullptr, false);
+                              nullptr, nullptr, shapeTensorParams, false);
 
     return slicedShapeFunction;
   }
@@ -802,6 +834,48 @@ public:
       Value outputTensor = slicedComputeFunction.getBody()->getArgument(0);
       Value shape;
 
+      SmallVector<KGENParamsOfTensor> kgenTensorParams(
+          slicedComputeFunction.getBody()->getNumArguments());
+
+      size_t i = 0;
+
+      // Scan through all the tensors to find their calls and extract the KGEN
+      // level parameter information for each from their calls.
+      for (Value arg : slicedComputeFunction.getBody()->getArguments()) {
+        KGENParamsOfTensor &params = kgenTensorParams[i];
+        i++;
+        for (OpOperand &use : arg.getUses()) {
+          if (auto call = dyn_cast<KGEN::CallOp>(use.getOwner())) {
+            KGEN::SymbolConstantAttr symbol = call.getCallee();
+            FlatSymbolRefAttr flatSym =
+                cast<FlatSymbolRefAttr>(symbol.getSymbol());
+            auto calledFunc =
+                cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
+
+            std::optional<MOGG::MOGGTensorParamAccessor> callRep =
+                getTensorRepFromFunctionInput(calledFunc,
+                                              use.getOperandNumber());
+            if (callRep.has_value()) {
+              if (KGEN::ParamIndexRefAttr ref = callRep->dtypeAsRef())
+                params.dtype =
+                    call.getCallee().getParamValues()[ref.getIndex()];
+
+              if (KGEN::ParamIndexRefAttr ref = callRep->shapeAsRef())
+                params.shape =
+                    call.getCallee().getParamValues()[ref.getIndex()];
+
+              if (KGEN::ParamIndexRefAttr ref = callRep->strideAsRef())
+                params.stride =
+                    call.getCallee().getParamValues()[ref.getIndex()];
+            }
+
+            if (params.dtype && params.shape && params.stride) {
+              break;
+            }
+          }
+        }
+      }
+
       bool isView = false;
 
       // Any MOGG annotated kernel which has no allocation should be treated as
@@ -858,7 +932,8 @@ public:
       GeneratorOp slicedShapeFunction;
 
       if (shape) {
-        slicedShapeFunction = sliceShapeFunction(shape, slicedComputeFunction);
+        slicedShapeFunction =
+            sliceShapeFunction(shape, slicedComputeFunction, kgenTensorParams);
       } else {
         // TODO: Shape functions for views.
       }
@@ -876,7 +951,7 @@ public:
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
                                 outputLambdaNames, elementwiseOp,
-                                slicedShapeFunction, isView);
+                                slicedShapeFunction, kgenTensorParams, isView);
 
       // Remove the attributes from the user kernel as that should remain
       // untouched for the user to use directly in their code.
