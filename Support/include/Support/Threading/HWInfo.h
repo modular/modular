@@ -88,6 +88,9 @@ size_t getNumLogicalCores();
 /// not known, will return the total number of physical cores.
 size_t getNumPerformanceCores();
 
+/// Returns the set of local MAC addresses.
+std::vector<std::string> localMACs();
+
 //===----------------------------------------------------------------------===//
 // OS and architecture-specific utilities, visible for testing only
 //===----------------------------------------------------------------------===//
