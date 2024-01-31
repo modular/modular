@@ -131,6 +131,64 @@ struct ConvShape[rank: Int]:
         return self.filter_dims.flattened_length()
 
     @always_inline
+    fn input_image_flat_size(self) -> Int:
+        return self.input_dims.flattened_length()
+
+    @always_inline
+    fn output_image_flat_size(self) -> Int:
+        return self.output_dims.flattened_length()
+
+    @always_inline
+    fn output_space_dims(self) -> StaticIntTuple[rank]:
+        return self.output_dims
+
+    @always_inline
+    fn output_flat_coord_to_input_offset(
+        self, n: Int, output_flat_coord: Int
+    ) -> Int:
+        constrained[
+            rank == 1 or rank == 2 or rank == 3,
+            "Only support 1d, 2d, and 3d convolution.",
+        ]()
+
+        @parameter
+        if rank == 1:
+            let w = output_flat_coord * self.stride[0] - self.pad_w[0]
+
+            return self.c * w
+
+        elif rank == 2:
+            # Unpack output coordinates
+            let ho = output_flat_coord // self.wo()
+            let wo = output_flat_coord % self.wo()
+
+            # Input coordinates
+            let h = ho * self.stride[0] - self.pad_h[0]
+            let w = wo * self.stride[1] - self.pad_w[0]
+
+            return self.c * (w + self.w() * (h + n * self.h()))
+
+        elif rank == 3:
+            # Unpack output coordinates
+            let doho = output_flat_coord // self.wo()
+            let wo = output_flat_coord % self.wo()
+            let do = doho // self.ho()
+            let ho = doho % self.ho()
+
+            # Input coordinates
+            let d = do * self.stride[0] - self.pad_d[0]
+            let h = ho * self.stride[1] - self.pad_h[0]
+            let w = wo * self.stride[2] - self.pad_w[0]
+
+            return self.c * (
+                w + self.w() * (h + self.h() * (d + self.d() * self.n))
+            )
+
+        else:
+            # Pass compile.
+            return -1
+
+    @always_inline
     fn matmul_M(self) -> Int:
         return self.n * self.output_dims.flattened_length() * self.num_groups
 
