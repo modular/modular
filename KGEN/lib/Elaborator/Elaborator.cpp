@@ -2304,7 +2304,8 @@ void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
           llvm::sys::SmartScopedWriter<true> guard(reader.mutex);
           func->remove();
           symtab.insert(func);
-          return readFromBytecode(func, reader.reader, symtab, *reader.symtab);
+          return loadSymbolsFromBytecode(func, reader.reader, symtab,
+                                         *reader.symtab);
         };
         if (failed(newSymTab.modify(loadFunc))) {
           inode->setToError(
