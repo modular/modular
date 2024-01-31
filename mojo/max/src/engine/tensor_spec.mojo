@@ -16,13 +16,17 @@ from .session import InferenceSession
 from ._tensor_spec_impl import *
 
 
-@value
-struct EngineTensorSpec(Stringable):
+struct EngineTensorSpec(Stringable, Movable):
     var ptr: CTensorSpec
     var lib: DLHandle
     var session: InferenceSession
 
     alias NewTensorSpecFnName = "M_newTensorSpec"
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ptr = existing.ptr
+        self.lib = existing.lib
+        self.session = existing.session ^
 
     fn __init__(
         inout self,

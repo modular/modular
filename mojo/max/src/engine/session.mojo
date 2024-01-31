@@ -42,63 +42,59 @@ struct _InferenceSessionImpl(Movable):
 
     fn _compile_model_from_config(
         self,
-        config: CompileConfig,
+        owned config: LoadOptions,
         owned session: InferenceSession,
     ) raises -> CompiledModel:
         let context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to compile model"
 
+        var compile_config = CompileConfig(self.engine.lib)
+
+        let model_path = config._model_path
+        if model_path:
+            let path = model_path.value()
+            compile_config.set_model_path(path.path._strref_dangerous())
+            path.path._strref_keepalive()
+
+        let custom_ops_path = config._custom_ops_path
+        if custom_ops_path:
+            let path = custom_ops_path.value()
+            compile_config.set_replace_ops_path(path.path._strref_dangerous())
+            path.path._strref_keepalive()
+
+        let model_source = config._source
+        if model_source and model_path:
+            raise "give either module source or path"
+
+        if model_source:
+            compile_config.set_model_source(model_source.value())
+
         let status = Status(self.engine.lib)
+        let compile_ptr = compile_config.borrow_ptr()
         let compiled_model_ptr = call_dylib_func[CCompiledModel](
             self.engine.lib,
             CompiledModel.CompileModelFnName,
             context,
-            config.borrow_ptr(),
+            compile_ptr,
             status.borrow_ptr(),
         )
         if status:
             raise status.__str__()
 
-        return CompiledModel(compiled_model_ptr, self.engine.lib, session ^)
-
-    fn compile_model(
-        self,
-        model_path: String,
-        user_defined_ops_path: Optional[StringRef],
-        owned session: InferenceSession,
-    ) raises -> CompiledModel:
-        """
-        Compiles the model given model path.
-
-        Raises: an Error if the path to the model file does
-        not exist on the filesystem.
-        """
-        let config = CompileConfig(self.engine.lib)
-        if user_defined_ops_path:
-            config.set_replace_ops_path(user_defined_ops_path.value())
-        config.set_model_path(model_path)
-
-        return self._compile_model_from_config(config, session ^)
-
-    fn compile_model(
-        self,
-        module: Module,
-        user_defined_ops_path: Optional[StringRef],
-        owned session: InferenceSession,
-    ) raises -> CompiledModel:
-        """
-        Compiles the model given an opaque model source representation.
-        """
-        # Set compilation config options.
-        let config = CompileConfig(self.engine.lib)
-        if user_defined_ops_path:
-            config.set_replace_ops_path(user_defined_ops_path.value())
-        config.set_model_source(
-            ModelSource(module.m.c.ptr, FrameworkFormat.MAXGraph)
+        let model = CompiledModel(
+            compiled_model_ptr, self.engine.lib, session ^
         )
+        _ = compile_config ^
 
-        return self._compile_model_from_config(config, session ^)
+        # We could borrow config and don't do this,
+        # but internally C APi will take ownership of compile_config ptr
+        # and mutates it to null. This will convey the intention that we are
+        # mutating something we own. There is no need for caller of this
+        # to have the mutated value now. That negates the need for inout.
+        _ = config ^
+
+        return model ^
 
     fn _init_model(
         self,
@@ -129,34 +125,15 @@ struct _InferenceSessionImpl(Movable):
 
     fn load_model(
         self,
-        module: Module,
-        user_defined_ops_path: Optional[StringRef],
+        owned config: LoadOptions,
         owned session: InferenceSession,
     ) raises -> Model:
         """
-        Compiles and initializes the model given a MAX graph `Module`.
+        Compiles and initializes the model.
         """
-        let compiled_model = self.compile_model(
-            module, user_defined_ops_path, session.copy()
+        let compiled_model = self._compile_model_from_config(
+            config ^, session.copy()
         )
-
-        return self._init_model(compiled_model ^, session ^)
-
-    fn load_model(
-        self,
-        model_path: Path,
-        user_defined_ops_path: Optional[StringRef],
-        owned session: InferenceSession,
-    ) raises -> Model:
-        """
-        Compiles and initializes model given path.
-        """
-        let compiled_model = self.compile_model(
-            model_path.path._strref_dangerous(),
-            user_defined_ops_path,
-            session.copy(),
-        )
-        model_path.path._strref_keepalive()
 
         return self._init_model(compiled_model ^, session ^)
 
@@ -193,6 +170,47 @@ struct _InferenceSessionImpl(Movable):
 
 
 @value
+struct LoadOptions(CollectionElement):
+    var _source: Optional[ModelSource]
+    var _model_path: Optional[Path]
+    var _custom_ops_path: Optional[Path]
+
+    fn __init__(inout self):
+        self._source = None
+        self._model_path = None
+        self._custom_ops_path = None
+
+    fn _set_model_source(inout self, module: Module):
+        """Specifies the Max Graph Module to load model from.
+           Use either this function or `set_model_path` function
+           to specify model source.
+
+        Args:
+            module: Max Graph module.
+        """
+        self._source = ModelSource(module.m.c.ptr, FrameworkFormat.MAXGraph)
+
+    fn _set_model_path(inout self, path: Path):
+        """Specifies the loaction in filesystem to load model from.
+           Use either this function or `set_model_source` function
+           to specify model source.
+
+        Args:
+            path: Path of the model on disk.
+
+        """
+        self._model_path = path
+
+    fn set_custom_ops_path(inout self, path: Path) raises:
+        """Replace Modular kernels in given model with user-defined kernels.
+
+        Args:
+            path: Path to mojo custom op package.
+        """
+        self._custom_ops_path = path
+
+
+@value
 @register_passable
 struct InferenceSession:
     var ptr: AnyPointer[_InferenceSessionImpl]
@@ -224,31 +242,51 @@ struct InferenceSession:
         return Self {ptr: self.ptr}
 
     fn load_model(
-        self,
-        model_path: Path,
-        user_defined_ops_path: Optional[StringRef] = None,
+        self, path: Path, config: Optional[LoadOptions] = None
     ) raises -> Model:
+        """Compile and Initialize AI model with Max
+           engine with given path and config.
+
+        Args:
+            path: Location of model in filesystem.
+            config: Configurations need for compiling model.
+
+        Returns:
+            Initialized model ready for inference.
+
         """
-        Replaces Modular ops with user-defined ops using the provided
-        path-to-mojopkg and then compiles and initializes the model
-        using the provided model path.
-        """
+        var load_config: LoadOptions
+        if config:
+            load_config = config.value()
+        else:
+            load_config = LoadOptions()
+        load_config._set_model_path(path)
         return __get_address_as_lvalue(self.ptr.value).load_model(
-            model_path, user_defined_ops_path, self.copy()
+            load_config ^, self.copy()
         )
 
     fn load_model(
-        self,
-        module: Module,
-        user_defined_ops_path: Optional[StringRef] = None,
+        self, module: Module, config: Optional[LoadOptions] = None
     ) raises -> Model:
+        """Compile and Initialize AI model with Max
+           engine with given Max Graph module and config.
+
+        Args:
+            module: Max Graph module.
+            config: Configurations need for compiling model.
+
+        Returns:
+            Initialized model ready for inference.
+
         """
-        Replaces Modular ops with user-defined ops using the provided
-        path-to-mojopkg and then compiles and initializes the model
-        using the provided MAX graph module.
-        """
+        var load_config: LoadOptions
+        if config:
+            load_config = config.value()
+        else:
+            load_config = LoadOptions()
+        load_config._set_model_source(module)
         return __get_address_as_lvalue(self.ptr.value).load_model(
-            module, user_defined_ops_path, self.copy()
+            load_config ^, self.copy()
         )
 
     fn get_as_engine_tensor_spec(

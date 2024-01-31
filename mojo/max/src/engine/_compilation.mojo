@@ -25,7 +25,7 @@ struct FrameworkFormat:
 
 @value
 @register_passable("trivial")
-struct ModelSource:
+struct ModelSource(CollectionElement):
     """Model source representation that is ABI compatible with the C API's `M_ModelSource`.
     """
 
