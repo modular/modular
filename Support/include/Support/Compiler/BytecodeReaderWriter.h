@@ -39,6 +39,22 @@ template <typename T>
 T readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer, MLIRContext *ctx) {
   return dyn_cast_if_present<T>(readAttrFromBytecodeFile(buffer, ctx));
 }
+
+/// Recursively and lazily read dependencies from the module contained by
+/// `bytecodeSymTab` into `symTab`, rooted at `op`.
+LogicalResult loadSymbolsFromBytecode(Operation *op,
+                                      mlir::BytecodeReader &reader,
+                                      SymbolTable &symTab,
+                                      const SymbolTable &bytecodeSymTab);
+/// Recursively and lazily read dependencies from the module contained by
+/// `bytecodeSymTab` into `symTab`, rooted at `op`. This version abstracts the
+/// insertion and lookup of symbols from the mutable symbol table.
+LogicalResult loadSymbolsFromBytecode(Operation *op,
+                                      mlir::BytecodeReader &reader,
+                                      function_ref<bool(StringAttr)> existsFn,
+                                      function_ref<void(Operation *)> insertFn,
+                                      const SymbolTable &bytecodeSymTab);
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_BYTECODEREADERWRITER_H

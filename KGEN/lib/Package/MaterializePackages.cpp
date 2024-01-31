@@ -9,6 +9,7 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
