@@ -1,18 +1,25 @@
-// RUN: kgen-opt -test-generate-elaborated-body %s | FileCheck %s --check-prefix=ATTACH
-// RUN: kgen-opt -test-generate-elaborated-body -lower-lit %s | FileCheck %s --check-prefix=LOWER_LIT
-// RUN: kgen-opt -test-generate-elaborated-body -lower-lit -materialize-packages %s | FileCheck %s
+// RUN: kgen-opt -test-generate-elaborated-body %s -o %t.0.mlir
+// RUN: cat %t.0.mlir | FileCheck %s --check-prefix=ATTACH
+// RUN: kgen-opt %t.0.mlir -lower-lit -o %t.1.mlir
+// RUN: cat %t.1.mlir | FileCheck %s --check-prefix=LOWER_LIT
+// RUN: kgen-opt %t.1.mlir -materialize-packages -o %t.2.mlir
+// RUN: cat %t.2.mlir | FileCheck %s
+// RUN: kgen-opt %t.2.mlir -elaborate-generators -o %t.3.mlir
+// RUN: cat %t.3.mlir | FileCheck %s --check-prefix=ELAB
 
 #module_target = #M.target<triple="", arch="", features="", data_layout="",
                         simd_bit_width=128>
 
-module attributes {M.target_info = #module_target} {
+module {
 // The `doNotExtern` attribute is a marker for the test pass - it won't attempt to generate a kgen.func for this lit.func.
 // ATTACH-LABEL: lit.func @caller
 // ATTACH-NOT: preCompiledModuleRef
 // CHECK-LABEL: kgen.generator @caller
+// ELAB-LABEL: kgen.func @caller
 lit.func @caller() -> index attributes {test.target.0 = #module_target, doNotExtern} {
   %0 = index.constant 32
   // CHECK: kgen.call @precompiled_func
+  // ELAB: kgen.call @precompiled_func
   %1 = kgen.call @precompiled_func(%0) : (index) -> index
   kgen.return %1 : index
 }
@@ -21,15 +28,16 @@ lit.func @caller() -> index attributes {test.target.0 = #module_target, doNotExt
 // built. When this occurs, their `export` attribute is removed by the
 // `-materialize-packages` pass.
 // ATTACH: kgen.package.link @link_exported_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<exported_func_generated_body_attr>
+// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<exported_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func export @exported_func
 // ATTACH-SAME: preCompiledModuleRef = @link_exported_func
 
 // LOWER_LIT-LABEL: kgen.extern.generator export @exported_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_exported_func
 
-// CHECK: kgen.link dense_resource<exported_func_generated_body_attr> {{.*}} as @link_exported_func
-// CHECK-LABEL: kgen.func @exported_func
+// CHECK: kgen.package.link @link_exported_func pre_elaboration(dense_resource<exported_func_generated_body_attr>
+// CHECK-LABEL: kgen.generator @exported_func
+// ELAB-LABEL: kgen.func export package @exported_func
 lit.func export @exported_func(%arg0: index) -> index attributes {
   test.target.0 = #module_target
 } {
@@ -37,15 +45,16 @@ lit.func export @exported_func(%arg0: index) -> index attributes {
 }
 
 // ATTACH: kgen.package.link @link_precompiled_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<precompiled_func_generated_body_attr>
+// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<precompiled_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func @precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_precompiled_func
 
 // LOWER_LIT-LABEL: kgen.extern.generator @precompiled_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_precompiled_func
 
-// CHECK: kgen.link dense_resource<precompiled_func_generated_body_attr> {{.*}} as @link_precompiled_func
-// CHECK-LABEL: kgen.func @precompiled_func
+// CHECK: kgen.package.link @link_precompiled_func
+// CHECK-LABEL: kgen.generator @precompiled_func
+// CHECK-SAME: preCompiledModuleRef = @link_precompiled_func
 lit.func @precompiled_func(%arg0: index) -> index attributes {
   test.target.0 = #module_target
 } {
@@ -53,15 +62,15 @@ lit.func @precompiled_func(%arg0: index) -> index attributes {
 }
 
 // ATTACH: kgen.package.link @link_different_precompiled_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<different_precompiled_func_generated_body_attr>
+// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<different_precompiled_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func @different_precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_different_precompiled_func
 
 // LOWER_LIT-LABEL: kgen.extern.generator @different_precompiled_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_different_precompiled_func
 
-// CHECK: kgen.link dense_resource<different_precompiled_func_generated_body_attr> {{.*}} as @link_different_precompiled_func
-// CHECK-LABEL: kgen.func @different_precompiled_func
+// CHECK: kgen.package.link @link_different_precompiled_func
+// CHECK-LABEL: kgen.generator @different_precompiled_func
 lit.func @different_precompiled_func(%arg0: index) -> index attributes {
   test.target.0 = #M.target<triple="", arch="", features="", data_layout="",
                             simd_bit_width=64>,
@@ -77,7 +86,7 @@ lit.func @different_precompiled_func(%arg0: index) -> index attributes {
 // case, given the module is going to be fully compiled.
 
 // CHECK-NOT: kgen.link dense_resource<compile_invalid_target_generated_body_attr> {{.*}} as @compile_invalid_target
-// CHECK-LABEL: kgen.func @compile_invalid_target_precompiled
+// CHECK-LABEL: kgen.generator @compile_invalid_target
 lit.func @compile_invalid_target(%arg0: index) -> index attributes {
   test.target.0 = #M.target<triple="", arch="", features="", data_layout="",
                             simd_bit_width=64>,

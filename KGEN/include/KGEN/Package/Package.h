@@ -12,6 +12,10 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Pass/PassManager.h"
 
+namespace mlir {
+class BytecodeReader;
+} // namespace mlir
+
 namespace M {
 namespace LLCL {
 class Runtime;
@@ -22,6 +26,12 @@ namespace M::KGEN {
 
 class CompilationOptions;
 class PackageLinkOp;
+
+/// Recursive pull dependencies from `bytecodeSymTab` into `symTab`, root at
+/// `op`.
+LogicalResult readFromBytecode(Operation *op, mlir::BytecodeReader &reader,
+                               SymbolTable &symTab,
+                               const SymbolTable &bytecodeSymTab);
 
 /// Given the symbol table of an elaborated module for a Mojo package, as well
 /// as that package's name, returns either an attribute to store the module
@@ -38,10 +48,14 @@ ErrorOr<PackageArchiveAttr> createPackageArchive(
     TargetInfoAttr targetInfo, DenseResourceElementsAttr elaboratedBytecode,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime);
 
+/// Load the given bytecode module and return it.
+ErrorOr<OwningOpRef<ModuleOp>>
+loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr);
+
 /// Loads the serialized MLIR bytecode representing a pre-elaborated module for
 /// package off of the given `packageLink` op, elaborates it, and generates a
 /// static archive. If successful, an archive will be set on the given op.
-ErrorOr<DenseResourceElementsAttr>
+ErrorOr<PackageArchiveAttr>
 loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
                          const CompilationOptions &compileOptions,
                          LLCL::Runtime &runtime);

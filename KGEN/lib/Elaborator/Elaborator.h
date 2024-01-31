@@ -38,6 +38,17 @@ using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
 using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmissionKind)>;
+using PackageLinkHandlerFnRef =
+    function_ref<ErrorOr<PackageArchiveAttr>(PackageLinkOp, TargetInfoAttr)>;
+
+struct ElaboratorCallbacks {
+  /// The functor used for evaluating generator specializations.
+  EvaluatorExecutorFnRef evaluateFn;
+  /// The functor used to compile a module to assembly.
+  ElaboratorCompileAsmFnRef compileAsmFn;
+  /// The functor used to process a package reference.
+  PackageLinkHandlerFnRef packageHandlerFn;
+};
 
 class Elaborator {
 public:
@@ -45,9 +56,8 @@ public:
   enum ASMFormat : uint8_t { ASM, LLVM };
 
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, TargetInfoAttr target,
-             const ElaborateGeneratorsOptions &config)
-      : symtab(symtab), target(target), config(config) {}
+  Elaborator(SymbolTable &oldSymTab, TargetInfoAttr target,
+             const ElaborateGeneratorsOptions &config);
 
   virtual ~Elaborator() = default;
 
@@ -58,6 +68,15 @@ public:
   getConcreteFunction(ImplNode *parent, Location loc,
                       FlatSymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) = 0;
+
+  /// Lookup an existing concrete function.
+  FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
+
+  /// Get the environment defines.
+  EnvAttr getCompilationEnvAttr() const { return env; }
+
+  /// Get the pre-elaboration symbol table we can slice from.
+  const SymbolTable &getSliceSymTab() const { return oldSymTab; }
 
   /// Get all the concrete functions for the given symbol. If the symbol is a
   /// function already, append it to the list and move on, otherwise,
@@ -75,22 +94,29 @@ public:
   /// elaboration should go.
   virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
 
-  /// Get the symbol table associated with this instance of the elaborator.
-  Shared<SymbolTable &> &getSymbolTable() { return symtab; }
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() const { return target; }
   /// Get the elaborator config.
   const ElaborateGeneratorsOptions &getOptions() const { return config; }
 
 protected:
-  /// This symbol table allows efficient lookups across the module.
-  Shared<SymbolTable &> symtab;
-
   /// The target we are compiling code for.
   TargetInfoAttr target;
 
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
+
+  /// This is the new module that concrete functions are being generated into.
+  OwningOpRef<ModuleOp> newModule;
+
+  /// This is the symbol table of the new module.
+  Shared<SymbolTable> newSymTab;
+
+  /// This symbol table allows efficient lookups across the module.
+  SymbolTable &oldSymTab;
+
+  /// The environment defines the module is being elaborated with.
+  EnvAttr env;
 };
 
 //===----------------------------------------------------------------------===//
@@ -114,8 +140,8 @@ struct ExpansionGraph {
   AsyncValueRef<Chain> quiesce();
 
   /// Map from generator instantiation to expansion tree node.
-  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>,
-                  std::unique_ptr<ParamNode>>>
+  Shared<llvm::MapVector<std::pair<ParameterExprArrayAttr, GeneratorOp>,
+                         std::unique_ptr<ParamNode>>>
       nodes;
 
   /// Map from concrete function to implementation node.
@@ -135,13 +161,8 @@ struct ExpansionGraph {
 
   /// Protect access to quiesceChain.
   std::mutex quiesceMu;
-
-  /// Protect access to worklistChain.
-  std::mutex worklistMu;
-
   /// Number of outstanding resources created from this runtime.
   size_t numOutstandingResources = 0;
-
   /// If quiesce() has been called, the chain it returned. Otherwise null.
   AsyncValueRef<Chain> quiesceChain;
 

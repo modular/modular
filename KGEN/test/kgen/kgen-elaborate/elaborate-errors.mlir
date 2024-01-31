@@ -197,7 +197,7 @@ kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
 
 // -----
 
-// expected-note @below {{failed to interpret function @fails_concrete}}
+// expected-note @below {{failed to interpret function @fails}}
 kgen.generator @fails() -> index {
   // expected-note @below {{failed to fold operation kgen.unreachable()}}
   kgen.unreachable

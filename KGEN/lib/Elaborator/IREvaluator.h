@@ -366,7 +366,7 @@ private:
   LLCL::AsyncValueRef<LLCL::Chain> paramCh;
 
   /// Mutex to prevent race on emplace.
-  mutable std::mutex mu;
+  std::mutex mu;
 
   /// The runtime manages the set of tasks kicked off in a given process. The
   /// ParamNode alerts the runtime upon creation and completion of tasks so that

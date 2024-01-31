@@ -187,6 +187,7 @@ struct ParamDeclaration {
 /// order.
 struct ParameterUseDefGraph {
   ParameterUseDefGraph(Region &scope) : scope(&scope) {}
+  ParameterUseDefGraph(Region *scope) : scope(scope) {}
 
   /// Map of parameter name to its declaration.
   DenseMap<StringAttr, ParamDeclaration> decls;

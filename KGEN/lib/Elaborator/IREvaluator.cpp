@@ -26,11 +26,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-  FuncOp func =
-      elaborator->getSymbolTable().read([name](const SymbolTable &symtab) {
-        return symtab.lookup<FuncOp>(name);
-      });
+  FuncOp func = elaborator->lookupConcreteFunction(symbol);
 
   // Now we can return the function body.
   return &func.getBodyRegion();
@@ -190,8 +186,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // Grab the module from the elaborator. This is a read operation of memory
   // that is not modified during elaboration, so no synchronization is needed.
-  auto module = cast<ModuleOp>(elaborator->getSymbolTable().get().getOp());
-  auto env = module->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName());
+  EnvAttr env = elaborator->getCompilationEnvAttr();
   assert(env && "expected an environment attribute on the module");
 
   auto name = dyn_cast<StringAttr>(op.getOperands().front());
@@ -249,8 +244,7 @@ FailureOr<TypedAttr>
 IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // Cheeky copy. The state of the symbol table right at this moment is
   // sufficient to produce a standalone object for the generator being JIT'd.
-  SymbolTable symtabCopy = elaborator->getSymbolTable().read(
-      [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
+  SymbolTable symtabCopy = elaborator->getSliceSymTab();
 
   // Slice out a stanalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
@@ -302,9 +296,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
     emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
     return failure();
   }
-  auto genOp = elaborator->getSymbolTable().read(
-      [name = symbol.getSymbol().getRootReference()](const SymbolTable &symtab)
-          -> GeneratorOp { return symtab.lookup<GeneratorOp>(name); });
+  auto genOp = elaborator->getSliceSymTab().lookup<GeneratorOp>(
+      symbol.getSymbol().getRootReference());
   assert(genOp && "expected a valid generator reference");
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the

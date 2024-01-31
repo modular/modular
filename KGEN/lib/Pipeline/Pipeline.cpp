@@ -80,9 +80,10 @@ void KGEN::buildElaborateModulePipeline(
     const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
     ElaboratorCompileAsmFn compileAsmFn,
     PackageLinkHandlerFn packageLinkHandlerFn) {
+  pm.addPass(createEliminateDeadSymbols());
   // At the end of the LIT lowering pipeline, pull in the bodies of constructs
   // that were already elaborated.
-  pm.addPass(createMaterializePackages(packageLinkHandlerFn));
+  pm.addPass(createMaterializePackages());
 
   // Erase debuginfo from all sources if compiling with no debuginfo.
   if (options.debugLevel == CompilationOptions::kNoDebug)
@@ -106,9 +107,9 @@ void KGEN::buildElaborateModulePipeline(
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   elaboratorOptions.diagAllFailures = options.emitAllElaboratorDiags;
-  pm.addPass(createElaborateGenerators(runtime, target, elaboratorOptions,
-                                       std::move(evaluatorExecutorFn),
-                                       std::move(compileAsmFn)));
+  pm.addPass(createElaborateGenerators(
+      runtime, target, elaboratorOptions, std::move(evaluatorExecutorFn),
+      std::move(compileAsmFn), std::move(packageLinkHandlerFn)));
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
@@ -218,4 +219,5 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   // At the end of the pipeline, externalize any functions that have been
   // precompiled so that they aren't sent to LLVM again.
   pm.addPass(createExternalizePrecompiledFunctions());
+  pm.addPass(createEliminateDeadSymbols());
 }

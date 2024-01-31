@@ -14,6 +14,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
+#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -35,6 +36,35 @@
 using namespace M;
 
 namespace {
+
+//===----------------------------------------------------------------------===//
+// ElaborateGenerators
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+static std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+  using namespace KGEN;
+  CompilationOptions options;
+  return createElaborateGenerators(
+      runtime, /*target=*/{}, /*options=*/{},
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
+                    TargetInfoAttr target, EmissionKind emissionKind) {
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    emissionKind, options);
+      },
+      [=, &runtime](PackageLinkOp link, TargetInfoAttr target) {
+        return loadAndElaborateBytecode(link, target, options, runtime);
+      });
+}
 
 //===----------------------------------------------------------------------===//
 // TestDataFlowPass
@@ -79,6 +109,32 @@ struct TestDataFlowPass
 // TestGeneratePreElaboratedBody
 //===----------------------------------------------------------------------===//
 
+/// Write the operation to bytecode and return it as a dense resource.
+static DenseResourceElementsAttr serializeToResource(Operation *op,
+                                                     const Twine &name) {
+  SmallVector<char> buffer;
+  llvm::raw_svector_ostream stream(buffer);
+  if (failed(mlir::writeBytecodeToFile(op, stream)))
+    return {};
+  return createResourceAttr(op->getContext(), buffer, name);
+}
+
+/// Generate a dummy module with the same function body.
+template <typename OpT>
+static OwningOpRef<ModuleOp> cloneIntoFakeModule(KGEN::LIT::FuncOp func) {
+  OpBuilder b(func.getContext());
+  OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
+  OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
+  auto fakeCompiledBody = fakeBuilder.create<OpT>(
+      func.getLoc(), b.getStringAttr(func.getSymName()), func.getSignature());
+  fakeCompiledBody.setPackageExported();
+
+  // Just clone the body in.
+  mlir::IRMapping map;
+  func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
+  return fakeModule;
+}
+
 /// This pass generates a kgen.func that clones the body and adds a
 /// "_elaborated" suffix to the name for all the specified lit.funcs in the
 /// module. It's used to test the logic in LowerLIT that handles pre-elaborated
@@ -113,21 +169,10 @@ struct TestGeneratePreElaboratedBody
           targets.push_back(target);
 
       OpBuilder b(func.getContext());
-      OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
-      OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
-      KGEN::FuncOp fakeCompiledBody = fakeBuilder.create<KGEN::FuncOp>(
-          func.getLoc(), b.getStringAttr(func.getSymName() + "_precompiled"),
-          func.getSignature(), KGEN::InlineLevel::Automatic);
-
-      // Just clone the body in.
-      mlir::IRMapping map;
-      func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
-
-      // Generate the bytecode for the module bytecode.
-      SmallVector<char> buffer;
-      llvm::raw_svector_ostream stream(buffer);
-      if (failed(mlir::writeBytecodeToFile(*fakeModule, stream)))
-        return signalPassFailure();
+      OwningOpRef<ModuleOp> fakeModule =
+          cloneIntoFakeModule<KGEN::GeneratorOp>(func);
+      OwningOpRef<ModuleOp> fakeCompiledModule =
+          cloneIntoFakeModule<KGEN::FuncOp>(func);
 
       // Externalize the function and attach the post elaboration metadata.
       func.getBody()->clear();
@@ -135,20 +180,27 @@ struct TestGeneratePreElaboratedBody
           .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
       StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
       func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
-      func.setPreElaborationName(fakeCompiledBody.getSymNameAttr());
-      func.setLinkageName(fakeCompiledBody.getSymNameAttr());
+      func.setPreElaborationNameAttr(func.getSymNameAttr());
+      func.setLinkageName(func.getSymNameAttr());
+
+      DenseResourceElementsAttr preElabBytecode = serializeToResource(
+          *fakeModule, func.getSymName() + "_generated_body_attr");
+      if (!preElabBytecode)
+        return signalPassFailure();
+      DenseResourceElementsAttr postElabBytecode = serializeToResource(
+          *fakeCompiledModule, func.getSymName() + "_generated_comp_attr");
+      if (!postElabBytecode)
+        return signalPassFailure();
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
-      auto bytecodeBufferAttr = createResourceAttr(
-          &getContext(), buffer, func.getSymName() + "_generated_body_attr");
       SmallVector<KGEN::PackageArchiveAttr> archives;
       for (TargetInfoAttr target : targets) {
         archives.push_back(KGEN::PackageArchiveAttr::get(
-            target, bytecodeBufferAttr, bytecodeBufferAttr));
+            target, postElabBytecode, postElabBytecode));
       }
       linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, bytecodeBufferAttr,
+          func.getLoc(), linkName, preElabBytecode,
           KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
           KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
     }
@@ -187,8 +239,8 @@ struct TestMaterializePackages
       OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
       OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
       KGEN::FuncOp fakeCompiledBody = fakeBuilder.create<KGEN::FuncOp>(
-          func.getLoc(), b.getStringAttr(func.getSymName() + "_precompiled"),
-          func.getSignature(), KGEN::InlineLevel::Automatic);
+          func.getLoc(), func.getSymNameAttr(), func.getSignature(),
+          KGEN::InlineLevel::Automatic);
 
       // Just clone the body in.
       mlir::IRMapping map;
@@ -300,6 +352,7 @@ int main(int argc, char **argv) {
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerLowerLITTypes();
+  KGEN::registerMaterializePackages();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
@@ -326,7 +379,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(llclOpts);
 
   mlir::registerPass(
-      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(*runtime); });
+      [&] { return createElaborateGeneratorsWithDefaultJIT(*runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(*runtime); });
   mlir::registerPass([&] { return KGEN::createInlineParametric(*runtime); });
   mlir::registerPass([&] { return KGEN::createAutomaticInline(*runtime); });
@@ -334,14 +387,6 @@ int main(int argc, char **argv) {
       [&] { return KGEN::createDeadArgumentElimination(*runtime); });
   mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(*runtime); });
-
-  // Register passes that require other arguments.
-  mlir::registerPass([&] {
-    return KGEN::createMaterializePackages(
-        [](KGEN::PackageLinkOp packageLink, TargetInfoAttr) {
-          return packageLink.getPreElaborationModuleAttr();
-        });
-  });
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};

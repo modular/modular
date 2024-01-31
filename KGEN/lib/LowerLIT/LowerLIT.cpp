@@ -396,6 +396,11 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
   llvm::append_range(inputParams, genParams);
 
   Operation *result;
+  // If the function has an alias name, rename it.
+  if (StringAttr newName = gen.getLinkageNameAttr()) {
+    renamedSymbols[gen.getSymNameAttr()] = newName;
+    gen.setSymName(newName);
+  }
   if (gen.isExternal()) {
     // Replace external functions with `kgen.extern.generator` ops.
     result = b.create<ExternGeneratorOp>(
@@ -403,14 +408,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
         ParamDeclArrayAttr::get(b.getContext(), {}), gen.getExportKindAttr(),
-        gen.getPreCompiledModuleRefAttr(), gen.getLinkageNameAttr());
+        gen.getPreCompiledModuleRefAttr());
   } else {
-    // If the function has an alias name, rename it.
-    if (StringAttr newName = gen.getLinkageNameAttr()) {
-      renamedSymbols[gen.getNameAttr()] = newName;
-      gen.setSymName(newName);
-    }
-
     // Directly lower since these operations are exactly identical right now.
     auto newGen = b.create<GeneratorOp>(
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
@@ -418,7 +417,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
         ParamDeclArrayAttr::get(b.getContext(), {}), gen.getDecoratorsAttr(),
         gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        gen.getLLVMMetadata(), PreservedAttr::get(TypeAttr::get(signature)));
+        gen.getLLVMMetadata(), PreservedAttr::get(TypeAttr::get(signature)),
+        /*preCompiledBodyRef=*/nullptr);
     result = newGen;
 
     // Move over the body.
