@@ -3546,12 +3546,13 @@ fn no_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     alias mask_shape = DimList()
     alias mask_type = DType.float32
-    let mask = NDBuffer[2, mask_shape, mask_type]()
+    let mask = NDBuffer[rank, mask_shape, mask_type]()
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
     try:
         with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
             cpu_fused_attention_impl[
+                rank,
                 rank,
                 input_0_static_shape,
                 input_1_static_shape,
@@ -3563,9 +3564,9 @@ fn no_mask_fused_attention_cpu[
                 v_type,
                 mask_type,
                 output_type,
-                False,  # transpose_k
-                False,  # add_attn_mask
-                False,  # add_causal_mask
+                transpose_k=False,
+                add_attn_mask=False,
+                add_causal_mask=False,
             ](output, q, k, v, mask, scale_f32, causal_mask)
     except e:
         ctx.set_to_error(e)
@@ -3576,6 +3577,7 @@ fn no_mask_fused_attention_cpu[
 @export
 fn with_mask_fused_attention_cpu[
     rank: Int,
+    attn_mask_rank: Int,
     input_0_static_shape: DimList,
     input_1_static_shape: DimList,
     input_2_static_shape: DimList,
@@ -3593,7 +3595,7 @@ fn with_mask_fused_attention_cpu[
     q: NDBuffer[rank, input_0_static_shape, q_type],
     k: NDBuffer[rank, input_1_static_shape, k_type],
     v: NDBuffer[rank, input_2_static_shape, v_type],
-    attn_mask: NDBuffer[2, input_3_static_shape, attn_mask_type],
+    attn_mask: NDBuffer[attn_mask_rank, input_3_static_shape, attn_mask_type],
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[1, input_4_static_shape, scale_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
@@ -3627,6 +3629,7 @@ fn with_mask_fused_attention_cpu[
         with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
             cpu_fused_attention_impl[
                 rank,
+                attn_mask_rank,
                 input_0_static_shape,
                 input_1_static_shape,
                 input_2_static_shape,
@@ -3637,9 +3640,9 @@ fn with_mask_fused_attention_cpu[
                 v_type,
                 attn_mask_type,
                 output_type,
-                False,  # transpose_k
-                True,  # add_attn_mask
-                False,  # add_causal_mask
+                transpose_k=False,
+                add_attn_mask=True,
+                add_causal_mask=False,
             ](output, q, k, v, attn_mask, scale_f32, causal_mask)
     except e:
         ctx.set_to_error(e)
