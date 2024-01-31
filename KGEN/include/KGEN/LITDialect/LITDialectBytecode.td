@@ -88,7 +88,9 @@ def ArgParamListAttr : DialectAttribute<(attr
   StringAttrArray:$names,
   EnumAttrArray<"PassingKind">:$passingKinds,
   TypedAttrArray:$defaultPos,
-  TypedAttrArray:$defaultKwOnly
+  TypedAttrArray:$defaultKwOnly,
+  IntegralAttrArray<"size_t">:$variadicIndices,
+  IntegralAttrArray<"size_t">:$packIndices
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr

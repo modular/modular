@@ -578,9 +578,11 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                            defaultKwOnlyArgs),
+                            defaultKwOnlyArgs, /*variadicIndices=*/{},
+                            /*packIndices=*/{}),
       ArgParamListAttr::get(ctx, paramNames, paramPassingKinds,
-                            defaultPosParams, defaultKwOnlyParams),
+                            defaultPosParams, defaultKwOnlyParams,
+                            /*variadicIndices=*/{}, /*packIndices=*/{}),
       numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,

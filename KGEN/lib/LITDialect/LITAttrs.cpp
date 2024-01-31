@@ -38,19 +38,21 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 ArgParamListAttr ArgParamListAttr::get(MLIRContext *context) {
-  return ArgParamListAttr::get(context, {}, {}, {}, {});
+  return ArgParamListAttr::get(context, {}, {}, {}, {}, {}, {});
 }
 
 ArgParamListAttr ArgParamListAttr::get(MLIRContext *context,
                                        ArrayRef<StringAttr> names,
                                        ArrayRef<PassingKind> passingKinds) {
-  return ArgParamListAttr::get(context, names, passingKinds, {}, {});
+  return ArgParamListAttr::get(context, names, passingKinds, {}, {}, {}, {});
 }
 
 LogicalResult ArgParamListAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> names,
     ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
-    ArrayRef<TypedAttr> defaultKwOnly) {
+    ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<size_t> variadicIndices,
+    ArrayRef<size_t> packIndices) {
+  // TODO: verify varidic Indices
   if (names.size() != passingKinds.size()) {
     return emitError()
            << "number of argument/parameter names and passing kinds must match";
@@ -65,7 +67,8 @@ ArgParamListAttr
 ArgParamListAttr::cloneWith(ArrayRef<StringAttr> names,
                             ArrayRef<PassingKind> passingKinds) const {
   return ArgParamListAttr::get(getContext(), names, passingKinds,
-                               getDefaultPos(), getDefaultKwOnly());
+                               getDefaultPos(), getDefaultKwOnly(),
+                               /*variadicIndices=*/{}, /*packIndices=*/{});
 }
 
 //===----------------------------------------------------------------------===//
@@ -105,9 +108,9 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   if (numArgs < newDefaultPosArgs.size())
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
-  auto newArgListAttrs =
-      ArgParamListAttr::get(getContext(), newArgNames, newArgPassingKind,
-                            newDefaultPosArgs, getDefaultKwOnlyArgs());
+  auto newArgListAttrs = ArgParamListAttr::get(
+      getContext(), newArgNames, newArgPassingKind, newDefaultPosArgs,
+      getDefaultKwOnlyArgs(), /*variadicIndices=*/{}, /*packIndices=*/{});
   return get(newArgListAttrs, getParamListAttrs(),
              getNumImplicitLifetimeDecls());
 }
@@ -131,9 +134,9 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     }
   }
 
-  auto newParamAttrs =
-      ArgParamListAttr::get(getContext(), newParamNames, newParamPassingKinds,
-                            newDefaultPosParams, newDefaultKwOnlyParams);
+  auto newParamAttrs = ArgParamListAttr::get(
+      getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
+      newDefaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
