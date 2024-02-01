@@ -7,7 +7,7 @@
 from tensor import TensorShape
 
 from max.graph import ops
-from max.graph.type import ElementType
+from max.graph.type import Dim, ElementType
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
@@ -66,7 +66,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
         MOTensor(DType.int64, rank - 1),
     )
 
-    var squeezed_dims = DynamicVector[Int64]()
+    var squeezed_dims = DynamicVector[Dim]()
     for i in range(rank):
         if i != axis:
             squeezed_dims.push_back(v_type.dims[i])
@@ -95,7 +95,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         MOTensor(DType.int64, v_type.rank() + 1),
     )
 
-    var dims = DynamicVector[Int64]()
+    var dims = DynamicVector[Dim]()
     for i in range(v_type.rank()):
         if i == axis:
             dims.push_back(1)
@@ -107,7 +107,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
 
 
 fn reshape(
-    v: Symbol, shape: Symbol, out_dims: DynamicVector[Int64]
+    v: Symbol, shape: Symbol, out_dims: DynamicVector[Dim]
 ) raises -> Symbol:
     var g = v.graph()
     return g.op(
@@ -119,11 +119,11 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
     var g = v.graph()
 
     var shape_t = shape.tensor_type()
-    if (shape_t.rank() != 1) or (shape_t.dims[0] == dyn()):
+    if (shape_t.rank() != 1) or (not shape_t.dims[0].is_static()):
         raise "reshape shape requires static shape shape"
-    var out_dims = DynamicVector[Int64]()
-    for _ in range(shape_t.dims[0]):
-        out_dims.append(dyn())
+    var out_dims = DynamicVector[Dim]()
+    for _ in range(shape_t.dims[0].num_elements()):
+        out_dims.append(Dim.dynamic())
 
     return reshape(v, shape, out_dims)
 
@@ -131,9 +131,9 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
 def reshape(v: Symbol, dims: DynamicVector[Int64]) -> Symbol:
     var g = v.graph()
 
-    var out_dims = DynamicVector[Int64]()
+    var out_dims = DynamicVector[Dim]()
     for i in range(len(dims)):
-        out_dims.append(dims[i] if dims[i] >= 0 else dyn())
+        out_dims.append(Dim.dynamic() if dims[i] < 0 else Dim.static(dims[i]))
 
     return reshape(v, g.vector[DType.int64](dims), out_dims)
 
@@ -166,7 +166,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     if x < 0 or x >= input_type.rank() or y < 0 or y >= input_type.rank():
         raise "transpose dim outside range"
 
-    var dims = DynamicVector[Int64]()
+    var dims = DynamicVector[Dim]()
     let ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.push_back(input_type.dims[i])

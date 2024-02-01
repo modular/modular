@@ -55,12 +55,9 @@ struct Symbol(CollectionElement, Stringable):
     # Type accessors
     # ===------------------------------------------------------------------=== #
 
-    fn tensor_type(self) -> MOTensor:
+    fn tensor_type(self) raises -> MOTensor:
         # TODO: Assert that this is an actual Tensor type, raise otherwise.
-        let ranked = capi.tensor_type_is_ranked(self.s)
-        let dims = capi.tensor_type_get_shape(self.s)
-        let dtype = capi.tensor_type_get_dtype(self.s)
-        return MOTensor(ElementType(dtype), dims, ranked)
+        return MOTensor.from_mlir(self.s.type())
 
     # ===------------------------------------------------------------------=== #
     # Stringable trait

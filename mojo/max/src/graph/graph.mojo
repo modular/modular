@@ -8,7 +8,7 @@
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
-from .type import dyn, MOType, MOTensor, TypeTuple
+from .type import MOType, MOTensor, TypeTuple
 
 
 @value

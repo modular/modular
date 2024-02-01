@@ -9,6 +9,7 @@
 
 
 from tensor import Tensor, TensorShape
+from max.graph.type import Dim
 
 
 # ===----------------------------------------------------------------------=== #
@@ -32,9 +33,10 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
     let new_shape = concat((shape[:last_d], back_dims))
 
     var new_dims = interleaved_t.dims
-    new_dims[last_d] = dyn() if (new_dims[last_d] == dyn()) else (
-        new_dims[last_d] // 2
-    )
+    let last_dim = new_dims[last_d]
+    new_dims[last_d] = Dim.static(
+        last_dim.num_elements() // 2
+    ) if last_dim.is_static() else Dim.dynamic()
     new_dims.append(2)
 
     return reshape(interleaved, new_shape, new_dims)

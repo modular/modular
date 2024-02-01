@@ -153,37 +153,99 @@ fn dim_type_new_dynamic() -> Int64:
 
 
 fn tensor_type_new(
-    m: mlir.Module, dtype: mlir.Type, dims: DynamicVector[Int64], ranked: Bool
+    m: mlir.Module,
+    dtype: mlir.Type,
+    dims: DynamicVector[mlir.Attribute],
+    ranked: Bool,
 ) -> mlir.Type:
-    return cfunc[
+    let result = cfunc[
         fn (
-            mlir.Module.c_type, mlir.Type.c_type, Bool, Pointer[Int64], Int32
+            mlir.Module.c_type,
+            mlir.Type.c_type,
+            Bool,
+            Pointer[mlir.Attribute.c_type],
+            Int32,
         ) -> mlir.Type.c_type
     ]("MAXG_tensorTypeNew")(
-        m.c, dtype.c, ranked, Pointer[Int64](dims.data.value), len(dims)
+        m.c,
+        dtype.c,
+        ranked,
+        Pointer[mlir.Attribute](dims.data.value).bitcast[
+            mlir.Attribute.c_type
+        ](),
+        len(dims),
     )
+    _ = dims
+    return result
 
 
-fn tensor_type_get_dtype(v: mlir.Value) -> DType:
-    let dtype = cfunc[fn (mlir.Value.c_type) -> UInt8](
+fn tensor_type_get_dtype(v: mlir.Type) -> DType:
+    let dtype = cfunc[fn (mlir.Type.c_type) -> UInt8](
         "MAXG_tensorTypeGetDType"
     )(v.c)
     return DType._from_ui8(dtype.value)
 
 
-fn tensor_type_get_shape(v: mlir.Value) -> DynamicVector[Int64]:
-    var rank: Int32 = 0
-    let dims = cfunc[fn (mlir.Value.c_type, Pointer[Int32]) -> Pointer[Int64]](
-        "MAXG_tensorTypeGetShape"
-    )(v.c, Pointer.address_of(rank))
-    var dimsVec = DynamicVector[Int64]()
-    for i in range(rank):
-        dimsVec.append(dims[i])
-    return dimsVec
+fn tensor_type_is_ranked(v: mlir.Type) -> Bool:
+    return cfunc[fn (mlir.Type.c_type) -> Bool]("MAXG_tensorTypeIsRanked")(v.c)
 
 
-fn tensor_type_is_ranked(v: mlir.Value) -> Bool:
-    return cfunc[fn (mlir.Value.c_type) -> Bool]("MAXG_tensorTypeIsRanked")(v.c)
+fn tensor_type_get_rank(t: mlir.Type) -> Int64:
+    return cfunc[fn (mlir.Type.c_type) -> Int64]("MAXG_tensorTypeGetRank")(t.c)
+
+
+fn tensor_type_get_dim(t: mlir.Type, dim: Int64) -> mlir.Attribute:
+    return cfunc[fn (mlir.Type.c_type, Int64) -> mlir.Attribute.c_type](
+        "MAXG_tensorTypeShapeGetDim"
+    )(t.c, dim)
+
+
+fn dim_new_dynamic(ctx: mlir.Context) -> mlir.Attribute:
+    return cfunc[fn (mlir.Context.c_type) -> mlir.Attribute.c_type](
+        "MAXG_dimNewDynamic"
+    )(ctx.c)
+
+
+fn dim_new_static(ctx: mlir.Context, dim: Int64) -> mlir.Attribute:
+    return cfunc[fn (mlir.Context.c_type, Int64) -> mlir.Attribute.c_type](
+        "MAXG_dimNewStatic"
+    )(ctx.c, dim)
+
+
+fn dim_new_symbolic(ctx: mlir.Context, name: StringRef) -> mlir.Attribute:
+    return cfunc[fn (mlir.Context.c_type, StringRef) -> mlir.Attribute.c_type](
+        "MAXG_dimNewSymbolic"
+    )(ctx.c, name)
+
+
+fn dim_is_dynamic(a: mlir.Attribute) -> Bool:
+    return cfunc[fn (mlir.Attribute.c_type) -> Bool]("MAXG_dimIsDynamic")(a.c)
+
+
+fn dim_is_static(a: mlir.Attribute) -> Bool:
+    return cfunc[fn (mlir.Attribute.c_type) -> Bool]("MAXG_dimIsStatic")(a.c)
+
+
+fn dim_is_symbolic(a: mlir.Attribute) -> Bool:
+    return cfunc[fn (mlir.Attribute.c_type) -> Bool]("MAXG_dimIsSymbolic")(a.c)
+
+
+fn dim_is_symbolic_expression(a: mlir.Attribute) -> Bool:
+    return cfunc[fn (mlir.Attribute.c_type) -> Bool](
+        "MAXG_dimIsSymbolicExpression"
+    )(a.c)
+
+
+fn dim_static_value(a: mlir.Attribute) -> Int64:
+    return cfunc[fn (mlir.Attribute.c_type) -> Int64]("MAXG_dimStaticValue")(
+        a.c
+    )
+
+
+fn dim_symbolic_name(a: mlir.Attribute) -> mlir.Identifier:
+    return cfunc[fn (mlir.Attribute.c_type) -> mlir.Identifier.c_type](
+        "MAXG_dimSymbolicName"
+    )(a.c)
 
 
 fn list_type_new(m: mlir.Module, eltype: mlir.Type) -> mlir.Type:

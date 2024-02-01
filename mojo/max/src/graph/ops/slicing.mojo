@@ -33,7 +33,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
             + String(input_type.rank())
         )
 
-    var dims = DynamicVector[Int64]()
+    var dims = DynamicVector[Dim]()
     for i in range(input_type.rank()):
         if i == axis:
             for j in range(indices_type.rank()):
@@ -58,7 +58,7 @@ def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
     if axis < 0:
         axis = rank + axis
 
-    var slice_dims = DynamicVector[Int64]()
+    var slice_dims = DynamicVector[Dim]()
     var start = DynamicVector[Symbol]()
     var stop = DynamicVector[Symbol]()
     var step = DynamicVector[Int64]()
@@ -87,10 +87,10 @@ def slice(input: Symbol, *slices: SymbolTuple) -> Symbol:
     let input_type = input.tensor_type()
     let input_shape = shape_of(input)
 
-    var dims = DynamicVector[Int64]()
+    var dims = DynamicVector[Dim]()
     for slice in slices:
         # TODO: This can actually be calculated.
-        dims.push_back(dyn())
+        dims.push_back(Dim.dynamic())
     for i in range(len(slices), input_type.rank()):
         dims.push_back(input_type.dims[i])
 
@@ -138,7 +138,7 @@ def split[
     for i in range(n):
         split_sizes.append(sizes[i])
         var out_dims = x_type.dims
-        out_dims[norm_axis] = sizes[i]
+        out_dims[norm_axis] = Dim.static(sizes[i])
         out_types.append(MOTensor(x_type.dtype, out_dims))
 
     return g.nvop(
@@ -170,7 +170,7 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
             + String(v0_type.rank())
         )
 
-    var concat_dim: Int64 = 0
+    var concat_dim: Dim = 0
     for i in range(len(values)):
         let v_type = values[i].tensor_type()
         if v_type.rank() != rank:
@@ -182,17 +182,22 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
                 + "]="
                 + String(v_type.rank())
             )
-        if concat_dim == dyn() or v_type.dims[norm_axis] == dyn():
-            concat_dim = dyn()
+        let dim = v_type.dims[norm_axis]
+        if concat_dim.is_dynamic() or dim.is_dynamic():
+            concat_dim = Dim.dynamic()
+        elif dim.is_symbolic():
+            raise "Concat doesn't yet support symbolic dimensions"
         else:
-            concat_dim += v_type.dims[norm_axis]
+            concat_dim = Dim.static(
+                concat_dim.num_elements() + dim.num_elements()
+            )
 
     var concat_args = DynamicVector[Symbol]()
     concat_args.push_back(g.scalar(Int64(norm_axis)))
     for i in range(len(values)):
         concat_args.push_back(values[i])
 
-    var dims = DynamicVector[Int64](rank)
+    var dims = DynamicVector[Dim](rank)
     for i in range(rank):
         dims.push_back(v0_type.dims[i])
     dims[norm_axis] = concat_dim

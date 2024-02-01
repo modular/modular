@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max.graph.type import ElementType, MOTensor, dyn
+from max.graph.type import ElementType, MOTensor
 
 
 # ===----------------------------------------------------------------------=== #

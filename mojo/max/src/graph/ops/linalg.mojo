@@ -6,7 +6,8 @@
 
 from math import max
 
-from max.graph.type import ElementType, MOTensor, dyn
+from max.graph.type import Dim, ElementType, MOTensor
+from max.graph.ops.casting import reshape
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -22,7 +23,7 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     let lhs_type = broadcast_lhs.tensor_type()
     let rhs_type = broadcast_rhs.tensor_type()
-    var dims = DynamicVector[Int64]()
+    var dims = DynamicVector[Dim]()
     for i in range(lhs_type.rank() - 1):
         dims.push_back(lhs_type.dims[i])
     dims.push_back(rhs_type.dim(-1))
@@ -63,11 +64,11 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
         MOTensor(DType.int64, broadcast_rank - 2),
     )
 
-    var lhs_final_dims = DynamicVector[Int64]()
-    var rhs_final_dims = DynamicVector[Int64]()
+    var lhs_final_dims = DynamicVector[Dim]()
+    var rhs_final_dims = DynamicVector[Dim]()
     for _ in range(broadcast_rank - 2):
-        lhs_final_dims.push_back(dyn())
-        rhs_final_dims.push_back(dyn())
+        lhs_final_dims.push_back(Dim.dynamic())
+        rhs_final_dims.push_back(Dim.dynamic())
     lhs_final_dims.push_back(lhs_type.dim(-2))
     lhs_final_dims.push_back(lhs_type.dim(-1))
     rhs_final_dims.push_back(rhs_type.dim(-2))
@@ -105,18 +106,18 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
         (shape_of(lhs)[: lhs_type.rank() - 1], dims(rhs, 1, 2))
     )
 
-    var final_dims = DynamicVector[Int64]()
+    var final_dims = DynamicVector[Dim]()
     for i in range(lhs_type.rank() - 1):
         final_dims.push_back(lhs_type.dim(i))
     final_dims.push_back(rhs_type.dim(-1))
 
-    var matmul_dims = DynamicVector[Int64]()
-    matmul_dims.append(dyn())
+    var matmul_dims = DynamicVector[Dim]()
+    matmul_dims.append(Dim.dynamic())
     matmul_dims.append(lhs_type.dim(-1))
     let matmul_out = g.op(
         "mo.matmul",
         (reshape(lhs, reshape_shape, matmul_dims), rhs),
-        MOTensor(lhs_type.dtype, dyn(), rhs_type.dim(-1)),
+        MOTensor(lhs_type.dtype, Dim.dynamic(), rhs_type.dim(-1)),
     )
 
     return reshape(matmul_out, final_shape, final_dims)

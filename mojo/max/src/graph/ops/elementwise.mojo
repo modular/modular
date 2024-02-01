@@ -6,7 +6,7 @@
 
 from math import max
 
-from max.graph.type import ElementType, MOTensor, dyn
+from max.graph.type import Dim, ElementType, MOTensor
 
 
 # ===----------------------------------------------------------------------=== #
@@ -38,7 +38,7 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     #   1. The smaller shape is filled with 1 from the left
     #   2. Dimensions are promoted by the rule 1 -> N -> dynamic
     # TODO: Raise error if static dumensions don't match and can't be promoted.
-    var broadcast_dims = DynamicVector[Int64]()
+    var broadcast_dims = DynamicVector[Dim]()
     let larger = lhs_type if lhs_rank > rhs_rank else rhs_type
     let smaller = rhs_type if lhs_rank > rhs_rank else lhs_type
     let offset = larger.rank() - smaller.rank()
@@ -48,7 +48,7 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
         let d1 = larger.dims[i]
         let d2 = smaller.dims[i - offset]
         broadcast_dims.push_back(
-            d1 if d1 == d2 or d2 == 1 else (d2 if d1 == 1 else dyn())
+            d1 if d1 == d2 or d2 == 1 else (d2 if d1 == 1 else Dim.dynamic())
         )
 
     let broadcast_lhs = g.op(
