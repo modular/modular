@@ -77,6 +77,27 @@ fn test_pytorch_model2() raises:
     print(compiled_model.num_model_outputs())
 
 
+fn test_model_execute() raises:
+    # CHECK: test_pytorch_model2
+    print("====test_pytorch_model2")
+
+    let args = argv()
+    let model_path = args[1]
+
+    let session = InferenceSession()
+    var config = LoadOptions()
+    config.add_input_spec("x", TensorSpec(DType.float32, 3, 100, 100))
+    let model = session.load_model(Path(model_path), config)
+    var input_tensor = Tensor[DType.float32](3, 100, 100)
+    input_tensor._to_buffer().fill(-1)
+    let outputs = model.execute("x", input_tensor)
+    let output_tensor = outputs.get[DType.float32]("result0")
+    var expected_output = Tensor[DType.float32](3, 100, 100)
+    expected_output._to_buffer().fill(0)
+    assert_equal(output_tensor, expected_output)
+
+
 fn main() raises:
     test_pytorch_model()
     test_pytorch_model2()
+    test_model_execute()
