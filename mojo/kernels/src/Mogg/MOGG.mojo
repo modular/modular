@@ -864,16 +864,13 @@ fn broadcast_to_shape[
     target_shape_buf: NDBuffer[
         1, DimList.create_unknown[1](), target_shape_type
     ],
-) -> StaticIntTuple[output_rank]:
-    # TODO(#17512)
-    debug_assert(
-        output_rank == target_shape_buf.dim(0),
-        "output rank must match target shape",
-    )
-    debug_assert(
-        input_rank <= output_rank,
-        "input rank must not exceed output rank",
-    )
+) raises -> StaticIntTuple[output_rank]:
+    if output_rank != target_shape_buf.dim(0):
+        raise Error(
+            "[broadcast_to] requires (len(target_shape) == output_rank)"
+        )
+    if input_rank > output_rank:
+        raise Error("[broadcast_to] requires (input_rank <= output_rank)")
 
     # move the output shape from buffer into a static int tuple
     var output_shape = StaticIntTuple[output_rank]()
@@ -887,10 +884,11 @@ fn broadcast_to_shape[
         let output_axis = output_rank - i - 1
         let input_dim = input_buf.dim(input_axis)
         let output_dim = output_shape[output_axis]
-        debug_assert(
-            input_dim == 1 or input_dim == output_dim,
-            "input dim must be either 1 or equal to corresponding output dim",
-        )
+        if input_dim != 1 and input_dim != output_dim:
+            raise Error(
+                "[broadcast_to] input dim must be either 1 or equal to"
+                " corresponding output dim"
+            )
     return output_shape
 
 
@@ -2988,34 +2986,30 @@ fn split_ith_output_shape[
     input_buf: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     split_sizes_buf: NDBuffer[1, DimList.create_unknown[1](), split_size_type],
     split_axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-) -> StaticIntTuple[rank]:
+) raises -> StaticIntTuple[rank]:
     # extract relevant hyper parameters
-    # TODO(#17512)
-    debug_assert(
-        0 <= output_idx and output_idx < split_sizes_buf.size(),
-        "output index must be within range [0, len(split_sizes))",
-    )
+    if output_idx < 0 or split_sizes_buf.size() <= output_idx:
+        raise Error(
+            "[split] output index must be within range [0, len(split_sizes))"
+        )
     let output_split_size = int(split_sizes_buf[output_idx])
 
     var split_axis = int(split_axis_buf[0])
     if split_axis < 0:
         split_axis += rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= split_axis and split_axis < rank,
-        "normalized split axis must be within range [0, rank)",
-    )
+    if split_axis < 0 or rank <= split_axis:
+        raise Error("[split] normalized axis must be within range [0, rank)")
 
     var split_sizes_sum = 0
 
     @unroll
     for i in range(split_sizes_buf.dim(0)):
         split_sizes_sum += int(split_sizes_buf[i])
-    # TODO(#17512)
-    debug_assert(
-        split_sizes_sum == input_buf.dim(split_axis),
-        "sum of split sizes must be equal to input dimension at split axis",
-    )
+    if split_sizes_sum != input_buf.dim(split_axis):
+        raise Error(
+            "[split] sum of split sizes must match input dimension at split"
+            " axis"
+        )
 
     # compute and return the output shape
     var output_shape = input_buf.get_shape()
