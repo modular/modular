@@ -75,7 +75,7 @@ from NN.Concat import (
     variadic_list_to_vector,
 )
 from NN.Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
-from NN.Conv import pack_conv_filter as _pack_conv_filter
+from NN.Conv import pack_filter as _pack_conv_filter
 from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
 from NN.ConvTranspose import conv_transpose as conv_transpose_impl
 from NN.ConvTranspose import conv_transpose_shape
@@ -3432,15 +3432,9 @@ fn pack_conv_filter_shape[
         The output shape.
     """
 
-    @parameter
-    if output_shape.all_known[4]():
-        return _pack_conv_filter_shape[
-            filter_type, output_shape.get[2](), single_thread_blocking_override
-        ](filter_buf, num_groups)
-    else:
-        return _pack_conv_filter_shape[
-            filter_type, single_thread_blocking_override
-        ](filter_buf, num_groups)
+    return _pack_conv_filter_shape[single_thread_blocking_override](
+        filter_buf, num_groups
+    )
 
 
 # ===----------------------------------------------------------------------===#
