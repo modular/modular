@@ -8,8 +8,6 @@
 from math import div_ceil, iota, max, min, sqrt, neginf, exp, align_down
 from algorithm import (
     elementwise,
-    unroll,
-    vectorize,
     unswitch,
 )
 from BatchedMatmul import batched_matmul
@@ -44,13 +42,6 @@ from gpu.memory import AddressSpace
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===----------------------------------------------------------------------===#
-
-
-@parameter
-fn null_bmm_lambda[
-    type: DType, width: Int, rank: Int
-](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width]):
-    pass
 
 
 fn fused_attention[
@@ -224,11 +215,9 @@ fn fused_attention[
             fuse_elementwise_fn,
             fuse_softmax,
         ](
-            rebind[NDBuffer[rank, DimList.create_unknown[rank](), score_type]](
-                score
-            ),
-            rebind[NDBuffer[rank, DimList.create_unknown[rank](), q_type]](q),
-            rebind[NDBuffer[rank, DimList.create_unknown[rank](), k_type]](k),
+            score.make_dims_unknown(),
+            q.make_dims_unknown(),
+            k.make_dims_unknown(),
             softmax_closure,
         )
 
@@ -255,13 +244,9 @@ fn fused_attention[
         False,
         False,
     ](
-        rebind[NDBuffer[rank, DimList.create_unknown[rank](), output_type]](
-            output
-        ),
-        rebind[NDBuffer[rank, DimList.create_unknown[rank](), score_type]](
-            score
-        ),
-        rebind[NDBuffer[rank, DimList.create_unknown[rank](), v_type]](v),
+        output.make_dims_unknown(),
+        score.make_dims_unknown(),
+        v.make_dims_unknown(),
         bmm_null_rowwise_epilogue,
     )
 
@@ -565,7 +550,7 @@ fn flash_attention_kernel[
     batch_size: _uint32,
     seq_len: _uint32,
 ):
-    # To ressemble cuda float4.
+    # To resemble CUDA float4.
     alias simd_size = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
     alias float_alignment = alignof[DType.float32]()
@@ -895,7 +880,7 @@ fn flash_attention_kernel_flexible_seqlen[
     seq_len: _uint32,
     num_keys: _uint32,
 ):
-    # To ressemble cuda float4.
+    # To resemble CUDA float4.
     alias simd_size = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
     alias float_alignment = alignof[DType.float32]()
@@ -1273,7 +1258,7 @@ fn _naive_attention_with_transpose[
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
     Layouts:
-        q: BSHD.
+        q: BSHD
         k, v: BKHD
         output: BSHD
         mask: SK
@@ -1336,50 +1321,24 @@ fn _naive_attention_with_transpose[
     o_perm[3] = 3
 
     try:
-        transpose[
-            4,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            type,
-        ](qt, q, q_perm.data)
+        transpose(qt, q, q_perm.data)
     except e:
         trap(e)
 
     try:
-        transpose[
-            4,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            type,
-        ](kt, k, k_perm.data)
+        transpose(kt, k, k_perm.data)
     except e:
         trap(e)
 
     try:
-        transpose[
-            4,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            type,
-        ](vt, v, q_perm.data)
+        transpose(vt, v, q_perm.data)
     except e:
         trap(e)
 
-    _naive_attention[type, transpose_k](
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](ot),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](qt),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](kt),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](vt),
-        mask,
-        scale,
-    )
+    _naive_attention[type, transpose_k](ot, qt, kt, vt, mask, scale)
+
     try:
-        transpose[
-            4,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            type,
-        ](output, ot, o_perm.data)
+        transpose(output, ot, o_perm.data)
     except e:
         trap(e)
 
@@ -1419,11 +1378,7 @@ fn _naive_attention[
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
-    batched_matmul[4, type, type, type, False, transpose_k](
-        score,
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-    )
+    batched_matmul[4, type, type, type, False, transpose_k](score, q, k)
 
     @parameter
     @always_inline
@@ -1441,15 +1396,11 @@ fn _naive_attention[
         softmax[type, simd_size, 4, DimList.create_unknown[4]()](
             score,
             score,
-            3,
+            axis=3,
         )
     except e:
         trap(e)
 
-    batched_matmul[4, type, type, type, False, False](
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-        score,
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
-    )
+    batched_matmul[4, type, type, type, False, False](output, score, v)
 
     score_ptr.free()

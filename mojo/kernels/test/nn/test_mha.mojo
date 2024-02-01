@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from math import div_ceil, min, abs, rsqrt, isclose
 from memory.buffer import NDBuffer, _compute_nd_index
@@ -12,18 +12,10 @@ from random import rand
 from runtime.llcl import Runtime
 from utils.index import Index
 from utils.list import DimList
+from testing import assert_true
+
 from BatchedMatmul import batched_matmul
 from NN.Softmax import softmax
-
-from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
-
 from NN.MultiHeadAttention import fused_attention, _naive_attention
 
 
@@ -74,10 +66,7 @@ fn is_ndbuffer_close[
 alias type = DType.float32
 
 
-# CHECK-LABEL: test_mha
-fn test() raises:
-    print("test_mha")
-
+def test_mha():
     # Query, key, value dimensions.
     alias batch_size = 1
     alias num_heads = 12
@@ -87,9 +76,7 @@ fn test() raises:
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
 
     # Q, K, V shapes.
-    alias BSHD = DimList(batch_size, seq_len, num_heads, depth)
     alias BHSD = DimList(batch_size, num_heads, seq_len, depth)
-    alias BHDS = DimList(batch_size, num_heads, depth, seq_len)
 
     alias qkv_size = batch_size * num_heads * seq_len * depth
 
@@ -102,9 +89,9 @@ fn test() raises:
     let mha_output_ptr = DTypePointer[type].alloc(qkv_size)
 
     # Q, K, V are randomly initialized.
-    rand[type](q_ptr, qkv_size)
-    rand[type](k_ptr, qkv_size)
-    rand[type](v_ptr, qkv_size)
+    rand(q_ptr, qkv_size)
+    rand(k_ptr, qkv_size)
+    rand(v_ptr, qkv_size)
 
     # Mask is set for half of the sequence.
     for b in range(seq_len):
@@ -131,10 +118,10 @@ fn test() raises:
         let k = NDBuffer[4, DimList.create_unknown[4](), type](k_ptr, k_shape)
 
         _naive_attention[type, transpose_k](
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-            rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
+            output.make_dims_unknown(),
+            q.make_dims_unknown(),
+            k.make_dims_unknown(),
+            v.make_dims_unknown(),
             mask,
             scale,
         )
@@ -156,21 +143,14 @@ fn test() raises:
             add_attn_mask=True,
         ](mha_output, q, k, v, mask, scale, Float32())
 
-    test_body[False]()
-    # CHECK: Transpose_k = False succeeds
-    if is_ndbuffer_close[4, type](
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](mha_output),
-    ):
-        print("Transpose_k = False succeeds")
+        assert_true(
+            is_ndbuffer_close(
+                output.make_dims_unknown(), mha_output.make_dims_unknown()
+            )
+        )
 
-    test_body[True]()
-    # CHECK: Transpose_k = True succeeds
-    if is_ndbuffer_close[4, type](
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](mha_output),
-    ):
-        print("Transpose_k = True succeeds")
+    test_body[transpose_k=False]()
+    test_body[transpose_k=True]()
 
     q_ptr.free()
     k_ptr.free()
@@ -181,4 +161,4 @@ fn test() raises:
 
 
 def main():
-    test()
+    test_mha()
