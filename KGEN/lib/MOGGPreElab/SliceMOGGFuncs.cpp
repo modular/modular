@@ -193,7 +193,14 @@ private:
     KGEN::SymbolConstantAttr symbol = call.getCallee();
     FlatSymbolRefAttr flatSym = cast<FlatSymbolRefAttr>(symbol.getSymbol());
     auto calledFunc =
-        cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
+        dyn_cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
+
+    // Could also be a post elaborated function or an ExternalGeneratorOp.
+    if (!calledFunc)
+      return;
+
+    if (symbol.getParamValues().empty())
+      return;
 
     SmallVector<TypedAttr> newParams;
     for (TypedAttr param : symbol.getParamValues())
