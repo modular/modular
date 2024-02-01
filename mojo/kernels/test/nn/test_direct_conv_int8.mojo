@@ -135,35 +135,18 @@ fn test[
         )
 
     # Reference: naive conv
-    Naive2dConvolution[
-        DimList.create_unknown[4](),  # Output Shape.
-        DimList.create_unknown[4](),  # Filter Shape,
-        DimList.create_unknown[4](),  # Input Shape
-        input_type,  # Data type.
-        filter_type,
-        output_type,
-        Image2DLayout.NHWC,  # Data Layout.
-        Image2DLayout.RSCF,  # Filter Layout.
-    ].run(
-        ImageData[
-            DimList.create_unknown[4](),
-            output_type,
-            Image2DLayout.NHWC,
-        ](output_ref),
-        ImageData[
-            DimList.create_unknown[4](),
-            input_type,
-            Image2DLayout.NHWC,
-        ](input),
-        ImageData[
-            DimList.create_unknown[4](),
-            filter_type,
-            Image2DLayout.RSCF,
-        ](filter),
+    Naive2dConvolution[output_type, input_type, filter_type].run(
+        output_ref_ptr,
+        input_ptr,
+        filter_ptr,
+        Index(N, 1, HO, WO, F),
+        Index(N, 1, H, W, C),
+        Index(1, R, S, C, F),
+        Index(0, 0),
         pad_h,
         pad_w,
-        stride,
-        dilation,
+        Index(1, stride[0], stride[1]),
+        Index(1, dilation[0], dilation[1]),
         conv_shape.num_groups,
     )
 

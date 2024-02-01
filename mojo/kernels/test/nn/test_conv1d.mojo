@@ -87,25 +87,15 @@ fn test[
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    # 2D buffers for naive conv.
-    let input2d = NDBuffer[4, DimList.create_unknown[4](), type](
-        input_ptr, Index(N, H, W, C)
-    )
-    let filter2d = NDBuffer[4, DimList.create_unknown[4](), type](
-        filter_ptr, Index(R, S, C // num_groups, F)
-    )
-    let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
-        output_ref_ptr, Index(N, HO, WO, F)
-    )
-
-    # 1D buffers for direct conv.
+    # Buffers for direct conv.
     let input = NDBuffer[3, DimList.create_unknown[3](), type](
         input_ptr, Index(N, W, C)
     )
     let filter = NDBuffer[3, DimList.create_unknown[3](), type](
-        filter_ptr, Index(S, C, F)
+        filter_ptr, Index(S, C_per_group, F)
     )
     let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
@@ -119,38 +109,25 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter(filter2d, packed_filter, num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
-        DimList.create_unknown[4](),  # Output Shape.
-        DimList.create_unknown[4](),  # Filter Shape,
-        DimList.create_unknown[4](),  # Input Shape
-        type,  # Data type.
         type,
         type,
-        Image2DLayout.NHWC,  # Data Layout.
-        Image2DLayout.RSCF,  # Filter Layout.
+        type,
     ].run(
-        ImageData[
-            DimList.create_unknown[4](),
-            type,
-            Image2DLayout.NHWC,
-        ](output_ref),
-        ImageData[
-            DimList.create_unknown[4](),
-            type,
-            Image2DLayout.NHWC,
-        ](input2d),
-        ImageData[
-            DimList.create_unknown[4](),
-            type,
-            Image2DLayout.RSCF,
-        ](filter2d),
-        Index(0, 0),
+        output_ref_ptr,
+        input_ptr,
+        filter_ptr,
+        Index(N, 1, 1, WO, F),  # output shape
+        Index(N, 1, 1, W, C),  # input shape
+        Index(1, 1, S, C // num_groups, F),  # filter shape
+        Index(0, 0),  #  pad_d
+        Index(0, 0),  #  pad_h
         pad_w,
-        stride,
-        dilation,
+        Index(1, 1, stride),
+        Index(1, 1, dilation),
         num_groups,
     )
 
@@ -172,12 +149,7 @@ fn test[
             True,
             conv_attr,
             False,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input, packed_filter, conv_shape)
     else:
         ConvDirectNHWC[
             3,
@@ -204,8 +176,8 @@ fn test[
         for wo in range(WO):
             for f in range(F):
                 if not isclose(
-                    output_ref.data[idx],
-                    output.data[idx],
+                    output_ref_ptr[idx],
+                    output_ptr[idx],
                     1e-4,  # absolute error tolerance
                     1e-4,  # relative error tolerance
                 ):
@@ -214,8 +186,8 @@ fn test[
                     print("filter packed", filter_packed)
                     print("num groups", num_groups)
                     print("Test failed at index: ", Index(n, wo, f))
-                    print("Golden value: ", output_ref.data[idx])
-                    print("Actual value: ", output.data[idx])
+                    print("Golden value: ", output_ref_ptr[idx])
+                    print("Actual value: ", output_ptr[idx])
                     output_ptr.free()
                     output_ref_ptr.free()
                     return

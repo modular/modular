@@ -751,10 +751,12 @@ fn get_partition(
         micro_kernel_f_size,
     )
 
-    # Merge wo and ho loops when there is no padding.
+    # Merge output space loops when there is no padding and 2D.
     # Otherwise the partition granularity is a row.
-    let work_unit = 1 if conv_shape.padded() else micro_kernel_height
-    let work_load = conv_shape.ho() if conv_shape.padded() else conv_shape.ho() * conv_shape.wo()
+    # TODO: generalize to 1D and 3D.
+    let merge_loop = not conv_shape.padded() and conv_shape.rank == 2
+    let work_unit = micro_kernel_height if merge_loop else 1
+    let work_load = conv_shape.output_image_flat_size() if merge_loop else conv_shape.ho()
     let howo_range = partition_work(
         task_id_howo, num_partitions[3], work_load, work_unit
     )

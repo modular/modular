@@ -82,129 +82,91 @@ from runtime.llcl import Runtime
 
 @value
 struct Naive2dConvolution[
-    static_output_shape: DimList,
-    static_filter_shape: DimList,
-    static_input_shape: DimList,
+    output_type: DType,
     input_type: DType,
     filter_type: DType,
-    output_type: DType,
-    static_data_layout: Image2DLayout,
-    static_filter_layout: Image2DLayout,
 ]:
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: ImageData[static_output_shape, output_type, static_data_layout]
-    var input: ImageData[static_input_shape, input_type, static_data_layout]
-    var filter: ImageData[
-        static_filter_shape, filter_type, static_filter_layout
-    ]
+    var output: DTypePointer[output_type]
+    var input: DTypePointer[input_type]
+    var filter: DTypePointer[filter_type]
+    var pad_d: StaticIntTuple[2]
     var pad_h: StaticIntTuple[2]
     var pad_w: StaticIntTuple[2]
-    var stride: StaticIntTuple[2]
-    var dilation: StaticIntTuple[2]
+    var stride: StaticIntTuple[3]
+    var dilation: StaticIntTuple[3]
     var num_groups: Int
 
     # Derived params.
-    var output_shape: ImageShape
-    var input_shape: ImageShape
-    var filter_shape: ImageShape
+    var output_shape: StaticIntTuple[5]  # NDHWC layout.
+    var input_shape: StaticIntTuple[5]  # NDHWC layout.
+    var filter_shape: StaticIntTuple[5]  # QRSCF layout.
 
     @staticmethod
     fn run(
-        output: ImageData[static_output_shape, output_type, static_data_layout],
-        input: ImageData[static_input_shape, input_type, static_data_layout],
-        filter: ImageData[
-            static_filter_shape, filter_type, static_filter_layout
-        ],
+        output: DTypePointer[output_type],
+        input: DTypePointer[input_type],
+        filter: DTypePointer[filter_type],
+        output_shape: StaticIntTuple[5],
+        input_shape: StaticIntTuple[5],
+        filter_shape: StaticIntTuple[5],
+        pad_d: StaticIntTuple[2],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
+        stride: StaticIntTuple[3],
+        dilation: StaticIntTuple[3],
         num_groups: Int,
     ):
-        """Interface function to run a convolution op on the given input and
-        filter tensor and stores the result in the given output tensor.
-
-        Args:
-            output: Pre-allocated output tensor space.
-            input: Batched image input to the conv2d operator.
-            filter: Filters to apply in the conv2d operator.
-            pad_h: Padding on the height dimension with
-                assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-            pad_w: Padding on the width dimension with
-                assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-            stride: Strides on height and width dimensions
-                with assumed tuple def (StrideH, StrideW).
-            dilation: Dilations on height and width
-                dimensions with assumed tuple def (dilation_h, dilation_w).
-            num_groups: The number of groups in the convolution.
-        """
         # Create an instance of the convolution op.
         let naive2d_convolution = Naive2dConvolution[
-            static_output_shape,
-            static_filter_shape,
-            static_input_shape,
-            input_type,
-            filter_type,
-            output_type,
-            static_data_layout,
-            static_filter_layout,
-        ](output, input, filter, pad_h, pad_w, stride, dilation, num_groups)
+            output_type, input_type, filter_type
+        ](
+            output,
+            input,
+            filter,
+            output_shape,
+            input_shape,
+            filter_shape,
+            pad_d,
+            pad_h,
+            pad_w,
+            stride,
+            dilation,
+            num_groups,
+        )
 
         # Run the actual loops and computations.
         naive2d_convolution._outer_loop()
 
     fn __init__(
         inout self,
-        output: ImageData[static_output_shape, output_type, static_data_layout],
-        input: ImageData[static_input_shape, input_type, static_data_layout],
-        filter: ImageData[
-            static_filter_shape, filter_type, static_filter_layout
-        ],
+        output: DTypePointer[output_type],
+        input: DTypePointer[input_type],
+        filter: DTypePointer[filter_type],
+        output_shape: StaticIntTuple[5],
+        input_shape: StaticIntTuple[5],
+        filter_shape: StaticIntTuple[5],
+        pad_d: StaticIntTuple[2],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
+        stride: StaticIntTuple[3],
+        dilation: StaticIntTuple[3],
         num_groups: Int,
     ):
-        """Constructor of a convolution op instance on the given input and
-        filter tensor and stores the result in the give output tensor.
-
-        Args:
-            output: Pre-allocated output tensor space.
-            input: Batched image input to the conv2d operator.
-            filter: Filters to apply in the conv2d operator.
-            pad_h: Padding on the height dimension with assu-
-                med tuple def (PadOnLowerIdx, PadOnHigherIdx).
-            pad_w: Padding on the width dimension with assum-
-                ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-            stride: Strides on height and width dimensions
-                with assumed tuple def (StrideH, StrideW).
-            dilation: Dilations on height and width dimensi-
-                ons with assumed tuple def (dilation_h, dilation_w).
-            num_groups: The number of groups in the convolution.
-        """
-        # Register input/output buffers and parameters.
         self.output = output
         self.input = input
         self.filter = filter
+        self.output_shape = output_shape
+        self.input_shape = input_shape
+        self.filter_shape = filter_shape
+        self.pad_d = pad_d
         self.pad_h = pad_h
         self.pad_w = pad_w
         self.stride = stride
         self.dilation = dilation
         self.num_groups = num_groups
-
-        # Derive layout agnostic shape information.
-        self.output_shape = ImageShape.__init__[
-            static_output_shape, output_type, static_data_layout
-        ](output)
-        self.input_shape = ImageShape.__init__[
-            static_input_shape, input_type, static_data_layout
-        ](input)
-        self.filter_shape = ImageShape.__init__[
-            static_filter_shape, filter_type, static_filter_layout
-        ](filter)
 
     fn _outer_loop(self):
         """Implementation of the outermost loop of a convolution operator with
@@ -212,98 +174,91 @@ struct Naive2dConvolution[
         dth dimensions.
         """
         # Iterate on output batch dimension.
-        for no_idx in range(self.output_shape.N):
+        for n in range(self.output_shape[0]):
             # Iterate on filter dimension.
-            for f_idx in range(self.output_shape.C):
+            for f in range(self.output_shape[4]):
                 # Iterate on output H dimension.
-                for ho_idx in range(self.output_shape.H):
-                    # Iterate on output W dimension.
-                    for wo_idx in range(self.output_shape.W):
-                        # Compute the result value at this specific output posit-
-                        #  ion.
-                        self._compute_poInt__(
-                            StaticIntTuple[4](no_idx, f_idx, ho_idx, wo_idx)
-                        )
+                for do in range(self.output_shape[1]):
+                    # Iterate on output H dimension.
+                    for ho in range(self.output_shape[2]):
+                        # Iterate on output W dimension.
+                        for wo in range(self.output_shape[3]):
+                            # Compute the result value at this specific output posit-
+                            #  ion.
+                            self._compute_point(n, do, ho, wo, f)
 
-    fn _compute_poInt__(
-        self,
-        # Output index [N,C,H,W]
-        output_idx: StaticIntTuple[4],
-    ):
+    fn _compute_point(self, n: Int, do: Int, ho: Int, wo: Int, f: Int):
         """Implementation of the inner loop computation of a conv2d operator
         producing a single scalar value at the given output tensor index.
-            Args:
-                output_index(StaticIntTuple): Index vector specifying which
-            value of the output tensor to produce.
         """
         # Initialize the result of this point.
         var value: SIMD[output_type, 1] = 0
 
-        # Extract the H and W size of the input image.
-        let image_bound = StaticIntTuple[2](
-            self.input_shape.H, self.input_shape.W
-        )
-        let C_per_group = self.input_shape.C // self.num_groups
-        let F_per_group = self.output_shape.C // self.num_groups
-        let group_idx = output_idx[1] // F_per_group
+        # Input dims.
+        let D = self.input_shape[1]
+        let H = self.input_shape[2]
+        let W = self.input_shape[3]
+        let C = self.input_shape[4]
+        let image_bound = Index(D, H, W)
+        let C_per_group = C // self.num_groups
 
-        # Iterate on filter height dimension.
-        for r_idx in range(self.filter_shape.H):
-            # Iterate on filter width dimension.
-            for s_idx in range(self.filter_shape.W):
-                # Compute input access index, on the H and W dimension.
-                let input_image_index = (
-                    # Output HxW with striding.
-                    (
-                        StaticIntTuple[2](
-                            output_idx[2],
-                            output_idx[3],
-                        )
-                        * self.stride
+        # Filter dims.
+        let Q = self.filter_shape[0]
+        let R = self.filter_shape[1]
+        let S = self.filter_shape[2]
+
+        # Output dims.
+        let DO = self.output_shape[1]
+        let HO = self.output_shape[2]
+        let WO = self.output_shape[3]
+        let F = self.output_shape[4]
+
+        let g = f // (F // self.num_groups)
+
+        for q in range(Q):
+            for r in range(R):
+                for s in range(S):
+                    # Compute input access index, on the H and W dimension.
+                    let dhw = (
+                        # Output HxW with striding.
+                        Index(do, ho, wo) * self.stride
+                        +
+                        # Filter RxS with dilation.
+                        (Index(q, r, s) * self.dilation)
+                        -
+                        # Padding offset, using the left padding only here.
+                        Index(self.pad_d[0], self.pad_h[0], self.pad_w[0])
                     )
-                    +
-                    # Filter RxS with dilation.
-                    (Index(r_idx, s_idx) * self.dilation)
-                    -
-                    # Padding offset, using the left padding only here.
-                    Index(self.pad_h[0], self.pad_w[0])
-                )
 
-                if (
                     # Check that the current image index is within valid range
                     #  on the input image data tensor.
-                    Index(0, 0) <= input_image_index
-                    and input_image_index < image_bound
-                ):
-                    # Iterate on channels dimension.
-                    for c_idx in range(
-                        C_per_group * group_idx, C_per_group * (group_idx + 1)
-                    ):
-                        # Accumulate product of input data filter data.
-                        let input_val = self.input[
-                            output_idx[0],  # N
-                            c_idx,
-                            input_image_index[0],  # H
-                            input_image_index[1],  # W
-                        ]
-                        let filter_val = self.filter[
-                            output_idx[1],
-                            c_idx % C_per_group,
-                            r_idx,
-                            s_idx,  # F  # C  # R  # S
-                        ]
-                        value += (
-                            input_val.cast[output_type]()
-                            * filter_val.cast[output_type]()
-                        )
+                    if Index(0, 0, 0) <= dhw < image_bound:
+                        # Iterate on channels dimension.
+                        for c in range(C_per_group * g, C_per_group * (g + 1)):
+                            # Accumulate product of input data filter data.
+                            let input_val = self.input[
+                                c
+                                + C
+                                * (dhw[2] + W * (dhw[1] + H * (dhw[0] + D * n)))
+                            ]
+                            let c_in_group = c % C_per_group
+                            let filter_val = self.filter[
+                                f
+                                + F
+                                * (
+                                    c_in_group
+                                    + C_per_group * (s + S * (r + R * q))
+                                )
+                            ]
+                            value += (
+                                input_val.cast[output_type]()
+                                * filter_val.cast[output_type]()
+                            )
 
         # Store the computed output at the given output position..
-        self.output[
-            output_idx[0],
-            output_idx[1],
-            output_idx[2],
-            output_idx[3],
-        ] = value
+        self.output.simd_store(
+            f + F * (wo + WO * (ho + HO * (do + DO * n))), value
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1503,6 +1458,24 @@ struct ConvDirectNHWC[
                 left_pad_impact_end,
                 right_pad_impact_start,
             )
+        elif input_rank == 5:
+            self.output_space_loop_3d[
+                micro_kernel_height,
+                micro_kernel_width,
+                has_residual,
+                last_c_tile,
+            ](
+                output_ptr,
+                input_ptr,
+                filter_ptr,
+                n,
+                self.is_new_c_accum(c_tile_offset),
+                c_tile_size,
+                f_tile_offset,
+                f_tile_size,
+                left_pad_impact_end,
+                right_pad_impact_start,
+            )
 
     @always_inline
     fn output_space_loop_1d[
@@ -1544,7 +1517,8 @@ struct ConvDirectNHWC[
                 effected_by_padding,
                 has_residual,
                 last_c_tile,
-                elementwise_epilogue_enabled,
+                # TODO: Enable epilogue for 1D and 3D.
+                elementwise_epilogue_enabled and input_rank == 4,
             ](
                 output_base,
                 input_base,
@@ -1650,6 +1624,95 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
                 self.conv_shape.wo(),
             )
+
+    @always_inline
+    fn output_space_loop_3d[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        has_residual: Bool,
+        last_c_tile: Bool,
+    ](
+        self,
+        output: DTypePointer,
+        input: DTypePointer,
+        filter: DTypePointer,
+        n: Int,
+        first_c_tile_in_group: Bool,
+        c_tile_size: Int,
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        left_pad_impact_end: Int,
+        right_pad_impact_start: Int,
+    ):
+        alias simd_size = simdwidthof[output_type]()
+
+        for do in range(0, self.conv_shape.do()):
+            let d = do * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
+
+            for ho in range(
+                self.partition.ho_or_howo_offset,
+                self.partition.ho_or_howo_offset
+                + self.partition.ho_or_howo_size,
+            ):
+                # fmt: off
+                let h = ho * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
+                # fmt: on
+
+                # Points input to the start of the row.
+                # Offset by -pad_w because s loop starts from the leftmost neightbor
+                # in padding. The kernel skip the padding point and increment the
+                # pointer.
+                var input_base = input + self.conv_shape.c * (
+                    -self.conv_shape.pad_w[0]
+                    + self.conv_shape.w() * (h + self.conv_shape.h() * d)
+                )
+
+                # Points output to the start of the row
+                var output_base = output + self.conv_shape.f * self.conv_shape.wo() * (
+                    ho + self.conv_shape.ho() * do
+                )
+
+                @parameter
+                @always_inline
+                fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+                    conv3d_update_wo_tile[
+                        height,
+                        micro_kernel_width,
+                        simd_size,
+                        filter_packed,
+                        effected_by_padding,
+                        has_residual,
+                        last_c_tile,
+                        # TODO: Enable epilogue for 1D and 3D.
+                        elementwise_epilogue_enabled and input_rank == 4,
+                    ](
+                        output_base,
+                        input_base,
+                        filter,
+                        first_c_tile_in_group,
+                        c_tile_size,
+                        f_tile_offset,
+                        f_tile_size,
+                        rebind[ConvShape[3]](self.conv_shape),
+                        n,
+                        Index(do, ho, wo),
+                        self.elementwise_epilogue_fn,
+                    )
+
+                    input_base = input_base.offset(
+                        height * self.conv_shape.stride[2] * self.conv_shape.c,
+                    )
+                    output_base = output_base.offset(height * self.conv_shape.f)
+
+                tile_middle_unswitch_boundaries[
+                    work_fn,
+                    VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+                ](
+                    0,
+                    left_pad_impact_end,
+                    right_pad_impact_start,
+                    self.conv_shape.wo(),
+                )
 
     fn _f_tile_loop_static[
         last_c_tile: Bool
@@ -2021,7 +2084,7 @@ struct ConvDirectNHWC[
 
 
 # ===----------------------------------------------------------------------=== #
-# Direct Convolution 1D
+# Direct Convolution 1D Resigter Tiling
 # ===----------------------------------------------------------------------=== #
 
 
@@ -2228,7 +2291,7 @@ fn conv1d_update_wo_tile[
 
 
 # ===----------------------------------------------------------------------=== #
-# Direct Convolution 2D
+# Direct Convolution 2D Register Tiling
 # ===----------------------------------------------------------------------=== #
 
 
@@ -2417,6 +2480,202 @@ fn conv2d_update_wo_tile[
         for wo_idx in range(howo[1], howo[1] + micro_kernel_height):
             elementwise_epilogue_fn(
                 n, howo[0], wo_idx, f_tile_offset, f_tile_size_bounded
+            )
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Convolution 3D Resigter Tiling
+# ===----------------------------------------------------------------------=== #
+
+
+# TODO: Simplify this with a rank parameter + recursion.
+@always_inline
+fn accumulate_wo_tile_3d[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    partial_load_filter: Bool,
+    effected_by_padding: Bool,
+](
+    c_tile_size: Int,
+    QRS: StaticIntTuple[3],
+    output: DTypePointer,
+    input: DTypePointer,
+    input_stride: Int,
+    input_stride_to_nbr: StaticIntTuple[3],
+    filter: DTypePointer,
+    filter_stride: Int,
+    filter_stride_to_nbr: StaticIntTuple[3],
+    partial_load_filter_size: Int,
+    dhw: StaticIntTuple[3],
+    DHW: StaticIntTuple[3],
+    dilation: StaticIntTuple[3],
+):
+    for q in range(QRS[0]):
+        let d_nbr = dhw[0] + q * dilation[0]
+        if d_nbr < 0 or d_nbr >= DHW[0]:
+            continue
+
+        let input_ptr = input + q * input_stride_to_nbr[0]
+        let filter_ptr = filter + q * filter_stride_to_nbr[0]
+
+        accumulate_wo_tile_2d[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            partial_load_filter,
+            effected_by_padding,
+        ](
+            c_tile_size,
+            Index(QRS[1], QRS[2]),
+            output,
+            input_ptr,
+            input_stride,
+            Index(input_stride_to_nbr[1], input_stride_to_nbr[2]),
+            filter_ptr,
+            filter_stride,
+            Index(filter_stride_to_nbr[1], filter_stride_to_nbr[2]),
+            partial_load_filter_size,
+            Index(dhw[1], dhw[2]),
+            Index(DHW[1], DHW[2]),
+            Index(dilation[1], dilation[2]),
+        )
+
+
+@always_inline
+fn conv3d_update_wo_tile[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    filter_packed: Bool,
+    effected_by_padding: Bool,
+    has_residual: Bool,
+    last_c_tile: Bool,
+    elementwise_epilogue_enabled: Bool,
+](
+    output: DTypePointer,
+    input: DTypePointer,
+    filter: DTypePointer,
+    first_c_tile: Bool,
+    c_tile_size: Int,
+    f_tile_offset: Int,
+    f_tile_size: Int,
+    conv_shape: ConvShape[3],
+    n: Int,
+    dohowo: StaticIntTuple[3],
+    elementwise_epilogue_fn: elementwise_epilogue_type,
+):
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Input stride to neighbor point in the filter window (Q, R, S).
+    # fmt: off
+    let input_stride_by_s = conv_shape.dilation[2] * conv_shape.c
+    let input_stride_by_r = conv_shape.dilation[1] * conv_shape.w() * conv_shape.c
+    let input_stride_by_q = conv_shape.dilation[0] * conv_shape.w() * conv_shape.h() * conv_shape.c
+    # fmt: on
+
+    # Filter stride when s increments by 1.
+    let filter_stride_by_s: Int
+
+    @parameter
+    if filter_packed:  # FRSCf layout
+        filter_stride_by_s = conv_shape.c_per_group() * micro_kernel_f_size
+    else:  # RSCF layout
+        filter_stride_by_s = conv_shape.c * conv_shape.f
+
+    let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
+    let filter_stride_by_q = conv_shape.r() * filter_stride_by_r
+
+    # Filter stride in F dimension in FRSCf
+    let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
+
+    # Input coordinates
+    let dhw = Index(
+        dohowo[0] * conv_shape.stride[0] - conv_shape.pad_d[0],
+        dohowo[1] * conv_shape.stride[1] - conv_shape.pad_h[0],
+        dohowo[2] * conv_shape.stride[2] - conv_shape.pad_w[0],
+    )
+
+    # This will be all lifted to simd registers for FMA unless the micro
+    # kernel is too large that spills named registers.
+    let register_tile = NDBuffer[
+        2,
+        DimList(micro_kernel_height, micro_kernel_width * simd_size),
+        output.type,
+    ].stack_allocation()
+
+    if first_c_tile:
+        init_register_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+        ](register_tile.data)
+    else:
+        load_register_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            partial_load=has_residual,
+        ](
+            register_tile.data,
+            output,
+            conv_shape.f,
+            conv_shape.f_per_group() % simd_size,
+        )
+
+    accumulate_wo_tile_3d[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        has_residual and not filter_packed,
+        effected_by_padding,
+    ](
+        c_tile_size,
+        conv_shape.filter_dims,
+        register_tile.data,
+        input,
+        conv_shape.c * conv_shape.stride[2],
+        Index(input_stride_by_q, input_stride_by_r, input_stride_by_s),
+        filter,
+        filter_stride,
+        Index(filter_stride_by_q, filter_stride_by_r, filter_stride_by_s),
+        conv_shape.f % simd_size,
+        dhw,
+        conv_shape.input_dims,
+        conv_shape.dilation,
+    )
+
+    # Store the micro tile
+    store_register_tile[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        partial_store=has_residual,
+    ](
+        output,
+        conv_shape.f,
+        register_tile.data,
+        conv_shape.f_per_group() % simd_size,
+    )
+
+    # Apply elmentwise epilogue to the
+    @parameter
+    if elementwise_epilogue_enabled and last_c_tile:
+        # If has residual, the tile size has been extended to a simd_size.
+        # Here needs to use the real bound F.
+        let f_tile_size_bounded: Int
+
+        @parameter
+        if has_residual:
+            f_tile_size_bounded = (
+                conv_shape.f_per_group() - conv_shape.f_in_group(f_tile_offset)
+            )
+        else:
+            f_tile_size_bounded = f_tile_size
+
+        for wo_idx in range(dohowo[2], dohowo[2] + micro_kernel_height):
+            elementwise_epilogue_fn(
+                n, dohowo[1], wo_idx, f_tile_offset, f_tile_size_bounded
             )
 
 
