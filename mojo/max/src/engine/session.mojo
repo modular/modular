@@ -14,6 +14,7 @@ from ._engine_impl import _EngineImpl, _get_engine_path
 from max.graph import Module
 
 from collections.optional import Optional
+from collections.vector import InlinedFixedVector, DynamicVector
 from memory.anypointer import AnyPointer
 from os.atomic import Atomic
 from sys.ffi import DLHandle
@@ -69,6 +70,33 @@ struct _InferenceSessionImpl(Movable):
 
         if model_source:
             compile_config.set_model_source(model_source.value())
+
+        let spec_count = len(config._input_names)
+        for i in range(spec_count):
+            let name = config._input_names[i]
+            let _spec = config._input_specs[i]
+            if _spec.static:
+                compile_config.add_input_spec(
+                    self.get_as_engine_tensor_spec(
+                        name._strref_dangerous(),
+                        _spec.static.value(),
+                        session.copy(),
+                    )
+                )
+                name._strref_keepalive()
+            else:
+                let dtype = _spec.dtype
+                compile_config.add_input_spec(
+                    self.get_as_engine_tensor_spec(
+                        name._strref_dangerous(),
+                        _spec.dynamic,
+                        dtype,
+                        session.copy(),
+                    )
+                )
+                name._strref_keepalive()
+
+        compile_config.set_torch_input_specs()
 
         let status = Status(self.engine.lib)
         let compile_ptr = compile_config.borrow_ptr()
@@ -170,15 +198,45 @@ struct _InferenceSessionImpl(Movable):
 
 
 @value
+struct _Specs(CollectionElement):
+    var static: Optional[TensorSpec]
+
+    alias dynamic_type = Optional[DynamicVector[Optional[Int64]]]
+    var dynamic: Self.dynamic_type
+    var dtype: DType
+
+    fn __init__(inout self, spec: TensorSpec):
+        self.static = spec
+        self.dynamic = None
+        self.dtype = spec.dtype()
+
+    fn __init__(
+        inout self, spec: Optional[DynamicVector[Optional[Int64]]], dtype: DType
+    ):
+        self.static = None
+        self.dynamic = spec
+        self.dtype = dtype
+
+    fn __init__(inout self, spec: NoneType, dtype: DType):
+        self.static = None
+        self.dynamic = None
+        self.dtype = dtype
+
+
+@value
 struct LoadOptions(CollectionElement):
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
     var _custom_ops_path: Optional[Path]
+    var _input_names: DynamicVector[String]
+    var _input_specs: DynamicVector[_Specs]
 
     fn __init__(inout self):
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
+        self._input_names = DynamicVector[String]()
+        self._input_specs = DynamicVector[_Specs]()
 
     fn _set_model_source(inout self, module: Module):
         """Specifies the Max Graph Module to load model from.
@@ -208,6 +266,74 @@ struct LoadOptions(CollectionElement):
             path: Path to mojo custom op package.
         """
         self._custom_ops_path = path
+
+    fn add_input_spec(inout self, name: String, spec: TensorSpec):
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            name: Name of the input.
+            spec: Spec for the input.
+        """
+        self._input_names.push_back(name)
+        self._input_specs.push_back(_Specs(spec))
+
+    fn add_input_spec(
+        inout self,
+        name: String,
+        shape: _Specs.dynamic_type,
+        dtype: DType,
+    ):
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            name: Name of the input.
+            shape: Shape of the input.
+            dtype: Datatype of the input.
+        """
+        self._input_names.push_back(name)
+        self._input_specs.push_back(_Specs(shape, dtype))
+
+    fn add_input_specs(
+        inout self,
+        names: DynamicVector[String],
+        specs: DynamicVector[TensorSpec],
+    ) raises:
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            names: Names of the input.
+            specs: Specs for the input.
+        """
+        if len(names) != len(specs):
+            raise "number of input names does not equal number of specs"
+        for i in range(len(specs)):
+            self._input_names.push_back(names[i])
+            self._input_specs.push_back(_Specs(specs[i]))
+
+    fn add_input_specs(
+        inout self,
+        names: DynamicVector[String],
+        shapes: DynamicVector[_Specs.dynamic_type],
+        dtypes: InlinedFixedVector[DType],
+    ) raises:
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            names: Names of the input.
+            shapes: Shapes of the input.
+            dtypes: Datatypes of the input.
+        """
+
+        if len(names) != len(shapes) != len(dtypes):
+            raise "number of input names does not equal number of specs"
+
+        for i in range(len(shapes)):
+            self._input_names.push_back(names[i])
+            self._input_specs.push_back(_Specs(shapes[i], dtypes[i]))
 
 
 @value
