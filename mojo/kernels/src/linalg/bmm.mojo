@@ -618,12 +618,10 @@ fn batched_matmul_shape[
     # Check batch dimensions
     var foundMismatch = False
 
-    # TODO bring this back once `SymbolicizeFallbackShapeFunctions` can handle
-    # multipl asserts.
-    # @unroll
-    # for i in range(rank - 2):
-    #    if a_buff.dim(i) != b_buff.dim(i):
-    #        foundMismatch = True
+    @unroll
+    for i in range(rank - 2):
+        if a_buff.dim(i) != b_buff.dim(i):
+            foundMismatch = True
 
     if foundMismatch:
         raise Error("batched_matmul batch dimensions must match")
