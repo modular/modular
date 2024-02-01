@@ -1101,6 +1101,26 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
   return decls;
 }
 
+ASTDecl *SharedState::getBuiltinType(ASTDecl &context, StringRef moduleName,
+                                     StringRef typeName, llvm::SMLoc loc) {
+
+  ASTDecl &module = importModule(moduleName, /*currentPackage=*/nullptr, loc);
+  LookupResult result =
+      lookupAndResolveDecl(typeName, loc, module, /*searchParentScopes=*/false);
+  if (!result.isSuccess() || result.getIfSuccess().empty()) {
+    emitError(loc, "internal error: could not find builtin type '")
+        << typeName << "'";
+    return {};
+  }
+  ArrayRef<ASTDecl *> decls = result.getIfSuccess();
+  if (!isa<LIT::StructDeclOp>(decls.front())) {
+    emitError(loc, "internal error: builtin '")
+        << typeName << "' does not refer to a type";
+    return {};
+  }
+  return decls.front();
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,

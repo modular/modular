@@ -404,8 +404,12 @@ public:
                                          ASTExprAnd<CValue> value,
                                          ASTType requiredType);
 
+  /// Emit a conversion from an MLIR type to a trait type by materializing stubs
+  /// for the type's witness table.
+  PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait);
+
   /// Emit a metatype conversion to a trait type by materializing the type's
-  /// vtable for the trait.
+  /// witness table for the trait.
   PValue emitMetaTypeConversion(ASTExprAnd<CValue> value, TraitType trait);
 
   //===--------------------------------------------------------------------===//

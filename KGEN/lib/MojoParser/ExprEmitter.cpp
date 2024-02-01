@@ -779,8 +779,8 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 //===----------------------------------------------------------------------===//
 // Type conversion helpers.
 
-/// Return true if the given type implements the trait.
-static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
+/// Return true if the given type explicitly implements the trait.
+static bool checkExplicitConformance(TraitType trait, ASTDecl *typeDecl) {
   ArrayRef<TypeLineageAttr> parentTypes;
   if (auto structOp = dyn_cast<StructDeclOp>(typeDecl))
     parentTypes = structOp.getParentTypes();
@@ -789,6 +789,32 @@ static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
   return llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
            return type.getType() == trait;
          }) != parentTypes.end();
+}
+
+/// Return true if the MLIR type can implicitly conform to the trait.
+static bool checkImplicitConformance(SharedState &shared, SMLoc loc,
+                                     TraitType trait) {
+  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
+  // Make sure the body of the trait is resolved.
+  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+    return false; // an error was emitted
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
+      // Skip any children that aren't methods or are inherited. This could be
+      // an alias.
+      if (!traitFn || traitFn.getIsInherited())
+        continue;
+      // MLIR types are movable, copyable, and destructible only.
+      if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
+                              SpecialFunctionKind::kCopyInit,
+                              SpecialFunctionKind::kDel},
+                             SpecialFunctionInfo::getKind(name)))
+        continue;
+      return false;
+    }
+  }
+  return true;
 }
 
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
@@ -807,10 +833,15 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
     return true;
 
   // Metatypes can implicitly convert to any trait type they implement.
-  if (auto traitType = dyn_cast<TraitType>(requiredType))
+  if (auto traitType = dyn_cast<TraitType>(requiredType)) {
     if (isa<MetaTypeType, TraitType>(rvType) &&
-        metaTypeImplements(traitType, rvType.getDecl(shared)))
+        checkExplicitConformance(traitType, rvType.getDecl(shared)))
       return true;
+    if (isa<TypeType>(rvType) &&
+        checkImplicitConformance(shared, value.expr->getLoc(), traitType))
+      return true;
+    return false;
+  }
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -897,6 +928,65 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
   return SRValue(rebind(srValue));
 }
 
+PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
+                                        TraitType trait) {
+  // Only static vtables are supported right now.
+  PValue typeValue = value.ir.getIfPValue();
+  if (!typeValue) {
+    emitError(value.expr->getLoc(), "existentials are not supported yet!");
+    return {};
+  }
+  ASTType mlirType = typeValue.getIfTypeValue();
+
+  SMLoc loc = value.expr->getLoc();
+  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
+  // Make sure the body of the trait is resolved.
+  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+    return {};
+
+  // Use a special wrapper decl in the builtins as stubs.
+  ASTDecl *wrapperDecl =
+      shared.getBuiltinType(declScope, "builtin._stubs", "__MLIRType", loc);
+  if (!wrapperDecl)
+    return {};
+  ASTType boundWrapper =
+      cast<StructDeclOp>(wrapperDecl).bindReference({typeValue});
+
+  SmallVector<VTableEntryAttr> vtable;
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+      continue;
+    for (ASTDecl *decl : decls) {
+      // MLIR types are movable, copyable, and destructible only.
+      switch (SpecialFunctionInfo::getKind(name)) {
+      case SpecialFunctionKind::kMoveInit:
+      case SpecialFunctionKind::kCopyInit:
+      case SpecialFunctionKind::kDel:
+        break;
+      default:
+        InflightDiag diag = emitError(loc, "cannot bind MLIR type ")
+                            << mlirType << " to trait " << ASTType(trait);
+        diag.attachNote(decl->getLoc())
+            << "MLIR type cannot satisfy required trait function here";
+        return {};
+      }
+      // We know the stub will provide exactly one overload for each allowed
+      // trait requirement.
+      PValue callee = OverloadSet::lookup(declScope, shared, boundWrapper, name,
+                                          value.expr, CallSyntax::kMethodCall)
+                          .getIfPValue();
+      if (!callee) {
+        emitError(loc, "internal error: MLIR type stub didn't resolve ")
+            << name;
+        return {};
+      }
+      vtable.push_back(VTableEntryAttr::get(name, callee));
+    }
+  }
+  return TypeConstantAttr::get(mlirType, trait,
+                               VTableAttr::get(getContext(), vtable));
+}
+
 PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
                                            TraitType trait) {
   // Only static vtables are supported right now.
@@ -910,7 +1000,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
   // Check that the struct implements the trait.
   ASTDecl *typeDecl = type.getDecl(shared);
-  if (!metaTypeImplements(trait, typeDecl)) {
+  if (!checkExplicitConformance(trait, typeDecl)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
@@ -927,19 +1017,19 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
   Type selfType;
   SmallVector<TypedAttr> selfParams;
-  auto anyRegTypeType = TypeType::get(getContext());
+  auto typeType = TypeType::get(getContext());
   if (auto metatype = dyn_cast<MetaTypeType>(type)) {
     // When converting from a concrete type, construct the self type value as
     // a declref to the metatype.
     selfType = DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
                                 metatype);
     // Substitute the implicit trait parameters.
-    selfParams.assign({TypeConstantAttr::get(anyRegTypeType, anyRegTypeType),
-                       TypeConstantAttr::get(selfType, anyRegTypeType)});
+    selfParams.assign({TypeConstantAttr::get(typeType, typeType),
+                       TypeConstantAttr::get(selfType, typeType)});
   } else {
     // Otherwise, we are converting from a trait. Just rebind the types.
     selfType = ParamRefType::get(typeValue);
-    selfParams.assign({TypeConstantAttr::get(type, anyRegTypeType), typeValue});
+    selfParams.assign({TypeConstantAttr::get(type, typeType), typeValue});
   }
 
   StructDeclOp structDeclOp = dyn_cast<StructDeclOp>(typeDecl);
@@ -1109,6 +1199,14 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
         if (isa<MetaTypeType, TraitType>(rvalueType)) {
           PValue result = emitMetaTypeConversion({cValue, expr}, trait);
+          if (!result) {
+            dest.resetForError();
+            return {};
+          }
+          return emitResult(result, expr, dest);
+        }
+        if (isa<TypeType>(rvalueType)) {
+          PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
           if (!result) {
             dest.resetForError();
             return {};
