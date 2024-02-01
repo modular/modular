@@ -208,11 +208,14 @@ TelemetryContext::TelemetryContext(
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
 
-  // Get the user ID out of the EntitlementStore.
-  auto store = EntitlementStore::alwaysOpen(nullptr, llvm::errs());
-  auto userIDOr = store.getUserID(std::move(config));
-  if (!userIDOr.isError())
+  // Get the user ID out of the EntitlementStore if we can, out of the config if
+  // we can't.
+  auto userIDOr = entitlementStore.getUserID();
+  if (!userIDOr.isError()) {
     attrs.SetAttribute("enduser.id", *userIDOr);
+  } else {
+    attrs.SetAttribute("enduser.id", cfg.getValue("user.id"));
+  }
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
