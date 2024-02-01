@@ -279,19 +279,46 @@ struct MOList(MOType, CollectionElement):
         return str(self.to_mlir(m))
 
 
-# TODO: Drop this when we get existentials.
-alias AnyMOType = Variant[MOTensor, MOList]
+@value
+struct AnyMOType(MOType, CollectionElement):
+    var type: Variant[MOTensor, MOList]
 
+    fn __init__(inout self, t: MOTensor):
+        self.type = t
 
-# TODO: Drop this when we get existentials.
-fn mo_type_to_mlir(t: AnyMOType, m: Module) -> mlir.Type:
-    if t.isa[MOTensor]():
-        return t.get[MOTensor]().to_mlir(m)
-    elif t.isa[MOList]():
-        return t.get[MOList]().to_mlir(m)
+    fn __init__(inout self, t: MOList):
+        self.type = t
 
-    # Use a default that will trap, to appease the checker that wants a return.
-    return t.get[MOTensor]().to_mlir(m)
+    fn list(self) raises -> MOList:
+        if not self.type.isa[MOList]():
+            raise "Not a list type!"
+        return self.type.get[MOList]()
+
+    fn tensor(self) raises -> MOTensor:
+        if not self.type.isa[MOTensor]():
+            raise "Not a tensor type!"
+        return self.type.get[MOTensor]()
+
+    fn to_mlir(self, m: Module) -> mlir.Type:
+        if self.type.isa[MOTensor]():
+            return self.type.get[MOTensor]().to_mlir(m)
+        else:
+            debug_assert(self.type.isa[MOList](), "MO type variants")
+            return self.type.get[MOList]().to_mlir(m)
+
+    @staticmethod
+    fn from_mlir(t: mlir.Type) raises -> Self:
+        if capi.type_is_list(t):
+            let element_type = MOTensor.from_mlir(
+                capi.list_type_element_type(t)
+            )
+            return Self(MOList(element_type))
+        else:
+            debug_assert(capi.type_is_tensor(t), "MO type variants")
+            return Self(MOTensor.from_mlir(t))
+
+    fn to_string(self, m: Module) -> String:
+        return str(self.to_mlir(m))
 
 
 @value
@@ -335,7 +362,7 @@ struct TypeTuple(Sized):
     fn to_mlir(self, m: Module) -> DynamicVector[mlir.Type]:
         var retval = DynamicVector[mlir.Type]()
         for i in range(len(self.elts)):
-            retval.append(mo_type_to_mlir(self.elts[i], m))
+            retval.append(self.elts[i].to_mlir(m))
         return retval
 
     # ===------------------------------------------------------------------=== #
