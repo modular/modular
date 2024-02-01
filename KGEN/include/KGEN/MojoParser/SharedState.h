@@ -402,6 +402,10 @@ public:
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,
                                          StringRef fnName, llvm::SMLoc loc);
 
+  /// Lookup a builtin special type.
+  ASTDecl *getBuiltinType(ASTDecl &context, StringRef moduleName,
+                          StringRef typeName, llvm::SMLoc loc);
+
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
