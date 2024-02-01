@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
+from collections import Optional
+
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
@@ -90,11 +92,21 @@ struct Graph:
             results=out_types.to_mlir(self.module()),
             attributes=attrs.attrs,
         )
-        self._body().append(op)
+
+        let output_op = self._output_op()
+        if output_op:
+            self._body().insert_before(output_op.value(), op)
+        else:
+            self._body().append(op)
+
         var tup = SymbolTuple()
         for i in range(op.num_results()):
             tup.append(op.result(i))
         return tup
+
+    fn _output_op(self) raises -> Optional[mlir.Operation]:
+        # Terminator must always be an output op by graph definition
+        return self._body().terminator()
 
     # ===------------------------------------------------------------------=== #
     # op - shorthands for single-result ops
