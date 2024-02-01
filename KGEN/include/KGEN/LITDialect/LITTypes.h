@@ -18,6 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN::LIT {
+class ArgParamListAttr;
 class FnMetadataAttr;
 enum class PassingKind : uint32_t;
 
