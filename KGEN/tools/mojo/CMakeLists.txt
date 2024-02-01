@@ -102,8 +102,8 @@ endif()
 
 message(STATUS "Using ${PYTHON_EXE} to create mblack binary.")
 
-if (MODULAR_RELEASE_PACKAGE_BUILD)
-  message(STATUS "Skipping binary mblack build for release package build.")
+if (MODULAR_STATIC_LINKED_PYTHON)
+  message(STATUS "Skipping binary mblack build when Python is statically linked (e.g. for building wheels inside manylinux).")
   return()
 endif()
 
