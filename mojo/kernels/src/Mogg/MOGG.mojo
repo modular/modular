@@ -112,6 +112,7 @@ from NN.Normalization import layer_norm
 from NN.Pad import (
     pad_reflect as _pad_reflect,
     pad_constant as _pad_constant,
+    pad_repeat as _pad_repeat,
     pad_shape,
 )
 from NN.Pool import avg_pool as _avg_pool, max_pool, pool_shape
@@ -1387,6 +1388,25 @@ fn pad_reflect[
     let paddings_ptr = paddings_buf.data
 
     _pad_reflect(output_buf, input_buf, paddings_ptr)
+
+
+@mogg_register("mo.pad.repeat")
+@always_inline
+@export
+fn pad_repeat[
+    rank: Int,
+    type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    ctx: MojoCallContextPtr,
+):
+    let paddings_ptr = paddings_buf.data
+
+    _pad_repeat(output_buf, input_buf, paddings_ptr)
 
 
 # ===----------------------------------------------------------------------===#
