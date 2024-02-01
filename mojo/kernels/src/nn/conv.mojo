@@ -824,8 +824,7 @@ struct ConvDirectNHWC[
             filter_ptr = _get_group_filter_base(
                 self.filter,
                 self.conv_shape.c_to_group(c_tile_offset),  # group index
-                self.conv_shape.f,
-                self.conv_shape.num_groups,
+                self.conv_shape.f_per_group(),
             )
             # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
             # current group.
@@ -1425,10 +1424,7 @@ struct ConvDirectNHWC[
         if filter_packed:
             # Move the pointer to the current group's start.
             filter_ptr = _get_group_filter_base(
-                self.filter,
-                g,
-                self.conv_shape.f,
-                self.conv_shape.num_groups,
+                self.filter, g, self.conv_shape.f_per_group()
             )
             # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
             # current group.
@@ -2469,94 +2465,49 @@ fn pack_filter_shape_impl[
 
 @always_inline
 fn pack_conv_filter_shape[
-    filter_type: DType,
     single_thread_blocking_override: Bool,
-](
-    filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type],
-    num_groups: Int,
-) -> StaticIntTuple[5]:
+](filter: NDBuffer, num_groups: Int) -> StaticIntTuple[filter.rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
     Parameters:
-        filter_type: Type of the filter.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
     Args:
-        filter_buf: The filter to be packed.
+        filter: The filter to be packed.
         num_groups: The number of groups in the convolution.
 
     Returns:
         The output shape.
     """
-    # ASSUME input has layout RSCF
-    let R = filter_buf.dim(0)
-    let S = filter_buf.dim(1)
-    let C = filter_buf.dim(2)
-    let F = filter_buf.dim(3)
-    return pack_filter_shape_impl[filter_type](R, S, C, F, num_groups)
 
+    alias simd_size = simdwidthof[filter.type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-@always_inline
-fn pack_conv_filter_shape[
-    filter_type: DType,
-    WO: Int,
-    single_thread_blocking_override: Bool,
-](
-    filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type],
-    num_groups: Int,
-) -> StaticIntTuple[5]:
-    """
-    Compute the output shape of convolution filter packing.
+    # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
+    let F = filter.dim[filter.rank - 1]()
 
-    Parameters:
-        filter_type: Type of the filter.
-        WO: Width dimension of the convolution output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        filter_buf: The filter to be packed.
-        num_groups: The number of groups in the convolution.
-
-    Returns:
-        The output shape.
-    """
-    # TODO specialize via `WO`
-    return pack_conv_filter_shape[filter_type, single_thread_blocking_override](
-        filter_buf, num_groups
+    debug_assert(
+        F % num_groups == 0,
+        "number of filters F must be divisible by number of groups",
     )
+    let F_per_group = F // num_groups
 
+    # FRSCf layout.
+    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
+    packed_shape[filter.rank] = micro_kernel_f_size
 
-@always_inline
-fn _get_group_filter_base[
-    rank: Int, type: DType, dims: DimList
-](
-    filter: NDBuffer[rank, dims, type], group_idx: Int, f: Int, num_groups: Int
-) -> DTypePointer[type]:
-    # Each group is zero padded to the nearest multiple of
-    # div_ceil(F_per_group, micro_kernel_width)*R*S*C*micro_kernel_width
-    # Within a group the residual filters are ragged so normal NDBuffer
-    # indexing cannot be used.
-    let shape = filter.get_shape()
-    let micro_kernel_f_size = shape[rank - 1]
-    return filter.data.offset(
-        _compute_ndbuffer_offset(
-            filter,
-            StaticIntTuple[rank](
-                group_idx
-                * div_ceil(
-                    f // num_groups,
-                    micro_kernel_f_size,
-                ),
-                0,
-                0,
-                0,
-                0,
-            ),
-        )
-    )
+    @always_inline
+    @parameter
+    fn assign[i: Int]():
+        packed_shape[i + 1] = filter.dim[i]()
+
+    unroll[filter.rank - 1, assign]()
+
+    return packed_shape
 
 
 @always_inline
@@ -2596,44 +2547,47 @@ fn _get_group_filter_base(
 
 
 @always_inline
-fn pack_filter[
-    type: DType,
-](
-    filter: NDBuffer[4, DimList.create_unknown[4](), type],
-    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
+fn pack_filter(
+    filter: NDBuffer,
+    packed_filter: NDBuffer,
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
     Use the default micro kernel size for dynamic shapes."""
 
-    alias simd_size = simdwidthof[type]()
-    alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    pack_filter[type, simd_size, micro_kernel_f_size](
-        filter, packed_filter, num_groups
-    )
+    constrained[
+        filter.type == packed_filter.type,
+        "Type mismatch between the filter and the packed filter.",
+    ]()
+
+    alias simd_size = simdwidthof[filter.type]()
+    alias f_size_default = get_direct_conv_micro_kernel_width() * simd_size
+
+    @parameter
+    if packed_filter.shape.at[packed_filter.rank - 1]().has_value():
+        alias f_size = packed_filter.shape.get[packed_filter.rank - 1]()
+        pack_filter[simd_size, f_size](filter, packed_filter, num_groups)
+    else:
+        pack_filter[simd_size, f_size_default](
+            filter, packed_filter, num_groups
+        )
 
 
 @always_inline
 fn pack_filter[
-    type: DType,
     simd_size: Int,
     micro_kernel_f_size: Int,
-](
-    filter: NDBuffer[4, DimList.create_unknown[4](), type],
-    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
-    num_groups: Int,
-):
+](filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
-        type: Filter data type.
         simd_size: Can differ from the simd size of the input type.
         micro_kernel_f_size: The size of the last dimension in FRSCf, which is
             equals the size of the micro kernel's F dimension.
 
     Args:
-        filter: Filter in RSCF layout.
-        packed_filter: Packed filter in FRScf layout. Here,
+        filter: Filter in RSCF layout (if 2D).
+        packed_filter: Packed filter in FRSCf layout (if 2D).
             F       - the index of continuous segments in micro kernel.
             R, S, C - original R, S, C.
             f       - the index within a continuous segments.
@@ -2649,57 +2603,56 @@ fn pack_filter[
 
     # The input simd size should not exceed filter type's simd size.
     # E.x. we can pack int8 filter based on int32 simd size.
-    constrained[simd_size <= simdwidthof[type]()]()
+    constrained[simd_size <= simdwidthof[filter.type]()]()
 
-    let R = filter.dim[0]()
-    let S = filter.dim[1]()
-    let C = filter.dim[2]()
-    let F = filter.dim[3]()
+    # Product of filter dims upto (rank - 1).
+    var outer_dims_prod = 1
+
+    @always_inline
+    @parameter
+    fn multiply[i: Int]():
+        outer_dims_prod *= filter.dim[i]()
+
+    unroll[filter.rank - 1, multiply]()
+
+    let F = filter.dim[filter.rank - 1]()
     let F_per_group = F // num_groups
+
     packed_filter.zero()
 
-    # For the last filters in a group that are leftover after dividing the filters
-    # per group by the microkernel width, the inner dim has length simd_width.
-    # This makes the packed format "ragged" - you cannot use normal NDBuffer
-    # indexing to get the value corresponding to a set of coordinates.
-    # Each group is zero padded to the nearest multiple of
-    # div_ceil(F_per_group, micro_kernel_width)*R*S*C*micro_kernel_width.
+    # Each group is zero padded to
+    #
+    #                   div_ceil(F_per_group, micro_kernel_f_size)
+    #                 * outer_dims_prod
+    #                 * micro_kernel_f_size.
+    #
+    # There can be a remainder: F_per_group % micro_kernel_f_size. That's further
+    # tiled by simd_size. The elements beyond the remainder is set to 0. E.x.
+    # micro_kernel_f_size = 8, simd_size = 2, 21 values in total, follows
+    #
+    #                       |--------|--------|--|--|-0|00|
+
     for g in range(num_groups):
-        let group_start = _get_group_filter_base(
-            packed_filter, g, F, num_groups
-        )
+        let group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
         @always_inline
         @parameter
         fn pack[f_tile_size: Int](f_tile_start: Int):
-            var packed_filter_ptr = group_start.offset(f_tile_start * R * S * C)
-            for r in range(R):
-                for s in range(S):
-                    for c in range(C):
-                        let filter_ptr = filter.data.offset(
-                            _compute_ndbuffer_offset(
-                                filter,
-                                StaticIntTuple[4](
-                                    r, s, c, g * F_per_group + f_tile_start
-                                ),
-                            )
-                        )
+            var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
-                        @always_inline
-                        @parameter
-                        fn body[idx: Int]():
-                            let filter_vec = filter_ptr.offset(
-                                idx * simd_size
-                            ).simd_load[simd_size]()
-                            packed_filter_ptr.offset(
-                                idx * simd_size
-                            ).simd_store[simd_size](filter_vec)
+            for row in range(outer_dims_prod):
+                let filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
 
-                        unroll[f_tile_size // simd_size, body]()
+                @unroll
+                for i in range(f_tile_size // simd_size):
+                    packed_filter_ptr.simd_store(
+                        i * simd_size,
+                        filter_ptr.simd_load[simd_size](i * simd_size).cast[
+                            packed_filter.type
+                        ](),
+                    )
 
-                        packed_filter_ptr = packed_filter_ptr.offset(
-                            f_tile_size
-                        )
+                packed_filter_ptr += f_tile_size
 
         # If F % simd_size != 0, the following won't touch the remainder.
         tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](
@@ -2714,51 +2667,22 @@ fn pack_filter[
     if residual > 0:
         for g in range(num_groups):
             let group_start = _get_group_filter_base(
-                packed_filter, g, F, num_groups
+                packed_filter, g, F_per_group
             )
-            var packed_filter_ptr = group_start.offset(
-                F_round_by_simd * R * S * C
-            )
-            for r in range(R):
-                for s in range(S):
-                    for c in range(C):
-                        let filter_ptr = filter.data.offset(
-                            _compute_ndbuffer_offset(
-                                filter,
-                                StaticIntTuple[4](
-                                    r, s, c, g * F_per_group + F_round_by_simd
-                                ),
-                            )
-                        )
-                        # Load remainder elements and pad with zero to
-                        # to fill a simd vector.
-                        let filter_vec = partial_simd_load[simd_size](
-                            filter_ptr, 0, residual, 0.0
-                        )
-                        packed_filter_ptr.simd_store(filter_vec)
-                        # Hence, packed filter is incremented by simd_size
-                        packed_filter_ptr = packed_filter_ptr.offset(simd_size)
+            var packed_filter_ptr = group_start + F_round_by_simd * outer_dims_prod
 
+            for row in range(outer_dims_prod):
+                let filter_ptr = filter.data + row * F + g * F_per_group + F_round_by_simd
 
-@always_inline
-fn pack_conv_filter[
-    type: DType,
-](
-    filter: NDBuffer[4, DimList.create_unknown[4](), type],
-    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
-    num_groups: Int,
-):
-    """This packs the filter form RSCF to FRSCf.
+                # Load remainder elements and pad with zero to
+                # to fill a simd vector.
+                let filter_vec = partial_simd_load[simd_size](
+                    filter_ptr, 0, residual, 0.0
+                ).cast[packed_filter.type]()
+                packed_filter_ptr.simd_store(filter_vec)
 
-    Args:
-        filter: Filter in RSCF layout.
-        packed_filter: Packed filter in FRScf layout. Here,
-            F       - the index of continuous segments in micro kernel.
-            R, S, C - original R, S, C.
-            f       - the index within a continuous segments.
-        num_groups: The number of groups in the convolution.
-    """
-    pack_filter(filter, packed_filter, num_groups)
+                # Hence, packed filter is incremented by simd_size
+                packed_filter_ptr = packed_filter_ptr + simd_size
 
 
 @always_inline

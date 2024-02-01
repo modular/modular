@@ -130,7 +130,7 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter[filter_type, simd_size, micro_kernel_f_size](
+        pack_filter[simd_size, micro_kernel_f_size](
             filter, packed_filter, conv_shape.num_groups
         )
 

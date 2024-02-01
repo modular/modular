@@ -76,14 +76,16 @@ fn test[
         num_groups: num_groups,
     }
 
+    let C_per_group = C // num_groups
+
     let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
+    let filter_ptr = DTypePointer[type].alloc(R * S * C_per_group * F)
     let output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
     let output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
     let bias_ptr = DTypePointer[type].alloc(F)
 
     rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    rand[type](filter_ptr, R * S * C_per_group * F)
     rand[type](bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -98,11 +100,9 @@ fn test[
         input_ptr, Index(N, H, W, C)
     )
     let filter = NDBuffer[4, DimList.create_unknown[4](), type](
-        filter_ptr, Index(R, S, C // num_groups, F)
+        filter_ptr, Index(R, S, C_per_group, F)
     )
-    let packed_filter_shape = pack_conv_filter_shape[type, False](
-        filter, num_groups
-    )
+    let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
@@ -119,7 +119,7 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter[type](filter, packed_filter, num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     alias conv_attr = ConvInfoStatic.create_unknown()
 

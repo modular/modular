@@ -70,54 +70,56 @@ fn test[
         num_groups: num_groups,
     }
 
-    let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
-    let output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
-    let output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    let C_per_group = C // num_groups
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    let input_ptr = DTypePointer[type].alloc(N * W * C)
+    let filter_ptr = DTypePointer[type].alloc(S * C_per_group * F)
+    let output_ptr = DTypePointer[type].alloc(N * WO * F)
+    let output_ref_ptr = DTypePointer[type].alloc(N * WO * F)
+
+    rand[type](input_ptr, N * W * C)
+    rand[type](filter_ptr, S * C_per_group * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    # Rounded C and F size for pre-packed filter.
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
+    # 2D buffers for naive conv.
     let input2d = NDBuffer[4, DimList.create_unknown[4](), type](
         input_ptr, Index(N, H, W, C)
     )
     let filter2d = NDBuffer[4, DimList.create_unknown[4](), type](
         filter_ptr, Index(R, S, C // num_groups, F)
     )
-    let packed_filter_shape = pack_conv_filter_shape[type, False](
-        filter2d, num_groups
+    let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
+        output_ref_ptr, Index(N, HO, WO, F)
     )
+
+    # 1D buffers for direct conv.
+    let input = NDBuffer[3, DimList.create_unknown[3](), type](
+        input_ptr, Index(N, W, C)
+    )
+    let filter = NDBuffer[3, DimList.create_unknown[3](), type](
+        filter_ptr, Index(S, C, F)
+    )
+    let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
+    let packed_filter = NDBuffer[4, DimList.create_unknown[4](), type](
         packed_filter_ptr,
         packed_filter_shape,
     )
     let output = NDBuffer[3, DimList.create_unknown[3](), type](
         output_ptr, Index(N, WO, F)
     )
-    let input1d = NDBuffer[3, DimList.create_unknown[3](), type](
-        input_ptr, Index(N, W, C)
-    )
-    let filter1d = NDBuffer[3, DimList.create_unknown[3](), type](
-        filter_ptr, Index(S, C, F)
-    )
-    let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
-        output_ref_ptr, Index(N, HO, WO, F)
-    )
 
     @parameter
     if filter_packed:
-        pack_filter[type](filter2d, packed_filter, num_groups)
+        pack_filter(filter2d, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -159,10 +161,10 @@ fn test[
     if filter_packed:
         ConvDirectNHWC[
             3,
-            5,
+            4,
             3,
             DimList.create_unknown[3](),
-            DimList.create_unknown[5](),
+            DimList.create_unknown[4](),
             DimList.create_unknown[3](),
             type,
             type,
@@ -172,17 +174,17 @@ fn test[
             False,
         ].run(
             output,
-            input1d,
+            input,
             packed_filter,
             conv_shape,
         )
     else:
         ConvDirectNHWC[
             3,
-            4,
+            3,
             3,
             DimList.create_unknown[3](),
-            DimList.create_unknown[4](),
+            DimList.create_unknown[3](),
             DimList.create_unknown[3](),
             type,
             type,
@@ -190,7 +192,7 @@ fn test[
             False,
             conv_attr,
             False,
-        ].run(output, input1d, filter2d, conv_shape)
+        ].run(output, input, filter, conv_shape)
 
     input_ptr.free()
     filter_ptr.free()

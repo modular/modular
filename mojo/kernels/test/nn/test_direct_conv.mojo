@@ -105,9 +105,7 @@ fn test[
     let filter = NDBuffer[4, DimList.create_unknown[4](), type](
         filter_ptr, Index(R, S, C // num_groups, F)
     )
-    let packed_filter_shape = pack_conv_filter_shape[type, False](
-        filter, num_groups
-    )
+    let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
@@ -124,7 +122,7 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter[type](filter, packed_filter, num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[

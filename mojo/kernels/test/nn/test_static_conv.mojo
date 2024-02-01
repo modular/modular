@@ -112,7 +112,7 @@ fn test[
         ),
     )
 
-    pack_filter[type](filter, packed_filter_dynamic, num_groups)
+    pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
     alias conv_attr_dynamic = ConvInfoStatic.create_unknown()
@@ -161,7 +161,7 @@ fn test[
         packed_filter_ptr_static
     )
 
-    pack_filter[type, simd_size, micro_kernel_f_size](
+    pack_filter[simd_size, micro_kernel_f_size](
         filter,
         rebind[NDBuffer[5, DimList.create_unknown[5](), type]](
             packed_filter_static
