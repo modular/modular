@@ -294,6 +294,26 @@ struct RuntimeOptions {
     return workQueueType;
   }
 
+  StringRef getProfileFilename() const {
+    if constexpr (!kIsProfilingEnabled) {
+      if (!profileFilename.empty())
+        llvm::errs()
+            << "WARNING: The --time-profile option was given but this build"
+               " does not support profiling. Rebuild with "
+               "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
+               "it.\n";
+      return "";
+    }
+#ifdef MODULAR_DEBUG
+    if (!profileFilename.empty())
+      llvm::errs()
+          << "WARNING: Using the --time-profile option in debug mode is"
+             " not recommended due to increased overhead. Please use"
+             " a release build.\n";
+#endif
+    return profileFilename;
+  }
+
   /// Print information about the runtime configuration to standard out.
   void printRuntimeConfig() const {
     printf("runtime using ");
@@ -342,7 +362,10 @@ struct RuntimeOptions {
   size_t getNumThreads() const { return numThreads; }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(StringRef profileName = {}) const;
+  std::unique_ptr<Runtime> createRuntime(StringRef profileName) const;
+  std::unique_ptr<Runtime> createRuntime() const {
+    return createRuntime(getProfileFilename());
+  }
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;
