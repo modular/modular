@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from sys.info import simdwidthof
+from sys.info import simdwidthof, has_neon
 
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
@@ -126,6 +126,10 @@ fn test_micro_kernel[
 @export(ABI="C")
 fn main():
     test_micro_kernel[DType.float32, DType.float32, DType.float32]()
-    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
-    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
-    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32]()
+
+    # TODO(30525): Re-enable after we resolve llvm lowering issues.
+    @parameter
+    if not has_neon():
+        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
+        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
+        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32]()
