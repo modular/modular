@@ -81,7 +81,7 @@ struct Symbol(CollectionElement, Stringable):
     # ... to tidy up ...
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__(self, span: slice) raises -> Symbol:
+    fn __getitem__(self, span: Slice) raises -> Symbol:
         if not span._has_end():
             raise "slice expects stop to be specified"
 
