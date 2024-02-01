@@ -39,7 +39,7 @@ inline const char *plural(size_t value, const char *one = "",
 
 /// If the argument at the given index is of pack type, returns that type.
 /// therwise, returns null.
-PackType getIfPackType(SignatureType sig, size_t index);
+PackType getIfPackType(LITSignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
 /// argument or parameter names.
