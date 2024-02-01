@@ -59,12 +59,9 @@ fn reshape_shape[
     target_shape_buf: NDBuffer[
         1, DimList.create_unknown[1](), target_shape_type
     ],
-) -> StaticIntTuple[output_rank]:
-    # TODO(#17512)
-    debug_assert(
-        output_rank == target_shape_buf.dim(0),
-        "output rank must match target shape",
-    )
+) raises -> StaticIntTuple[output_rank]:
+    if output_rank != target_shape_buf.dim(0):
+        raise Error("[reshape] requires (len(target_shape) == output_rank)")
 
     # move the target shape from buffer into a static int tuple; also check and
     # record if there's any to-be-inferred dimension (-1).
@@ -74,46 +71,28 @@ fn reshape_shape[
     for axis in range(output_rank):
         let target_dim = int(target_shape_buf[axis])
         target_shape[axis] = target_dim
-        if target_dim == -1:
-            # TODO(#17512)
-            debug_assert(
-                to_be_inferred_axis == -1,
-                "only one -1 is allowed in target shape",
-            )
+        if target_dim < 0:
+            if target_dim != -1:
+                raise Error(
+                    "[reshape] only -1 is allowed as a negative value in target"
+                    " shape"
+                )
+            if to_be_inferred_axis != -1:
+                raise Error("[reshape] only one -1 is allowed in target shape")
             to_be_inferred_axis = axis
         else:
-            # TODO(#17512)
-            debug_assert(
-                target_dim >= 0,
-                "only -1 is allowed as a negative value in target shape",
-            )
             non_negative_dim_prodcut *= target_dim
 
     let input_num_elems = input_buf.num_elements()
     var output_num_elems = non_negative_dim_prodcut
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:
-        # TODO(#17512)
-        debug_assert(
-            non_negative_dim_prodcut != 0,
-            (
-                "concrete dimensions must not contain 0 if there's a"
-                " to-be-inferred dimension"
-            ),
-        )
-        debug_assert(
-            input_num_elems % non_negative_dim_prodcut == 0,
-            "to-be-inferred dimension must be an integer",
-        )
         target_shape[to_be_inferred_axis] = (
             input_num_elems // non_negative_dim_prodcut
         )
-        output_num_elems = input_num_elems
+        output_num_elems *= target_shape[to_be_inferred_axis]
 
-    # TODO(#17512)
-    debug_assert(
-        output_num_elems == input_num_elems,
-        "output and input number of elements must match",
-    )
+    if output_num_elems != input_num_elems:
+        raise Error("[reshape] input and output number of elements must match")
 
     return target_shape

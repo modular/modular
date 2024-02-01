@@ -146,7 +146,7 @@ fn conv_transpose_shape[
     dilations: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
     pads: NDBuffer[1, DimList.create_unknown[1](), pads_type],
     output_pads: NDBuffer[1, DimList.create_unknown[1](), output_pads_type],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the
     inputs are compatible.
@@ -174,17 +174,19 @@ fn conv_transpose_shape[
         The output shape.
     """
 
-    # TODO(#17512)
-    debug_assert(input_rank == 4, "input rank must be 4")
-    debug_assert(input_rank == kernel_rank, "input rank must match kernel rank")
-    debug_assert(
-        strides.dim(0) == input_rank - 2 and dilations.dim(0) == input_rank - 2,
-        "strides and dilations size must be input rank - 2",
-    )
-    debug_assert(
-        pads.dim(0) == 2 * (input_rank - 2),
-        "paddings size must be 2 * (input rank - 2)",
-    )
+    if input_rank != 4:
+        raise Error("[conv_transpose] requires (input_rank == 4))")
+    if input_rank != kernel_rank:
+        raise Error("[conv_transpose] requires (input_rank == kernel_rank))")
+    if strides.dim(0) != input_rank - 2 or dilations.dim(0) != input_rank - 2:
+        raise Error(
+            "[conv_transpose] requires (len(strides) == len(dilations) =="
+            " input_rank - 2)"
+        )
+    if pads.dim(0) != 2 * (input_rank - 2):
+        raise Error(
+            "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
+        )
 
     # Assume input has layout NHWC
     let batch_size = input.dim(0)
@@ -209,6 +211,11 @@ fn conv_transpose_shape[
         - int(pads[PADS_W_START])
         - int(pads[PADS_W_END])
     )
+
+    if output_height <= 0:
+        raise Error("[conv_transpose] output height must be positive")
+    if output_width <= 0:
+        raise Error("[conv_transpose] output width must be positive")
 
     var output_shape = StaticIntTuple[input_rank]()
     output_shape[0] = batch_size

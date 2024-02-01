@@ -470,7 +470,7 @@ fn concat_shape[
         NDBuffer[input_rank, DimList.create_unknown[input_rank](), input_type]
     ],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-) -> StaticIntTuple[input_rank]:
+) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -494,11 +494,11 @@ fn concat_shape[
     var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= axis and axis < input_rank,
-        "normalized split axis must be within range [0, input_rank)",
-    )
+    if axis < 0 or input_rank <= axis:
+        raise Error(
+            "[concat_from_list] normalized axis must be within range [0,"
+            " input_rank)"
+        )
 
     @always_inline
     fn shape_equal_ignore_axis(
@@ -512,13 +512,13 @@ fn concat_shape[
     var concat_axis_dim_sum = 0
     for i in range(len(input_bufs)):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
-        # TODO(#17512)
-        debug_assert(
-            shape_equal_ignore_axis(
-                input_bufs[0].get_shape(), input_bufs[i].get_shape()
-            ),
-            "input shapes must be equal except for at the concat axis",
-        )
+        if not shape_equal_ignore_axis(
+            input_bufs[0].get_shape(), input_bufs[i].get_shape()
+        ):
+            raise Error(
+                "[concat_from_list] input shapes must match except at concat"
+                " axis"
+            )
 
     # compute and return the output shape
     var output_shape = input_bufs[0].get_shape()
