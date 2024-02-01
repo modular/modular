@@ -200,7 +200,7 @@ fn pad_shape[
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
     if paddings_buf.dim(0) != input_rank or paddings_buf.dim(1) != 2:
-        raise Error("paddings shape must be (input_rank, 2)")
+        raise Error("[pad] paddings shape must be (input_rank, 2)")
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()

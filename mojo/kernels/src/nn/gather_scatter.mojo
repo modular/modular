@@ -900,14 +900,19 @@ fn scatter_nd_shape[
     """
 
     if indices_rank < 1:
-        raise Error("indices cannot be a scalar")
+        raise Error("[scatter_nd] indices cannot be a scalar")
 
     let num_sliced_dims = indices.dim(indices_rank - 1)
     if num_sliced_dims > input_rank:
-        raise Error("cannot slice more dimensions than what input has")
+        raise Error(
+            "[scatter_nd] cannot slice more dimensions than what input has"
+        )
 
     if indices_rank - 1 + input_rank - num_sliced_dims != updates_rank:
-        raise Error("invalid rank for the updates tensor")
+        raise Error(
+            "[scatter_nd] requires (updates_rank == indices_rank - 1 +"
+            " input_rank - num_sliced_dims)"
+        )
 
     var foundMismatch = False
 
@@ -916,7 +921,9 @@ fn scatter_nd_shape[
         if indices.dim(i) != updates.dim(i):
             foundMismatch = True
     if foundMismatch:
-        raise Error("batch dimensions of indices and updates don't match")
+        raise Error(
+            "[scatter_nd] batch dimensions of indices and updates don't match"
+        )
 
     foundMismatch = False
 
@@ -925,7 +932,9 @@ fn scatter_nd_shape[
         if input.dim(i + num_sliced_dims) != updates.dim(i + indices_rank - 1):
             foundMismatch = True
     if foundMismatch:
-        raise Error("updated dimensions of input and updates don't match")
+        raise Error(
+            "[scatter_nd] updated dimensions of input and updates don't match"
+        )
 
     return input.get_shape()
 
@@ -976,14 +985,18 @@ fn gather_shape[
         The output shape.
     """
     if output_rank != input_rank + indices_rank - 1:
-        raise Error("output rank must equal (input_rank + indices_rank - 1)")
+        raise Error(
+            "[gather] requires (output_rank == input_rank + indices_rank - 1)"
+        )
 
     # extract hyper parameter
     var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     if axis < 0 or input_rank <= axis:
-        raise Error("normalized axis must be within range [0, input_rank)")
+        raise Error(
+            "[gather] normalized axis must be within range [0, input_rank)"
+        )
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[output_rank]()
@@ -1110,14 +1123,14 @@ fn scatter_elements_shape[
         The output shape.
     """
 
-    # Check axis
+    # Normalize and check axis
     var axis_int = int(axis[0])
-    if axis_int < -rank or rank <= axis_int:
-        raise Error("axis must be within range [-input_rank, input_rank)")
-
-    # Normalize axis
     if axis_int < 0:
         axis_int += rank
+    if axis_int < 0 or rank <= axis_int:
+        raise Error(
+            "[scatter] normalized axis must be within range [0, input_rank)"
+        )
 
     # Check individual dimensions
     @unroll
@@ -1126,10 +1139,12 @@ fn scatter_elements_shape[
         let indices_dim = indices.dim(axis)
         let updates_dim = updates.dim(axis)
         if indices_dim != updates_dim:
-            raise Error("indices and updates must have the same shape")
+            raise Error(
+                "[scatter] indices and updates must have the same shape"
+            )
         if indices_dim > input_dim:
             raise Error(
-                "indices and updates shape cannot be bigger than input shape"
+                "[scatter] indices shape cannot be bigger than input shape"
             )
 
     # Return output shape
@@ -1232,14 +1247,17 @@ fn gather_nd_shape[
         The output shape.
     """
     if input_rank < 1 or indices_rank < 1:
-        raise Error("input_rank and indices_rank must be >= 1")
+        raise Error("[gather_nd] input_rank and indices_rank must be >= 1")
 
     let indices_shape = indices_buf.get_shape()
     let index_size = indices_shape[indices_rank - 1]
     if index_size < 1 or input_rank - batch_dims < index_size:
-        raise Error("index size must be within [1, input_rank - batch_dims]")
+        raise Error(
+            "[gather_nd] index size must be within range [1, input_rank -"
+            " batch_dims]"
+        )
     if batch_dims >= indices_rank:
-        raise Error("batch_dims must be smaller than indices_rank")
+        raise Error("[gather_nd] requires (batch_dims < indices_rank)")
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[output_rank]()

@@ -46,15 +46,15 @@ fn arange_shape[
     let stop: Scalar[type] = stop_buf[0]
     let step: Scalar[type] = step_buf[0]
     if step == 0:
-        raise Error("step must be non-zero")
+        raise Error("[range] step must be non-zero")
 
     @parameter
     if start.type.is_integral():
         if step > 0 and stop < start:
-            raise Error("stop cannot be smaller than start for positive step")
+            raise Error("[range] requires (start <= stop) for positive step")
 
         if step < 0 and start < stop:
-            raise Error("start cannot be smaller than stop for negative step")
+            raise Error("[range] requires (stop <= start) for negative step")
 
         return StaticIntTuple[1](len(range(start, stop, step)))
     else:

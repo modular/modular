@@ -238,7 +238,7 @@ fn tile_shape[
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.
     if repeats_buf.dim(0) != input_rank:
-        raise Error("repeats length must match input rank")
+        raise Error("[tile] requires (len(repeats) == input_rank)")
 
     # Compute and return the output shape.
     var output_shape = StaticIntTuple[input_rank]()

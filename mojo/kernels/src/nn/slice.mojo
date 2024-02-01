@@ -136,16 +136,16 @@ fn slice_shape[
     step_buf: NDBuffer[1, DimList.create_unknown[1](), step_type],
 ) raises -> StaticIntTuple[input_rank]:
     if input_rank != start_buf.dim(0):
-        raise Error("start indices size must equal input rank")
+        raise Error("[slice] start indices size must equal input rank")
     if input_rank != stop_buf.dim(0):
-        raise Error("stop indices size must equal input rank")
+        raise Error("[slice] stop indices size must equal input rank")
     if input_rank != step_buf.dim(0):
-        raise Error("step indices size must equal input rank")
+        raise Error("[slice] step indices size must equal input rank")
 
     @unroll
     for axis in range(input_rank):
         if step_buf[axis] == 0:
-            raise Error("step must be non-zero")
+            raise Error("[slice] step must be non-zero")
 
     var output_shape = StaticIntTuple[input_rank]()
 
@@ -179,12 +179,14 @@ fn slice_shape[
 
         if step > 0 and stop < start:
             raise Error(
-                "normalized stop cannot be smaller than start for positive step"
+                "[slice] normalized stop cannot be smaller than start for"
+                " positive step"
             )
 
         if step < 0 and start < stop:
             raise Error(
-                "normalized start cannot be smaller than stop for negative step"
+                "[slice] normalized start cannot be smaller than stop for"
+                " negative step"
             )
 
         output_shape[i] = len(slice(start, stop, step))

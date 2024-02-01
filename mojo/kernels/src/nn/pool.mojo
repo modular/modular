@@ -77,17 +77,22 @@ fn pool_shape[
         The output shape.
     """
     if input_rank != 4:
-        raise Error("input rank must be 4")
+        raise Error("[pooling] requires (input_rank == 4)")
 
     if (
         filter_buf.dim(0) != input_rank - 2
         or strides_buf.dim(0) != input_rank - 2
         or dilations_buf.dim(0) != input_rank - 2
     ):
-        raise Error("strides and dilations size must be input rank - 2")
+        raise Error(
+            "[pooling] requires (len(strides) == len(dilations) == input rank"
+            " - 2)"
+        )
 
     if paddings_buf.dim(0) != 2 * (input_rank - 2):
-        raise Error("paddings size must be 2 * (input rank - 2)")
+        raise Error(
+            "[pooling] requires (len(paddings) == 2 * (input rank - 2))"
+        )
 
     # Assume input has layout NHWC
     let batch_size = input_buf.dim(0)
@@ -115,9 +120,9 @@ fn pool_shape[
     )
 
     if output_height <= 0:
-        raise Error("Pooling output height must be positive")
+        raise Error("[pooling] output height must be positive")
     if output_width <= 0:
-        raise Error("Pooling output width must be positive")
+        raise Error("[pooling] output width must be positive")
 
     var output_shape = StaticIntTuple[input_rank](
         batch_size, output_height, output_width, input_channels

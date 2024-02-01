@@ -46,9 +46,9 @@ fn top_k_shape[
     let k = int(k_buf[0])
 
     if axis < 0 or axis >= rank:
-        raise Error("axis must be within [0, rank]")
+        raise Error("[top/bottom-k] axis must be within [0, rank]")
     if k < 0 or k > input.get_shape()[axis]:
-        raise Error("k must be within [0, input_shape[axis]]")
+        raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = input.get_shape()
     shape[axis] = k

@@ -2996,16 +2996,21 @@ fn conv_shape[
     """
 
     if input_rank != 4:
-        raise Error("input rank must be 4")
+        raise Error("[convolution] requires (input_rank == 4)")
     if input_rank != filter_rank:
-        raise Error("input rank must match filter rank")
+        raise Error("[convolution] requires (input_rank == filter_rank)")
     if (
         strides_buf.dim(0) != input_rank - 2
         or dilations_buf.dim(0) != input_rank - 2
     ):
-        raise Error("strides and dilations size must be input rank - 2")
+        raise Error(
+            "[convolution] requires (len(strides) == len(dilations) =="
+            " input_rank - 2)"
+        )
     if paddings_buf.dim(0) != 2 * (input_rank - 2):
-        raise Error("paddings size must be 2 * (input rank - 2)")
+        raise Error(
+            "[convolution] requires (len(paddings) == 2 * (input rank - 2))"
+        )
 
     # Assume input has layout NHWC
     let batch_size = input_buf.dim(0)
@@ -3017,10 +3022,13 @@ fn conv_shape[
 
     if input_channels != (num_groups * filter_channels):
         raise Error(
-            "input channels and groups times filter channels must match"
+            "[convolution] requires (input_channels == num_groups *"
+            " filter_channels)"
         )
     if (output_channels % num_groups) != 0:
-        raise Error("output_channels must be divisible by the number of groups")
+        raise Error(
+            "[convolution] output_channels must be divisible by num_groups"
+        )
 
     # compute and return the output shape
     let output_height = get_sliding_window_out_dim(
@@ -3039,9 +3047,9 @@ fn conv_shape[
     )
 
     if output_height <= 0:
-        raise Error("Convolution output height must be positive")
+        raise Error("[convolution] output height must be positive")
     if output_width <= 0:
-        raise Error("Convolution output width must be positive")
+        raise Error("[convolution] output width must be positive")
 
     var output_shape = StaticIntTuple[input_rank](
         batch_size, output_height, output_width, output_channels
