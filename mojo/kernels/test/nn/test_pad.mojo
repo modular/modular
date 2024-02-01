@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from NN.Pad import pad_constant, pad_reflect
+from NN.Pad import pad_constant, pad_reflect, pad_repeat
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
@@ -105,6 +105,55 @@ fn test_pad_reflect_1d():
     # CHECK: 2
     print(output[6])
     # CHECK: 1
+    print(output[7])
+
+
+# CHECK-LABEL: test_pad_repeat_1d
+fn test_pad_repeat_1d():
+    print("== test_pad_repeat_1d")
+
+    alias in_shape = DimList(3)
+    alias out_shape = DimList(8)
+
+    # Create an input matrix of the form
+    # [1, 2, 3]
+    let input = NDBuffer[1, in_shape, DType.index].stack_allocation()
+    input[StaticIntTuple[1](0)] = 1
+    input[StaticIntTuple[1](1)] = 2
+    input[StaticIntTuple[1](2)] = 3
+
+    # Create an output matrix of the form
+    # [0, 0, 0, 0, 0, 0, 0, 0]
+    let output = NDBuffer[1, out_shape, DType.index].stack_allocation()
+    output.fill(0)
+
+    # Create a padding array of the form
+    # [3, 2]
+    let paddings = Buffer[2, DType.index].stack_allocation()
+    paddings[0] = 3
+    paddings[1] = 2
+
+    # pad
+    pad_repeat(output, input, paddings.data)
+
+    # output should have form
+    # [1, 1, 1, 1, 2, 3, 3, 3]
+
+    # CHECK: 1
+    print(output[0])
+    # CHECK: 1
+    print(output[1])
+    # CHECK: 1
+    print(output[2])
+    # CHECK: 1
+    print(output[3])
+    # CHECK: 2
+    print(output[4])
+    # CHECK: 3
+    print(output[5])
+    # CHECK: 3
+    print(output[6])
+    # CHECK: 3
     print(output[7])
 
 
@@ -251,6 +300,89 @@ fn test_pad_reflect_2d():
     # CHECK: 2
     print(output[4, 2])
     # CHECK: 4
+    print(output[5, 0])
+    # CHECK: 3
+    print(output[5, 1])
+    # CHECK: 4
+    print(output[5, 2])
+
+
+# CHECK-LABEL: test_pad_repeat_2d
+fn test_pad_repeat_2d():
+    print("== test_pad_repeat_2d")
+
+    alias in_shape = DimList(2, 2)
+    alias out_shape = DimList(6, 3)
+
+    # Create an input matrix of the form
+    # [[1, 2],
+    #  [3, 4]]
+    let input = NDBuffer[2, in_shape, DType.index].stack_allocation()
+    input[StaticIntTuple[2](0, 0)] = 1
+    input[StaticIntTuple[2](0, 1)] = 2
+    input[StaticIntTuple[2](1, 0)] = 3
+    input[StaticIntTuple[2](1, 1)] = 4
+
+    # Create a padding array of the form
+    # [2, 2, 1, 0]
+    let paddings = Buffer[4, DType.index].stack_allocation()
+    paddings[0] = 2
+    paddings[1] = 2
+    paddings[2] = 1
+    paddings[3] = 0
+
+    # Create an output matrix of the form
+    # [[0 0 0]
+    #  [0 0 0]
+    #  [0 0 0]
+    #  [0 0 0]
+    #  [0 0 0]
+    #  [0 0 0]]
+    let output = NDBuffer[2, out_shape, DType.index].stack_allocation()
+    output.fill(0)
+
+    # pad
+    pad_repeat(output, input, paddings.data)
+
+    # output should have form
+    # [[1, 1, 2],
+    #  [1, 1, 2],
+    #  [1, 1, 2],
+    #  [3, 3, 4],
+    #  [3, 3, 4],
+    #  [3, 3, 4]]
+
+    # CHECK: 1
+    print(output[0, 0])
+    # CHECK: 1
+    print(output[0, 1])
+    # CHECK: 2
+    print(output[0, 2])
+    # CHECK: 1
+    print(output[1, 0])
+    # CHECK: 1
+    print(output[1, 1])
+    # CHECK: 2
+    print(output[1, 2])
+    # CHECK: 1
+    print(output[2, 0])
+    # CHECK: 1
+    print(output[2, 1])
+    # CHECK: 2
+    print(output[2, 2])
+    # CHECK: 3
+    print(output[3, 0])
+    # CHECK: 3
+    print(output[3, 1])
+    # CHECK: 4
+    print(output[3, 2])
+    # CHECK: 3
+    print(output[4, 0])
+    # CHECK: 3
+    print(output[4, 1])
+    # CHECK: 4
+    print(output[4, 2])
+    # CHECK: 3
     print(output[5, 0])
     # CHECK: 3
     print(output[5, 1])
@@ -604,12 +736,201 @@ fn test_pad_reflect_4d_big_input():
     output_ptr.free()
 
 
+# CHECK-LABEL: test_pad_repeat_3d
+fn test_pad_repeat_3d():
+    print("== test_pad_repeat_3d")
+    alias in_shape = DimList(2, 2, 2)
+    alias out_shape = DimList(5, 4, 3)
+
+    # Create an input matrix of the form
+    # [[[1, 2],
+    #   [3, 4]],
+    #  [[1, 2],
+    #   [3 ,4]]]
+    let input = NDBuffer[3, in_shape, DType.index].stack_allocation()
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 0, 1)] = 2
+    input[StaticIntTuple[3](0, 1, 0)] = 3
+    input[StaticIntTuple[3](0, 1, 1)] = 4
+    input[StaticIntTuple[3](1, 0, 0)] = 1
+    input[StaticIntTuple[3](1, 0, 1)] = 2
+    input[StaticIntTuple[3](1, 1, 0)] = 3
+    input[StaticIntTuple[3](1, 1, 1)] = 4
+
+    # Create a padding array of the form
+    # [1, 1, 0, 1, 1, 0]
+    let paddings = Buffer[6, DType.index].stack_allocation()
+    paddings[0] = 1
+    paddings[1] = 2
+    paddings[2] = 0
+    paddings[3] = 2
+    paddings[4] = 0
+    paddings[5] = 1
+
+    # Create an output array equivalent to np.zeros((5, 4, 3))
+    let output = NDBuffer[3, out_shape, DType.index].stack_allocation()
+    output.fill(0)
+
+    # pad
+    pad_repeat(output, input, paddings.data)
+
+    # output should have form
+    # [[[1, 2, 2],
+    #   [3, 4, 4],
+    #   [3, 4, 4],
+    #   [3, 4, 4]],
+    #
+    #  [[1, 2, 2],
+    #   [3, 4, 4],
+    #   [3, 4, 4],
+    #   [3, 4, 4]],
+    #
+    #  [[1, 2, 2],
+    #   [3, 4, 4],
+    #   [3, 4, 4],
+    #   [3, 4, 4]],
+    #
+    #  [[1, 2, 2],
+    #   [3, 4, 4],
+    #   [3, 4, 4],
+    #   [3, 4, 4]],
+    #
+    #  [[1, 2, 2],
+    #   [3, 4, 4],
+    #   [3, 4, 4],
+    #   [3, 4, 4]]]
+
+    # CHECK: 1
+    print(output[0, 0, 0])
+    # CHECK: 2
+    print(output[0, 0, 1])
+    # CHECK: 2
+    print(output[0, 0, 2])
+    # CHECK: 3
+    print(output[0, 1, 0])
+    # CHECK: 4
+    print(output[0, 1, 1])
+    # CHECK: 4
+    print(output[0, 1, 2])
+    # CHECK: 3
+    print(output[0, 2, 0])
+    # CHECK: 4
+    print(output[0, 2, 1])
+    # CHECK: 4
+    print(output[0, 2, 2])
+    # CHECK: 3
+    print(output[0, 3, 0])
+    # CHECK: 4
+    print(output[0, 3, 1])
+    # CHECK: 4
+    print(output[0, 3, 2])
+    # CHECK: 1
+    print(output[1, 0, 0])
+    # CHECK: 2
+    print(output[1, 0, 1])
+    # CHECK: 2
+    print(output[1, 0, 2])
+    # CHECK: 3
+    print(output[1, 1, 0])
+    # CHECK: 4
+    print(output[1, 1, 1])
+    # CHECK: 4
+    print(output[1, 1, 2])
+    # CHECK: 3
+    print(output[1, 2, 0])
+    # CHECK: 4
+    print(output[1, 2, 1])
+    # CHECK: 4
+    print(output[1, 2, 2])
+    # CHECK: 3
+    print(output[1, 3, 0])
+    # CHECK: 4
+    print(output[1, 3, 1])
+    # CHECK: 4
+    print(output[1, 3, 2])
+    # CHECK: 1
+    print(output[2, 0, 0])
+    # CHECK: 2
+    print(output[2, 0, 1])
+    # CHECK: 2
+    print(output[2, 0, 2])
+    # CHECK: 3
+    print(output[2, 1, 0])
+    # CHECK: 4
+    print(output[2, 1, 1])
+    # CHECK: 4
+    print(output[2, 1, 2])
+    # CHECK: 3
+    print(output[2, 2, 0])
+    # CHECK: 4
+    print(output[2, 2, 1])
+    # CHECK: 4
+    print(output[2, 2, 2])
+    # CHECK: 3
+    print(output[2, 3, 0])
+    # CHECK: 4
+    print(output[2, 3, 1])
+    # CHECK: 4
+    print(output[2, 3, 2])
+    # CHECK: 1
+    print(output[3, 0, 0])
+    # CHECK: 2
+    print(output[3, 0, 1])
+    # CHECK: 2
+    print(output[3, 0, 2])
+    # CHECK: 3
+    print(output[3, 1, 0])
+    # CHECK: 4
+    print(output[3, 1, 1])
+    # CHECK: 4
+    print(output[3, 1, 2])
+    # CHECK: 3
+    print(output[3, 2, 0])
+    # CHECK: 4
+    print(output[3, 2, 1])
+    # CHECK: 4
+    print(output[3, 2, 2])
+    # CHECK: 3
+    print(output[3, 3, 0])
+    # CHECK: 4
+    print(output[3, 3, 1])
+    # CHECK: 4
+    print(output[3, 3, 2])
+    # CHECK: 1
+    print(output[4, 0, 0])
+    # CHECK: 2
+    print(output[4, 0, 1])
+    # CHECK: 2
+    print(output[4, 0, 2])
+    # CHECK: 3
+    print(output[4, 1, 0])
+    # CHECK: 4
+    print(output[4, 1, 1])
+    # CHECK: 4
+    print(output[4, 1, 2])
+    # CHECK: 3
+    print(output[4, 2, 0])
+    # CHECK: 4
+    print(output[4, 2, 1])
+    # CHECK: 4
+    print(output[4, 2, 2])
+    # CHECK: 3
+    print(output[4, 3, 0])
+    # CHECK: 4
+    print(output[4, 3, 1])
+    # CHECK: 4
+    print(output[4, 3, 2])
+
+
 fn main():
     test_pad_1d()
     test_pad_reflect_1d()
+    test_pad_repeat_1d()
     test_pad_2d()
     test_pad_reflect_2d()
+    test_pad_repeat_2d()
     test_pad_3d()
     test_pad_reflect_3d()
     test_pad_reflect_3d_singleton()
     test_pad_reflect_4d_big_input()
+    test_pad_repeat_3d()

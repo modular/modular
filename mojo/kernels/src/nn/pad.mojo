@@ -21,6 +21,8 @@ from Transpose import _fill_strides
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
+from collections.vector import InlinedFixedVector
+
 from math import min
 
 
@@ -28,6 +30,79 @@ fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
     _ = Buffer[Dim(), type](dst, count).fill(value)
+
+
+struct _NestedLoopIter[n_loops: Int]:
+    """
+    Helper iterable for padding functions meant to represent an n-level loop nest of
+    the form:
+
+    for i1 in range(lower_i1, upper_i1):
+       for i2 in range(lower_i2, upper_i2):
+           for i3 in range(lower_i3, upper_i3):
+             .....
+    """
+
+    var cur: StaticIntTuple[n_loops]
+
+    alias LoopBoundSpec = InlinedFixedVector[Tuple[Int, Int], n_loops]
+    var loop_bounds: _NestedLoopIter[n_loops].LoopBoundSpec
+    var early_stop: Bool
+
+    fn __init__(inout self: Self, loop_bounds: self.LoopBoundSpec):
+        debug_assert(
+            len(loop_bounds) == n_loops,
+            (
+                "Number of entries in loop_bounds doesn't match the number of"
+                " loops specified"
+            ),
+        )
+
+        self.loop_bounds = loop_bounds
+
+        self.cur = StaticIntTuple[n_loops]()
+        self.early_stop = False
+
+        for i in range(n_loops):
+            let lb = self._lb_loop(i)
+            let ub = self._ub_loop(i)
+
+            self.cur[i] = lb
+
+            let invalid_bound = lb >= ub
+            self.early_stop = self.early_stop or invalid_bound
+
+    fn _lb_loop(borrowed self, axis: Int) -> Int:
+        return self.loop_bounds[axis].get[0, Int]()
+
+    fn _ub_loop(borrowed self, axis: Int) -> Int:
+        return self.loop_bounds[axis].get[1, Int]()
+
+    fn __copyinit__(inout self: Self, other: Self):
+        self.cur = other.cur
+        self.loop_bounds = other.loop_bounds
+        self.early_stop = other.early_stop
+
+    fn __iter__(inout self: Self) -> Self:
+        return self
+
+    fn __next__(inout self) -> StaticIntTuple[n_loops]:
+        let cur = self.cur
+
+        self.cur[len(self.cur) - 1] += 1
+
+        for i in range(n_loops - 1, 0, -1):
+            if self.cur[i] == self._ub_loop(i):
+                self.cur[i] = self._lb_loop(i)
+                self.cur[i - 1] += 1
+
+        return cur
+
+    fn __len__(inout self) -> Int:
+        if self.cur[0] >= self._ub_loop(0) or self.early_stop:
+            return 0
+        else:
+            return 1
 
 
 fn pad_constant[
@@ -451,3 +526,106 @@ fn _pad_reflect_impl[
 
             memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
             curr_post_pad += 1
+
+
+@always_inline
+fn pad_repeat[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+    paddings_type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    paddings: DTypePointer[paddings_type],
+):
+    """
+    Fill `output` with values from `input`, and edges padded boundary
+    values from the unpadded region.
+
+    Parameters:
+        rank: Rank of the input/output buffers.
+        output_shape: Dimensions of the output buffer.
+        input_shape: Dimensions of the input buffer.
+        type: DType of the input/output buffer.
+        paddings_type: DType of the input, output, and padding buffers.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        paddings: Ordered (before, after) padding sizes for each axis.
+
+    Example:
+        let input = [[1, 2],
+                     [3, 4]]
+        let paddings = [2, 2, 1, 0]
+
+        Yields:
+        output = [[1, 1, 2],
+                  [1, 1, 2],
+                  [1, 1, 2],
+                  [3, 3, 4],
+                  [3, 3, 4],
+                  [3, 3, 4]]
+    """
+    let padding_ndbuf = NDBuffer[2, DimList(rank, 2), paddings_type](paddings)
+
+    var pre_pads = StaticIntTuple[rank]()
+    var post_pads = StaticIntTuple[rank]()
+
+    for axis in range(rank):
+        pre_pads[axis] = int(paddings[2 * axis])
+        post_pads[axis] = int(paddings[2 * axis + 1])
+
+    var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
+
+    for i in range(rank):
+        loop_bounds.append((0, input.dim(i)))
+
+    var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
+
+    for input_idx in non_pad_iter:
+        let output_idx = input_idx + pre_pads
+        output[output_idx] = input[input_idx]
+
+    for axis in range(rank - 1, -1, -1):
+        alias sit = StaticIntTuple[2]
+
+        let pre_pad = pre_pads[axis]
+        let post_pad = post_pads[axis]
+
+        for i in range(axis):
+            loop_bounds[i] = (pre_pads[i], pre_pads[i] + input.dim(i))
+
+        for i in range(axis + 1, rank):
+            loop_bounds[i] = (0, output.dim(i))
+
+        # handle pre-padding of the axis
+        let pre_lower = 0
+        let pre_upper = pre_pads[axis]
+
+        loop_bounds[axis] = (pre_lower, pre_upper)
+
+        var pre_pad_iter = _NestedLoopIter[rank](loop_bounds)
+
+        for write_idx in pre_pad_iter:
+            var read_idx = write_idx
+
+            read_idx[axis] = pre_pads[axis]
+
+            output[write_idx] = output[read_idx]
+
+        # and now post-padding
+        let post_lower = pre_pads[axis] + input.dim(axis)
+        let post_upper = output.dim(axis)
+
+        loop_bounds[axis] = (post_lower, post_upper)
+
+        var post_pad_iter = _NestedLoopIter[rank](loop_bounds)
+
+        for write_idx in post_pad_iter:
+            var read_idx = write_idx
+            read_idx[axis] = post_lower - 1
+
+            output[write_idx] = output[read_idx]
