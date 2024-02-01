@@ -51,6 +51,16 @@ struct Symbol(CollectionElement, Stringable):
         let graph_op = block.parent()
         return Graph(graph_op)
 
+    fn replace_all_uses_with(self, other: Symbol):
+        self.s.replace_all_uses_with(other.s)
+
+    fn replace_all_uses_with(
+        self, transform: fn (Symbol) raises -> Symbol
+    ) raises:
+        let dummy = self.graph().constant[DType.int64](0)
+        self.replace_all_uses_with(dummy)
+        dummy.replace_all_uses_with(transform(self))
+
     # ===------------------------------------------------------------------=== #
     # Type accessors
     # ===------------------------------------------------------------------=== #
