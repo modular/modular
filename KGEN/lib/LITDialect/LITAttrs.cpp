@@ -66,7 +66,43 @@ LogicalResult ArgParamListAttr::verify(
                                 defaultKwOnly.size(), "arguments/parameter")))
     return failure();
 
-  // TODO: verify varidic Indices
+  // We verified the passing kinds' order and number, so we can use a handler.
+  DefaultValueHandler defaultHandler(passingKinds, defaultPos, defaultKwOnly);
+  auto verifyVariadicIdx = [&](size_t idx, bool isPack) -> LogicalResult {
+    if (idx >= numEl) {
+      return emitError() << "variadic " << (isPack ? "pack " : "")
+                         << "index must be less than the number of elements: "
+                         << idx << " vs. " << numEl;
+    }
+    if (defaultHandler.getDefault(idx))
+      return emitError() << "variadic " << (isPack ? "pack " : "")
+                         << "cannot have a default value";
+    if (passingKinds[idx] != PassingKind::PosOrKw) {
+      if (isPack) {
+        return emitError()
+               << "passing kind of variadic pack must be pos_or_kw, got "
+               << stringifyPassingKind(passingKinds[idx]);
+      }
+      if (passingKinds[idx] != PassingKind::KwOnly) {
+        return emitError()
+               << "passing kind of variadic must be pos_or_kw or kw, got "
+               << stringifyPassingKind(passingKinds[idx]);
+      }
+    }
+    return success();
+  };
+  if (size_t numPacks = packIndices.size(); packIndices.size() > 1) {
+    return emitError() << "more than 1 variadic pack not allowed in an "
+                          "argument/parameter list";
+  } else if (numPacks == 1) {
+    if (failed(verifyVariadicIdx(packIndices[0], /*isPack=*/true)))
+      return failure();
+  }
+
+  for (size_t idx : variadicIndices)
+    if (failed(verifyVariadicIdx(idx, /*isPack=*/false)))
+      return failure();
+
   return success();
 }
 
