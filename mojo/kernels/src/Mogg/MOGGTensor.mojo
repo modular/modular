@@ -91,12 +91,12 @@ struct Tensor[
     type: DType,
     static_shape: DimList = DimList(),
     static_strides: DimList = _static_strides_from_shape[static_shape](),
-    MOGG_input_lambda: Optional[
+    _internal_in_lambda: Optional[
         fn[
             _w: Int, _t: DType, _v: DimList
         ] (IntList[_v]) capturing -> SIMD[_t, _w]
     ] = None,
-    MOGG_output_lambda: Optional[
+    _internal_out_lambda: Optional[
         fn[
             _w: Int, _t: DType, _v: DimList
         ] (IntList[_v], SIMD[_t, _w]) capturing -> None
@@ -302,8 +302,8 @@ struct Tensor[
         let val = rebind[SIMD[type, value.size]](value)
 
         @parameter
-        if Self.MOGG_output_lambda:
-            alias func = Self.MOGG_output_lambda.value()
+        if Self._internal_out_lambda:
+            alias func = Self._internal_out_lambda.value()
             func[val.size, type, index.static_values](index, val)
         else:
             self._simd_store_internal(index, val)
@@ -352,8 +352,8 @@ struct Tensor[
         self._input_fusion_hook()
 
         @parameter
-        if Self.MOGG_input_lambda:
-            alias func = Self.MOGG_input_lambda.value()
+        if Self._internal_in_lambda:
+            alias func = Self._internal_in_lambda.value()
             return func[simd_width, type, index.static_values](index)
         else:
             return self._simd_load_internal[simd_width](index)
