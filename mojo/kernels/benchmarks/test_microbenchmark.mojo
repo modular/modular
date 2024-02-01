@@ -1,0 +1,232 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from memory.buffer import NDBuffer
+import time
+from microbenchmark import Benchmarkable
+import microbenchmark
+from random import seed, random_si64
+from memory.unsafe import DTypePointer, bitcast
+from sys.info import sizeof
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
+from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from Matrix import Matrix
+from time import now
+
+alias alignment = 64
+
+
+fn gemm_naive[
+    a_type: DType, b_type: DType, c_type: DType
+](
+    a: Matrix[DimList.create_unknown[2](), a_type, False],
+    b: Matrix[DimList.create_unknown[2](), b_type, False],
+    c: Matrix[DimList.create_unknown[2](), c_type, False],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    for i in range(m):
+        for p in range(k):
+            for j in range(n):
+                let a_val = a[i, p].cast[c_type]()
+                let b_val = b[p, j].cast[c_type]()
+                c[i, j] += a_val * b_val
+
+
+@value
+struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
+    Benchmarkable
+):
+    var m: Int
+    var n: Int
+    var k: Int
+    var a_ptr: DTypePointer[a_type]
+    var b_ptr: DTypePointer[b_type]
+    var c_ptr: DTypePointer[c_type]
+    var am: Matrix[DimList.create_unknown[2](), a_type, False]
+    var bm: Matrix[DimList.create_unknown[2](), b_type, False]
+    var cm: Matrix[DimList.create_unknown[2](), c_type, False]
+
+    fn __init__(inout self, m: Int, n: Int, k: Int):
+        self.m = m
+        self.n = n
+        self.k = k
+        self.a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
+        self.b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
+        self.c_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
+        self.am = Matrix[DimList.create_unknown[2](), a_type, False](
+            self.a_ptr, Index(self.m, self.k)
+        )
+        self.bm = Matrix[DimList.create_unknown[2](), b_type, False](
+            self.b_ptr, Index(self.k, self.n)
+        )
+        self.cm = Matrix[DimList.create_unknown[2](), c_type, False](
+            self.c_ptr, Index(self.m, self.n)
+        )
+
+    fn __str__(self) -> String:
+        return (
+            "m = "
+            + str(self.m)
+            + ", n = "
+            + str(self.n)
+            + ", k = "
+            + str(self.k)
+        )
+
+    fn __del__(owned self):
+        self.a_ptr.free()
+        self.b_ptr.free()
+        self.c_ptr.free()
+
+    @always_inline
+    fn global_pre_run(self):
+        print("Generating Random Input Data")
+        for i in range(self.m):
+            for j in range(self.k):
+                let val = random_si64(0, 255)
+                self.am[i, j] = val.cast[a_type]()
+        for i in range(self.k):
+            for j in range(self.n):
+                let val = random_si64(-128, 127)
+                self.bm[i, j] = val.cast[b_type]()
+        for i in range(self.m):
+            for j in range(self.n):
+                self.cm[i, j] = 0
+
+    @always_inline
+    fn pre_run(self):
+        pass
+
+    fn run(self):
+        gemm_naive[a_type, b_type, c_type](
+            self.am, self.bm, self.cm, self.m, self.n, self.k
+        )
+
+    @always_inline
+    fn post_run(self):
+        pass
+
+    @always_inline
+    fn global_post_run(self):
+        pass
+
+
+@value
+struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
+    var m: Int
+    var n: Int
+    var k: Int
+    var a_ptr: DTypePointer[a_type]
+    var b_ptr: DTypePointer[b_type]
+    var c_ptr: DTypePointer[c_type]
+    var am: Matrix[DimList.create_unknown[2](), a_type, False]
+    var bm: Matrix[DimList.create_unknown[2](), b_type, False]
+    var cm: Matrix[DimList.create_unknown[2](), c_type, False]
+
+    fn __init__(inout self, m: Int, n: Int, k: Int):
+        self.m = m
+        self.n = n
+        self.k = k
+        self.a_ptr = DTypePointer[a_type].aligned_alloc(
+            alignment, self.m * self.k
+        )
+        self.b_ptr = DTypePointer[b_type].aligned_alloc(
+            alignment, self.k * self.n
+        )
+        self.c_ptr = DTypePointer[c_type].aligned_alloc(
+            alignment, self.m * self.n
+        )
+        self.am = Matrix[DimList.create_unknown[2](), a_type, False](
+            self.a_ptr, Index(self.m, self.k)
+        )
+        self.bm = Matrix[DimList.create_unknown[2](), b_type, False](
+            self.b_ptr, Index(self.k, self.n)
+        )
+        self.cm = Matrix[DimList.create_unknown[2](), c_type, False](
+            self.c_ptr, Index(self.m, self.n)
+        )
+
+    fn __str__(self) -> String:
+        return (
+            "m = "
+            + str(self.m)
+            + ", n = "
+            + str(self.n)
+            + ", k = "
+            + str(self.k)
+        )
+
+    fn __del__(owned self):
+        self.a_ptr.free()
+        self.b_ptr.free()
+        self.c_ptr.free()
+
+    @always_inline
+    fn global_pre_run(self):
+        print("Generating Random Input Data")
+        for i in range(self.m):
+            for j in range(self.k):
+                let val = random_si64(0, 255)
+                self.am[i, j] = val.cast[a_type]()
+        for i in range(self.k):
+            for j in range(self.n):
+                let val = random_si64(-128, 127)
+                self.bm[i, j] = val.cast[b_type]()
+        for i in range(self.m):
+            for j in range(self.n):
+                self.cm[i, j] = 0
+
+    @always_inline
+    fn pre_run(self):
+        pass
+
+    fn run(self):
+        matmul[
+            a_type,
+            DimList.create_unknown[2](),
+            b_type,
+            DimList.create_unknown[2](),
+            c_type,
+            DimList.create_unknown[2](),
+        ](self.cm.data, self.am.data, self.bm.data)
+
+    @always_inline
+    fn post_run(self):
+        pass
+
+    @always_inline
+    fn global_post_run(self):
+        pass
+
+
+fn main():
+    microbenchmark.run(
+        MatmulTest[DType.uint8, DType.int8, DType.int32](800, 800, 160),
+        "opt_matmul_1",
+    )
+    microbenchmark.run(
+        MatmulTest[DType.uint8, DType.int8, DType.int32](16, 16, 32),
+        "opt_matmul_2",
+    )
+    microbenchmark.run(
+        MatmulTest[DType.uint8, DType.int8, DType.int32](32, 32, 64),
+        "opt_matmul_3",
+    )
+    microbenchmark.run(
+        MatmulNaiveTest[DType.uint8, DType.int8, DType.int32](8, 8, 16),
+        "naive_matmul_1",
+    )
+    microbenchmark.run(
+        MatmulNaiveTest[DType.uint8, DType.int8, DType.int32](16, 16, 32),
+        "naive_matmul_2",
+    )
+    microbenchmark.run(
+        MatmulNaiveTest[DType.uint8, DType.int8, DType.int32](32, 32, 64),
+        "naive_matmul_3",
+    )
