@@ -50,18 +50,6 @@ loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
                          const CompilationOptions &compileOptions,
                          LLCL::Runtime &runtime);
 
-/// Loads the serialized MLIR bytecode representing a pre-elaborated module in
-/// `bytecodeAttr`, and prepare to link it into directly another module. Returns
-/// the module if successful, or an error.
-ErrorOr<OwningOpRef<ModuleOp>>
-loadPreElaboratedModuleForLinking(DenseResourceElementsAttr bytecodeAttr);
-
-/// Loads the serialized MLIR bytecode representing a pre-elaborated module in
-/// `bytecodeAttr`, and prepare to link it into directly another module. Returns
-/// the bytecode if successful, or an error.
-ErrorOr<DenseResourceElementsAttr>
-loadPreElaboratedBytecodeForLinking(DenseResourceElementsAttr bytecodeAttr);
-
 /// This populates the passes to produce a fully concrete KGEN module. It's the
 /// equivalent of the `buildElaborateModulePipeline` function defined in
 /// KGENCompiler, but with a default handler for package link ops.
