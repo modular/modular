@@ -1081,7 +1081,7 @@ fn concat_shape[
     if axis < 0:
         axis += input_rank
     if axis < 0 or input_rank <= axis:
-        raise ("normalized split axis must be within range [0, input_rank)")
+        raise ("[concat] normalized axis must be within range [0, input_rank)")
 
     @parameter
     @always_inline
@@ -1103,7 +1103,7 @@ fn concat_shape[
             input_bufs[0].get_shape(), input_bufs[i].get_shape()
         ):
             raise Error(
-                "input shapes must be equal except for at the concat axis"
+                "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
@@ -1742,7 +1742,9 @@ fn squeeze_shape_shape[
     let out_dim = input_shape.dim(0) - remove_indices.dim(0)
 
     if out_dim < 0:
-        raise Error("cannot remove more dimensions than there exists")
+        raise Error(
+            "[squeeze_shape] cannot remove more dimensions than there exists"
+        )
 
     return StaticIntTuple[1](out_dim)
 
@@ -1871,13 +1873,15 @@ fn transpose_shape[
     perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
 ) raises -> StaticIntTuple[rank]:
     if perms.dim(0) != rank:
-        raise Error("Permutation size must match input rank")
+        raise Error("[transpose] permutation size must match input rank")
 
     @unroll
     for i in range(rank):
         let perm = int(perms[i])
         if perm < 0 or rank <= perm:
-            raise Error("each permutation must be within [0, rank)")
+            raise Error(
+                "[transpose] each permutation must be within range [0, rank)"
+            )
 
     # NOTE this assumes `transpose` can handle input with null data pointer
     let out = transpose[rank, type, int_type, single_thread_blocking_override](
