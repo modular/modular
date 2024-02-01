@@ -122,16 +122,3 @@ config.excludes.update(["test_user_op"])
 output = subprocess.run("is-cuda-available")
 if output.returncode == 0:
     config.available_features.add("cuda")
-
-
-torchscript_relu_model_path = (
-    Path(config.modular_src_root)
-    / "GenericML"
-    / "integration-test"
-    / "max-cli"
-    / "Inputs"
-    / "relu3x100x100.torchscript"
-)
-config.substitutions.append(
-    ("%torchscript_relu_model", str(torchscript_relu_model_path))
-)
