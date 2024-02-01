@@ -11,8 +11,6 @@ from ._status import *
 from ._context import *
 from ._model_specs import *
 from .session import InferenceSession
-from sys import external_call
-from ._tensor_spec_impl import CTensorSpec
 
 
 @value
@@ -50,7 +48,6 @@ struct CCompileConfig:
     alias SetModelPathFnName = "M_setModelPath"
     alias ReplaceOpsFnName = "M_useKernelsFrom"
     alias SetDeviceFnName = "M_setDevice"
-    alias SetTorchInputSpecsFnName = "M_setTorchInputSpecs"
 
     fn set_model_source(
         self, model_source: ModelSource, borrowed lib: DLHandle
@@ -73,20 +70,6 @@ struct CCompileConfig:
         if status:
             raise Error(status.__str__())
 
-    fn set_torch_input_specs(
-        self,
-        torch_lib: DLHandle,
-        specs_ptr: Pointer[CTensorSpec],
-        spec_count: Int,
-    ):
-        call_dylib_func(
-            torch_lib,
-            Self.SetTorchInputSpecsFnName,
-            self,
-            specs_ptr,
-            spec_count,
-        )
-
     fn free(self, borrowed lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompileConfigFnName, self)
 
@@ -96,13 +79,6 @@ struct CompileConfig:
 
     var ptr: Pointer[CCompileConfig]
     var lib: DLHandle
-    var torch_lib: Optional[DLHandle]
-
-    var input_specs: AnyPointer[EngineTensorSpec]
-    var input_specs_c_ptr: Pointer[CTensorSpec]
-    var input_spec_count: Int
-    var input_spec_capacity: Int
-    alias initial_capacity = 5
 
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
@@ -113,48 +89,9 @@ struct CompileConfig:
         ](lib, Self.NewCompileConfigFnName)
         self.lib = lib
 
-        # Pick a reasonable intitial value
-        self.input_spec_capacity = Self.initial_capacity
-        self.input_specs = AnyPointer[EngineTensorSpec].alloc(
-            self.input_spec_capacity
-        )
-        self.input_specs_c_ptr = Pointer[CTensorSpec].alloc(
-            self.input_spec_capacity
-        )
-        self.input_spec_count = 0
-        self.torch_lib = Self._get_torch_lib()
-
-    @staticmethod
-    fn _get_torch_lib() -> Optional[DLHandle]:
-        # Since we only need to open this library for this case we
-        # can lazy load it here.
-        let torch_ext_lib_path_str_ptr = external_call[
-            "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
-        ]("max.torch_ext_lib")
-
-        # This transfers ownership of the underlying data buffer allocated in
-        # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-        let pathlen = len(StringRef(torch_ext_lib_path_str_ptr))
-        let torch_ext_lib_path = String(
-            torch_ext_lib_path_str_ptr, pathlen + 1
-        )  # account for the terminator
-
-        if not torch_ext_lib_path:
-            return None
-
-        if not Path(torch_ext_lib_path).exists():
-            return None
-
-        return DLHandle(torch_ext_lib_path)
-
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = existing.ptr
         self.lib = existing.lib
-        self.input_specs = existing.input_specs
-        self.input_specs_c_ptr = existing.input_specs_c_ptr
-        self.input_spec_count = existing.input_spec_count
-        self.input_spec_capacity = existing.input_spec_capacity
-        self.torch_lib = existing.torch_lib
 
     fn set_model_source(self, model_source: ModelSource):
         __get_address_as_lvalue(self.ptr.address).set_model_source(
@@ -169,85 +106,10 @@ struct CompileConfig:
         """Replace Modular kernels with user-defined kernels."""
         __get_address_as_lvalue(self.ptr.address).replace_ops(path, self.lib)
 
-    fn set_torch_input_specs(self) raises:
-        if self.input_spec_count == 0:
-            return
-
-        if not self.torch_lib:
-            raise "cannot find torch extension libraries"
-
-        __get_address_as_lvalue(self.ptr.address).set_torch_input_specs(
-            self.torch_lib.value(),
-            self.input_specs_c_ptr,
-            self.input_spec_count,
-        )
-
-    fn add_input_spec(inout self, owned spec: EngineTensorSpec):
-        # We don't have a collection type for Movable only objects
-        # So we keep track of both EngineTensorSpec to clear at the end
-        # as well as an array of CTensorSpec to pass to C API.
-
-        # If we have reached capacity realloc and move existing values there.
-        if self.input_spec_count == self.input_spec_capacity:
-            # Double the capacity and allocate new ptrs.
-            self.input_spec_capacity *= 2
-            let input_specs = AnyPointer[EngineTensorSpec].alloc(
-                self.input_spec_capacity
-            )
-            let input_specs_c_ptr = Pointer[CTensorSpec].alloc(
-                self.input_spec_capacity
-            )
-
-            # Move old values to new location and delete the
-            # old memory.
-            for i in range(self.input_spec_count):
-                _ = __get_address_as_owned_value(
-                    (input_specs_c_ptr + i).address
-                )
-                (input_specs + i).emplace_value(
-                    (self.input_specs + i).take_value()
-                )
-                let inner_ptr = __get_address_as_lvalue(
-                    (input_specs + i).value
-                )._borrow_ptr()
-                input_specs_c_ptr.store(i, inner_ptr)
-
-            self.input_specs_c_ptr.free()
-            self.input_specs.free()
-            self.input_specs = input_specs
-            self.input_specs_c_ptr = input_specs_c_ptr
-
-        # Keep both engine tensor spec and its inner C spec.
-        (self.input_specs + self.input_spec_count).emplace_value(spec ^)
-        let inner_ptr = __get_address_as_lvalue(
-            (self.input_specs + self.input_spec_count).value
-        )._borrow_ptr()
-        self.input_specs_c_ptr.store(self.input_spec_count, inner_ptr)
-        self.input_spec_count += 1
-
     fn borrow_ptr(self) -> Pointer[CCompileConfig]:
         return self.ptr
 
-    fn take_ptr(inout self) -> Pointer[CCompileConfig]:
-        let ptr = self.ptr
-        self.ptr = Pointer[CCompileConfig]()
-        return ptr
-
-    fn _del_specs(self):
-        for i in range(self.input_spec_count):
-            _ = (self.input_specs + i).take_value()
-
-        # We don't need to call destructor for inner c ptr
-        self.input_specs_c_ptr.free()
-        self.input_specs.free()
-
     fn __del__(owned self):
-        self._del_specs()
-
-        if self.torch_lib:
-            var torch = self.torch_lib.value()
-            torch._del_old()
-
         __get_address_as_lvalue(self.ptr.address).free(self.lib)
         _ = __get_address_as_owned_value(self.ptr.address)
         self.ptr.free()
