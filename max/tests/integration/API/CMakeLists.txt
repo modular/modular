@@ -28,6 +28,7 @@ add_modular_testsuite(check-api-integration-tests
   tfl
   monnx
   mof
+  mtorch
   is-cuda-available
   )
 
