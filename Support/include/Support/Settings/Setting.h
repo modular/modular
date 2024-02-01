@@ -40,10 +40,10 @@ private:
   /// class.
   friend class Settings;
 
-  Setting(StringRef s) : storage(s) {}
+  Setting(StringRef s) : storage(s.str()) {}
   Setting(M::Entitlement *e) : storage(e) {}
 
-  SmartVariant<StringRef, M::Entitlement *> storage;
+  SmartVariant<std::string, M::Entitlement *> storage;
 };
 } // namespace M
 
@@ -51,9 +51,9 @@ namespace llvm {
 /// Provide casting support from an M::Setting to a concrete Entitlement, such
 /// as ModularDeveloperEntitlement.
 template <typename E>
-struct CastInfo<E *, M::Setting,
+struct CastInfo<E *, M::Setting *,
                 std::enable_if_t<std::is_base_of_v<M::Entitlement, E>>> {
-  using Self = CastInfo<E *, M::Setting,
+  using Self = CastInfo<E *, M::Setting *,
                         std::enable_if_t<std::is_base_of_v<M::Entitlement, E>>>;
 
   static bool isPossible(const M::Setting *s) {
@@ -79,22 +79,33 @@ struct CastInfo<E *, M::Setting,
   }
 };
 
+template <typename E>
+struct CastInfo<const E *, const M::Setting *,
+                std::enable_if_t<std::is_base_of_v<M::Entitlement, E>>>
+    : public ConstStrippingForwardingCast<const E *, const M::Setting *,
+                                          CastInfo<E *, M::Setting *>> {};
+
 /// Provide casting support from an M::Setting to a StringRef. This is primarily
 /// useful for Config settings which are represented as strings.
 template <>
-struct CastInfo<StringRef, M::Setting>
-    : public DefaultDoCastIfPossible<StringRef, M::Setting,
-                                     CastInfo<StringRef, M::Setting>> {
+struct CastInfo<StringRef, M::Setting *>
+    : public DefaultDoCastIfPossible<StringRef, M::Setting *,
+                                     CastInfo<StringRef, M::Setting *>> {
   static bool isPossible(const M::Setting *s) {
-    return isa<StringRef>(s->getStorage());
+    return isa<std::string>(s->getStorage());
   }
 
   static StringRef doCast(const M::Setting *s) {
-    return llvm::cast<StringRef>(s->getStorage());
+    return llvm::cast<std::string>(s->getStorage());
   }
 
   static StringRef castFailed() { return ""; }
 };
+
+template <>
+struct CastInfo<StringRef, const M::Setting *>
+    : public ConstStrippingForwardingCast<StringRef, const M::Setting *,
+                                          CastInfo<StringRef, M::Setting *>> {};
 
 /// It would be possible to have strongly-typed configs as well - the simplest
 /// model would be to have a CastInfo<T, M::Setting> that simply parses T from a
