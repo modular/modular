@@ -134,25 +134,59 @@ fn slice_shape[
     start_buf: NDBuffer[1, DimList.create_unknown[1](), start_type],
     stop_buf: NDBuffer[1, DimList.create_unknown[1](), stop_type],
     step_buf: NDBuffer[1, DimList.create_unknown[1](), step_type],
-) -> StaticIntTuple[input_rank]:
-    # TODO(17512)
-    debug_assert(
-        input_rank == start_buf.dim(0),
-        "start indices size must equal input rank",
-    )
-    debug_assert(
-        input_rank == stop_buf.dim(0), "stop indices size must equal input rank"
-    )
-    debug_assert(
-        input_rank == step_buf.dim(0), "step indices size must equal input rank"
-    )
+) raises -> StaticIntTuple[input_rank]:
+    if input_rank != start_buf.dim(0):
+        raise Error("start indices size must equal input rank")
+    if input_rank != stop_buf.dim(0):
+        raise Error("stop indices size must equal input rank")
+    if input_rank != step_buf.dim(0):
+        raise Error("step indices size must equal input rank")
 
     @unroll
     for axis in range(input_rank):
-        debug_assert(int(step_buf[axis]) != 0, "step must be non-zero")
+        if step_buf[axis] == 0:
+            raise Error("step must be non-zero")
 
-    # NOTE this assumes `slice_as_view` can handle input with null data pointer
-    let output_shape = slice_as_view(
-        input_buf, start_buf, stop_buf, step_buf
-    ).dynamic_shape
+    var output_shape = StaticIntTuple[input_rank]()
+
+    @unroll
+    for i in range(input_rank):
+        var start = int(start_buf[i])
+        var stop = int(stop_buf[i])
+        let step = int(step_buf[i])
+        let dim_i = input_buf.dim(i)
+
+        # Normalize the start/stop indices
+        if start < 0:
+            start = start + dim_i
+        if stop < 0:
+            stop = stop + dim_i
+
+        # Compute the min/max for clamping start/end
+        let idx_min = 0 if step > 0 else -1
+        let idx_max = dim_i if step > 0 else dim_i - 1
+
+        # Allow start and stop to truncate like numpy and torch allow.
+        if start < idx_min:
+            start = idx_min
+        elif start > idx_max:
+            start = idx_max
+
+        if stop < idx_min:
+            stop = idx_min
+        elif stop > idx_max:
+            stop = idx_max
+
+        if step > 0 and stop < start:
+            raise Error(
+                "normalized stop cannot be smaller than start for positive step"
+            )
+
+        if step < 0 and start < stop:
+            raise Error(
+                "normalized start cannot be smaller than stop for negative step"
+            )
+
+        output_shape[i] = len(slice(start, stop, step))
+
     return output_shape
