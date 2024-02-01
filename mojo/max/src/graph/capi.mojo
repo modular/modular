@@ -252,3 +252,17 @@ fn list_type_new(m: mlir.Module, eltype: mlir.Type) -> mlir.Type:
     return cfunc[fn (mlir.Module.c_type, mlir.Type.c_type) -> mlir.Type.c_type](
         "MAXG_listTypeNew"
     )(m.c, eltype.c)
+
+
+fn list_type_element_type(t: mlir.Type) -> mlir.Type:
+    return cfunc[fn (mlir.Type.c_type) -> mlir.Type.c_type](
+        "MAXG_listTypeElementType"
+    )(t.c)
+
+
+fn type_is_list(t: mlir.Type) -> Bool:
+    return cfunc[fn (mlir.Type.c_type) -> Bool]("MAXG_typeIsList")(t.c)
+
+
+fn type_is_tensor(t: mlir.Type) -> Bool:
+    return cfunc[fn (mlir.Type.c_type) -> Bool]("MAXG_typeIsTensor")(t.c)
