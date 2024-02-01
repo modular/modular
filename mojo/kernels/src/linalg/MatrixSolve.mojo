@@ -155,19 +155,19 @@ fn matrix_solve_shape[
     """
 
     if rank < 2:
-        raise Error("matrix-solve requires rank >= 2")
+        raise Error("[matrix-solve] requires (rank >= 2)")
 
     if a_buff.dim(rank - 1) != a_buff.dim(rank - 2):
         raise Error(
-            "matrix-solve requires first input to be a (batch of) square matrix"
+            "[matrix-solve] first input must be a (batch of) square matrix"
         )
 
     if a_buff.dim(rank - 2) != b_buff.dim(rank - 2):
-        raise Error("matrix-solve input outter dimensions must match")
+        raise Error("[matrix-solve] inputs outter dimensions must match")
 
     @unroll
     for i in range(rank - 2):
         if a_buff.dim(i) != b_buff.dim(i):
-            raise Error("matrix-solve batch dimensions must match")
+            raise Error("[matrix-solve] inputs batch dimensions must match")
 
     return b_buff.get_shape()

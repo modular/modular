@@ -610,10 +610,10 @@ fn batched_matmul_shape[
     """
 
     if rank <= 2:
-        raise Error("batched_matmul requires rank >= 2")
+        raise Error("[batch_matmul] requires rank > 2")
 
     if a_buff.dim(rank - 1) != b_buff.dim(rank - 2):
-        raise Error("batched_matmul inner dimension must match")
+        raise Error("[batch_matmul] inputs inner dimensions must match")
 
     # Check batch dimensions
     var foundMismatch = False
@@ -624,7 +624,7 @@ fn batched_matmul_shape[
             foundMismatch = True
 
     if foundMismatch:
-        raise Error("batched_matmul batch dimensions must match")
+        raise Error("[batch_matmul] inputs batch dimensions must match")
 
     var output_shape = a_buff.get_shape()
     output_shape[rank - 1] = b_buff.dim(rank - 1)
