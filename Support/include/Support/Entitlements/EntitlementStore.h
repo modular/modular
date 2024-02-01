@@ -53,12 +53,9 @@ public:
     return *this;
   }
 
-  /// Get the current user ID. Clients should use this rather than reading
-  /// `modular.cfg` or any other alternative if they want to find the current
-  /// user's ID for e.g. telemetry. This may return an error if we don't have
-  /// access to any kind of user ID.
-  ErrorOr<std::string>
-  getUserID(std::optional<Config> cfg = std::nullopt) const;
+  /// Get the current user ID. This is effectively a view over the Subject
+  /// string in the certificate.
+  ErrorOr<StringRef> getUserID() const;
 
   /// Open the entitlements store. If the client certificate exists, this will
   /// return a valid and ready-to-use EntitlementStore. If the client

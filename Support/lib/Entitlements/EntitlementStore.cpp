@@ -181,8 +181,9 @@ public:
   }
 
   /// Return the subject of the leaf certificate. This asserts that the
-  /// certificate has been verified.
-  ErrorOr<std::string> getSubject() const;
+  /// certificate has been verified. This returns a reference to the string data
+  /// contained directly in the certificate.
+  ErrorOr<StringRef> getSubject() const;
 
   /// Apply `policy` to the validity period of the parsed leaf certificate.
   ErrorOr<bool> applyToValidity(
@@ -316,7 +317,7 @@ ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys,
 // Detail::CertificateChain::getSubject
 //===----------------------------------------------------------------------===//
 
-ErrorOr<std::string> Detail::CertificateChain::getSubject() const {
+ErrorOr<StringRef> Detail::CertificateChain::getSubject() const {
   assert(verified && "must have a verified certificate chain");
   // The subject is exactly the value of the ASN.1 subject for the previous
   // certificate, which is the user ID. The subject is a linked-list of C/O/CN
@@ -329,7 +330,7 @@ ErrorOr<std::string> Detail::CertificateChain::getSubject() const {
   auto *commonName = mbedtls_asn1_find_named_data(
       &getLeafCertificate()->subject, (const char *)encoded.data(),
       encoded.size());
-  return std::string{(const char *)commonName->val.p, commonName->val.len};
+  return StringRef{(const char *)commonName->val.p, commonName->val.len};
 }
 
 //===----------------------------------------------------------------------===//
@@ -626,34 +627,15 @@ EntitlementStore::EntitlementStore(M::EntitlementStore &&other) = default;
 // EntitlementStore::getUserID
 //===----------------------------------------------------------------------===//
 
-ErrorOr<std::string>
-EntitlementStore::getUserID(std::optional<Config> cfg) const {
-  if (clientCert) {
-    auto subjOr = clientCert->getSubject();
-    if (subjOr.isError())
-      return subjOr.takeError();
+ErrorOr<StringRef> EntitlementStore::getUserID() const {
+  if (!clientCert)
+    return Error("no client certificate");
 
-    return subjOr.takeValue();
-  }
+  auto subjOr = clientCert->getSubject();
+  if (subjOr.isError())
+    return subjOr.takeError();
 
-  // If we don't have a client cert, then use modular.cfg.
-  // TODO(#27787): Phase this out as we roll out entitlements.
-  Config config;
-  if (!cfg) {
-    auto cfgOr = Config::open();
-    if (cfgOr.isError())
-      return cfgOr.takeError();
-    config = cfgOr.takeValue();
-  } else {
-    config = std::move(*cfg);
-  }
-
-  // Get the user ID.
-  StringRef val = config.getValue("user.id");
-  if (val.empty())
-    return Error("no user ID found in modular.cfg");
-
-  return val.str();
+  return subjOr.takeValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -840,12 +822,13 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
         shouldRefresh) {
   // It is an error to 'refresh' if we don't already have the client
   // certificate.
-  if (!clientCert->isAvailable())
+  if (!clientCert || !clientCert->isAvailable())
     return Error("no client certificate loaded");
 
   // Apply the `shouldRefresh` function to the validity period in the client
   // certificate.
-  auto shouldRefreshOr = clientCert->applyToValidity(shouldRefresh);
+  auto shouldRefreshOr = clientCert->applyToValidity(
+      shouldRefresh ? shouldRefresh : defaultEntitlementRefreshPolicy);
   if (shouldRefreshOr.isError())
     return shouldRefreshOr.takeError();
 
