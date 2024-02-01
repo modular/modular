@@ -23,7 +23,7 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-PackType LIT::getIfPackType(SignatureType sig, size_t index) {
+PackType LIT::getIfPackType(LITSignatureType sig, size_t index) {
   return sig.isPackVarArg(index) ? ::cast<PackType>(sig.getArguments()[index])
                                  : nullptr;
 }

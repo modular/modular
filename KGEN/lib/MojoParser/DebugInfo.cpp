@@ -56,7 +56,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       name = func.getSymNameAttr();
     // Bundle the source names of the argument and parameter types. Don't
     // include the memory-only result slot if it's there.
-    SignatureType sig = func.getSignature();
+    LITSignatureType sig = func.getSignature();
     for (Type type : sig.getInputParamTypes())
       paramTypes.push_back(getSourceName(type));
     for (auto [i, t, conv] : llvm::drop_begin(

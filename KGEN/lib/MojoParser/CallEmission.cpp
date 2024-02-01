@@ -1060,7 +1060,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   auto calleeSignature =
-      cast<SignatureType>(directSymbolAttr.getType().mlirType);
+      cast<LITSignatureType>(directSymbolAttr.getType().mlirType);
   Type firstArgIRType = calleeSignature.getArguments()[0];
   ArgConvention selfConvention = calleeSignature.getArgConvention(0);
   Value firstArgValue;
