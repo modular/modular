@@ -177,18 +177,7 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
   debugTypeConverter.addConversion([&](PointerType type) -> DebugInfo::DIType {
     DebugInfo::DIType elementType =
         debugTypeConverter.convertDebugType(type.getElementType());
-
-    std::string str;
-    llvm::raw_string_ostream ss(str);
-    ss << elementType;
-    if (str.find("debuginfo.unresolved<!pop.scalar<p0>>") !=
-        std::string::npos) {
-      llvm::errs() << str << "\n";
-    }
-
-    auto resultType =
-        DebugInfo::DITargetIndependentPointerType::get(elementType);
-    return resultType;
+    return DebugInfo::DITargetIndependentPointerType::get(elementType);
   });
   debugTypeConverter.addConversion([&](RefType type) -> DebugInfo::DIType {
     return debugTypeConverter.convertDebugType(type.getAsPointerType());
