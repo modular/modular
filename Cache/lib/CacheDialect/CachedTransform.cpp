@@ -68,7 +68,7 @@ static ErrorOrSuccess decodeDiagnostics(const char *&dataIt,
 
   // Functor for reading a string from the cache buffer.
   auto readString = [&](StringRef &str) -> ErrorOrSuccess {
-    uint64_t size;
+    uint64_t size = 0;
     if (auto err = readInt(size))
       return err.takeError();
     if ((dataIt + size + 1) > dataEnd)
@@ -79,7 +79,7 @@ static ErrorOrSuccess decodeDiagnostics(const char *&dataIt,
   };
 
   // Write out the number of diagnostics.
-  uint64_t numDiagnostics;
+  uint64_t numDiagnostics = 0;
   if (auto err = readInt(numDiagnostics))
     return err;
   for (uint64_t i = 0; i < numDiagnostics; ++i) {
