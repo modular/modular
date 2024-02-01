@@ -21,10 +21,7 @@ def DiscardType : DialectType<(type)>;
 
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
-  StringAttrArray:$paramNames,
-  EnumAttrArray<"PassingKind">:$paramPassingKinds,
-  TypedAttrArray:$defaultPosParams,
-  TypedAttrArray:$defaultKwOnlyParams,
+  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs,
   Bool:$paramVarArg
 )>;
 

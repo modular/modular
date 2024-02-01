@@ -97,30 +97,22 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
   let parameters = (ins
     ArrayRefParameter<"Type">:$paramTypes,
-    ArrayRefParameter<"StringAttr">:$paramNames,
-    ArrayRefParameter<"PassingKind">:$paramPassingKinds,
-    ArrayRefParameter<"TypedAttr">:$defaultPosParams,
-    ArrayRefParameter<"TypedAttr">:$defaultKwOnlyParams,
+    "ArgParamListAttr":$paramListAttrs,
     "bool":$paramVarArg
   );
 
   let assemblyFormat = [{
-    `` custom<TypeSignature>(
-      $paramTypes, $paramNames, $paramPassingKinds,
-      $defaultPosParams, $defaultKwOnlyParams, $paramVarArg)
+    `` custom<TypeSignature>($paramTypes, $paramListAttrs, $paramVarArg)
   }];
 
   let builders = [
-    TypeBuilder<(ins), [{
-      using std::nullopt;
-      return $_get($_ctxt, nullopt, nullopt, nullopt, nullopt, nullopt, false);
-    }]>,
-    TypeBuilder<(ins "ArrayRef<Type>":$params,
+    TypeBuilder<(ins)>,
+    TypeBuilder<(ins "ArrayRef<Type>":$paramTypes,
                      "ArrayRef<StringAttr>":$paramNames,
-                     "ArrayRef<PassingKind>":$passingKinds), [{
-      return $_get($_ctxt, params, paramNames, passingKinds,
-                   std::nullopt, std::nullopt, false);
-    }]>
+                     "ArrayRef<PassingKind>":$paramPassingKinds,
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultPosParams,
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultKwOnlyParams,
+                     CArg<"bool", "false">:$paramVarArg)>
   ];
 
   let genVerifyDecl = 1;
@@ -128,6 +120,10 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
   let extraClassDeclaration = [{
     ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
     ArrayRef<Type> getResultParamTypes() const { return {}; }
+    ArrayRef<StringAttr> getParamNames() const;
+    ArrayRef<PassingKind> getParamPassingKinds() const;
+    ArrayRef<TypedAttr> getDefaultPosParams() const;
+    ArrayRef<TypedAttr> getDefaultKwOnlyParams() const;
 
     /// Get the number of input parameters.
     size_t getNumParams() { return getParamTypes().size(); }
