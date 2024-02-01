@@ -4,6 +4,13 @@
 #
 ##===----------------------------------------------------------------------===##
 
+set(TORCH_LIB "missing")
+set(FRAMEWORK_DYLIB_DEPS "")
+if(TARGET mtorch)
+  set(TORCH_LIB "mtorch")
+  list(APPEND FRAMEWORK_DYLIB_DEPS mtorch)
+endif()
+
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -28,6 +35,7 @@ add_modular_testsuite(check-api-integration-tests
   tfl
   monnx
   mof
+  ${FRAMEWORK_DYLIB_DEPS}
   is-cuda-available
   )
 
