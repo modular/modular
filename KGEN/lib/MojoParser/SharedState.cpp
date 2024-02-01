@@ -1045,7 +1045,7 @@ ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
 }
 
 ASTType SharedState::getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "slice", *this);
+  return resolveBuiltinModuleType(context, loc, "Slice", *this);
 }
 
 ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,

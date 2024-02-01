@@ -965,7 +965,7 @@ struct Slicable:
     fn __init__(inout self):
         pass
 
-    fn __getitem__(self, s: slice):
+    fn __getitem__(self, s: Slice):
         pass
 
 # CHECK-LABEL: lit.func @"slice_expression
@@ -973,25 +973,25 @@ fn slice_expression(a: Slicable, i: Int):
   # CHECK: %[[I0:.*]] = kgen{{.*}}none
   # CHECK: %[[I1:.*]] = kgen{{.*}}none
   # CHECK: %[[I2:.*]] = kgen{{.*}}none
-  # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
+  # CHECK-NEXT: call {{.*}}@Slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[:]
   # CHECK: %[[I0:.*]] = kgen{{.*}}none
   # CHECK: %[[I1:.*]] = kgen{{.*}}none
   # CHECK: %[[I2:.*]] = kgen{{.*}}none
-  # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
+  # CHECK-NEXT: call {{.*}}@Slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[::]
   # CHECK: %[[I0:.*]] = kgen{{.*}}1
   # CHECK: %[[I2:.*]] = kgen{{.*}}none
-  # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %i, %[[I2]])
+  # CHECK-NEXT: call {{.*}}@Slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %i, %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[1:i]
   # CHECK: %[[C2:.*]] = kgen{{.*}}2
   # CHECK: %[[I1:.*]] = {{.*}}@Int::@"__add__{{.*}}"(%[[C2]], %i)
   # CHECK: %[[I0:.*]] = kgen{{.*}}none
   # CHECK: %[[I2:.*]] = kgen{{.*}}3
-  # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
+  # CHECK-NEXT: call {{.*}}@Slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[:2+i:3]
 
