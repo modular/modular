@@ -53,34 +53,43 @@ struct TensorMap(SizedRaising):
         self.lib = existing.lib
         self.session = existing.session ^
 
-    fn borrow[type: DType](self, key: StringRef, value: Tensor[type]) raises:
+    fn borrow[type: DType](self, key: String, value: Tensor[type]) raises:
         let spec = EngineTensorSpec(
-            key, value.spec(), self.lib, self.session.copy()
+            key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(
             bitcast[DType.invalid](value.data()), spec, self.lib
         )
+        key._strref_keepalive()
 
-    fn borrow(self, key: StringRef, value: EngineTensorView) raises:
+    fn borrow(self, key: String, value: EngineTensorView) raises:
         let spec = EngineTensorSpec(
-            key, value.spec(), self.lib, self.session.copy()
+            key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(value.data(), spec, self.lib)
+        key._strref_keepalive()
 
-    fn borrow(self, key: StringRef, value: EngineNumpyView) raises:
+    fn borrow(self, key: String, value: EngineNumpyView) raises:
         let spec = EngineTensorSpec(
-            key, value.spec(), self.lib, self.session.copy()
+            key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(value.data(), spec, self.lib)
+        key._strref_keepalive()
 
-    fn get[type: DType](self, key: StringRef) raises -> Tensor[type]:
-        let tensor_ptr = self.ptr.get_tensor_by_name(key.data, self.lib)
+    fn get[type: DType](self, key: String) raises -> Tensor[type]:
+        let tensor_ptr = self.ptr.get_tensor_by_name(
+            key._strref_dangerous().data, self.lib
+        )
+        key._strref_keepalive()
         let mof_tensor = EngineTensor(tensor_ptr, self.lib, self.session.copy())
         let tensor = mof_tensor.tensor[type]()
         return tensor ^
 
-    fn buffer[type: DType](self, key: StringRef) raises -> Buffer[Dim(), type]:
-        let tensor_ptr = self.ptr.get_tensor_by_name(key.data, self.lib)
+    fn buffer[type: DType](self, key: String) raises -> Buffer[Dim(), type]:
+        let tensor_ptr = self.ptr.get_tensor_by_name(
+            key._strref_dangerous().data, self.lib
+        )
+        key._strref_keepalive()
         return EngineTensor(tensor_ptr, self.lib, self.session.copy()).buffer[
             type
         ]()

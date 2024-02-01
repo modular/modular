@@ -136,6 +136,126 @@ struct Model:
         """
         return self._execute_view[StringLiteral, EngineNumpyView](inputs)
 
+    fn execute[
+        type: DType
+    ](self, name: String, input: Tensor[type]) raises -> TensorMap:
+        """Execute model with given input.
+
+        Args:
+          name: Name of the input tensor.
+          input: Input tensor to the model.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name, input)
+        return self.execute(input_map)
+
+    fn execute(
+        self, name: String, inout input: PythonObject
+    ) raises -> TensorMap:
+        """Execute model with given input.
+
+        Args:
+          name: Name of the input tensor.
+          input: Inpu to the model as numpy array.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name, EngineNumpyView(input))
+        return self.execute(input_map)
+
+    fn execute[
+        type1: DType, type2: DType
+    ](
+        self,
+        name1: String,
+        input1: Tensor[type1],
+        name2: String,
+        input2: Tensor[type2],
+    ) raises -> TensorMap:
+        """Execute model with given inputs.
+
+        Args:
+          name1: Name of the first input tensor.
+          input1: First Input tensor to the model.
+          name2: Name of the second input tensor.
+          input2: Second Input tensor to the model.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name1, input1)
+        input_map.borrow(name2, input2)
+        return self.execute(input_map)
+
+    fn execute(
+        self,
+        name1: String,
+        inout input1: PythonObject,
+        name2: String,
+        inout input2: PythonObject,
+    ) raises -> TensorMap:
+        """Execute model with given inputs.
+
+        Args:
+          name1: Name of the first input tensor.
+          input1: First Input to the model as numpy array.
+          name2: Name of the second input tensor.
+          input2: Second Input to the model as numpy array.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name1, EngineNumpyView(input1))
+        input_map.borrow(name2, EngineNumpyView(input2))
+        return self.execute(input_map)
+
+    fn execute[
+        type1: DType, type2: DType, type3: DType
+    ](
+        self,
+        name1: String,
+        input1: Tensor[type1],
+        name2: String,
+        input2: Tensor[type2],
+        name3: String,
+        input3: Tensor[type3],
+    ) raises -> TensorMap:
+        """Execute model with given inputs.
+
+        Args:
+          name1: Name of the first input tensor.
+          input1: First Input tensor to the model.
+          name2: Name of the second input tensor.
+          input2: Second Input tensor to the model.
+          name3: Name of the third input tensor.
+          input3: Third Input tensor to the model.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name1, input1)
+        input_map.borrow(name2, input2)
+        input_map.borrow(name3, input3)
+        return self.execute(input_map)
+
+    fn execute(
+        self,
+        name1: String,
+        inout input1: PythonObject,
+        name2: String,
+        inout input2: PythonObject,
+        name3: String,
+        inout input3: PythonObject,
+    ) raises -> TensorMap:
+        """Execute model with given inputs.
+
+        Args:
+          name1: Name of the first input tensor.
+          input1: First Input to the model as numpy array.
+          name2: Name of the second input tensor.
+          input2: Second Input to the model as numpy array.
+          name3: Name of the third input tensor.
+          input3: Third Input to the model as numpy array.
+        """
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        input_map.borrow(name1, EngineNumpyView(input1))
+        input_map.borrow(name2, EngineNumpyView(input2))
+        input_map.borrow(name3, EngineNumpyView(input3))
+        return self.execute(input_map)
+
     fn num_model_inputs(self) raises -> Int:
         """Gets the number of inputs of the model."""
 
