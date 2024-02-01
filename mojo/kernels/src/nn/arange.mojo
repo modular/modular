@@ -18,17 +18,6 @@ from utils.list import DimList
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline
-fn _arange_get_numelems(
-    start: Scalar, stop: Scalar[start.type], step: Scalar[start.type]
-) -> Int:
-    @parameter
-    if start.type.is_integral():
-        return len(range(start, stop, step))
-    else:
-        return int(ceil(abs(stop - start) / abs(step)))
-
-
 @mogg_register("mo.range")
 @mogg_elementwise
 @mogg_takes_indices()
@@ -52,6 +41,21 @@ fn arange_shape[
     start_buf: NDBuffer[1, DimList.create_unknown[1](), type],
     stop_buf: NDBuffer[1, DimList.create_unknown[1](), type],
     step_buf: NDBuffer[1, DimList.create_unknown[1](), type],
-) -> StaticIntTuple[1]:
-    let numElems = _arange_get_numelems(start_buf[0], stop_buf[0], step_buf[0])
-    return StaticIntTuple[1](numElems)
+) raises -> StaticIntTuple[1]:
+    let start: Scalar[type] = start_buf[0]
+    let stop: Scalar[type] = stop_buf[0]
+    let step: Scalar[type] = step_buf[0]
+    if step == 0:
+        raise Error("step must be non-zero")
+
+    @parameter
+    if start.type.is_integral():
+        if step > 0 and stop < start:
+            raise Error("stop cannot be smaller than start for positive step")
+
+        if step < 0 and start < stop:
+            raise Error("start cannot be smaller than stop for negative step")
+
+        return StaticIntTuple[1](len(range(start, stop, step)))
+    else:
+        return StaticIntTuple[1](int(ceil(abs(stop - start) / abs(step))))

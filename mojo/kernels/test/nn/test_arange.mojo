@@ -60,9 +60,13 @@ fn test_arange[
     )
     step_tensor[0] = step
 
-    let outshape = arange_shape[dtype, True](
-        start_tensor, stop_tensor, step_tensor
-    )
+    var outshape = StaticIntTuple[1]()
+    try:
+        outshape = arange_shape[dtype, True](
+            start_tensor, stop_tensor, step_tensor
+        )
+    except e:
+        print(e)
     print("Expected output shape: ")
     print(outshape)
 
