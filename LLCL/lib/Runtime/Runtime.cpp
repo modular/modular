@@ -111,20 +111,38 @@ void Runtime::restartFromCancellation() {
 static std::unique_ptr<Runtime>
 createRuntimeImpl(const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
+  std::unique_ptr<Allocator> allocator;
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
-  std::unique_ptr<Allocator> allocator =
-      options.useAfterFreeAllocator ? createUseAfterFreeAllocator()
-      : options.tcmallocAllocator   ? createTCMallocAllocator()
-                                    : createMallocAllocator();
+  switch (options.allocatorType) {
+  case RuntimeOptions::AllocatorType::kUseAfterFree:
+    allocator = createUseAfterFreeAllocator();
+    break;
+  case RuntimeOptions::AllocatorType::kTCMalloc:
+    allocator = createTCMallocAllocator();
+    break;
+  default:
+    allocator = createMallocAllocator();
+  };
 #else
-  std::unique_ptr<Allocator> allocator = options.tcmallocAllocator
-                                             ? createTCMallocAllocator()
-                                             : createMallocAllocator();
+  switch (options.allocatorType) {
+  case RuntimeOptions::AllocatorType::kTCMalloc:
+    allocator = createTCMallocAllocator();
+    break;
+  default:
+    allocator = createMallocAllocator();
+  };
 #endif
-  if (options.leakCheckedAllocator)
+
+  switch (options.allocatorType) {
+  case RuntimeOptions::AllocatorType::kLeakChecker:
     allocator = createLeakCheckAllocator(std::move(allocator));
-  if (options.profilingAllocator)
+    break;
+  case RuntimeOptions::AllocatorType::kProfiler:
     allocator = createProfilingAllocator(std::move(allocator));
+    break;
+  default:
+    break;
+  };
   std::unique_ptr<WorkQueue> workQueue =
       options.singleThreaded
           ? createSingleThreadWorkQueue(runtimePtr)
@@ -155,4 +173,38 @@ LLCL::createRuntimeIfNeeded(const RuntimeOptions &options) {
   return ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
       Runtime::getCurrentRuntimeOrNull(),
       [&options]() { return createRuntimeImpl(options).release(); });
+}
+
+std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
+  StringRef profileName = getProfileFilename();
+  RuntimeOptions runtimeOptions;
+#if not defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+  if (allocatorType == RuntimeOptions::AllocatorType::kUseAfterFree) {
+    llvm::errs() << "The use-after-free allocator is not available for this "
+                    "target. Using the leak-checker runtime instead.";
+  }
+#endif
+  runtimeOptions.allocatorType = allocatorType;
+  switch (getWorkQueueType()) {
+  case RuntimeOptions::WorkQueueType::kDefault:
+    assert(0 && "should be resolved");
+  case RuntimeOptions::WorkQueueType::kSingleThread:
+    runtimeOptions.singleThreaded = true;
+    break;
+  case RuntimeOptions::WorkQueueType::kThreadPool:
+    runtimeOptions.numThreads = numThreads;
+    runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
+#if MODULAR_PARANOID
+    options.paranoid = paranoid;
+#endif
+    break;
+  }
+  runtimeOptions.profileFilename = profileName;
+  // TODO(#28412): Ideally this would be createUniqueRuntime since it's silly to
+  // be asking to create a runtime from the current cl options when one has
+  // already been established, presumably via some other configuration
+  // mechanism. However modular-api-executor.cpp has already established a
+  // runtime via the C API when it invokes
+  // setupMLIRAndRunWithLeakCheckedRuntime.
+  return LLCL::createNestedRuntime(runtimeOptions);
 }
