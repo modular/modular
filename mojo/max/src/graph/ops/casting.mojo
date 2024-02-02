@@ -44,7 +44,7 @@ def shape_of(v: Symbol) -> Symbol:
 
 def cast(v: Symbol, dtype: ElementType) -> Symbol:
     var g = v.graph()
-    return g.op("mo.cast", v, MOTensor(dtype, v.tensor_type().dims))
+    return v.graph().op("mo.cast", v, v.tensor_type().cast(dtype))
 
 
 # ===----------------------------------------------------------------------=== #

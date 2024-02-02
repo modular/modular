@@ -251,7 +251,7 @@ struct MOTensor(MOType, CollectionElement):
         return True
 
     # ===------------------------------------------------------------------=== #
-    # Shape arithmetic
+    # Utilities
     # ===------------------------------------------------------------------=== #
 
     fn num_elements(self) -> Int64:
@@ -261,6 +261,9 @@ struct MOTensor(MOType, CollectionElement):
                 return _dyn()
             n *= self.dims[i].num_elements()
         return n
+
+    fn cast(self, dtype: ElementType) -> Self:
+        return Self(dtype, self.dims, self.ranked)
 
 
 @value
