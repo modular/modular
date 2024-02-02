@@ -47,12 +47,14 @@ struct Replacer {
   uint32_t maxNumElements;
 
   /// The new scalar stack allocations we have created.
-  SmallVector<Value> newAllocas;
+  SmallVector<Value> &newAllocas;
 
   Replacer(OpBuilder &builder, StackAllocationOp alloc, ContainerType container,
-           uint32_t maxNumElements)
+           uint32_t maxNumElements, SmallVector<Value> &valueMemCache)
       : builder(builder), alloc(alloc), containerTy(container),
-        maxNumElements(maxNumElements) {}
+        maxNumElements(maxNumElements), newAllocas(valueMemCache) {}
+
+  ~Replacer() { newAllocas.clear(); }
 
   Derived *getDerived() { return static_cast<Derived *>(this); }
 
@@ -187,8 +189,9 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
 
   ReplaceStructs(OpBuilder &builder, StackAllocationOp alloc,
                  ContainerType container, uint32_t maxNumElements,
-                 SROAStructLeafReplacer &leafReplacer)
-      : Replacer(builder, alloc, container, maxNumElements),
+                 SROAStructLeafReplacer &leafReplacer,
+                 SmallVector<Value> &valueMemCache)
+      : Replacer(builder, alloc, container, maxNumElements, valueMemCache),
         leafReplacer(leafReplacer) {}
 
   bool canRun() {
@@ -309,8 +312,9 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   using ContainerType = POP::ArrayType;
 
   ReplaceArray(OpBuilder &builder, StackAllocationOp alloc,
-               ContainerType container, uint32_t maxNumElements)
-      : Replacer(builder, alloc, container, maxNumElements) {}
+               ContainerType container, uint32_t maxNumElements,
+               SmallVector<Value> &valueMemCache)
+      : Replacer(builder, alloc, container, maxNumElements, valueMemCache) {}
 
   bool canRun() {
     // If we don't know the size of the array there's nothing to do.
@@ -448,8 +452,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   using ContainerType = POP::StackAllocationOp;
 
   ReplaceStack(OpBuilder &builder, StackAllocationOp alloc,
-               uint32_t maxNumElements)
-      : Replacer(builder, alloc, alloc, maxNumElements) {}
+               uint32_t maxNumElements, SmallVector<Value> &valueMemCache)
+      : Replacer(builder, alloc, alloc, maxNumElements, valueMemCache) {}
 
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
@@ -554,6 +558,12 @@ void SROAPass::runOnOperation() {
   // amount of time to run and is a net-postive on compile time.
   constexpr size_t loopLimit = 10;
 
+  SmallVector<Operation *, 32> toDelete;
+
+  // The algorithm is serial so each step can use the same buffer backing which
+  // avoids repeated allocations and deallocations.
+  SmallVector<Value> valueMemCache;
+
   size_t iters = 0;
 
   bool changed = true;
@@ -561,8 +571,7 @@ void SROAPass::runOnOperation() {
   while (changed && iters < loopLimit) {
     changed = false;
     iters++;
-
-    SmallVector<Operation *, 32> toDelete;
+    toDelete.clear();
 
     getOperation()->walk([&](StackAllocationOp alloc) {
       // Skip non singleton stack allocations.
@@ -583,16 +592,17 @@ void SROAPass::runOnOperation() {
       // stack itself.
       if (numElems != 1) {
         // Replace stack of N with N stacks of 1.
-        ReplaceStack replacer{builder, alloc, maxNumElements};
+        ReplaceStack replacer{builder, alloc, maxNumElements, valueMemCache};
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementType())) {
-        ReplaceStructs replacer{builder, alloc, structTy, maxNumElements,
-                                leafReplacer};
+        ReplaceStructs replacer{builder,        alloc,        structTy,
+                                maxNumElements, leafReplacer, valueMemCache};
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =
                      dyn_cast<POP::ArrayType>(ptrType.getElementType())) {
-        ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements};
+        ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements,
+                              valueMemCache};
         changed |= replacer.run(toDelete);
       }
     });
