@@ -7,7 +7,6 @@ include(AddTCMalloc)
 set(SOURCES
   Config.cpp
   Globals.cpp
-  HashMap.cpp
   IO.cpp
   InitIntelAMX.cpp
   Initialize.cpp
