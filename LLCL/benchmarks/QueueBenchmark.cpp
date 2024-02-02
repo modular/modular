@@ -34,7 +34,7 @@ class LockFreeRingBufferTest {
 public:
   LockFreeRingBufferTest() : queue(1024) {}
   void enqueue() {
-    bool val = true;
+    void *val = (void *)&queue;
     while (!queue.enqueue(val))
       ;
   }
@@ -44,7 +44,7 @@ public:
   }
 
 private:
-  LockFreeRingBuffer<bool> queue;
+  LockFreeRingBuffer<void *> queue;
 };
 
 template <class T>
@@ -53,13 +53,13 @@ void BM_SingleProducer(benchmark::State &state) {
   int consumers = state.threads() - 1;
   if (state.thread_index() == 0) {
     queue = new (T);
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       for (int i = 0; i < consumers; i++)
         queue->enqueue();
     }
     delete queue;
   } else {
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       queue->dequeue();
     }
   }
@@ -74,13 +74,13 @@ void BM_SingleConsumer(benchmark::State &state) {
   int producers = state.threads() - 1;
   if (state.thread_index() == 0) {
     queue = new (T);
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       for (int i = 0; i < producers; i++)
         queue->dequeue();
     }
     delete queue;
   } else {
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       queue->enqueue();
     }
   }
@@ -96,11 +96,11 @@ void BM_Balanced(benchmark::State &state) {
   if (state.thread_index() == 0)
     queue = new (T);
   if (state.thread_index() < consumers) {
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       queue->dequeue();
     }
   } else {
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       queue->enqueue();
     }
   }
