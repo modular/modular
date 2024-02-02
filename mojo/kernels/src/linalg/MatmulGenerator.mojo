@@ -1208,8 +1208,10 @@ struct TiledMatmulGenerated[
         """
         # TODO: (once we have more) wrap these generators behind a common
         #  interface.
+        # MatmulGenerator does not support i8mm or vnni yet so set the factor to 1
+        alias factor = 1
         let tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
+            config.pack_data_size, config.pack_inner_size, 1
         ](global_tile_shape)
 
         # Define an no-op epilog function.
@@ -1315,8 +1317,9 @@ struct TiledMatmulBiasGenerated[
         """
         # TODO: (once we have more) wrap these generators behind a common
         #  interface.
+        # MatmulGenerator does not support i8mm or vnni yet so set the factor to 1
         let tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
+            config.pack_data_size, config.pack_inner_size, 1
         ](global_tile_shape)
 
         # Define a bias epilog function that can apply the bias vector at

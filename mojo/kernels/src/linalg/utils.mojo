@@ -267,6 +267,8 @@ fn calculate_tile_n_k[
     pack_cache_size: Int,
     # Inner size of data layout.
     pack_inner_size: Int,
+    # Factor to adjust for vnni or i8mm
+    factor: Int,
 ](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
@@ -284,11 +286,12 @@ fn calculate_tile_n_k[
     let least_tile_n: Int = pack_inner_size
 
     # Max tile K size based on smallest Tile N.
-    let largest_tile_k = pack_cache_size // least_tile_n
+    let largest_tile_k = align_down(pack_cache_size // least_tile_n, factor)
 
     # Prioritize shape on K dimension, so try to fit in the whole
     #  input on the tile.
-    let tile_k = min(largest_tile_k, k)
+
+    let tile_k = min(largest_tile_k, align_up(k, factor))
 
     # Calculate number of InnerSize to fit in tile_n dimension,
     let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
@@ -308,8 +311,10 @@ fn calculate_tile_n_k[
     pack_cache_size: Int,
     # Inner size of data layout.
     pack_inner_size: Int,
+    # Factor to adjust for vnni or i8mm
+    factor: Int,
 ](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
-    return calculate_tile_n_k[pack_cache_size, pack_inner_size](
+    return calculate_tile_n_k[pack_cache_size, pack_inner_size, factor](
         global_tile_shape.N, global_tile_shape.K
     )
 
@@ -1029,19 +1034,17 @@ fn _get_tile_n_k[
     c_shape: DimList,
 ](b: NDBuffer[2, b_shape, b_type]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
     @parameter
     if not transpose_b:
         tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
+            config.pack_data_size, config.pack_inner_size, factor
         ](b.dim(1), b.dim(0))
     else:
         tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
+            config.pack_data_size, config.pack_inner_size, factor
         ](b.dim(0), b.dim(1))
-
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-    tile_n_k[1] = align_up(tile_n_k[1], factor)
     return tile_n_k

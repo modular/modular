@@ -1527,9 +1527,12 @@ struct TiledMatmul[
             global_tile_shape: Tile shape this call will process.
             global_tile_offset: Tile offset on the original buffer.
         """
+        alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
         let tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
+            config.pack_data_size, config.pack_inner_size, factor
         ](global_tile_shape)
 
         let matmul = TiledMatmul[
