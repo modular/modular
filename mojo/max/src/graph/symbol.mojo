@@ -65,9 +65,11 @@ struct Symbol(CollectionElement, Stringable):
     # Type accessors
     # ===------------------------------------------------------------------=== #
 
+    fn type(self) raises -> AnyMOType:
+        return AnyMOType.from_mlir(self.s.type())
+
     fn tensor_type(self) raises -> MOTensor:
-        # TODO: Assert that this is an actual Tensor type, raise otherwise.
-        return MOTensor.from_mlir(self.s.type())
+        return self.type().tensor()
 
     # ===------------------------------------------------------------------=== #
     # Stringable trait
@@ -79,6 +81,22 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
     # Overloaded operators
     # ===------------------------------------------------------------------=== #
+
+    fn list_get(self, i: Int) raises -> Symbol:
+        return self.list_get(self.graph().constant[DType.int64](i))
+
+    fn list_get(self, i: Symbol) raises -> Symbol:
+        let g = self.graph()
+        let result_type = self.type().list().eltype
+        return g.op("mo.list.get", (self, i), result_type)
+
+    fn list_insert(self, i: Int, v: Symbol) raises -> Symbol:
+        return self.list_insert(self.graph().constant[DType.int64](i), v)
+
+    fn list_insert(self, i: Symbol, v: Symbol) raises -> Symbol:
+        let g = self.graph()
+        let result_type = self.type().list().eltype
+        return g.op("mo.list.insert", (self, v, i), result_type)
 
     fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
         let g = self.graph()
