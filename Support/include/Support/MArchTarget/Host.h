@@ -52,8 +52,6 @@ enum class HostProperty {
   OS,
   Arch,
   CPUModel,
-  CloudVendor,
-  CloudInstanceType,
   Features,
   SIMDBitWidth,
   CoreCount,
@@ -70,9 +68,6 @@ struct HostMachineInfo {
   std::string osName;
   std::string cpuArch;
   std::string cpuModelName;
-  // If this is a VM on a recognized cloud provider, save the provider & type.
-  std::string cloudVendor;
-  std::string cloudInstanceType;
   // This is the SIMD bit-width of the host system.
   size_t simdBitWidth = 0;
   std::vector<std::string> cpuFeatures;
