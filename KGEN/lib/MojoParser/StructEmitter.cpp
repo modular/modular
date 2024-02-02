@@ -30,11 +30,10 @@ using namespace M::KGEN::LIT;
 
 LIT::FuncOp StructEmitter::createFunction(
     StringRef name, ArrayRef<ParamDeclAttr> params,
-    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds, Type resultType,
-    SpecialFunctionKind specialFnID, SMLoc loc, ImplicitLocOpBuilder &builder,
-    FnEffects fnEffects, StringRef prefix) {
+    ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+    Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef prefix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -83,16 +82,8 @@ LIT::FuncOp StructEmitter::createFunction(
   }
   size_t numImplicitLifetimeDecls = fullParams.size();
 
-  SmallVector<StringAttr> parameterNames;
-  for (ParamDeclAttr p : params) {
-    parameterNames.push_back(
-        builder.getStringAttr(demangleParameterName(p.getName())));
-  }
-
-  auto metadata = FnMetadataAttr::get(
-      ArgParamListAttr::get(getContext(), argNames, argPassingKinds),
-      ArgParamListAttr::get(getContext(), parameterNames, paramPassingKinds),
-      numImplicitLifetimeDecls);
+  auto metadata = FnMetadataAttr::get(argListAttrs, paramListAttrs,
+                                      numImplicitLifetimeDecls);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
@@ -137,29 +128,30 @@ LIT::FuncOp StructEmitter::createFunction(
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds, Type resultType, ASTDecl &structDecl,
-    SpecialFunctionKind specialFnID, FnEffects effects, StringRef prefix) {
-  return synthesizeMethodInStruct(name, /*params=*/{}, /*paramPassingKinds=*/{},
-                                  argTypes, argConventions, argNames,
-                                  argPassingKinds, resultType, structDecl,
-                                  specialFnID, effects, prefix);
+    ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+    Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
+    FnEffects fnEffects, StringRef prefix) {
+  return synthesizeMethodInStruct(
+      name, /*params=*/{},
+      /*paramListAttrs=*/ArgParamListAttr::get(getContext()), argTypes,
+      argConventions, argListAttrs, resultType, structDecl, specialFnID,
+      fnEffects, prefix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params,
-    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds, Type resultType, ASTDecl &structDecl,
-    SpecialFunctionKind specialFnID, FnEffects effects, StringRef prefix) {
+    ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+    Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
+    FnEffects fnEffects, StringRef prefix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
   LIT::FuncOp funcOp = createFunction(
-      name, params, paramPassingKinds, argTypes, argConventions, argNames,
-      argPassingKinds, resultType, specialFnID, structDecl.getLoc(), builder,
-      effects.setParamVarArgs(effects.hasParamVarArgs() ||
-                              structOp.getSignature().getParamVarArg()),
+      name, params, paramListAttrs, argTypes, argConventions, argListAttrs,
+      resultType, specialFnID, structDecl.getLoc(), builder,
+      fnEffects.setParamVarArgs(fnEffects.hasParamVarArgs() ||
+                                structOp.getSignature().getParamVarArg()),
       prefix);
 
   // If the struct is register_passable("trivial"), make this
@@ -210,8 +202,7 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds) {
+    ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
   bool isMemoryOnly = !structOp.isRegisterPassable();
@@ -224,8 +215,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
-      "__init__", argTypes, argConventions, argNames, argPassingKinds,
-      resultType, structDecl, specialFnId);
+      "__init__", argTypes, argConventions, argListAttrs, resultType,
+      structDecl, specialFnId);
 
   // Set up the body.
   ImplicitLocOpBuilder builder =
@@ -294,7 +285,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
   auto result = SRValue(builder.create<StructCreateOp>(
       selfType.mlirType, fieldVals,
-      StringArrayAttr::get(emitter.getContext(), argNames)));
+      StringArrayAttr::get(emitter.getContext(), argListAttrs.getNames())));
 
   ExprEmitter::emitNormalReturn(builder, result, funcOp);
   builder.create<LIT::EndFuncOp>();
@@ -379,14 +370,16 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 ///   lit.end_func
 /// }
 /// ```
-LIT::FuncOp StructEmitter::addVoidMethod(
-    ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-    ArrayRef<PassingKind> argPassingKinds, SpecialFunctionKind kind,
-    ArrayRef<ParamDeclAttr> params, ArrayRef<PassingKind> paramPassingKinds) {
+LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                                         ArrayRef<Type> argTypes,
+                                         ArrayRef<ArgConvention> argConventions,
+                                         ArgParamListAttr argListAttrs,
+                                         SpecialFunctionKind kind,
+                                         ArrayRef<ParamDeclAttr> params,
+                                         ArgParamListAttr paramListAttrs) {
   auto [func, _] = synthesizeMethodInStruct(
-      prefix, params, paramPassingKinds, argTypes, argConventions, argNames,
-      argPassingKinds, shared.getNoneType(), structDecl, kind);
+      prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
+      shared.getNoneType(), structDecl, kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
@@ -397,6 +390,17 @@ LIT::FuncOp StructEmitter::addVoidMethod(
   ExprEmitter::emitNormalReturn(b, b.create<ParamConstantOp>(noneAttr), func);
   b.create<LIT::EndFuncOp>();
   return func;
+}
+
+LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                                         ArrayRef<Type> argTypes,
+                                         ArrayRef<ArgConvention> argConventions,
+                                         ArgParamListAttr argListAttrs,
+                                         SpecialFunctionKind kind) {
+
+  return addVoidMethod(structDecl, prefix, argTypes, argConventions,
+                       argListAttrs, kind, /*params=*/{},
+                       /*paramListAttrs=*/ArgParamListAttr::get(getContext()));
 }
 
 struct ValueInfo {
@@ -558,8 +562,9 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argNames.push_back(fieldOp.getNameAttr());
       argPassingKinds.push_back(PassingKind::PosOrKw);
     }
-    init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
-                                    argNames, argPassingKinds);
+    init = synthesizeMemberwiseInit(
+        structDecl, argTypes, argConventions,
+        ArgParamListAttr::get(getContext(), argNames, argPassingKinds));
   }
 
   if (!valueInfo.hasDestructor()) {
@@ -593,9 +598,11 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     // We should probably move synthesizeEmptyDtor into this code and use it
     // from the type checking logic.
     if (needsDtor && isMemoryOnly) {
-      destructorFunc = addVoidMethod(
-          structDecl, "__del__", refToSelf, ArgConvention::OwnedInMem, selfName,
-          PassingKind::PosOnly, SpecialFunctionKind::kDel);
+      auto argListAttrs =
+          ArgParamListAttr::get(getContext(), selfName, PassingKind::PosOnly);
+      destructorFunc = addVoidMethod(structDecl, "__del__", refToSelf,
+                                     ArgConvention::OwnedInMem, argListAttrs,
+                                     SpecialFunctionKind::kDel);
     }
   }
 
@@ -618,17 +625,20 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     if (isMemoryOnly) {
       Type refToExisting =
           ASTType(selfType).getRefForArgument("existing", /*isMut=*/false);
+      auto argListAttrs =
+          ArgParamListAttr::get(getContext(), {selfName, existingName},
+                                {PassingKind::PosOnly, PassingKind::PosOnly});
       copyFunc =
           addVoidMethod(structDecl, "__copyinit__", {refToSelf, refToExisting},
                         {ArgConvention::InitSelf, ArgConvention::BorrowedInMem},
-                        {selfName, existingName},
-                        {PassingKind::PosOnly, PassingKind::PosOnly},
-                        SpecialFunctionKind::kCopyInit);
+                        argListAttrs, SpecialFunctionKind::kCopyInit);
     } else {
-      copyFunc = synthesizeMethodInStruct(
-                     "__copyinit__", selfType, ArgConvention::BorrowedInReg,
-                     existingName, PassingKind::PosOnly, selfType, structDecl,
-                     SpecialFunctionKind::kCopyInitReg)
+      auto argListAttrs = ArgParamListAttr::get(getContext(), existingName,
+                                                PassingKind::PosOnly);
+      copyFunc = synthesizeMethodInStruct("__copyinit__", selfType,
+                                          ArgConvention::BorrowedInReg,
+                                          argListAttrs, selfType, structDecl,
+                                          SpecialFunctionKind::kCopyInitReg)
                      .first;
     }
   }
@@ -640,18 +650,21 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
       Type refToExisting =
           ASTType(selfType).getRefForArgument("existing", /*isMut=*/true);
+      auto argListAttrs =
+          ArgParamListAttr::get(getContext(), {selfName, existingName},
+                                {PassingKind::PosOnly, PassingKind::PosOnly});
       moveFunc =
           addVoidMethod(structDecl, "__moveinit__", {refToSelf, refToExisting},
                         {ArgConvention::InitSelf, ArgConvention::OwnedInMem},
-                        {selfName, existingName},
-                        {PassingKind::PosOnly, PassingKind::PosOnly},
-                        SpecialFunctionKind::kMoveInit);
+                        argListAttrs, SpecialFunctionKind::kMoveInit);
     } else {
       addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
-      moveFunc = synthesizeMethodInStruct(
-                     "__moveinit__", selfType, ArgConvention::OwnedInReg,
-                     existingName, PassingKind::PosOnly, selfType, structDecl,
-                     SpecialFunctionKind::kMoveInitReg)
+      auto argListAttrs = ArgParamListAttr::get(getContext(), existingName,
+                                                PassingKind::PosOnly);
+      moveFunc = synthesizeMethodInStruct("__moveinit__", selfType,
+                                          ArgConvention::OwnedInReg,
+                                          argListAttrs, selfType, structDecl,
+                                          SpecialFunctionKind::kMoveInitReg)
                      .first;
     }
   }
