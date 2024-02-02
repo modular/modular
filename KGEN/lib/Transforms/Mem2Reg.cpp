@@ -386,10 +386,13 @@ struct Mem2RegPass : public M::KGEN::impl::Mem2RegBase<Mem2RegPass> {
 void Mem2RegPass::runOnOperation() {
   auto &cfg = getAnalysis<HLCF::CFGAnalysis>();
   PassStats stats;
+  llvm::MapVector<StackAllocationOp, PromotedStackAlloc> entryState;
+  DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
+      termVariants;
   for (Region &region : getOperation()->getRegions()) {
-    llvm::MapVector<StackAllocationOp, PromotedStackAlloc> entryState;
-    DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
-        termVariants;
+    // Reuse the same memory for the maps each time.
+    entryState.clear();
+    termVariants.clear();
     DebugInfo::DIExprLeafReplacer exprLeafReplacer(mem2RegLeafConversion);
     if (failed(processRegion(region, cfg, entryState, termVariants,
                              exprLeafReplacer, stats)))
