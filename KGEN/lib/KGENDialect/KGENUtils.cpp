@@ -227,6 +227,10 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
 }
 
 void KGEN::printKGENType(AsmPrinter &p, Type type) {
+  // Always print an alias if available.
+  if (succeeded(p.printAlias(type)))
+    return;
+
   // Handle other special cases for parameters here.  These each are sugar for a
   // kgen type.
   auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();

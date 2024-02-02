@@ -54,7 +54,7 @@ struct NMType:
 # CHECK-LABEL: lit.func @"metatypes()"
 fn metatypes():
     # COM: Test that a local alias can retain type properties.
-    # CHECK: lit.alias.decl [[T:\*"T.*]]: metatype<[[THING:@.*]]> = <!Thing>
+    # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
     alias T = Thing
     # CHECK: [[VAL:%.*]] = kgen.param.constant: !Thing =
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[VAL]])

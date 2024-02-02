@@ -740,14 +740,18 @@ std::optional<StringRef> DeclRefType::getAliasName() {
   // Don't alias types with parameter references.
   if (!getParamValues().empty())
     return {};
-  StringRef rootName = getSymbol().getRootReference().getValue();
+  return getAliasName(getSymbol());
+}
+
+std::optional<StringRef> DeclRefType::getAliasName(SymbolRefAttr symbol) {
+  StringRef rootName = symbol.getRootReference().getValue();
 
   // Alias declref types that have mangled names.
   if (llvm::all_of(rootName, [](char c) { return std::isalnum(c); }))
     return {};
 
   // Use the leaf name as the alias name.
-  StringRef leaf = getSymbol().getLeafReference().getValue();
+  StringRef leaf = symbol.getLeafReference().getValue();
   unsigned offset = leaf.size();
   while (offset > 0 && std::isalnum(leaf[offset - 1]))
     --offset;

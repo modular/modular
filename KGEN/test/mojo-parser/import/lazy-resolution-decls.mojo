@@ -8,6 +8,8 @@
 # RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s -o /dev/null
 # RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s | FileCheck %s
 
+# CHECK: !Trait = !lit.trait<@"$imported_cached_module"::@Trait>
+
 from imported_cached_module import (
     StringLiteralAlias,
     global_variable,
@@ -24,7 +26,7 @@ fn assign_from():
     let bar = global_variable
 
 
-# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>, trait<{{.*}}@AnyType>[{{.*}}])
+# CHECK-LABEL: lit.struct.decl @Struct(!Trait, !AnyType[!Trait])
 struct Struct(Trait):
     pass
 

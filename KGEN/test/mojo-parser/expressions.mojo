@@ -1485,7 +1485,7 @@ fn testTransferWarning():
 # CHECK-SAME: (%a: !Bool borrow) -> !kgen.type
 fn type_function(a: Bool) -> AnyRegType:
     # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.type
-    # CHECK-NEXT: %metatype = kgen.param.constant: metatype<{{.*}}@Int> = <!Int>
+    # CHECK-NEXT: %metatype = kgen.param.constant: !mt_Int = <!Int>
     # CHECK-NEXT: [[COERCED:%.*]] = lit.call {{.*}}(%metatype)
     # CHECK-NEXT: yield [[COERCED]]
     # CHECK-NEXT: else
