@@ -236,9 +236,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     it->second(p, type);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     // Use the alias printer if suitable.
-    if (ref.getAliasName()) {
-      p.printType(ref);
-    } else {
+    if (failed(p.printAlias(ref))) {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
       if (auto type = ref.getMetaType(); !isa<TypeType>(type)) {

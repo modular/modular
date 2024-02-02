@@ -211,9 +211,7 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
 
   if (auto ref = ::dyn_cast<DeclRefType>(type.getValue())) {
     // Use the alias printer if suitable.
-    if (ref.getAliasName()) {
-      p.printType(ref);
-    } else {
+    if (failed(p.printAlias(ref))) {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
       if (ref.getMetaType() != metatype) {
