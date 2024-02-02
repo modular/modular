@@ -28,24 +28,7 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
 }
 
 const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
-  switch (value) {
-  case kUnknown:
-    return nullptr;
-  case kTFLiteModel:
-    return "tfl";
-  case kTensorFlowModel:
-    return "tf";
-  case kFauxModel:
-    // TODO(#6190): Support mgp.model for faux.
-    return nullptr;
-  case kONNXModel:
-    return "onnx";
-  case kPyTorchModel:
-    return "pytorch";
-  case kModularModel:
-    return "mof";
-  }
-  llvm::report_fatal_error("missing case");
+  return asLabelString(value);
 }
 
 bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
@@ -102,3 +85,25 @@ const char *CompiledFrameworkLabel::getAsString() const {
   }
   llvm::report_fatal_error("missing case");
 };
+
+const char *
+CompiledFrameworkLabel::asLabelString(CompiledFrameworkLabel::Cases label) {
+  switch (label) {
+  case kUnknown:
+    return nullptr;
+  case kTensorFlowModel:
+    return "tf";
+  case kTFLiteModel:
+    return "tfl";
+  case kFauxModel:
+    // TODO(#6190): Support mgp.model for faux.
+    return nullptr;
+  case kONNXModel:
+    return "onnx";
+  case kPyTorchModel:
+    return "pytorch";
+  case kModularModel:
+    return "mof";
+  }
+  llvm::report_fatal_error("missing case");
+}
