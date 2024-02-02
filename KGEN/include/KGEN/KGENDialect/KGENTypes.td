@@ -181,13 +181,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getArguments() const;
     ArrayRef<Type> getResults() const;
 
-    /// Returns true if the argument at this index is a vararg.
-    bool isVarArg(size_t index);
-    /// Returns true if the argument at this index is a pack vararg.
-    bool isPackVarArg(size_t index);
-    /// Returns true if the argument at this index is a keyword vararg.
-    bool isKWVarArg(size_t index);
-
     /// Return true if this signature's first argument is a result from the
     /// the function returned through memory.
     bool hasMemoryOnlyResult();
@@ -197,8 +190,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
-    bool hasParamVarArgs() const { return getFnEffects().hasParamVarArgs(); }
-    bool hasPackVarArgs() const { return getFnEffects().hasPackVarArgs(); }
     bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isEscaping() const { return getFnEffects().isEscaping(); }
     bool hasOwnedRegisterResult() const {
