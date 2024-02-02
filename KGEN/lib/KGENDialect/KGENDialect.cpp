@@ -19,6 +19,7 @@
 #include "mlir/Interfaces/FoldInterfaces.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace M;
 using namespace KGEN;
@@ -48,6 +49,21 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
 // KGENDialectOpAsmDialectInterface
 //===----------------------------------------------------------------------===//
 
+struct KGENDialectAliasOptions {
+  llvm::cl::opt<bool> printInlineVTables{
+      "kgen-print-inline-vtables",
+      llvm::cl::desc("Print type vtables inline. Used for FileCheck testing."),
+      llvm::cl::init(false)};
+};
+
+} // namespace
+
+static llvm::ManagedStatic<KGENDialectAliasOptions> clOptions;
+
+void KGEN::registerKGENCommandLineOptions() { *clOptions; }
+
+namespace {
+
 struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using OpAsmDialectInterface::OpAsmDialectInterface;
 
@@ -55,6 +71,28 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   // Aliases
 
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    if (auto typeCst = dyn_cast<TypeConstantAttr>(attr)) {
+      // Alias the type constant if it has a vtable.
+      if (clOptions->printInlineVTables ||
+          typeCst.getVTable().getEntries().empty())
+        return AliasResult::NoAlias;
+
+      // Special case decl ref types..
+      if (auto ref = dyn_cast<DeclRefType>(typeCst.getValue())) {
+        if (std::optional<StringRef> aliasName = ref.getAliasName()) {
+          os << *aliasName;
+          return AliasResult::OverridableAlias;
+        }
+        StringRef name = ref.getSymbol().getLeafReference();
+        if (size_t index = name.find_last_of(":$"); index != StringRef::npos)
+          name = name.substr(index + 1);
+        os << name;
+        return AliasResult::OverridableAlias;
+      }
+
+      os << "type_value";
+      return AliasResult::OverridableAlias;
+    }
     return AliasResult::NoAlias;
   }
 

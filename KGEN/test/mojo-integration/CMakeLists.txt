@@ -15,7 +15,7 @@ add_modular_testsuite(check-mojo-integration
   TOP_LEVEL_CHECK check-mojo
 
   TOOLS
-  mojo-sdk
+  mojo-stdlib
   kgen
   kgen-translate
 )

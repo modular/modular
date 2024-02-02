@@ -111,13 +111,16 @@ static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
   if (!type)
     return failure();
 
+  if (succeeded(p.printAlias(type)))
+    return success();
+
   VTableAttr vtable = type.getVTable();
   if (!vtable.getEntries().empty())
     p << '[';
   printKGENType(p, type.getValue());
   if (!vtable.getEntries().empty()) {
     p << ", {";
-    vtable.print(p);
+    p.printStrippedAttrOrType(vtable);
     p << "}]";
   }
   return success();
