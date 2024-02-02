@@ -5,16 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/MArchTarget.h"
-#include "Support/Buffer.h"
-#include "Support/FileSystemExtras.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Program.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/ARMTargetParser.h"
@@ -93,42 +89,6 @@ std::string M::getHostCPUFeatures() {
   if (targetInfoOr)
     return "";
   return encodeFeatures(targetInfoOr->features);
-}
-
-ErrorOr<CloudInfo> M::getHostCloudInfo() {
-  CloudInfo info;
-  // Check for Amazon VM
-  std::string EC2 = "/usr/bin/ec2metadata";
-  if (llvm::sys::fs::can_execute(EC2)) {
-    // If we have ec2metadata then this is an AWS VM.
-    info.vendor = "aws";
-    // Now run ec2metadata to get the instance type.
-    ErrorOr<TempFile> resFile =
-        TempFile::create("ec2-instance-type-%%%%%%.txt");
-    if (resFile.isError())
-      return resFile.takeError();
-    std::string execErrorMsg;
-    int res = llvm::sys::ExecuteAndWait(
-        EC2,
-        /*Args=*/{EC2, "--instance-type"},
-        /*Env=*/std::nullopt,
-        /*Redirects=*/{std::nullopt, resFile->getPath().string(), std::nullopt},
-        /*SecondsToWait=*/0,
-        /*MemoryLimit=*/0, &execErrorMsg);
-    if (execErrorMsg.size() || res != 0) {
-      return execErrorMsg.size() ? Error(execErrorMsg)
-                                 : Error("Failed to exec ec2metadata");
-    }
-    ErrorOr<BufferRef> resBuf = Buffer::getFile(resFile->getPath());
-    if (resBuf.isError()) {
-      return resBuf.takeError();
-    }
-    info.instanceType = StringRef((*resBuf)->getBuffer()).trim().str();
-    return info;
-  }
-
-  // TODO: Add support for GCP
-  return Error("Failed to retrieve Cloud info");
 }
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
