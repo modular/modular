@@ -2435,8 +2435,11 @@ void ElaboratorImpl::completeSpecializationFromPackage(PackageState *state,
         return newSymTab.read(
             [name](auto &symtab) { return symtab.lookup(name); });
       },
-      [&](Operation *op) {
-        return newSymTab.modify([op](auto &symtab) { symtab.insert(op); });
+      [&](Operation *op, Operation *after) {
+        return newSymTab.modify([op, after](auto &symtab) {
+          op->moveAfter(after);
+          symtab.insert(op);
+        });
       },
       *reader.symtab);
   // We are done loading functions, so release the mutex.

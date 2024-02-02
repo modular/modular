@@ -49,11 +49,11 @@ LogicalResult loadSymbolsFromBytecode(Operation *op,
 /// Recursively and lazily read dependencies from the module contained by
 /// `bytecodeSymTab` into `symTab`, rooted at `op`. This version abstracts the
 /// insertion and lookup of symbols from the mutable symbol table.
-LogicalResult loadSymbolsFromBytecode(Operation *op,
-                                      mlir::BytecodeReader &reader,
-                                      function_ref<bool(StringAttr)> existsFn,
-                                      function_ref<void(Operation *)> insertFn,
-                                      const SymbolTable &bytecodeSymTab);
+LogicalResult
+loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
+                        function_ref<bool(StringAttr)> existsFn,
+                        function_ref<void(Operation *, Operation *)> insertFn,
+                        const SymbolTable &bytecodeSymTab);
 
 } // namespace M
 

@@ -48,11 +48,11 @@ Attribute M::readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer,
 // loadSymbolsFromBytecode
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-M::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
-                           function_ref<bool(StringAttr)> existsFn,
-                           function_ref<void(Operation *)> insertFn,
-                           const SymbolTable &bytecodeSymTab) {
+LogicalResult M::loadSymbolsFromBytecode(
+    Operation *op, mlir::BytecodeReader &reader,
+    function_ref<bool(StringAttr)> existsFn,
+    function_ref<void(Operation *, Operation *)> insertFn,
+    const SymbolTable &bytecodeSymTab) {
   if (reader.isMaterializable(op)) {
     if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
       return failure();
@@ -69,8 +69,7 @@ M::loadSymbolsFromBytecode(Operation *op, mlir::BytecodeReader &reader,
     assert(symbol && "expected valid symbol reference");
 
     // Move the symbol into the main module.
-    symbol->moveAfter(op);
-    insertFn(symbol);
+    insertFn(symbol, op);
     return symbol;
   };
 
@@ -104,5 +103,9 @@ LogicalResult M::loadSymbolsFromBytecode(Operation *op,
                                          const SymbolTable &bytecodeSymTab) {
   return loadSymbolsFromBytecode(
       op, reader, [&](StringAttr name) -> bool { return symTab.lookup(name); },
-      [&](Operation *op) { symTab.insert(op); }, bytecodeSymTab);
+      [&](Operation *op, Operation *after) {
+        op->moveAfter(after);
+        symTab.insert(op);
+      },
+      bytecodeSymTab);
 }
