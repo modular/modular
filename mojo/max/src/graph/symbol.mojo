@@ -330,6 +330,9 @@ struct SymbolTuple(Sized):
     # Convenience tuple adapters
     # ===------------------------------------------------------------------=== #
 
+    fn __init__(inout self, owned symbols: ()):
+        self.__init__()
+
     fn __init__(inout self, owned symbols: (Symbol, Symbol)):
         let ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(

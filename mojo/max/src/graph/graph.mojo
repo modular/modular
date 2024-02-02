@@ -10,7 +10,7 @@ from collections import Optional
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
-from .type import MOType, MOTensor, TypeTuple
+from .type import MOList, MOType, MOTensor, TypeTuple
 
 
 @value
@@ -185,3 +185,17 @@ struct Graph:
 
     fn output(self, outs: SymbolTuple) raises:
         _ = self.nvop("mo.output", outs)
+
+    fn list(self, elements: SymbolTuple) raises -> Symbol:
+        if not len(elements):
+            raise "Can't create empty list without a type, use graph.list(MOTensor)"
+        let tensor_type = elements[0].tensor_type()
+        for i in range(len(elements)):
+            if not elements[i].tensor_type() == tensor_type:
+                raise "All list tensors must be the same type"
+        return self.op(
+            "mo.list.create", elements, MOList(elements[0].tensor_type())
+        )
+
+    fn list(self, tensor_type: MOTensor) raises -> Symbol:
+        return self.op("mo.list.create", (), MOList(tensor_type))
