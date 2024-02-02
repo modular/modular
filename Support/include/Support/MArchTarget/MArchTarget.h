@@ -18,11 +18,20 @@ class TargetMachine;
 
 namespace M {
 
+struct CloudInfo {
+  std::string vendor;
+  std::string instanceType;
+};
+
 /// Returns a TargetInfo describing the host.
 ErrorOr<TargetInfo> getHostTargetInfo();
 
 /// Returns the features for the host in "+feature1,+feature2" form.
 std::string getHostCPUFeatures();
+
+/// If host is a VM on a recognized cloud provider, returns CloudInfo.
+/// Otherwise, returns Error.
+ErrorOr<CloudInfo> getHostCloudInfo();
 
 /// Returns a TargetMachine for the current host.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(

@@ -140,6 +140,10 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << cpuArch;
   os << "\ncpu-model: ";
   os << cpuModelName;
+  os << "\ncloud-vendor: ";
+  os << cloudVendor;
+  os << "\ncloud-instance-type: ";
+  os << cloudInstanceType;
   os << "\nsimd-bitwidth: ";
   os << simdBitWidth;
   os << "\nfeatures: ";
@@ -165,6 +169,8 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
   json.attribute("os", osName);
   json.attribute("arch", cpuArch);
   json.attribute("cpu-model", cpuModelName);
+  json.attribute("cloud-vendor", cloudVendor);
+  json.attribute("cloud-instance-type", cloudInstanceType);
   json.attribute("simd-bitwidth", simdBitWidth);
   json.attribute("features", cpuFeatures);
   json.attribute("core-count", numPhysicalCores);
@@ -192,6 +198,12 @@ void HostMachineInfo::print(HostProperty property,
     break;
   case HostProperty::CPUModel:
     json.attribute("cpu-model", cpuModelName);
+    break;
+  case HostProperty::CloudVendor:
+    json.attribute("cloud-vendor", cloudVendor);
+    break;
+  case HostProperty::CloudInstanceType:
+    json.attribute("cloud-instance-type", cloudInstanceType);
     break;
   case HostProperty::SIMDBitWidth:
     json.attribute("simd-bitwidth", simdBitWidth);
@@ -236,6 +248,12 @@ void HostMachineInfo::print(HostProperty property,
   case HostProperty::CPUModel:
     os << cpuModelName;
     break;
+  case HostProperty::CloudVendor:
+    os << cloudVendor;
+    break;
+  case HostProperty::CloudInstanceType:
+    os << cloudInstanceType;
+    break;
   case HostProperty::SIMDBitWidth:
     os << simdBitWidth;
     break;
@@ -269,6 +287,8 @@ void HostMachineInfo::printStaticInfo(raw_ostream &os) const {
   print(HostProperty::OS, os);
   print(HostProperty::Arch, os);
   print(HostProperty::CPUModel, os);
+  print(HostProperty::CloudVendor, os);
+  print(HostProperty::CloudInstanceType, os);
   print(HostProperty::SIMDBitWidth, os);
   print(HostProperty::Features, os);
   print(HostProperty::L1CacheSize, os);
@@ -306,6 +326,14 @@ static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
   machineInfo.simdBitWidth = simdWidthFromFeatures(machineInfo.cpuFeatures);
 
   machineInfo.numPhysicalCores = M::getNumPhysicalCores();
+
+  auto cloudInfoOr = getHostCloudInfo();
+  machineInfo.cloudVendor = "Unknown";
+  machineInfo.cloudInstanceType = "Unknown";
+  if (!cloudInfoOr.isError()) {
+    machineInfo.cloudVendor = cloudInfoOr->vendor;
+    machineInfo.cloudInstanceType = cloudInfoOr->instanceType;
+  }
 
   auto l1CacheSizeOr = getHostCPUCacheSize(1);
   if (l1CacheSizeOr.isError())
