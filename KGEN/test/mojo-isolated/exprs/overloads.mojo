@@ -4,30 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
-
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias AnyRegType = __mlir_type.`!kgen.type`
-alias Float = __mlir_type.`!pop.scalar<f64>`
-alias Int = __mlir_type.index
-
-
-trait AnyType:
-    fn __del__(owned self, /):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
+# RUN: %translate-with-packages %s | FileCheck %s
 
 
 @register_passable("trivial")

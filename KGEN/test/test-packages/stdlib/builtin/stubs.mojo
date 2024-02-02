@@ -7,7 +7,9 @@
 alias Int = __mlir_type.index
 alias AnyRegType = __mlir_type.`!kgen.type`
 alias StringLiteral = __mlir_type.`!kgen.string`
+alias Float = __mlir_type.`!pop.scalar<f64>`
 
+alias `0` = __mlir_attr.`0 : index`
 alias `1` = __mlir_attr.`1 : index`
 alias `2` = __mlir_attr.`2 : index`
 alias `3` = __mlir_attr.`3 : index`
