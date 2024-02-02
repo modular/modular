@@ -37,10 +37,10 @@ struct CallGraphNodeBase {
 
   /// Nodes of functions that inline call this function. These are the child
   /// edges.
-  std::vector<DerivedT *> callers;
+  SmallVector<DerivedT *> callers;
   /// Calls and callees to inline inside this function. These are the parent
   /// edges.
-  std::vector<std::pair<CallOpT, DerivedT *>> callsites;
+  SmallVector<std::pair<CallOpT, DerivedT *>> callsites;
   /// This mutex guards `callsites` and `callers` during parallel graph
   /// construction.
   llvm::sys::SmartRWMutex<true> mutex;
