@@ -238,20 +238,25 @@ struct RuntimeOptions {
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
   };
+
   size_t numThreads = 0;
+
   bool singleThreaded = false;
+
   std::string profileFilename = {};
+
   bool mainWillDonate = true;
+
   // TODO arekay - revert to time units
   //  std::chrono::microseconds threadBusyWaitTime = 200us;
   size_t threadBusyWaitTime = 200;
+
   std::string_view poolName = "🔥 Thread";
+
   bool paranoid = false;
-  bool leakCheckedAllocator = false;
-  bool tcmallocAllocator = false;
-  bool profilingAllocator = false;
-  bool useAfterFreeAllocator = false;
+
   OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
+
   WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kDefault};
 
   AllocatorType allocatorType{
@@ -263,9 +268,11 @@ struct RuntimeOptions {
 
   };
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
+
   RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =
                      LLCL::RuntimeOptions::WorkQueueType::kThreadPool)
       : defaultWorkQueue(wq){};
+
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime (for
   /// eg: ExternalFrameworks in benchmarking)
@@ -362,14 +369,11 @@ struct RuntimeOptions {
   size_t getNumThreads() const { return numThreads; }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(StringRef profileName) const;
-  std::unique_ptr<Runtime> createRuntime() const {
-    return createRuntime(getProfileFilename());
-  }
+  std::unique_ptr<Runtime> createRuntime() const;
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;
-    leakCheckedAllocator = true;
+    allocatorType = AllocatorType::kLeakChecker;
     return *this;
   }
 
@@ -380,17 +384,23 @@ struct RuntimeOptions {
 
   RuntimeOptions &
   withLeakCheckedAllocator(bool newLeakCheckedAllocator = true) {
-    leakCheckedAllocator = newLeakCheckedAllocator;
+    allocatorType = newLeakCheckedAllocator
+                        ? RuntimeOptions::AllocatorType::kLeakChecker
+                        : allocatorType;
     return *this;
   }
 
   RuntimeOptions &withTCMallocAllocator(bool newTcmallocAllocator = true) {
-    tcmallocAllocator = newTcmallocAllocator;
+    allocatorType = newTcmallocAllocator
+                        ? RuntimeOptions::AllocatorType::kTCMalloc
+                        : allocatorType;
     return *this;
   }
 
   RuntimeOptions &withProfilingAllocator(bool newProfilingAllocator = true) {
-    profilingAllocator = newProfilingAllocator;
+    allocatorType = newProfilingAllocator
+                        ? RuntimeOptions::AllocatorType::kProfiler
+                        : allocatorType;
     return *this;
   }
 

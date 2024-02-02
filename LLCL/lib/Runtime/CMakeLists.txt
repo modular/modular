@@ -15,7 +15,6 @@ add_modular_library(LLCLRuntime
   MallocAllocator.cpp
   TCMallocAllocator.cpp
   Runtime.cpp
-  RuntimeCLOptions.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
 
