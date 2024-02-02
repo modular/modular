@@ -62,7 +62,7 @@ fn variadic_trait_elt[T: Intable](*xs: T): pass
 
 # CHECK-LABEL: lit.func @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: !kgen.pack<:variadic<trait<{{.*}}Intable>> Ts> borrow
+# CHECK-SAME: !kgen.pack<:variadic<!Intable> Ts> borrow
 fn trait_pack[T: Intable, *Ts: Intable](first: T, *rest: *Ts):
     pass
 
@@ -818,7 +818,7 @@ struct ShadowsOuterName:
 # Struct @value decorator
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType, !Copyable, !Movable) attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
 # CHECK-SAME: !kgen.signature<!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |)
 @value
@@ -865,7 +865,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %5, %3
 # CHECK-NEXT: kgen.param.constant: none
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable) attributes {
 @value
 struct ValueMemHasCopy:
     var a: Int
@@ -874,7 +874,7 @@ struct ValueMemHasCopy:
        self.a = other.a
        self.b = other.b
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType, !Copyable, !Movable) attributes {
 @value
 struct ValueMemHasMove:
     var a: Int
@@ -884,7 +884,7 @@ struct ValueMemHasMove:
        self.b = other.b
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (trait<@"{{.*}}"::@AnyType>, trait<@"{{.*}}"::@Copyable>, trait<@"{{.*}}"::@Movable>) register_passable_trivial
+# CHECK-SAME: (!AnyType, !Copyable, !Movable) register_passable_trivial
 # CHECK: lit.func @"__copyinit__{{.*}}"(%other: !ValueRegTrivial borrow, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__copyinit__", specialFnKind = 6 : i8} {
 # CHECK-NEXT:  [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
 # CHECK-NEXT:  [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
@@ -943,7 +943,7 @@ struct ValueReg:
 # CHECK-NEXT: lit.return %3
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType, !Copyable, !Movable) attributes
 @value
 struct Foo:
     var a: Int

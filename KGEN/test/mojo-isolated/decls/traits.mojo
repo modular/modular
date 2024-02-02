@@ -67,7 +67,7 @@ trait Trait2:
         ...
 
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits(trait<{{.*}}@Trait1>, trait<{{.*}}@Trait2>)
+# CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1_, {{.*}}, !Trait2_)
 struct StructWithTraits(Trait1, Trait2):
     # CHECK: lit.func @"f{{.*}}(%{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result, |, %self: !lit.ref<!StructWithTraits, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn f(self: Self) -> Self:
@@ -86,7 +86,7 @@ trait CFMTrait:
         pass
 
 
-# CHECK-LABEL: lit.struct.decl @CFMStruct(trait<{{.*}}@CFMTrait>
+# CHECK-LABEL: lit.struct.decl @CFMStruct(!CFMTrait
 struct CFMStruct(CFMTrait):
     # CHECK: lit.func @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn f1(self: Self):
@@ -101,23 +101,23 @@ struct CFMStruct(CFMTrait):
 # Test for struct with parameters and function with parameters.
 # CHECK-LABEL: lit.trait.decl @CFMTraitParams<?, MT: type, T: !kgen.paramref<MT>>
 trait CFMTraitParams:
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[TT:.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
 struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<[[ST1:.*]]: trait<[[TN:@.*]]>>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<{{.*}}@CFMStructParams<:type [[T1:.*]], :type [[T2:.*]]>{{.*}}> borrow_in_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 
 
-# CHECK-LABEL: lit.func @"generic_trait_fn{{.*}}<T: trait<{{.*}}@Trait>>
-# CHECK-SAME: %x: !lit.ref<:trait<{{.*}}@Trait> T, imm {{.*}}> borrow_in_mem
+# CHECK-LABEL: lit.func @"generic_trait_fn{{.*}}<T: !Trait>
+# CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK: call_param[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
-    # CHECK-SAME: get_type_method(:trait<{{.*}}@Trait> T, "f0")]{{.*}}(%x)
+    # CHECK-SAME: get_type_method(:!Trait T, "f0")]{{.*}}(%x)
     x.f0()
 
     # CHECK: call_param[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
@@ -137,7 +137,7 @@ fn generic_trait_fn[T: Trait](x: T):
 
 
 # CHECK-LABEL: lit.func @"existential_arg
-# CHECK-SAME: (%x: !lit.ref<trait<{{.*}}@Trait>, imm {{.*}}>
+# CHECK-SAME: (%x: !lit.ref<!Trait, imm {{.*}}>
 fn existential_arg(x: Trait):
     pass
 
@@ -176,11 +176,11 @@ fn infer_trait[T: SimpleTrait](value: T):
 
 # CHECK-LABEL: lit.func @"test_metatype_to_trait_vtable
 fn test_metatype_to_trait_vtable():
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct{{[0-9]*}}, {
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [!TraitStruct{{[0-9]*}}, {
     # CHECK-SAME: "method" : !lit.signature<[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"method
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>, {
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>, {
     # CHECK-SAME: "method" : !lit.signature<[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
@@ -190,9 +190,9 @@ fn test_metatype_to_trait_vtable():
 fn test_infer_trait(
     a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : index`]
 ):
-    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [!TraitStruct,
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>,
     infer_trait(b)
 
 
@@ -221,16 +221,16 @@ struct StaticMethodStruct(StaticMethodTrait, Copyable):
         pass
 
 
-# CHECK-LABEL: lit.func @"trait_static_method{{.*}}<T: trait
+# CHECK-LABEL: lit.func @"trait_static_method{{.*}}<T: !StaticMethodTrait
 fn trait_static_method[T: StaticMethodTrait]():
-    # CHECK: call_param[!lit.signature<() -> !kgen.none>: get_type_method(:trait<{{.*}}@StaticMethodTrait> T, "foobar")]()
+    # CHECK: call_param[!lit.signature<() -> !kgen.none>: get_type_method(:!StaticMethodTrait T, "foobar")]()
     T.foobar()
 
 
 # CHECK-LABEL: lit.func @"copy_me
-# CHECK-SAME: <T: trait
-# CHECK-SAME: %__result__: !lit.ref<:trait<{{.*}}@Copyable> T, mut {{.*}}> byref_result, |,
-# CHECK-SAME: %value: !lit.ref<:trait<{{.*}}@Copyable> T, imm {{.*}}> borrow_in_mem)
+# CHECK-SAME: <T: !Copyable
+# CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result, |,
+# CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> borrow_in_mem)
 fn copy_me[T: Copyable](value: T) -> T:
     # CHECK-NEXT: call_param[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
     # CHECK-SAME: get_type_method({{.*}} T, "__copyinit__")]{{.*}}(%__result__, %value)
@@ -238,9 +238,9 @@ fn copy_me[T: Copyable](value: T) -> T:
 
 
 # CHECK-LABEL: lit.func @"move_me
-# CHECK-SAME: <T: trait
-# CHECK-SAME: @Movable> T, {{.*}}> byref_result
-# CHECK-SAME: @Movable> T, {{.*}}> owned_in_mem
+# CHECK-SAME: <T: !Movable
+# CHECK-SAME: !Movable T, {{.*}}> byref_result
+# CHECK-SAME: !Movable T, {{.*}}> owned_in_mem
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership %value
     # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
@@ -431,7 +431,7 @@ fn default_construct[T: DefaultConstructible]() -> T:
 # CHECK-LABEL: lit.func @"generic_fn_return_type
 fn generic_fn_return_type():
     # CHECK: lit.varlet.decl "c" let : !lit.ref<!NoDtor,
-    # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:trait<{{.*}}> [!NoDtor,{{.*}}(%c)
+    # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:!DefaultConstructible [!NoDtor,{{.*}}(%c)
     let c = default_construct[NoDtor]()
     # CHECK: call {{.*}}@NoDtor::@"method
     c.method()
@@ -529,7 +529,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
 
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
-# CHECK-SAME: (trait<{{.*}}@AnyType>)
+# CHECK-SAME: (!AnyType)
 trait GreatGrandFather:
     # CHECK: lit.func @"foo(T)"
     fn foo(self):
@@ -537,7 +537,7 @@ trait GreatGrandFather:
 
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
-# CHECK-SAME: (trait<{{.*}}@GreatGrandFather>,
+# CHECK-SAME: (!GreatGrandFather,
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.func @"bar(T)"
     fn bar(self):
@@ -547,7 +547,7 @@ trait GrandFather(GreatGrandFather):
 
 
 # CHECK-LABEL: lit.trait.decl @Father
-# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>],
+# CHECK-SAME: (!GrandFather, !GreatGrandFather[!GrandFather],
 trait Father(GrandFather):
     # CHECK: lit.func @"baz(T)"
     fn baz(self):
@@ -558,7 +558,7 @@ trait Father(GrandFather):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
-# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>[trait<{{.*}}@Father>], trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>, trait<{{.*}}@Father>],
+# CHECK-SAME: (!Father, !GrandFather[!Father], !GreatGrandFather[!GrandFather, !Father],
 struct TraitInheritance(Father):
     fn foo(self):
         pass
@@ -603,12 +603,12 @@ fn infer_grand_father[T: GrandFather](x: T):
 
 
 # CHECK-LABEL: lit.func @"pass_up_trait
-# CHECK-SAME: <T: trait<{{.*}}@Father>>
+# CHECK-SAME: <T: !Father>
 fn pass_up_trait[T: Father](x: T):
-    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:trait<{{.*}}@GrandFather>
-    # CHECK-SAME: [!kgen.paramref<:trait<{{.*}}@Father> T>, {
-    # CHECK-SAME: "bar" : !lit.signature<[1]("self": !lit.ref<:trait<{{.*}}@Father> T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "bar"),
-    # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:trait<{{.*}}@Father> T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "foo")
+    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather
+    # CHECK-SAME: [!kgen.paramref<:!Father T>, {
+    # CHECK-SAME: "bar" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "bar"),
+    # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "foo")
     # CHECK-SAME: }]>(%x)
     infer_grand_father(x)
 
@@ -665,7 +665,7 @@ struct MyPointer[T: AnyType]:
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
 struct HasMyPointerSelf(AnyType):
-    # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:trait<{{.*}}@AnyType>
+    # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:!AnyType
     var x: MyPointer[Self]
     # CHECK: lit.func @"__del__
 

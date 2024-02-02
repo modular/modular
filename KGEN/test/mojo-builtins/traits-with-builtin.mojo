@@ -82,5 +82,5 @@ fn nonmaterializable_trait():
     # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK-NEXT: store [[VAL]], [[SLOT]]
     # CHECK-NEXT:  = lit.ref.immut [[SLOT]]
-    # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:trait<{{.*}}Intable> [!Int, {"__int__"
+    # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:!Intable [!Int, {"__int__"
     take_intable(1)

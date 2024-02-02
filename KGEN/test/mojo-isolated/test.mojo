@@ -14,8 +14,7 @@
 # RUN: %translate-with-packages %s | FileCheck %s
 
 
-# CHECK: lit.struct.decl @BoxedInt(
-# CHECK-SAME: @"$stdlib"::@"$builtin"::@"$stubs"::@Copyable>, trait<@"$stdlib"::@"$builtin"::@"$stubs"::@Movable>
+# CHECK: lit.struct.decl @BoxedInt(!AnyType, !Copyable, !Movable)
 @value
 struct BoxedInt:
     var value: Int

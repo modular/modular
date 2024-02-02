@@ -391,6 +391,7 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 
     /// Return an alias name if the DeclRefType should be printed with an alias.
     std::optional<StringRef> getAliasName();
+    static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
   }];
 }
 

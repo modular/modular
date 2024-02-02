@@ -16,13 +16,13 @@ from test_package_trait.module import (
 )
 
 
-# CHECK: lit.struct.decl @MyType(trait<{{.*}}@PackageTrait>,
+# CHECK: lit.struct.decl @MyType(!PackageTrait,
 struct MyType(PackageTrait):
     fn method(self):
         pass
 
 
-# CHECK: lit.struct.decl @MyRegType(trait<{{.*}}@PackageTrait>,
+# CHECK: lit.struct.decl @MyRegType(!PackageTrait,
 @register_passable
 struct MyRegType(PackageTrait):
     # CHECK: lit.func @"`thunk_method
@@ -55,7 +55,6 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 
 # CHECK: lit.trait.decl @PackageTrait
 # CHECK: lit.trait.decl @UsedInPackageTrait
-# CHECK: lit.struct.decl @UseTrait
-# CHECK-SAME: {{.*}}@UsedInPackageTrait
+# CHECK: lit.struct.decl @UseTrait(!UsedInPackageTrait
 
 # CHECK: lit.func @"`thunk_method({{.*}}_PrivateReg)"
