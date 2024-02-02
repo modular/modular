@@ -334,6 +334,7 @@ static Region *getNearestDeclRegion(Operation *op) {
 static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
                                        ValueRange inputs, TypeRange outputs) {
   SmallVector<Value> newValues;
+  newValues.reserve(inputs.size());
   for (auto [input, output] : llvm::zip(inputs, outputs))
     if (input.getType() != output)
       newValues.push_back(b.create<RebindOp>(loc, output, input));
@@ -1044,7 +1045,9 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       "InliningGraph::performInlining",
       [name = caller->func.getSymName()] { return name.str(); });
 
+  IRMapping map;
   for (auto [call, callee] : caller->callsites) {
+    map.clear();
     Operation *scope;
     bool singleExit;
     // Check if this is the last use of the function.
@@ -1053,7 +1056,6 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     // into one that does.
     bool nukeDebugInfo =
         !callee->func.getLocScope() && caller->func.getLocScope();
-    IRMapping map;
     if (callee->numTimesInlined.fetch_add(1) + 1 == callee->callers.size()) {
       // If so, we can take the body instead of cloning it. Acquire an exclusive
       // lock to wait for all other users to finish cloning.
