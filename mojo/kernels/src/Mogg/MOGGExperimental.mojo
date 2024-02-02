@@ -133,7 +133,7 @@ fn my_sub_without_fusion(
 
 @mogg_register_override("mo.relu", 1000)
 @export
-fn unary_op_with_fusion(
+fn my_relu(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -151,6 +151,25 @@ fn unary_op_with_fusion(
 
 
 @mogg_register_override("mo.sqrt", 1000)
+@export
+fn my_sqrt(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register("unary_op_without_fusion")
 @export
 fn unary_op_without_fusion(
     x: Tensor,
