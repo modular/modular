@@ -1516,8 +1516,8 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
     }
 
     // If no operand is provided, try a default.
-    if (auto defaultOr = defaultHandler.getDefault(idx)) {
-      bindOperands.emplace_back(*defaultOr);
+    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
+      bindOperands.emplace_back(defaultOr);
       continue;
     }
 

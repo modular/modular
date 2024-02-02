@@ -235,10 +235,10 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     passingKindPrinter.printOptionalStarSlash(idx);
 
     printParamDecl(p, decl);
-    if (auto defaultOr = defaultHandler.getDefault(idx)) {
+    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
       printParamValue(
-          p, cast<TypedAttr>(evaluator.getReboundAttribute(*defaultOr)));
+          p, cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr)));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -310,9 +310,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
-    if (auto defaultOr = defaultHandler.getDefault(idx)) {
+    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
-      printParamValue(p, *defaultOr);
+      printParamValue(p, defaultOr);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
@@ -679,12 +679,12 @@ LogicalResult LIT::verifyDefaultTypes(
     StringRef argOrParam, ArrayRef<ArgConvention> convs) {
   DefaultValueHandler defaultHandler(passingKinds, defaultsPos, defaultsKwOnly);
   for (size_t idx = 0; idx < passingKinds.size(); ++idx) {
-    auto defaultOr = defaultHandler.getDefault(idx);
-    if (!defaultOr.has_value())
+    TypedAttr defaultOr = defaultHandler.getDefault(idx);
+    if (!defaultOr)
       continue;
 
     Type expectedType = types[idx];
-    Type defaultType = defaultOr->getType();
+    Type defaultType = defaultOr.getType();
 
     // Memory-only arguments store their default values as pure values.
     if (!convs.empty()) {

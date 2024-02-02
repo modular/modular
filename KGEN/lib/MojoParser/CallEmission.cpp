@@ -282,12 +282,12 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       }
 
       // If available, we use a default parameter value.
-      if (auto defaultOr = defaultHandler.getDefault(idx)) {
+      if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
         // Default parameter values may reference other parameter values, so we
         // need to evaluate these.
         expectedType = evaluator.getReboundType(expectedType);
         auto reboundAttr =
-            cast<TypedAttr>(evaluator.getReboundAttribute(*defaultOr));
+            cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr));
         assert(expectedType.isEqualCanon(reboundAttr.getType()));
 
         setParamValue(reboundAttr);

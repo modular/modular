@@ -269,10 +269,10 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
 
-        if (auto defaultOr = defaultHandler.getPosDefault(i))
-          newPosDefaults.push_back(*defaultOr);
-        else if (auto defaultOr = defaultHandler.getKwOnlyDefault(i))
-          newKwOnlyDefaults.push_back(*defaultOr);
+        if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
+          newPosDefaults.push_back(defaultOr);
+        else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
+          newKwOnlyDefaults.push_back(defaultOr);
 
         if (sig.isVarArg(i))
           paramVarArg = true;
@@ -674,9 +674,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     printArgConvention(p, signature.getArgConvention(i),
                        ArgConvention::OwnedInReg);
 
-    if (auto defaultOr = defaultHandler.getDefault(i)) {
+    if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
-      printParamValue(p, *defaultOr);
+      printParamValue(p, defaultOr);
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
