@@ -4,30 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -verify-diagnostics
-
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias AnyRegType = __mlir_type.`!kgen.type`
-alias Int = __mlir_type.index
-
-alias `7` = __mlir_attr.`7 : index`
-
-
-@register_passable
-struct VariadicList[type: AnyRegType]:
-    alias storage_type = __mlir_type[`!kgen.variadic<`, type, `>`]
-
-    fn __init__(value: Self.storage_type) -> Self:
-        return Self {}
-
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
-
+# RUN: %translate-with-packages %s -verify-diagnostics
 
 # expected-note @+1 {{function declared here}}
 fn takes_pos_only_arg(a: Int, b: Int, /):
