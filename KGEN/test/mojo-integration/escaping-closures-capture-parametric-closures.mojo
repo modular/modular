@@ -23,10 +23,8 @@ from sys import argv
 # CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
 # CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {
 # CHECK-NEXT:    %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:    %idx16 = index.constant 16
-# CHECK-NEXT:    %idx8 = index.constant 8
 
-# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
+# CHECK:         [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<struct<(index)>>
