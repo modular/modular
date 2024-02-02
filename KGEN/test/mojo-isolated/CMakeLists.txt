@@ -14,7 +14,7 @@ configure_lit_site_cfg(
 )
 
 add_modular_testsuite(check-mojo-isolated
-  TOP_LEVEL_CHECK check-mojo
+  TOP_LEVEL_CHECK check-mojo-parser
 
   TOOLS
   kgen-translate
