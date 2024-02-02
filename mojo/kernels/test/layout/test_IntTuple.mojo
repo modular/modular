@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO(30677) reenable once the compiler does not crash.
+# REQUIRES: disabled
+# RUN: %mojo %s
 
 from kernel_utils.IntTuple import *
 from testing import assert_true
