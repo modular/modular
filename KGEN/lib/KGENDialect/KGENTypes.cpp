@@ -242,24 +242,6 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             getMetadata());
 }
 
-bool SignatureType::isVarArg(size_t index) {
-  if (!getFnEffects().hasVarArgs())
-    return false;
-  return getFnEffects().isVarArg(getNumArguments(), index);
-}
-
-bool SignatureType::isPackVarArg(size_t index) {
-  if (!getFnEffects().hasPackVarArgs())
-    return false;
-  return getFnEffects().isVarArg(getNumArguments(), index);
-}
-
-bool SignatureType::isKWVarArg(size_t index) {
-  if (!getFnEffects().hasKWVarArgs())
-    return false;
-  return index + 1 == getNumArguments();
-}
-
 bool SignatureType::hasMemoryOnlyResult() {
   ArrayRef<ArgConvention> conventions = getArgConventions();
   return !conventions.empty() && conventions[0] == ArgConvention::ByRefResult;
