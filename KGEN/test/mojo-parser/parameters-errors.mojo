@@ -265,3 +265,22 @@ struct CtadStruct[a: Int]:
 fn test_implicitly_parametric_static_methods_fails():
     # expected-error @below {{could not deduce parameter #0 ('a') of parent struct CtadStruct}}
     CtadStruct.foo[5]()
+
+##===----------------------------------------------------------------------===##
+# Parameter inference
+##===----------------------------------------------------------------------===##
+
+trait SomeTrait:
+    pass
+
+struct NoTraitsType:
+    pass
+
+# expected-note @below {{function declared here}}
+fn take_some_trait[T: SomeTrait](x: T):
+    pass
+
+fn pass_no_traits(x: NoTraitsType):
+    # expected-error @below {{invalid call to 'take_some_trait'}}
+    # expected-note @below {{failed to infer parameter 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
+    take_some_trait(x)
