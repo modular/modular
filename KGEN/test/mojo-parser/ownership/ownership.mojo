@@ -649,7 +649,7 @@ fn test_or(a: MemExample) -> MemExample:
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}}:lifetime<0> *"mems`">(%mems_0, %mems)
+  # CHECK-SAME: <:trait<{{.*}}AnyType> #MemExample{{.*}}:lifetime<0> *"mems`">(%mems_0, %mems)
   pass
 
 # CHECK-LABEL: lit.func @"call_variadic_mems
@@ -704,7 +704,7 @@ fn variadic_field_sensitivity():
 fn variadic_inout_mems(inout *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.varlet.decl
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
-  # CHECK-SAME: <:trait<{{.*}}AnyType> [!MemExample{{.*}} :lifetime<1> *"mems`">(%mems_0, %mems)
+  # CHECK-SAME: <:trait<{{.*}}AnyType> #MemExample{{.*}} :lifetime<1> *"mems`">(%mems_0, %mems)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[IMMREF]], [[ZERO]])

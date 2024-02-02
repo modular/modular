@@ -19,6 +19,9 @@
 #include "KGEN/KGENDialect/KGENDialect.h.inc"
 
 namespace M::KGEN {
+/// Register KGEN dialect commandline options.
+void registerKGENCommandLineOptions();
+
 template <typename TypeT>
 void KGENDialect::registerMnemonicType() {
   registerPrettyType(

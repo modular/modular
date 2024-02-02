@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -29,6 +30,8 @@ using namespace KGEN;
 int main(int argc, char *argv[]) {
   KGENCommonOptions clOptions;
   KGENCommonCLOptions parser(clOptions);
+
+  KGEN::registerKGENCommandLineOptions();
 
   M::cl::MOpt<bool> disableBuiltinModule{
       "mojo-disable-builtins",

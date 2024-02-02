@@ -205,6 +205,9 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
   if (!type)
     return failure();
 
+  if (succeeded(p.printAlias(type)))
+    return success();
+
   VTableAttr vtable = type.getVTable();
   if (!vtable.getEntries().empty())
     p << '[';
@@ -225,7 +228,7 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
 
   if (!vtable.getEntries().empty()) {
     p << ", {";
-    vtable.print(p);
+    p.printStrippedAttrOrType(vtable);
     p << "}]";
   }
   return success();

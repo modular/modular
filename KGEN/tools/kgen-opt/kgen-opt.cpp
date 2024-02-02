@@ -402,6 +402,8 @@ int main(int argc, char **argv) {
                      "traced by time profiler."),
       llvm::cl::init(0)};
 
+  KGEN::registerKGENCommandLineOptions();
+
   // Register and parse command line options.
   std::string inputFilename, outputFilename;
   std::tie(inputFilename, outputFilename) =
