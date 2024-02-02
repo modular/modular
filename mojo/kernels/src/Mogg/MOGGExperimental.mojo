@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from NN.Activations import relu
+from NN.GatherScatter import gather_shape, Axis, gather as _gather
 from math import sqrt
 from utils._annotations import *
 from MOGGIntList import IntList
@@ -303,3 +304,106 @@ fn view_like_custom_op_target(
     return Tensor[x.type, x.same_rank_param()](
         x.data, new_shape, new_stride, x.refcount()
     )
+
+
+fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
+    if input_rank == -1 or indices_rank == -1:
+        return 0
+    return input_rank + indices_rank - 1
+
+
+@mogg_register_override("mo.gather", priority=1000)
+@always_inline
+@export
+fn gather[
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input: Tensor,
+    indices: Tensor,
+    axis: Tensor,
+) -> Tensor[
+    input.type,
+    DimList.create_unknown[
+        gather_rank(input.static_rank, indices.static_rank)
+    ](),
+]:
+    constrained[
+        input.has_static_rank() and indices.has_static_rank(),
+        "gather kernel does not support dynamic rank inputs",
+    ]()
+    let input_buf = input.to_buffer[input.static_rank]().make_dims_unknown()
+    let indices_buf = indices.to_buffer[
+        indices.static_rank
+    ]().make_dims_unknown()
+    let axis_buf = axis.to_buffer[1]().make_dims_unknown()
+
+    alias out_rank = gather_rank(input.static_rank, indices.static_rank)
+    var out_shape = StaticIntTuple[out_rank](0)
+    # TODO (#30286): kernels should be able to raise
+    # and also cannot write try/except in outermost block because of another bug
+    try:
+        out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
+    except e:
+        trap(e)
+
+    @parameter
+    @always_inline
+    fn load_indices[
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[indices.type, width]:
+        return indices_buf.simd_load[width](
+            rebind[StaticIntTuple[indices.static_rank]](coords)
+        )
+
+    let output = empty_tensor[input.type](
+        IntList[
+            DimList.create_unknown[
+                # cannot use out_rank because then output type does not match return type
+                # kgen cannot see that the values are equivalent
+                gather_rank(input.static_rank, indices.static_rank)
+            ]()
+        ](out_shape)
+    )
+
+    output.enable_fusion()
+    input.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn load_input[
+        width: Int, rank: Int
+    ](coords: StaticIntTuple[rank]) capturing -> SIMD[input.type, width]:
+        return input.simd_load[width](
+            rebind[StaticIntTuple[input.static_rank]](coords)
+        )
+
+    @parameter
+    @always_inline
+    fn store_output[
+        width: Int, rank: Int
+    ](
+        coords: StaticIntTuple[rank], val: SIMD[output.type, width]
+    ) capturing -> None:
+        output.store(rebind[StaticIntTuple[output.static_rank]](coords), val)
+
+    try:
+        _gather[
+            input.type,
+            indices.type,
+            load_input,
+            load_indices,
+            store_output,
+            # TODO (#30291): target and single_thread_blocking_override not supported yet
+            # target=target,
+            # single_thread_blocking_override=single_thread_blocking_override,
+        ](
+            Axis(axis_buf[0], input.static_rank),
+            input.shape.to_static_tuple(),
+            indices.shape.to_static_tuple(),
+            output.shape.to_static_tuple(),
+        )
+    except e:
+        trap(e)
+
+    return output

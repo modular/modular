@@ -295,6 +295,19 @@ struct Tensor[
         return flat_index
 
     @always_inline
+    fn store(self, index: StaticIntTuple[Self.static_rank], value: SIMD):
+        constrained[
+            Self.has_static_rank(),
+            (
+                "store using statically ranked index argument requires tensor"
+                " to have static rank"
+            ),
+        ]()
+        self.store(
+            IntList[DimList.create_unknown[Self.static_rank]()](index), value
+        )
+
+    @always_inline
     fn store(self, index: IntList, value: SIMD):
         # Nop function to preserve symbol.
         self._output_fusion_hook()
@@ -343,6 +356,21 @@ struct Tensor[
         var as_nd = self.get_nd_indices()
         as_nd[0] = index
         return self.simd_load[simd_width](as_nd)
+
+    @always_inline
+    fn simd_load[
+        simd_width: Int,
+    ](self, index: StaticIntTuple[Self.static_rank]) -> SIMD[type, simd_width]:
+        constrained[
+            Self.has_static_rank(),
+            (
+                "simd_load using statically ranked index argument requires"
+                " tensor to have static rank"
+            ),
+        ]()
+        return self.simd_load[simd_width](
+            IntList[DimList.create_unknown[Self.static_rank]()](index)
+        )
 
     @always_inline
     fn simd_load[
