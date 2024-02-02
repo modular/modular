@@ -30,17 +30,14 @@ using namespace M::KGEN::LIT;
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct DefaultValue {};
-/// An operand can either be position, keyword, or a default.
-using CallOperandPos = SmartVariant<size_t, StringAttr, DefaultValue>;
-
 class ParameterInferenceDiagnostics {
 public:
   /// Indicate that parameter inference failed to infer the parameter at
   /// `paramIdx` from the argument at `argPos`.
-  void addFailedInference(size_t paramIdx, CallOperandPos argPos,
+  void addFailedInference(size_t paramIdx, const ExprNode *argExpr,
                           ASTType paramType, ASTType argParamType) {
-    diags[paramIdx].push_back(FailedInference{argPos, paramType, argParamType});
+    diags[paramIdx].push_back(
+        FailedInference{argExpr, paramType, argParamType});
   }
 
   /// Attach failed parameter inference diagnostics for parameters with no
@@ -53,7 +50,7 @@ private:
                         ASTType paramType, ASTType argParamType);
 
   struct FailedInference {
-    CallOperandPos argPos;
+    const ExprNode *argExpr;
     ASTType paramType;
     ASTType argParamType;
   };
@@ -70,16 +67,13 @@ void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
       continue;
     for (const FailedInference &failed : diags) {
       // Don't report diagnostics when failure occurred from a default value.
-      if (isa<DefaultValue>(failed.argPos))
+      if (!failed.argExpr)
         continue;
-      ASTExprAnd<AnyValue> operand =
-          isa<size_t>(failed.argPos)
-              ? operands.posOperands[cast<size_t>(failed.argPos)]
-              : operands.kwOperands->at(cast<StringAttr>(failed.argPos));
+      const ExprNode *expr = failed.argExpr;
       emitSpecificNote(
           [&, idx = idx]() -> InflightDiag & {
-            diag.attachNote(operand.expr->getLoc())
-                << operand.expr->getRange() << "failed to infer parameter ";
+            diag.attachNote(expr->getLoc())
+                << expr->getRange() << "failed to infer parameter ";
             if (StringRef name = signature.getParamNames()[idx]; !name.empty())
               diag << "'" << name << "'";
             else
@@ -133,15 +127,11 @@ public:
 private:
   void matchTypes(Type actualType, Type expectedType);
   void matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
-  LogicalResult checkOneOperand(CallOperandPos argPos, AnyValue value,
-                                ASTType expectedType,
-                                ArgConvention expectedConvention);
-  LogicalResult checkOneOperand(CallOperandPos argPos,
-                                ASTExprAnd<AnyValue> operand,
+  LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
   void addFailedInference(ASTType paramType, ASTType argParamType) {
-    diags.addFailedInference(parameterIndex, curArgPos, paramType,
+    diags.addFailedInference(parameterIndex, curArgExpr, paramType,
                              argParamType);
   }
 
@@ -151,7 +141,7 @@ private:
   SmallVector<PValue> inferredValues;
   ParameterInferenceDiagnostics &diags;
 
-  CallOperandPos curArgPos;
+  const ExprNode *curArgExpr = nullptr;
 };
 } // namespace
 
@@ -315,10 +305,11 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
 }
 
 LogicalResult
-ParameterInferenceState::checkOneOperand(CallOperandPos argPos, AnyValue value,
+ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                          ASTType expectedType,
                                          ArgConvention expectedConvention) {
-  curArgPos = argPos;
+  AnyValue value = operand.ir;
+  curArgExpr = operand.expr;
 
   // We'll bind the next provided value.
   switch (expectedConvention) {
@@ -397,12 +388,6 @@ ParameterInferenceState::checkOneOperand(CallOperandPos argPos, AnyValue value,
   llvm_unreachable("invalid argument convention");
 };
 
-LogicalResult ParameterInferenceState::checkOneOperand(
-    CallOperandPos argPos, ASTExprAnd<AnyValue> operand, ASTType expectedType,
-    ArgConvention expectedConvention) {
-  return checkOneOperand(argPos, operand.ir, expectedType, expectedConvention);
-}
-
 PValue ParameterInferenceState::infer(LITSignatureType signature,
                                       ArrayRef<TypedAttr> bindingsSoFar,
                                       const CallOperands &callOperands) {
@@ -439,7 +424,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       // Check if a keyword operand was provided for this argument
       if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
               callOperands.findKwArg(argName)) {
-        if (failed(checkOneOperand(argName, *kwOperandOr, expectedType,
+        if (failed(checkOneOperand(*kwOperandOr, expectedType,
                                    expectedConvention)))
           return {};
         continue;
@@ -450,8 +435,8 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       // meaning there can't be anything to infer here directly, but we still
       // check to make sure that the default value doesn't contradict already
       // inferred parameters.
-      if (auto defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
-        if (failed(checkOneOperand(DefaultValue{}, *defaultOr, expectedType,
+      if (TypedAttr defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
+        if (failed(checkOneOperand({defaultOr, /*expr=*/nullptr}, expectedType,
                                    expectedConvention)))
           return {};
         continue;
@@ -470,8 +455,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       auto expectedVariadic = cast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands)
-        if (failed(checkOneOperand(posOperandIdx, posOperands[posOperandIdx++],
-                                   varArgsEltType,
+        if (failed(checkOneOperand(posOperands[posOperandIdx++], varArgsEltType,
                                    expectedVariadic.getConvention())))
           return {};
       continue;
@@ -520,8 +504,8 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     // In the typical case, this argument isn't varargs or a pack, so just check
     // it.  If there was a problem, report it, otherwise continue on to the next
     // expected argument to check.
-    if (failed(checkOneOperand(posOperandIdx, posOperands[posOperandIdx++],
-                               expectedType, expectedConvention)))
+    if (failed(checkOneOperand(posOperands[posOperandIdx++], expectedType,
+                               expectedConvention)))
       return {};
   }
 

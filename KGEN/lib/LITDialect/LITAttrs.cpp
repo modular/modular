@@ -170,10 +170,10 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);
       newParamPassingKinds.emplace_back(getParamPassingKinds()[idx]);
-      if (auto defaultOr = defaultHandler.getPosDefault(idx))
-        newDefaultPosParams.emplace_back(*defaultOr);
-      else if (auto defaultOr = defaultHandler.getKwOnlyDefault(idx))
-        newDefaultKwOnlyParams.emplace_back(*defaultOr);
+      if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
+        newDefaultPosParams.emplace_back(defaultOr);
+      else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
+        newDefaultKwOnlyParams.emplace_back(defaultOr);
     }
   }
 

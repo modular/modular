@@ -423,11 +423,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       // Otherwise, apply the default argument. We've ensured before that we
       // have a default argument for each missing operand.
-      auto defaultOr = defaultHandler.getDefault(argIdx);
-      assert(defaultOr.has_value());
+      TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
+      assert(defaultOr);
       assert(convention != ArgConvention::ByRef &&
              "by_ref argument cannot have defaults");
-      argumentValues.push_back({PValue(*defaultOr), callExpr});
+      argumentValues.push_back({PValue(defaultOr), callExpr});
       continue;
     }
 

@@ -270,25 +270,25 @@ public:
 
   /// If the given index refers to an optional positional (pos-only or
   /// pos-or-kw) argument/parameter, return its default value or null otherwise.
-  inline std::optional<TypedAttr> getPosDefault(size_t idx) {
+  inline TypedAttr getPosDefault(size_t idx) {
     if (defaultPosStart <= idx && idx < numPositional)
       return defaultsPos[idx - defaultPosStart];
-    return std::nullopt;
+    return {};
   }
 
   /// If the given index refers to an optional keyword-only argument/parameter,
   /// return its default value or null otherwise.
-  inline std::optional<TypedAttr> getKwOnlyDefault(size_t idx) {
+  inline TypedAttr getKwOnlyDefault(size_t idx) {
     if (defaultKwOnlyStart <= idx && idx < kwOnlyEnd)
       return defaultsKwOnly[idx - defaultKwOnlyStart];
-    return std::nullopt;
+    return {};
   }
 
   /// If the given index refers to an optional argument/parameter (of any
   /// passing kind), return its default value or null otherwise.
-  inline std::optional<TypedAttr> getDefault(size_t idx) {
-    if (auto defaultOr = getPosDefault(idx))
-      return *defaultOr;
+  inline TypedAttr getDefault(size_t idx) {
+    if (TypedAttr defaultOr = getPosDefault(idx))
+      return defaultOr;
     return getKwOnlyDefault(idx);
   }
 
