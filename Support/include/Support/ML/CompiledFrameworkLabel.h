@@ -83,6 +83,11 @@ public:
   /// Return a printable string identifying this framework label.
   const char *getAsString() const;
 
+  /// Returns a unique label string such as `onnx` identifying the framework.
+  /// Differs from `getAsString` in that this is an ID, whereas `getAsString` is
+  /// more human readable.
+  static const char *asLabelString(Cases label);
+
   constexpr bool operator==(CompiledFrameworkLabel other) const {
     return value == other.value;
   }
