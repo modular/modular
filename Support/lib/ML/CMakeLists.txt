@@ -8,6 +8,7 @@ add_modular_library(MSupportML
   BroadcastShape.cpp
   CompiledFrameworkLabel.cpp
   DType.cpp
+  Fill.cpp
   MatMulBroadcast.cpp
   RangeUtils.cpp
   TensorShape.cpp
@@ -15,4 +16,5 @@ add_modular_library(MSupportML
 
   LINK_LIBS PUBLIC
   LLVMSupport
-  )
+  MSupport
+)

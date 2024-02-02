@@ -11,6 +11,7 @@ add_subdirectory(DebugInfoDialect)
 add_subdirectory(Entitlements)
 add_subdirectory(HTTP)
 add_subdirectory(MArchTarget)
+add_subdirectory(ML)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK

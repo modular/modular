@@ -108,11 +108,11 @@ TEST(DeviceSpecs, ReconcileDeviceSpecs) {
     ASSERT_TRUE(itr != mapOr->end());
     // provided
     ASSERT_EQ(itr->second.first.ref.label, "cuda");
-    ASSERT_EQ(itr->second.first.ref.id, 0);
+    ASSERT_EQ(itr->second.first.ref.id, (size_t)0);
     ASSERT_EQ(itr->second.first.target.arch, "sm_80");
     // required
     ASSERT_EQ(itr->second.second.ref.label, "cudax");
-    ASSERT_EQ(itr->second.second.ref.id, 7);
+    ASSERT_EQ(itr->second.second.ref.id, (size_t)7);
     ASSERT_EQ(itr->second.second.target.arch, "sm_90");
   }
 }
