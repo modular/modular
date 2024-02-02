@@ -688,7 +688,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   // If the callee has implicit lifetimes, we need to bind them to immortal
   // references and rebind the callee.
-  SignatureType boundSigType = calleeSig;
+  LITSignatureType boundSigType = calleeSig;
   if (calleeSig.getNumImplicitLifetimeDecls()) {
     boundSigType = calleeSig.getWithImplicitLifetimesBoundImmortal();
     operands[0] =

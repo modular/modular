@@ -787,7 +787,7 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
 
 /// Get this signature with all the implicit lifetimes bound to #lit.lifetime
 /// and dropped from the signature.
-SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
+LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
   // Avoid work if this there is nothing to do.
   if (getNumImplicitLifetimeDecls() == 0)
     return *this;
@@ -798,9 +798,8 @@ SignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
       lifetimes,
       []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
 
-  return SignatureType::get(newFnType, getParamTypes(),
-                            /*no result params*/ {}, getArgConventions(),
-                            getFnEffects());
+  return LITSignatureType::get(newFnType, getParamTypes(), getArgConventions(),
+                               getFnEffects(), getMetadata());
 }
 
 /// This method replaces direct uses of NAMED implicit lifetime declarations
@@ -845,11 +844,11 @@ Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
 /// This method replaces direct uses of NAMED implicit lifetime declarations
 /// with index-based references corresponding to the signature. `lifetimeDecls`
 /// specifies the names of the implicit lifetime decls.
-SignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
+LITSignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
     ArrayRef<ParamDeclAttr> lifetimeDecls) {
   assert(lifetimeDecls.size() == getNumImplicitLifetimeDecls() &&
          "Incorrect number of lifetime decls");
-  return ::cast<SignatureType>(
+  return ::cast<LITSignatureType>(
       replaceImplicitLifetimesWithIndexes(*this, lifetimeDecls, 1));
 }
 
@@ -893,8 +892,6 @@ LITSignatureType LITSignatureType::get(FunctionType values,
                                        FnEffects effects,
                                        FnMetadataAttr metadata) {
   assert(metadata && "LITSignatureType must have non-null metadata");
-  assert(countImplicitLifetimes(convs) ==
-         metadata.getNumImplicitLifetimeDecls());
   return SignatureType::get(values, paramTypes, /*resultParamTypes=*/{}, convs,
                             effects, metadata);
 }

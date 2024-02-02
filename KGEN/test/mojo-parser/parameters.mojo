@@ -767,14 +767,15 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<x: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:(!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self) -> !kgen.none
+# CHECK-SAME: apply_result_slot(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self, |) -> !kgen.none
 # CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>(
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
 # CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:(!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self) -> !kgen.none rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self, |) -> !kgen.none
+# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @"$parameters"::@MemoryOnlyType::@"__init__($parameters::MemoryOnlyType=&)"))>
 fn test_mem_only_default_param():
     mem_only_default_param()
 

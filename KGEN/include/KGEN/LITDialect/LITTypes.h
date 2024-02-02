@@ -80,12 +80,12 @@ public:
   /// This method replaces direct uses of NAMED implicit lifetime declarations
   /// with index-based references corresponding to the signature.  lifetimeDecls
   /// specifies the names of the implicit lifetime decls.
-  SignatureType
+  LITSignatureType
   replaceImplicitLifetimesWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
   /// Get this signature with all the implicit lifetimes bound to #lit.lifetime
   /// and dropped from the signature.
-  SignatureType getWithImplicitLifetimesBoundImmortal();
+  LITSignatureType getWithImplicitLifetimesBoundImmortal();
 
   /// This method replaces direct uses of NAMED implicit lifetime declarations
   /// with index-based references.  lifetimeDecls specifies the names of the

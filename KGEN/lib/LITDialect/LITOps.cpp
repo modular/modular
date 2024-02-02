@@ -600,8 +600,8 @@ static ParseResult parseLITFunctionSignature(
                             /*variadicIndices=*/{}, /*packIndices=*/{}),
       lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
-      params, resultParams, functionType, argConventions, effects, metadata,
-      [&] { return p.emitError(startLoc); });
+      params, /*resultParams=*/{}, functionType, argConventions, effects,
+      metadata, [&] { return p.emitError(startLoc); });
   if (!signature)
     return failure();
 
