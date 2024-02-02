@@ -175,11 +175,12 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto b = ImplicitLocOpBuilder::atBlockEnd(
       translateLocation(decl.getLoc()),
       &cast<StructDeclOp>(decl).getFields().front());
+  auto argListAttrs = ArgParamListAttr::get(
+      ctx, {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw});
   LIT::FuncOp func = createFunction(
-      "__init__", {}, {},
+      "__init__", /*params=*/{}, /*paramListAttrs=*/ArgParamListAttr::get(ctx),
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
-      {ArgConvention::InitSelf, ArgConvention::OwnedInReg},
-      {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw},
+      {ArgConvention::InitSelf, ArgConvention::OwnedInReg}, argListAttrs,
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
   shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
                                             &decl);
@@ -211,9 +212,9 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   LIT::FuncOp callImpl = createFunction(
-      lambdaName, {}, {}, callImplType.getArguments(),
-      callImplType.getArgConventions(), callImplType.getArgNames(),
-      callImplType.getArgPassingKinds(), fnPtrType.getResultType(),
+      lambdaName, /*params=*/{}, callImplType.getMetadata().getParamListAttrs(),
+      callImplType.getArguments(), callImplType.getArgConventions(),
+      callImplType.getMetadata().getArgListAttrs(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
   auto paramDecl = ParamDeclAttr::get(lambdaName, callImpl.getSignature());
   callImpl.setParamDeclAttr(paramDecl);
@@ -403,9 +404,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
-      closureMethodSignatureType.getArgNames(),
-      closureMethodSignatureType.getArgPassingKinds(), resultType, astDecl,
-      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
+      closureMethodSignatureType.getMetadata().getArgListAttrs(), resultType,
+      astDecl, SpecialFunctionKind::kNormal,
+      closureMethodSignatureType.getFnEffects());
 
   // Populate the body of ClosureWrapper::__call__.
   {
@@ -546,7 +547,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
   auto [callFunc, _] = synthesizeMethodInStruct(
-      "__call__", callInputTypes, callConventions, callNames, callPassingKinds,
+      "__call__", callInputTypes, callConventions,
+      ArgParamListAttr::get(ctx, callNames, callPassingKinds),
       closureResultType, structDecl, SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
 
@@ -588,9 +590,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/hasParamClosureCaptures);
-  LIT::FuncOp initFunc =
-      synthesizeMemberwiseInit(structDecl, initSigTypes, initSigConventions,
-                               initSigNames, initSigPassingKinds);
+  LIT::FuncOp initFunc = synthesizeMemberwiseInit(
+      structDecl, initSigTypes, initSigConventions,
+      ArgParamListAttr::get(ctx, initSigNames, initSigPassingKinds));
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
 
@@ -804,6 +806,14 @@ ClosureEmitter::collectTopLevelFunctionTypes(StructDeclOp closureWrapper) {
   return topLevelTypes;
 }
 
+/// Helper to return an array of demangled names for the given declarations.
+static SmallVector<StringAttr>
+getDemangledNames(ArrayRef<ParamDeclAttr> decls) {
+  return llvm::map_to_vector(decls, [](ParamDeclAttr p) {
+    return StringAttr::get(p.getContext(), demangleParameterName(p.getName()));
+  });
+}
+
 /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
 /// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to
 /// specify which parameters of the ClosureWrapper should be bound to the
@@ -836,17 +846,15 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Bind the impl struct to the declared parameters.
   ASTType closureImplType = makeClosureImplSelfType(closureImpl, totalParams);
   auto closureImplRefType =
-      closureImplType.getRefForArgument("existing", /*mut=*/true);
-
-  SmallVector<PassingKind> paramPassingKinds(closureImpl.getParams().size(),
-                                             PassingKind::PosOnly);
+      closureImplType.getRefForArgument("existing", /*isMut=*/true);
 
   // Create unique names for parameters.
   if (auto init = findInitInStruct(closureWrapper, closureImplRefType))
     return init;
   ASTType wrapperType = makeClosureImplSelfType(closureWrapper, wrapperParams);
   SmallVector<Type> argTypes{
-      wrapperType.getRefForArgument("self", /*mut=*/true), closureImplRefType};
+      wrapperType.getRefForArgument("self", /*isMut=*/true),
+      closureImplRefType};
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ArgConvention> argConventions{ArgConvention::InitSelf,
@@ -855,11 +863,15 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
                                                    PassingKind::PosOnly);
+  auto paramListAttrsOfInit = ArgParamListAttr::get(
+      ctx, getDemangledNames(initParams), paramPassingKindsOfInit);
+  auto argListAttrsOfInit =
+      ArgParamListAttr::get(ctx, argNames, argPassingKinds);
   FuncOp init = addVoidMethod(
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared),
-      "__init__", argTypes, argConventions, argNames, argPassingKinds,
-      SpecialFunctionKind::kInit, initParams, paramPassingKindsOfInit);
+      "__init__", argTypes, argConventions, argListAttrsOfInit,
+      SpecialFunctionKind::kInit, initParams, paramListAttrsOfInit);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = init.getLocScope())
@@ -913,13 +925,18 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     topLevelParams.push_back(ParamDeclAttr::get(declRef));
   }
 
+  SmallVector<PassingKind> paramPassingKinds(closureImpl.getParams().size(),
+                                             PassingKind::PosOnly);
+  auto paramListAttrs = ArgParamListAttr::get(
+      ctx, getDemangledNames(topLevelParams), paramPassingKinds);
+  auto argListAttrs =
+      ArgParamListAttr::get(ctx, otherName, PassingKind::PosOnly);
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCopyInit = createFunction(
-      generateName("_copyinit_"), topLevelParams, paramPassingKinds,
-      {opaquePtrType}, {ArgConvention::OwnedInReg}, {otherName},
-      {PassingKind::PosOnly}, opaquePtrType, SpecialFunctionKind::kNormal, loc,
-      builder);
+  LIT::FuncOp topLevelCopyInit =
+      createFunction(generateName("_copyinit_"), topLevelParams, paramListAttrs,
+                     {opaquePtrType}, {ArgConvention::OwnedInReg}, argListAttrs,
+                     opaquePtrType, SpecialFunctionKind::kNormal, loc, builder);
 
   SmallVector<TypedAttr> topLevelParamRefs;
   for (auto [i, p] : llvm::enumerate(totalParams))
@@ -971,10 +988,11 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Create top level destructor.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelDtor = createFunction(
-      generateName("_dtor_"), topLevelParams, paramPassingKinds, opaquePtrType,
-      ArgConvention::OwnedInReg, selfName, PassingKind::PosOnly, noneType,
-      SpecialFunctionKind::kNormal, loc, builder);
+  LIT::FuncOp topLevelDtor =
+      createFunction(generateName("_dtor_"), topLevelParams, paramListAttrs,
+                     opaquePtrType, ArgConvention::OwnedInReg,
+                     ArgParamListAttr::get(ctx, selfName, PassingKind::PosOnly),
+                     noneType, SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.
   {
@@ -1025,10 +1043,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
-      generateName("_call_"), topLevelParams, paramPassingKinds,
+      generateName("_call_"), topLevelParams, paramListAttrs,
       closureSignature.getArguments(), closureSignature.getArgConventions(),
-      closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
-      resultType, SpecialFunctionKind::kNormal, loc, builder,
+      closureSignature.getMetadata().getArgListAttrs(), resultType,
+      SpecialFunctionKind::kNormal, loc, builder,
       closureSignature.getFnEffects());
 
   // Populate the __call__ body.

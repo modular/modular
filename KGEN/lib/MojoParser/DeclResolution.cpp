@@ -1817,7 +1817,9 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, convention, selfName, PassingKind::PosOnly,
+      "__del__", selfType.mlirType, convention,
+      ArgParamListAttr::get(emitter.getContext(), selfName,
+                            PassingKind::PosOnly),
       shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
@@ -2126,10 +2128,11 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Synthesize the method inside the struct.
   auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, paramDecls, memSig.getParamPassingKinds(), memSig.getArguments(),
-      memSig.getArgConventions(), memSig.getArgNames(),
-      memSig.getArgPassingKinds(), memSig.getResultType(), structDecl,
-      SpecialFunctionInfo::getKind(name), memSig.getFnEffects(), "`thunk_");
+      name, paramDecls, memSig.getMetadata().getParamListAttrs(),
+      memSig.getArguments(), memSig.getArgConventions(),
+      memSig.getMetadata().getArgListAttrs(), memSig.getResultType(),
+      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
+      "`thunk_");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2260,9 +2263,9 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // want check lifetimes to insert a call to the real destructor here, if it
     // has one.
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
-        "__del__", selfRefType, ArgConvention::OwnedInMem, empty,
-        PassingKind::PosOnly, shared.getNoneType(), structDecl, kind,
-        FnEffects(), "`thunk_");
+        "__del__", selfRefType, ArgConvention::OwnedInMem,
+        ArgParamListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
+        shared.getNoneType(), structDecl, kind, FnEffects(), "`thunk_");
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
@@ -2284,9 +2287,10 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         structDecl.getSelfType().getRefForArgument("existing", isMut);
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
-        {ArgConvention::InitSelf, existingConv}, {empty, empty},
-        {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
-        structDecl, kind, FnEffects(), "`thunk_");
+        {ArgConvention::InitSelf, existingConv},
+        ArgParamListAttr::get(shared.getContext(), {empty, empty},
+                              {PassingKind::PosOnly, PassingKind::PosOnly}),
+        shared.getNoneType(), structDecl, kind, FnEffects(), "`thunk_");
     func = ctor;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());

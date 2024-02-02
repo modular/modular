@@ -67,11 +67,15 @@ public:
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ArgConvention> argConventions,
-                            ArrayRef<StringAttr> argNames,
-                            ArrayRef<PassingKind> argPassingKinds,
+                            ArgParamListAttr argListAttrs,
                             SpecialFunctionKind kind,
-                            ArrayRef<ParamDeclAttr> params = {},
-                            ArrayRef<PassingKind> paramPassingKinds = {});
+                            ArrayRef<ParamDeclAttr> params,
+                            ArgParamListAttr paramListAttrs);
+  LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                            ArrayRef<Type> argTypes,
+                            ArrayRef<ArgConvention> argConventions,
+                            ArgParamListAttr argListAttrs,
+                            SpecialFunctionKind kind);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
@@ -80,13 +84,15 @@ public:
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `prefix` is prepended to the mangled function name.
-  LIT::FuncOp createFunction(
-      StringRef name, ArrayRef<ParamDeclAttr> params,
-      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-      ArrayRef<PassingKind> argPassingKinds, Type resultType,
-      SpecialFunctionKind specialFnID, SMLoc loc, ImplicitLocOpBuilder &builder,
-      FnEffects effects = FnEffects(), StringRef prefix = "");
+  LIT::FuncOp createFunction(StringRef name, ArrayRef<ParamDeclAttr> params,
+                             ArgParamListAttr paramListAttrs,
+                             ArrayRef<Type> argTypes,
+                             ArrayRef<ArgConvention> argConventions,
+                             ArgParamListAttr argListAttrs, Type resultType,
+                             SpecialFunctionKind specialFnID, SMLoc loc,
+                             ImplicitLocOpBuilder &builder,
+                             FnEffects fnEffects = FnEffects(),
+                             StringRef prefix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -97,26 +103,23 @@ public:
   LIT::FuncOp synthesizeMemberwiseInit(ASTDecl &structDecl,
                                        ArrayRef<Type> argTypes,
                                        ArrayRef<ArgConvention> argConventions,
-                                       ArrayRef<StringAttr> argNames,
-                                       ArrayRef<PassingKind> argPassingKinds);
+                                       ArgParamListAttr argListAttrs);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `prefix` is prepended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
-      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-      ArrayRef<PassingKind> argPassingKinds, Type resultType,
-      ASTDecl &structDecl,
+      ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
+      ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+      Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects effects = FnEffects(), StringRef prefix = "");
+      FnEffects fnEffects = FnEffects(), StringRef prefix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArrayRef<StringAttr> argNames,
-      ArrayRef<PassingKind> argPassingKinds, Type resultType,
-      ASTDecl &structDecl,
+      ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+      Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects effects = FnEffects(), StringRef prefix = "");
+      FnEffects fnEffects = FnEffects(), StringRef prefix = "");
 
   /// Given a struct and a trait declaration, make the trait inherit from the
   /// struct if it does not already. This adds the trait decl to the struct's
