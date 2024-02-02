@@ -65,70 +65,92 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 
 
 # ===----------------------------------------------------------------------=== #
-# Ops
+# Binary Ops
 # ===----------------------------------------------------------------------=== #
-
-
 # Note: Keep alphabetized.
+# TODO: Type promotion
 
 
-def add(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.add", opnds, opnds.get[0, Symbol]().tensor_type())
+def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
+    let operands = elementwise_broadcast(lhs, rhs)
+    return lhs.graph().op(op_name, operands, operands[0].tensor_type())
 
 
-def cos(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.cos", v, v.tensor_type())
+def _binary_comparison_op[
+    op_name: StringLiteral
+](lhs: Symbol, rhs: Symbol) -> Symbol:
+    let operands = elementwise_broadcast(lhs, rhs)
+    let result_type = operands[0].tensor_type().cast(DType.bool)
+    return lhs.graph().op(op_name, operands, result_type)
+
+
+alias add = _binary_op["mo.add"]
 
 
 def div(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    # TODO: This needs proper type promotion, as do all binary ops.
-    let cast_rhs = cast(rhs, lhs.tensor_type().dtype)
-    let opnds = elementwise_broadcast(lhs, cast_rhs)
-    return g.op("mo.div", opnds, opnds.get[0, Symbol]().tensor_type())
+    # div requires its operands to be the same dtype
+    return _binary_op["mo.div"](lhs, cast(rhs, lhs.tensor_type().dtype))
 
 
-def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.mul", opnds, opnds.get[0, Symbol]().tensor_type())
+# alias max = _binary_op["mo.max"]  # TODO: namespace problem
+alias min = _binary_op["mo.min"]
+alias mod = _binary_op["mo.mod"]
+alias mul = _binary_op["mo.mul"]
+alias pow = _binary_op["mo.pow"]
+alias sub = _binary_op["mo.sub"]
+
+alias equal = _binary_comparison_op["mo.equal"]
+alias greater = _binary_comparison_op["mo.greater"]
+alias greater_equal = _binary_comparison_op["mo.greater_equal"]
+alias not_equal = _binary_comparison_op["mo.not_equal"]
 
 
-def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.pow", opnds, opnds.get[0, Symbol]().tensor_type())
+# ===----------------------------------------------------------------------=== #
+# Unary Ops
+# ===----------------------------------------------------------------------=== #
+# Note: Keep alphabetized.
 
 
-def rsqrt(v: Symbol) -> Symbol:
-    var g = v.graph()
-    let f32_v = cast(v, DType.float32)  # TODO: add missing rsqrt coverage.
-    return g.op("mo.rsqrt", f32_v, f32_v.tensor_type())
+def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
+    return value.graph().op(op_name, value, value.tensor_type())
 
 
-def softmax(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.softmax", v, v.tensor_type())
+def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
+    let float_v = cast(value, DType.float32)
+    return value.graph().op(op_name, float_v, float_v.tensor_type())
 
 
-def sigmoid(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.sigmoid", v, v.tensor_type())
+def _unary_comparison_op[op_name: StringLiteral](value: Symbol) -> Symbol:
+    let result_type = value.tensor_type().cast(DType.bool)
+    return value.graph().op(op_name, value, result_type)
+
+
+alias abs = _unary_op["mo.abs"]
+alias exp = _unary_op["mo.exp"]
+alias erf = _unary_op["mo.erf"]
+alias gelu = _unary_op["mo.gelu"]
+alias log = _unary_op["mo.log"]
+alias log1p = _unary_op["mo.log1p"]
+alias logsoftmax = _unary_op["mo.logsoftmax"]
+alias relu = _unary_op["mo.relu"]
+alias softmax = _unary_op["mo.softmax"]
+alias sigmoid = _unary_op["mo.sigmoid"]
 
 
 def silu(v: Symbol) -> Symbol:
     return mul(v, sigmoid(v))
 
 
-def sin(v: Symbol) -> Symbol:
-    var g = v.graph()
-    return g.op("mo.sin", v, v.tensor_type())
+alias cos = _unary_float_op["mo.cos"]
+alias floor = _unary_float_op["mo.floor"]
+alias round = _unary_float_op["mo.round"]
+alias roundeven = _unary_float_op["mo.roundeven"]
+alias rsqrt = _unary_float_op["mo.rsqrt"]  # TODO: add missing rsqrt coverage.
+alias sqrt = _unary_float_op["mo.sqrt"]
+alias sin = _unary_float_op["mo.sin"]
+alias tanh = _unary_float_op["mo.tanh"]
+alias trunc = _unary_float_op["mo.trunc"]
 
 
-def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    let opnds = elementwise_broadcast(lhs, rhs)
-    return g.op("mo.sub", opnds, opnds.get[0, Symbol]().tensor_type())
+alias is_nan = _unary_comparison_op["mo.is_nan"]
+alias is_inf = _unary_comparison_op["mo.is_inf"]
