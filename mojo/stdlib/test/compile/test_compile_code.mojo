@@ -16,12 +16,9 @@ def main():
     ](x: SIMD[type, size], y: SIMD[type, size]) -> SIMD[type, size]:
         return x + y
 
+    alias func = my_add_function[DType.float32, 4]
     let asm: String = compile_code[
-        fn (
-            SIMD[DType.float32, 4], SIMD[DType.float32, 4]
-        ) capturing -> SIMD[DType.float32, 4], my_add_function[
-            DType.float32, 4
-        ], emission_kind="llvm"
+        __type_of(func), func, emission_kind="llvm"
     ]()
 
     assert_true(asm.__contains__("fadd"))
