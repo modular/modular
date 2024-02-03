@@ -44,8 +44,9 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 @register_passable
 struct Buffer[
     type: DType,
-    size: Dim,
     /,
+    *,
+    size: Dim = Dim(),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized):
     """Defines a Buffer which can be parametrized on a static size and Dtype.
@@ -617,8 +618,9 @@ fn _compute_ndbuffer_stride[
 struct NDBuffer[
     type: DType,
     rank: Int,
-    shape: DimList,
     /,
+    *,
+    shape: DimList = DimList.create_unknown[rank](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized, Stringable):
     """An N-dimensional Buffer.
@@ -1396,9 +1398,7 @@ struct NDBuffer[
     @always_inline
     fn make_dims_unknown(
         self,
-    ) -> NDBuffer[
-        type, rank, DimList.create_unknown[rank](), address_space=address_space
-    ]:
+    ) -> NDBuffer[type, rank, address_space=address_space]:
         """Rebinds the NDBuffer to one with unknown shape.
 
         Returns:
@@ -1408,7 +1408,6 @@ struct NDBuffer[
             NDBuffer[
                 type,
                 rank,
-                DimList.create_unknown[rank](),
                 address_space=address_space,
             ]
         ](self)
@@ -1849,7 +1848,7 @@ struct DynamicRankBuffer:
         }
 
     @always_inline
-    fn to_buffer[type: DType](self) -> Buffer[type, Dim()]:
+    fn to_buffer[type: DType](self) -> Buffer[type]:
         """Casts DynamicRankBuffer to Buffer.
 
         Parameters:
@@ -1858,14 +1857,12 @@ struct DynamicRankBuffer:
         Returns:
             Constructed Buffer.
         """
-        return Buffer[type, Dim()](
+        return Buffer[type](
             self.data.bitcast[type](), tuple_product(self.shape, self.rank)
         )
 
     @always_inline
-    fn to_ndbuffer[
-        type: DType, rank: Int
-    ](self) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
+    fn to_ndbuffer[type: DType, rank: Int](self) -> NDBuffer[type, rank]:
         """Casts the buffer to NDBuffer.
 
         Constraints:
@@ -1882,16 +1879,14 @@ struct DynamicRankBuffer:
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
-        return NDBuffer[type, rank, DimList.create_unknown[rank]()](
+        return NDBuffer[type, rank](
             self.data.bitcast[type](), self._shape_to_static_tuple[rank]()
         )
 
     @always_inline
     fn to_ndbuffer[
         type: DType, rank: Int
-    ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
-        type, rank, DimList.create_unknown[rank]()
-    ]:
+    ](self, stride: StaticIntTuple[rank]) -> NDBuffer[type, rank]:
         """Casts the buffer to NDBuffer.
 
         Constraints:
@@ -1911,7 +1906,7 @@ struct DynamicRankBuffer:
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
-        return NDBuffer[type, rank, DimList.create_unknown[rank]()](
+        return NDBuffer[type, rank](
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
             stride,
