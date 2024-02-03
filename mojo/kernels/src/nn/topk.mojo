@@ -21,9 +21,9 @@ fn top_k_shape[
     axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    k_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
-    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    input: NDBuffer[type, rank],
+    k_buf: NDBuffer[axis_type, 1],
+    axis_buf: NDBuffer[axis_type, 1],
 ) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a  top/bottom k operation.
@@ -59,12 +59,12 @@ fn top_k_shape[
 fn top_k[
     rank: Int, type: DType
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
     largest: Bool,
-    out_vals: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    out_idxs: NDBuffer[DType.int64, rank, DimList.create_unknown[rank]()],
+    out_vals: NDBuffer[type, rank],
+    out_idxs: NDBuffer[DType.int64, rank],
     sorted: Bool = True,
 ):
     """
@@ -100,12 +100,12 @@ fn top_k[
 fn _top_k[
     rank: Int, type: DType
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
     largest: Bool,
-    out_vals: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    out_idxs: NDBuffer[DType.int64, rank, DimList.create_unknown[rank]()],
+    out_vals: NDBuffer[type, rank],
+    out_idxs: NDBuffer[DType.int64, rank],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):

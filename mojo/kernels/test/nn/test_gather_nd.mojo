@@ -55,9 +55,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[2, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -108,9 +108,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -174,9 +174,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -240,9 +240,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -304,9 +304,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -393,9 +393,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[6, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -461,9 +461,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[8, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,
@@ -532,9 +532,9 @@ fn main():
         print("Output shape: ", output_shape)
 
         let output_data_data = stack_allocation[6, data_type]()
-        let output_data_buffer = NDBuffer[
-            data_type, output_rank, DimList.create_unknown[output_rank]()
-        ](output_data_data, output_shape)
+        let output_data_buffer = NDBuffer[data_type, output_rank](
+            output_data_data, output_shape
+        )
         gather_nd[
             data_type,
             DType.int64,

@@ -39,20 +39,12 @@ fn conv_transpose[
     dilations_type: DType,
     pads_type: DType,
 ](
-    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    input: NDBuffer[
-        type,
-        rank,
-        DimList.create_unknown[rank](),
-    ],
-    kernel: NDBuffer[
-        type,
-        rank,
-        DimList.create_unknown[rank](),
-    ],
-    strides: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
-    dilations: NDBuffer[dilations_type, 1, DimList.create_unknown[1]()],
-    pads: NDBuffer[pads_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank],
+    input: NDBuffer[type, rank],
+    kernel: NDBuffer[type, rank],
+    strides: NDBuffer[strides_type, 1],
+    dilations: NDBuffer[dilations_type, 1],
+    pads: NDBuffer[pads_type, 1],
 ):
     """
     Implements the ConvTranspose operator from the MO spec.
@@ -132,20 +124,12 @@ fn conv_transpose_shape[
     output_pads_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[
-        type,
-        input_rank,
-        DimList.create_unknown[input_rank](),
-    ],
-    kernel: NDBuffer[
-        type,
-        kernel_rank,
-        DimList.create_unknown[kernel_rank](),
-    ],
-    strides: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
-    dilations: NDBuffer[dilations_type, 1, DimList.create_unknown[1]()],
-    pads: NDBuffer[pads_type, 1, DimList.create_unknown[1]()],
-    output_pads: NDBuffer[output_pads_type, 1, DimList.create_unknown[1]()],
+    input: NDBuffer[type, input_rank],
+    kernel: NDBuffer[type, kernel_rank],
+    strides: NDBuffer[strides_type, 1],
+    dilations: NDBuffer[dilations_type, 1],
+    pads: NDBuffer[pads_type, 1],
+    output_pads: NDBuffer[output_pads_type, 1],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the

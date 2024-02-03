@@ -29,7 +29,7 @@ from math import min
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
-    _ = Buffer[type, Dim()](dst, count).fill(value)
+    _ = Buffer[type](dst, count).fill(value)
 
 
 struct _NestedLoopIter[n_loops: Int]:
@@ -248,10 +248,8 @@ fn pad_shape[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[
-        input_type, input_rank, DimList.create_unknown[input_rank]()
-    ],
-    paddings_buf: NDBuffer[paddings_type, 2, DimList.create_unknown[2]()],
+    input_buf: NDBuffer[input_type, input_rank],
+    paddings_buf: NDBuffer[paddings_type, 2],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are

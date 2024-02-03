@@ -103,7 +103,7 @@ fn roi_align_nhwc[
     aligned: Bool,
     mode: StringLiteral = "AVG",
 ](
-    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    output: NDBuffer[type, 4],
     input: NDBuffer[type, 4, input_shape],
     rois: NDBuffer[type, 2, roi_shape],
     output_height: Int,

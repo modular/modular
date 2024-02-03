@@ -25,11 +25,11 @@ fn slice_as_view[
     step_type: DType,
     rank: Int,
 ](
-    tensor: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    starts: NDBuffer[start_type, 1, DimList.create_unknown[1]()],
-    ends: NDBuffer[end_type, 1, DimList.create_unknown[1]()],
-    steps: NDBuffer[step_type, 1, DimList.create_unknown[1]()],
-) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
+    tensor: NDBuffer[type, rank],
+    starts: NDBuffer[start_type, 1],
+    ends: NDBuffer[end_type, 1],
+    steps: NDBuffer[step_type, 1],
+) -> NDBuffer[type, rank]:
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
@@ -78,9 +78,7 @@ fn slice_as_view[
         new_shape[i] = len(slice(start, stop, step))
 
     # Create the new view
-    return NDBuffer[type, rank, DimList.create_unknown[rank]()](
-        new_data, new_shape, new_stride
-    )
+    return NDBuffer[type, rank](new_data, new_shape, new_stride)
 
 
 # ===----------------------------------------------------------------------===#
@@ -92,11 +90,11 @@ fn slice_as_view[
 fn slice_as_copy[
     type: DType, index_type: DType, in_rank: Int
 ](
-    output: NDBuffer[type, in_rank, DimList.create_unknown[in_rank]()],
-    tensor: NDBuffer[type, in_rank, DimList.create_unknown[in_rank]()],
-    start: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
-    end: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
-    step: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, in_rank],
+    tensor: NDBuffer[type, in_rank],
+    start: NDBuffer[index_type, 1],
+    end: NDBuffer[index_type, 1],
+    step: NDBuffer[index_type, 1],
 ):
     # Apply slice to the tensor
     let sliced = slice_as_view(tensor, start, end, step)
@@ -128,12 +126,10 @@ fn slice_shape[
     step_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[
-        input_type, input_rank, DimList.create_unknown[input_rank]()
-    ],
-    start_buf: NDBuffer[start_type, 1, DimList.create_unknown[1]()],
-    stop_buf: NDBuffer[stop_type, 1, DimList.create_unknown[1]()],
-    step_buf: NDBuffer[step_type, 1, DimList.create_unknown[1]()],
+    input_buf: NDBuffer[input_type, input_rank],
+    start_buf: NDBuffer[start_type, 1],
+    stop_buf: NDBuffer[stop_type, 1],
+    step_buf: NDBuffer[step_type, 1],
 ) raises -> StaticIntTuple[input_rank]:
     if input_rank != start_buf.dim(0):
         raise Error("[slice] start indices size must equal input rank")

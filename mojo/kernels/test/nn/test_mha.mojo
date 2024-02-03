@@ -24,8 +24,8 @@ from NN.MultiHeadAttention import fused_attention, _naive_attention
 fn is_ndbuffer_close[
     rank: Int, type: DType
 ](
-    a: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    b: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    a: NDBuffer[type, rank],
+    b: NDBuffer[type, rank],
     abs_tol: SIMD[type, 1] = 1e-5,
     rel_tol: SIMD[type, 1] = 1e-4,
     print_wrong_value: Bool = True,
@@ -103,9 +103,7 @@ def test_mha():
     # Contruct buffers.
     let q = NDBuffer[type, 4, BHSD](q_ptr)
     let v = NDBuffer[type, 4, BHSD](v_ptr)
-    let mask = NDBuffer[type, 2, DimList.create_unknown[2]()](
-        mask_ptr, Index(seq_len, seq_len)
-    )
+    let mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, seq_len))
     let output = NDBuffer[type, 4, BHSD](output_ptr)
     let mha_output = NDBuffer[type, 4, BHSD](mha_output_ptr)
 
@@ -115,7 +113,7 @@ def test_mha():
         let k_shape = Index(
             batch_size, num_heads, seq_len, depth
         ) if transpose_k else Index(batch_size, num_heads, depth, seq_len)
-        let k = NDBuffer[type, 4, DimList.create_unknown[4]()](k_ptr, k_shape)
+        let k = NDBuffer[type, 4](k_ptr, k_shape)
 
         _naive_attention[type, transpose_k](
             output.make_dims_unknown(),

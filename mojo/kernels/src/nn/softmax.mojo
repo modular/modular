@@ -538,7 +538,7 @@ fn logsoftmax[
         let end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             let buffer_offset = i * inner_dim
-            let output_buffer_view = Buffer[type, Dim()](
+            let output_buffer_view = Buffer[type](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index[rank](
@@ -630,7 +630,7 @@ fn _softmax_cpu[
             let end_offset = min((task_id + 1) * chunk_size, outer_dim)
             for i in range(start_offset, end_offset):
                 let buffer_offset = i * inner_dim
-                let output_buffer_view = Buffer[type, Dim()](
+                let output_buffer_view = Buffer[type](
                     output.data.offset(buffer_offset), inner_dim
                 )
                 var indices = _get_nd_indices_from_flat_index[rank](
@@ -685,11 +685,7 @@ fn softmax_kernel[
     ) capturing -> SIMD[_type, _simd_width],
     type: DType,
     rank: Int,
-](
-    shape: StaticIntTuple[rank],
-    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    axis: Int,
-):
+](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
     let row_size = shape[axis]
     let num_rows = shape.flattened_length() // row_size
 
@@ -786,7 +782,7 @@ fn _softmax_gpu[
     let func = Function[
         fn (
             StaticIntTuple[rank],
-            NDBuffer[type, rank, DimList.create_unknown[rank]()],
+            NDBuffer[type, rank],
             Int,
         ) capturing -> None, softmax_kernel[
             BLOCK_SIZE,

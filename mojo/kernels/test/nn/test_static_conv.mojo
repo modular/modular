@@ -82,13 +82,11 @@ fn test[
     rand[type](filter_ptr, R * S * C * F)
 
     let input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
-    let filter = NDBuffer[type, 4, DimList.create_unknown[4]()](
-        filter_ptr, Index(R, S, C, F)
-    )
+    let filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))
     let output_static = NDBuffer[type, 4, DimList(N, HO, WO, F)](
         output_ptr_static
     )
-    let output_dynamic = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let output_dynamic = NDBuffer[type, 4](
         output_ptr_dynamic, Index(N, HO, WO, F)
     )
 
@@ -101,7 +99,7 @@ fn test[
     let packed_filter_ptr_dynamic = DTypePointer[type].alloc(
         R * S * C * rounded_F_dynamic
     )
-    let packed_filter_dynamic = NDBuffer[type, 5, DimList.create_unknown[5]()](
+    let packed_filter_dynamic = NDBuffer[type, 5](
         packed_filter_ptr_dynamic,
         Index(
             div_ceil(F, micro_kernel_f_size_default),
@@ -132,7 +130,7 @@ fn test[
         False,
     ].run(
         output_dynamic,
-        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](input),
+        rebind[NDBuffer[type, 4]](input),
         packed_filter_dynamic,
         conv_shape,
     )

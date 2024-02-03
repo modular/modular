@@ -25,9 +25,9 @@ from utils.list import DimList
 fn arange[
     type: DType, simd_width: Int
 ](
-    start_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
-    stop_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
-    step_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    start_buf: NDBuffer[type, 1],
+    stop_buf: NDBuffer[type, 1],
+    step_buf: NDBuffer[type, 1],
     index: StaticIntTuple[1],
 ) -> SIMD[type, simd_width]:
     return start_buf[0] + (iota[type, simd_width](index[0]) * step_buf[0])
@@ -38,9 +38,9 @@ fn arange_shape[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    start_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
-    stop_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
-    step_buf: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    start_buf: NDBuffer[type, 1],
+    stop_buf: NDBuffer[type, 1],
+    step_buf: NDBuffer[type, 1],
 ) raises -> StaticIntTuple[1]:
     let start: Scalar[type] = start_buf[0]
     let stop: Scalar[type] = stop_buf[0]

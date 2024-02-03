@@ -470,9 +470,7 @@ struct ConvDirectNHWC[
         let scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
             output_ptr = DTypePointer[output_type].alloc(scratch_size)
-        let output_scratch = Buffer[output_type, Dim()](
-            output_ptr, scratch_size
-        )
+        let output_scratch = Buffer[output_type](output_ptr, scratch_size)
 
         @parameter
         @always_inline
@@ -2954,16 +2952,12 @@ fn conv_shape[
     num_groups_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[
-        input_type, input_rank, DimList.create_unknown[input_rank]()
-    ],
-    filter_buf: NDBuffer[
-        filter_type, filter_rank, DimList.create_unknown[filter_rank]()
-    ],
-    strides_buf: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
-    dilations_buf: NDBuffer[dilations_type, 1, DimList.create_unknown[1]()],
-    paddings_buf: NDBuffer[paddings_type, 1, DimList.create_unknown[1]()],
-    num_groups_buf: NDBuffer[num_groups_type, 1, DimList.create_unknown[1]()],
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, filter_rank],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+    num_groups_buf: NDBuffer[num_groups_type, 1],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are

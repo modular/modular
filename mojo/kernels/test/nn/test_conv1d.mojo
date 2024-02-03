@@ -88,24 +88,18 @@ fn test[
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
-    let input = NDBuffer[type, 3, DimList.create_unknown[3]()](
-        input_ptr, Index(N, W, C)
-    )
-    let filter = NDBuffer[type, 3, DimList.create_unknown[3]()](
-        filter_ptr, Index(S, C_per_group, F)
-    )
+    let input = NDBuffer[type, 3](input_ptr, Index(N, W, C))
+    let filter = NDBuffer[type, 3](filter_ptr, Index(S, C_per_group, F))
     let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let packed_filter = NDBuffer[type, 4](
         packed_filter_ptr,
         packed_filter_shape,
     )
-    let output = NDBuffer[type, 3, DimList.create_unknown[3]()](
-        output_ptr, Index(N, WO, F)
-    )
+    let output = NDBuffer[type, 3](output_ptr, Index(N, WO, F))
 
     @parameter
     if filter_packed:

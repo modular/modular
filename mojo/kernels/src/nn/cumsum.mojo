@@ -13,11 +13,7 @@ fn cumsum[
     type: DType,
     exclusive: Bool,
     reverse: Bool,
-](
-    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    axis: Int,
-):
+](output: NDBuffer[type, rank], input: NDBuffer[type, rank], axis: Int,):
     """
     Implements the CumSum operator from the ONNX spec:
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#CumSum

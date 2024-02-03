@@ -22,9 +22,9 @@ fn reshape[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
     new_shape: StaticIntTuple[output_rank],
-) -> NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()]:
+) -> NDBuffer[type, output_rank]:
     var stride_tuple = StaticIntTuple[output_rank]()
     var stride: Int = 1
 
@@ -40,9 +40,7 @@ fn reshape[
     unroll[output_rank, body]()
 
     # Return the a view with the new shape.
-    return NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()](
-        input.data, new_shape, stride_tuple
-    )
+    return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)
 
 
 @always_inline
@@ -53,12 +51,8 @@ fn reshape_shape[
     target_shape_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[
-        input_type, input_rank, DimList.create_unknown[input_rank]()
-    ],
-    target_shape_buf: NDBuffer[
-        target_shape_type, 1, DimList.create_unknown[1]()
-    ],
+    input_buf: NDBuffer[input_type, input_rank],
+    target_shape_buf: NDBuffer[target_shape_type, 1],
 ) raises -> StaticIntTuple[output_rank]:
     if output_rank != target_shape_buf.dim(0):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")

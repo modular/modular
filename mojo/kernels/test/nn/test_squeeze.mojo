@@ -49,15 +49,9 @@ fn test_calculate_squeeze_shape():
     ].stack_allocation()
 
     calculate_squeeze_shape[DType.index, DType.index, False](
-        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
-            data_matrix
-        ),
-        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
-            remove_indices
-        ),
-        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
-            final_shape
-        ),
+        rebind[NDBuffer[DType.index, 1]](data_matrix),
+        rebind[NDBuffer[DType.index, 1]](remove_indices),
+        rebind[NDBuffer[DType.index, 1]](final_shape),
     )
 
     # CHECK: 10 1 11 12 13

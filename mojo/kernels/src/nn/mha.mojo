@@ -127,9 +127,7 @@ fn fused_attention[
     else:
         score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
     # fmt: on
-    let score = NDBuffer[score_type, rank, DimList.create_unknown[rank]()](
-        score_ptr, score_shape
-    )
+    let score = NDBuffer[score_type, rank](score_ptr, score_shape)
 
     @parameter
     @always_inline
@@ -172,11 +170,11 @@ fn fused_attention[
     fn softmax_closure(
         start_row: Int,
         num_rows: Int,
-        c: NDBuffer[score_type, 2, DimList.create_unknown[2]()],
+        c: NDBuffer[score_type, 2],
     ):
         let row_size = c.dim(1)
         for i in range(start_row, start_row + num_rows):
-            let row_view = Buffer[DType.float32, Dim()](
+            let row_view = Buffer[DType.float32](
                 bitcast[DType.float32](c.data.offset(i * row_size)), row_size
             )
 
@@ -224,14 +222,12 @@ fn fused_attention[
     unswitch[bmm_query_key](softmax_fusable)
 
     if not softmax_fusable:
-        softmax[score_type, simd_size, rank, DimList.create_unknown[rank]()](
-            score, score, rank - 1
-        )
+        softmax[score_type, simd_size, rank](score, score, rank - 1)
 
     fn bmm_null_rowwise_epilogue(
         start_row: Int,
         num_rows: Int,
-        c: NDBuffer[output_type, 2, DimList.create_unknown[2]()],
+        c: NDBuffer[output_type, 2],
     ):
         pass
 
@@ -1248,11 +1244,11 @@ fn _naive_attention_with_transpose[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    q: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    k: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    v: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    mask: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    output: NDBuffer[type, 4],
+    q: NDBuffer[type, 4],
+    k: NDBuffer[type, 4],
+    v: NDBuffer[type, 4],
+    mask: NDBuffer[type, 2],
     scale: Float32,
 ):
     """This kernel provides reference values for flash attention in llama 2.
@@ -1283,19 +1279,19 @@ fn _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     let ot_ptr = DTypePointer[type].alloc(output.num_elements())
 
-    let qt = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let qt = NDBuffer[type, 4](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    let kt = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let kt = NDBuffer[type, 4](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    let vt = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let vt = NDBuffer[type, 4](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    let score = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let score = NDBuffer[type, 4](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    let ot = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let ot = NDBuffer[type, 4](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
@@ -1353,11 +1349,11 @@ fn _naive_attention[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    q: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    k: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    v: NDBuffer[type, 4, DimList.create_unknown[4]()],
-    mask: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    output: NDBuffer[type, 4],
+    q: NDBuffer[type, 4],
+    k: NDBuffer[type, 4],
+    v: NDBuffer[type, 4],
+    mask: NDBuffer[type, 2],
     scale: Float32,
 ):
     """This kernel provides reference values for flash attention in llama 2.
@@ -1374,7 +1370,7 @@ fn _naive_attention[
     # Allocate intermediate memory buffer.
     let score_size = batch_size * num_heads * seq_len * num_keys
     let score_ptr = DTypePointer[type].alloc(score_size)
-    let score = NDBuffer[type, 4, DimList.create_unknown[4]()](
+    let score = NDBuffer[type, 4](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
@@ -1393,7 +1389,7 @@ fn _naive_attention[
     elementwise[4, simd_size, scale_and_mask](score.dynamic_shape)
 
     try:
-        softmax[type, simd_size, 4, DimList.create_unknown[4]()](
+        softmax[type, simd_size, 4](
             score,
             score,
             axis=3,

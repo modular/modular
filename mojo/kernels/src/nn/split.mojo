@@ -21,7 +21,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     of NDBuffers."""
 
     alias stack_capacity = 20
-    alias BufferType = NDBuffer[type, rank, DimList.create_unknown[rank]()]
+    alias BufferType = NDBuffer[type, rank]
     alias StorageType = InlinedFixedVector[
         Self.BufferType, size = Self.stack_capacity
     ]
@@ -50,9 +50,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
             self.storage.append(input_list[i])
 
     @always_inline
-    fn __getitem__(
-        self, idx: Int
-    ) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
+    fn __getitem__(self, idx: Int) -> NDBuffer[type, rank]:
         return self.storage[idx]
 
     @always_inline
@@ -73,7 +71,7 @@ fn _split[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
     axis: Int,
     outputs: _NDBufferVector[type, rank],
 ):
@@ -108,10 +106,8 @@ fn _split[
         for j in range(h):
             let output_offset = j * w * c
             let input_offset = j * stride_h_in + w_offset * stride_w_in
-            let out_slice = Buffer[type, Dim()](
-                out_buf.data + output_offset, w * c
-            )
-            let in_slice = Buffer[type, Dim()](input.data + input_offset, w * c)
+            let out_slice = Buffer[type](out_buf.data + output_offset, w * c)
+            let in_slice = Buffer[type](input.data + input_offset, w * c)
             # these slices are contiguous
             memcpy(out_slice, in_slice)
         w_offset += w
@@ -119,16 +115,13 @@ fn _split[
 
 fn _split_inner[
     type: DType, rank: Int, axis: Int
-](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    outputs: _NDBufferVector[type, rank],
-):
+](input: NDBuffer[type, rank], outputs: _NDBufferVector[type, rank],):
     constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(len(outputs)):
         let output_buf = outputs[i].flatten()
         let buffer_len = len(output_buf)
-        let input_buffer_offset = Buffer[type, Dim()](
+        let input_buffer_offset = Buffer[type](
             input.data.offset(num_elems_copied), buffer_len
         )
         memcpy[type](output_buf, input_buffer_offset)
@@ -139,7 +132,7 @@ fn split[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
     axis: Int,
     outputs: _NDBufferVector[type, rank],
 ) raises:
