@@ -3066,32 +3066,29 @@ fn _matmul_gpu_dispatch[
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
             alias NUM_WARPS = NUM_THREADS / WARP_SIZE
 
-            let gpu_func = Function[
-                fn (
-                    NDBuffer[c_type, 2, c_shape],
-                    NDBuffer[a_type, 2, a_shape],
-                    NDBuffer[b_type, 2, b_shape],
-                ) capturing -> None, sgemm_warp_tiling_kernel[
-                    c_type,
-                    c_shape,
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    indexing_integral_dtype=indexing_integral_dtype,
-                    BM=BM,
-                    BN=BN,
-                    BK=BK,
-                    WM=WM,
-                    WN=WN,
-                    WMITER=WMITER,
-                    WNITER=WNITER,
-                    TM=TM,
-                    TN=TN,
-                    NUM_THREADS=NUM_THREADS,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ](threads_per_block=NUM_THREADS)
+            alias mm = sgemm_warp_tiling_kernel[
+                c_type,
+                c_shape,
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                indexing_integral_dtype=indexing_integral_dtype,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                WMITER=WMITER,
+                WNITER=WNITER,
+                TM=TM,
+                TN=TN,
+                NUM_THREADS=NUM_THREADS,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ]
+            let gpu_func = Function[__type_of(mm), mm](
+                threads_per_block=NUM_THREADS
+            )
             gpu_func(
                 stream,
                 (div_ceil(n, BN), div_ceil(m, BM)),

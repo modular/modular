@@ -502,23 +502,17 @@ fn _batched_matmul_gpu[
 
     try:
         let stream = Stream.get_current_stream()
-        let gpu_func = Function[
-            fn (
-                NDBuffer[c_type, 3, unkown_shape],
-                NDBuffer[a_type, 3, unkown_shape],
-                NDBuffer[b_type, 3, unkown_shape],
-                StaticIntTuple[rank],
-            ) capturing -> None, batched_matmul_kernel[
-                rank,
-                c_type,
-                unkown_shape,
-                a_type,
-                unkown_shape,
-                b_type,
-                unkown_shape,
-                elementwise_epilogue_fn,
-            ]
-        ]()
+        alias bmm = batched_matmul_kernel[
+            rank,
+            c_type,
+            unkown_shape,
+            a_type,
+            unkown_shape,
+            b_type,
+            unkown_shape,
+            elementwise_epilogue_fn,
+        ]
+        let gpu_func = Function[__type_of(bmm), bmm]()
         gpu_func(
             stream,
             (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
