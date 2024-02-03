@@ -1938,11 +1938,6 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
-static AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs,
-                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
-                               ValueDest &dest, const ExprNode *callExpr,
-                               ExprEmitter &emitter);
-
 /// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
@@ -1955,8 +1950,17 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
                               ValueDest &dest, const ExprNode *callExpr,
                               ExprEmitter &emitter) {
-  if (kind == ExprNode::Kind::kCmpIn || kind == ExprNode::Kind::kCmpNotIn)
-    return emitCmpContain(lhs, rhs, kind, dest, callExpr, emitter);
+
+  // If this is a 'not in' emit the 'in' expression and then invert the result.
+  //  We use this style to make sure that a direct emission emits into
+  // the ValueDest directly.
+  if (kind == ExprNode::Kind::kCmpNotIn) {
+    ValueDest inDest(EC_OperatorOperandValue);
+    auto inResult = emitBinOpCall(lhs, rhs, ExprNode::Kind::kCmpIn, inDest,
+                                  callExpr, emitter);
+    return UnaryOpNode::emitArith(ExprNode::Kind::kBoolNot, callExpr,
+                                  {inResult, callExpr}, dest, emitter);
+  }
 
   // If this operator maps onto a special function, attempt to lower it.
   auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
@@ -1966,6 +1970,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     return {};
   }
   ASTExprAnd<AnyValue> argValues[] = {lhs, rhs};
+
+  // `a in b` => `b.__contains__(a)` and there is no reversed form.
+  if (kind == ExprNode::Kind::kCmpIn)
+    std::swap(argValues[0], argValues[1]);
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
@@ -1999,28 +2007,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Emit an error complaining about the forward version of the operator.
   return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
                                      CallSyntax::kOperator, callExpr);
-}
-
-/// Emit code for `x in y` and `x not in y` operators. These don't map
-/// cleanly to single dunder methods, but rather have a series of
-/// fallback behaviors.  Specifically, `x in y` uses __contains__ if
-/// available, and if not it traverses the object if it's iterable,
-/// comparing contained objects for equality.  The `not in` operator simply
-/// negates the result of the `in` operator.
-static AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs,
-                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
-                               ValueDest &dest, const ExprNode *callExpr,
-                               ExprEmitter &emitter) {
-  assert(
-      (kind == ExprNode::Kind::kCmpIn || kind == ExprNode::Kind::kCmpNotIn) &&
-      "must be used on in/not in comparison node");
-  Location cmpContainLoc = callExpr->getLocation(emitter);
-  std::string opName = "in";
-  if (kind == ExprNode::Kind::kCmpNotIn)
-    opName = "not in";
-  emitter.emitError(cmpContainLoc, "'")
-      << opName << "' operation is not yet supported";
-  return {};
 }
 
 /// Emit a simple assignment statement. Python evaluates the RHS of an
@@ -2455,9 +2441,22 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!exprRep)
     return {};
 
+  if (kind == kTransfer)
+    return emitTransfer(exprRep, dest, emitter);
+
+  return emitArith(kind, this, {exprRep, subExpr}, dest, emitter);
+}
+
+/// Emit a unary arithmetic operation as a dynamic expression.
+AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
+                                ASTExprAnd<AnyValue> argValue, ValueDest &dest,
+                                ExprEmitter &emitter) {
+  if (!argValue.ir)
+    return {};
+
   // Special case some things for literals.
   // TODO: Fix literal representation.
-  if (auto exprParam = exprRep.getIfPValue();
+  if (auto exprParam = argValue.ir.getIfPValue();
       exprParam && (exprParam.getType().mlirType.isIndex() ||
                     exprParam.getType().mlirType.isF64())) {
     switch (kind) {
@@ -2467,39 +2466,34 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get())) {
         auto result =
             FloatAttr::get(constantFP.getType(), -constantFP.getValue());
-        return emitter.emitResult(result, this, dest);
+        return emitter.emitResult(result, expr, dest);
       }
 
       // Support general integer parameter exprs.
       if (exprParam.getType().mlirType.isIndex())
-        return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), this,
+        return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), expr,
                                   dest);
 
       break;
     case ExprNode::kPos:
-      return emitter.emitResult(exprParam, this, dest);
+      return emitter.emitResult(exprParam, expr, dest);
     }
   }
 
-  // Handle special cases that don't correspond to special functions, such as
-  // `not x`, `*args: *Ts`, `x^` etc
-  if (kind == kTransfer)
-    return emitTransfer(exprRep, dest, emitter);
-
-  ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
-  Kind kindToEmit = kind;
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
     ValueDest subDest(EC_OperatorOperandValue);
     argValue.ir =
         emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
-                                    CallSyntax::kImplicitConvert, this);
+                                    CallSyntax::kImplicitConvert, expr);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
-    kindToEmit = kInvert;
-  } else if (kind == kUnpack) {
-    if (auto pValue = exprRep.getIfPValue()) {
+    return emitArith(kInvert, expr, argValue, dest, emitter);
+  }
+
+  if (kind == kUnpack) {
+    if (auto pValue = argValue.ir.getIfPValue()) {
       // There are two distinct cases of unpacking:
       // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
       //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This
@@ -2510,22 +2504,23 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       //    Ts[1], ...`. This is not handled with a special function of any
       //    kind, and so is handled here.
       if (!isa<VariadicType>(pValue.get().getType())) {
-        emitter.emitError(getLoc(), "only variadic types may be unpacked");
+        emitter.emitError(expr->getLoc(),
+                          "only variadic types may be unpacked");
         return {};
       }
       auto typeExpr = TypeConstantAttr::get(
           PackType::get(pValue.get()), TypeType::get(emitter.getContext()));
-      return emitter.emitResult(typeExpr, this, dest);
+      return emitter.emitResult(typeExpr, expr, dest);
     }
   }
 
   // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnInfo = getOpSpecialFunctions(kindToEmit, /*isReversed=*/false);
+  auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
   return emitter.emitNamedMethodCall(specialFnInfo.name, CallOperands(argValue),
-                                     dest, CallSyntax::kOperator, this);
+                                     dest, CallSyntax::kOperator, expr);
 }
 
 AnyValue RefTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

@@ -1604,3 +1604,16 @@ fn foo(x: index) -> __type_of(x):
 fn bar(x: index, y: __type_of(x)) -> index:
     let z : __type_of(x) = y
     return z
+
+##===----------------------------------------------------------------------===##
+# in / not in
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"test_in
+fn test_in(a: String, b: String):
+    # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, %a)
+    _ = a in b
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__contains__{{.*}}(%b, %a)
+    # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
+    # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
+    _ = a not in b
