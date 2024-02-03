@@ -21,6 +21,7 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/DebugInfoEncoding.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "MojoTypeDataLayout.h"
@@ -47,8 +48,8 @@ using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
 using namespace mlir;
 
-/// Convert a KGENDType, which is an extension to the regular MLIR DType, into
-/// MLIR types that can be understood by the typesystem.
+/// Convert a KGENDType, which is an extension to the regular DType, into
+/// approximate MLIR types.
 static std::optional<mlir::Type>
 getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
   // `address` and `index` are extensions to the regular dtype.
@@ -64,6 +65,9 @@ getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
 
   if (FloatType fpType = getEquivalentFloatType(ctx, dtype))
     return fpType;
+
+  if (dtype.isInvalid())
+    return KGEN::NoneType::get(ctx);
 
   return {};
 }
@@ -788,7 +792,7 @@ CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
 
 lldb_private::CompilerType
 MojoTypeSystem::createCompilerTypeFromDType(StringRef dtype) {
-  auto dTypeOr = KGENDType::getFromString(dtype);
+  auto dTypeOr = DebugInfoEncoding::getKGENDTypeFromString(dtype);
   if (failed(dTypeOr))
     return {};
   return createCompilerType(*getMLIRTypeForDType(getMLIRContext(), *dTypeOr,
@@ -799,7 +803,7 @@ lldb_private::CompilerType MojoTypeSystem::createSIMDType(StringRef dtype,
                                                           size_t numElements) {
   if (llvm::popcount(numElements) != 1)
     return {};
-  auto dTypeOr = KGENDType::getFromString(dtype);
+  auto dTypeOr = DebugInfoEncoding::getKGENDTypeFromString(dtype);
   if (failed(dTypeOr))
     return {};
   return createCompilerType(
