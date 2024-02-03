@@ -36,9 +36,9 @@ fn test_gather() raises:
         alias row_size = 4
 
         let input_host = NDBuffer[
+            DType.float32,
             2,
             DimList(num_rows, row_size),
-            DType.float32,
         ].stack_allocation()
         for i in range(num_rows):
             for j in range(row_size):
@@ -50,24 +50,24 @@ fn test_gather() raises:
             input_device_ptr, input_host.data, input_host.size()
         )
         let input_device = NDBuffer[
+            DType.float32,
             2,
             DimList(num_rows, row_size),
-            DType.float32,
         ](input_device_ptr)
 
         alias num_indices = 16
         let indices_host = NDBuffer[
+            indices_type,
             1,
             DimList(num_indices),
-            indices_type,
         ].stack_allocation()
         let indices_device_ptr = _malloc[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
         let indices_device = NDBuffer[
+            indices_type,
             1,
             DimList(num_indices),
-            indices_type,
         ](indices_device_ptr)
 
         for i in range(num_indices):
@@ -81,17 +81,17 @@ fn test_gather() raises:
 
         # create output
         let output_host = NDBuffer[
+            DType.float32,
             2,
             DimList(num_indices, row_size),
-            DType.float32,
         ].stack_allocation()
         let output_device_ptr = _malloc[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
         let output_device = NDBuffer[
+            DType.float32,
             2,
             DimList(num_indices, row_size),
-            DType.float32,
         ](output_device_ptr)
 
         gather[axis=0, target="cuda"](

@@ -21,10 +21,10 @@ from gpu.host.memory import _copy_host_to_device, _copy_device_to_host
 
 fn _create_buffer_host[
     rank: Int, dtype: DType
-](dims: DimList) -> NDBuffer[rank, DimList.create_unknown[rank](), dtype]:
+](dims: DimList) -> NDBuffer[dtype, rank, DimList.create_unknown[rank]()]:
     let total_size: Int = dims.product[rank]().value.value()
     let mem_ptr = DTypePointer[dtype].alloc(total_size)
-    let buffer = NDBuffer[rank, DimList.create_unknown[rank](), dtype](
+    let buffer = NDBuffer[dtype, rank, DimList.create_unknown[rank]()](
         mem_ptr, dims
     )
     return buffer
@@ -33,11 +33,11 @@ fn _create_buffer_host[
 fn _create_buffer_device[
     rank: Int, dtype: DType
 ](dims: DimList) raises -> NDBuffer[
-    rank, DimList.create_unknown[rank](), dtype
+    dtype, rank, DimList.create_unknown[rank]()
 ]:
     let total_size: Int = dims.product[rank]().value.value()
     let mem_ptr = _malloc[dtype](total_size)
-    let buffer = NDBuffer[rank, DimList.create_unknown[rank](), dtype](
+    let buffer = NDBuffer[dtype, rank, DimList.create_unknown[rank]()](
         mem_ptr, dims
     )
     return buffer
@@ -45,7 +45,7 @@ fn _create_buffer_device[
 
 fn _fill_buffer[
     rank: Int, dtype: DType
-](buffer: NDBuffer[rank, DimList.create_unknown[rank](), dtype]):
+](buffer: NDBuffer[dtype, rank, DimList.create_unknown[rank]()]):
     for i in range(buffer.num_elements()):
         buffer.flatten()[i] = i
 
@@ -53,7 +53,7 @@ fn _fill_buffer[
 fn _fill_buffer[
     rank: Int, dtype: DType
 ](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), dtype],
+    buffer: NDBuffer[dtype, rank, DimList.create_unknown[rank]()],
     val: Scalar[dtype],
 ):
     for i in range(buffer.num_elements()):
@@ -109,9 +109,9 @@ fn test_concat_4_inputs_rank5() raises:
 
     let func = Function[
         fn (
-            NDBuffer[5, DimList.create_unknown[5](), DType.float32],
+            NDBuffer[DType.float32, 5, DimList.create_unknown[5]()],
             StaticTuple[
-                4, NDBuffer[5, DimList.create_unknown[5](), DType.float32]
+                4, NDBuffer[DType.float32, 5, DimList.create_unknown[5]()]
             ],
         ) -> None, _concat_inner_most_single_dim[
             rank=5, type = DType.float32, num_inputs=4, block_size=B_SIZE

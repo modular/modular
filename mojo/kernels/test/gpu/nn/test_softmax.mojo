@@ -35,22 +35,22 @@ fn test_gpu_softmax() raises:
     let shape = StaticIntTuple[rank](3, 5, 515)
     let in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     let in_device_ptr = _malloc[type](shape.flattened_length())
-    let in_host = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let in_host = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         in_host_ptr, shape
     )
-    let in_device = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let in_device = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         in_device_ptr, shape
     )
     let out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     let out_ref_ptr = DTypePointer[type].alloc(shape.flattened_length())
     let out_device_ptr = _malloc[type](shape.flattened_length())
-    let out_host = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let out_host = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         out_host_ptr, shape
     )
-    let out_ref = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let out_ref = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         out_ref_ptr, shape
     )
-    let out_device = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let out_device = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         out_device_ptr, shape
     )
 

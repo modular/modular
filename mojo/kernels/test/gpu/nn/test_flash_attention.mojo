@@ -74,28 +74,28 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     rand[type](mask_ptr, seq_len * num_keys)
 
     # Contruct buffers.
-    let q = NDBuffer[4, DimList.create_unknown[4](), type](
+    let q = NDBuffer[type, 4, DimList.create_unknown[4]()](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
-    let k = NDBuffer[4, DimList.create_unknown[4](), type](
+    let k = NDBuffer[type, 4, DimList.create_unknown[4]()](
         k_ptr, Index(batch_size, num_keys, num_heads, depth)
     )
-    let v = NDBuffer[4, DimList.create_unknown[4](), type](
+    let v = NDBuffer[type, 4, DimList.create_unknown[4]()](
         v_ptr, Index(batch_size, num_keys, num_heads, depth)
     )
-    let mask = NDBuffer[2, DimList.create_unknown[2](), type](
+    let mask = NDBuffer[type, 2, DimList.create_unknown[2]()](
         mask_ptr, Index(seq_len, num_keys)
     )
-    let output = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output = NDBuffer[type, 4, DimList.create_unknown[4]()](
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
     _naive_attention_with_transpose[type](
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
-        rebind[NDBuffer[2, DimList.create_unknown[2](), type]](mask),
+        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](output),
+        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](q),
+        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](k),
+        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](v),
+        rebind[NDBuffer[type, 2, DimList.create_unknown[2]()]](mask),
         scale,
     )
 
