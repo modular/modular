@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import * as child_process from 'child_process';
 import * as ini from 'ini';
 import * as path from 'path';
 import * as util from 'util';
@@ -14,6 +15,7 @@ const execFile = util.promisify(require('child_process').execFile);
 import {LoggingService} from './logging';
 import * as config from './utils/config';
 import {substituteVariables} from './utils/vscodeVariables';
+import {isNightlyExtension} from './utils/buildInfo';
 
 /**
  * This class represents a subset of the Modular config object used by extension
@@ -122,8 +124,101 @@ export class MOJOSDK {
    */
   private loggingService: LoggingService;
 
-  constructor(loggingService: LoggingService) {
+  /**
+   * The current extension context.
+   */
+  private readonly context: vscode.ExtensionContext;
+
+  constructor(loggingService: LoggingService,
+              context: vscode.ExtensionContext) {
     this.loggingService = loggingService;
+    this.context = context;
+  }
+
+  /**
+   * Return if the given modular home path refers to a dev-build of the SDK.
+   */
+  private static isDevBuild(modularHomePath: string) {
+    return modularHomePath.endsWith('.derived');
+  }
+
+  /**
+   * Return the configuration key for the SDK within the modular.cfg file.
+   */
+  private static getConfigKey(modularHomePath: string, isNightly: boolean,
+                              possibleKeys: string[]): string|undefined {
+    // Bail early if we don't have any keys.
+    if (possibleKeys.length === 0)
+      return undefined;
+
+    // If this is a dev-build, there'll only be one key so just grab
+    // it.
+    if (MOJOSDK.isDevBuild(modularHomePath))
+      return possibleKeys[0];
+
+    // Filter the keys to only those that match the current extension.
+    possibleKeys =
+        possibleKeys.filter(key => isNightly == key.endsWith("-nightly"));
+    if (possibleKeys.length === 0)
+      return undefined;
+
+    // Prefer the 'max' key if it exists.
+    const maxKey = possibleKeys.find(key => key.includes("max"));
+    if (maxKey)
+      return maxKey;
+
+    // Otherwise, just grab the first key.
+    return possibleKeys[0];
+  }
+
+  /**
+   * Emit a warning to the user if the current SDK is out of date.
+   */
+  private async warnIfSDKOutOfDate(modularHomePath: string, mojoPath: string) {
+    // If this is a dev-build, there's no version to check.
+    if (MOJOSDK.isDevBuild(modularHomePath))
+      return;
+
+    // Otherwise, invoke `mojo` to grab the current version.
+    try {
+      let rawStdout = child_process.execFileSync(mojoPath, [ "--version" ], {
+        env : {...process.env, "MODULAR_HOME" : modularHomePath},
+      });
+      let stdout = rawStdout.toString();
+
+      // Grab the version string from the output.
+      const match = stdout.match(/mojo\s+\b([0-9]+)\.([0-9]+)\.([0-9]+)\b.*/);
+      if (!match) {
+        this.loggingService.logError(
+            "`mojo` returned an unexpected version string: " + stdout);
+        return;
+      }
+
+      // Grab the current extension version.
+      const extensionVersion =
+          this.context.extension.packageJSON.version as string;
+      const extensionVersionMatch =
+          extensionVersion.match(/([0-9]+)\.([0-9]+)\.([0-9]+)/);
+      if (!extensionVersionMatch) {
+        this.loggingService.logError("Unable to compute extension version: " +
+                                     extensionVersion);
+        return;
+      }
+
+      // Compare the two versions. We don't warn if the extension is older,
+      // just if the SDK is older.
+      if (/*major*/ +match[1] < +extensionVersionMatch[1] ||
+          /*minor*/ +match[2] < +extensionVersionMatch[2] ||
+          /*patch*/ +match[3] < +extensionVersionMatch[3]) {
+        vscode.window.showWarningMessage(
+            "The current Mojo SDK version is incompatible with this " +
+            "version of the Mojo extension. Please update your SDK " +
+            "to ensure the extension behaves correctly.");
+      }
+    } catch (e) {
+      this.loggingService.logError(
+          "Unable to invoke `mojo` to check the SDK version, failed with: ", e);
+    }
   }
 
   /**
@@ -204,23 +299,35 @@ export class MOJOSDK {
       this.promptInstallSDK();
       return undefined;
     }
-
     let modularConfig = ini.parse(new TextDecoder().decode(
         await vscode.workspace.fs.readFile(configPath)));
-
     this.loggingService.logInfo("modular.cfg file with contents",
                                 modularConfig);
+
+    // Find the appropriate mojo configuration key in the config file.
+    let mojoKeys: string[] =
+        Object.keys(modularConfig).filter(key => key.startsWith("mojo"));
+    let configKey = MOJOSDK.getConfigKey(
+        modularPath, isNightlyExtension(this.context), mojoKeys);
+    if (!configKey) {
+      this.promptInstallSDK();
+      return undefined;
+    }
+    let modularMojoConfig = modularConfig[configKey];
 
     // Extract out the pieces of the config that we care about.
     mojoConfig = new MOJOSDKConfig(this.loggingService);
     mojoConfig.modularHomePath = modularPath;
-    mojoConfig.mojoLLDBVSCodePath = modularConfig.mojo.lldb_vscode_path;
+    mojoConfig.mojoLLDBVSCodePath = modularMojoConfig.lldb_vscode_path;
     mojoConfig.mojoLLDBVisualizersPath =
-        modularConfig.mojo.lldb_visualizers_path;
-    mojoConfig.mojoDriverPath = modularConfig.mojo.driver_path;
-    mojoConfig.mojoLanguageServerPath = modularConfig.mojo.lsp_server_path;
-    mojoConfig.mojoLLDBPluginPath = modularConfig.mojo.lldb_plugin_path;
-    mojoConfig.lldbPath = modularConfig.mojo.lldb_path;
+        modularMojoConfig.lldb_visualizers_path;
+    mojoConfig.mojoDriverPath = modularMojoConfig.driver_path;
+    mojoConfig.mojoLanguageServerPath = modularMojoConfig.lsp_server_path;
+    mojoConfig.mojoLLDBPluginPath = modularMojoConfig.lldb_plugin_path;
+    mojoConfig.lldbPath = modularMojoConfig.lldb_path;
+
+    // Now that we have a resolved SDK, warn if it's out of date.
+    await this.warnIfSDKOutOfDate(modularPath, mojoConfig.mojoDriverPath);
 
     // Cache the config for the workspace.
     this.workspaceConfigs.set(key, mojoConfig);

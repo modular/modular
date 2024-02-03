@@ -32,7 +32,7 @@ export class MOJOContext extends DisposableContext {
     super();
     this.extensionContext = extensionContext;
     this.loggingService = loggingService;
-    this.sdk = new MOJOSDK(this.loggingService);
+    this.sdk = new MOJOSDK(this.loggingService, extensionContext);
   }
 
   /**
