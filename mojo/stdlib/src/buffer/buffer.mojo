@@ -43,8 +43,8 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 @value
 @register_passable
 struct Buffer[
-    size: Dim,
     type: DType,
+    size: Dim,
     /,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized):
@@ -53,8 +53,8 @@ struct Buffer[
     The Buffer does not own its underlying pointer.
 
     Parameters:
-      size: The static size (if known) of the Buffer.
       type: The element type of the Buffer.
+      size: The static size (if known) of the Buffer.
       address_space: The address space of the Buffer.
     """
 
@@ -410,19 +410,19 @@ struct Buffer[
 
 @always_inline
 fn _compute_nd_index[
+    type: DType,
     rank: Int,
     shape: DimList,
-    type: DType,
     address_space: AddressSpace,
 ](
-    buf: NDBuffer[rank, shape, type, address_space], index: Int
+    buf: NDBuffer[type, rank, shape, address_space], index: Int
 ) -> StaticIntTuple[rank]:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
+        type: The element-type of the NDBuffer.
         rank: The rank of the NDBuffer.
         shape: The shape of the NDBuffer.
-        type: The element-type of the NDBuffer.
         address_space: The address space of the NDBuffer.
 
     Args:
@@ -454,17 +454,17 @@ fn _compute_nd_index[
 
 @always_inline
 fn _compute_ndbuffer_offset[
-    rank: Int, shape: DimList, type: DType, address_space: AddressSpace
+    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
 ](
-    buf: NDBuffer[rank, shape, type, address_space=address_space],
+    buf: NDBuffer[type, rank, shape, address_space=address_space],
     index: VariadicList[Int],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
+        type: The element-type of the NDBuffer.
         rank: The rank of the NDBuffer.
         shape: The shape of the NDBuffer.
-        type: The element-type of the NDBuffer.
         address_space: The address space of the NDBuffer.
 
     Args:
@@ -501,17 +501,17 @@ fn _compute_ndbuffer_offset[
 
 @always_inline
 fn _compute_ndbuffer_offset[
-    rank: Int, shape: DimList, type: DType, address_space: AddressSpace
+    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
 ](
-    buf: NDBuffer[rank, shape, type, address_space=address_space],
+    buf: NDBuffer[type, rank, shape, address_space=address_space],
     idx: StaticIntTuple[rank],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
+        type: The element-type of the NDBuffer.
         rank: The rank of the NDBuffer.
         shape: The shape of the NDBuffer.
-        type: The element-type of the NDBuffer.
         address_space: The address space of the NDBuffer.
 
     Args:
@@ -526,17 +526,17 @@ fn _compute_ndbuffer_offset[
 
 @always_inline
 fn _compute_ndbuffer_offset[
-    rank: Int, shape: DimList, type: DType, address_space: AddressSpace
+    type: DType, rank: Int, shape: DimList, address_space: AddressSpace
 ](
-    buf: NDBuffer[rank, shape, type, address_space=address_space],
+    buf: NDBuffer[type, rank, shape, address_space=address_space],
     index: StaticTuple[rank, Int],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
+        type: The element-type of the NDBuffer.
         rank: The rank of the NDBuffer.
         shape: The shape of the NDBuffer.
-        type: The element-type of the NDBuffer.
         address_space: The address space of the NDBuffer.
 
     Args:
@@ -615,9 +615,9 @@ fn _compute_ndbuffer_stride[
 @value
 @register_passable("trivial")
 struct NDBuffer[
+    type: DType,
     rank: Int,
     shape: DimList,
-    type: DType,
     /,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized, Stringable):
@@ -627,9 +627,9 @@ struct NDBuffer[
     not own its underlying pointer.
 
     Parameters:
+        type: The element type of the buffer.
         rank: The rank of the buffer.
         shape: The static size (if known) of the buffer.
-        type: The element type of the buffer.
         address_space: The address space of the buffer.
     """
 
@@ -964,7 +964,7 @@ struct NDBuffer[
         """
         constrained[rank <= _MAX_RANK]()
         return self.data.offset(
-            _compute_ndbuffer_offset[rank, shape, type](self, idx)
+            _compute_ndbuffer_offset[type, rank, shape](self, idx)
         )
 
     @always_inline
@@ -987,7 +987,7 @@ struct NDBuffer[
         """
         constrained[rank <= _MAX_RANK]()
         return self.data.offset(
-            _compute_ndbuffer_offset[rank, shape, type](self, idx)
+            _compute_ndbuffer_offset[type, rank, shape](self, idx)
         )
 
     @always_inline
@@ -1379,7 +1379,7 @@ struct NDBuffer[
         return self.dynamic_stride[index]
 
     @always_inline
-    fn flatten(self) -> Buffer[Dim(), type, address_space=address_space]:
+    fn flatten(self) -> Buffer[type, Dim(), address_space=address_space]:
         """Constructs a flattened Buffer counterpart for this NDBuffer.
 
         Constraints:
@@ -1389,7 +1389,7 @@ struct NDBuffer[
             Constructed Buffer object.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        return Buffer[Dim(), type, address_space=address_space](
+        return Buffer[type, Dim(), address_space=address_space](
             self.data, self.size()
         )
 
@@ -1397,7 +1397,7 @@ struct NDBuffer[
     fn make_dims_unknown(
         self,
     ) -> NDBuffer[
-        rank, DimList.create_unknown[rank](), type, address_space=address_space
+        type, rank, DimList.create_unknown[rank](), address_space=address_space
     ]:
         """Rebinds the NDBuffer to one with unknown shape.
 
@@ -1406,9 +1406,9 @@ struct NDBuffer[
         """
         return rebind[
             NDBuffer[
+                type,
                 rank,
                 DimList.create_unknown[rank](),
-                type,
                 address_space=address_space,
             ]
         ](self)
@@ -1686,7 +1686,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn __sub__[
         rhs_shape: DimList
-    ](self, rhs: NDBuffer[1, rhs_shape, type]) -> Self:
+    ](self, rhs: NDBuffer[type, 1, rhs_shape]) -> Self:
         """Subtracts a NDBuffer.
 
         Args:
@@ -1735,7 +1735,7 @@ fn partial_simd_load[
         addr 0  1  2  3
         data x 42 43  x
 
-        partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
+        partial_simd_load[4](addr0, 1, 3) #gives [0 42 43 0]
 
     Parameters:
         width: The system simd vector size.
@@ -1776,7 +1776,7 @@ fn partial_simd_store[
         addr 0 1 2  3
         data 0 0 0  0
 
-        partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
+        partial_simd_load[4](addr0, 1, 3, [-1, 42, 43, -1]) #gives [0 42 43 0]
 
     Parameters:
         width: The system simd vector size.
@@ -1849,7 +1849,7 @@ struct DynamicRankBuffer:
         }
 
     @always_inline
-    fn to_buffer[type: DType](self) -> Buffer[Dim(), type]:
+    fn to_buffer[type: DType](self) -> Buffer[type, Dim()]:
         """Casts DynamicRankBuffer to Buffer.
 
         Parameters:
@@ -1858,22 +1858,22 @@ struct DynamicRankBuffer:
         Returns:
             Constructed Buffer.
         """
-        return Buffer[Dim(), type](
+        return Buffer[type, Dim()](
             self.data.bitcast[type](), tuple_product(self.shape, self.rank)
         )
 
     @always_inline
     fn to_ndbuffer[
-        rank: Int, type: DType
-    ](self) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+        type: DType, rank: Int
+    ](self) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
         """Casts the buffer to NDBuffer.
 
         Constraints:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
 
         Parameters:
-            rank: Rank of the buffer.
             type: `dtype` of the buffer.
+            rank: Rank of the buffer.
 
         Returns:
             Constructed NDBuffer.
@@ -1882,15 +1882,15 @@ struct DynamicRankBuffer:
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
-        return NDBuffer[rank, DimList.create_unknown[rank](), type](
+        return NDBuffer[type, rank, DimList.create_unknown[rank]()](
             self.data.bitcast[type](), self._shape_to_static_tuple[rank]()
         )
 
     @always_inline
     fn to_ndbuffer[
-        rank: Int, type: DType
+        type: DType, rank: Int
     ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
-        rank, DimList.create_unknown[rank](), type
+        type, rank, DimList.create_unknown[rank]()
     ]:
         """Casts the buffer to NDBuffer.
 
@@ -1898,8 +1898,8 @@ struct DynamicRankBuffer:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
 
         Parameters:
-            rank: Rank of the buffer.
             type: `dtype` of the buffer.
+            rank: Rank of the buffer.
 
         Args:
             stride: Strides of the buffer.
@@ -1911,7 +1911,7 @@ struct DynamicRankBuffer:
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
-        return NDBuffer[rank, DimList.create_unknown[rank](), type](
+        return NDBuffer[type, rank, DimList.create_unknown[rank]()](
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
             stride,
