@@ -853,12 +853,17 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // right type.
     CValue argVal;
     if (auto orValue = operand.ir.getIfORValue()) {
-      if (!orValue->baseValue) { // Cannot merge base value.
-        // Try to refine the ORValue into a PValue.
-        argVal = orValue->getDirectSymbol(expectedType);
-        if (!argVal)
-          return {kWrongType, expectedType};
-      }
+      // Try to refine the ORValue into a PValue.
+      argVal = orValue->getDirectSymbol(expectedType);
+      if (!argVal)
+        return {kWrongType, expectedType};
+
+      // If we have a reference to an overloaded method like foo(a.method), then
+      // we can't resolve it.
+      // TODO(partial application => closures): Given we just resolved argVal,
+      // we could form the "a.method" expression with a closure.
+      if (orValue->baseValue) // Cannot merge base value.
+        return {kWrongType, expectedType};
     } else {
       argVal = operand.ir.getIfCValue();
       assert(argVal && "we handled ORValue above");

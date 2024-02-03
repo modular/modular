@@ -510,3 +510,12 @@ fn transfer_warnings():
   var someInt2 = 4
   someInt2 = 4
   _ = someInt2^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
+
+# Issue #1708: https://github.com/modularml/mojo/issues/1708
+# Issue #1699: https://github.com/modularml/mojo/issues/1699
+# Issue #30790: https://github.com/modularml/modular/issues/30790
+struct SomeThing:
+    fn overloaded[a: Int](self, b: Int) -> Int: pass
+fn testSomeThing(a: SomeThing):
+   # expected-error @+1 {{TODO: partial application requires closure generation 'SomeThing'}}
+   a.overloaded[4] / 1.0
