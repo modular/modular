@@ -126,8 +126,11 @@ ParserBase::parseDecorators(ssize_t indentation) {
 
     ExprNode *decoratorExpr;
     LexerCursor cursor = lexer.getCursor();
-    if (parseExpression(decoratorExpr, indentation))
+    if (parseExpression(decoratorExpr, indentation)) {
+      skipUntilIndentation(indentation, /*stopOnSemicolon=*/false,
+                           stopOnStatement);
       break;
+    }
     result.push_back({decoratorExpr, cursor});
 
     if (!getToken().isStartOfLine() ||
