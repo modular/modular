@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoDWARFParser.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/Support/DebugInfoEncoding.h"
 #include "MojoTypeSystem.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/ErrorOr.h"
@@ -353,15 +355,15 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     // a base type using its encoding, which might fail anyway. We follow that
     // approach.
 
-    // FIXME(25720): `void` maps to DType.invalid.
-    if (attrs.name == "void") {
-      CompilerType mojoType = typeSystem.getBuiltinScalarType(
-          "invalid", DW_ATE_unsigned, attrs.byteSize.value_or(0));
+    if (attrs.name ==
+        DebugInfoEncoding::getKGENDTypeAsString(DType::invalid).c_str()) {
+      CompilerType mojoType =
+          typeSystem.createCompilerTypeFromDType(attrs.name);
 
-      type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
-                             attrs.type.Reference().GetID(),
-                             lldb_private::Type::eEncodingIsUID, &attrs.decl,
-                             mojoType, lldb_private::Type::ResolveState::Full);
+      type = dwarf->MakeType(
+          die.GetID(), attrs.name, attrs.byteSize.value_or(0), nullptr,
+          attrs.type.Reference().GetID(), lldb_private::Type::eEncodingIsUID,
+          &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
       break;
     }
 
@@ -416,8 +418,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         // LLDB expects us to provide a lldb_private::Type for the element type
         // of the SIMD.
         TypeSP lldbDType = dwarf->MakeType(
-            dtypeDie.GetID(), dtypeAttrs.name, *dtypeAttrs.byteSize, nullptr,
-            dtypeDie.GetID(), lldb_private::Type::eEncodingIsUID,
+            dtypeDie.GetID(), dtypeAttrs.name, dtypeAttrs.byteSize.value_or(0),
+            nullptr, dtypeDie.GetID(), lldb_private::Type::eEncodingIsUID,
             &dtypeAttrs.decl, elementType,
             lldb_private::Type::ResolveState::Full);
         CompilerType mojoType =
@@ -425,7 +427,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         if (mojoType.IsValid()) {
           type = dwarf->MakeType(
               die.GetID(), ConstString(),
-              attrs.byteSize.value_or(*dtypeAttrs.byteSize * numElements),
+              attrs.byteSize.value_or(dtypeAttrs.byteSize.value_or(0) *
+                                      numElements),
               nullptr, die.GetID(), lldb_private::Type::eEncodingIsUID,
               &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
           type->SetEncodingType(lldbDType.get());

@@ -27,4 +27,4 @@ class TestPointer(LLDBTestBase):
         with self.build_and_launch("invalid_pointer.mojo") as ctx:
             var = ctx.frame.FindVariable("ptr")
             assert var.GetValue() == "0x0000000000000000"
-            assert var.GetTypeName() == "!kgen.pointer<ui0>"
+            assert var.GetTypeName() == "!kgen.pointer<scalar<invalid>>"

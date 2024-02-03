@@ -39,11 +39,11 @@
 # CHECK:     [0] = 12
 # CHECK:   }
 # CHECK:   tuple = {
-# CHECK:     m0 = 1
-# CHECK:     m1 = {
+# CHECK:     [0] = 1
+# CHECK:     [1] = {
 # CHECK:       [0] = 87
 # CHECK:     }
-# CHECK:     m2 = {
+# CHECK:     [2] = {
 # CHECK:       [0] = 123.125
 # CHECK:     }
 # CHECK:   }
@@ -55,13 +55,13 @@
 # CHECK:   [0] = 4.125
 # CHECK: }
 # CHECK: (string) a_string_literal = "fofofo"
-# HECK: (pack) a_list = {
-# HECK:   m0 = 1
-# HECK:   m1 = {
-# HECK:     [0] = 2.125
-# HECK:   }
-# HECK:   m2 = 3
-# HECK: }
+# CHECK: (!kgen.pack<[index, scalar<f64>, index]>) a_list = {
+# CHECK:   [0] = 1
+# CHECK:   [1] = {
+# CHECK:     [0] = 2.125
+# CHECK:   }
+# CHECK:   [2] = 3
+# CHECK: }
 # CHECK: (simd<4, f16>) a_simd = {
 # CHECK:   [0] = 1.125
 # CHECK:   [1] = 2.5

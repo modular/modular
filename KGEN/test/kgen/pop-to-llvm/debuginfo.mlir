@@ -10,9 +10,9 @@
 !simdTest = !pop.simd<8, ui32>
 !structTest = !kgen.struct<(scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>)>
 
-// CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
+// CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<kgen.dtype.bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
 // CHECK-DAG: ![[BASIC1:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
-// CHECK-DAG: ![[UNSPECIFIED:.*]] = !debuginfo.unspecified<"void">
+// CHECK-DAG: ![[UNSPECIFIED:.*]] = !debuginfo.unspecified<"kgen.dtype.invalid">
 // CHECK-DAG: ![[ARRAY:.*]] = !debuginfo.array<5 x !{{.*}}>
 // CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<m0: ![[BASIC1]]>
 // CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: !{{.*}}>
@@ -32,12 +32,12 @@
 // CHECK-DAG: ![[ARRAY3:.*]] = !debuginfo.array<3 x ![[ARRAY1]]>
 // CHECK-DAG: ![[ARRAY4:.*]] = !debuginfo.array<5 x ![[ARRAY2]]>
 // CHECK-DAG: ![[MEMBER25:.*]] = !debuginfo.member<m1: ![[ARRAY2]]>
-// CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<pack(![[MEMBER]], ![[MEMBER1]])>
+// CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<"!kgen.pack<[index, array<5, f32>]>"(![[MEMBER]], ![[MEMBER1]])>
 // CHECK-DAG: ![[ARRAY5:.*]] = !debuginfo.array<2 x ![[ARRAY3]]>
 // CHECK-DAG: ![[MEMBER26:.*]] = !debuginfo.member<m1: ![[ARRAY4]]>
-// CHECK-DAG: ![[STRUCT1:.*]] = !debuginfo.struct<struct(![[MEMBER24]], ![[MEMBER25]])>
+// CHECK-DAG: ![[STRUCT1:.*]] = !debuginfo.struct<"!kgen.struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>"(![[MEMBER24]], ![[MEMBER25]])>
 // CHECK-DAG: ![[MEMBER27:.*]] = !debuginfo.member<m2: ![[STRUCT1]]>
-// CHECK-DAG: ![[STRUCT2:.*]] = !debuginfo.struct<struct(![[MEMBER22]], ![[MEMBER26]], ![[MEMBER27]])>
+// CHECK-DAG: ![[STRUCT2:.*]] = !debuginfo.struct<"!kgen.struct<(scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>)>"(![[MEMBER22]], ![[MEMBER26]], ![[MEMBER27]])>
 
 // CHECK-DAG: ![[STRING_DATA:.*]] = !debuginfo.member<data: !ptr
 // CHECK-DAG: ![[STRING_SIZE:.*]] = !debuginfo.member<size: !basic

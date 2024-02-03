@@ -23,6 +23,7 @@ add_modular_library(KGENToLLVM
   DebugInfoTransforms
   HLCFAnalysis
   KGENDialect
+  KGENSupport
   MCompilerSupport
   POPDialect
 
