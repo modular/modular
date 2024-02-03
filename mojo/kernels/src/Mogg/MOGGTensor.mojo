@@ -239,7 +239,7 @@ struct Tensor[
 
     @mogg_output_fusion_hook()
     @no_inline
-    fn _output_fusion_hook(self):
+    fn _output_fusion_hook(inout self):
         @always_inline
         @parameter
         fn _default_output[
@@ -295,7 +295,7 @@ struct Tensor[
         return flat_index
 
     @always_inline
-    fn store(self, index: StaticIntTuple[Self.static_rank], value: SIMD):
+    fn store(inout self, index: StaticIntTuple[Self.static_rank], value: SIMD):
         constrained[
             Self.has_static_rank(),
             (
@@ -308,7 +308,7 @@ struct Tensor[
         )
 
     @always_inline
-    fn store(self, index: IntList, value: SIMD):
+    fn store(inout self, index: IntList, value: SIMD):
         # Nop function to preserve symbol.
         self._output_fusion_hook()
 
@@ -322,7 +322,7 @@ struct Tensor[
             self._simd_store_internal(index, val)
 
     @always_inline
-    fn store(self, index: Int, value: SIMD):
+    fn store(inout self, index: Int, value: SIMD):
         constrained[
             self.static_rank == 1,
             (
@@ -335,7 +335,7 @@ struct Tensor[
         self.store(as_nd, value)
 
     @always_inline
-    fn _simd_store_internal(self, index: IntList, val: SIMD):
+    fn _simd_store_internal(inout self, index: IntList, val: SIMD):
         let flat_index = self._compute_flat_index(index)
         let value = rebind[SIMD[type, val.size]](val)
         self.data.simd_store[val.size](flat_index, value)
