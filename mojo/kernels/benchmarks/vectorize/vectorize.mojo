@@ -8,67 +8,77 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-from algorithm.functional import vectorize, vectorize_unroll
+from algorithm.functional import vectorize
 from random import rand
-import benchmark
+from benchmark import Unit, run
 
 alias type = DType.uint8
 alias width = simdwidthof[type]()
-alias unit = benchmark.Unit.ns
+alias unit = Unit.ns
 # increasing will reduce the benefit of passing the size as a paramater
-alias multiplier = 1
+alias multiplier = 2
 # Add .5 of the elements that fit into a simd register
-alias size: Int = (width * (multiplier + 0.5)).to_int()
-alias param_loops = multiplier + 1
-alias arg_loops = size % width + multiplier
+alias size: Int = (multiplier * width + (width * 0.5)).to_int()
 alias unroll_factor = 2
-
-alias p1 = DTypePointer[type].alloc(size)
-alias p2 = DTypePointer[type].alloc(size)
-
-
-fn arg_size():
-    @parameter
-    fn sum_all[width: Int](i: Int):
-        p2.simd_store(i, p1.simd_load[width](i) * i)
-
-    vectorize[width, sum_all](size)
-
-
-fn arg_size_unroll():
-    @parameter
-    fn sum_all[width: Int](i: Int):
-        p2.simd_store(i, p1.simd_load[width](i) * i)
-
-    vectorize_unroll[width, unroll_factor, sum_all](size)
-
-
-fn param_size():
-    @parameter
-    fn sum_all[width: Int](i: Int):
-        p2.simd_store(i, p1.simd_load[width](i) * i)
-
-    vectorize[width, size, sum_all]()
-
-
-fn param_size_unroll():
-    @parameter
-    fn sum_all[width: Int](i: Int):
-        p2.simd_store(i, p1.simd_load[width](i) * i)
-
-    vectorize_unroll[width, size, unroll_factor, sum_all]()
+alias its = 1000
 
 
 fn main():
+    let p1 = DTypePointer[type].alloc(size)
+    let p2 = DTypePointer[type].alloc(size)
+
     rand(p1, size)
-    let arg = benchmark.run[arg_size](max_runtime_secs=0.5).mean(unit)
-    let param = benchmark.run[param_size](max_runtime_secs=0.5).mean(unit)
-    let arg_unroll = benchmark.run[arg_size_unroll](max_runtime_secs=0.5).mean(
-        unit
-    )
-    let param_unroll = benchmark.run[param_size_unroll](
-        max_runtime_secs=0.5
-    ).mean(unit)
+
+    @parameter
+    fn arg_size():
+        @parameter
+        fn closure[width: Int](i: Int):
+            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+
+        for i in range(its):
+            vectorize[closure, width](size)
+
+    @parameter
+    fn param_size():
+        @parameter
+        fn closure[width: Int](i: Int):
+            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+
+        for i in range(its):
+            vectorize[closure, width, size]()
+
+    @parameter
+    fn arg_size_unroll():
+        @parameter
+        fn closure[width: Int](i: Int):
+            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+
+        for i in range(its):
+            vectorize[closure, width, unroll_factor](size)
+
+    @parameter
+    fn param_size_unroll():
+        @parameter
+        fn closure[width: Int](i: Int):
+            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+
+        for i in range(its):
+            vectorize[closure, width, size, unroll_factor]()
+
+    let arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
+    print(p2.simd_load[size]())
+    memset_zero(p2, size)
+
+    let param = run[param_size](max_runtime_secs=0.5).mean(unit)
+    print(p2.simd_load[size]())
+    memset_zero(p2, size)
+
+    let arg_unroll = run[arg_size_unroll](max_runtime_secs=0.5).mean(unit)
+    print(p2.simd_load[size]())
+    memset_zero(p2, size)
+
+    let param_unroll = run[param_size_unroll](max_runtime_secs=0.5).mean(unit)
+    print(p2.simd_load[size]())
 
     print(
         "calculating",
@@ -78,12 +88,15 @@ fn main():
         "elements fit into the SIMD register\n",
     )
 
-    print("size as argument", arg_loops, "loops at:  ", arg, unit)
-    print("     unroll_factor:", unroll_factor, "        ", arg_unroll, unit)
-    print("\nsize as parameter", param_loops, "loops at: ", param, unit)
-    print("     unroll_factor:", unroll_factor, "        ", param_unroll, unit)
+    print(" size as argument:", arg, unit)
+    print("         unrolled:", arg_unroll, unit)
+    print()
+    print("size as parameter:", param, unit)
+    print("         unrolled:", param_unroll, unit)
     print(
-        "\nPassing size as a parameter is",
+        "\nPassing size as a parameter and unrolling is",
         arg_unroll / param_unroll,
-        "times faster than passing size as an argument due to less loops",
+        "x faster",
     )
+    p1.free()
+    p2.free()
