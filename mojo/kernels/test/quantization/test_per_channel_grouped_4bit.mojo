@@ -155,23 +155,11 @@ fn _read_write_to_tensors[
     for i in range(num_elements):
         out_data_matrix[i] = 0
 
-    let rebound_data_matrix = rebind[
-        NDBuffer[
-            DType.float32,
-            rank,
-            DimList.create_unknown[rank](),
-        ]
-    ](data_matrix)
-    let rebound_packed_block = rebind[
-        NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()]
-    ](packed_blob)
-    let rebound_out_data_matrix = rebind[
-        NDBuffer[
-            DType.float32,
-            rank,
-            DimList.create_unknown[rank](),
-        ]
-    ](out_data_matrix)
+    let rebound_data_matrix = rebind[NDBuffer[DType.float32, rank]](data_matrix)
+    let rebound_packed_block = rebind[NDBuffer[DType.uint8, rank]](packed_blob)
+    let rebound_out_data_matrix = rebind[NDBuffer[DType.float32, rank]](
+        out_data_matrix
+    )
 
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
         rebound_data_matrix,
