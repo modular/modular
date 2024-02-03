@@ -16,9 +16,9 @@ from utils.list import DimList
 fn matrix_solve_tiny[
     type: DType, M: Int, N: Int, K: Int
 ](
-    X: NDBuffer[2, DimList(K, N), type],
-    A: NDBuffer[2, DimList(M, K), type],
-    B: NDBuffer[2, DimList(M, N), type],
+    X: NDBuffer[type, 2, DimList(K, N)],
+    A: NDBuffer[type, 2, DimList(M, K)],
+    B: NDBuffer[type, 2, DimList(M, N)],
 ):
     """Solve A*X = B, where A is a 3x3 matrix, B and X are 3x2."""
     constrained[M == 3]()
@@ -77,9 +77,9 @@ fn matrix_solve[
     b_rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
-    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
-    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    a: NDBuffer[type, a_rank, DimList.create_unknown[a_rank]()],
+    b: NDBuffer[type, b_rank, DimList.create_unknown[b_rank]()],
+    x: NDBuffer[type, x_rank, DimList.create_unknown[x_rank]()],
 ) raises:
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS
@@ -115,13 +115,13 @@ fn matrix_solve[
 
         for batch in range(batch_size):
             # Get a 2D view of the Tensor.
-            let x_view = NDBuffer[2, DimList(3, 2), type](
+            let x_view = NDBuffer[type, 2, DimList(3, 2)](
                 x.data.offset(batch * 3 * 2), (3, 2)
             )
-            let a_view = NDBuffer[2, DimList(3, 3), type](
+            let a_view = NDBuffer[type, 2, DimList(3, 3)](
                 a.data.offset(batch * 3 * 3), (3, 3)
             )
-            let b_view = NDBuffer[2, DimList(3, 2), type](
+            let b_view = NDBuffer[type, 2, DimList(3, 2)](
                 b.data.offset(batch * 3 * 2), (3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
@@ -133,8 +133,8 @@ fn matrix_solve_shape[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    b_buff: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    a_buff: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    b_buff: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a matrix solve operation (i.e., given A and B

@@ -22,9 +22,9 @@ from utils.list import DimList
 
 fn fill_a(
     buf: NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row + 2*col
@@ -38,9 +38,9 @@ fn fill_a(
 
 fn fill_b(
     buf: NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col
@@ -54,9 +54,9 @@ fn fill_b(
 
 fn clear_c(
     buf: NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ]
 ):
     buf.zero()
@@ -64,9 +64,9 @@ fn clear_c(
 
 fn print_matrix(
     buf: NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col + 3
@@ -83,19 +83,19 @@ fn test_amx_matmul():
         print("== test_amx_matmul")
 
     let a_matrix = NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ].stack_allocation()
     let b_matrix = NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ].stack_allocation()
     let c_matrix = NDBuffer[
+        DType.float32,
         2,
         DimList(16, 16),
-        DType.float32,
     ].stack_allocation()
 
     fill_a(a_matrix)

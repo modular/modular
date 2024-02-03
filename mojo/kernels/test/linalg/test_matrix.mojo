@@ -51,7 +51,7 @@ fn test_dynamic_shape(
 
 fn test_matrix_static():
     print("== test_matrix_static")
-    let a = Buffer[16, DType.int32].stack_allocation()
+    let a = Buffer[DType.int32, 16].stack_allocation()
     let m = Matrix[DimList(4, 4), DType.int32, False](a.data)
     for i in range(16):
         a[i] = i
@@ -60,7 +60,7 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    let a = Buffer[16, DType.int32].stack_allocation()
+    let a = Buffer[DType.int32, 16].stack_allocation()
     let m = Matrix[DimList(4, 4), DType.int32, False](a.data)
     for i in range(16):
         a[i] = i
@@ -69,7 +69,7 @@ fn test_matrix_dynamic():
 
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    let a = Buffer[16, DType.int32].stack_allocation()
+    let a = Buffer[DType.int32, 16].stack_allocation()
     # let m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
     let m = Matrix[DimList.create_unknown[2](), DType.int32, False](
         a.data, Index(4, 4)

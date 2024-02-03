@@ -40,14 +40,14 @@ alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[Dim(), type](a_ptr.bitcast[type](), n)
+    let a = Buffer[type, Dim()](a_ptr.bitcast[type](), n)
     for i in range(n):
         let v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
         print(v)
 
 
 fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[Dim(), type](a_ptr.bitcast[type](), m * n)
+    let a = Buffer[type, Dim()](a_ptr.bitcast[type](), m * n)
     for i in range(m):
         print("row")
         for j in range(n):
@@ -58,7 +58,7 @@ fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
 @always_inline
 fn identity_epilogue_rowise_func[
     accum_type: DType
-](row_idx: Int, row: Buffer[Dim(), accum_type]):
+](row_idx: Int, row: Buffer[accum_type, Dim()]):
     pass
 
 
@@ -75,11 +75,11 @@ fn init_matrices(
     c_ptr: DTypePointer[DType.int32],
     c2_ptr: DTypePointer[DType.int32],
 ):
-    let a = Buffer[Dim(), DType.int8](a_ptr.address, 1024)
-    let b = Buffer[Dim(), DType.int8](b_ptr.address, 1024)
-    let c = Buffer[Dim(), DType.int32](c_ptr.address, 256)
-    let c2 = Buffer[Dim(), DType.int32](c2_ptr.address, 256)
-    let b2 = Buffer[1024, DType.int8].stack_allocation()
+    let a = Buffer[DType.int8, Dim()](a_ptr.address, 1024)
+    let b = Buffer[DType.int8, Dim()](b_ptr.address, 1024)
+    let c = Buffer[DType.int32, Dim()](c_ptr.address, 256)
+    let c2 = Buffer[DType.int32, Dim()](c2_ptr.address, 256)
+    let b2 = Buffer[DType.int8, 1024].stack_allocation()
 
     for i in range(1024):
         a[i] = Int8(i & 127)
@@ -88,16 +88,16 @@ fn init_matrices(
     memset_zero[DType.int32](c.data, 1024)
     memset_zero[DType.int32](c2.data, 1024)
 
-    let b2m = NDBuffer[2, DimList(64, 16), DType.int8](b2.data.address)
-    let bm = NDBuffer[2, DimList(16, 64), DType.int8](b_ptr.address)
+    let b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data.address)
+    let bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr.address)
     # transpose from 64x16 to 16x64
     transpose[2, DimList(16, 64), DimList(64, 16), DType.int8](bm, b2m)
 
     let b32_ptr = b.data.bitcast[DType.int32]()
-    let b32m = NDBuffer[2, DimList(16, 16), DType.int32](b32_ptr.address)
+    let b32m = NDBuffer[DType.int32, 2, DimList(16, 16)](b32_ptr.address)
     transpose_inplace[16, 16, DType.int32](b32m)
-    let am = NDBuffer[2, DimList(16, 64), DType.int8](a.data.address)
-    let c2m = NDBuffer[2, DimList(16, 16), DType.int32](c2.data.address)
+    let am = NDBuffer[DType.int8, 2, DimList(16, 64)](a.data.address)
+    let c2m = NDBuffer[DType.int32, 2, DimList(16, 16)](c2.data.address)
     naive_matmul[
         DimList(16, 64),
         DimList(64, 16),
@@ -132,10 +132,10 @@ fn setup_tile_config() -> tileconfig:
 
 
 fn main():
-    let a = Buffer[1024, DType.int8].stack_allocation()
-    let b = Buffer[1024, DType.int8].stack_allocation()
-    let c = Buffer[256, DType.int32].stack_allocation()
-    let c2 = Buffer[256, DType.int32].stack_allocation()
+    let a = Buffer[DType.int8, 1024].stack_allocation()
+    let b = Buffer[DType.int8, 1024].stack_allocation()
+    let c = Buffer[DType.int32, 256].stack_allocation()
+    let c2 = Buffer[DType.int32, 256].stack_allocation()
 
     init_matrices(a.data, b.data, c.data, c2.data)
     # print_matrix[16, 64, DType.int8](b.data.bitcast[void]())

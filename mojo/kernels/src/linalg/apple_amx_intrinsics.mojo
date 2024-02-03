@@ -381,19 +381,19 @@ struct amx_detail:
     @staticmethod
     fn dot_at_b(
         c: NDBuffer[
+            DType.float32,
             2,
             DimList(16, 16),
-            DType.float32,
         ],
         a: NDBuffer[
+            DType.float32,
             2,
             DimList(16, 16),
-            DType.float32,
         ],
         b: NDBuffer[
+            DType.float32,
             2,
             DimList(16, 16),
-            DType.float32,
         ],
     ):
         # Performs a 16x16x16 matrix multiply on the given matrices storing the

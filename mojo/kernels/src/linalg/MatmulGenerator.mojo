@@ -272,9 +272,9 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn get[
         matmul_config: MatmulConfig, data_layout: MatmulOperandLayout
     ](
-        c: NDBuffer[2, matmul_config.shape_c, data_type.accum_type],
-        a: NDBuffer[2, matmul_config.shape_a, data_type.value_type],
-        b: NDBuffer[2, matmul_config.shape_b, data_type.value_type],
+        c: NDBuffer[data_type.accum_type, 2, matmul_config.shape_c],
+        a: NDBuffer[data_type.value_type, 2, matmul_config.shape_a],
+        b: NDBuffer[data_type.value_type, 2, matmul_config.shape_b],
         global_offset: GemmShape,
         valid_tile_bound: GemmShape,
     ) -> Self:
@@ -335,7 +335,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     @always_inline
     fn get_global_operand_buffer[
         operand_id: Int, transposed: Bool
-    ](self) -> NDBuffer[2, DimList.create_unknown[2](), data_type.value_type]:
+    ](self) -> NDBuffer[data_type.value_type, 2, DimList.create_unknown[2]()]:
         """Utility to get an NDBuffer handle to the global space holding the
         operands.
             Args:
@@ -373,18 +373,18 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
                 )
             buffer_pointer = self.b
 
-        return NDBuffer[2, DimList.create_unknown[2](), data_type.value_type](
+        return NDBuffer[data_type.value_type, 2, DimList.create_unknown[2]()](
             buffer_pointer, buffer_shape
         )
 
     @always_inline
     fn get_global_result_buffer(
         self,
-    ) -> NDBuffer[2, DimList.create_unknown[2](), data_type.accum_type]:
+    ) -> NDBuffer[data_type.accum_type, 2, DimList.create_unknown[2]()]:
         """Utility to get an NDBuffer handle to the global space holding the
         result i.e. matrix C buffer.
         """
-        return NDBuffer[2, DimList.create_unknown[2](), data_type.accum_type](
+        return NDBuffer[data_type.accum_type, 2, DimList.create_unknown[2]()](
             self.c, Index(self.global_gemm_size.M, self.global_gemm_size.N)
         )
 
@@ -392,7 +392,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn get_packed_operand_buffer[
         operand_id: Int, inner_size: Int
     ](self, tile_dimension: StaticIntTuple[2]) -> NDBuffer[
-        3, DimList.create_unknown[3](), data_type.value_type
+        data_type.value_type, 3, DimList.create_unknown[3]()
     ]:
         """Utility to get an NDBuffer handle to the local space holding the
         packed operands when applicable.
@@ -425,7 +425,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         if operand_id == GemmIdentifiers.OperandB:
             buffer_pointer = self.packed_b
 
-        return NDBuffer[3, DimList.create_unknown[3](), data_type.value_type](
+        return NDBuffer[data_type.value_type, 3, DimList.create_unknown[3]()](
             buffer_pointer, buffer_shape
         )
 
@@ -1191,9 +1191,9 @@ struct TiledMatmulGenerated[
 
     @staticmethod
     fn run(
-        c: NDBuffer[2, config.shape_c, data_type.accum_type],
-        a: NDBuffer[2, config.shape_a, data_type.value_type],
-        b: NDBuffer[2, config.shape_b, data_type.value_type],
+        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
+        a: NDBuffer[data_type.value_type, 2, config.shape_a],
+        b: NDBuffer[data_type.value_type, 2, config.shape_b],
         global_tile_offset: GemmShape,
         global_tile_shape: GemmShape,
     ):
@@ -1298,10 +1298,10 @@ struct TiledMatmulBiasGenerated[
 
     @staticmethod
     fn run(
-        c: NDBuffer[2, config.shape_c, data_type.accum_type],
-        a: NDBuffer[2, config.shape_a, data_type.value_type],
-        b: NDBuffer[2, config.shape_b, data_type.value_type],
-        bias: NDBuffer[1, config.shape_bias, data_type.accum_type],
+        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
+        a: NDBuffer[data_type.value_type, 2, config.shape_a],
+        b: NDBuffer[data_type.value_type, 2, config.shape_b],
+        bias: NDBuffer[data_type.accum_type, 1, config.shape_bias],
         global_tile_offset: GemmShape,
         global_tile_shape: GemmShape,
     ):

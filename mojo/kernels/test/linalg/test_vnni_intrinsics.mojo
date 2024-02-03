@@ -21,12 +21,12 @@ from VNNI import (
 
 
 fn main():
-    let a = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()
-    let asat = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()
-    let b = Buffer[64 * 16, DType.int8].aligned_stack_allocation[64]()
+    let a = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
+    let asat = Buffer[DType.uint8, 16 * 64].aligned_stack_allocation[64]()
+    let b = Buffer[DType.int8, 64 * 16].aligned_stack_allocation[64]()
 
-    let c = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
-    let csat = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let c = Buffer[DType.int32, 16 * 16].aligned_stack_allocation[64]()
+    let csat = Buffer[DType.int32, 16 * 16].aligned_stack_allocation[64]()
 
     for i in range(16 * 64):
         a[i] = i & 255

@@ -16,8 +16,8 @@ def matrix_band_part[
     rank: Int,
     type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
@@ -25,9 +25,9 @@ def matrix_band_part[
     alias int_type = DType.index
     alias cond_type = DType.bool
 
-    let num_lower_buf = NDBuffer[1, DimList(1), int_type].stack_allocation()
-    let num_upper_buf = NDBuffer[1, DimList(1), int_type].stack_allocation()
-    let exclude_buf = NDBuffer[1, DimList(1), cond_type].stack_allocation()
+    let num_lower_buf = NDBuffer[int_type, 1, DimList(1)].stack_allocation()
+    let num_upper_buf = NDBuffer[int_type, 1, DimList(1)].stack_allocation()
+    let exclude_buf = NDBuffer[cond_type, 1, DimList(1)].stack_allocation()
 
     num_lower_buf[0] = num_lower
     num_upper_buf[0] = num_upper
@@ -62,8 +62,8 @@ def test_matrix_band_part():
     alias shape = DimList(3, 3)
     alias type = DType.float32
 
-    let input = NDBuffer[rank, shape, type].stack_allocation()
-    let output = NDBuffer[rank, shape, type].stack_allocation()
+    let input = NDBuffer[type, rank, shape].stack_allocation()
+    let output = NDBuffer[type, rank, shape].stack_allocation()
 
     input[(0, 0)] = 1
     input[(0, 1)] = 2

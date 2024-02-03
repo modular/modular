@@ -142,9 +142,9 @@ struct GemmShape:
         b_type: DType,
         c_type: DType,
     ](
-        c: NDBuffer[2, shape_c, c_type],
-        a: NDBuffer[2, shape_a, a_type],
-        b: NDBuffer[2, shape_b, b_type],
+        c: NDBuffer[c_type, 2, shape_c],
+        a: NDBuffer[a_type, 2, shape_a],
+        b: NDBuffer[b_type, 2, shape_b],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -167,9 +167,9 @@ struct GemmShape:
         layout: MatmulOperandLayout,
         data_type: MatmulDataType,
     ](
-        c: NDBuffer[2, config.shape_c, data_type.accum_type],
-        a: NDBuffer[2, config.shape_a, data_type.value_type],
-        b: NDBuffer[2, config.shape_b, data_type.value_type],
+        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
+        a: NDBuffer[data_type.value_type, 2, config.shape_a],
+        b: NDBuffer[data_type.value_type, 2, config.shape_b],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -1032,7 +1032,7 @@ fn _get_tile_n_k[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](b: NDBuffer[2, b_shape, b_type]) -> StaticIntTuple[2]:
+](b: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()

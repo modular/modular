@@ -46,18 +46,18 @@ fn test_gemv():
     alias k = 11008
 
     let lhs_storage = DTypePointer[type].aligned_alloc(alignment, m * k)
-    let lhs = NDBuffer[2, DimList.create_unknown[2](), type](
+    let lhs = NDBuffer[type, 2, DimList.create_unknown[2]()](
         lhs_storage, Index(m, k)
     )
 
     let rhs_storage = DTypePointer[type].aligned_alloc(alignment, k)
-    let rhs = Buffer[Dim(k), type](rhs_storage)
+    let rhs = Buffer[type, Dim(k)](rhs_storage)
 
     let out_storage = DTypePointer[type].aligned_alloc(alignment, m)
-    let out = Buffer[Dim(m), type](out_storage)
+    let out = Buffer[type, Dim(m)](out_storage)
 
     let ref_out_storage = DTypePointer[type].aligned_alloc(alignment, m)
-    let ref_out = Buffer[Dim(m), type](ref_out_storage)
+    let ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -130,10 +130,10 @@ fn test_gemv():
         let par_perf = bench_run[bench_fn_parallel]()
         benchmark.keep(out[10])
 
-        let rhs_mat = NDBuffer[2, DimList.create_unknown[2](), type](
+        let rhs_mat = NDBuffer[type, 2, DimList.create_unknown[2]()](
             rhs_storage, Index(k, 1)
         )
-        let out_mat = NDBuffer[2, DimList.create_unknown[2](), type](
+        let out_mat = NDBuffer[type, 2, DimList.create_unknown[2]()](
             out_storage, Index(m, 1)
         )
 

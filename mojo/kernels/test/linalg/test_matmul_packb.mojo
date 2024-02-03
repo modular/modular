@@ -27,9 +27,9 @@ alias kc = 128
 @export(ABI="C")
 fn pack_b(
     packed_b: NDBuffer[
-        3, DimList(width // tile_inner_size, K, tile_inner_size), type
+        type, 3, DimList(width // tile_inner_size, K, tile_inner_size)
     ],
-    b: NDBuffer[2, DimList(K, N), type],
+    b: NDBuffer[type, 2, DimList(K, N)],
 ):
     PackMatrixCols[
         DimList(K, N),
@@ -50,10 +50,10 @@ fn pack_b(
 
 fn test_pack_b():
     let packed_b = NDBuffer[
-        3, DimList(width // tile_inner_size, K, tile_inner_size), type
+        type, 3, DimList(width // tile_inner_size, K, tile_inner_size)
     ].aligned_stack_allocation[64]()
     packed_b.fill(1)
-    let b = NDBuffer[2, DimList(K, N), type].aligned_stack_allocation[64]()
+    let b = NDBuffer[type, 2, DimList(K, N)].aligned_stack_allocation[64]()
     b.fill(1)
     pack_b(packed_b, b)
 

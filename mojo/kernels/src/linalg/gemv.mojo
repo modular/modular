@@ -27,9 +27,9 @@ fn gemv[
     b_type: DType,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: Buffer[c_size, c_type],
-    a_buf: NDBuffer[2, a_shape, a_type],
-    b_buf: Buffer[b_size, b_type],
+    c_buf: Buffer[c_type, c_size],
+    a_buf: NDBuffer[a_type, 2, a_shape],
+    b_buf: Buffer[b_type, b_size],
 ):
     alias simd_width = simdwidthof[c_type]()
 
@@ -90,9 +90,9 @@ fn naive_gemv[
     b_size: Dim,
     type: DType,
 ](
-    c_buf: Buffer[c_size, type],
-    a_buf: NDBuffer[2, a_shape, type],
-    b_buf: Buffer[b_size, type],
+    c_buf: Buffer[type, c_size],
+    a_buf: NDBuffer[type, 2, a_shape],
+    b_buf: Buffer[type, b_size],
 ):
     let M = a_buf.dim[0]()
     let K = a_buf.dim[1]()

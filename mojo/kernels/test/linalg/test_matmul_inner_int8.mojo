@@ -46,16 +46,16 @@ alias KH = align_up(K, factor)
 
 @export(ABI="C")
 fn matmul_inner_loop(
-    c: NDBuffer[2, DimList(M, N), c_type],
-    a: NDBuffer[2, DimList(M, K), a_type],
+    c: NDBuffer[c_type, 2, DimList(M, N)],
+    a: NDBuffer[a_type, 2, DimList(M, K)],
     b_packed: NDBuffer[
+        b_type,
         3,
         DimList(
             NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
-        b_type,
     ],
 ):
     MatmulInnerLoopBPacked[
@@ -91,21 +91,21 @@ fn matmul_inner_loop(
 fn test_micro_kernel():
     print("== test_micro_kernel")
 
-    let a = NDBuffer[2, DimList(M, K), a_type].aligned_stack_allocation[128]()
+    let a = NDBuffer[a_type, 2, DimList(M, K)].aligned_stack_allocation[128]()
     a.fill(1)
 
     let b_packed = NDBuffer[
+        b_type,
         3,
         DimList(
             NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
-        b_type,
     ].aligned_stack_allocation[128]()
     b_packed.fill(1)
 
-    let c = NDBuffer[2, DimList(M, N), c_type].aligned_stack_allocation[128]()
+    let c = NDBuffer[c_type, 2, DimList(M, N)].aligned_stack_allocation[128]()
     c.fill(0)
 
     matmul_inner_loop(c, a, b_packed)

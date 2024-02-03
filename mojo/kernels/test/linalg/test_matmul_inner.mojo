@@ -35,16 +35,16 @@ fn matmul_inner_loop[
     a_row_size: Int,
     pack_inner_size: Int,
 ](
-    c: NDBuffer[2, DimList(M, N), c_type],
-    a: NDBuffer[2, DimList(M, K), a_type],
+    c: NDBuffer[c_type, 2, DimList(M, N)],
+    a: NDBuffer[a_type, 2, DimList(M, K)],
     b_packed: NDBuffer[
+        b_type,
         3,
         DimList(
             N // tile_inner_size,
             K,
             tile_inner_size,
         ),
-        b_type,
     ],
 ):
     MatmulInnerLoopBPacked[
@@ -92,21 +92,21 @@ fn test_micro_kernel[
     alias pack_inner_size = kernel_shape.pack_inner_size
     alias tile_inner_size: Int = pack_inner_size * simd_size
 
-    let a = NDBuffer[2, DimList(M, K), a_type].aligned_stack_allocation[128]()
+    let a = NDBuffer[a_type, 2, DimList(M, K)].aligned_stack_allocation[128]()
     a.fill(1)
 
     let b_packed = NDBuffer[
+        b_type,
         3,
         DimList(
             N // tile_inner_size,
             K,
             tile_inner_size,
         ),
-        b_type,
     ].aligned_stack_allocation[128]()
     b_packed.fill(1)
 
-    let c = NDBuffer[2, DimList(M, N), c_type].aligned_stack_allocation[128]()
+    let c = NDBuffer[c_type, 2, DimList(M, N)].aligned_stack_allocation[128]()
     c.fill(0)
 
     matmul_inner_loop[

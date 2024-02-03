@@ -25,11 +25,11 @@ struct Matrix[
     unified indexing interface.
     """
 
-    var data: NDBuffer[2, shape, type, address_space=address_space]
+    var data: NDBuffer[type, 2, shape, address_space=address_space]
 
     fn __init__(inout self):
         """Default construct the matrix."""
-        self.data = NDBuffer[2, shape, type, address_space=address_space]()
+        self.data = NDBuffer[type, 2, shape, address_space=address_space]()
 
     fn __init__(inout self, dptr: DTypePointer[type, address_space]):
         """Constructor of a matrix from a DTypePointer.
@@ -50,7 +50,7 @@ struct Matrix[
             dptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
         """
-        self.data = NDBuffer[2, shape, type, address_space=address_space](
+        self.data = NDBuffer[type, 2, shape, address_space=address_space](
             dptr, dynamic_shape
         )
 
@@ -60,7 +60,7 @@ struct Matrix[
         Args:
             ptr: The buffer containing the matrix data.
         """
-        self.data = NDBuffer[2, shape, type, address_space=address_space](ptr)
+        self.data = NDBuffer[type, 2, shape, address_space=address_space](ptr)
 
     fn __init__(
         inout self,
@@ -73,7 +73,7 @@ struct Matrix[
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
         """
-        self.data = NDBuffer[2, shape, type, address_space=address_space](
+        self.data = NDBuffer[type, 2, shape, address_space=address_space](
             ptr, dynamic_shape
         )
 
@@ -90,7 +90,7 @@ struct Matrix[
         """
         var res = Self()
         res.data = NDBuffer[
-            2, shape, type, address_space=address_space
+            type, 2, shape, address_space=address_space
         ].aligned_stack_allocation[alignment]()
         return res
 
