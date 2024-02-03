@@ -1033,11 +1033,11 @@ PValue OverloadSet::getIfPValue() const {
                               baseName, paramBindings, expr);
 }
 
-/// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
+/// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // If we have an overload set with multiple possibilities, we'll fail to emit
-  // this as a CRValue.  Try to resolve it based on the destination's type.
+  // this as a RValue.  Try to resolve it based on the destination's type.
   ASTType expectedType;
   if (fnDecls.size() > 1) {
     expectedType = dest.resolveImpliedType(expr->getLoc(),
@@ -1183,7 +1183,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   }
 
   // If we have a function pointer, resolve it to an RValue.
-  CRValue calleeRV = emitCRValue({callee, callExpr}, EC_CallCalleeValue);
+  RValue calleeRV = emitRValue({callee, callExpr}, EC_CallCalleeValue);
   if (!calleeRV) {
     dest.resetForError();
     return {};

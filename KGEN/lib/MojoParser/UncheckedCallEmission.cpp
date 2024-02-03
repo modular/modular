@@ -36,7 +36,7 @@ using namespace M::KGEN::LIT;
 
 class CallEmitter {
 public:
-  CallEmitter(CRValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
+  CallEmitter(RValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
               ValueDest &dest)
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())),
@@ -102,7 +102,7 @@ public:
 
 private:
   /// The (type-checked and resolved) callee we are emitting the call to.
-  CRValue callee;
+  RValue callee;
   /// The call's expression node.
   const ExprNode *callExpr;
   /// The mlir location of the call expression above, stored for convenience.
@@ -841,7 +841,7 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   }
 }
 
-CValue ExprEmitter::emitCallUnchecked(CRValue callee,
+CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       const CallOperands &callOperands,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {

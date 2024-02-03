@@ -53,7 +53,7 @@ public:
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
-  CRValue getIfRValue() const;
+  RValue getIfRValue() const;
   BValue getIfBValue() const;
   PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
   MLValue getIfMLValue() const { return dyn_cast_or_null<MLValue>(irValue); }

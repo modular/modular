@@ -50,7 +50,7 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "MB: ";
     os << val;
-  } else if (auto val = dyn_cast<ORValue>(storage)) {
+  } else if (auto val = dyn_cast<OverloadSetUValue>(storage)) {
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
@@ -75,16 +75,16 @@ static raw_ostream &printStorage(raw_ostream &os,
 raw_ostream &LIT::operator<<(raw_ostream &os, PValue value) {
   return printStorage(os, value);
 }
-raw_ostream &LIT::operator<<(raw_ostream &os, ORValue value) {
+raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
   return printStorage(os, value);
 }
-raw_ostream &LIT::operator<<(raw_ostream &os, CRValue value) {
-  return printStorage(os, value.getStorage());
-}
-raw_ostream &LIT::operator<<(raw_ostream &os, URValue value) {
+raw_ostream &LIT::operator<<(raw_ostream &os, UValue value) {
   return printStorage(os, value.getStorage());
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
+  return printStorage(os, value.getStorage());
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, CValue value) {
   return printStorage(os, value.getStorage());
 }
 raw_ostream &operator<<(raw_ostream &os, LValue value) {
@@ -102,10 +102,7 @@ void PValue::dump() const { printStorage(llvm::errs(), *this, true) << '\n'; }
 void CValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
-void CRValue::dump() const {
-  printStorage(llvm::errs(), getStorage(), true) << '\n';
-}
-void URValue::dump() const {
+void UValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void RValue::dump() const {
@@ -138,11 +135,11 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
-  assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
+  assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
   llvm_unreachable("unknown IRValue");
 }
 
-ASTType CRValue::getType() const { return getTypeFrom(storage); }
+ASTType RValue::getType() const { return getTypeFrom(storage); }
 ASTType CValue::getType() const { return getTypeFrom(storage); }
 ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
@@ -174,7 +171,7 @@ ASTType PValue::getIfTypeValue() const {
 }
 
 /// This method looks through references to return the element type.
-ASTType CRValue::getRValueType() const {
+ASTType RValue::getRValueType() const {
   auto type = getType();
   if (isa<MRValue>(storage))
     return type.getReferenceElementType();
@@ -228,22 +225,24 @@ void MLValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void MBValue::check() const { assert(::isa<RefType>(Value::getType())); }
 
 //===----------------------------------------------------------------------===//
-// ORValue
+// OverloadSetUValue
 //===----------------------------------------------------------------------===//
 
-ORValue::ORValue() = default;
-ORValue::ORValue(const ORValue &existing) : storage(existing.storage.copy()) {}
-ORValue::ORValue(RCRef<OverloadSetWrapper> storage)
+OverloadSetUValue::OverloadSetUValue() = default;
+OverloadSetUValue::OverloadSetUValue(const OverloadSetUValue &existing)
+    : storage(existing.storage.copy()) {}
+OverloadSetUValue::OverloadSetUValue(RCRef<OverloadSetWrapper> storage)
     : storage(std::move(storage)) {}
-ORValue::~ORValue() = default;
+OverloadSetUValue::~OverloadSetUValue() = default;
 
-ORValue &ORValue::operator=(const ORValue &existing) {
+OverloadSetUValue &
+OverloadSetUValue::operator=(const OverloadSetUValue &existing) {
   storage = existing.storage.copy();
   return *this;
 }
 
-ORValue ORValue::create(OverloadSet &&set) {
-  return ORValue(takeRCRef(new OverloadSetWrapper{std::move(set)}));
+OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
+  return OverloadSetUValue(takeRCRef(new OverloadSetWrapper{std::move(set)}));
 }
 
 //===----------------------------------------------------------------------===//

@@ -344,7 +344,7 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // TODO: Consider implicit conversions?
     if (CValue cValue = value.getIfCValue())
       actualType = cValue.getRValueType();
-    else if (ORValue orValue = value.getIfORValue())
+    else if (OverloadSetUValue orValue = value.getIfOverloadSetUValue())
       if (PValue pValue = orValue->getIfPValue())
         actualType = pValue.getType();
 
@@ -692,7 +692,7 @@ static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
   if (auto cValue = value.getIfCValue())
     return cValue.getRValueType();
   // Otherwise, try to narrow an overload set to a PValue.
-  if (auto pValue = value.getIfORValue()->getIfPValue())
+  if (auto pValue = value.getIfOverloadSetUValue()->getIfPValue())
     return pValue.getType();
   return ASTType();
 }
@@ -852,8 +852,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If the argument is an overload set, see if it can be resolve to the
     // right type.
     CValue argVal;
-    if (auto orValue = operand.ir.getIfORValue()) {
-      // Try to refine the ORValue into a PValue.
+    if (auto orValue = operand.ir.getIfOverloadSetUValue()) {
+      // Try to refine the OverloadSetUValue into a PValue.
       argVal = orValue->getDirectSymbol(expectedType);
       if (!argVal)
         return {kWrongType, expectedType};
@@ -866,7 +866,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return {kWrongType, expectedType};
     } else {
       argVal = operand.ir.getIfCValue();
-      assert(argVal && "we handled ORValue above");
+      assert(argVal && "we handled OverloadSetUValue above");
     }
 
     auto argType = argVal.getRValueType();

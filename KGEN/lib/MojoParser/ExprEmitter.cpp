@@ -388,57 +388,40 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
-CValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+CValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  if (auto overloads = value.ir.getIfORValue()) {
+  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
     value.ir = overloads->emitAsCValue(*this, dest);
     if (!value.ir)
       return {};
   }
 
   CValue cValue = value.ir.getIfCValue();
-  assert(cValue && "ORValue handled above");
+  assert(cValue && "OverloadSetUValue handled above");
 
-  // If this is already an CRValue/PValue then we are done.
-  if (auto rvRep = cValue.getIfCRValue())
+  // If this is already an RValue/PValue then we are done.
+  if (auto rvRep = cValue.getIfRValue())
     return emitCResult(rvRep, value.expr, dest);
 
   // Otherwise, this is an LValue or BValue, emit a copy.
   return emitCopyOfValue({cValue, value.expr}, dest);
 }
 
-CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context) {
-  ValueDest dest(context);
-  auto cr = emitCRValue(value, dest);
-  if (!cr)
-    return {};
-  assert(cr.getIfCRValue() && "Should return a CRValue");
-  return cr.getIfCRValue();
-}
-
 RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
-  // If we have no contextual type and the operand is a ORValue, then we cannot
-  // resolve it and have to pass up the ambiguous value.  This is needed for
-  // things like `(((overloadset)))` for example.
-  if (!resultType)
-    if (auto orVal = value.ir.getIfORValue())
-      return orVal;
-
   ValueDest dest(resultType, context);
-  CValue result = emitCRValue(value, dest);
+  CValue result = emitRValue(value, dest);
   while (true) {
     if (!result) {
       dest.resetForError();
       return {};
     }
-    // Typically emitCRValue will return an RValue.
-    if (auto rv = result.getIfCRValue())
+    // Typically emitRValue will return an RValue, but it might return a BValue.
+    if (auto rv = result.getIfRValue())
       return rv;
 
     // It may return a BValue though (e.g. when accessing subfields with
@@ -471,7 +454,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  ORValue overloads = value.ir.getIfORValue();
+  OverloadSetUValue overloads = value.ir.getIfOverloadSetUValue();
   assert(overloads && "unknown overloaded value");
   return overloads->emitAsCValue(*this, dest);
 }
@@ -493,7 +476,7 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  if (auto overloads = value.ir.getIfORValue()) {
+  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
     value.ir = overloads->emitAsCValue(*this, dest);
     if (!value.ir)
       return {};
@@ -654,9 +637,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
                                  ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
 
-  // Emit using resultType if present, and eliminate LValue/ORValue's.
-  anyValue.ir = emitRValue(anyValue, context, resultType);
-  CValue value = emitCValue(anyValue, context);
+  // Emit using resultType if present, and eliminate LValue/OverloadSetUValue's.
+  RValue value = emitRValue(anyValue, context, resultType);
   if (!value)
     return {};
 
@@ -688,18 +670,18 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
 
 MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
-  auto crVal = emitCRValue(value, context);
-  if (!crVal)
+  auto rVal = emitRValue(value, context);
+  if (!rVal)
     return {};
 
-  if (auto mr = value.ir.getIfMRValue())
+  if (auto mr = rVal.getIfMRValue())
     return mr;
 
-  if (auto pv = value.ir.getIfPValue())
+  if (auto pv = rVal.getIfPValue())
     return emitPValueToMRValue({pv, value.expr}, context);
 
   // Promote SRValue to MRValue.
-  if (SRValue srValue = value.ir.getIfSRValue()) {
+  if (SRValue srValue = rVal.getIfSRValue()) {
     Location argLoc = value.expr->getLocation(*this);
     VarLetDeclOp varOp = emitVarLetDecl("__mem_tmp__", srValue.getType(),
                                         argLoc, VarLetDeclKind::Synthesized);
@@ -707,7 +689,7 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
     return MRValue(varOp);
   }
 
-  llvm_unreachable("unknown CRValue");
+  llvm_unreachable("unknown RValue");
 }
 
 /// This helper emits the specified value as an MBValue which has
@@ -748,8 +730,8 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
       return {};
   }
 
-  // If this is an ORValue, it must resolve to a single entry.
-  if (auto overloads = value.ir.getIfORValue()) {
+  // If this is an OverloadSetUValue, it must resolve to a single entry.
+  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
     ValueDest dest(context);
     value.ir = overloads->emitAsCValue(*this, dest);
     if (!value.ir)
@@ -1099,7 +1081,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
                                   ExprEmitter &emitter) {
   Type valueType;
-  // Only CValues can be specialized. ORValues don't have a type.
+  // Only CValues can be specialized. OverloadSetUValues don't have a type.
   if (auto cValue = value.getIfCValue())
     valueType = cValue.getType();
   else
@@ -1136,11 +1118,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  if (auto overloads = value.getIfORValue())
+  if (auto overloads = value.getIfOverloadSetUValue())
     return overloads->emitAsCValue(*this, dest);
 
   auto cValue = value.getIfCValue();
-  assert(cValue && "Must be a CValue if not an ORValue");
+  assert(cValue && "Must be a CValue if not an OverloadSetUValue");
   auto rvalueType = cValue.getRValueType();
 
   // If there is a known type for the destination but the value disagrees, emit
@@ -1243,7 +1225,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     return MBValue(memValue);
   }
 
-  // We know we have an CRValue/BValue and the destination is some kind of
+  // We know we have an RValue/BValue and the destination is some kind of
   // LValue.  Emit the dest to figure out where to store it.
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
                                           /*allowIncompatibleTypes=*/true,
@@ -1286,12 +1268,8 @@ AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
 
 RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
                                    ASTType resultType) {
-  return emitRValue({emitExpr(expr, context, resultType), expr}, context);
-}
-
-CRValue ExprEmitter::emitExprCRValue(const ExprNode *expr, ExprContext context,
-                                     ASTType resultType) {
-  return emitCRValue({emitExpr(expr, context, resultType), expr}, context);
+  return emitRValue({emitExpr(expr, context, resultType), expr}, context,
+                    resultType);
 }
 
 CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
@@ -1485,7 +1463,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return result.getIfBValue();
   }
 
-  // Otherwise this is a movable CRValue that we own.
+  // Otherwise this is a movable RValue that we own.
 
   // If it is a register passable, assign with a store.
   if (valueType.isRegisterPassable(exprLoc, shared)) {
@@ -1516,7 +1494,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   MLValue destRef = destLV.getIfMLValue();
   assert(destRef && "No other known LValue");
 
-  // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
+  // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
     // `__moveinit__(inout self, owned existing: Self)`.
@@ -1598,7 +1576,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   return type;
 }
 
-CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
+RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (!value.ir)
     return {};
 
@@ -1606,7 +1584,7 @@ CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
 
   // If this is already an 'i1', then we're done.
   if (valueRValueType.mlirType.isInteger(1))
-    return emitCRValue(value, context);
+    return emitRValue(value, context);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -1630,10 +1608,10 @@ CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
       emitNamedMethodCall("__mlir_i1__", {{{value.ir, value.expr}}}, boolDest,
                           CallSyntax::kImplicitConvert, value.expr);
 
-  return emitCRValue({litBoolCall, value.expr}, context);
+  return emitRValue({litBoolCall, value.expr}, context);
 }
 
-CRValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
+RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   return emitI1({emitExprCValue(condExpr, context), condExpr}, context);
 }
 
@@ -1801,8 +1779,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, ParamBindings(*this), expr,
-                                  CallSyntax::kDirectCall);
+    auto result = OverloadSetUValue::create(
+        spelling, decls, ParamBindings(*this), expr, CallSyntax::kDirectCall);
     return emitResult(result, expr, dest);
   }
 
@@ -1890,7 +1868,7 @@ void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
                                ExprEmitter &emitter) const {
   // Convert to an RValue to fully evaluate it, but otherwise just discard the
   // value!
-  (void)emitter.emitRValue(value, EC_Assignment);
+  (void)emitter.emitRValue(value, EC_Assignment, elementType);
 }
 
 CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
