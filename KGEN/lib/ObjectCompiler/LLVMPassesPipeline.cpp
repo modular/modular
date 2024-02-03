@@ -478,7 +478,7 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   MPM.addPass(GlobalDCEPass());
   MPM.addPass(ConstantMergePass());
 
-  MPM.addPass(CGProfilePass());
+  MPM.addPass(CGProfilePass(false));
 
   // TODO: Relative look table converter pass caused an issue when full lto is
   // enabled. See https://reviews.llvm.org/D94355 for more details.
