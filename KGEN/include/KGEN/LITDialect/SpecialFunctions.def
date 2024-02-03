@@ -67,6 +67,8 @@ SF(kCmpGE, "__ge__", 2, 2, kCmpGE, kInstMethod)
 SF(kCmpIs,    "__is__",    2, 2, kCmpIs, kInstMethod)
 SF(kCmpIsNot, "__isnot__", 2, 2, kCmpIsNot, kInstMethod)
 
+SF(kCmpIn, "__contains__", 2, 2, kCmpIn, kInstMethod)
+
 // Normal arithmetic operators.
 SF(kAdd     , "__add__"     , 2, 2, kAdd,      kInstMethod)
 SF(kSub     , "__sub__"     , 2, 2, kSub,      kInstMethod)

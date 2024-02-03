@@ -449,12 +449,11 @@ def testLambda2():
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
   _ = lambda (x: Int, y: Float) raises: x+y
 
-def testInExpr(x, y):
-  # expected-error @+1 {{'in' operation is not yet supported}}
+def testInExpr(x: Int, y: Int):
+  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
   _ = x in y
-  # expected-error @+1 {{'not in' operation is not yet supported}}
+  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
   _ = x not in y
-
 
 
 struct CopyAndInitMemType:

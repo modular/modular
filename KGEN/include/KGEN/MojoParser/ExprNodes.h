@@ -484,10 +484,6 @@ struct BinOpNode final : public ExprNode {
 
 private:
   AnyValue emitAndOr(ValueDest &dest, ExprEmitter &emitter) const;
-  AnyValue emitCmpContain(ValueDest &dest, ExprEmitter &emitter) const;
-  AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs, ASTExprAnd<AnyValue> rhs,
-                          ExprNode::Kind kind, ValueDest &dest,
-                          const ExprNode *callExpr, ExprEmitter &emitter);
   AnyValue emitAssign(ValueDest &dest, ExprEmitter &emitter) const;
   AnyValue emitInplace(ValueDest &dest, ExprEmitter &emitter) const;
 };
@@ -509,6 +505,11 @@ struct UnaryOpNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
   AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
                         ExprEmitter &emitter) const;
+
+  /// Emit a unary arithmetic operation.
+  static AnyValue emitArith(Kind kind, const ExprNode *expr,
+                            ASTExprAnd<AnyValue> value, ValueDest &dest,
+                            ExprEmitter &emitter);
 };
 
 /// `ref[lt, addrspace] Type` and related reference types.
