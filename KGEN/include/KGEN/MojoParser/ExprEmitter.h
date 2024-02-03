@@ -300,11 +300,7 @@ public:
   /// This transfers ownership to the destination, and it will return a
   /// reference if the destination consumes the RValue or the RValue itself if
   /// not. This method will also emit a copy if required to obtain and RValue.
-  CValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
-  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ExprContext context);
-
-  /// This helper emits the specified value as an RValue.  This can propagate an
-  /// ORValue.
+  CValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
   CValue emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -352,7 +348,7 @@ public:
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
-  CValue emitCallUnchecked(CRValue callee, const CallOperands &operands,
+  CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
                            ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and
@@ -432,11 +428,7 @@ public:
   AnyValue emitExpr(const ExprNode *expr, ExprContext context,
                     ASTType resultType = {});
 
-  /// This emits the specified value to a CRValue with the specified context.
-  CRValue emitExprCRValue(const ExprNode *expr, ExprContext context,
-                          ASTType resultType = {});
-
-  /// This emits the specified value to an RValue with the specified context.
+  /// This emits the specified value to a RValue with the specified context.
   RValue emitExprRValue(const ExprNode *expr, ExprContext context,
                         ASTType resultType = {});
 
@@ -496,12 +488,12 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns
   /// null on error.
-  CRValue emitI1(ASTExprAnd<CValue> value, ExprContext context);
+  RValue emitI1(ASTExprAnd<CValue> value, ExprContext context);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  CRValue emitExprI1(const ExprNode *condExpr, ExprContext context);
+  RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
 
   /// Given a value, emit it into an index value by invoking its `__index__`
   /// method.

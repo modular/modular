@@ -13,27 +13,20 @@
 // is both a BValue and RValue):
 //
 // AnyValue       <- Expr emitted to MLIR...
-//   LValue         <- mutable reference to storage
-//     MLValue        <- value is in memory with a mutable reference
-//     DLValue        <- with dynamic get/set accessors
-//   BValue         <- with a borrowed value
-//     SBValue          <- value is register-passable and in an SSA register
-//     MBValue          <- value is in memory with a reference (may be mutable)
-//     PValue           <- value is a parameter expression.
-//   RValue         <- with an owned value
-//     URValue         <- value cannot be materialized
-//       ORValue        <- with an unresolved overload set
-//     CRValue        <- with a concrete resolved type
+//   UValue         <- unresolved value that cannot be materialized
+//     OverloadSetUValue  <- with an unresolved overload set
+//   CValue        <- Concrete value: LValue or RValue with a known type.
+//     LValue         <- mutable reference to storage
+//       MLValue        <- value is in memory with a mutable reference
+//       DLValue        <- with dynamic get/set accessors
+//     BValue         <- with a borrowed value
+//       SBValue        <- value is register-passable and in an SSA register
+//       MBValue        <- value is in memory with a reference (may be mutable)
+//       PValue         <- value is a parameter expression.
+//     RValue         <- with an owned value
 //       SRValue        <- with a register-passable value in an SSA register
 //       MRValue        <- value is in memory with a mutable reference
 //       PValue         <- with a parameter value
-//
-// This is another parallel hierarchy, which excludes URValue:
-//
-//   CValue        <- Concrete value: LValue or RValue with a known type.
-//     LValue        <- mutable reference
-//     BValue        <- Borrowed value
-//     CRValue       <- Concrete RValue
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a register compatible type.
@@ -244,14 +237,14 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, PValue value);
 
-/// Instances of ORValue represent an unresolved overload set that must be
-/// disambiguated before being used.
-class ORValue {
+/// Instances of OverloadSetUValue represent an unresolved overload set that
+/// must be disambiguated before being used.
+class OverloadSetUValue {
 public:
-  ORValue();
-  ORValue(const ORValue &existing);
-  ORValue &operator=(const ORValue &existing);
-  ~ORValue();
+  OverloadSetUValue();
+  OverloadSetUValue(const OverloadSetUValue &existing);
+  OverloadSetUValue &operator=(const OverloadSetUValue &existing);
+  ~OverloadSetUValue();
 
   bool isNull() const { return !storage; }
   bool operator!() const { return isNull(); }
@@ -263,21 +256,22 @@ public:
   OverloadSet &operator*();
 
   template <typename... Args>
-  static ORValue create(Args &&...args);
-  static ORValue create(OverloadSet &&set);
+  static OverloadSetUValue create(Args &&...args);
+  static OverloadSetUValue create(OverloadSet &&set);
 
 private:
   struct OverloadSetWrapper;
-  ORValue(RCRef<OverloadSetWrapper> storage);
+  OverloadSetUValue(RCRef<OverloadSetWrapper> storage);
 
   RCRef<OverloadSetWrapper> storage;
 };
-raw_ostream &operator<<(raw_ostream &os, ORValue value);
+raw_ostream &operator<<(raw_ostream &os, OverloadSetUValue value);
 
 struct VariantValueStorageBase {
   /// These are all the forms of storage we can have.
-  using Storage = SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
-                               ORValue, SBValue, MBValue, DLValue, MLValue>;
+  using Storage =
+      SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
+                   OverloadSetUValue, SBValue, MBValue, DLValue, MLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -318,24 +312,24 @@ struct VariantValueStorage : public VariantValueStorageBase {
 };
 
 template <typename DerivedType>
-struct VariantCRValue {
-  VariantCRValue() = default;
-  // These are common constructors all CRValues have.
-  VariantCRValue(PValue value) {
+struct VariantRValue {
+  VariantRValue() = default;
+  // These are common constructors all RValues have.
+  VariantRValue(PValue value) {
     if (value)
       getStorageR() = value;
   }
-  VariantCRValue(TypedAttr value) : VariantCRValue(PValue(value)) {}
-  VariantCRValue(Attribute value) : VariantCRValue(TypedAttr(value)) {
+  VariantRValue(TypedAttr value) : VariantRValue(PValue(value)) {}
+  VariantRValue(Attribute value) : VariantRValue(TypedAttr(value)) {
     assert(isa<TypedAttr>(value) && "invalid value attribute");
   }
-  VariantCRValue(Type value) : VariantCRValue(PValue(value)) {}
-  VariantCRValue(ASTType value) : VariantCRValue(PValue(value)) {}
-  VariantCRValue(SRValue value) {
+  VariantRValue(Type value) : VariantRValue(PValue(value)) {}
+  VariantRValue(ASTType value) : VariantRValue(PValue(value)) {}
+  VariantRValue(SRValue value) {
     if (value)
       getStorageR() = value;
   }
-  VariantCRValue(MRValue value) {
+  VariantRValue(MRValue value) {
     if (value)
       getStorageR() = value;
   }
@@ -363,15 +357,15 @@ private:
   }
 };
 
-/// Concrete RValue: CRValue = PValue|SRValue|MRValue.
-class CRValue : public VariantValueStorage<CRValue>,
-                public VariantCRValue<CRValue> {
+/// RValue: RValue = PValue|SRValue|MRValue.
+class RValue : public VariantValueStorage<RValue>,
+               public VariantRValue<RValue> {
 public:
-  using VariantCRValue::VariantCRValue;
+  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
 
-  static CRValue getFrom(Storage storage) {
-    CRValue result;
+  static RValue getFrom(Storage storage) {
+    RValue result;
     // Initialize conditionally based on what is in Storage.
     if (isa<PValue, SRValue, MRValue>(storage))
       result.storage = std::move(storage);
@@ -385,20 +379,22 @@ public:
   ASTType getRValueType() const;
   void dump() const;
 };
-raw_ostream &operator<<(raw_ostream &os, CRValue value);
+raw_ostream &operator<<(raw_ostream &os, RValue value);
 
-/// This is the base class of any URValue parent, enabling implicit conversion
+/// This is the base class of any UValue parent, enabling implicit conversion
 /// from and checked conversion to child value types.
 template <typename DerivedType>
-struct VariantURValue {
-  VariantURValue() = default;
-  // These are common constructors all URValues have.
-  VariantURValue(ORValue value) {
+struct VariantUValue {
+  VariantUValue() = default;
+  // These are common constructors all UValues have.
+  VariantUValue(OverloadSetUValue value) {
     if (value)
       getStorageR() = std::move(value);
   }
 
-  ORValue getIfORValue() const { return dyn_cast<ORValue>(getStorageR()); }
+  OverloadSetUValue getIfOverloadSetUValue() const {
+    return dyn_cast<OverloadSetUValue>(getStorageR());
+  }
 
 private:
   // These are named getStorageR instead of getStorage to easy
@@ -412,59 +408,24 @@ private:
   }
 };
 
-/// URValue = ORValue
-class URValue : public VariantValueStorage<URValue>,
-                public VariantURValue<URValue> {
+/// UValue = OverloadSetUValue
+class UValue : public VariantValueStorage<UValue>,
+               public VariantUValue<UValue> {
 public:
-  using VariantURValue::VariantURValue;
+  using VariantUValue::VariantUValue;
   using VariantValueStorage::VariantValueStorage;
 
-  static URValue getFrom(Storage storage) {
-    URValue result;
+  static UValue getFrom(Storage storage) {
+    UValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<ORValue>(storage))
+    if (isa<OverloadSetUValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
 
   void dump() const;
 };
-raw_ostream &operator<<(raw_ostream &os, URValue value);
-
-/// RValue = CRValue|URValue.
-class RValue : public VariantValueStorage<RValue>,
-               public VariantCRValue<RValue>,
-               public VariantURValue<RValue> {
-public:
-  using VariantCRValue::VariantCRValue;
-  using VariantURValue::VariantURValue;
-  using VariantValueStorage::VariantValueStorage;
-
-  RValue() = default;
-
-  RValue(URValue value) {
-    if (value)
-      storage = std::move(value.getStorage());
-  }
-  RValue(CRValue value) {
-    if (value)
-      storage = std::move(value.getStorage());
-  }
-
-  static RValue getFrom(Storage storage) {
-    RValue result;
-    // Initialize conditionally based on what is in Storage.
-    if (isa<PValue, SRValue, MRValue, ORValue>(storage))
-      result.storage = std::move(storage);
-    return result;
-  }
-
-  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
-  URValue getIfURValue() const { return URValue::getFrom(storage); }
-
-  void dump() const;
-};
-raw_ostream &operator<<(raw_ostream &os, RValue value);
+raw_ostream &operator<<(raw_ostream &os, UValue value);
 
 template <typename DerivedType>
 struct VariantLValue {
@@ -571,19 +532,19 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, LValue value);
 
-/// Concrete Value: CValue = CRValue|LValue|BValue.
+/// Concrete Value: CValue = RValue|LValue|BValue.
 class CValue : public VariantValueStorage<CValue>,
-               public VariantCRValue<CValue>,
+               public VariantRValue<CValue>,
                public VariantLValue<CValue>,
                public VariantBValue<CValue> {
 public:
   using VariantBValue::VariantBValue;
-  using VariantCRValue::VariantCRValue;
   using VariantLValue::VariantLValue;
+  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
 
   CValue() = default;
-  CValue(CRValue value) { getStorage() = value.getStorage(); }
+  CValue(RValue value) { getStorage() = value.getStorage(); }
   CValue(BValue value) { getStorage() = value.getStorage(); }
   CValue(LValue value) { getStorage() = value.getStorage(); }
   CValue(PValue value) {
@@ -603,7 +564,6 @@ public:
   BValue getIfBValue() const { return BValue::getFrom(getStorage()); }
   RValue getIfRValue() const { return RValue::getFrom(getStorage()); }
   LValue getIfLValue() const { return LValue::getFrom(getStorage()); }
-  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorage()); }
 
   /// Return the type for the contained representation, or null if null.
@@ -614,25 +574,24 @@ public:
   ASTType getRValueType() const;
   void dump() const;
 };
-raw_ostream &operator<<(raw_ostream &os, CRValue value);
+raw_ostream &operator<<(raw_ostream &os, CValue value);
 
-/// AnyValue = LValue|BValue|RValue.
+/// AnyValue = UValue|CValue (LValue|BValue|RValue).
 class AnyValue : public VariantValueStorage<AnyValue>,
-                 public VariantCRValue<AnyValue>,
+                 public VariantRValue<AnyValue>,
                  public VariantLValue<AnyValue>,
                  public VariantBValue<AnyValue>,
-                 public VariantURValue<AnyValue> {
+                 public VariantUValue<AnyValue> {
 public:
   using VariantBValue::VariantBValue;
-  using VariantCRValue::VariantCRValue;
   using VariantLValue::VariantLValue;
-  using VariantURValue::VariantURValue;
+  using VariantRValue::VariantRValue;
+  using VariantUValue::VariantUValue;
   using VariantValueStorage::VariantValueStorage;
 
   AnyValue() = default;
 
-  AnyValue(URValue value) { storage = value.getStorage(); }
-  AnyValue(CRValue value) { storage = value.getStorage(); }
+  AnyValue(UValue value) { storage = value.getStorage(); }
   AnyValue(BValue value) { storage = value.getStorage(); }
   AnyValue(RValue value) { storage = value.getStorage(); }
   AnyValue(LValue value) { storage = value.getStorage(); }
@@ -643,8 +602,7 @@ public:
   }
 
   LValue getIfLValue() const { return LValue::getFrom(storage); }
-  URValue getIfURValue() const { return URValue::getFrom(storage); }
-  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
+  UValue getIfUValue() const { return UValue::getFrom(storage); }
   CValue getIfCValue() const { return CValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
   BValue getIfBValue() const { return BValue::getFrom(storage); }

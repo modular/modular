@@ -282,7 +282,7 @@ struct CallOperands {
 /// This class represents an unresolved overload set with partially bound
 /// callees, e.g. "foo" or "a.foo" where "foo" is an overloaded declaration or
 /// an incompletely bound function (e.g. one with result parameters).  This is
-/// resolved when emitted to a CRValue or when binding more things into it as
+/// resolved when emitted to an RValue or when binding more things into it as
 /// part of the expression tree.
 class OverloadSet {
 public:
@@ -394,8 +394,8 @@ private:
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
-/// allowing ORValue to maintain it while still being copyable.
-struct ORValue::OverloadSetWrapper
+/// allowing OverloadSetUValue to maintain it while still being copyable.
+struct OverloadSetUValue::OverloadSetWrapper
     : public NonAtomicallyReferenceCounted<OverloadSetWrapper> {
 
   OverloadSetWrapper(OverloadSet &&overloadSet)
@@ -404,20 +404,20 @@ struct ORValue::OverloadSetWrapper
 };
 
 //===----------------------------------------------------------------------===//
-// ORValue implementation details
+// OverloadSetUValue implementation details
 //===----------------------------------------------------------------------===//
 
 template <typename... Args>
-inline ORValue ORValue::create(Args &&...args) {
-  return ORValue(takeRCRef(
+inline OverloadSetUValue OverloadSetUValue::create(Args &&...args) {
+  return OverloadSetUValue(takeRCRef(
       new OverloadSetWrapper(OverloadSet(std::forward<Args>(args)...))));
 }
 
-inline const OverloadSet &ORValue::operator*() const {
+inline const OverloadSet &OverloadSetUValue::operator*() const {
   return storage.getPointer()->overloadSet;
 }
 
-inline OverloadSet &ORValue::operator*() {
+inline OverloadSet &OverloadSetUValue::operator*() {
   return storage.getPointer()->overloadSet;
 }
 
