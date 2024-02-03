@@ -826,6 +826,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
                                              SharedState &shared,
                                              ASTExprAnd<CValue> value,
                                              ASTType requiredType) {
+  assert(value.ir && "Should only query valid values");
   // If it already matches, then we're done.
   ASTType rvType = value.ir.getRValueType();
   if (rvType.isEqualCanon(requiredType) ||
