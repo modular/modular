@@ -409,6 +409,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
   case Token::kw___lifetime_of:
+  case Token::kw___type_of:
     return true;
   default:
     return false;
@@ -561,6 +562,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
   case Token::kw___lifetime_of:
+  case Token::kw___type_of:
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
@@ -1097,6 +1099,9 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   case Token::kw___lifetime_of:
     nodeKind = ExprNode::kLifetimeOf;
+    break;
+  case Token::kw___type_of:
+    nodeKind = ExprNode::kTypeOf;
     break;
   }
   SMLoc baseLoc = consumeToken().getLoc();

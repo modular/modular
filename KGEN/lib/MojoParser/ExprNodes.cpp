@@ -2936,6 +2936,9 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == kLifetimeOf)
     return emitLifetimeOf(dest, emitter);
 
+  if (kind == kTypeOf)
+    return emitTypeOf(dest, emitter);
+
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
@@ -3056,4 +3059,13 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
   Value mvalue = subExprValue.getMValueReference();
   auto lifetime = cast<RefType>(mvalue.getType()).getLifetime();
   return emitter.emitResult(PValue(lifetime), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
+                                       ExprEmitter &emitter) const {
+  CRValue subExprValue = emitter.emitExprCRValue(subExpr, dest.getContext());
+  if (!subExprValue)
+    return {};
+
+  return emitter.emitResult(PValue(subExprValue.getRValueType()), this, dest);
 }
