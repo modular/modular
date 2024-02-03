@@ -615,6 +615,7 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 
   AnyValue emitLifetimeOf(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitTypeOf(ValueDest &dest, ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

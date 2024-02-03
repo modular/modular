@@ -1585,3 +1585,22 @@ fn self_recursive_param[a: Int]():
 
 fn self_recursive_impl_lifetime(inout a: MemoryOnlyInt):
   self_recursive_impl_lifetime(a) # expected-warning {{self recursive call will cause an infinite loop}}
+
+
+##===----------------------------------------------------------------------===##
+# __type_of
+##===----------------------------------------------------------------------===##
+
+alias index = __mlir_type.index
+
+# CHECK-LABEL: lit.func @"foo(
+# CHECK: __mlir_type.index)"(%x: index borrow) -> index
+fn foo(x: index) -> __type_of(x):
+    return x
+
+
+# CHECK-LABEL: lit.func @"bar(
+# CHECK: __mlir_type.index,__mlir_type.index)"(%x: index borrow, %y: index borrow) -> index
+fn bar(x: index, y: __type_of(x)) -> index:
+    let z : __type_of(x) = y
+    return z
