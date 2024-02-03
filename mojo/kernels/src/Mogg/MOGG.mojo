@@ -417,7 +417,7 @@ fn to_buffer[
 ](
     data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
     shape: __mlir_type.`!kgen.pointer<index>`,
-) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -435,7 +435,7 @@ fn to_buffer[
 
     unroll[rank, body]()
 
-    return NDBuffer[rank, DimList.create_unknown[rank](), type](
+    return NDBuffer[type, rank, DimList.create_unknown[rank]()](
         DTypePointer[type](data), shape_tuple, stride_tuple
     )
 
@@ -462,7 +462,7 @@ fn to_shape[
 fn tensor_to_shape[
     type: DType,
     rank: Int,
-](tensor: NDBuffer[1, DimList.create_unknown[1](), type]) -> StaticIntTuple[
+](tensor: NDBuffer[type, 1, DimList.create_unknown[1]()]) -> StaticIntTuple[
     rank
 ]:
     var out = StaticIntTuple[rank]()
@@ -485,7 +485,7 @@ fn shape_to_tensor[
     shape_rank: Int, buf_rank: Int, type: DType
 ](
     shape: StaticIntTuple[shape_rank],
-    buf: NDBuffer[buf_rank, DimList.create_unknown[buf_rank](), type],
+    buf: NDBuffer[type, buf_rank, DimList.create_unknown[buf_rank]()],
 ):
     @unroll
     for i in range(shape_rank):
@@ -497,7 +497,7 @@ fn to_buffer_list[
     type: DType, rank: Int
 ](
     raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
-) -> InlinedFixedVector[NDBuffer[rank, DimList.create_unknown[rank](), type]]:
+) -> InlinedFixedVector[NDBuffer[type, rank, DimList.create_unknown[rank]()]]:
     # Cast input list pointer
     let abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
     let elems_ptr = Pointer(
@@ -508,7 +508,7 @@ fn to_buffer_list[
     # Create output list
     let num_elements = __get_address_as_lvalue(abi_list_ptr.address).num_elems
     var out_list = InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
@@ -530,7 +530,7 @@ fn destruct_buffer_list[
     type: DType, rank: Int
 ](
     owned list: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ]
 ):
     # Must call destructor explicitly until `InlinedFixedVector` has `__del__`
@@ -551,7 +551,7 @@ fn elementwise_wrapper[
     /,
     target: StringLiteral = "cpu",
 ](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    buffer: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -611,7 +611,7 @@ fn elementwise_wrapper[
 fn _compute_flat_index[
     type: DType, rank: Int, iters: Int, static_shape: DimList
 ](
-    buffer: NDBuffer[rank, static_shape, type],
+    buffer: NDBuffer[type, rank, static_shape],
     index: StaticIntTuple[rank],
 ) -> Int:
     var flat_index: Int = 0
@@ -628,7 +628,7 @@ fn _compute_flat_index[
 @always_inline
 fn _simd_load_internal[
     simd_width: Int, type: DType, rank: Int, static_shape: DimList
-](buffer: NDBuffer[rank, static_shape, type], index: Int) -> SIMD[
+](buffer: NDBuffer[type, rank, static_shape], index: Int) -> SIMD[
     type, simd_width
 ]:
     @parameter
@@ -645,7 +645,7 @@ fn _simd_load_internal[
 fn simd_load[
     type: DType, simd_width: Int, rank: Int, input_0_static_shape: DimList
 ](
-    buffer: NDBuffer[rank, input_0_static_shape, type],
+    buffer: NDBuffer[type, rank, input_0_static_shape],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     let flat_index = _compute_flat_index[
@@ -678,7 +678,7 @@ fn simd_load[
 fn simd_store[
     type: DType, simd_width: Int, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    buffer: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     index: StaticIntTuple[rank],
     val: SIMD[type, simd_width],
 ):
@@ -706,9 +706,9 @@ fn broadcast_shape[
     rhs_type: DType,
     out_type: DType,
 ](
-    lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
-    rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
-    out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
+    lhs_buf: NDBuffer[lhs_type, 1, DimList.create_unknown[1]()],
+    rhs_buf: NDBuffer[rhs_type, 1, DimList.create_unknown[1]()],
+    out_buf: NDBuffer[out_type, 1, DimList.create_unknown[1]()],
     ctx: MojoCallContextPtr,
 ):
     let lhs_size = lhs_buf.size()
@@ -724,9 +724,9 @@ fn broadcast_shape_impl[
     rhs_type: DType,
     out_type: DType,
 ](
-    lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
-    rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
-    out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
+    lhs_buf: NDBuffer[lhs_type, 1, DimList.create_unknown[1]()],
+    rhs_buf: NDBuffer[rhs_type, 1, DimList.create_unknown[1]()],
+    out_buf: NDBuffer[out_type, 1, DimList.create_unknown[1]()],
 ):
     # Ensure lhs is always the smaller shape
     let lhs_rank = lhs_buf.size()
@@ -771,10 +771,10 @@ fn broadcast_to_tensor[
     target: StringLiteral = "cpu",
 ](
     original: NDBuffer[
-        original_rank, DimList.create_unknown[original_rank](), type
+        type, original_rank, DimList.create_unknown[original_rank]()
     ],
     target_shape: StaticIntTuple[target_rank],
-) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
+) -> NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()]:
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
 
@@ -840,7 +840,7 @@ fn broadcast_to_tensor[
 
     # Create a view of the original data with the new shape and strides.
     var out = NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), type
+        type, output_rank, DimList.create_unknown[output_rank]()
     ](
         original.data,
         shape,
@@ -859,10 +859,10 @@ fn broadcast_to_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
     target_shape_buf: NDBuffer[
-        1, DimList.create_unknown[1](), target_shape_type
+        target_shape_type, 1, DimList.create_unknown[1]()
     ],
 ) raises -> StaticIntTuple[output_rank]:
     if output_rank != target_shape_buf.dim(0):
@@ -937,9 +937,9 @@ fn argmax_wrapped[
     input_2_static_shape: DimList,
     rank: Int,
 ](
-    input: NDBuffer[rank, input_0_static_shape, type],
-    axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
-    output: NDBuffer[rank, input_2_static_shape, out_type],
+    input: NDBuffer[type, rank, input_0_static_shape],
+    axis_buf: NDBuffer[axis_type, 1, input_1_static_shape],
+    output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ):
     try:
@@ -966,9 +966,9 @@ fn argmin_wrapped[
     input_2_static_shape: DimList,
     rank: Int,
 ](
-    input: NDBuffer[rank, input_0_static_shape, type],
-    axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
-    output: NDBuffer[rank, input_2_static_shape, out_type],
+    input: NDBuffer[type, rank, input_0_static_shape],
+    axis_buf: NDBuffer[axis_type, 1, input_1_static_shape],
+    output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ):
     try:
@@ -1009,10 +1009,10 @@ fn concat_from_list[
     axis_type: DType,
 ](
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     try:
@@ -1034,10 +1034,10 @@ fn concat[
     axis_type: DType,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
     ctx: MojoCallContextPtr,
-    *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    *variadic_ins: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     if _guard_against_gpu_target[target](ctx):
         return
@@ -1062,9 +1062,9 @@ fn concat_shape[
     single_thread_blocking_override: Bool,
     axis_type: DType,
 ](
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
     *input_bufs: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
 ) raises -> StaticIntTuple[input_rank]:
     # TODO we should refactor this with `concat_from_list_shape`, but this
@@ -1124,12 +1124,12 @@ fn avg_pool[
     int_type: DType,
     count_boundary: Bool,
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), type],
-    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    input: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    filter: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    strides: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    dilations: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    paddings: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
     ctx: MojoCallContextPtr,
 ):
     return _avg_pool[count_boundary=count_boundary](
@@ -1152,9 +1152,9 @@ fn cumsum[
     exclusive: Int,
     reverse: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     _cumsum[rank, type, exclusive == 1, reverse == 1](
@@ -1178,11 +1178,11 @@ fn split[
     axis_type: DType,
     split_sizes_type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    split_sizes: NDBuffer[1, DimList.create_unknown[1](), split_sizes_type],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    split_sizes: NDBuffer[split_sizes_type, 1, DimList.create_unknown[1]()],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
     ctx: MojoCallContextPtr,
-    *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    *variadic_outs: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     # NOTE: Synchronous, so stack allocated variadic list is safe
     try:
@@ -1281,7 +1281,7 @@ fn mean[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    axis_buffer: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1357,10 +1357,10 @@ fn pad_constant[
     constant_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
-    constant_buf: NDBuffer[1, DimList.create_unknown[1](), constant_type],
-    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    paddings_buf: NDBuffer[paddings_type, 2, DimList.create_unknown[2]()],
+    constant_buf: NDBuffer[constant_type, 1, DimList.create_unknown[1]()],
+    output_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     let paddings_ptr = paddings_buf.data
@@ -1378,9 +1378,9 @@ fn pad_reflect[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
-    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    paddings_buf: NDBuffer[paddings_type, 2, DimList.create_unknown[2]()],
+    output_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     let paddings_ptr = paddings_buf.data
@@ -1397,9 +1397,9 @@ fn pad_repeat[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
-    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    paddings_buf: NDBuffer[paddings_type, 2, DimList.create_unknown[2]()],
+    output_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     let paddings_ptr = paddings_buf.data
@@ -1429,7 +1429,7 @@ fn reduce_add[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    axis_buffer: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1488,7 +1488,7 @@ fn reduce_max[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    axis_buffer: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1547,7 +1547,7 @@ fn reduce_min[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    axis_buffer: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1607,7 +1607,7 @@ fn reduce_mul[
     target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    axis_buffer: NDBuffer[index_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[rank],
     ctx: MojoCallContextPtr,
 ):
@@ -1669,12 +1669,12 @@ fn slice[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    starts: NDBuffer[1, DimList.create_unknown[1](), start_type],
-    ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
-    steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
+    tensor: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    starts: NDBuffer[start_type, 1, DimList.create_unknown[1]()],
+    ends: NDBuffer[end_type, 1, DimList.create_unknown[1]()],
+    steps: NDBuffer[step_type, 1, DimList.create_unknown[1]()],
     ctx: MojoCallContextPtr,  # remove (#24946)
-) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
     if _guard_against_gpu_target[target](ctx):
         return tensor
 
@@ -1692,9 +1692,9 @@ fn slice[
 fn calculate_squeeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
-    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
-    remove_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
-    output_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    input_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    remove_indices: NDBuffer[indices_type, 1, DimList.create_unknown[1]()],
+    output_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
 ):
     # remove_indices may not be sorted so our strategy is to use -1 to
     # represent removed dimensions in a copied version of our input shape buffer
@@ -1754,8 +1754,8 @@ fn calculate_squeeze_shape[
 fn squeeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
-    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
-    remove_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+    input_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    remove_indices: NDBuffer[indices_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[1]:
     let out_dim = input_shape.dim(0) - remove_indices.dim(0)
 
@@ -1778,9 +1778,9 @@ fn squeeze_shape_shape[
 fn calculate_unsqueeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
-    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
-    padding_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
-    output_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    input_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    padding_indices: NDBuffer[indices_type, 1, DimList.create_unknown[1]()],
+    output_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
 ):
     # padding_indices_buf may not be sorted so our strategy is to use -1 to
     # represent uninitialized dimensions, add the padding dimensions, and copy
@@ -1832,8 +1832,8 @@ fn calculate_unsqueeze_shape[
 fn unsqueeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
-    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
-    padding_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+    input_shape: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    padding_indices: NDBuffer[indices_type, 1, DimList.create_unknown[1]()],
 ) -> StaticIntTuple[1]:
     let out_dim = input_shape.dim(0) + padding_indices.dim(0)
     return StaticIntTuple[1](out_dim)
@@ -1855,10 +1855,10 @@ fn transpose[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    perms: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
     ctx: MojoCallContextPtr,
-) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
@@ -1875,7 +1875,7 @@ fn transpose[
     unroll[rank, body]()
 
     # Create the transposed view.
-    return NDBuffer[rank, DimList.create_unknown[rank](), type](
+    return NDBuffer[type, rank, DimList.create_unknown[rank]()](
         input.data, new_shape, new_stride
     )
 
@@ -1887,8 +1887,8 @@ fn transpose_shape[
     int_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    perms: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[rank]:
     if perms.dim(0) != rank:
         raise Error("[transpose] permutation size must match input rank")
@@ -1924,13 +1924,13 @@ fn mogg_gather_sum[
     indices_rank: Int,
     type: DType,
 ](
-    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
+    input: NDBuffer[type, input_rank, DimList.create_unknown[input_rank]()],
     indices: NDBuffer[
+        DType.int32,
         indices_rank,
         DimList.create_unknown[indices_rank](),
-        DType.int32,
     ],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output: NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()],
     ctx: MojoCallContextPtr,
 ):
     gather_reduce[
@@ -1971,11 +1971,11 @@ fn gather[
 ](
     input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[
+        indices_type,
         indices_rank,
         DimList.create_unknown[indices_rank](),
-        indices_type,
     ],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buffer: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
     output_shape: StaticIntTuple[output_rank],
     ctx: MojoCallContextPtr,
 ):
@@ -2066,9 +2066,9 @@ fn matmul[
     /,
     target: StringLiteral = "cpu",
 ](
-    a: NDBuffer[2, input_0_static_shape, a_type],
-    b: NDBuffer[2, input_1_static_shape, b_type],
-    c: NDBuffer[2, input_2_static_shape, c_type],
+    a: NDBuffer[a_type, 2, input_0_static_shape],
+    b: NDBuffer[b_type, 2, input_1_static_shape],
+    c: NDBuffer[c_type, 2, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ):
     alias transpose_a = False
@@ -2158,9 +2158,9 @@ fn batched_matmul[
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
-    a: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
-    b: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
-    c: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
+    a: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
+    b: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
+    c: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     alias adj_a = False
@@ -2228,18 +2228,18 @@ fn scatter[
     axis_type: DType,
 ](
     input: NDBuffer[
-        rank,
-        DimList.create_unknown[rank](),
         input_type,
-    ],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
-        indices_type,
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[
+        indices_type,
+        rank,
+        DimList.create_unknown[rank](),
+    ],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -2271,18 +2271,18 @@ fn scatter_add[
     axis_type: DType,
 ](
     input: NDBuffer[
-        rank,
-        DimList.create_unknown[rank](),
         input_type,
-    ],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
-        indices_type,
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[
+        indices_type,
+        rank,
+        DimList.create_unknown[rank](),
+    ],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -2314,18 +2314,18 @@ fn scatter_max[
     axis_type: DType,
 ](
     input: NDBuffer[
-        rank,
-        DimList.create_unknown[rank](),
         input_type,
-    ],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
-        indices_type,
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[
+        indices_type,
+        rank,
+        DimList.create_unknown[rank](),
+    ],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -2357,18 +2357,18 @@ fn scatter_min[
     axis_type: DType,
 ](
     input: NDBuffer[
-        rank,
-        DimList.create_unknown[rank](),
         input_type,
-    ],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
-        indices_type,
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[
+        indices_type,
+        rank,
+        DimList.create_unknown[rank](),
+    ],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -2400,18 +2400,18 @@ fn scatter_mul[
     axis_type: DType,
 ](
     input: NDBuffer[
-        rank,
-        DimList.create_unknown[rank](),
         input_type,
-    ],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
-        indices_type,
     ],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[
+        indices_type,
+        rank,
+        DimList.create_unknown[rank](),
+    ],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -2451,18 +2451,18 @@ fn scatter_nd[
     target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
+        output_type,
         output_rank,
         DimList.create_unknown[output_rank](),
-        output_type,
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
+        output_type, output_rank, DimList.create_unknown[output_rank]()
     ],
     ctx: MojoCallContextPtr,
 ):
@@ -2496,18 +2496,18 @@ fn scatter_nd_add[
     target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
+        output_type,
         output_rank,
         DimList.create_unknown[output_rank](),
-        output_type,
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
+        output_type, output_rank, DimList.create_unknown[output_rank]()
     ],
     ctx: MojoCallContextPtr,
 ):
@@ -2549,18 +2549,18 @@ fn scatter_nd_max[
     target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
+        output_type,
         output_rank,
         DimList.create_unknown[output_rank](),
-        output_type,
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
+        output_type, output_rank, DimList.create_unknown[output_rank]()
     ],
     ctx: MojoCallContextPtr,
 ):
@@ -2602,18 +2602,18 @@ fn scatter_nd_min[
     target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
+        output_type,
         output_rank,
         DimList.create_unknown[output_rank](),
-        output_type,
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
+        output_type, output_rank, DimList.create_unknown[output_rank]()
     ],
     ctx: MojoCallContextPtr,
 ):
@@ -2655,18 +2655,18 @@ fn scatter_nd_mul[
     target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
+        output_type,
         output_rank,
         DimList.create_unknown[output_rank](),
-        output_type,
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
+        output_type, output_rank, DimList.create_unknown[output_rank]()
     ],
     ctx: MojoCallContextPtr,
 ):
@@ -2708,7 +2708,7 @@ fn softmax[
     target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     if _guard_against_gpu_target[target](ctx):
@@ -2739,7 +2739,7 @@ fn logsoftmax[
     ) capturing -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     try:
@@ -2762,12 +2762,12 @@ fn logsoftmax[
 fn non_maximum_suppression[
     type: DType
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
-    max_output_boxes_per_class: NDBuffer[1, DimList(1), DType.int64],
-    iou_threshold: NDBuffer[1, DimList(1), DType.float32],
-    score_threshold: NDBuffer[1, DimList(1), DType.float32],
-    output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    max_output_boxes_per_class: NDBuffer[DType.int64, 1, DimList(1)],
+    iou_threshold: NDBuffer[DType.float32, 1, DimList(1)],
+    score_threshold: NDBuffer[DType.float32, 1, DimList(1)],
+    output: NDBuffer[DType.int64, 2, DimList.create_unknown[2]()],
     ctx: MojoCallContextPtr,
 ):
     let max_output_boxes_int = int(max_output_boxes_per_class[0])
@@ -2787,11 +2787,11 @@ fn non_maximum_suppression[
 fn non_maximum_suppression_shape_func[
     type: DType, single_thread_blocking_override: Bool
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
-    max_output_boxes_per_class: NDBuffer[1, DimList(1), DType.int64],
-    iou_threshold: NDBuffer[1, DimList(1), DType.float32],
-    score_threshold: NDBuffer[1, DimList(1), DType.float32],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    max_output_boxes_per_class: NDBuffer[DType.int64, 1, DimList(1)],
+    iou_threshold: NDBuffer[DType.float32, 1, DimList(1)],
+    score_threshold: NDBuffer[DType.float32, 1, DimList(1)],
 ) -> StaticIntTuple[2]:
     let max_output_boxes_int = int(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
@@ -2818,11 +2818,11 @@ fn random_normal[
     shapeType: DType,
     rank: Int,
 ](
-    shape: NDBuffer[1, DimList(rank), shapeType],
-    mean: NDBuffer[1, DimList(1), DType.float64],
-    variance: NDBuffer[1, DimList(1), DType.float64],
-    op_seed: NDBuffer[1, DimList(1), DType.int64],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: NDBuffer[shapeType, 1, DimList(rank)],
+    mean: NDBuffer[DType.float64, 1, DimList(1)],
+    variance: NDBuffer[DType.float64, 1, DimList(1)],
+    op_seed: NDBuffer[DType.int64, 1, DimList(1)],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     seed(op_seed[0].to_int())
@@ -2837,7 +2837,7 @@ fn random_shape[
     shapeType: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-](shape: NDBuffer[1, DimList(rank), shapeType],) -> StaticIntTuple[rank]:
+](shape: NDBuffer[shapeType, 1, DimList(rank)],) -> StaticIntTuple[rank]:
     var unrolledShape = StaticIntTuple[rank]()
 
     @unroll
@@ -2861,9 +2861,9 @@ fn resize_nearest[
     inpType: DType,
     sizeType: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
-    size: NDBuffer[1, DimList(rank), sizeType],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    input: NDBuffer[inpType, rank, DimList.create_unknown[rank]()],
+    size: NDBuffer[sizeType, 1, DimList(rank)],
+    output: NDBuffer[inpType, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     resize_nearest_neighbor[
@@ -2881,9 +2881,9 @@ fn resize_linear[
     inpType: DType,
     sizeType: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
-    size: NDBuffer[1, DimList(rank), sizeType],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    input: NDBuffer[inpType, rank, DimList.create_unknown[rank]()],
+    size: NDBuffer[sizeType, 1, DimList(rank)],
+    output: NDBuffer[inpType, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     resize_linear_kernel[coordinate_transform_mode, antialias, rank, inpType](
@@ -2898,8 +2898,8 @@ fn resize_shape[
     sizeType: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
-    size: NDBuffer[1, DimList(rank), sizeType],
+    input: NDBuffer[inpType, rank, DimList.create_unknown[rank]()],
+    size: NDBuffer[sizeType, 1, DimList(rank)],
 ) -> StaticIntTuple[rank]:
     var shape = StaticIntTuple[rank]()
 
@@ -2919,13 +2919,13 @@ fn resize_shape[
 fn roi_align[
     type: DType, aligned: Bool, mode: StringLiteral
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), type],
-    rois: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_height: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
-    output_width: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
-    spatial_scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
-    sampling_ratio: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    input: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    rois: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    output_height: NDBuffer[DType.int64, 1, DimList.create_unknown[1]()],
+    output_width: NDBuffer[DType.int64, 1, DimList.create_unknown[1]()],
+    spatial_scale: NDBuffer[DType.float32, 1, DimList.create_unknown[1]()],
+    sampling_ratio: NDBuffer[DType.float32, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
     ctx: MojoCallContextPtr,
 ):
     roi_align_nhwc[
@@ -2951,10 +2951,10 @@ fn roi_align_shape[
     roisTy: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), inpTy],
-    rois: NDBuffer[2, DimList.create_unknown[2](), roisTy],
-    output_height: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
-    output_width: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
+    input: NDBuffer[inpTy, 4, DimList.create_unknown[4]()],
+    rois: NDBuffer[roisTy, 2, DimList.create_unknown[2]()],
+    output_height: NDBuffer[DType.int64, 1, DimList.create_unknown[1]()],
+    output_width: NDBuffer[DType.int64, 1, DimList.create_unknown[1]()],
 ) -> StaticIntTuple[4]:
     var shape = StaticIntTuple[4]()
 
@@ -2983,9 +2983,9 @@ fn split_ith_output_shape[
     axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    split_sizes_buf: NDBuffer[1, DimList.create_unknown[1](), split_size_type],
-    split_axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    input_buf: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    split_sizes_buf: NDBuffer[split_size_type, 1, DimList.create_unknown[1]()],
+    split_axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[rank]:
     # extract relevant hyper parameters
     if output_idx < 0 or split_sizes_buf.size() <= output_idx:
@@ -3041,21 +3041,21 @@ fn conv[
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    input: NDBuffer[input_type, 4, DimList.create_unknown[4]()],
     filter: NDBuffer[
-        filter_rank, DimList.create_unknown[filter_rank](), filter_type
+        filter_type, filter_rank, DimList.create_unknown[filter_rank]()
     ],
     strides: NDBuffer[
-        strides_rank, DimList.create_unknown[strides_rank](), strides_type
+        strides_type, strides_rank, DimList.create_unknown[strides_rank]()
     ],
     dilation: NDBuffer[
-        dilation_rank, DimList.create_unknown[dilation_rank](), dilation_type
+        dilation_type, dilation_rank, DimList.create_unknown[dilation_rank]()
     ],
     paddings: NDBuffer[
-        padding_rank, DimList.create_unknown[padding_rank](), padding_type
+        padding_type, padding_rank, DimList.create_unknown[padding_rank]()
     ],
-    num_groups: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
-    output: NDBuffer[4, DimList.create_unknown[4](), output_type],
+    num_groups: NDBuffer[num_groups_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[output_type, 4, DimList.create_unknown[4]()],
     ctx: MojoCallContextPtr,
 ):
     """Including this function in MOGG.mojo since it is intended to be a temporary
@@ -3161,15 +3161,15 @@ fn conv_transpose[
     padding_type: DType,
     output_padding_type: DType,
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), input_type],
-    filter: NDBuffer[4, DimList.create_unknown[4](), input_type],
-    strides: NDBuffer[1, DimList.create_unknown[1](), strides_type],
-    dilation: NDBuffer[1, DimList.create_unknown[1](), dilation_type],
-    paddings: NDBuffer[1, DimList.create_unknown[1](), padding_type],
+    input: NDBuffer[input_type, 4, DimList.create_unknown[4]()],
+    filter: NDBuffer[input_type, 4, DimList.create_unknown[4]()],
+    strides: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
+    dilation: NDBuffer[dilation_type, 1, DimList.create_unknown[1]()],
+    paddings: NDBuffer[padding_type, 1, DimList.create_unknown[1]()],
     output_paddings: NDBuffer[
-        1, DimList.create_unknown[1](), output_padding_type
+        output_padding_type, 1, DimList.create_unknown[1]()
     ],
-    output: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    output: NDBuffer[input_type, 4, DimList.create_unknown[4]()],
     ctx: MojoCallContextPtr,
 ):
     constrained[
@@ -3217,10 +3217,10 @@ fn mogg_layer_norm[
     ) capturing -> SIMD[type, _width],
 ](
     shape: StaticIntTuple[rank],
-    gamma: NDBuffer[1, DimList.create_unknown[1](), type],
-    beta: NDBuffer[1, DimList.create_unknown[1](), type],
-    epsilon: NDBuffer[1, DimList.create_unknown[1](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    gamma: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    beta: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    epsilon: NDBuffer[type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     @always_inline
@@ -3258,7 +3258,7 @@ fn mogg_layer_norm[
             let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
             let per_thread_dims = DimList(num_rows, last_dim)
             let output_buf_view = NDBuffer[
-                2, DimList.create_unknown[2](), type
+                type, 2, DimList.create_unknown[2]()
             ](output_buf._offset(thread_starting_coord), per_thread_dims)
 
             @parameter
@@ -3291,7 +3291,7 @@ fn mogg_layer_norm[
 @export
 fn print_buffer_info[
     type: DType, rank: Int
-](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):
+](buffer: NDBuffer[type, rank, DimList.create_unknown[rank]()]):
     print("Rank:", rank)
     print("Shape:", buffer.dynamic_shape)
     print("Strides:", buffer.dynamic_stride)
@@ -3305,7 +3305,7 @@ fn return_error[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     ctx.set_to_error("This is an error")
@@ -3324,12 +3324,12 @@ fn bottom_k[
     rank: Int,
     axis_type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
-    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    k_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    sorted: NDBuffer[DType.bool, 1, DimList.create_unknown[1]()],
+    out_vals: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    out_idxs: NDBuffer[DType.int64, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     _top_k[rank, type](
@@ -3337,7 +3337,7 @@ fn bottom_k[
         int(k_buf[0]),
         int(axis_buf[0]),
         False,
-        rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
+        rebind[NDBuffer[type, rank, DimList.create_unknown[rank]()]](out_vals),
         out_idxs,
         sorted[0],
     )
@@ -3351,12 +3351,12 @@ fn top_k[
     rank: Int,
     axis_type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
-    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    k_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
+    sorted: NDBuffer[DType.bool, 1, DimList.create_unknown[1]()],
+    out_vals: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    out_idxs: NDBuffer[DType.int64, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     _top_k[rank, type](
@@ -3364,7 +3364,7 @@ fn top_k[
         int(k_buf[0]),
         int(axis_buf[0]),
         True,
-        rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
+        rebind[NDBuffer[type, rank, DimList.create_unknown[rank]()]](out_vals),
         out_idxs,
         sorted[0],
     )
@@ -3387,11 +3387,11 @@ fn gather_nd[
     batch_dims: Int,
     single_thread_blocking_override: Bool,
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    data: NDBuffer[type, data_rank, DimList.create_unknown[data_rank]()],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output: NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()],
     ctx: MojoCallContextPtr,
 ):
     _gather_nd[
@@ -3407,8 +3407,8 @@ fn pack_conv_filter[
     filter_type: DType,
     num_groups: Int,
 ](
-    filter: NDBuffer[4, DimList.create_unknown[4](), filter_type],
-    packed_filter: NDBuffer[5, DimList.create_unknown[5](), filter_type],
+    filter: NDBuffer[filter_type, 4, DimList.create_unknown[4]()],
+    packed_filter: NDBuffer[filter_type, 5, DimList.create_unknown[5]()],
     ctx: MojoCallContextPtr,
 ):
     _pack_conv_filter(filter, packed_filter, num_groups)
@@ -3426,7 +3426,7 @@ fn pack_conv_filter_shape[
     num_groups: Int,
     single_thread_blocking_override: Bool,
 ](
-    filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type],
+    filter_buf: NDBuffer[filter_type, 4, DimList.create_unknown[4]()],
 ) -> StaticIntTuple[5]:
     """
     Compute the output shape of convolution filter packing.
@@ -3476,12 +3476,12 @@ fn multi_head_flash_attention[
     output_type: DType,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[rank, input_0_static_shape, q_type],
-    k: NDBuffer[rank, input_1_static_shape, k_type],
-    v: NDBuffer[rank, input_2_static_shape, v_type],
-    mask: NDBuffer[3, input_3_static_shape, mask_type],
-    scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    q: NDBuffer[q_type, rank, input_0_static_shape],
+    k: NDBuffer[k_type, rank, input_1_static_shape],
+    v: NDBuffer[v_type, rank, input_2_static_shape],
+    mask: NDBuffer[mask_type, 3, input_3_static_shape],
+    scale: NDBuffer[DType.float32, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     if _guard_against_gpu_target[target](ctx):
@@ -3526,12 +3526,12 @@ fn no_mask_fused_attention_cpu[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[rank, input_0_static_shape, q_type],
-    k: NDBuffer[rank, input_1_static_shape, k_type],
-    v: NDBuffer[rank, input_2_static_shape, v_type],
+    q: NDBuffer[q_type, rank, input_0_static_shape],
+    k: NDBuffer[k_type, rank, input_1_static_shape],
+    v: NDBuffer[v_type, rank, input_2_static_shape],
     # TODO(28121): This should be rank 0, but only works with rank 1
-    scale: NDBuffer[1, input_3_static_shape, scale_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    scale: NDBuffer[scale_type, 1, input_3_static_shape],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     # TODO:
@@ -3558,7 +3558,7 @@ fn no_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     alias mask_shape = DimList()
     alias mask_type = DType.float32
-    let mask = NDBuffer[rank, mask_shape, mask_type]()
+    let mask = NDBuffer[mask_type, rank, mask_shape]()
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
     try:
@@ -3604,13 +3604,13 @@ fn with_mask_fused_attention_cpu[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    q: NDBuffer[rank, input_0_static_shape, q_type],
-    k: NDBuffer[rank, input_1_static_shape, k_type],
-    v: NDBuffer[rank, input_2_static_shape, v_type],
-    attn_mask: NDBuffer[attn_mask_rank, input_3_static_shape, attn_mask_type],
+    q: NDBuffer[q_type, rank, input_0_static_shape],
+    k: NDBuffer[k_type, rank, input_1_static_shape],
+    v: NDBuffer[v_type, rank, input_2_static_shape],
+    attn_mask: NDBuffer[attn_mask_type, attn_mask_rank, input_3_static_shape],
     # TODO(28121): This should be rank 0, but only works with rank 1
-    scale: NDBuffer[1, input_4_static_shape, scale_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    scale: NDBuffer[scale_type, 1, input_4_static_shape],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     # TODO:
@@ -3676,8 +3676,8 @@ from quantization import Q4sym, matmul_int4
 fn quantize_Q4sym_g8[
     input_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[8, input_type].quantize_and_write_to_tensor(
@@ -3691,7 +3691,7 @@ fn quantize_Q4sym_g8[
 fn quantize_Q4sym_g8_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
@@ -3706,8 +3706,8 @@ fn quantize_Q4sym_g8_shape_func[
 fn dequantize_Q4sym_g8[
     output_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    input: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[8, output_type].dequantize_and_write_to_tensor(
@@ -3724,8 +3724,8 @@ fn dequantize_Q4sym_g8[
 fn quantize_Q4sym_g16[
     input_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[16, input_type].quantize_and_write_to_tensor(
@@ -3739,7 +3739,7 @@ fn quantize_Q4sym_g16[
 fn quantize_Q4sym_g16_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
@@ -3754,8 +3754,8 @@ fn quantize_Q4sym_g16_shape_func[
 fn dequantize_Q4sym_g16[
     output_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    input: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[16, output_type].dequantize_and_write_to_tensor(
@@ -3772,8 +3772,8 @@ fn dequantize_Q4sym_g16[
 fn quantize_Q4sym_g32[
     input_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[32, input_type].quantize_and_write_to_tensor(
@@ -3787,7 +3787,7 @@ fn quantize_Q4sym_g32[
 fn quantize_Q4sym_g32_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
@@ -3802,8 +3802,8 @@ fn quantize_Q4sym_g32_shape_func[
 fn dequantize_Q4sym_g32[
     output_type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    input: NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[output_type, rank, DimList.create_unknown[rank]()],
     ctx: MojoCallContextPtr,
 ):
     Q4sym[32, output_type].dequantize_and_write_to_tensor(
@@ -3817,9 +3817,9 @@ fn dequantize_Q4sym_g32[
 fn qmatmul_Af32_BTQ4symG32_Cf32[
     type: DType
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[DType.uint8, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[type, 2, DimList.create_unknown[2]()],
     ctx: MojoCallContextPtr,
 ):
     try:
@@ -3835,8 +3835,8 @@ fn qmatmul_Af32_BTQ4symG32_Cf32_shape_func[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
+    a: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[DType.uint8, 2, DimList.create_unknown[2]()],
 ) -> StaticIntTuple[2]:
     return StaticIntTuple[2](a.dim[0](), b.dim[0]())
 
@@ -3849,9 +3849,9 @@ fn mogg_matrix_solve[
     b_rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
-    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
-    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    a: NDBuffer[type, a_rank, DimList.create_unknown[a_rank]()],
+    b: NDBuffer[type, b_rank, DimList.create_unknown[b_rank]()],
+    x: NDBuffer[type, x_rank, DimList.create_unknown[x_rank]()],
     ctx: MojoCallContextPtr,
 ):
     try:

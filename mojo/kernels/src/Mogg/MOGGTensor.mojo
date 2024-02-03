@@ -420,7 +420,7 @@ struct Tensor[
     @always_inline
     fn to_buffer[
         rank: Int
-    ](self) -> NDBuffer[rank, Self.static_shape, Self.type]:
+    ](self) -> NDBuffer[Self.type, rank, Self.static_shape]:
         var shape = StaticIntTuple[rank]()
         var strides = StaticIntTuple[rank]()
 
@@ -429,7 +429,7 @@ struct Tensor[
             shape[i] = self.shape[i]
             strides[i] = self.strides[i]
 
-        let buffer = NDBuffer[rank, Self.static_shape, Self.type](
+        let buffer = NDBuffer[Self.type, rank, Self.static_shape](
             self.data, shape, strides
         )
         return buffer

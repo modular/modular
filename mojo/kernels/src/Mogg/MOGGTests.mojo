@@ -32,12 +32,12 @@ fn test_many_ranks_and_types[
     type5: DType,
     rank5: Int,
 ](
-    tensor1: NDBuffer[rank1, DimList.create_unknown[rank1](), type1],
-    tensor2: NDBuffer[rank2, DimList.create_unknown[rank2](), type2],
-    tensor3: NDBuffer[rank3, DimList.create_unknown[rank3](), type3],
-    tensor4: NDBuffer[rank4, DimList.create_unknown[rank4](), type4],
-    tensor5: NDBuffer[rank5, DimList.create_unknown[rank5](), type5],
-) -> NDBuffer[rank1, DimList.create_unknown[rank1](), type1]:
+    tensor1: NDBuffer[type1, rank1, DimList.create_unknown[rank1]()],
+    tensor2: NDBuffer[type2, rank2, DimList.create_unknown[rank2]()],
+    tensor3: NDBuffer[type3, rank3, DimList.create_unknown[rank3]()],
+    tensor4: NDBuffer[type4, rank4, DimList.create_unknown[rank4]()],
+    tensor5: NDBuffer[type5, rank5, DimList.create_unknown[rank5]()],
+) -> NDBuffer[type1, rank1, DimList.create_unknown[rank1]()]:
     """
     Used as a test target to ensure parameter deduction works when there are
     many to deduce and also used to check errors.
@@ -50,12 +50,12 @@ fn test_many_ranks_and_types[
 fn test_one_rank_many_tensor[
     type: DType, rank: Int
 ](
-    tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    tensor2: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    tensor3: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    tensor4: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    tensor5: NDBuffer[rank, DimList.create_unknown[rank](), type],
-) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+    tensor1: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    tensor2: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    tensor3: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    tensor4: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    tensor5: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
     """
     Used as a test target to ensure we can deduce type and rank when used by
     many arguments.
@@ -75,9 +75,9 @@ fn test_3D_in_out_lambda[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    tensor1: NDBuffer[3, DimList.create_unknown[3](), type],
-    output: NDBuffer[3, DimList.create_unknown[3](), type],
-) -> NDBuffer[3, DimList.create_unknown[3](), type]:
+    tensor1: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    output: NDBuffer[type, 3, DimList.create_unknown[3]()],
+) -> NDBuffer[type, 3, DimList.create_unknown[3]()]:
     """
     Used as a target to test passing input and output lambdas.
     """
@@ -140,7 +140,7 @@ fn sqrt_wrapped[
 @export
 fn test_static_shape_deduction[
     type: DType, rank: Int, input_0_static_shape: DimList
-](tensor: NDBuffer[rank, input_0_static_shape, type],):
+](tensor: NDBuffer[type, rank, input_0_static_shape],):
     print("Printing shape: ")
 
     @always_inline
@@ -161,7 +161,7 @@ fn test_static_shape_deduction[
 @export
 fn test_static_shape_output[
     type: DType, rank: Int, output_0_static_shape: DimList
-]() -> NDBuffer[rank, output_0_static_shape, type]:
+]() -> NDBuffer[type, rank, output_0_static_shape]:
     print("Printing output shape: ")
 
     @always_inline
@@ -174,7 +174,7 @@ fn test_static_shape_output[
             print(dim.get())
 
     unroll[rank, body]()
-    return NDBuffer[rank, output_0_static_shape, type](
+    return NDBuffer[type, rank, output_0_static_shape](
         DTypePointer[type](), StaticIntTuple[rank](), StaticIntTuple[rank]()
     )
 
@@ -220,7 +220,7 @@ fn test_unary_kernel[
 fn test_unary_kernel_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[rank]:
     print("Hello")
 
@@ -236,8 +236,8 @@ fn test_unary_kernel_params[
     extra_param: Int,
     extra_param2: StringLiteral,
 ](
-    tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    tensor1: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     print(extra_param)
     print(extra_param2)
@@ -287,7 +287,7 @@ fn test_custom_identity[
 fn test_custom_identity_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[rank]:
     return data.get_shape()
 
@@ -297,7 +297,7 @@ fn test_custom_identity_shape_func[
 @export
 fn concat(
     ctx: MojoCallContextPtr,
-    *variadic_ins: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
+    *variadic_ins: NDBuffer[DType.float32, 1, DimList.create_unknown[1]()],
 ):
     pass
 
@@ -311,9 +311,9 @@ fn reduce_shape_no_explicit_inline[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
 ) -> StaticIntTuple[input_rank]:
     # extract hyper parameter
     var axis = int(axis_buf[0])
@@ -366,7 +366,7 @@ fn custom_op_that_raises[
 fn custom_shape_func_that_raises[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](
-    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) raises -> StaticIntTuple[rank]:
     # This print ensures we won't symbolicize this shape function call, so we
     # can test its runtime execution.
