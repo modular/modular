@@ -439,6 +439,9 @@ kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <8>
   kgen.param.constant = <get_alignof(!kgen.signature<() -> ()>, #target)>
 
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <get_alignof(!pop.simd<0, f32>, #target)>
+
   kgen.return
 }
 
