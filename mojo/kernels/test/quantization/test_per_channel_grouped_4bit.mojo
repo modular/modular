@@ -131,9 +131,9 @@ fn _read_write_to_tensors[
     # Allocate and populate tensor to encode
     # Buffer with the original data
     let data_matrix = NDBuffer[
+        DType.float32,
         rank,
         DimList(num_elements),
-        DType.float32,
     ].stack_allocation()
     for i in range(num_elements):
         data_matrix[i] = i
@@ -143,33 +143,33 @@ fn _read_write_to_tensors[
     alias num_blocks = div_ceil(num_elements, group_size)
     alias block_size = sizeof[Q4sym[group_size]]()
     let packed_blob = NDBuffer[
-        rank, DimList(num_blocks * block_size), DType.uint8
+        DType.uint8, rank, DimList(num_blocks * block_size)
     ].stack_allocation()
 
     # Tensor to store the dequantized data
     let out_data_matrix = NDBuffer[
+        DType.float32,
         1,
         DimList(num_elements),
-        DType.float32,
     ].stack_allocation()
     for i in range(num_elements):
         out_data_matrix[i] = 0
 
     let rebound_data_matrix = rebind[
         NDBuffer[
+            DType.float32,
             rank,
             DimList.create_unknown[rank](),
-            DType.float32,
         ]
     ](data_matrix)
     let rebound_packed_block = rebind[
-        NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8]
+        NDBuffer[DType.uint8, rank, DimList.create_unknown[rank]()]
     ](packed_blob)
     let rebound_out_data_matrix = rebind[
         NDBuffer[
+            DType.float32,
             rank,
             DimList.create_unknown[rank](),
-            DType.float32,
         ]
     ](out_data_matrix)
 

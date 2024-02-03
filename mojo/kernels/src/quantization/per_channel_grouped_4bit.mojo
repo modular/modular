@@ -395,12 +395,12 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
         rank: Int,
     ](
         input_tensor: NDBuffer[
+            float_dtype,
             rank,
             DimList.create_unknown[rank](),
-            float_dtype,
         ],
         output_tensor: NDBuffer[
-            rank, DimList.create_unknown[rank](), DType.uint8
+            DType.uint8, rank, DimList.create_unknown[rank]()
         ],
         input_shape: StaticIntTuple[rank],
     ):
@@ -463,12 +463,12 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
         rank: Int,
     ](
         input_tensor: NDBuffer[
-            rank, DimList.create_unknown[rank](), DType.uint8
+            DType.uint8, rank, DimList.create_unknown[rank]()
         ],
         output_tensor: NDBuffer[
+            float_dtype,
             rank,
             DimList.create_unknown[rank](),
-            float_dtype,
         ],
         output_shape: StaticIntTuple[rank],
     ):
@@ -535,9 +535,9 @@ fn _block_quantize_a[
     type: DType,
     scale_type: DType,
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    a_quant: NDBuffer[2, DimList.create_unknown[2](), DType.int8],
-    a_scale: NDBuffer[2, DimList.create_unknown[2](), scale_type],
+    a: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    a_quant: NDBuffer[DType.int8, 2, DimList.create_unknown[2]()],
+    a_scale: NDBuffer[scale_type, 2, DimList.create_unknown[2]()],
 ):
     let M = a.dim[0]()
     let K = a.dim[1]()
@@ -641,10 +641,10 @@ fn _process_rows[
     row_count: Int,
     type: DType,
 ](
-    a_quant: NDBuffer[2, DimList.create_unknown[2](), DType.int8],
-    a_scale: NDBuffer[2, DimList.create_unknown[2](), DType.float32],
-    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a_quant: NDBuffer[DType.int8, 2, DimList.create_unknown[2]()],
+    a_scale: NDBuffer[DType.float32, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[DType.uint8, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[type, 2, DimList.create_unknown[2]()],
     m: Int,
 ):
     alias block_size = sizeof[Q4sym[group_size, type]]()
@@ -655,7 +655,7 @@ fn _process_rows[
     let k_groups = K // group_size
 
     let accum_fp_tile = NDBuffer[
-        2, DimList(row_count, simd_width), type
+        type, 2, DimList(row_count, simd_width)
     ].stack_allocation()
 
     for n in range(N):
@@ -706,9 +706,9 @@ fn matmul_int4[
     group_size: Int,
     type: DType,
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[type, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[DType.uint8, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[type, 2, DimList.create_unknown[2]()],
 ) raises:
     alias block_size = sizeof[Q4sym[group_size, type]]()
 
@@ -723,10 +723,10 @@ fn matmul_int4[
     let a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
     let a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
 
-    let a_quant = NDBuffer[2, DimList.create_unknown[2](), DType.int8](
+    let a_quant = NDBuffer[DType.int8, 2, DimList.create_unknown[2]()](
         a_quant_base_ptr, Index(M, K)
     )
-    let a_scale = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+    let a_scale = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_scale_base_ptr, Index(M, k_groups)
     )
 
