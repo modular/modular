@@ -40,7 +40,7 @@ fn _static_int_tuple_to_tensor[
 
 fn print_buffer[
     rank: Int
-](buf: NDBuffer[4, DimList.create_unknown[rank](), DType.float32]):
+](buf: NDBuffer[DType.float32, 4, DimList.create_unknown[rank]()]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)

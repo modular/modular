@@ -20,16 +20,16 @@ fn tile[
     rank: Int, type: DType, rank_repeats: Int, type_repeats: DType
 ](
     input: NDBuffer[
+        type,
         rank,
         DimList.create_unknown[rank](),
-        type,
     ],
     repeats: NDBuffer[
+        type_repeats,
         rank_repeats,
         DimList.create_unknown[rank_repeats](),
-        type_repeats,
     ],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy
@@ -212,9 +212,9 @@ fn tile_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
-    repeats_buf: NDBuffer[1, DimList.create_unknown[1](), repeats_type],
+    repeats_buf: NDBuffer[repeats_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are

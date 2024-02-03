@@ -56,7 +56,7 @@ fn _get_bounding_box[
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
 ) -> BoundingBox[type]:
     let y1 = boxes[batch_size, box_idx, 0]
     let x1 = boxes[batch_size, box_idx, 1]
@@ -68,8 +68,8 @@ fn _get_bounding_box[
 fn non_max_suppression[
     type: DType
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -105,9 +105,9 @@ fn non_max_suppression[
 fn non_max_suppression[
     type: DType
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
-    output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    output: NDBuffer[DType.int64, 2, DimList.create_unknown[2]()],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -135,8 +135,8 @@ fn non_max_suppression[
 fn non_max_suppression_shape_func[
     type: DType
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -165,8 +165,8 @@ fn non_max_suppression[
     type: DType,
     func: fn (Int64, Int64, Int64) capturing -> None,
 ](
-    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
-    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    boxes: NDBuffer[type, 3, DimList.create_unknown[3]()],
+    scores: NDBuffer[type, 3, DimList.create_unknown[3]()],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,

@@ -22,14 +22,14 @@ fn test_broadcast_empty_shape():
 
     # Create a 1D tensor of shape (1), of the form [1]
     var input = NDBuffer[
+        DType.index,
         1,
         input_shape,
-        DType.index,
     ].stack_allocation()
     input[0] = 1
 
     # Create a 1D tensor of shape (0)
-    var output = NDBuffer[1, output_shape, DType.index].stack_allocation()
+    var output = NDBuffer[DType.index, 1, output_shape].stack_allocation()
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -52,15 +52,15 @@ fn test_broadcast_same_shape():
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input = NDBuffer[
+        DType.index,
         3,
         input_shape,
-        DType.index,
     ].stack_allocation()
     input[StaticIntTuple[3](0, 0, 0)] = 1
     input[StaticIntTuple[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
-    var output = NDBuffer[3, output_shape, DType.index].stack_allocation()
+    var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
     output.fill(0)
 
     broadcast(output, input)
@@ -89,16 +89,16 @@ fn test_broadcast_single_axis():
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
     var input = NDBuffer[
+        DType.index,
         2,
         input_shape,
-        DType.index,
     ].stack_allocation()
 
     input[StaticIntTuple[2](0, 0)] = 1
     input[StaticIntTuple[2](0, 1)] = 2
 
     # Create a 2D tensor of shape (3, 2)
-    var output = NDBuffer[2, output_shape, DType.index].stack_allocation()
+    var output = NDBuffer[DType.index, 2, output_shape].stack_allocation()
     output.fill(0)
 
     broadcast(output, input)
@@ -135,16 +135,16 @@ fn test_broadcast_multi_axes():
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input = NDBuffer[
+        DType.index,
         3,
         input_shape,
-        DType.index,
     ].stack_allocation()
 
     input[StaticIntTuple[3](0, 0, 0)] = 1
     input[StaticIntTuple[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
-    var output = NDBuffer[3, output_shape, DType.index].stack_allocation()
+    var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
     output.fill(0)
 
     broadcast(output, input)
@@ -191,9 +191,9 @@ fn test_broadcast_multi_axes_nested():
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]
     var input = NDBuffer[
+        DType.index,
         5,
         input_shape,
-        DType.index,
     ].stack_allocation()
 
     input[StaticIntTuple[5](0, 0, 0, 0, 0)] = 1
@@ -206,7 +206,7 @@ fn test_broadcast_multi_axes_nested():
     input[StaticIntTuple[5](1, 0, 1, 0, 1)] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
-    var output = NDBuffer[5, output_shape, DType.index].stack_allocation()
+    var output = NDBuffer[DType.index, 5, output_shape].stack_allocation()
     output.fill(0)
 
     broadcast(output, input)

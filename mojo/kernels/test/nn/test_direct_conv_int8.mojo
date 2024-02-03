@@ -105,13 +105,13 @@ fn test[
         R * S * C * rounded_F
     )
 
-    let input = NDBuffer[4, DimList.create_unknown[4](), input_type](
+    let input = NDBuffer[input_type, 4, DimList.create_unknown[4]()](
         input_ptr, Index(N, H, W, C)
     )
-    let filter = NDBuffer[4, DimList.create_unknown[4](), filter_type](
+    let filter = NDBuffer[filter_type, 4, DimList.create_unknown[4]()](
         filter_ptr, Index(R, S, C, F)
     )
-    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), filter_type](
+    let packed_filter = NDBuffer[filter_type, 5, DimList.create_unknown[5]()](
         packed_filter_ptr,
         Index(
             div_ceil(F, micro_kernel_width * simd_size),
@@ -121,10 +121,10 @@ fn test[
             micro_kernel_width * simd_size,
         ),
     )
-    let output = NDBuffer[4, DimList.create_unknown[4](), output_type](
+    let output = NDBuffer[output_type, 4, DimList.create_unknown[4]()](
         output_ptr, Index(N, HO, WO, F)
     )
-    let output_ref = NDBuffer[4, DimList.create_unknown[4](), output_type](
+    let output_ref = NDBuffer[output_type, 4, DimList.create_unknown[4]()](
         output_ref_ptr, Index(N, HO, WO, F)
     )
 

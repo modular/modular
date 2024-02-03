@@ -32,9 +32,9 @@ fn test_gather() raises:
 
         # Setup input.
         let input = NDBuffer[
+            DType.float32,
             2,
             DimList(num_rows, row_size),
-            DType.float32,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_rows):
@@ -44,9 +44,9 @@ fn test_gather() raises:
         # Setup indices.
         alias num_indices = 16
         let indices = NDBuffer[
+            indices_type,
             1,
             DimList(num_indices),
-            indices_type,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_indices):
@@ -56,9 +56,9 @@ fn test_gather() raises:
 
         # create output
         let output = NDBuffer[
+            DType.float32,
             2,
             DimList(num_indices, row_size),
-            DType.float32,
         ].aligned_stack_allocation[64]()
 
         # Test gather
@@ -101,9 +101,9 @@ fn test_gather_3d() raises:
 
         # Setup input.
         let input = NDBuffer[
+            DType.float32,
             3,
             DimList(num_rows, row_size, 1),
-            DType.float32,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_rows):
@@ -113,9 +113,9 @@ fn test_gather_3d() raises:
         # Setup indices.
         alias num_indices = 16
         let indices = NDBuffer[
+            indices_type,
             2,
             DimList(num_indices, 1),
-            indices_type,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_indices):
@@ -123,9 +123,9 @@ fn test_gather_3d() raises:
 
         # create output
         let output = NDBuffer[
+            DType.float32,
             4,
             DimList(num_indices, 1, row_size, 1),
-            DType.float32,
         ].aligned_stack_allocation[64]()
 
         # Test gather
@@ -171,9 +171,9 @@ fn test_gather_empty_indices() raises:
 
         # Setup input.
         let input = NDBuffer[
+            DType.float32,
             2,
             DimList(num_rows, row_size),
-            DType.float32,
         ].aligned_stack_allocation[input_size]()
 
         for i in range(num_rows):
@@ -182,9 +182,9 @@ fn test_gather_empty_indices() raises:
 
         # Setup indices.
         let indices = NDBuffer[
+            indices_type,
             1,
             DimList(num_indices),
-            indices_type,
         ].aligned_stack_allocation[indices_size]()
 
         for i in range(num_indices):
@@ -192,9 +192,9 @@ fn test_gather_empty_indices() raises:
 
         # create output
         let output = NDBuffer[
+            DType.float32,
             2,
             DimList(num_indices, row_size),
-            DType.float32,
         ].aligned_stack_allocation[output_size]()
 
         # Test gather

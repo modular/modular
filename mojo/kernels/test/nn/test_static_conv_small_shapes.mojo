@@ -61,13 +61,13 @@ alias num_micro_tile = div_ceil(F, micro_kernel_f_size)
 
 
 @export(ABI="C")
-def static_conv(
-    output: NDBuffer[4, DimList(N, HO, WO, F), value_type],
-    input: NDBuffer[4, DimList(N, H, W, C), value_type],
+fn static_conv(
+    output: NDBuffer[value_type, 4, DimList(N, HO, WO, F)],
+    input: NDBuffer[value_type, 4, DimList(N, H, W, C)],
     filter: NDBuffer[
+        value_type,
         5,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-        value_type,
     ],
 ):
     let conv_shape = ConvShape[2] {
@@ -94,20 +94,23 @@ def static_conv(
     ):
         pass
 
-    ConvDirectNHWC[
-        4,
-        5,
-        4,
-        DimList(N, H, W, C),
-        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-        DimList(N, HO, WO, F),
-        value_type,
-        value_type,
-        value_type,
-        True,
-        conv_attr,
-        False,
-    ].run(output, input, filter, conv_shape)
+    try:
+        ConvDirectNHWC[
+            4,
+            5,
+            4,
+            DimList(N, H, W, C),
+            DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
+            DimList(N, HO, WO, F),
+            value_type,
+            value_type,
+            value_type,
+            True,
+            conv_attr,
+            False,
+        ].run(output, input, filter, conv_shape)
+    except e:
+        print(e)
 
 
 # CHECK-LABEL: test_static_conv
@@ -115,13 +118,13 @@ def test_static_conv():
     print("== test_static_conv")
 
     let output = NDBuffer[
-        4, DimList(N, HO, WO, F), value_type
+        value_type, 4, DimList(N, HO, WO, F)
     ].stack_allocation()
-    let input = NDBuffer[4, DimList(N, H, W, C), value_type].stack_allocation()
+    let input = NDBuffer[value_type, 4, DimList(N, H, W, C)].stack_allocation()
     let filter = NDBuffer[
+        value_type,
         5,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-        value_type,
     ].stack_allocation()
 
     output.fill(0.0)

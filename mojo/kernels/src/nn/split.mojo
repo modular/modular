@@ -15,13 +15,13 @@ from utils.list import Dim, DimList
 from collections.vector import InlinedFixedVector
 
 
-struct _NDBufferVector[rank: Int, type: DType](Sized):
+struct _NDBufferVector[type: DType, rank: Int](Sized):
     """Utility to store a VariadicList of NDBuffers. Required because there is not
     a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
     of NDBuffers."""
 
     alias stack_capacity = 20
-    alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
+    alias BufferType = NDBuffer[type, rank, DimList.create_unknown[rank]()]
     alias StorageType = InlinedFixedVector[
         Self.BufferType, size = Self.stack_capacity
     ]
@@ -38,7 +38,7 @@ struct _NDBufferVector[rank: Int, type: DType](Sized):
     fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
-            self.storage.append(input_list[i].to_ndbuffer[rank, type]())
+            self.storage.append(input_list[i].to_ndbuffer[type, rank]())
 
     @always_inline
     fn __init__(inout self, *inputs: Self.BufferType):
@@ -52,7 +52,7 @@ struct _NDBufferVector[rank: Int, type: DType](Sized):
     @always_inline
     fn __getitem__(
         self, idx: Int
-    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+    ) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
         return self.storage[idx]
 
     @always_inline
@@ -73,9 +73,9 @@ fn _split[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
-    outputs: _NDBufferVector[rank, type],
+    outputs: _NDBufferVector[type, rank],
 ):
     """splits input along axis and store in outputs.
 
@@ -108,10 +108,10 @@ fn _split[
         for j in range(h):
             let output_offset = j * w * c
             let input_offset = j * stride_h_in + w_offset * stride_w_in
-            let out_slice = Buffer[Dim(), type](
+            let out_slice = Buffer[type, Dim()](
                 out_buf.data + output_offset, w * c
             )
-            let in_slice = Buffer[Dim(), type](input.data + input_offset, w * c)
+            let in_slice = Buffer[type, Dim()](input.data + input_offset, w * c)
             # these slices are contiguous
             memcpy(out_slice, in_slice)
         w_offset += w
@@ -120,15 +120,15 @@ fn _split[
 fn _split_inner[
     type: DType, rank: Int, axis: Int
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    outputs: _NDBufferVector[rank, type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    outputs: _NDBufferVector[type, rank],
 ):
     constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(len(outputs)):
         let output_buf = outputs[i].flatten()
         let buffer_len = len(output_buf)
-        let input_buffer_offset = Buffer[Dim(), type](
+        let input_buffer_offset = Buffer[type, Dim()](
             input.data.offset(num_elems_copied), buffer_len
         )
         memcpy[type](output_buf, input_buffer_offset)
@@ -139,9 +139,9 @@ fn split[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
-    outputs: _NDBufferVector[rank, type],
+    outputs: _NDBufferVector[type, rank],
 ) raises:
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(outputs)):

@@ -14,8 +14,8 @@ fn cumsum[
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
 ):
     """

@@ -20,12 +20,12 @@ fn test_cumsum_1d():
     let axis = 0
 
     let matrix_data = DTypePointer[DType.float64].alloc(5)
-    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
+    let matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
 
     let cumsum_matrix = NDBuffer[
-        1, DimList(5), DType.float64
+        DType.float64, 1, DimList(5)
     ].stack_allocation()
 
     cumsum[1, DType.float64, exclusive, reverse](
@@ -48,12 +48,12 @@ fn test_cumsum_1d_exclusive():
     let axis = 0
 
     let matrix_data = DTypePointer[DType.float64].alloc(5)
-    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
+    let matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
 
     let cumsum_matrix = NDBuffer[
-        1, DimList(5), DType.float64
+        DType.float64, 1, DimList(5)
     ].stack_allocation()
 
     cumsum[1, DType.float64, exclusive, reverse](
@@ -76,12 +76,12 @@ fn test_cumsum_1d_reverse():
     let axis = 0
 
     let matrix_data = DTypePointer[DType.float64].alloc(5)
-    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
+    let matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
 
     let cumsum_matrix = NDBuffer[
-        1, DimList(5), DType.float64
+        DType.float64, 1, DimList(5)
     ].stack_allocation()
 
     cumsum[1, DType.float64, exclusive, reverse](
@@ -104,12 +104,12 @@ fn test_cumsum_1d_reverse_exclusive():
     alias axis = 0
 
     let matrix_data = DTypePointer[DType.float64].alloc(5)
-    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
+    let matrix = NDBuffer[DType.float64, 1, DimList(5)](matrix_data, DimList(5))
 
     iota[DType.float64](matrix_data, 5, 1)
 
     let cumsum_matrix = NDBuffer[
-        1, DimList(5), DType.float64
+        DType.float64, 1, DimList(5)
     ].stack_allocation()
 
     cumsum[1, DType.float64, exclusive, reverse](
@@ -133,17 +133,17 @@ fn test_cumsum_2d_axis_0():
 
     let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ](matrix_data, DimList(2, 3))
 
     iota[DType.float64](matrix_data, 6, 1)
 
     let cumsum_matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ].stack_allocation()
 
     cumsum[2, DType.float64, exclusive, reverse](
@@ -168,17 +168,17 @@ fn test_cumsum_2d_axis_1():
 
     let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ](matrix_data, DimList(2, 3))
 
     iota[DType.float64](matrix_data, 6, 1)
 
     let cumsum_matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ].stack_allocation()
 
     cumsum[2, DType.float64, exclusive, reverse](
@@ -203,17 +203,17 @@ fn test_cumsum_2d_negative_axis():
 
     let matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ](matrix_data, DimList(2, 3))
 
     iota[DType.float64](matrix_data, 6, 1)
 
     let cumsum_matrix = NDBuffer[
+        DType.float64,
         2,
         DimList(2, 3),
-        DType.float64,
     ].stack_allocation()
 
     cumsum[2, DType.float64, exclusive, reverse](

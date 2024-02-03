@@ -83,7 +83,7 @@ struct _CanonicallyReshapedBuffer:
 fn _canonical_reshape[
     rank: Int, type: DType
 ](
-    buf: NDBuffer[rank, DimList.create_unknown[rank](), type], axis: Int
+    buf: NDBuffer[type, rank, DimList.create_unknown[rank]()], axis: Int
 ) -> _CanonicallyReshapedBuffer:
     let shape = buf.get_shape()
     let h = product(shape, 0, axis)
@@ -95,10 +95,10 @@ fn _canonical_reshape[
 fn _canonical_reshape_output[
     rank: Int, type: DType
 ](
-    out_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_buf: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
@@ -116,10 +116,10 @@ fn _canonical_reshape_output[
 fn _concat_parallel[
     rank: Int, type: DType
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
@@ -237,10 +237,10 @@ fn _concat_parallel[
 fn _concat[
     rank: Int, type: DType
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     """Concatenate inputs along axis and store in output.
@@ -272,10 +272,10 @@ fn _concat[
         for j in range(h):
             let input_offset = j * w * c
             let output_offset = j * stride_h_out + w_offset * stride_w_out
-            let in_slice = Buffer[Dim(), type](
+            let in_slice = Buffer[type, Dim()](
                 inputs[i].data + input_offset, w * c
             )
-            let out_slice = Buffer[Dim(), type](
+            let out_slice = Buffer[type, Dim()](
                 output.data + output_offset, w * c
             )
             # these slices are contiguous
@@ -288,9 +288,9 @@ fn _concat_inner[
     rank: Int,
     type: DType,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     var num_elems_copied: Int = 0
@@ -308,7 +308,7 @@ fn _check_input_consistency[
 ](
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     @parameter
@@ -334,10 +334,10 @@ fn _check_input_consistency[
 fn _concat_serial[
     rank: Int, type: DType
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     _check_input_consistency[rank, type](axis, inputs)
@@ -362,10 +362,10 @@ fn _concat_small[
     rank: Int,
     type: DType,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     alias single_thread_blocking_override = True
@@ -395,9 +395,9 @@ fn _concat_small[
                 var in_index = out_index
                 in_index[axis] = target_dim
                 let load = rebind[
-                    NDBuffer[rank, DimList.create_unknown[rank](), type]
+                    NDBuffer[type, rank, DimList.create_unknown[rank]()]
                 ](input).simd_load[simd_width](in_index)
-                rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](
+                rebind[NDBuffer[type, rank, DimList.create_unknown[rank]()]](
                     output
                 ).simd_store[simd_width](out_index, load)
                 return
@@ -429,10 +429,10 @@ fn _concat_cpu[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ) raises:
     @parameter
@@ -467,9 +467,9 @@ fn concat_shape[
     single_thread_blocking_override: Bool,
 ](
     input_bufs: InlinedFixedVector[
-        NDBuffer[input_rank, DimList.create_unknown[input_rank](), input_type]
+        NDBuffer[input_type, input_rank, DimList.create_unknown[input_rank]()]
     ],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
 ) -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -532,10 +532,10 @@ fn _concat_gpu_impl[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ) raises:
     try:
@@ -1291,10 +1291,10 @@ fn concat[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ) raises:
     constrained[target == "cpu" or target == "cuda", "not a valid target"]()
@@ -1305,9 +1305,9 @@ fn concat[
 fn _concat_inner_most_single_dim[
     rank: Int, type: DType, num_inputs: Int, block_size: Int
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     inputs: StaticTuple[
-        num_inputs, NDBuffer[rank, DimList.create_unknown[rank](), type]
+        num_inputs, NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ):
     let idx = BlockIdx.x() * block_size + ThreadIdx.x()
@@ -1331,10 +1331,10 @@ fn _concat_gpu[
     type: DType,
     num_inputs: Int,
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
     inputs: StaticTuple[
-        num_inputs, NDBuffer[rank, DimList.create_unknown[rank](), type]
+        num_inputs, NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ],
 ) raises:
     var stream = Stream.get_current_stream()
@@ -1397,10 +1397,10 @@ fn _concat_gpu[
             alias block_size = 32
             let func = Function[
                 fn (
-                    NDBuffer[rank, DimList.create_unknown[rank](), type],
+                    NDBuffer[type, rank, DimList.create_unknown[rank]()],
                     StaticTuple[
                         num_inputs,
-                        NDBuffer[rank, DimList.create_unknown[rank](), type],
+                        NDBuffer[type, rank, DimList.create_unknown[rank]()],
                     ],
                 ) -> None, _concat_inner_most_single_dim[
                     rank, type, num_inputs, block_size

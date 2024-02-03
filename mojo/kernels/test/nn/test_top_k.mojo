@@ -30,8 +30,8 @@ struct TestTensor[rank: Int, type: DType]:
 
     fn to_ndbuffer(
         self,
-    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-        return NDBuffer[rank, DimList.create_unknown[rank](), type](
+    ) -> NDBuffer[type, rank, DimList.create_unknown[rank]()]:
+        return NDBuffer[type, rank, DimList.create_unknown[rank]()](
             rebind[DTypePointer[type]](self.storage.data), self.shape
         )
 
@@ -40,7 +40,7 @@ fn test_case[
     rank: Int,
     type: DType,
     fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[rank, DimList.create_unknown[rank](), type]
+        inout NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ) capturing -> None,
 ](
     K: Int,
@@ -86,7 +86,7 @@ fn main():
     @parameter
     fn fill_iota[
         rank: Int, type: DType
-    ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
+    ](inout buf: NDBuffer[type, rank, DimList.create_unknown[rank]()]):
         iota[type](buf.data, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
@@ -156,7 +156,7 @@ fn main():
     @parameter
     fn fill_identical[
         rank: Int, type: DType
-    ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
+    ](inout buf: NDBuffer[type, rank, DimList.create_unknown[rank]()]):
         buf.fill(1)
 
     fn test_identical():
@@ -193,7 +193,7 @@ fn main():
     @parameter
     fn fill_custom[
         rank: Int, type: DType
-    ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
+    ](inout buf: NDBuffer[type, rank, DimList.create_unknown[rank]()]):
         let flat_buf = buf.flatten()
         for i in range(len(flat_buf)):
             flat_buf[i] = len(flat_buf) - i - 1

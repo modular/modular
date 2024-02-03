@@ -56,10 +56,10 @@ struct ImageData[
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: NDBuffer[4, shape, type]
+    var data: NDBuffer[type, 4, shape]
     var dynamic_layout: Image2DLayout
 
-    fn __init__(data: NDBuffer[4, shape, type], layout: Image2DLayout) -> Self:
+    fn __init__(data: NDBuffer[type, 4, shape], layout: Image2DLayout) -> Self:
         """Construct of an image data instance with dynamic layout param.
 
         Args:
@@ -72,7 +72,7 @@ struct ImageData[
         constrained[static_layout == Image2DLayout.UNKNOWN]()
         return Self {data: data, dynamic_layout: layout}
 
-    fn __init__(data: NDBuffer[4, shape, type]) -> Self:
+    fn __init__(data: NDBuffer[type, 4, shape]) -> Self:
         constrained[static_layout != Image2DLayout.UNKNOWN]()
         return Self {data: data, dynamic_layout: static_layout}
 

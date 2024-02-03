@@ -61,11 +61,11 @@ fn fused_attention[
     add_attn_mask: Bool = True,
     add_causal_mask: Bool = False,
 ](
-    output: NDBuffer[rank, output_shape, output_type],
-    q: NDBuffer[rank, q_shape, q_type],
-    k: NDBuffer[rank, k_shape, k_type],
-    v: NDBuffer[rank, v_shape, v_type],
-    mask: NDBuffer[mask_rank, mask_shape, mask_type],
+    output: NDBuffer[output_type, rank, output_shape],
+    q: NDBuffer[q_type, rank, q_shape],
+    k: NDBuffer[k_type, rank, k_shape],
+    v: NDBuffer[v_type, rank, v_shape],
+    mask: NDBuffer[mask_type, mask_rank, mask_shape],
     scale: Float32,
     causal_mask_value: Float32,
 ) raises:
@@ -127,7 +127,7 @@ fn fused_attention[
     else:
         score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
     # fmt: on
-    let score = NDBuffer[rank, DimList.create_unknown[rank](), score_type](
+    let score = NDBuffer[score_type, rank, DimList.create_unknown[rank]()](
         score_ptr, score_shape
     )
 
@@ -172,11 +172,11 @@ fn fused_attention[
     fn softmax_closure(
         start_row: Int,
         num_rows: Int,
-        c: NDBuffer[2, DimList.create_unknown[2](), score_type],
+        c: NDBuffer[score_type, 2, DimList.create_unknown[2]()],
     ):
         let row_size = c.dim(1)
         for i in range(start_row, start_row + num_rows):
-            let row_view = Buffer[Dim(), DType.float32](
+            let row_view = Buffer[DType.float32, Dim()](
                 bitcast[DType.float32](c.data.offset(i * row_size)), row_size
             )
 
@@ -231,7 +231,7 @@ fn fused_attention[
     fn bmm_null_rowwise_epilogue(
         start_row: Int,
         num_rows: Int,
-        c: NDBuffer[2, DimList.create_unknown[2](), output_type],
+        c: NDBuffer[output_type, 2, DimList.create_unknown[2]()],
     ):
         pass
 
@@ -280,11 +280,11 @@ fn flash_attention[
     add_attn_mask: Bool = True,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[rank, output_shape, output_type],
-    q: NDBuffer[rank, q_shape, q_type],
-    k: NDBuffer[rank, k_shape, k_type],
-    v: NDBuffer[rank, v_shape, v_type],
-    mask: NDBuffer[3, mask_shape, mask_type],
+    output: NDBuffer[output_type, rank, output_shape],
+    q: NDBuffer[q_type, rank, q_shape],
+    k: NDBuffer[k_type, rank, k_shape],
+    v: NDBuffer[v_type, rank, v_shape],
+    mask: NDBuffer[mask_type, 3, mask_shape],
     scale: Float32,
 ) raises:
     """Flash attention 2 algorithm.
@@ -1248,11 +1248,11 @@ fn _naive_attention_with_transpose[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
-    q: NDBuffer[4, DimList.create_unknown[4](), type],
-    k: NDBuffer[4, DimList.create_unknown[4](), type],
-    v: NDBuffer[4, DimList.create_unknown[4](), type],
-    mask: NDBuffer[2, DimList.create_unknown[2](), type],
+    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    q: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    k: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    v: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    mask: NDBuffer[type, 2, DimList.create_unknown[2]()],
     scale: Float32,
 ):
     """This kernel provides reference values for flash attention in llama 2.
@@ -1283,38 +1283,38 @@ fn _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     let ot_ptr = DTypePointer[type].alloc(output.num_elements())
 
-    let qt = NDBuffer[4, DimList.create_unknown[4](), type](
+    let qt = NDBuffer[type, 4, DimList.create_unknown[4]()](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    let kt = NDBuffer[4, DimList.create_unknown[4](), type](
+    let kt = NDBuffer[type, 4, DimList.create_unknown[4]()](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    let vt = NDBuffer[4, DimList.create_unknown[4](), type](
+    let vt = NDBuffer[type, 4, DimList.create_unknown[4]()](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    let score = NDBuffer[4, DimList.create_unknown[4](), type](
+    let score = NDBuffer[type, 4, DimList.create_unknown[4]()](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    let ot = NDBuffer[4, DimList.create_unknown[4](), type](
+    let ot = NDBuffer[type, 4, DimList.create_unknown[4]()](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
     # BSHD -> BHSD
-    let q_perm = Buffer[4, DType.index].stack_allocation()
+    let q_perm = Buffer[DType.index, 4].stack_allocation()
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
     q_perm[3] = 3
 
     # BSHD -> BHDS
-    let k_perm = Buffer[4, DType.index].stack_allocation()
+    let k_perm = Buffer[DType.index, 4].stack_allocation()
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
     k_perm[3] = 1
 
     # BHSD -> BSHD
-    let o_perm = Buffer[4, DType.index].stack_allocation()
+    let o_perm = Buffer[DType.index, 4].stack_allocation()
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1
@@ -1353,11 +1353,11 @@ fn _naive_attention[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
-    q: NDBuffer[4, DimList.create_unknown[4](), type],
-    k: NDBuffer[4, DimList.create_unknown[4](), type],
-    v: NDBuffer[4, DimList.create_unknown[4](), type],
-    mask: NDBuffer[2, DimList.create_unknown[2](), type],
+    output: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    q: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    k: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    v: NDBuffer[type, 4, DimList.create_unknown[4]()],
+    mask: NDBuffer[type, 2, DimList.create_unknown[2]()],
     scale: Float32,
 ):
     """This kernel provides reference values for flash attention in llama 2.
@@ -1374,7 +1374,7 @@ fn _naive_attention[
     # Allocate intermediate memory buffer.
     let score_size = batch_size * num_heads * seq_len * num_keys
     let score_ptr = DTypePointer[type].alloc(score_size)
-    let score = NDBuffer[4, DimList.create_unknown[4](), type](
+    let score = NDBuffer[type, 4, DimList.create_unknown[4]()](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 

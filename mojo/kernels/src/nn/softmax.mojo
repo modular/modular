@@ -93,7 +93,7 @@ fn _softmax_2_pass_step1[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](input: Buffer[buffer_size, type]) -> StaticTuple[
+](input: Buffer[type, buffer_size]) -> StaticTuple[
     2, __mlir_type[`!pop.scalar<`, type.value, `>`]
 ]:
     # STEP 1: find the runningMax and runningSum in each batch.
@@ -149,8 +149,8 @@ fn _softmax_2_pass_step2[
     buffer_size: Dim,
     type: DType,
 ](
-    output: Buffer[buffer_size, type],
-    input: Buffer[buffer_size, type],
+    output: Buffer[type, buffer_size],
+    input: Buffer[type, buffer_size],
     running_max: SIMD[type, 1],
     running_sum: SIMD[type, 1],
 ):
@@ -177,7 +177,7 @@ fn softmax_2_pass[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+](output: Buffer[type, buffer_size], input: Buffer[type, buffer_size]):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
 
@@ -242,7 +242,7 @@ fn _softmax_3_pass_step_2[
     post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-](output: Buffer[buffer_size, type], max_val: SIMD[type, 1],) -> SIMD[type, 1]:
+](output: Buffer[type, buffer_size], max_val: SIMD[type, 1],) -> SIMD[type, 1]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -282,7 +282,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[buffer_size, type], accum: SIMD[type, 1]):
+](output: Buffer[type, buffer_size], accum: SIMD[type, 1]):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
@@ -320,7 +320,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[buffer_size, type]):
+](output: Buffer[type, buffer_size]):
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -339,7 +339,7 @@ fn _softmax_3_pass_base[
     """
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
-    let max_buff = Buffer[1, type].stack_allocation()
+    let max_buff = Buffer[type, 1].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
@@ -417,7 +417,7 @@ fn softmax_3_pass[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[buffer_size, type]):
+](output: Buffer[type, buffer_size]):
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -472,7 +472,7 @@ fn logsoftmax[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
         type, _simd_width
     ],
-](output: Buffer[buffer_size, type]):
+](output: Buffer[type, buffer_size]):
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -518,7 +518,7 @@ fn logsoftmax[
     ) capturing -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partioning logic between
@@ -541,7 +541,7 @@ fn logsoftmax[
         let end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             let buffer_offset = i * inner_dim
-            let output_buffer_view = Buffer[Dim(), type](
+            let output_buffer_view = Buffer[type, Dim()](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index[rank](
@@ -568,8 +568,8 @@ fn logsoftmax[
     rank: Int,
     static_shape: DimList,
 ](
-    input: NDBuffer[rank, static_shape, type],
-    output: NDBuffer[rank, static_shape, type],
+    input: NDBuffer[type, rank, static_shape],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     @parameter
@@ -601,7 +601,7 @@ fn _softmax_cpu[
     ) capturing -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partioning logic between
@@ -633,7 +633,7 @@ fn _softmax_cpu[
             let end_offset = min((task_id + 1) * chunk_size, outer_dim)
             for i in range(start_offset, end_offset):
                 let buffer_offset = i * inner_dim
-                let output_buffer_view = Buffer[Dim(), type](
+                let output_buffer_view = Buffer[type, Dim()](
                     output.data.offset(buffer_offset), inner_dim
                 )
                 var indices = _get_nd_indices_from_flat_index[rank](
@@ -663,8 +663,8 @@ fn softmax[
     rank: Int,
     static_shape: DimList,
 ](
-    input: NDBuffer[rank, static_shape, type],
-    output: NDBuffer[rank, static_shape, type],
+    input: NDBuffer[type, rank, static_shape],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     @parameter
@@ -690,14 +690,14 @@ fn softmax_kernel[
     rank: Int,
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
     axis: Int,
 ):
     let row_size = shape[axis]
     let num_rows = shape.flattened_length() // row_size
 
-    let max_buf = Buffer[1, type, AddressSpace.SHARED].stack_allocation()
-    let exp_sum_buf = Buffer[1, type, AddressSpace.SHARED].stack_allocation()
+    let max_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
+    let exp_sum_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
 
     @parameter
     @always_inline
@@ -771,7 +771,7 @@ fn _softmax_gpu[
     ) capturing -> SIMD[type, _simd_width],
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     if axis != rank - 1:
@@ -789,7 +789,7 @@ fn _softmax_gpu[
     let func = Function[
         fn (
             StaticIntTuple[rank],
-            NDBuffer[rank, DimList.create_unknown[rank](), type],
+            NDBuffer[type, rank, DimList.create_unknown[rank]()],
             Int,
         ) capturing -> None, softmax_kernel[
             BLOCK_SIZE,
@@ -818,7 +818,7 @@ fn softmax[
     target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
-    output: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[type, rank, static_shape],
     axis: Int,
 ) raises:
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()

@@ -25,7 +25,7 @@ fn main():
         alias data_rank = 2
         alias data_type = DType.int32
         let data = NDBuffer[
-            data_rank, DimList(2, 2), data_type
+            data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0)] = 0
@@ -35,7 +35,7 @@ fn main():
 
         alias indices_rank = 2
         let indices = NDBuffer[
-            indices_rank, DimList(2, 2), DType.int64
+            DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0)] = 0
@@ -56,7 +56,7 @@ fn main():
 
         let output_data_data = stack_allocation[2, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -80,7 +80,7 @@ fn main():
         alias data_rank = 2
         alias data_type = DType.int8
         let data = NDBuffer[
-            data_rank, DimList(2, 2), data_type
+            data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0)] = 0
@@ -90,7 +90,7 @@ fn main():
 
         alias indices_rank = 2
         let indices = NDBuffer[
-            indices_rank, DimList(2, 1), DType.int64
+            DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0)] = 1
@@ -109,7 +109,7 @@ fn main():
 
         let output_data_data = stack_allocation[4, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -140,7 +140,7 @@ fn main():
         alias data_rank = 3
         alias data_type = DType.float32
         let data = NDBuffer[
-            data_rank, DimList(2, 2, 2), data_type
+            data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0, 0)] = 0
@@ -154,7 +154,7 @@ fn main():
 
         alias indices_rank = 2
         let indices = NDBuffer[
-            indices_rank, DimList(2, 2), DType.int64
+            DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0)] = 0
@@ -175,7 +175,7 @@ fn main():
 
         let output_data_data = stack_allocation[4, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -206,7 +206,7 @@ fn main():
         alias data_rank = 3
         alias data_type = DType.int8
         let data = NDBuffer[
-            data_rank, DimList(2, 2, 2), data_type
+            data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0, 0)] = 0
@@ -220,7 +220,7 @@ fn main():
 
         alias indices_rank = 3
         let indices = NDBuffer[
-            indices_rank, DimList(2, 1, 2), DType.int64
+            DType.int64, indices_rank, DimList(2, 1, 2)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0, 0)] = 0
@@ -241,7 +241,7 @@ fn main():
 
         let output_data_data = stack_allocation[4, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -272,7 +272,7 @@ fn main():
         alias data_rank = 3
         alias data_type = DType.int32
         let data = NDBuffer[
-            data_rank, DimList(2, 2, 2), data_type
+            data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0, 0)] = 0
@@ -286,7 +286,7 @@ fn main():
 
         alias indices_rank = 2
         let indices = NDBuffer[
-            indices_rank, DimList(2, 1), DType.int64
+            DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0)] = 1
@@ -305,7 +305,7 @@ fn main():
 
         let output_data_data = stack_allocation[4, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -336,7 +336,7 @@ fn main():
         alias data_rank = 3
         alias data_type = DType.int8
         let data = NDBuffer[
-            data_rank, DimList(2, 3, 4), data_type
+            data_type, data_rank, DimList(2, 3, 4)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0, 0)] = 1
@@ -371,7 +371,7 @@ fn main():
 
         alias indices_rank = 4
         let indices = NDBuffer[
-            indices_rank, DimList(2, 3, 1, 1), DType.int64
+            DType.int64, indices_rank, DimList(2, 3, 1, 1)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0, 0, 0)] = 1
@@ -394,7 +394,7 @@ fn main():
 
         let output_data_data = stack_allocation[6, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -429,7 +429,7 @@ fn main():
         alias data_rank = 3
         alias data_type = DType.int8
         let data = NDBuffer[
-            data_rank, DimList(2, 2, 2), data_type
+            data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0, 0)] = 0
@@ -443,7 +443,7 @@ fn main():
 
         alias indices_rank = 3
         let indices = NDBuffer[
-            indices_rank, DimList(2, 1, 1), DType.int64
+            DType.int64, indices_rank, DimList(2, 1, 1)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0, 0)] = 0
@@ -462,7 +462,7 @@ fn main():
 
         let output_data_data = stack_allocation[8, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,
@@ -502,7 +502,7 @@ fn main():
         alias data_rank = 2
         alias data_type = DType.int8
         let data = NDBuffer[
-            data_rank, DimList(2, 3), data_type
+            data_type, data_rank, DimList(2, 3)
         ]().stack_allocation()
 
         data[StaticIntTuple[data_rank](0, 0)] = 0
@@ -514,7 +514,7 @@ fn main():
 
         alias indices_rank = 2
         let indices = NDBuffer[
-            indices_rank, DimList(2, 1), DType.int64
+            DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
         indices[StaticIntTuple[indices_rank](0, 0)] = 1
@@ -533,7 +533,7 @@ fn main():
 
         let output_data_data = stack_allocation[6, data_type]()
         let output_data_buffer = NDBuffer[
-            output_rank, DimList.create_unknown[output_rank](), data_type
+            data_type, output_rank, DimList.create_unknown[output_rank]()
         ](output_data_data, output_shape)
         gather_nd[
             data_type,

@@ -23,8 +23,8 @@ fn arg_nonzero[
     output_type: DType,
     rank: Int,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), output_type],
+    input_buffer: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output_buffer: NDBuffer[output_type, 2, DimList.create_unknown[2]()],
 ):
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
@@ -68,7 +68,7 @@ fn arg_nonzero_shape[
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_buffer: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ) -> StaticIntTuple[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.

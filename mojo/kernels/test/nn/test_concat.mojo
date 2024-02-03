@@ -30,31 +30,31 @@ fn test_concat() raises:
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    let x1 = NDBuffer[rank, s1, type].stack_allocation()
-    let x2 = NDBuffer[rank, s2, type].stack_allocation()
-    let x3 = NDBuffer[rank, s3, type].stack_allocation()
+    let x1 = NDBuffer[type, rank, s1].stack_allocation()
+    let x2 = NDBuffer[type, rank, s2].stack_allocation()
+    let x3 = NDBuffer[type, rank, s3].stack_allocation()
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x1_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x1.data, s1
     )
-    let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x2_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x2.data, s2
     )
-    let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x3_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x3.data, s3
     )
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    let output = NDBuffer[rank, out_shape, type].stack_allocation()
+    let output = NDBuffer[type, rank, out_shape].stack_allocation()
     output.fill(-1)
-    let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let output_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         output.data, out_shape
     )
 
     let input_list = VariadicList[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ](x1_dyn, x2_dyn, x3_dyn)
 
     with Runtime(4) as rt:
@@ -87,31 +87,31 @@ fn test_concat_parallel():
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    let x1 = NDBuffer[rank, s1, type].stack_allocation()
-    let x2 = NDBuffer[rank, s2, type].stack_allocation()
-    let x3 = NDBuffer[rank, s3, type].stack_allocation()
+    let x1 = NDBuffer[type, rank, s1].stack_allocation()
+    let x2 = NDBuffer[type, rank, s2].stack_allocation()
+    let x3 = NDBuffer[type, rank, s3].stack_allocation()
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x1_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x1.data, s1
     )
-    let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x2_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x2.data, s2
     )
-    let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x3_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x3.data, s3
     )
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    let output = NDBuffer[rank, out_shape, type]().stack_allocation()
+    let output = NDBuffer[type, rank, out_shape]().stack_allocation()
     output.fill(-1)
-    let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let output_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         output.data, out_shape
     )
 
     let input_list = VariadicList[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ](x1_dyn, x2_dyn, x3_dyn)
 
     with Runtime(4) as rt:
@@ -145,31 +145,31 @@ fn test_concat_inner():
     alias s2 = DimList(1, 1, 2, 2, 2)
     alias s3 = DimList(1, 1, 3, 2, 2)
 
-    let x1 = NDBuffer[rank, s1, type].stack_allocation()
-    let x2 = NDBuffer[rank, s2, type].stack_allocation()
-    let x3 = NDBuffer[rank, s3, type].stack_allocation()
+    let x1 = NDBuffer[type, rank, s1].stack_allocation()
+    let x2 = NDBuffer[type, rank, s2].stack_allocation()
+    let x3 = NDBuffer[type, rank, s3].stack_allocation()
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x1_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x1.data, s1
     )
-    let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x2_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x2.data, s2
     )
-    let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let x3_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         x3.data, s3
     )
 
     alias out_shape = DimList(1, 1, 6, 2, 2)
-    let output = NDBuffer[rank, out_shape, type]().stack_allocation()
+    let output = NDBuffer[type, rank, out_shape]().stack_allocation()
     output.fill(-1)
-    let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+    let output_dyn = NDBuffer[type, rank, DimList.create_unknown[rank]()](
         output.data, out_shape
     )
 
     let input_list = VariadicList[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+        NDBuffer[type, rank, DimList.create_unknown[rank]()]
     ](x1_dyn, x2_dyn, x3_dyn)
 
     let input_vec = variadic_list_to_vector(input_list)

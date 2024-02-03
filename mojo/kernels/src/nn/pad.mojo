@@ -29,7 +29,7 @@ from math import min
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
-    _ = Buffer[Dim(), type](dst, count).fill(value)
+    _ = Buffer[type, Dim()](dst, count).fill(value)
 
 
 struct _NestedLoopIter[n_loops: Int]:
@@ -113,8 +113,8 @@ fn pad_constant[
     paddings_type: DType,
     constant_type: DType,
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
+    output: NDBuffer[type, rank, output_shape],
+    input: NDBuffer[type, rank, input_shape],
     paddings: DTypePointer[paddings_type],
     constant: SIMD[constant_type, 1],
 ):
@@ -182,8 +182,8 @@ fn pad_reflect[
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
+    output: NDBuffer[type, rank, output_shape],
+    input: NDBuffer[type, rank, input_shape],
     paddings: DTypePointer[paddings_type],
 ):
     """
@@ -249,9 +249,9 @@ fn pad_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
-    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+    paddings_buf: NDBuffer[paddings_type, 2, DimList.create_unknown[2]()],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -304,12 +304,12 @@ fn _do_pad[
         DTypePointer[DType.index],
     ) capturing -> None,
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
+    output: NDBuffer[type, rank, output_shape],
+    input: NDBuffer[type, rank, input_shape],
     paddings: DTypePointer[paddings_type],
 ):
-    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
-    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    let input_strides_buf = Buffer[DType.index, rank].stack_allocation()
+    let output_strides_buf = Buffer[DType.index, rank].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
@@ -536,8 +536,8 @@ fn pad_repeat[
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
+    output: NDBuffer[type, rank, output_shape],
+    input: NDBuffer[type, rank, input_shape],
     paddings: DTypePointer[paddings_type],
 ):
     """
@@ -569,7 +569,7 @@ fn pad_repeat[
                   [3, 3, 4],
                   [3, 3, 4]]
     """
-    let padding_ndbuf = NDBuffer[2, DimList(rank, 2), paddings_type](paddings)
+    let padding_ndbuf = NDBuffer[paddings_type, 2, DimList(rank, 2)](paddings)
 
     var pre_pads = StaticIntTuple[rank]()
     var post_pads = StaticIntTuple[rank]()

@@ -19,9 +19,9 @@ fn test_calculate_unsqueeze_shape():
     print("== test_calculate_unsqueeze_shape")
 
     let data_matrix = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
     data_matrix[StaticIntTuple[1](0)] = 10
     data_matrix[StaticIntTuple[1](1)] = 11
@@ -29,9 +29,9 @@ fn test_calculate_unsqueeze_shape():
     # Main thing is indices not sorted.
     # Final shape should be [1, 1, 10, 1, 11, 1]
     let padding_indices = NDBuffer[
+        DType.index,
         1,
         DimList(4),
-        DType.index,
     ].stack_allocation()
     padding_indices[StaticIntTuple[1](0)] = 3
     padding_indices[StaticIntTuple[1](1)] = 1
@@ -39,19 +39,19 @@ fn test_calculate_unsqueeze_shape():
     padding_indices[StaticIntTuple[1](3)] = 5
 
     let final_shape = NDBuffer[
+        DType.index,
         1,
         DimList(6),
-        DType.index,
     ].stack_allocation()
 
     calculate_unsqueeze_shape[DType.index, DType.index, False](
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             data_matrix
         ),
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             padding_indices
         ),
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             final_shape
         ),
     )

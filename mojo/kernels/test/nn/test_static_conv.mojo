@@ -81,14 +81,14 @@ fn test[
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    let input = NDBuffer[4, DimList(N, H, W, C), type](input_ptr)
-    let filter = NDBuffer[4, DimList.create_unknown[4](), type](
+    let input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
+    let filter = NDBuffer[type, 4, DimList.create_unknown[4]()](
         filter_ptr, Index(R, S, C, F)
     )
-    let output_static = NDBuffer[4, DimList(N, HO, WO, F), type](
+    let output_static = NDBuffer[type, 4, DimList(N, HO, WO, F)](
         output_ptr_static
     )
-    let output_dynamic = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output_dynamic = NDBuffer[type, 4, DimList.create_unknown[4]()](
         output_ptr_dynamic, Index(N, HO, WO, F)
     )
 
@@ -101,7 +101,7 @@ fn test[
     let packed_filter_ptr_dynamic = DTypePointer[type].alloc(
         R * S * C * rounded_F_dynamic
     )
-    let packed_filter_dynamic = NDBuffer[5, DimList.create_unknown[5](), type](
+    let packed_filter_dynamic = NDBuffer[type, 5, DimList.create_unknown[5]()](
         packed_filter_ptr_dynamic,
         Index(
             div_ceil(F, micro_kernel_f_size_default),
@@ -132,7 +132,7 @@ fn test[
         False,
     ].run(
         output_dynamic,
-        rebind[NDBuffer[4, DimList.create_unknown[4](), type]](input),
+        rebind[NDBuffer[type, 4, DimList.create_unknown[4]()]](input),
         packed_filter_dynamic,
         conv_shape,
     )
@@ -157,13 +157,13 @@ fn test[
     let packed_filter_ptr_static = DTypePointer[type].alloc(
         R * S * C * rounded_F_static
     )
-    let packed_filter_static = NDBuffer[5, packed_filter_shape, type](
+    let packed_filter_static = NDBuffer[type, 5, packed_filter_shape](
         packed_filter_ptr_static
     )
 
     pack_filter[simd_size, micro_kernel_f_size](
         filter,
-        rebind[NDBuffer[5, DimList.create_unknown[5](), type]](
+        rebind[NDBuffer[type, 5, DimList.create_unknown[5]()]](
             packed_filter_static
         ),
         num_groups,

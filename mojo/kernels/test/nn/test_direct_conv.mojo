@@ -99,24 +99,24 @@ fn test[
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    let input = NDBuffer[4, DimList.create_unknown[4](), type](
+    let input = NDBuffer[type, 4, DimList.create_unknown[4]()](
         input_ptr, Index(N, H, W, C)
     )
-    let filter = NDBuffer[4, DimList.create_unknown[4](), type](
+    let filter = NDBuffer[type, 4, DimList.create_unknown[4]()](
         filter_ptr, Index(R, S, C // num_groups, F)
     )
     let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
+    let packed_filter = NDBuffer[type, 5, DimList.create_unknown[5]()](
         packed_filter_ptr,
         packed_filter_shape,
     )
-    let output = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output = NDBuffer[type, 4, DimList.create_unknown[4]()](
         output_ptr, Index(N, HO, WO, F)
     )
-    let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output_ref = NDBuffer[type, 4, DimList.create_unknown[4]()](
         output_ref_ptr, Index(N, HO, WO, F)
     )
 

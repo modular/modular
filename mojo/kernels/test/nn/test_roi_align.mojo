@@ -18,9 +18,9 @@ def test_roi_align_avg():
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    let input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-    let output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
-    let rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
+    let input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
+    let output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
+    let rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
 
     for i in range(10):
         for j in range(10):
@@ -81,9 +81,9 @@ def test_roi_align_max():
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    let input = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-    let output = NDBuffer[4, out_shape, DType.float32].stack_allocation()
-    let rois = NDBuffer[2, roi_shape, DType.float32].stack_allocation()
+    let input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
+    let output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
+    let rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
 
     for i in range(10):
         for j in range(10):

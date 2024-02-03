@@ -20,7 +20,7 @@ from utils.list import Dim, DimList
 
 fn print_elements[
     type: DType, in_rank: Int
-](tensor: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type]):
+](tensor: NDBuffer[type, in_rank, DimList.create_unknown[in_rank]()]):
     print("New shape:", tensor.dynamic_shape)
     print("New strides:", tensor.dynamic_stride)
 
@@ -43,19 +43,19 @@ fn test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
     let memory1 = stack_allocation[1, dtype, 1]()
-    let start_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
+    let start_tensor = NDBuffer[dtype, 1, DimList.create_unknown[1]()](
         memory1, StaticIntTuple[1](1)
     )
     start_tensor[0] = start
 
     let memory2 = stack_allocation[1, dtype, 1]()
-    let stop_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
+    let stop_tensor = NDBuffer[dtype, 1, DimList.create_unknown[1]()](
         memory2, StaticIntTuple[1](1)
     )
     stop_tensor[0] = stop
 
     let memory3 = stack_allocation[1, dtype, 1]()
-    let step_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
+    let step_tensor = NDBuffer[dtype, 1, DimList.create_unknown[1]()](
         memory3, StaticIntTuple[1](1)
     )
     step_tensor[0] = step
@@ -77,7 +77,7 @@ fn test_arange[
         return
 
     let memory4 = stack_allocation[max_output_size, dtype, 1]()
-    let out_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
+    let out_tensor = NDBuffer[dtype, 1, DimList.create_unknown[1]()](
         memory4, outshape
     )
 

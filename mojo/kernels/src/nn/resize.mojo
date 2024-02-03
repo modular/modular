@@ -111,8 +111,8 @@ fn resize_nearest_neighbor[
     rank: Int,
     type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     var scales = StaticTuple[rank, Float32]()
     for i in range(rank):
@@ -195,8 +195,8 @@ fn interpolate_point_1d[
     dim: Int,
     out_coords: StaticIntTuple[rank],
     scale: Float32,
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     let center = coord_transform[coordinate_transformation_mode](
         out_coords[dim], input.dim(dim), output.dim(dim), scale
@@ -227,8 +227,8 @@ fn resize_linear[
     rank: Int,
     type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     """Resizes input to output shape using linear interpolation.
 
@@ -259,8 +259,8 @@ fn _resize[
     rank: Int,
     type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     var scales = StaticTuple[rank, Float32]()
 
@@ -302,10 +302,10 @@ fn _resize[
         let resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
-        let in_buf = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        let in_buf = NDBuffer[type, rank, DimList.create_unknown[rank]()](
             in_ptr, in_shape
         )
-        let out_buf = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        let out_buf = NDBuffer[type, rank, DimList.create_unknown[rank]()](
             out_ptr, out_shape
         )
 

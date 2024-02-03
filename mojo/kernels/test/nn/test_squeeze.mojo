@@ -19,9 +19,9 @@ fn test_calculate_squeeze_shape():
     print("== test_calculate_squeeze_shape")
 
     let data_matrix = NDBuffer[
+        DType.index,
         1,
         DimList(8),
-        DType.index,
     ].stack_allocation()
     data_matrix[StaticIntTuple[1](0)] = 1
     data_matrix[StaticIntTuple[1](1)] = 10
@@ -34,28 +34,28 @@ fn test_calculate_squeeze_shape():
 
     # Main thing is indices not sorted.
     let remove_indices = NDBuffer[
+        DType.index,
         1,
         DimList(3),
-        DType.index,
     ].stack_allocation()
     remove_indices[StaticIntTuple[1](0)] = 0
     remove_indices[StaticIntTuple[1](1)] = -1  # same as index 7
     remove_indices[StaticIntTuple[1](2)] = 4
 
     let final_shape = NDBuffer[
+        DType.index,
         1,
         DimList(5),
-        DType.index,
     ].stack_allocation()
 
     calculate_squeeze_shape[DType.index, DType.index, False](
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             data_matrix
         ),
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             remove_indices
         ),
-        rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+        rebind[NDBuffer[DType.index, 1, DimList.create_unknown[1]()]](
             final_shape
         ),
     )

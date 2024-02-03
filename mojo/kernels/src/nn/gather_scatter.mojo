@@ -90,12 +90,12 @@ fn gather_reduce[
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
 ](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
+    output: NDBuffer[type, output_rank, output_shape],
+    input: NDBuffer[type, input_rank, input_shape],
     indices: NDBuffer[
+        DType.int32,
         indices_rank,
         indices_shape,
-        DType.int32,
     ],
     reduce_init: SIMD[type, 1],
 ):
@@ -140,14 +140,14 @@ fn gather_reduce[
     if output_rank == 3:
         output_2d_dims[1] = output.dim[2]()
 
-    let output_bind = NDBuffer[2, DimList.create_unknown[2](), type](
+    let output_bind = NDBuffer[type, 2, DimList.create_unknown[2]()](
         output.data, output_2d_dims
     )
-    let input_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
+    let input_bind = rebind[NDBuffer[type, 2, DimList.create_unknown[2]()]](
         input
     )
     let indices_bind = rebind[
-        NDBuffer[indices_rank, indices_shape, DType.int32]
+        NDBuffer[DType.int32, indices_rank, indices_shape]
     ](indices)
 
     let gather_axis_size = input.get_shape()[gather_axis]
@@ -246,10 +246,10 @@ fn gather[
     indices_type: DType,
     target: StringLiteral = "cpu",
 ](
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
-    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
+    output: NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()],
+    input: NDBuffer[type, input_rank, DimList.create_unknown[input_rank]()],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -650,15 +650,15 @@ fn scatter_nd_generator[
         ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
     ] = None,
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
+    data: NDBuffer[output_type, data_rank, DimList.create_unknown[data_rank]()],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     output: NDBuffer[
-        data_rank, DimList.create_unknown[data_rank](), output_type
+        output_type, data_rank, DimList.create_unknown[data_rank]()
     ],
 ) raises:
     """
@@ -833,15 +833,15 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
+    data: NDBuffer[output_type, data_rank, DimList.create_unknown[data_rank]()],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
+        output_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     output: NDBuffer[
-        data_rank, DimList.create_unknown[data_rank](), output_type
+        output_type, data_rank, DimList.create_unknown[data_rank]()
     ],
 ) raises:
     """Scatter_nd operation without any reduction."""
@@ -868,13 +868,13 @@ fn scatter_nd_shape[
     single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), input_type
+        input_type, updates_rank, DimList.create_unknown[updates_rank]()
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
 ) raises -> StaticIntTuple[input_rank]:
     """
@@ -955,12 +955,12 @@ fn gather_shape[
     single_thread_blocking_override: Bool = False,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
     indices_buf: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
@@ -1033,11 +1033,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[indices_type, rank, DimList.create_unknown[rank]()],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
     _axis: Int,
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1096,10 +1096,10 @@ fn scatter_elements_shape[
     axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    updates: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[indices_type, rank, DimList.create_unknown[rank]()],
+    axis: NDBuffer[axis_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a `scatter_elements` operation, and assert the
@@ -1162,10 +1162,10 @@ fn gather_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
+    input: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
+    indices: NDBuffer[indices_type, rank, DimList.create_unknown[rank]()],
     _axis: Int,
-    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    output: NDBuffer[input_type, rank, DimList.create_unknown[rank]()],
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1219,10 +1219,10 @@ fn gather_nd_shape[
     single_thread_blocking_override: Bool = True,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
     indices_buf: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
 ) raises -> StaticIntTuple[output_rank]:
     """
@@ -1300,11 +1300,11 @@ fn gather_nd[
     output_rank: Int,
     batch_dims: Int,
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    data: NDBuffer[type, data_rank, DimList.create_unknown[data_rank]()],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_type, indices_rank, DimList.create_unknown[indices_rank]()
     ],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output: NDBuffer[type, output_rank, DimList.create_unknown[output_rank]()],
 ):
     """
     GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
@@ -1383,7 +1383,7 @@ fn gather_nd[
 
     # idx[] stores the index from where to gather the requested elements.
     let idx_ptr = DTypePointer[DType.index].alloc(reshaped_indices_shape[2])
-    let idx = NDBuffer[1, DimList.create_unknown[1](), DType.index](
+    let idx = NDBuffer[DType.index, 1, DimList.create_unknown[1]()](
         idx_ptr, reshaped_indices_shape[2]
     )
 
@@ -1405,9 +1405,9 @@ fn gather_nd[
     # Stores the full index on reshaped_data, where to copy from.
     # It is constructed within the nested loop below.
     let start_tensor = NDBuffer[
+        DType.index,
         1,
         DimList(reshaped_data_rank),
-        DType.index,
     ]().stack_allocation()
     # Zeroing here to avoid doing it selectively within the nested loop below.
     memset_zero[DType.index](start_tensor.data, reshaped_data_rank)

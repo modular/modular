@@ -21,8 +21,8 @@ fn test_logsoftmax() raises:
     alias simd_width = simdwidthof[type]()
 
     fn logsoftmax_test_nd[rank: Int, shape: DimList]() raises:
-        let in_buf = NDBuffer[rank, shape, type].stack_allocation()
-        let out_buf = NDBuffer[rank, shape, type].stack_allocation()
+        let in_buf = NDBuffer[type, rank, shape].stack_allocation()
+        let out_buf = NDBuffer[type, rank, shape].stack_allocation()
         let in_buf_flat = in_buf.flatten()
         let out_buf_flat = out_buf.flatten()
         out_buf.zero()
@@ -65,10 +65,10 @@ fn test_softmax_2pass():
     alias simd_width = simdwidthof[type]()
     alias sz = 5
 
-    let in_buf = Buffer[sz, type].stack_allocation()
+    let in_buf = Buffer[type, sz].stack_allocation()
     for i in range(sz):
         in_buf[i] = i
-    let out_buf = Buffer[sz, type].stack_allocation()
+    let out_buf = Buffer[type, sz].stack_allocation()
     out_buf.zero()
 
     softmax_2_pass[simd_width, sz, type](out_buf, in_buf)

@@ -15,7 +15,7 @@ fn random_normal[
     output_shape: DimList,
     mean: Float64,
     variance: Float64,
-](output: NDBuffer[rank, output_shape, type]):
+](output: NDBuffer[type, rank, output_shape]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 

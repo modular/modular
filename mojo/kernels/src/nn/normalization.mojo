@@ -24,9 +24,9 @@ fn layer_norm[
     shape: DimList,
     inner_dim: DimList,
 ](
-    out_buf: NDBuffer[2, shape, type],
-    gamma_buf: NDBuffer[1, inner_dim, type],
-    beta_buf: NDBuffer[1, inner_dim, type],
+    out_buf: NDBuffer[type, 2, shape],
+    gamma_buf: NDBuffer[type, 1, inner_dim],
+    beta_buf: NDBuffer[type, 1, inner_dim],
     eps: SIMD[type, 1],
 ):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -54,7 +54,7 @@ fn layer_norm[
 
     for i in range(m):
         let start_coord = StaticIntTuple[2](i, 0)
-        let out_slice = Buffer[shape.at[1](), type](
+        let out_slice = Buffer[type, shape.at[1]()](
             out_buf._offset(start_coord), n
         )
 

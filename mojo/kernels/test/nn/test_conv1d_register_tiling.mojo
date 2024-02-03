@@ -105,9 +105,9 @@ fn conv1d_register_tiling(
 
 
 fn test_conv1d_register_tiling() raises:
-    let output = NDBuffer[3, output_shape, type].stack_allocation()
-    let input = NDBuffer[3, input_shape, type].stack_allocation()
-    let filter = NDBuffer[4, filter_shape, type].stack_allocation()
+    let output = NDBuffer[type, 3, output_shape].stack_allocation()
+    let input = NDBuffer[type, 3, input_shape].stack_allocation()
+    let filter = NDBuffer[type, 4, filter_shape].stack_allocation()
 
     output.fill(0.0)
     input.fill(1.0)

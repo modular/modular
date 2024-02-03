@@ -45,12 +45,12 @@ fn pool_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
-    filter_buf: NDBuffer[1, DimList.create_unknown[1](), filter_type],
-    strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
-    dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
-    paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
+    filter_buf: NDBuffer[filter_type, 1, DimList.create_unknown[1]()],
+    strides_buf: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
+    dilations_buf: NDBuffer[dilations_type, 1, DimList.create_unknown[1]()],
+    paddings_buf: NDBuffer[paddings_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
@@ -135,12 +135,12 @@ fn pool_shape[
 fn max_pool[
     type: DType, int_type: DType, rank: Int = 4
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    filter: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    strides: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    dilations: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    paddings: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     """Computes fp32 pooling.
 
@@ -296,12 +296,12 @@ fn avg_pool[
     rank: Int = 4,
     count_boundary: Bool = False,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    filter: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    strides: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    dilations: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    paddings: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
+    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
 ):
     """Computes the average pool.
 

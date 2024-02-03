@@ -15,7 +15,7 @@ fn test_random_normal():
     seed(0)
 
     alias out_shape = DimList(2, 2)
-    var output = NDBuffer[2, out_shape, DType.float32].stack_allocation()
+    var output = NDBuffer[DType.float32, 2, out_shape].stack_allocation()
     output.fill(0)
 
     random_normal[2, DType.float32, out_shape, 0.0, 1.0](output)

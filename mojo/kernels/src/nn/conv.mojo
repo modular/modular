@@ -372,9 +372,9 @@ struct ConvDirectNHWC[
     Assume F is divisible at least by simd_size.
     """
 
-    var output: NDBuffer[output_rank, output_shape, output_type]
-    var input: NDBuffer[input_rank, input_shape, input_type]
-    var filter: NDBuffer[filter_rank, filter_shape, filter_type]
+    var output: NDBuffer[output_type, output_rank, output_shape]
+    var input: NDBuffer[input_type, input_rank, input_shape]
+    var filter: NDBuffer[filter_type, filter_rank, filter_shape]
 
     var conv_shape: ConvShape[input_rank - 2]
 
@@ -398,9 +398,9 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[output_rank, output_shape, output_type],
-        input: NDBuffer[input_rank, input_shape, input_type],
-        filter: NDBuffer[filter_rank, filter_shape, filter_type],
+        output: NDBuffer[output_type, output_rank, output_shape],
+        input: NDBuffer[input_type, input_rank, input_shape],
+        filter: NDBuffer[filter_type, filter_rank, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
     ) raises:
         fn direct_null_elementwise_epilogue(
@@ -418,9 +418,9 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[output_rank, output_shape, output_type],
-        input: NDBuffer[input_rank, input_shape, input_type],
-        filter: NDBuffer[filter_rank, filter_shape, filter_type],
+        output: NDBuffer[output_type, output_rank, output_shape],
+        input: NDBuffer[input_type, input_rank, input_shape],
+        filter: NDBuffer[filter_type, filter_rank, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
         elementwise_epilogue_fn: elementwise_epilogue_type,
     ) raises:
@@ -471,7 +471,7 @@ struct ConvDirectNHWC[
         let scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
             output_ptr = DTypePointer[output_type].alloc(scratch_size)
-        let output_scratch = Buffer[Dim(), output_type](
+        let output_scratch = Buffer[output_type, Dim()](
             output_ptr, scratch_size
         )
 
@@ -495,7 +495,7 @@ struct ConvDirectNHWC[
 
             # TODO: Need to have a more robust way to compute task_id_c
             let task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
-            let task_output = NDBuffer[output_rank, output_shape, output_type](
+            let task_output = NDBuffer[output_type, output_rank, output_shape](
                 output_scratch.data.offset(task_id_c * output_size),
                 output.dynamic_shape,
             )
@@ -734,7 +734,7 @@ struct ConvDirectNHWC[
 
         # Base input offsets.
         let input_base_offsets = Buffer[
-            micro_kernel_height, DType.int32
+            DType.int32, micro_kernel_height
         ].stack_allocation()
 
         @unroll
@@ -749,9 +749,9 @@ struct ConvDirectNHWC[
 
         alias alignment = alignof[SIMD[output_type, simd_size]]()
         let output_micro_tile = NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ].aligned_stack_allocation[alignment]()
 
         let output_offset = self.conv_shape.f * (
@@ -878,9 +878,9 @@ struct ConvDirectNHWC[
     ](
         self,
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
     ):
         """Initialize a micro tile to zero.
@@ -909,9 +909,9 @@ struct ConvDirectNHWC[
         self,
         output_base: DTypePointer[output_type],
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
     ):
         """Load a micro tile from the output buffer.
@@ -964,9 +964,9 @@ struct ConvDirectNHWC[
     ](
         self,
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
         output_base: DTypePointer[output_type],
     ):
@@ -1053,14 +1053,14 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
         filter_base: DTypePointer[filter_type],
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
     ):
         """Accumulate with register tiling on SIMD ISAs other than NEON.
@@ -1142,14 +1142,14 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
         filter_base: DTypePointer[filter_type],
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
     ):
         """Accumulate with register tiling on NEON architectures."""
@@ -1227,14 +1227,14 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
         filter_base: DTypePointer[filter_type],
         output_micro_tile: NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ],
     ):
         @parameter
@@ -1976,9 +1976,9 @@ struct ConvDirectNHWC[
         alias filter_F_stride = R * S * filter_S_stride
 
         let output_micro_tile = NDBuffer[
+            output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            output_type,
         ].stack_allocation()
 
         # Initialize micro tile with 0 for its first use
@@ -2217,9 +2217,9 @@ fn conv1d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     let register_tile = NDBuffer[
+        output.type,
         2,
         DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        output.type,
     ].stack_allocation()
 
     if first_c_tile:
@@ -2402,9 +2402,9 @@ fn conv2d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     let register_tile = NDBuffer[
+        output.type,
         2,
         DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        output.type,
     ].stack_allocation()
 
     if first_c_tile:
@@ -2598,9 +2598,9 @@ fn conv3d_update_wo_tile[
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
     let register_tile = NDBuffer[
+        output.type,
         2,
         DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        output.type,
     ].stack_allocation()
 
     if first_c_tile:
@@ -2956,15 +2956,15 @@ fn conv_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+        input_type, input_rank, DimList.create_unknown[input_rank]()
     ],
     filter_buf: NDBuffer[
-        filter_rank, DimList.create_unknown[filter_rank](), filter_type
+        filter_type, filter_rank, DimList.create_unknown[filter_rank]()
     ],
-    strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
-    dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
-    paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
-    num_groups_buf: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
+    strides_buf: NDBuffer[strides_type, 1, DimList.create_unknown[1]()],
+    dilations_buf: NDBuffer[dilations_type, 1, DimList.create_unknown[1]()],
+    paddings_buf: NDBuffer[paddings_type, 1, DimList.create_unknown[1]()],
+    num_groups_buf: NDBuffer[num_groups_type, 1, DimList.create_unknown[1]()],
 ) raises -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
@@ -3075,9 +3075,9 @@ fn conv_2d_nhwc_direct[
     filter_shape: DimList,
     output_shape: DimList,
 ](
-    input: NDBuffer[4, input_shape, input_type],
-    filter: NDBuffer[filter_rank, filter_shape, filter_type],
-    output: NDBuffer[4, output_shape, output_type],
+    input: NDBuffer[input_type, 4, input_shape],
+    filter: NDBuffer[filter_type, filter_rank, filter_shape],
+    output: NDBuffer[output_type, 4, output_shape],
     conv_info: ConvInfo[conv_info_static],
 ) raises:
     constrained[
@@ -3090,8 +3090,8 @@ fn conv_2d_nhwc_direct[
         "unexpected filter rank for filter layout",
     ]()
 
-    let output_rebind = rebind[NDBuffer[4, output_shape, input_type]](output)
-    let filter_rebind = rebind[NDBuffer[filter_rank, filter_shape, input_type]](
+    let output_rebind = rebind[NDBuffer[input_type, 4, output_shape]](output)
+    let filter_rebind = rebind[NDBuffer[input_type, filter_rank, filter_shape]](
         filter
     )
 

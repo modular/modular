@@ -16,9 +16,9 @@ def test_where_size():
     print("== test_where_size")
     alias rank = 3
     let values = NDBuffer[
+        DType.float32,
         rank,
         DimList(3, 2, 1),
-        DType.float32,
     ].stack_allocation()
 
     values[StaticIntTuple[rank](0, 0, 0)] = 1.0
@@ -41,9 +41,9 @@ def test_where_size_bool():
     print("== test_where_size_bool")
     alias rank = 3
     let values = NDBuffer[
+        DType.bool,
         rank,
         DimList(3, 2, 1),
-        DType.bool,
     ].stack_allocation()
 
     values[StaticIntTuple[rank](0, 0, 0)] = True
@@ -66,9 +66,9 @@ def test_where():
     print("== test_where")
     alias rank = 3
     let values = NDBuffer[
+        DType.float32,
         rank,
         DimList(3, 2, 1),
-        DType.float32,
     ].stack_allocation()
 
     values[StaticIntTuple[rank](0, 0, 0)] = 1.0
@@ -79,15 +79,15 @@ def test_where():
     values[StaticIntTuple[rank](2, 1, 0)] = -3.0
 
     let computed_outputs = NDBuffer[
+        DType.index,
         2,
         DimList(3, 3),
-        DType.index,
     ].stack_allocation()
 
     let golden_outputs = NDBuffer[
+        DType.index,
         2,
         DimList(3, 3),
-        DType.index,
     ].stack_allocation()
 
     golden_outputs[StaticIntTuple[2](0, 0)] = 0
@@ -116,9 +116,9 @@ def test_where_1d():
     alias num_indices = 6
 
     let values = NDBuffer[
+        DType.float32,
         1,
         DimList(num_elements),
-        DType.float32,
     ].stack_allocation()
 
     values[0] = 0.0
@@ -135,15 +135,15 @@ def test_where_1d():
     values[11] = 1.0
 
     let computed_outputs = NDBuffer[
+        DType.index,
         2,
         DimList(num_indices, 1),
-        DType.index,
     ].stack_allocation()
 
     let golden_outputs = NDBuffer[
+        DType.index,
         1,
         DimList(num_indices),
-        DType.index,
     ].stack_allocation()
 
     golden_outputs[0] = 1
@@ -166,9 +166,9 @@ def test_where_bool():
     print("== test_where_bool")
     alias rank = 3
     let values = NDBuffer[
+        DType.bool,
         rank,
         DimList(3, 2, 1),
-        DType.bool,
     ].stack_allocation()
 
     values[StaticIntTuple[rank](0, 0, 0)] = True
@@ -179,15 +179,15 @@ def test_where_bool():
     values[StaticIntTuple[rank](2, 1, 0)] = True
 
     let computed_outputs = NDBuffer[
+        DType.index,
         2,
         DimList(3, 3),
-        DType.index,
     ].stack_allocation()
 
     let golden_outputs = NDBuffer[
+        DType.index,
         2,
         DimList(3, 3),
-        DType.index,
     ].stack_allocation()
 
     golden_outputs[StaticIntTuple[2](0, 0)] = 0

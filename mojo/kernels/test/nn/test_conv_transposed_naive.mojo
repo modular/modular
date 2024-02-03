@@ -31,9 +31,9 @@ fn test_convtranspose_pads():
     alias type = DType.float32
 
     let input = NDBuffer[
+        type,
         rank,
         DimList(1, 3, 3, 1),
-        type,
     ].stack_allocation()
 
     input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
@@ -49,9 +49,9 @@ fn test_convtranspose_pads():
     input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
 
     let kernel = NDBuffer[
+        type,
         rank,
         DimList(3, 3, 2, 1),
-        type,
     ].stack_allocation()
 
     kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
@@ -79,48 +79,48 @@ fn test_convtranspose_pads():
     kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
+        type,
         rank,
         DimList(1, 7, 3, 2),
-        type,
     ].stack_allocation()
 
     let bias = NDBuffer[
+        type,
         1,
         DimList(2),
-        type,
     ].stack_allocation()
 
     let strides = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     strides[0] = 3
     strides[1] = 2
 
     let dilations = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     dilations[0] = 1
     dilations[1] = 1
 
     let output_padding = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     output_padding[0] = 0
     output_padding[1] = 0
 
     let pads = NDBuffer[
+        DType.index,
         1,
         DimList(4),
-        DType.index,
     ].stack_allocation()
 
     pads[0] = 1
@@ -164,9 +164,9 @@ fn test_convtranspose():
     alias type = DType.float32
 
     let input = NDBuffer[
+        type,
         rank,
         DimList(1, 3, 3, 1),
-        type,
     ].stack_allocation()
 
     input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
@@ -182,9 +182,9 @@ fn test_convtranspose():
     input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
 
     let kernel = NDBuffer[
+        type,
         rank,
         DimList(3, 3, 2, 1),
-        type,
     ].stack_allocation()
 
     kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
@@ -212,48 +212,48 @@ fn test_convtranspose():
     kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
+        type,
         rank,
         DimList(1, 5, 5, 2),
-        type,
     ].stack_allocation()
 
     let bias = NDBuffer[
+        type,
         1,
         DimList(2),
-        type,
     ].stack_allocation()
 
     let strides = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     strides[0] = 1
     strides[1] = 1
 
     let dilations = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     dilations[0] = 1
     dilations[1] = 1
 
     let output_padding = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     output_padding[0] = 0
     output_padding[1] = 0
 
     let pads = NDBuffer[
+        DType.index,
         1,
         DimList(4),
-        DType.index,
     ].stack_allocation()
 
     pads[0] = 0
@@ -294,9 +294,9 @@ fn test_convtranspose_dilation():
     alias type = DType.float32
 
     let input = NDBuffer[
+        type,
         rank,
         DimList(1, 3, 3, 1),
-        type,
     ].stack_allocation()
 
     input[StaticIntTuple[rank](0, 0, 0, 0)] = 3
@@ -312,9 +312,9 @@ fn test_convtranspose_dilation():
     input[StaticIntTuple[rank](0, 2, 2, 0)] = 6
 
     let kernel = NDBuffer[
+        type,
         rank,
         DimList(2, 2, 1, 1),
-        type,
     ].stack_allocation()
 
     kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 7
@@ -324,48 +324,48 @@ fn test_convtranspose_dilation():
     kernel[StaticIntTuple[rank](1, 1, 0, 0)] = 9
 
     let output = NDBuffer[
+        type,
         rank,
         DimList(1, 5, 5, 1),
-        type,
     ].stack_allocation()
 
     let bias = NDBuffer[
+        type,
         1,
         DimList(2),
-        type,
     ].stack_allocation()
 
     let strides = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     strides[0] = 1
     strides[1] = 1
 
     let dilations = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     dilations[0] = 2
     dilations[1] = 2
 
     let output_padding = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     output_padding[0] = 0
     output_padding[1] = 0
 
     let pads = NDBuffer[
+        DType.index,
         1,
         DimList(4),
-        DType.index,
     ].stack_allocation()
 
     pads[0] = 0
@@ -421,9 +421,9 @@ fn test_convtranspose_attributes():
     alias type = DType.float32
 
     let input = NDBuffer[
+        type,
         rank,
         DimList(1, 3, 3, 1),
-        type,
     ].stack_allocation()
 
     input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
@@ -439,9 +439,9 @@ fn test_convtranspose_attributes():
     input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
 
     let kernel = NDBuffer[
+        type,
         rank,
         DimList(3, 3, 2, 1),
-        type,
     ].stack_allocation()
 
     kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
@@ -469,48 +469,48 @@ fn test_convtranspose_attributes():
     kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
+        type,
         rank,
         DimList(1, 10, 8, 2),
-        type,
     ].stack_allocation()
 
     let bias = NDBuffer[
+        type,
         1,
         DimList(2),
-        type,
     ].stack_allocation()
 
     let strides = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     strides[0] = 3
     strides[1] = 2
 
     let dilations = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     dilations[0] = 1
     dilations[1] = 1
 
     let output_padding = NDBuffer[
+        DType.index,
         1,
         DimList(2),
-        DType.index,
     ].stack_allocation()
 
     output_padding[0] = 1
     output_padding[1] = 1
 
     let pads = NDBuffer[
+        DType.index,
         1,
         DimList(4),
-        DType.index,
     ].stack_allocation()
 
     pads[0] = 0
