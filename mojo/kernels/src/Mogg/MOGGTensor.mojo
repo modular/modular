@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # A temporary home for the experimental tensor type.
 
-from algorithm.functional import vectorize_unroll, elementwise
+from algorithm.functional import vectorize, elementwise
 from math import fma
 from memory.buffer import NDBuffer
 from MOGGIntList import IntList
@@ -491,7 +491,7 @@ struct Tensor[
                 self.store(indices, out)
 
             # We vectorize over the innermost dimension.
-            vectorize_unroll[simd_width, 1, func_wrapper](inner_loop)
+            vectorize[func_wrapper, simd_width](inner_loop)
 
             # We have to extend the lifetime of the indices as the above parameter
             # capture and use does not extend the lifetime of the object.

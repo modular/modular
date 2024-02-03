@@ -54,7 +54,6 @@ from algorithm import (
     reduce_shape,
     unroll,
     vectorize,
-    vectorize_unroll,
 )
 from algorithm.functional import _elementwise_impl, _async_elementwise_impl
 from algorithm.reduction import (

@@ -93,8 +93,8 @@ fn test_3D_in_out_lambda[
                 output_0_fn[simd_width, 3](indices, result)
 
             vectorize[
-                simd_width,
                 func_wrapper,
+                simd_width,
             ](tensor1.dim[2]())
 
     return output
