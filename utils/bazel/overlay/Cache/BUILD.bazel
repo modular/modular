@@ -166,6 +166,7 @@ cc_library(
         ":CacheAttrs",
         ":CacheTypes",
         "//LLCL:CompilerSupport",
+        "//Support:Compiler",
         "//Support:MDialect",
         "@llvm-project//mlir:AsmParser",
         "@llvm-project//mlir:Pass",
