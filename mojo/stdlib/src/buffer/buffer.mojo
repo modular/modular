@@ -351,7 +351,7 @@ struct Buffer[
         fn _fill[simd_width: Int](idx: Int):
             self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
 
-        vectorize[simd_width, _fill](len(self))
+        vectorize[_fill, simd_width](len(self))
 
     @always_inline
     fn fill(self, val: SIMD[type, 1]):
