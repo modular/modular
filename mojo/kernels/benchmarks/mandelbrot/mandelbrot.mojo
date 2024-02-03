@@ -247,7 +247,7 @@ fn mandelbrot[
 
         # We vectorize the call to compute_vector where call gets a chunk of
         # pixels.
-        vectorize[simd_width, compute_vector](w)
+        vectorize[compute_vector, simd_width](w)
 
     @parameter
     if step == BlogPost2Step.PARALLELIZE:
