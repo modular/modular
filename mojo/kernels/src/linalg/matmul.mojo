@@ -20,7 +20,6 @@ from algorithm import (
     unroll,
     unswitch,
     vectorize,
-    vectorize_unroll,
 )
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE, lane_id
 from gpu.memory import AddressSpace
@@ -87,7 +86,7 @@ fn elementwise_epilogue_c_tile[
             let c_val = c.simd_load[col_chunk_size](c_coord)
             func[type, col_chunk_size](c_coord, c_val)
 
-    vectorize[simd_width, activation_on_col_chunk](tile_len.N)
+    vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2315,7 +2314,6 @@ fn _small_matmul[
     c: NDBuffer[type, 2, c_shape],
 ):
     alias simd_width = simdwidthof[type]()
-    alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
 
     let M = a.dim[0]()
     let N = b.dim[0]() if transpose_b else b.dim[1]()
@@ -2339,7 +2337,7 @@ fn _small_matmul[
                             m, k
                         ) * b.simd_load[simd_width](n, k)
 
-                vectorize_unroll[simd_width, unroll_factor, compute_fn](K)
+                vectorize[compute_fn, simd_width, unroll_factor=2](K)
 
                 let val = acc_vector.reduce_add() + acc_scalar
 
@@ -2390,7 +2388,7 @@ fn _small_matmul[
                     + a_val * b.simd_load[simd_width](k, n),
                 )
 
-            vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
+            vectorize[_wrapper, simd_width, unroll_factor=2](N)
 
         for m in range(M):
             memset_zero(c.data + m * N, N)
@@ -3351,7 +3349,7 @@ fn _matmul_cpu[
                         t0,
                     )
 
-            vectorize[2, packA_helper](t1 - t0)
+            vectorize[packA_helper, 2](t1 - t0)
 
         @always_inline
         @parameter

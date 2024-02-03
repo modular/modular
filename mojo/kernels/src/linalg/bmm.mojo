@@ -11,7 +11,7 @@ from sys.info import simdwidthof
 from gpu import ThreadIdx, BlockIdx, BlockDim
 from gpu.host import Function, Stream
 
-from algorithm import sync_parallelize, vectorize_unroll
+from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
 from Matmul import _submatmul_sequential_sync
@@ -195,8 +195,7 @@ fn _small_batched_matmul[
                             + a_val.cast[c_type]() * b_val.cast[c_type](),
                         )
 
-                    alias unroll_factor = 2
-                    vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
+                    vectorize[compute_fn, simd_width, unroll_factor=2](N)
 
             @parameter
             if elementwise_epilogue_fn:
@@ -211,7 +210,7 @@ fn _small_batched_matmul[
                         alias func = elementwise_epilogue_fn.value()
                         func[c_type, width, rank](indices, val)
 
-                    vectorize_unroll[simd_width, 1, apply_epilogue](N)
+                    vectorize[apply_epilogue, simd_width](N)
 
     return
 

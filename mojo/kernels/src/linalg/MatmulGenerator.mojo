@@ -7,7 +7,7 @@
 from math import div_ceil, max, min
 from sys.info import simdbytewidth, simdwidthof
 
-from algorithm import tile, tile_and_unswitch, vectorize_unroll
+from algorithm import tile, tile_and_unswitch, vectorize
 from Matmul import (
     GemmShape,
     MatmulConfig,
@@ -1354,8 +1354,8 @@ struct TiledMatmulBiasGenerated[
                         c_coord, c_val + bias_val
                     )
 
-            alias unroll_factor = 4  # TODO: Search
-            vectorize_unroll[unroll_factor, config.simd_size, bias_col_chunk](
+            # TODO: Search tile factor
+            vectorize[bias_col_chunk, config.simd_size, unroll_factor=4](
                 dynamic_state.valid_tile_bound.N
             )
 

@@ -972,7 +972,7 @@ fn _copy_with_strides[
                 src_ptr = src_ptr.offset(simd_width * input_axis_stride)
                 dst_ptr = dst_ptr.offset(simd_width * output_axis_stride)
 
-            vectorize[simdwidthof[type](), _copy](axis_dim)
+            vectorize[_copy, simdwidthof[type]()](axis_dim)
 
         return
 
