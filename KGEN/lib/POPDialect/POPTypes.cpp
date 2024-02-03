@@ -194,7 +194,7 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
 
 std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
   if (std::optional<int64_t> size = getTypeSize(target))
-    return llvm::PowerOf2Ceil(*size);
+    return std::max((int64_t)llvm::PowerOf2Ceil(*size), (int64_t)1);
   return {};
 }
 

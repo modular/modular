@@ -2026,7 +2026,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   //    get[i: Int, T: AnyRegType](self)
   // FIXME(Issue #14946): The Tuple.get's T parameter shouldn't exist!
   //   https://github.com/modularml/modular/issues/14946
-  // For the dynamic case we'd use __get_item__.
+  // For the dynamic case we'd use __getitem__.
   auto getDecl =
       OverloadSet::lookup(emitter.declScope, emitter.shared, elementType, "get",
                           expr, CallSyntax::kTupleGetItem,
