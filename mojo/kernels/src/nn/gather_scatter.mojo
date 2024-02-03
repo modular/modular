@@ -13,7 +13,6 @@ from algorithm import (
     elementwise,
     unroll,
     vectorize,
-    vectorize_unroll,
 )
 from algorithm.functional import (
     _elementwise_impl,

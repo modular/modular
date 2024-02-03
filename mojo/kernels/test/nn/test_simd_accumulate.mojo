@@ -69,7 +69,7 @@ def test_accumulate[
     fn fill_c[widthj: Int](offset: Int):
         (c + offset).simd_store(SIMD[type, simd_size](0.0))
 
-    vectorize[simd_size, fill_c](c_size)
+    vectorize[fill_c, simd_size, c_size]()
 
     accumulate[num_rows, num_cols, simd_size](
         length, c, a, length, b, kernel_width

@@ -6,7 +6,7 @@
 
 from math import sqrt
 
-from algorithm import map_reduce, mean, variance, vectorize, vectorize_unroll
+from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from memory.buffer import Buffer, NDBuffer
 
@@ -101,4 +101,4 @@ fn layer_norm[
             )
             out_slice.simd_store(idx, norm_val)
 
-        vectorize[simd_width, _normalize](n)
+        vectorize[_normalize, simd_width](n)

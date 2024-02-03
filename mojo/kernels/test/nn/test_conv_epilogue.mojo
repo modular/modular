@@ -178,7 +178,7 @@ fn test[
                         ),
                     )
 
-                vectorize[simd_size, body](F)
+                vectorize[body, simd_size](F)
 
     # Test epilogue
     fn epilogue(
@@ -197,7 +197,7 @@ fn test[
                 coords, 10.0 * (vec + bias_ptr.simd_load[width](f_offset + idx))
             )
 
-        vectorize[simd_size, body](f_size)
+        vectorize[body, simd_size](f_size)
 
     @parameter
     if filter_packed:

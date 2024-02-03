@@ -23,7 +23,6 @@ from algorithm import (
     unroll,
     unswitch,
     vectorize,
-    vectorize_unroll,
 )
 from .AccumulateSIMD import (
     accumulate,
@@ -327,7 +326,7 @@ fn _reduce_output[
                 )
             output.simd_store[width](tid_output_offset, vec)
 
-        vectorize_unroll[simd_size, 4, sum](reduce_range[1] * F)
+        vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
 
         @parameter
         if elementwise_epilogue_enabled:
@@ -3132,7 +3131,7 @@ fn conv_2d_nhwc_direct[
             let vec = output.simd_load[width](coords)
             epilogue_wrapper[output_type, width](coords, vec)
 
-        vectorize[simd_size, body](f_size)
+        vectorize[body, simd_size](f_size)
 
     ConvDirectNHWC[
         4,  # input_rank
