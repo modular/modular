@@ -100,11 +100,11 @@ struct EngineTensor(Sized):
             self.lib, self.session.copy()
         ).get_as_tensor_spec()
 
-    fn buffer[type: DType](self) raises -> Buffer[type, Dim()]:
-        return Buffer[type, Dim()](self.data[type](), len(self))
+    fn buffer[type: DType](self) raises -> Buffer[type]:
+        return Buffer[type](self.data[type](), len(self))
 
-    fn buffer(self) -> Buffer[DType.invalid, Dim()]:
-        return Buffer[DType.invalid, Dim()](
+    fn buffer(self) -> Buffer[DType.invalid]:
+        return Buffer[DType.invalid](
             self.data(), len(self) * self.dtype().sizeof()
         )
 
