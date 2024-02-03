@@ -62,9 +62,7 @@ fn _get_batch_dims[
 @always_inline
 fn _reshape_nd_buffer_with_batch_to_3d[
     rank: Int, dtype: DType
-](buffer: NDBuffer[dtype, rank, DimList.create_unknown[rank]()]) -> NDBuffer[
-    dtype, 3, DimList.create_unknown[3]()
-]:
+](buffer: NDBuffer[dtype, rank]) -> NDBuffer[dtype, 3]:
     constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
 
     var batch_size = 1
@@ -77,9 +75,7 @@ fn _reshape_nd_buffer_with_batch_to_3d[
         buffer.dim(buffer.get_rank() - 1),
     )
 
-    return NDBuffer[dtype, 3, DimList.create_unknown[3]()](
-        buffer.data.bitcast[dtype](), matrix_shape
-    )
+    return NDBuffer[dtype, 3](buffer.data.bitcast[dtype](), matrix_shape)
 
 
 @always_inline
@@ -90,9 +86,9 @@ fn _small_batched_matmul[
     c_type: DType,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
-    a_buf: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buf: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
+    c_buf: NDBuffer[c_type, rank],
+    a_buf: NDBuffer[a_type, rank],
+    b_buf: NDBuffer[b_type, rank],
 ):
     alias simd_width = simdwidthof[c_type]()
 
@@ -112,12 +108,8 @@ fn _small_batched_matmul[
             # each trailing batch dimension.
             var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
 
-            let a_view = NDBuffer[a_type, 1, DimList.create_unknown[1]()](
-                a_buf.data + batch * K, (K)
-            )
-            let b_view = NDBuffer[b_type, 1, DimList.create_unknown[1]()](
-                b_buf.data + batch * K, (K)
-            )
+            let a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, (K))
+            let b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, (K))
 
             @always_inline
             @parameter
@@ -228,9 +220,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    c_buf: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
-    a_buf: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buf: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
+    c_buf: NDBuffer[c_type, rank],
+    a_buf: NDBuffer[a_type, rank],
+    b_buf: NDBuffer[b_type, rank],
 ):
     # TODO: generalize to > rank 3
     @parameter
@@ -251,7 +243,7 @@ fn batched_matmul[
     fn null_rowwise_epilogue(
         start_row: Int,
         num_rows: Int,
-        c: NDBuffer[c_type, 2, DimList.create_unknown[2]()],
+        c: NDBuffer[c_type, 2],
     ):
         pass
 
@@ -281,12 +273,10 @@ fn _batched_matmul_cpu[
     rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
-    a_buf: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buf: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
-    rowwise_epilogue: fn (
-        Int, Int, NDBuffer[c_type, 2, DimList.create_unknown[2]()]
-    ) escaping -> None,
+    c_buf: NDBuffer[c_type, rank],
+    a_buf: NDBuffer[a_type, rank],
+    b_buf: NDBuffer[b_type, rank],
+    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
@@ -364,15 +354,15 @@ fn _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            let c_view = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
+            let c_view = NDBuffer[c_type, 2](
                 c.data.offset(batch * c_stride_between_batches),
                 StaticIntTuple[2](c.dim[1](), c.dim[2]()),
             )
-            let a_view = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
+            let a_view = NDBuffer[a_type, 2](
                 a.data.offset(batch * a_stride_between_batches),
                 StaticIntTuple[2](a.dim[1](), a.dim[2]()),
             )
-            let b_view = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+            let b_view = NDBuffer[b_type, 2](
                 b.data.offset(batch * b_stride_between_batches),
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
             )
@@ -489,12 +479,10 @@ fn _batched_matmul_gpu[
     rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
-    a_buf: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buf: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
-    rowwise_epilogue: fn (
-        Int, Int, NDBuffer[c_type, 2, DimList.create_unknown[2]()]
-    ) escaping -> None,
+    c_buf: NDBuffer[c_type, rank],
+    a_buf: NDBuffer[a_type, rank],
+    b_buf: NDBuffer[b_type, rank],
+    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
     constrained[
         not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
@@ -557,12 +545,10 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    c_buf: NDBuffer[c_type, rank, DimList.create_unknown[rank]()],
-    a_buf: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buf: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
-    rowwise_epilogue: fn (
-        Int, Int, NDBuffer[c_type, 2, DimList.create_unknown[2]()]
-    ) escaping -> None,
+    c_buf: NDBuffer[c_type, rank],
+    a_buf: NDBuffer[a_type, rank],
+    b_buf: NDBuffer[b_type, rank],
+    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
     alias func = _batched_matmul_cpu if target == "cpu" else _batched_matmul_gpu
@@ -586,8 +572,8 @@ fn batched_matmul_shape[
     b_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[a_type, rank, DimList.create_unknown[rank]()],
-    b_buff: NDBuffer[b_type, rank, DimList.create_unknown[rank]()],
+    a_buff: NDBuffer[a_type, rank],
+    b_buff: NDBuffer[b_type, rank],
 ) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the

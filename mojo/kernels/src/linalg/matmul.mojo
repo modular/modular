@@ -1894,9 +1894,7 @@ fn pack_b[
         )
         for idx_k in range(0, k_out, tile_k):
             for idx_n in range(0, n_out, tile_n):
-                let packed_dst_view = NDBuffer[
-                    b_type, 3, DimList.create_unknown[3]()
-                ](
+                let packed_dst_view = NDBuffer[b_type, 3](
                     dst_flat.data.offset(dst_offset),
                     DimList(
                         tile_n // inner_size2,
@@ -1943,9 +1941,7 @@ fn pack_b[
 
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
-                let packed_dst_view_t = NDBuffer[
-                    b_type, 3, DimList.create_unknown[3]()
-                ](
+                let packed_dst_view_t = NDBuffer[b_type, 3](
                     dst_flat.data.offset(dst_offset),
                     DimList(tile_n // inner_size, tile_k, inner_size),
                 )
@@ -1979,10 +1975,7 @@ fn _pack_b_ndbuffer_impl[
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
-](
-    b_input: NDBuffer[b_type, 2, b_shape],
-    output_buffer: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
-):
+](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
     """Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
     `output_buffer`.
@@ -2059,10 +2052,7 @@ fn pack_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](
-    b_input: NDBuffer[b_type, 2, b_shape],
-    output_buffer: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
-):
+](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
     """
     Perform matmul weight packing on the given input.
 
@@ -2101,10 +2091,7 @@ fn pack_transposed_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](
-    b_input: NDBuffer[b_type, 2, b_shape],
-    output_buffer: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
-):
+](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
     """
     Perform matmul weight packing on a transposed input.
 
@@ -2812,9 +2799,9 @@ fn matmul_kernel[
     access.
     """
 
-    let a = NDBuffer[a_type, 2, DimList.create_unknown[2]()](a_ptr, Index(m, k))
-    let b = NDBuffer[b_type, 2, DimList.create_unknown[2]()](b_ptr, Index(k, n))
-    let c = NDBuffer[c_type, 2, DimList.create_unknown[2]()](c_ptr, Index(m, n))
+    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
+    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    let c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
     # Allocate A, B tile in shared memory.
     let a_shared = stack_allocation[
@@ -2920,9 +2907,9 @@ fn matmul_kernel_naive[
     if x >= m or y >= n:
         return
 
-    let a = NDBuffer[a_type, 2, DimList.create_unknown[2]()](a_ptr, Index(m, k))
-    let b = NDBuffer[b_type, 2, DimList.create_unknown[2]()](b_ptr, Index(k, n))
-    let c = NDBuffer[c_type, 2, DimList.create_unknown[2]()](c_ptr, Index(m, n))
+    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
+    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    let c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
     var accum = SIMD[c_type, 1]()
     for i in range(k):
@@ -3286,9 +3273,9 @@ fn _matmul_cpu[
 
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        let out = Buffer[c_type, Dim()](c.data, c.dim[0]())
+        let out = Buffer[c_type](c.data, c.dim[0]())
         let lhs = rebind[NDBuffer[a_type, 2, a_shape]](a)
-        let rhs = Buffer[b_type, Dim()](b.data, b.dim[0]())
+        let rhs = Buffer[b_type](b.data, b.dim[0]())
         gemv[
             parallelize=True,
             c_size = Dim(),

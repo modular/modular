@@ -40,14 +40,14 @@ alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[type, Dim()](a_ptr.bitcast[type](), n)
+    let a = Buffer[type](a_ptr.bitcast[type](), n)
     for i in range(n):
         let v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
         print(v)
 
 
 fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[type, Dim()](a_ptr.bitcast[type](), m * n)
+    let a = Buffer[type](a_ptr.bitcast[type](), m * n)
     for i in range(m):
         print("row")
         for j in range(n):
@@ -58,7 +58,7 @@ fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
 @always_inline
 fn identity_epilogue_rowise_func[
     accum_type: DType
-](row_idx: Int, row: Buffer[accum_type, Dim()]):
+](row_idx: Int, row: Buffer[accum_type]):
     pass
 
 
@@ -75,10 +75,10 @@ fn init_matrices(
     c_ptr: DTypePointer[DType.int32],
     c2_ptr: DTypePointer[DType.int32],
 ):
-    let a = Buffer[DType.int8, Dim()](a_ptr.address, 1024)
-    let b = Buffer[DType.int8, Dim()](b_ptr.address, 1024)
-    let c = Buffer[DType.int32, Dim()](c_ptr.address, 256)
-    let c2 = Buffer[DType.int32, Dim()](c2_ptr.address, 256)
+    let a = Buffer[DType.int8](a_ptr.address, 1024)
+    let b = Buffer[DType.int8](b_ptr.address, 1024)
+    let c = Buffer[DType.int32](c_ptr.address, 256)
+    let c2 = Buffer[DType.int32](c2_ptr.address, 256)
     let b2 = Buffer[DType.int8, 1024].stack_allocation()
 
     for i in range(1024):

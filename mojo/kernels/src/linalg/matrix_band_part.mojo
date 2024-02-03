@@ -26,10 +26,10 @@ fn matrix_band_part[
     single_thread_blocking_override: Bool,
 ](
     input_shape: StaticIntTuple[rank],
-    num_lower: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
-    num_upper: NDBuffer[int_type, 1, DimList.create_unknown[1]()],
-    exclude_buf: NDBuffer[cond_type, 1, DimList.create_unknown[1]()],
-    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    num_lower: NDBuffer[int_type, 1],
+    num_upper: NDBuffer[int_type, 1],
+    exclude_buf: NDBuffer[cond_type, 1],
+    output: NDBuffer[type, rank],
 ):
     let lower_diagonal_index = int(num_lower[0])
     let upper_diagonal_index = int(num_upper[0])

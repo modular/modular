@@ -77,9 +77,9 @@ fn matrix_solve[
     b_rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    a: NDBuffer[type, a_rank, DimList.create_unknown[a_rank]()],
-    b: NDBuffer[type, b_rank, DimList.create_unknown[b_rank]()],
-    x: NDBuffer[type, x_rank, DimList.create_unknown[x_rank]()],
+    a: NDBuffer[type, a_rank],
+    b: NDBuffer[type, b_rank],
+    x: NDBuffer[type, x_rank],
 ) raises:
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS
@@ -133,8 +133,8 @@ fn matrix_solve_shape[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    b_buff: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    a_buff: NDBuffer[type, rank],
+    b_buff: NDBuffer[type, rank],
 ) raises -> StaticIntTuple[rank]:
     """
     Compute the output shape of a matrix solve operation (i.e., given A and B

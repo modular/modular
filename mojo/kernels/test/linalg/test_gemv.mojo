@@ -46,9 +46,7 @@ fn test_gemv():
     alias k = 11008
 
     let lhs_storage = DTypePointer[type].aligned_alloc(alignment, m * k)
-    let lhs = NDBuffer[type, 2, DimList.create_unknown[2]()](
-        lhs_storage, Index(m, k)
-    )
+    let lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
     let rhs_storage = DTypePointer[type].aligned_alloc(alignment, k)
     let rhs = Buffer[type, Dim(k)](rhs_storage)
@@ -130,12 +128,8 @@ fn test_gemv():
         let par_perf = bench_run[bench_fn_parallel]()
         benchmark.keep(out[10])
 
-        let rhs_mat = NDBuffer[type, 2, DimList.create_unknown[2]()](
-            rhs_storage, Index(k, 1)
-        )
-        let out_mat = NDBuffer[type, 2, DimList.create_unknown[2]()](
-            out_storage, Index(m, 1)
-        )
+        let rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
+        let out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
 
         # Compute speedup and bandwidth stats
         let par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte

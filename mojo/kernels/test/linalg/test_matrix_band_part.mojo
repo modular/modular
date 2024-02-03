@@ -16,8 +16,8 @@ def matrix_band_part[
     rank: Int,
     type: DType,
 ](
-    input: NDBuffer[type, rank, DimList.create_unknown[rank]()],
-    output: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    input: NDBuffer[type, rank],
+    output: NDBuffer[type, rank],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,

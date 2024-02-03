@@ -335,7 +335,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     @always_inline
     fn get_global_operand_buffer[
         operand_id: Int, transposed: Bool
-    ](self) -> NDBuffer[data_type.value_type, 2, DimList.create_unknown[2]()]:
+    ](self) -> NDBuffer[data_type.value_type, 2]:
         """Utility to get an NDBuffer handle to the global space holding the
         operands.
             Args:
@@ -373,18 +373,16 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
                 )
             buffer_pointer = self.b
 
-        return NDBuffer[data_type.value_type, 2, DimList.create_unknown[2]()](
-            buffer_pointer, buffer_shape
-        )
+        return NDBuffer[data_type.value_type, 2](buffer_pointer, buffer_shape)
 
     @always_inline
     fn get_global_result_buffer(
         self,
-    ) -> NDBuffer[data_type.accum_type, 2, DimList.create_unknown[2]()]:
+    ) -> NDBuffer[data_type.accum_type, 2]:
         """Utility to get an NDBuffer handle to the global space holding the
         result i.e. matrix C buffer.
         """
-        return NDBuffer[data_type.accum_type, 2, DimList.create_unknown[2]()](
+        return NDBuffer[data_type.accum_type, 2](
             self.c, Index(self.global_gemm_size.M, self.global_gemm_size.N)
         )
 
@@ -392,7 +390,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn get_packed_operand_buffer[
         operand_id: Int, inner_size: Int
     ](self, tile_dimension: StaticIntTuple[2]) -> NDBuffer[
-        data_type.value_type, 3, DimList.create_unknown[3]()
+        data_type.value_type, 3
     ]:
         """Utility to get an NDBuffer handle to the local space holding the
         packed operands when applicable.
@@ -425,9 +423,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         if operand_id == GemmIdentifiers.OperandB:
             buffer_pointer = self.packed_b
 
-        return NDBuffer[data_type.value_type, 3, DimList.create_unknown[3]()](
-            buffer_pointer, buffer_shape
-        )
+        return NDBuffer[data_type.value_type, 3](buffer_pointer, buffer_shape)
 
 
 @register_passable("trivial")

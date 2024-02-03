@@ -55,7 +55,7 @@ fn test_matmul[
 ](m: Int, n: Int, k: Int) -> Int:
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
-    let b = NDBuffer[b_type, 2, DimList.create_unknown[2]()](b_ptr, Index(k, n))
+    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
     padded_n_k = pack_matmul_b_shape_func[
@@ -78,14 +78,10 @@ fn test_matmul[
     let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
     let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
 
-    let a = NDBuffer[a_type, 2, DimList.create_unknown[2]()](a_ptr, Index(m, k))
+    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
 
-    let bp = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
-        bp_ptr, Index(padded_k, padded_n)
-    )
-    let c = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
-        c0_ptr, Index(m, n)
-    )
+    let bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
+    let c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
 
     let am = Matrix[DimList.create_unknown[2](), a_type, False](
         a_ptr, Index(m, k)
