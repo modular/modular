@@ -897,8 +897,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
-        ExprEmitter::canImplicitlyConvertToType(
-            declScope, shared, {argVal, operand.expr}, expectedType)) {
+        ExprEmitter(shared, declScope, ExprContext::EC_CallArgValue)
+            .canImplicitlyConvertToType({argVal, operand.expr}, expectedType)) {
       // If we had one, this bumps our # implicit conversions.
       ++numImplicitConversions;
       break;
