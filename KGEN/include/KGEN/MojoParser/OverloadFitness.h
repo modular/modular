@@ -16,7 +16,7 @@
 #include "Support/Compiler/Diags.h"
 
 namespace M::KGEN::LIT {
-struct CallOperands;
+class CallOperands;
 class LITSignatureType;
 
 /// This struct indicates whether a signature can be successfully applied to a

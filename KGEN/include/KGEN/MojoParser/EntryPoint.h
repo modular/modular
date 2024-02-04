@@ -30,7 +30,7 @@ class ASTDecl;
 class ExprNode;
 class PackageOp;
 class ParserListener;
-struct CallOperands;
+class CallOperands;
 
 //===----------------------------------------------------------------------===//
 // ParserConfig
