@@ -22,7 +22,7 @@ struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
-struct CallOperands;
+class CallOperands;
 class AliasDeclOp;
 class TraitType;
 class VarLetDeclOp;
@@ -389,11 +389,12 @@ public:
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
-  /// Return true the specified type can be constructed with the specified
-  /// operands.  This does not generate any IR.
-  bool canConstructType(ASTType requiredType, const CallOperands &operands,
-                        const ExprNode *expr,
-                        bool allowImplicitConversions = true);
+  /// If the specified type can be constructed with the specified operands
+  /// return the initializer that would be invoked. If not, return null. This
+  /// does not generate any IR.
+  PValue canConstructType(ASTType requiredType, const CallOperands &operands,
+                          const ExprNode *expr,
+                          bool allowImplicitConversions = true);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate

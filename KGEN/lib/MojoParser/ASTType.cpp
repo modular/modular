@@ -90,6 +90,17 @@ ArrayRef<Type> ASTType::getParameters() const {
   return {};
 }
 
+/// Return this type with any parameter bindings removed.
+Type ASTType::getWithoutParameters() const {
+  if (!mlirType)
+    return {};
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+    return DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
+  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
+    return MetaTypeType::get(metaType.getSymbol(), metaType.getSignature());
+  return {};
+}
+
 ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
   // Query the metatype for the parameter signature.
   if (MetaTypeType metaType =

@@ -111,11 +111,11 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(SharedState &shared, size_t index,
+  ParameterInferenceState(ASTDecl &declScope, SharedState &shared, size_t index,
                           ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags)
-      : shared(shared), parameterIndex(index), evaluator(evaluator),
-        diags(diags) {}
+      : declScope(declScope), shared(shared), parameterIndex(index),
+        evaluator(evaluator), diags(diags) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -135,6 +135,7 @@ private:
                              argParamType);
   }
 
+  ASTDecl &declScope;
   SharedState &shared;
   size_t parameterIndex;
   ParserParamEvaluator &evaluator;
@@ -279,8 +280,8 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
       }
       // Otherwise, attempt an implicit conversion between the inferred type and
       // the expected type.
-      ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
-      SyntheticNode node(shared.getTopLevelDecl().getLoc());
+      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
+      SyntheticNode node(declScope.getLoc());
       if (emitter.canImplicitlyConvertToType({actualAttr, node},
                                              expectedType)) {
         PValue result = emitter.emitPValue({actualAttr, node},
@@ -342,11 +343,28 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::BorrowedInReg: {
     Type actualType;
     // TODO: Consider implicit conversions?
-    if (CValue cValue = value.getIfCValue())
+    if (CValue cValue = value.getIfCValue()) {
       actualType = cValue.getRValueType();
-    else if (OverloadSetUValue orValue = value.getIfOverloadSetUValue())
+    } else if (OverloadSetUValue orValue = value.getIfOverloadSet()) {
       if (PValue pValue = orValue->getIfPValue())
         actualType = pValue.getType();
+    } else if (auto initValue = operand.ir.getIfInitializer()) {
+      // Check to see if the expected type has an initializer with the
+      // specified operands.  Remove any parameters from the expected type since
+      // those are what we're inferring from the arguments.  The result
+      // 'actualType' will have those newly inferred parameters.
+      ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+      PValue initFn = emitter.canConstructType(
+          expectedType.getWithoutParameters(), initValue.get(), operand.expr);
+      if (!initFn)
+        return failure();
+
+      // TODO(inference): need to figure out what the concrete type constructed
+      // with initFn + the arguments substituted into it would be.  This needs
+      // recursive inference.
+    } else {
+      llvm_unreachable("Unknown UValue");
+    }
 
     if (!actualType)
       return success();
@@ -468,7 +486,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
       SmallVector<TypedAttr> types;
       auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
       Type elementType = variadicType.getElementType();
-      ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
+      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
@@ -692,8 +710,10 @@ static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
   if (auto cValue = value.getIfCValue())
     return cValue.getRValueType();
   // Otherwise, try to narrow an overload set to a PValue.
-  if (auto pValue = value.getIfOverloadSetUValue()->getIfPValue())
-    return pValue.getType();
+  if (auto ovSet = value.getIfOverloadSet())
+    if (auto pValue = ovSet->getIfPValue())
+      return pValue.getType();
+  // Initializer lists have no implied type.
   return ASTType();
 }
 
@@ -709,6 +729,8 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
       diag << "invalid use of mutating method on rvalue of type ";
       if (ASTType type = getRValueType(operand))
         diag << type;
+      else if (operand.ir.getIfInitializer())
+        diag << "initializer list";
       else
         diag << "unknown overload";
     } else {
@@ -729,6 +751,8 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     ASTType rValueType = getRValueType(operand);
     if (rValueType)
       diag << rValueType;
+    else if (operand.ir.getIfInitializer())
+      diag << "initializer list";
     else
       diag << "unknown overload";
     SourceRange payloadLoc = operand.expr->getRange();
@@ -849,31 +873,43 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     [[fallthrough]];
   case ArgConvention::BorrowedInReg:
   case ArgConvention::OwnedInReg: {
-    // If the argument is an overload set, see if it can be resolve to the
-    // right type.
-    CValue argVal;
-    if (auto orValue = operand.ir.getIfOverloadSetUValue()) {
-      // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedType);
-      if (!argVal)
-        return {kWrongType, expectedType};
+    // Get the argument if it has a concrete type.
+    CValue argVal = operand.ir.getIfCValue();
 
-      // If we have a reference to an overloaded method like foo(a.method), then
-      // we can't resolve it.
-      // TODO(partial application => closures): Given we just resolved argVal,
-      // we could form the "a.method" expression with a closure.
-      if (orValue->baseValue) // Cannot merge base value.
-        return {kWrongType, expectedType};
-    } else {
-      argVal = operand.ir.getIfCValue();
-      assert(argVal && "we handled OverloadSetUValue above");
+    // If the argument is unresolved, see if we can resolve it with the expected
+    // type.
+    if (!argVal) {
+      if (auto orValue = operand.ir.getIfOverloadSet()) {
+        // Try to refine the OverloadSetUValue into a PValue.
+        argVal = orValue->getDirectSymbol(expectedType);
+        if (!argVal)
+          return {kWrongType, expectedType};
+
+        // If we have a reference to an overloaded method like foo(a.method),
+        // then we can't resolve it.
+        // TODO(partial application => closures): Given we just resolved argVal,
+        // we could form the "a.method" expression with a closure.
+        if (orValue->baseValue) // Cannot merge base value.
+          return {kWrongType, expectedType};
+      } else {
+        auto initValue = operand.ir.getIfInitializer();
+        assert(initValue && "Unknown UValue!");
+
+        // Initializer lists are good if we can construct the expected type.
+        PValue initFn =
+            ExprEmitter(shared, declScope, ExprContext::EC_CallArgValue)
+                .canConstructType(expectedType, initValue.get(), operand.expr);
+        // If so, all is good, if not, we fail.
+        return {(bool)initFn ? kValidType : kWrongType, expectedType};
+      }
     }
 
     auto argType = argVal.getRValueType();
     // Otherwise, we pass as an r-value.  If the argument types match, then
     // they are good.
     if (argType.isEqualCanon(expectedType))
-      break;
+      return {kValidType, expectedType};
+
     if (auto nonmaterializableTarget =
             argType.getNonmaterializableTarget(shared)) {
       if (nonmaterializableTarget.isEqualCanon(expectedType)) {
@@ -892,7 +928,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
     // Argument name mismatches don't count as implicit conversions.
     if (canZeroCostConvert(shared, argType, expectedType))
-      break;
+      return {kValidType, expectedType};
 
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
@@ -1100,7 +1136,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       [&](size_t index, ArrayRef<TypedAttr> bindingsSoFar,
           TypedAttr defaultParam, ParserParamEvaluator &evaluator) -> PValue {
     if (PValue inferred =
-            ParameterInferenceState(shared, index, evaluator, inferenceDiags)
+            ParameterInferenceState(callable.paramBindings.declScope, shared,
+                                    index, evaluator, inferenceDiags)
                 .infer(signature, bindingsSoFar, callOperands))
       return inferred;
     return PValue(defaultParam);

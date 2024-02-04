@@ -234,7 +234,8 @@ enum class CallSyntax : uint8_t {
 
 /// Struct to that carries both positional and keyword operands for a call. This
 /// does not own any values, only references and pointers to their containers.
-struct CallOperands {
+class CallOperands {
+public:
   using PositionalOperands = ArrayRef<ASTExprAnd<AnyValue>>;
 
   /// Create call operands with positional and optional keyword arguments.
@@ -277,7 +278,10 @@ struct CallOperands {
 
   /// Inidicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
+
+  void dump() const;
 };
+raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 
 /// This class represents an unresolved overload set with partially bound
 /// callees, e.g. "foo" or "a.foo" where "foo" is an overloaded declaration or

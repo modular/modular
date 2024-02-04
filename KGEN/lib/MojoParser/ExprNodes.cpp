@@ -1313,7 +1313,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If this is an overloaded operand, resolve it and call the result.
-  if (auto overloads = calleeVal.getIfOverloadSetUValue()) {
+  if (auto overloads = calleeVal.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
                                         operands);
     overloads->expr = this;
@@ -1321,37 +1321,37 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
-  auto crVal = calleeVal.getIfCValue();
-  return emitter.emitIndirectCall(crVal, operands, dest, this);
+  if (auto crVal = calleeVal.getIfCValue())
+    return emitter.emitIndirectCall(crVal, operands, dest, this);
+
+  emitter.emitError(getLoc(), "cannot call this unresolved expression");
+  return {};
 }
 
 AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Emit the slice index expressions as values. Any one of them could be null
-  // if they were not present. Emit them as `None` in that case.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  auto emitOrNone = [&](ExprNode *const expr, llvm::SMLoc loc) -> ParseResult {
-    if (!expr) {
-      posOperands.push_back({NoneAttr::get(emitter.getContext()), this});
-      return success();
-    }
-    AnyValue value = emitter.emitExpr(expr, EC_SliceIndex);
-    if (!value)
-      return failure();
-    posOperands.push_back({value, expr});
-    return success();
+  // SliceNode(x,y,z) is just syntax sugar for 'slice(x,y,z)', where a missing
+  // expression is equivalent to a None expression.  Form the expression tree
+  // here on the stack and emit it.
+  auto getOperand = [&](const ExprNode *expr) -> ASTExprAnd<AnyValue> {
+    if (expr)
+      return {emitter.emitExpr(expr, ExprContext::EC_SliceIndex), expr};
+
+    // Missing expressions resolve into None.
+    return {PValue(NoneAttr::get(emitter.getContext())), this};
   };
 
-  // The location of the first colon is always set. The location of the second
-  // colon is set if there is a stride.
-  if (emitOrNone(lower, getLoc()) || emitOrNone(upper, colon1Loc) ||
-      emitOrNone(stride, stride ? colon2Loc : colon1Loc))
+  // TODO: Generalize to more than 3 operands.
+  SmallVector<ASTExprAnd<AnyValue>, 3> operands;
+  operands.push_back(getOperand(lower));
+  if (!operands.back().ir)
     return {};
-
-  // Lookup the builtin slice type and emit a constructor call.
-  ASTType type =
-      emitter.shared.getBuiltinSliceType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, posOperands, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  operands.push_back(getOperand(upper));
+  if (!operands.back().ir)
+    return {};
+  operands.push_back(getOperand(stride));
+  if (!operands.back().ir)
+    return {};
+  return emitter.emitResult(InitializerUValue::create(operands), this, dest);
 }
 
 /// Given a value of type type, substitute parameters into the type, producing
@@ -1540,7 +1540,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If the baseAnyValue has a bound callable symbol, then this is applying
   // (more?) parameter expressions to bind its parameters.
-  if (auto overloads = baseAnyValue.getIfOverloadSetUValue()) {
+  if (auto overloads = baseAnyValue.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
     auto result = bindParamValuesToDirectCall(overloads, operands, emitter);

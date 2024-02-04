@@ -41,7 +41,7 @@ class LookupResult;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
-struct CallOperands;
+class CallOperands;
 struct ParserConfig;
 enum class CallSyntax : uint8_t;
 

@@ -392,16 +392,13 @@ CValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
 
-  // If the value being materialized is an unresolved overload set, try to
-  // materialize it.
-  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
-    value.ir = overloads->emitAsCValue(*this, dest);
-    if (!value.ir)
+  // If the value is still unresolved, materialize it.
+  CValue cValue = value.ir.getIfCValue();
+  if (!cValue) {
+    cValue = emitCValue(value, dest);
+    if (!cValue)
       return {};
   }
-
-  CValue cValue = value.ir.getIfCValue();
-  assert(cValue && "OverloadSetUValue handled above");
 
   // If this is already an RValue/PValue then we are done.
   if (auto rvRep = cValue.getIfRValue())
@@ -454,9 +451,28 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  OverloadSetUValue overloads = value.ir.getIfOverloadSetUValue();
-  assert(overloads && "unknown overloaded value");
-  return overloads->emitAsCValue(*this, dest);
+  if (OverloadSetUValue overloads = value.ir.getIfOverloadSet()) {
+    assert(overloads && "unknown overloaded value");
+    return overloads->emitAsCValue(*this, dest);
+  }
+
+  // Otherwise we must have an initializer list.
+  auto initValue = value.ir.getIfInitializer();
+  assert(initValue && "Unknown UValue!");
+
+  // We can't emit an initializer list without a contextual type.  See if we
+  // have one.
+  ASTType expectedType =
+      dest.resolveImpliedType(value.expr->getLoc(),
+                              /*no implied type*/ Type(), *this);
+  if (!expectedType) {
+    emitError(value.expr->getLoc(),
+              "cannot emit initializer list without a contextual type");
+    return {};
+  }
+
+  return emitConstructorCall(expectedType, initValue.get(), value.expr,
+                             CallSyntax::kImplicitConvert, dest);
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.
@@ -476,8 +492,8 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
-    value.ir = overloads->emitAsCValue(*this, dest);
+  if (value.ir.getIfUValue()) {
+    value.ir = emitCValue(value, dest);
     if (!value.ir)
       return {};
   }
@@ -730,13 +746,8 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
       return {};
   }
 
-  // If this is an OverloadSetUValue, it must resolve to a single entry.
-  if (auto overloads = value.ir.getIfOverloadSetUValue()) {
-    ValueDest dest(context);
-    value.ir = overloads->emitAsCValue(*this, dest);
-    if (!value.ir)
-      return {};
-  }
+  // Resolve any unresolved values using the result type.
+  value.ir = emitCValue(value, context, resultType);
 
   // If this is a DLValue, see if it can be emitted as a PValue. PValues are
   // immutable, so try to load the DLValue in a parameter context.
@@ -799,12 +810,13 @@ static bool checkImplicitConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
-/// Return true the specified type can be constructed with the specified
-/// operands.  This does not generate any IR.
-bool ExprEmitter::canConstructType(ASTType requiredType,
-                                   const CallOperands &operands,
-                                   const ExprNode *expr,
-                                   bool allowImplicitConversions) {
+/// If the specified type can be constructed with the specified operands return
+/// the initializer that would be invoked. If not, return null. This does not
+/// generate any IR.
+PValue ExprEmitter::canConstructType(ASTType requiredType,
+                                     const CallOperands &operands,
+                                     const ExprNode *expr,
+                                     bool allowImplicitConversions) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -814,7 +826,7 @@ bool ExprEmitter::canConstructType(ASTType requiredType,
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
-    return false;
+    return {};
 
   // If this is a memory-only type, then we'll pass a self argument with the
   // destination when invoking the method, use a temporary so we can
@@ -834,10 +846,10 @@ bool ExprEmitter::canConstructType(ASTType requiredType,
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue calleeFn =
+  PValue initFn =
       callee.filterOverloadSet(adjOperands, allowImplicitConversions,
                                /*emitDiagnosticOnFailure=*/false);
-  return !calleeFn.isNull();
+  return initFn;
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'
@@ -868,8 +880,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Disable implicit conversions though, to prevent converting T -> S -> U in
   // one step.
-  return canConstructType(requiredType, CallOperands({value}), value.expr,
-                          /*allowImplicitConversions=*/false);
+  return (bool)canConstructType(requiredType, CallOperands({value}), value.expr,
+                                /*allowImplicitConversions=*/false);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1127,16 +1139,13 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     return value;
   }
 
+  // If the value is still unresolved, materialize it into the destination.
+  auto cValue = value.getIfCValue();
+  if (!cValue)
+    return emitCValue({value, expr}, dest);
+
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
-
-  // If the value being materialized is an unresolved overload set, try to
-  // materialize it.
-  if (auto overloads = value.getIfOverloadSetUValue())
-    return overloads->emitAsCValue(*this, dest);
-
-  auto cValue = value.getIfCValue();
-  assert(cValue && "Must be a CValue if not an OverloadSetUValue");
   auto rvalueType = cValue.getRValueType();
 
   // If there is a known type for the destination but the value disagrees, emit

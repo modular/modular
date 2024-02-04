@@ -15,6 +15,7 @@
 // AnyValue       <- Expr emitted to MLIR...
 //   UValue         <- unresolved value that cannot be materialized
 //     OverloadSetUValue  <- with an unresolved overload set
+//     InitializerUValue  <- constructor operands for an unknown type
 //   CValue        <- Concrete value: LValue or RValue with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
@@ -52,6 +53,8 @@ class FuncOp;
 class ValueDest;
 class StructFieldOp;
 class GlobalVarDeclOp;
+class CallOperands;
+class AnyValue;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -229,7 +232,6 @@ public:
   /// Pretty print the pvalue for use by diagnostics and other high level
   /// situations.
   void printForDiag(raw_ostream &os) const;
-
   void dump() const;
 
 private:
@@ -241,7 +243,7 @@ raw_ostream &operator<<(raw_ostream &os, PValue value);
 /// must be disambiguated before being used.
 class OverloadSetUValue {
 public:
-  OverloadSetUValue();
+  OverloadSetUValue(); // Used by dyn_cast.
   OverloadSetUValue(const OverloadSetUValue &existing);
   OverloadSetUValue &operator=(const OverloadSetUValue &existing);
   ~OverloadSetUValue();
@@ -267,11 +269,39 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, OverloadSetUValue value);
 
+/// Instances of InitializerUValue represent the operand list for a constructor
+/// call before knowing what the type being constructed is.  It is similar to
+/// the {1, 2, 3} syntax in C++: both are resolved when applied to a type, e.g.
+/// in the operand list of a function call: array.append({1, 2, 3}).
+///
+/// This is used in slice operands to subscripts.
+class InitializerUValue {
+public:
+  InitializerUValue(); // Used by dyn_cast.
+  InitializerUValue(const InitializerUValue &existing);
+  InitializerUValue &operator=(const InitializerUValue &existing);
+  ~InitializerUValue();
+
+  bool isNull() const { return !storage; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  CallOperands get() const;
+
+  static InitializerUValue create(ArrayRef<ASTExprAnd<AnyValue>> operands);
+
+private:
+  struct CallOperandsWrapper;
+  InitializerUValue(RCRef<CallOperandsWrapper> storage);
+  RCRef<CallOperandsWrapper> storage;
+};
+raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);
+
 struct VariantValueStorageBase {
   /// These are all the forms of storage we can have.
-  using Storage =
-      SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
-                   OverloadSetUValue, SBValue, MBValue, DLValue, MLValue>;
+  using Storage = SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
+                               OverloadSetUValue, InitializerUValue, SBValue,
+                               MBValue, DLValue, MLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -391,9 +421,17 @@ struct VariantUValue {
     if (value)
       getStorageR() = std::move(value);
   }
+  VariantUValue(InitializerUValue value) {
+    if (value)
+      getStorageR() = std::move(value);
+  }
 
-  OverloadSetUValue getIfOverloadSetUValue() const {
+  OverloadSetUValue getIfOverloadSet() const {
     return dyn_cast<OverloadSetUValue>(getStorageR());
+  }
+
+  InitializerUValue getIfInitializer() const {
+    return dyn_cast<InitializerUValue>(getStorageR());
   }
 
 private:
@@ -419,6 +457,8 @@ public:
     UValue result;
     // Initialize conditionally based on what is in Storage.
     if (isa<OverloadSetUValue>(storage))
+      result.storage = std::move(storage);
+    if (isa<InitializerUValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
