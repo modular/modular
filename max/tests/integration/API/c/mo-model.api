@@ -1,8 +1,8 @@
-// RUN: modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full %s | FileCheck %s --check-prefix=CHECK-EXECUTE
+// RUN: modular-api-executor --model-inputs=zeros  --num-threads=0 --result-output-style=full %s | FileCheck %s --check-prefix=CHECK-EXECUTE
 // RUN: modular-api-executor --print-metadata %s | FileCheck %s --check-prefix=CHECK-METADATA
 
 // RUN: mt --compile %s -o=%t.mef
-// RUN: modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full %t.mef | FileCheck %s --check-prefix=CHECK-EXECUTE-MEF
+// RUN: modular-api-executor --model-inputs=zeros  --num-threads=0 --result-output-style=full %t.mef | FileCheck %s --check-prefix=CHECK-EXECUTE-MEF
 
 // CHECK-EXECUTE: tensor<5xf32> [3.000000e+00, 1.000000e+00, -6.000000e+00, 2.000000e+00, 5.000000e+00]
 // CHECK-EXECUTE-MEF: tensor<5xf32> [3.000000e+00, 1.000000e+00, -6.000000e+00, 2.000000e+00, 5.000000e+00]

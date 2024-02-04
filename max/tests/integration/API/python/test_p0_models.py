@@ -181,7 +181,7 @@ def test_c_package(package_path: Path):
         test_dir_path = Path(test_dir)
 
         common_modular_api_executor_args = (
-            "--model-inputs=zeros --allocator=malloc --num-threads=0"
+            "--model-inputs=zeros  --num-threads=0"
             " --num-runs=1 --result-output-style=compact".split()
         )
         for _, value in top_models.items():
