@@ -1329,9 +1329,6 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // SliceNode(x,y,z) is just syntax sugar for 'slice(x,y,z)', where a missing
-  // expression is equivalent to a None expression.  Form the expression tree
-  // here on the stack and emit it.
   auto getOperand = [&](const ExprNode *expr) -> ASTExprAnd<AnyValue> {
     if (expr)
       return {emitter.emitExpr(expr, ExprContext::EC_SliceIndex), expr};
@@ -1340,7 +1337,8 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {PValue(NoneAttr::get(emitter.getContext())), this};
   };
 
-  // TODO: Generalize to more than 3 operands.
+  // TODO: Generalize to more than 3 operands.  We might also want to turn this
+  // into a well-known static method instead of overloading onto constructor.
   SmallVector<ASTExprAnd<AnyValue>, 3> operands;
   operands.push_back(getOperand(lower));
   if (!operands.back().ir)
