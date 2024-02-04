@@ -389,16 +389,17 @@ public:
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
+  /// Return true the specified type can be constructed with the specified
+  /// operands.  This does not generate any IR.
+  bool canConstructType(ASTType requiredType, const CallOperands &operands,
+                        const ExprNode *expr,
+                        bool allowImplicitConversions = true);
+
   /// Return true if 'value' may be implicitly converted to 'requiredType'
-  /// by invoking (one level of) conversion operations. A flag can be specified
-  /// to allow argument name mismatches when comparing signature types. This
-  /// does not generate any IR.
+  /// by invoking (one level of) conversion operations.  This does not generate
+  /// any IR.
   bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                   ASTType requiredType);
-  static bool canImplicitlyConvertToType(ASTDecl &declScope,
-                                         SharedState &shared,
-                                         ASTExprAnd<CValue> value,
-                                         ASTType requiredType);
 
   /// Emit a conversion from an MLIR type to a trait type by materializing stubs
   /// for the type's witness table.

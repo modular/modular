@@ -799,14 +799,51 @@ static bool checkImplicitConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
-bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                             ASTType requiredType) {
-  return canImplicitlyConvertToType(declScope, shared, value, requiredType);
+/// Return true the specified type can be constructed with the specified
+/// operands.  This does not generate any IR.
+bool ExprEmitter::canConstructType(ASTType requiredType,
+                                   const CallOperands &operands,
+                                   const ExprNode *expr,
+                                   bool allowImplicitConversions) {
+
+  // Check to see if we can do an implicit conversion by invoking a `__init__`
+  // method on the expected type.
+  auto callee = OverloadSet::lookup(declScope, shared, requiredType, "__init__",
+                                    expr, CallSyntax::kImplicitConvert,
+                                    /*no error emission on failure */ {});
+
+  // If there are no viable candidates for the implicit conversion, we fail.
+  if (!callee)
+    return false;
+
+  // If this is a memory-only type, then we'll pass a self argument with the
+  // destination when invoking the method, use a temporary so we can
+  // conveniently type check this.
+  SmallVector<ASTExprAnd<AnyValue>> posOperands(operands.posOperands.begin(),
+                                                operands.posOperands.end());
+  bool hasSelfOperand = false;
+  if (!requiredType.isRegisterPassable(expr->getLoc(), shared)) {
+    auto attr = UnknownAttr::get(PointerType::get(requiredType));
+    posOperands.insert(posOperands.begin(), {PValue(attr), expr});
+    hasSelfOperand = true;
+  }
+
+  CallOperands adjOperands(posOperands, operands.kwOperands);
+  adjOperands.hasSelfOperand = hasSelfOperand;
+
+  // If we have at least one candidate, we check to see if any of them can
+  // work. This needs to call filterOverloadSet manually because we might not
+  // be able to allow implicit conversions.
+  PValue calleeFn =
+      callee.filterOverloadSet(adjOperands, allowImplicitConversions,
+                               /*emitDiagnosticOnFailure=*/false);
+  return !calleeFn.isNull();
 }
 
-bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
-                                             SharedState &shared,
-                                             ASTExprAnd<CValue> value,
+/// Return true if 'value' may be implicitly converted to 'requiredType'
+/// by invoking (one level of) conversion operations.  This does not generate
+/// any IR.
+bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                              ASTType requiredType) {
   assert(value.ir && "Should only query valid values");
   // If it already matches, then we're done.
@@ -826,36 +863,13 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTDecl &declScope,
     return false;
   }
 
-  // Check to see if we can do an implicit conversion by invoking a `__init__`
-  // method on the expected type.
-  auto callee = OverloadSet::lookup(declScope, shared, requiredType, "__init__",
-                                    value.expr, CallSyntax::kImplicitConvert,
-                                    /*no error emission on failure */ {});
+  // We can implicitly convert to the specified type if we can construct it with
+  // the value.
 
-  // If there are no viable candidates for the implicit conversion, we fail.
-  if (!callee)
-    return false;
-
-  // If this is a memory-only type, then we'll pass a self argument with the
-  // destination when invoking the method, use a temporary so we can
-  // conveniently type check this.
-  SmallVector<ASTExprAnd<AnyValue>> args;
-  if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
-    auto attr = UnknownAttr::get(PointerType::get(requiredType));
-    args.push_back({PValue(attr), value.expr});
-  }
-  args.push_back(value);
-
-  // If we have at least one candidate, we check to see if any of them can
-  // work. We disable implicit conversions though, to prevent converting
-  // T -> S -> U in one step.
-
-  // This needs to call filterOverloadSet manually because we cannot allow
-  // implicit conversions here.
-  PValue calleeFn =
-      callee.filterOverloadSet({args}, /*allowImplicitConversions=*/false,
-                               /*emitDiagnosticOnFailure=*/false);
-  return !calleeFn.isNull();
+  // Disable implicit conversions though, to prevent converting T -> S -> U in
+  // one step.
+  return canConstructType(requiredType, CallOperands({value}), value.expr,
+                          /*allowImplicitConversions=*/false);
 }
 
 //===----------------------------------------------------------------------===//
