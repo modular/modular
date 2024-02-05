@@ -1030,10 +1030,6 @@ ASTType SharedState::getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "Error", *this);
 }
 
-ASTType SharedState::getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Int", *this);
-}
-
 ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
                                               llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "IntLiteral", *this);
@@ -1042,10 +1038,6 @@ ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
 ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
                                                  llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "StringLiteral", *this);
-}
-
-ASTType SharedState::getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Slice", *this);
 }
 
 ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,
