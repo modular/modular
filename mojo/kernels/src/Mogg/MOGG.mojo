@@ -73,7 +73,7 @@ from NN.Concat import (
     concat_shape as concat_from_list_shape,
     variadic_list_to_vector,
 )
-from NN.Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
+from NN.Conv import ConvInfo, ConvInfoStatic, conv_nhwc_direct, conv_shape
 from NN.Conv import pack_filter as _pack_conv_filter
 from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
 from NN.ConvTranspose import conv_transpose as conv_transpose_impl
@@ -2894,6 +2894,7 @@ fn split_ith_output_shape[
 @always_inline
 @export
 fn conv[
+    input_rank: Int,
     filter_rank: Int,
     strides_rank: Int,
     dilation_rank: Int,
@@ -2914,13 +2915,15 @@ fn conv[
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[input_type, 4],
+    input: NDBuffer[input_type, input_rank],
     filter: NDBuffer[filter_type, filter_rank],
     strides: NDBuffer[strides_type, strides_rank],
     dilation: NDBuffer[dilation_type, dilation_rank],
     paddings: NDBuffer[padding_type, padding_rank],
     num_groups: NDBuffer[num_groups_type, 1],
-    output: NDBuffer[output_type, 4],
+    output: NDBuffer[
+        output_type, input_rank
+    ],  # output and input have the same rank.
     ctx: MojoCallContextPtr,
 ):
     """Including this function in MOGG.mojo since it is intended to be a temporary
@@ -2932,37 +2935,52 @@ fn conv[
         "stride and dilation must have integral type",
     ]()
 
-    if strides.size() != 2:
-        return ctx.set_to_error("2 values expected in strides input")
+    if strides.size() != input_rank - 2:
+        return ctx.set_to_error(
+            "$(input_rank-2) values expected in conv strides"
+        )
 
-    if dilation.size() != 2:
-        return ctx.set_to_error("2 values expected in dilation input")
+    if dilation.size() != input_rank - 2:
+        return ctx.set_to_error(
+            "$(input_rank-2) values expected in conv dilation"
+        )
 
-    if paddings.size() != 4:
-        return ctx.set_to_error("4 values expected in paddings input")
+    if paddings.size() != 2 * (input_rank - 2):
+        return ctx.set_to_error(
+            "$(2*(input_rank-2)) value expected in conv paddings"
+        )
 
-    let strides_flat = strides.flatten()
+    let stride_flat = strides.flatten()
     let dilation_flat = dilation.flatten()
-    let paddings_flat = paddings.flatten()
+    let padding_flat = paddings.flatten()
 
-    let strides_tuple = Index(strides_flat[0], strides_flat[1])
-    let dilation_tuple = Index(dilation_flat[0], dilation_flat[1])
-    if dilation_tuple != Index(1, 1):
+    var stride_tuple = StaticIntTuple[input_rank - 2](0)
+    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+
+    @unroll
+    for i in range(input_rank - 2):
+        stride_tuple[i] = int(stride_flat[i])
+        dilation_tuple[i] = int(dilation_flat[i])
+
+    if dilation_tuple != StaticIntTuple[input_rank - 2](1):
         return ctx.set_to_error("Non-unit dilation is not supported yet.")
 
-    let pad_h_tuple = Index(paddings_flat[0], paddings_flat[1])
-    let pad_w_tuple = Index(paddings_flat[2], paddings_flat[3])
+    var pad_d_tuple = StaticIntTuple[2](0)
+    var pad_h_tuple = StaticIntTuple[2](0)
+    var pad_w_tuple = StaticIntTuple[2](0)
 
-    # TODO: eventually padding, strides and dilation will be passed in as
-    # parameters here when they are constant in the graph
-    alias conv_info_static = ConvInfoStatic.create_unknown()
-    let conv_info = ConvInfo[conv_info_static](
-        pad_h_tuple,
-        pad_w_tuple,
-        strides_tuple,
-        dilation_tuple,
-        int(num_groups[0]),
-    )
+    @parameter
+    if input_rank == 3:
+        pad_w_tuple = Index(padding_flat[0], padding_flat[1])
+    elif input_rank == 4:
+        pad_h_tuple = Index(padding_flat[0], padding_flat[1])
+        pad_w_tuple = Index(padding_flat[2], padding_flat[3])
+    elif input_rank == 5:
+        pad_d_tuple = Index(padding_flat[0], padding_flat[1])
+        pad_h_tuple = Index(padding_flat[2], padding_flat[3])
+        pad_w_tuple = Index(padding_flat[4], padding_flat[5])
+
+    alias conv_attr = ConvInfoStatic.create_unknown[input_rank - 2]()
 
     # Specialize the function to take 4D coordiantes.
     # The bias is broadcasted to the same shape as output and
@@ -2970,9 +2988,11 @@ fn conv[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        _type: DType, width: Int
-    ](coords: StaticIntTuple[4], val: SIMD[_type, width]):
-        output_0_fn[width, 4](coords, rebind[SIMD[output_type, width]](val))
+        _type: DType, _rank: Int, _width: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+        output_0_fn[_width, _rank](
+            coords, rebind[SIMD[output_type, _width]](val)
+        )
 
     @always_inline
     @parameter
@@ -2987,7 +3007,7 @@ fn conv[
             output.dynamic_shape
         )
         let group_str = String("group=") + int(num_groups[0])
-        let stride_str = String("stride=") + String("x").join(strides_tuple)
+        let stride_str = String("stride=") + String("x").join(stride_tuple)
         let padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
         let padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
 
@@ -3005,13 +3025,30 @@ fn conv[
         "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ) as t:
         try:
-            conv_2d_nhwc_direct[
+            conv_nhwc_direct[
+                input_rank,
                 filter_rank,
+                DimList.create_unknown[input_rank](),  # input shape
+                DimList.create_unknown[filter_rank](),  # filter shape
+                DimList.create_unknown[input_rank](),  # output shape
+                input_type,
+                filter_type,
+                output_type,
                 filter_packed,
-                conv_info_static,
+                conv_attr,
                 lambdas_have_fusion,
                 epilogue_wrapper,
-            ](input, filter, output, conv_info)
+            ](
+                input,
+                filter,
+                output,
+                stride_tuple,
+                dilation_tuple,
+                pad_d_tuple,
+                pad_h_tuple,
+                pad_w_tuple,
+                int(num_groups[0]),
+            )
         except e:
             ctx.set_to_error(e)
 
