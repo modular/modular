@@ -276,7 +276,7 @@ fn get_conv_shape[
         else:
             filter_dims[i] = filter.dim[i]()
 
-    unroll[rank, assign]()
+    unroll[assign, rank]()
 
     return ConvShape[rank] {
         n: input.dim[0](),
