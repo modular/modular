@@ -1243,7 +1243,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Pack results into a tuple and return it.
   ValueDest tupleDest = ValueDest(EC_MLIRMagic);
-  ASTType tupleType = emitter.shared.getBuiltinTupleInstantion(
+  ASTType tupleType = emitter.shared.getBuiltinTupleInstantiation(
       emitter.declScope, call.getLoc(), state.types);
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   for (OpResult opResult : resultOp->getResults())
@@ -1701,8 +1701,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
     SmallVector<Type> typeElts;
     for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    type = emitter.shared.getBuiltinTupleInstantion(emitter.declScope,
-                                                    node->getLoc(), typeElts);
+    type = emitter.shared.getBuiltinTupleInstantiation(
+        emitter.declScope, node->getLoc(), typeElts);
     if (type.isTypeCheckErrorType())
       return {};
     DLValue result(RCRef<TupleDLValue>::create(elements, type, node));
@@ -1717,7 +1717,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
     for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfTypeValue());
 
-    auto result = emitter.shared.getBuiltinTupleInstantion(
+    auto result = emitter.shared.getBuiltinTupleInstantiation(
         emitter.declScope, node->getLoc(), typeElts);
     if (type.isTypeCheckErrorType())
       return {};

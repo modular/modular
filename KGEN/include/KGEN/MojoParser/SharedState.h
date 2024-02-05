@@ -395,8 +395,8 @@ public:
 
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.
-  ASTType getBuiltinTupleInstantion(ASTDecl &context, llvm::SMLoc loc,
-                                    ArrayRef<Type> elements);
+  ASTType getBuiltinTupleInstantiation(ASTDecl &context, llvm::SMLoc loc,
+                                       ArrayRef<Type> elements);
 
   /// Lookup a builtin special function overload set.
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,

@@ -1549,7 +1549,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (innerExpr->kind == ExprNode::kNoneLiteral)
     return shared.getNoneType();
   if (innerExpr->isEmptyTuple())
-    return shared.getBuiltinTupleInstantion(declScope, expr->getLoc(), {});
+    return shared.getBuiltinTupleInstantiation(declScope, expr->getLoc(), {});
 
   auto value = emitExprPValue(expr, EC_Type);
   if (!value)
