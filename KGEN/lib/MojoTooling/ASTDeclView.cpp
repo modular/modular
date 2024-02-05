@@ -217,13 +217,22 @@ static llvm::json::Array toJSONArray(MojoParserContext &ctx,
 }
 
 /// Dump the markdown header common to all decls that support docstring
-/// documentation.
+/// documentation. Optionally dump the `description` after the `summary`,
+/// skipping any sections.
 static void dumpMarkdownDocumentationHeader(llvm::raw_ostream &os,
                                             StringRef summary,
                                             StringRef description = {}) {
   if (!summary.empty())
     os << summary << "\n";
 
+  if (!description.empty())
+    os << "\n" << description << "\n";
+}
+
+/// Dump the markdown description common to all decls that support docstring
+/// documentation.
+static void dumpMarkdownDocumentationDescription(llvm::raw_ostream &os,
+                                                 StringRef description) {
   if (!description.empty())
     os << "\n" << description << "\n";
 }
@@ -549,11 +558,12 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  dumpMarkdownDocumentationHeader(os, summary, description);
+  dumpMarkdownDocumentationHeader(os, summary);
   dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
   dumpMarkdownDeclListSection(os, DocString::kSectionArgs, args);
   dumpMarkdownTextSection(os, DocString::kSectionReturns, returns);
   dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
+  dumpMarkdownDocumentationDescription(os, description);
 
   return markdown;
 }
