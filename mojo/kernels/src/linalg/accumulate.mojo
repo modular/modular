@@ -433,7 +433,7 @@ fn load_register_tile[
             ).cast[tile_ptr.type]()
         )
 
-    unroll[num_rows, num_cols, body]()
+    unroll[body, num_rows, num_cols]()
 
 
 @always_inline
@@ -479,4 +479,4 @@ fn store_register_tile[
             partial_store_size,
         )
 
-    unroll[num_rows, num_cols, body]()
+    unroll[body, num_rows, num_cols]()

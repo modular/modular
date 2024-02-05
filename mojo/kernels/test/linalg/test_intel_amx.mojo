@@ -127,7 +127,7 @@ fn setup_tile_config() -> tileconfig:
         tc.rows[idx] = nrows.value
         tc.colb[idx] = colb.value
 
-    unroll[8, tc_fill]()
+    unroll[tc_fill, 8]()
     return tc
 
 

@@ -543,14 +543,14 @@ fn _process_tile[
             input_tile_offset + M * count
         )
 
-    unroll[tile_size_n, load_input_vals]()
+    unroll[load_input_vals, tile_size_n]()
 
     @parameter
     @always_inline
     fn compute_output_vals[m: Int, n: Int]():
         output_vals[m][n] = input_vals[n][m]
 
-    unroll[tile_size_m, tile_size_n, compute_output_vals]()
+    unroll[compute_output_vals, tile_size_m, tile_size_n]()
 
     @parameter
     @always_inline
@@ -559,7 +559,7 @@ fn _process_tile[
             output_tile_offset + N * count, output_vals[count]
         )
 
-    unroll[tile_size_m, store_output_vals]()
+    unroll[store_output_vals, tile_size_m]()
 
 
 fn _transpose_2d_serial_tiled[

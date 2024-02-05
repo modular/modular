@@ -54,7 +54,7 @@ fn _get_batch_dims[
         out[i] = curr_index % shape[i]
         curr_index //= shape[i]
 
-    unroll[rank - 2, compute_shape]()
+    unroll[compute_shape, rank - 2]()
     return out
 
 

@@ -248,7 +248,7 @@ struct PackMatrixRows[
                     (inner_row_idx, 0), SIMD[type, simd_size](0)
                 )
 
-        unroll[simd_size, body]()
+        unroll[body, simd_size]()
 
         # Transpose the buffered data
         transpose_inplace[simd_size, simd_size, type](transpose_buffer)
@@ -277,7 +277,7 @@ struct PackMatrixRows[
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
 
-        unroll[simd_size, transposed_inner_row_body]()
+        unroll[transposed_inner_row_body, simd_size]()
 
     fn _pack(self):
         """Helper function: Allocates transpose workspace and launch the
@@ -462,8 +462,8 @@ struct PackMatrixCols[
         @parameter
         if skip_row_bound:
             if not has_neon():
-                unroll[unroll_factor, prefetch_body]()
-            unroll[unroll_factor, pack_body]()
+                unroll[prefetch_body, unroll_factor]()
+            unroll[pack_body, unroll_factor]()
         else:
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)
@@ -795,7 +795,7 @@ struct MatmulInnerLoopBPacked[
                 SIMD[c_type, simd_size](0),
             )
 
-        unroll[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
 
     @always_inline
     fn _load_c_tile(
@@ -856,7 +856,7 @@ struct MatmulInnerLoopBPacked[
                     rebind[SIMD[c_type, simd_size]](c_data),
                 )
 
-            unroll[a_row_size, pack_inner_size // simd_size, body_i8mm]()
+            unroll[body_i8mm, a_row_size, pack_inner_size // simd_size]()
             return
 
         @parameter
@@ -900,7 +900,7 @@ struct MatmulInnerLoopBPacked[
             if idx1 == pack_inner_size // simd_size - 1:
                 c_ptr = c_ptr.offset(self.c_stride)
 
-        unroll[a_row_size, pack_inner_size // simd_size, body]()
+        unroll[body, a_row_size, pack_inner_size // simd_size]()
 
     @always_inline
     fn _store_c_tile(
@@ -961,7 +961,7 @@ struct MatmulInnerLoopBPacked[
                             c_data.slice[2](2),
                         )
 
-            unroll[a_row_size, pack_inner_size // simd_size, body_i8mm]()
+            unroll[body_i8mm, a_row_size, pack_inner_size // simd_size]()
             return
 
         @parameter
@@ -999,7 +999,7 @@ struct MatmulInnerLoopBPacked[
             if idx1 == pack_inner_size // simd_size - 1:
                 c_ptr = c_ptr.offset(self.c_stride)
 
-        unroll[a_row_size, pack_inner_size // simd_size, body]()
+        unroll[body, a_row_size, pack_inner_size // simd_size]()
 
     fn _accumulate[
         a_col_size: Int
