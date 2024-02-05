@@ -7,9 +7,7 @@
 """The module contains implementations of activation functions."""
 
 from math import (
-    abs,
     clamp,
-    copysign,
     erf,
     exp,
     expm1,
@@ -20,7 +18,6 @@ from math import (
     tanh,
 )
 from math.bit import _is_neg
-from math.polynomial import polynomial_evaluate
 
 
 @value
@@ -185,36 +182,6 @@ fn relu_n1[
 
 
 @always_inline
-fn _erf[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the erf function. This uses the formula 7.1.26 on page 299 from
-    `Abramowitz and Stegun from "Handbook of Mathematical Functions"`.
-    This version is used in oneDNN.
-    """
-    constrained[type.is_floating_point(), "must be a floating point value"]()
-    let x_abs = abs(x)
-    # t = 1 / (1 + p * abs(x))
-    let t = 1 / x_abs.fma(0.3275911, 1)
-    # auxiliary value =  t * exp(-x*x)
-    let val_aux = t * exp(-x_abs * x_abs)
-    # r = 1 - polynomial * t * exp(-x*x)
-    let polynomial = polynomial_evaluate[
-        type,
-        simd_width,
-        VariadicList[SIMD[type, simd_width]](
-            0.254829592,
-            -0.284496736,
-            1.421413741,
-            -1.453152027,
-            1.061405429,
-        ),
-    ](t)
-    let r = polynomial.fma(-val_aux, 1)
-    return copysign(r, x)
-
-
-@always_inline
 fn gelu[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -242,7 +209,7 @@ fn gelu[
     # 0.5 * x * (1 + erf(x / SQRT_2))
     # x_half + x_half * erf_res
     let x_half = 0.5 * x
-    let erf_res = _erf(x * inv_SQRT_2)
+    let erf_res = erf(x * inv_SQRT_2)
     return x_half.fma(erf_res, x_half)
 
 

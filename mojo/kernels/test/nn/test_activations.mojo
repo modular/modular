@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# REQUIRES: linux
+# RUN: %mojo -debug-level full -I%S/.. %s | FileCheck %s
 
 from math import iota
 
@@ -15,6 +16,10 @@ from NN.Activations import (
     relu,
     relu_n1,
 )
+
+from tensor import Tensor, TensorShape
+from random import randn, seed
+from test_utils import get_minmax, compare, libm_call
 
 
 # CHECK-LABEL: test_elu
@@ -131,9 +136,81 @@ fn test_gelu_float64():
     print(gelu_approximate_sigmoid(Float64(107.5230)))
 
 
+@always_inline
+fn erf_libm[
+    type: DType, simd_width: Int
+](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    let eval = libm_call[type, simd_width, "erff", "err"](arg)
+    return eval
+
+
+@always_inline
+fn gelu_libm[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the GELU Op using the equation
+    $0.5 * x * (1 + erf_libm(x / sqrt(2)))$.
+
+    Parameters:
+        type: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        x: The value to compute the GELU operation on.
+
+    Returns:
+        SIMD[type, size]: The result of the GELU operation.
+
+    Constraints:
+        Type must be a floating point type.
+    """
+    alias inv_SQRT_2 = 0.70710678118654752440
+    constrained[
+        type.is_floating_point(),
+        "dtype must be a floating point type",
+    ]()
+    # 0.5 * x * (1 + erf(x / SQRT_2))
+    # x_half + x_half * erf_res
+    let x_half = 0.5 * x
+    let erf_res = erf_libm(x * inv_SQRT_2)
+    return x_half.fma(erf_res, x_half)
+
+
+# CHECK-LABEL: test_gelu_libm
+fn test_gelu_libm():
+    print("== test_gelu_libm")
+    seed(0)
+    alias N = 8192
+    # generate input values and write them to file
+    let x32 = randn[DType.float32](N, 0, 9.0)
+    print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
+
+    ####################
+    # math.erf result
+    ####################
+    var y32 = Tensor[DType.float32](TensorShape(N))
+    for i in range(N):
+        y32[i] = gelu(x32[i])  # gelu using math.erf
+
+    ####################
+    ## libm erf result
+    ####################
+    var libm_out = Tensor[DType.float32](TensorShape(N))
+    for i in range(N):
+        libm_out[i] = gelu_libm(x32[i])
+
+    # CHECK: Compare Mojo activations.gelu vs. LibM
+    # CHECK: AbsErr-Min/Max 0.0 4.76837158203125e-07
+    # CHECK: RelErr-Min/Max 0.0 0.035714227706193924
+    compare[DType.float32, N](
+        y32, libm_out, "Compare Mojo activations.gelu vs. LibM"
+    )
+
+
 fn main():
     test_elu()
     test_relu()
     test_relu_n1()
     test_gelu_float32()
     test_gelu_float64()
+    test_gelu_libm()
