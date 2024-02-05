@@ -82,8 +82,7 @@ fn test_gemv():
     alias threads = 0
 
     out.zero()
-    with Runtime(threads) as rt:
-        gemv[parallelize=True](out, lhs, rhs)
+    gemv[parallelize=True](out, lhs, rhs)
 
     # Verify the result
     for i in range(out.__len__()):
@@ -118,47 +117,45 @@ fn test_gemv():
     print("Serial GEMV GFLOP/s", 1e-9 * ((2 * m * k) / serial_perf.mean()))
 
     # Parallel Gemv
-    with Runtime(threads) as rt:
+    @always_inline
+    @parameter
+    fn bench_fn_parallel():
+        gemv[parallelize=True](out, lhs, rhs)
 
-        @always_inline
-        @parameter
-        fn bench_fn_parallel():
-            gemv[parallelize=True](out, lhs, rhs)
+    let par_perf = bench_run[bench_fn_parallel]()
+    benchmark.keep(out[10])
 
-        let par_perf = bench_run[bench_fn_parallel]()
-        benchmark.keep(out[10])
+    let rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
+    let out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
 
-        let rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
-        let out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
+    # Compute speedup and bandwidth stats
+    let par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
+    print(
+        "Parallel GEMV Bandwidth: ",
+        par_bandwidth,
+        "(",
+        par_perf.mean(),
+        ")",
+    )
+    print("Parallel GEMV GFLOP/s", 1e-9 * ((2 * m * k) / par_perf.mean()))
 
-        # Compute speedup and bandwidth stats
-        let par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
-        print(
-            "Parallel GEMV Bandwidth: ",
-            par_bandwidth,
-            "(",
-            par_perf.mean(),
-            ")",
-        )
-        print("Parallel GEMV GFLOP/s", 1e-9 * ((2 * m * k) / par_perf.mean()))
+    let bandwidth_increase = par_bandwidth / serial_bandwidth
+    print("--> Bandwidth increase: ", bandwidth_increase)
 
-        let bandwidth_increase = par_bandwidth / serial_bandwidth
-        print("--> Bandwidth increase: ", bandwidth_increase)
+    let speedup = serial_perf.mean() / par_perf.mean()
+    print("--> Mean Runtime Speedup: ", speedup)
 
-        let speedup = serial_perf.mean() / par_perf.mean()
-        print("--> Mean Runtime Speedup: ", speedup)
+    @always_inline
+    @parameter
+    fn bench_fn_matmul():
+        matmul(out_mat, lhs, rhs_mat)
 
-        @always_inline
-        @parameter
-        fn bench_fn_matmul():
-            matmul(out_mat, lhs, rhs_mat)
+    bench_fn_matmul()
 
-        bench_fn_matmul()
-
-        let matmul_perf = bench_run[bench_fn_matmul]()
-        benchmark.keep(out[10])
-        matmul_perf.print()
-        print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
+    let matmul_perf = bench_run[bench_fn_matmul]()
+    benchmark.keep(out[10])
+    matmul_perf.print()
+    print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 
     lhs_storage.free()
     rhs_storage.free()
