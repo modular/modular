@@ -193,6 +193,4 @@ fn _top_k[
                 out_vals[indices] = val
                 out_idxs[indices] = idxs[i]
 
-    parallelize_over_rows[rank, process_rows](
-        shape, axis, parallelism_grain_size
-    )
+    parallelize_over_rows[process_rows](shape, axis, parallelism_grain_size)
