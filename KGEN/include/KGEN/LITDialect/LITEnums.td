@@ -65,4 +65,27 @@ def LIT_VarLetDeclKind : I32EnumAttr<"VarLetDeclKind",
   let genSpecializedAttr = 0;
 }
 
+//===----------------------------------------------------------------------===//
+// VariadicEffects
+//===----------------------------------------------------------------------===//
+
+/// This describes the encoding of the function effects in the metadata of a
+/// SignatureType.
+def LIT_VariadicEffectsImpl : I16BitEnumAttr<"VariadicEffects",
+    "Variadic argument effects", [
+  /// This function has no variadics.
+  I16BitEnumAttrCaseNone<"None", "none">,
+  /// This function has vararg arguments.
+  I16BitEnumAttrCaseBit<"VarArg", 0, "vararg">,
+  /// This function has pack arguments.
+  I16BitEnumAttrCaseBit<"PackVarArg", 1, "packvararg">,
+  /// This function has keyword vararg arguments.
+  I16BitEnumAttrCaseBit<"KWVarArg", 2, "kwvararg">,
+  /// This function has vararg input parameters.
+  I16BitEnumAttrCaseBit<"ParamVarArg", 3, "param_vararg">,
+]> {
+  let cppNamespace = "M::KGEN::LIT::VariadicImpl";
+  let genSpecializedAttr = 0;
+}
+
 #endif // KGEN_LITDIALECT_LITENUMS_TD
