@@ -1123,9 +1123,9 @@ ASTDecl *SharedState::getBuiltinType(ASTDecl &context, StringRef moduleName,
 
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
-ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
-                                               llvm::SMLoc loc,
-                                               ArrayRef<Type> elements) {
+ASTType SharedState::getBuiltinTupleInstantiation(ASTDecl &context,
+                                                  llvm::SMLoc loc,
+                                                  ArrayRef<Type> elements) {
   auto tupleType = getBuiltinTupleType(context, loc);
   if (tupleType.isTypeCheckErrorType())
     return tupleType;
