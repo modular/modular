@@ -121,21 +121,23 @@ ArgParamListAttr::cloneWith(ArrayRef<StringAttr> names,
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = ArgParamListAttr::get(context);
-  return FnMetadataAttr::get(context, list, list, 0);
+  return FnMetadataAttr::get(context, list, list, 0, VariadicEffects());
 }
 
 FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
                                    ArgParamListAttr paramListAttrs,
-                                   size_t numImplicitLifetimeDecls) {
+                                   size_t numImplicitLifetimeDecls,
+                                   VariadicEffects variadicEffects) {
   return get(argListAttrs.getContext(), argListAttrs, paramListAttrs,
-             numImplicitLifetimeDecls);
+             numImplicitLifetimeDecls, variadicEffects);
 }
 
 FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
-                                   size_t numImplicitLifetimeDecls) {
+                                   size_t numImplicitLifetimeDecls,
+                                   VariadicEffects variadicEffects) {
   MLIRContext *ctx = argListAttrs.getContext();
   return get(ctx, argListAttrs, ArgParamListAttr::get(ctx),
-             numImplicitLifetimeDecls);
+             numImplicitLifetimeDecls, variadicEffects);
 }
 
 FnMetadataAttrInterface
@@ -252,6 +254,41 @@ LogicalResult FnMetadataAttr::verifySignature(
 
   return success();
 }
+
+static ParseResult parseVariadicEffects(AsmParser &p,
+                                        VariadicEffects &variadicEffects) {
+  if (succeeded(p.parseOptionalKeyword("none"))) {
+    variadicEffects = VariadicEffects();
+    return success();
+  }
+
+  auto effectsValue = VariadicImpl::VariadicEffects::None;
+  StringRef kw;
+  while (succeeded(p.parseOptionalKeyword(
+      &kw, {"vararg", "packvararg", "kwvararg", "param_vararg"}))) {
+    effectsValue |= *VariadicImpl::symbolizeVariadicEffects(kw);
+
+    // No vertical bar? We're done. It's not a parse error, but it does mean we
+    // can't specify more effects.
+    if (failed(p.parseOptionalVerticalBar())) {
+      variadicEffects = VariadicEffects(effectsValue);
+      return success();
+    }
+  }
+
+  return failure();
+}
+
+static void printVariadicEffects(AsmPrinter &p,
+                                 VariadicEffects variadicEffects) {
+  p << VariadicImpl::stringifyVariadicEffects(variadicEffects.getImpl());
+}
+
+namespace M::KGEN::LIT {
+static llvm::hash_code hash_value(VariadicEffects effects) {
+  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
+}
+} // namespace M::KGEN::LIT
 
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
