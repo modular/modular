@@ -2931,6 +2931,9 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == kTypeOf)
     return emitTypeOf(dest, emitter);
 
+  if (kind == kSourceLocation)
+    return emitSourceLocation(dest, emitter);
+
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
@@ -3060,4 +3063,23 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
     return {};
 
   return emitter.emitResult(PValue(subExprValue.getRValueType()), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
+                                               ExprEmitter &emitter) const {
+  Builder b(emitter.getContext());
+  auto stringType = StringType::get(emitter.getContext());
+
+  auto loc =
+      cast<FileLineColLoc>(emitter.shared.diags.translateLocation(getLoc()));
+  auto func =
+      cast<LIT::FuncOp>(emitter.declScope.getNearestDeclOfType<LIT::FuncOp>());
+
+  return emitter.emitConstructorCall(
+      emitter.shared.getBuiltinSourceLocationType(emitter.declScope, getLoc()),
+      ArrayRef<ASTExprAnd<AnyValue>>{
+          {StringAttr::get(loc.getFilename().getValue(), stringType), this},
+          {StringAttr::get(*func.getSourceName(), stringType), this},
+          {b.getIndexAttr(loc.getLine()), this}},
+      this, CallSyntax::kImplicitConvert, dest);
 }

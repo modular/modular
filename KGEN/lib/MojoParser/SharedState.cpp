@@ -1073,6 +1073,14 @@ ASTType SharedState::getBuiltinRaisingCoroutineType(ASTDecl &context,
   return resolveBuiltinModuleType(context, loc, "RaisingCoroutine", *this);
 }
 
+ASTType SharedState::getBuiltinSourceLocationType(ASTDecl &context,
+                                                  llvm::SMLoc loc) {
+  ASTDecl &locationModule =
+      importModule("builtin._location", /*currentPackage=*/nullptr, loc);
+  return resolveBuiltinModuleType(locationModule, loc, "_SourceLocation",
+                                  *this);
+}
+
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
   ASTDecl &closureModule =
       importModule("builtin._closure", /*currentPackage=*/nullptr, loc);
