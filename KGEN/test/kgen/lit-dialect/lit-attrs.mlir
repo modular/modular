@@ -22,15 +22,16 @@
 // CHECK: #lit.fn_metadata
 // CHECK-SAME: <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
 // CHECK-SAME: <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
-// CHECK-SAME: 2>
+// CHECK-SAME: 2, param_vararg>
 "some.op"() {metadata = #lit.fn_metadata<
   <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
   <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
-  2
+  2,
+  param_vararg
 >} : () -> ()
 
-// CHECK: #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0>
-"some.op"() {metadata = #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0>} : () -> ()
+// CHECK: #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0, none>
+"some.op"() {metadata = #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0, none>} : () -> ()
 
 // CHECK: #kgen.none : !kgen.none
 "a"() {a = #kgen.none : !kgen.none} : () -> ()

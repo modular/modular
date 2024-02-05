@@ -93,7 +93,8 @@ def ArgParamListAttr : DialectAttribute<(attr
 def FnMetadataAttr : DialectAttribute<(attr
   ConcreteAttribute<"ArgParamListAttr">:$argListAttrs,
   ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs,
-  VarInt:$numImplicitLifetimeDecls
+  VarInt:$numImplicitLifetimeDecls,
+  Custom<"VariadicEffects">:$variadicEffects
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
