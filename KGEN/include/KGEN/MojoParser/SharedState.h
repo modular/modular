@@ -391,6 +391,7 @@ public:
   ASTType getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinSourceLocationType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
 
   /// This returns an instance of Tuple[...] with the specified element types

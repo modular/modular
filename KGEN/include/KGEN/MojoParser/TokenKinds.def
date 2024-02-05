@@ -159,6 +159,7 @@ TOK_KEYWORD(__get_lvalue_as_address)
 TOK_KEYWORD(__get_address_as_owned_value)
 TOK_KEYWORD(__lifetime_of)
 TOK_KEYWORD(__type_of)
+TOK_KEYWORD(__source_location)
 
 #undef TOK_MARKER
 #undef TOK_IDENTIFIER

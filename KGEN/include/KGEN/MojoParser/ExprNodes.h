@@ -594,6 +594,7 @@ struct FunctionTypeNode final : public ExprNode {
 /// __get_address_as_lvalue(some_ptr)      # returns !kgen.pointer
 /// __get_address_as_owned_value(some_ptr) # returns RValue
 /// __lifetime_of(decl)                    # returns !lit.lifetime<mut>
+/// __source_location()                    # returns _SourceLocation
 struct MagicFunctionNode final : public ExprNode {
   MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
                     SMLoc rparenLoc)
@@ -616,6 +617,7 @@ struct MagicFunctionNode final : public ExprNode {
 
   AnyValue emitLifetimeOf(ValueDest &dest, ExprEmitter &emitter) const;
   AnyValue emitTypeOf(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitSourceLocation(ValueDest &dest, ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT
