@@ -245,6 +245,55 @@ struct ConvShape[rank: Int]:
         return c_idx % self.c_per_group()
 
 
+@always_inline
+fn get_conv_shape[
+    rank: Int,
+    filter_packed: Bool,
+](
+    output: NDBuffer,
+    input: NDBuffer,
+    filter: NDBuffer,
+    stride: StaticIntTuple[rank],
+    dilation: StaticIntTuple[rank],
+    pad_d: StaticIntTuple[2],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+    num_groups: Int,
+) -> ConvShape[rank]:
+    var output_dims = StaticIntTuple[rank](0)
+    var input_dims = StaticIntTuple[rank](0)
+    var filter_dims = StaticIntTuple[rank](0)
+
+    @always_inline
+    @parameter
+    fn assign[i: Int]():
+        output_dims[i] = output.dim[i + 1]()
+        input_dims[i] = input.dim[i + 1]()
+
+        @parameter
+        if filter_packed:
+            filter_dims[i] = filter.dim[i + 1]()
+        else:
+            filter_dims[i] = filter.dim[i]()
+
+    unroll[rank, assign]()
+
+    return ConvShape[rank] {
+        n: input.dim[0](),
+        input_dims: input_dims,
+        output_dims: output_dims,
+        filter_dims: filter_dims,
+        c: input.dim[rank + 1](),
+        f: output.dim[rank + 1](),
+        stride: stride,
+        dilation: dilation,
+        pad_d: pad_d,
+        pad_h: pad_h,
+        pad_w: pad_w,
+        num_groups: num_groups,
+    }
+
+
 fn get_conv2d_shape[
     output_shape: DimList,
     input_shape: DimList,
@@ -399,6 +448,7 @@ fn get_conv_tile_shape[
 @value
 @register_passable("trivial")
 struct ConvInfoStatic:
+    var pad_d: DimList
     var pad_h: DimList
     var pad_w: DimList
     var stride: DimList
@@ -406,12 +456,13 @@ struct ConvInfoStatic:
     var num_groups: Dim
 
     @always_inline
-    fn all_known(self) -> Bool:
+    fn all_known[rank: Int](self) -> Bool:
         return (
-            self.pad_h.all_known[2]()
+            self.pad_d.all_known[2]()
+            and self.pad_h.all_known[2]()
             and self.pad_w.all_known[2]()
-            and self.stride.all_known[2]()
-            and self.dilation.all_known[2]()
+            and self.stride.all_known[rank]()
+            and self.dilation.all_known[rank]()
             and self.num_groups.has_value()
         )
 
@@ -433,13 +484,14 @@ struct ConvInfoStatic:
 
     @always_inline
     @staticmethod
-    fn create_unknown() -> Self:
+    fn create_unknown[rank: Int]() -> Self:
         return rebind[Self](
             ConvInfoStatic(
                 DimList.create_unknown[2](),
                 DimList.create_unknown[2](),
                 DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
+                DimList.create_unknown[rank](),
+                DimList.create_unknown[rank](),
                 Dim(),
             )
         )
@@ -492,7 +544,9 @@ fn get_direct_conv_micro_kernel_width() -> Int:
 fn get_micro_kernel_shape[
     WO: Dim, F: Dim, conv_attr: ConvInfoStatic, simd_size: Int
 ]() -> StaticIntTuple[2]:
-    alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known()
+    alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known[
+        2
+    ]()
 
     # Number of named simd registers for each architecture.
     # TODO: configure micro kernel shape are other architectures.
@@ -706,7 +760,7 @@ fn get_conv_num_partitions[
     # Do not partition channels when num_groups > 1.
     let max_num_channel_tasks = max(
         conv_shape.c // min_c_per_task, 1
-    ) if conv_shape.num_groups == 1 else 1
+    ) if conv_shape.num_groups == 1 and conv_shape.rank == 2 else 1
     let num_channel_tasks = min(
         max_num_channel_tasks,
         max_num_tasks // (num_row_tasks * num_col_tasks),

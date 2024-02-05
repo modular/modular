@@ -45,6 +45,7 @@ alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
 alias num_groups = 1
 
 alias conv_attr = ConvInfoStatic(
+    DimList(0, 0),
     DimList(pad_bottom, pad_top),
     DimList(pad_left, pad_right),
     DimList(stride_h, stride_w),
@@ -107,7 +108,6 @@ fn static_conv(
             value_type,
             True,
             conv_attr,
-            False,
         ].run(output, input, filter, conv_shape)
     except e:
         print(e)

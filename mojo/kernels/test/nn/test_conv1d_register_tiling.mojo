@@ -71,15 +71,6 @@ fn conv1d_register_tiling(
         num_groups: 1,
     }
 
-    fn epilogue_fn(
-        n: Int,
-        ho: Int,
-        wo_idx: Int,
-        f_tile_offset: Int,
-        f_tile_size_bounded: Int,
-    ):
-        pass
-
     conv1d_update_wo_tile[
         micro_kernel_height,
         micro_kernel_width,
@@ -88,7 +79,6 @@ fn conv1d_register_tiling(
         effected_by_padding=False,
         has_residual=False,
         last_c_tile=False,
-        elementwise_epilogue_enabled=False,
     ](
         output,
         input,
@@ -100,7 +90,6 @@ fn conv1d_register_tiling(
         conv_shape,
         0,
         wo,
-        epilogue_fn,
     )
 
 

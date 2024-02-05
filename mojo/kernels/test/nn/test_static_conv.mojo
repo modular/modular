@@ -113,7 +113,7 @@ fn test[
     pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
-    alias conv_attr_dynamic = ConvInfoStatic.create_unknown()
+    alias conv_attr_dynamic = ConvInfoStatic.create_unknown[2]()
 
     ConvDirectNHWC[
         4,
@@ -127,7 +127,6 @@ fn test[
         type,  # output type
         True,
         conv_attr_dynamic,
-        False,
     ].run(
         output_dynamic,
         rebind[NDBuffer[type, 4]](input),
@@ -136,6 +135,7 @@ fn test[
     )
 
     alias conv_attr_static = ConvInfoStatic(
+        DimList(0, 0),
         DimList(pad_h[0], pad_h[1]),
         DimList(pad_w[0], pad_w[1]),
         DimList(stride[0], stride[1]),
@@ -179,7 +179,6 @@ fn test[
         type,  # output type
         True,
         conv_attr_static,
-        False,
     ].run(
         output_static,
         input,

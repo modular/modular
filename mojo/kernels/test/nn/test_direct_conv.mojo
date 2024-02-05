@@ -137,7 +137,7 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic.create_unknown()
+    alias conv_attr = ConvInfoStatic.create_unknown[2]()
 
     @parameter
     if filter_packed:
@@ -153,7 +153,6 @@ fn test[
             type,
             True,
             conv_attr,
-            False,
         ].run(
             output,
             input,
@@ -173,7 +172,6 @@ fn test[
             type,
             False,
             conv_attr,
-            False,
         ].run(output, input, filter, conv_shape)
 
     input_ptr.free()

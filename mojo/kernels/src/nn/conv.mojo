@@ -43,6 +43,7 @@ from .ConvUtils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
     get_partition,
+    get_conv_shape,
 )
 from .Image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
@@ -265,7 +266,7 @@ struct Naive2dConvolution[
 
 
 @always_inline
-fn _m_to_n_ho_wo_nhwc(m: Int, WO: Int, HO: Int) -> StaticIntTuple[3]:
+fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
     """Converts post-im2col m dimension index to pre-im2col coordinates on
     (N, Hout, Wout) dimensions.
         Args:
@@ -284,14 +285,17 @@ fn _m_to_n_ho_wo_nhwc(m: Int, WO: Int, HO: Int) -> StaticIntTuple[3]:
 
 
 # Elementwise epilogue signature
-alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) escaping -> None
+alias elementwise_epilogue_type = fn[rank: Int] (
+    coords: StaticIntTuple[rank],
+    f_size: Int,
+) capturing -> None
 
 
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
     simd_size: Int,
-    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     scratch: DTypePointer,
     output: DTypePointer[scratch.type],
@@ -300,7 +304,6 @@ fn _reduce_output[
     F: Int,
     num_partitions: Int,
     num_threads: Int,
-    elementwise_epilogue_fn: elementwise_epilogue_type,
 ):
     let num_rows = N * output_space_dims.flattened_length()
     let buf_size = num_rows * F
@@ -329,12 +332,13 @@ fn _reduce_output[
         vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
 
         @parameter
-        if elementwise_epilogue_enabled:
+        if elementwise_epilogue:
+            alias epilogue = elementwise_epilogue.value()
             for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
                 let nhowo = _m_to_n_ho_wo_nhwc(
                     m, output_space_dims[0], output_space_dims[1]
                 )
-                elementwise_epilogue_fn(nhowo[0], nhowo[1], nhowo[2], 0, F)
+                epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: synchronous, so use of locally allocated output_ptr is safe.
     sync_parallelize[reduce_task](num_threads)
@@ -358,7 +362,7 @@ struct ConvDirectNHWC[
     output_type: DType,
     filter_packed: Bool,
     conv_attr: ConvInfoStatic,
-    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ]:
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
@@ -384,12 +388,10 @@ struct ConvDirectNHWC[
 
     var cf_tile_size: StaticIntTuple[2]
 
-    var elementwise_epilogue_fn: elementwise_epilogue_type
-
     # If shapes and attributes are known at compile time
-    alias packed_and_fully_static = conv_attr.all_known() and input_shape.all_known[
-        1, input_rank
-    ]() and output_shape.all_known[
+    alias packed_and_fully_static = conv_attr.all_known[
+        input_rank - 2
+    ]() and input_shape.all_known[1, input_rank]() and output_shape.all_known[
         1, output_rank
     ]() and filter_shape.all_known[
         filter_rank
@@ -401,27 +403,6 @@ struct ConvDirectNHWC[
         input: NDBuffer[input_type, input_rank, input_shape],
         filter: NDBuffer[filter_type, filter_rank, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
-    ) raises:
-        fn direct_null_elementwise_epilogue(
-            n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
-        ):
-            pass
-
-        Self.run(
-            output,
-            input,
-            filter,
-            conv_shape,
-            direct_null_elementwise_epilogue,
-        )
-
-    @staticmethod
-    fn run(
-        output: NDBuffer[output_type, output_rank, output_shape],
-        input: NDBuffer[input_type, input_rank, input_shape],
-        filter: NDBuffer[filter_type, filter_rank, filter_shape],
-        conv_shape: ConvShape[input_rank - 2],
-        elementwise_epilogue_fn: elementwise_epilogue_type,
     ) raises:
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
@@ -509,7 +490,7 @@ struct ConvDirectNHWC[
                 output_type,
                 filter_packed,
                 conv_attr,
-                elementwise_epilogue_enabled,
+                elementwise_epilogue,
             ](
                 task_output,
                 input,
@@ -517,7 +498,6 @@ struct ConvDirectNHWC[
                 conv_shape,
                 partition,
                 task_tile_size,
-                elementwise_epilogue_fn,
             )
             instance._batch_group_loop()
 
@@ -526,7 +506,10 @@ struct ConvDirectNHWC[
 
             # Reduce from the output scratch buffer to the actual output.
             _reduce_output[
-                simd_size, elementwise_epilogue_enabled and input_rank == 4
+                simd_size,
+                # Only support channel partition for 2D shapes (ResNet).
+                elementwise_epilogue = elementwise_epilogue if input_rank
+                == 4 else None,
             ](
                 output_scratch.data,
                 output.data,
@@ -535,7 +518,6 @@ struct ConvDirectNHWC[
                 conv_shape.f,
                 num_partitions[1],
                 num_threads,
-                elementwise_epilogue_fn,
             )
 
             output_ptr.free()
@@ -840,7 +822,9 @@ struct ConvDirectNHWC[
         ](output_micro_tile, self.output.data + output_offset)
 
         @parameter
-        if elementwise_epilogue_enabled and last_c_tile:
+        if elementwise_epilogue and last_c_tile:
+            alias epilogue = elementwise_epilogue.value()
+
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
             let f_tile_size_bounded: Int
@@ -859,11 +843,13 @@ struct ConvDirectNHWC[
             ):
                 # The micro tile may cover points in different rows/images.
                 # Convert the 1D index back to (n, ho, wo).
-                self.elementwise_epilogue_fn(
-                    n,
-                    m // self.conv_shape.wo(),
-                    m % self.conv_shape.wo(),
-                    f_tile_offset,
+                epilogue(
+                    Index(
+                        n,
+                        m // self.conv_shape.wo(),
+                        m % self.conv_shape.wo(),
+                        f_tile_offset,
+                    ),
                     f_tile_size_bounded,
                 )
 
@@ -1513,8 +1499,7 @@ struct ConvDirectNHWC[
                 effected_by_padding,
                 has_residual,
                 last_c_tile,
-                # TODO: Enable epilogue for 1D and 3D.
-                elementwise_epilogue_enabled and input_rank == 4,
+                elementwise_epilogue=elementwise_epilogue,
             ](
                 output_base,
                 input_base,
@@ -1526,7 +1511,6 @@ struct ConvDirectNHWC[
                 rebind[ConvShape[1]](self.conv_shape),
                 n,
                 wo,
-                self.elementwise_epilogue_fn,
             )
 
             input_base = input_base.offset(
@@ -1592,7 +1576,7 @@ struct ConvDirectNHWC[
                     effected_by_padding,
                     has_residual,
                     last_c_tile,
-                    elementwise_epilogue_enabled,
+                    elementwise_epilogue=elementwise_epilogue,
                 ](
                     output_base,
                     input_base,
@@ -1604,7 +1588,6 @@ struct ConvDirectNHWC[
                     rebind[ConvShape[2]](self.conv_shape),
                     n,
                     Index(ho, wo),
-                    self.elementwise_epilogue_fn,
                 )
 
                 input_base = input_base.offset(
@@ -1679,8 +1662,7 @@ struct ConvDirectNHWC[
                         effected_by_padding,
                         has_residual,
                         last_c_tile,
-                        # TODO: Enable epilogue for 1D and 3D.
-                        elementwise_epilogue_enabled and input_rank == 4,
+                        elementwise_epilogue=elementwise_epilogue,
                     ](
                         output_base,
                         input_base,
@@ -1692,7 +1674,6 @@ struct ConvDirectNHWC[
                         rebind[ConvShape[3]](self.conv_shape),
                         n,
                         Index(do, ho, wo),
-                        self.elementwise_epilogue_fn,
                     )
 
                     input_base = input_base.offset(
@@ -2067,13 +2048,14 @@ struct ConvDirectNHWC[
         alias F = output_shape.get[3]()  # NHWC
 
         @parameter
-        if elementwise_epilogue_enabled and last_c_tile:
+        if elementwise_epilogue and last_c_tile:
+            alias epilogue = elementwise_epilogue.value()
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
             let f_tile_size_bounded = F - f_tile_offset if has_residual else f_tile_size
             for wo_idx in range(wo, wo + micro_kernel_height):
-                self.elementwise_epilogue_fn(
-                    n, ho, wo_idx, f_tile_offset, f_tile_size_bounded
+                epilogue(
+                    Index(n, ho, wo_idx, f_tile_offset), f_tile_size_bounded
                 )
 
         return
@@ -2177,7 +2159,7 @@ fn conv1d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2189,7 +2171,6 @@ fn conv1d_update_wo_tile[
     conv_shape: ConvShape,
     n: Int,
     wo: Int,
-    elementwise_epilogue_fn: elementwise_epilogue_type,
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2275,15 +2256,22 @@ fn conv1d_update_wo_tile[
 
     # Apply elementwise epilogue if necessary
     @parameter
-    if elementwise_epilogue_enabled and last_c_tile:
+    if elementwise_epilogue and last_c_tile:
+        alias epilogue = elementwise_epilogue.value()
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
-        let f_tile_size_bounded = conv_shape.f - f_tile_offset if has_residual else f_tile_size
-        alias ho = 1
-        for wo_idx in range(wo, wo + micro_kernel_height):
-            elementwise_epilogue_fn(
-                n, ho, wo_idx, f_tile_offset, f_tile_size_bounded
+        let f_tile_size_bounded: Int
+
+        @parameter
+        if has_residual:
+            f_tile_size_bounded = (
+                conv_shape.f_per_group() - conv_shape.f_in_group(f_tile_offset)
             )
+        else:
+            f_tile_size_bounded = f_tile_size
+
+        for wo_idx in range(wo, wo + micro_kernel_height):
+            epilogue(Index(n, wo_idx, f_tile_offset), f_tile_size_bounded)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2354,7 +2342,7 @@ fn conv2d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2366,7 +2354,6 @@ fn conv2d_update_wo_tile[
     conv_shape: ConvShape[2],
     n: Int,
     howo: StaticIntTuple[2],
-    elementwise_epilogue_fn: elementwise_epilogue_type,
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2460,7 +2447,10 @@ fn conv2d_update_wo_tile[
 
     # Apply elmentwise epilogue to the
     @parameter
-    if elementwise_epilogue_enabled and last_c_tile:
+    # if elementwise_epilogue_enabled and last_c_tile:
+    if elementwise_epilogue and last_c_tile:
+        alias epilogue = elementwise_epilogue.value()
+
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
         let f_tile_size_bounded: Int
@@ -2474,8 +2464,9 @@ fn conv2d_update_wo_tile[
             f_tile_size_bounded = f_tile_size
 
         for wo_idx in range(howo[1], howo[1] + micro_kernel_height):
-            elementwise_epilogue_fn(
-                n, howo[0], wo_idx, f_tile_offset, f_tile_size_bounded
+            # elementwise_epilogue_fn[4](
+            epilogue(
+                Index(n, howo[0], wo_idx, f_tile_offset), f_tile_size_bounded
             )
 
 
@@ -2547,7 +2538,7 @@ fn conv3d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2559,7 +2550,6 @@ fn conv3d_update_wo_tile[
     conv_shape: ConvShape[3],
     n: Int,
     dohowo: StaticIntTuple[3],
-    elementwise_epilogue_fn: elementwise_epilogue_type,
 ):
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2656,7 +2646,9 @@ fn conv3d_update_wo_tile[
 
     # Apply elmentwise epilogue to the
     @parameter
-    if elementwise_epilogue_enabled and last_c_tile:
+    if elementwise_epilogue and last_c_tile:
+        alias epilogue = elementwise_epilogue.value()
+
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
         let f_tile_size_bounded: Int
@@ -2670,8 +2662,9 @@ fn conv3d_update_wo_tile[
             f_tile_size_bounded = f_tile_size
 
         for wo_idx in range(dohowo[2], dohowo[2] + micro_kernel_height):
-            elementwise_epilogue_fn(
-                n, dohowo[1], wo_idx, f_tile_offset, f_tile_size_bounded
+            epilogue(
+                Index(n, dohowo[0], dohowo[1], wo_idx, f_tile_offset),
+                f_tile_size_bounded,
             )
 
 
@@ -3050,87 +3043,78 @@ fn conv_shape[
     return output_shape
 
 
-alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
-    StaticIntTuple[4], SIMD[type, width]
-) capturing -> None
-
-
-fn conv_2d_nhwc_direct[
+fn conv_nhwc_direct[
+    input_rank: Int,
     filter_rank: Int,
-    filter_packed: Bool,
-    conv_info_static: ConvInfoStatic,
-    lambdas_have_fusion: Bool,
-    epilogue_wrapper: elementwise_lambda_fn_sig_type,
-    input_type: DType,
-    filter_type: DType,
-    output_type: DType,
     input_shape: DimList,
     filter_shape: DimList,
     output_shape: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_packed: Bool,
+    conv_info_static: ConvInfoStatic,
+    lambdas_have_fusion: Bool,
+    elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
-    input: NDBuffer[input_type, 4, input_shape],
+    input: NDBuffer[input_type, input_rank, input_shape],
     filter: NDBuffer[filter_type, filter_rank, filter_shape],
-    output: NDBuffer[output_type, 4, output_shape],
-    conv_info: ConvInfo[conv_info_static],
+    output: NDBuffer[output_type, input_rank, output_shape],
+    stride: StaticIntTuple[input_rank - 2],
+    dilation: StaticIntTuple[input_rank - 2],
+    pad_d: StaticIntTuple[2],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+    num_groups: Int,
 ) raises:
     constrained[
         input_type == filter_type and input_type == output_type,
-        "conv input/output/filter types must be the same",
+        "conv input/output/filter types must be the same.",
     ]()
     constrained[
-        (filter_packed and filter_rank == 5)
-        or (not filter_packed and filter_rank == 4),
-        "unexpected filter rank for filter layout",
+        (filter_packed and filter_rank == input_rank + 1)
+        or (not filter_packed and filter_rank == input_rank),
+        "Filter and input ranks mismatch.",
     ]()
 
-    let output_rebind = rebind[NDBuffer[input_type, 4, output_shape]](output)
-    let filter_rebind = rebind[NDBuffer[input_type, filter_rank, filter_shape]](
-        filter
-    )
-
-    alias filter_layout = Image2DLayout.FRSCf if filter_packed else Image2DLayout.RSCF
-    let conv_shape = get_conv2d_shape[
-        filter_rank,
-        output_shape,
-        input_shape,
-        filter_shape,
-        input_type,
-        Image2DLayout.NHWC,
-        filter_layout,
-    ](
-        output_rebind,
+    let conv_shape = get_conv_shape[input_rank - 2, filter_packed](
+        output,
         input,
-        filter_rebind,
-        conv_info.pad_h.get(),
-        conv_info.pad_w.get(),
-        conv_info.stride.get(),
-        conv_info.dilation.get(),
-        conv_info.num_groups.get(),
+        filter,
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
+        num_groups,
     )
 
     # The closure updates a row segment of the output.
-    fn elementwise_epilogue_closure(
-        n: Int,
-        ho: Int,
-        wo: Int,
-        f_offset: Int,
-        f_size: Int,
-    ):
+    @always_inline
+    @parameter
+    fn elementwise_epilogue[
+        rank: Int
+    ](coords: StaticIntTuple[rank], f_size: Int,):
         alias simd_size = simdwidthof[output_type]()
 
         @always_inline
         @parameter
         fn body[width: Int](idx: Int):
-            let coords = Index(n, ho, wo, f_offset + idx)
-            let vec = output.simd_load[width](coords)
-            epilogue_wrapper[output_type, width](coords, vec)
+            # Cooridates of the current index.
+            var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+            curr_coords[input_rank - 1] += idx
+
+            let vec = output.simd_load[width](curr_coords)
+            elementwise_lambda(curr_coords, vec)
 
         vectorize[body, simd_size](f_size)
 
     ConvDirectNHWC[
-        4,  # input_rank
+        input_rank,
         filter_rank,
-        4,  # output_rank
+        input_rank,
         input_shape,
         filter_shape,
         output_shape,
@@ -3139,11 +3123,12 @@ fn conv_2d_nhwc_direct[
         output_type,
         filter_packed,
         conv_info_static,
-        lambdas_have_fusion,
+        Optional[elementwise_epilogue_type](
+            elementwise_epilogue
+        ) if lambdas_have_fusion else None,
     ].run(
         output,
         input,
         filter,
         conv_shape,
-        elementwise_epilogue_closure,
     )
