@@ -603,7 +603,7 @@ fn _compute_ndbuffer_stride[
         alias i = rank - idx - 1
         stride[i - 1] = shape[i] * stride[i]
 
-    unroll[rank - 1, body]()
+    unroll[body, rank - 1]()
     return stride
 
 
@@ -2052,6 +2052,6 @@ fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
     fn loop[idx: Int]():
         product *= x.dim[start_dim + idx]()
 
-    unroll[end_dim - start_dim, loop]()
+    unroll[loop, end_dim - start_dim]()
 
     return product
