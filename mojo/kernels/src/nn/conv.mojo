@@ -2676,12 +2676,13 @@ fn conv3d_update_wo_tile[
 @always_inline
 fn pack_filter_shape_impl[
     filter_type: DType
-](R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> StaticIntTuple[5]:
+](Q: Int, R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> StaticIntTuple[6]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
 
     Args:
+        Q: Original Q filter dimension.
         R: Original R filter dimension.
         S: Original S filter dimension.
         C: Original C filter dimension.
@@ -2701,12 +2702,13 @@ fn pack_filter_shape_impl[
     )
     let F_per_group = F // num_groups
 
-    var output_shape = StaticIntTuple[5]()
+    var output_shape = StaticIntTuple[6]()
     output_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
-    output_shape[1] = R
-    output_shape[2] = S
-    output_shape[3] = C
-    output_shape[4] = micro_kernel_f_size
+    output_shape[1] = Q
+    output_shape[2] = R
+    output_shape[3] = S
+    output_shape[4] = C
+    output_shape[5] = micro_kernel_f_size
 
     return output_shape
 
