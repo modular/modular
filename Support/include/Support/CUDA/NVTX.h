@@ -19,7 +19,11 @@ namespace M::CUDA::NVTX {
 struct Event {
 
   Event(StringRef category, StringRef message, uint32_t color = 0xFF880000)
-      : category(category), message(message), color(color) {}
+#ifdef USE_NVTX_LIB
+      : category(category), message(message), color(color)
+#endif // USE_NVTX_LIB
+  {
+  }
 
   struct RangeID {
 #ifdef USE_NVTX_LIB
@@ -35,6 +39,7 @@ struct Event {
 
   ErrorOr<RangeID> start();
 
+#ifdef USE_NVTX_LIB
 private:
   // The cateogry for the event. This is used to disambiguate the different
   // event types.
@@ -43,6 +48,7 @@ private:
   std::string message;
   // The ARGB color (in Hex) of the event.
   [[maybe_unused]] uint32_t color = 0;
+#endif // USE_NVTX_LIB
 };
 } // namespace M::CUDA::NVTX
 
