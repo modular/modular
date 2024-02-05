@@ -72,7 +72,7 @@ fn kernel(
         let cv = c.simd_load[simd_size](n * idx0 + simd_size * idx1)
         c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
 
-    unroll[mr, nr2, loadc]()
+    unroll[loadc, mr, nr2]()
 
     for pr in range(kc):
 
@@ -83,7 +83,7 @@ fn kernel(
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ]()
 
-        unroll[nr2, prefetch]()
+        unroll[prefetch, nr2]()
 
         @parameter
         @always_inline
@@ -94,7 +94,7 @@ fn kernel(
             cv += av * bv
             c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
 
-        unroll[mr, nr2, calc]()
+        unroll[calc, mr, nr2]()
 
     @parameter
     @always_inline
@@ -102,7 +102,7 @@ fn kernel(
         let cv = c_local.simd_load[simd_size](nr * idx0 + simd_size * idx1)
         c.simd_store[simd_size](n * idx0 + simd_size * idx1, cv)
 
-    unroll[mr, nr2, storec]()
+    unroll[storec, mr, nr2]()
 
 
 fn pack_B(
