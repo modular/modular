@@ -415,7 +415,7 @@ fn gather_elementwise_fn_wrapper[
         fn indices_get[unrolled_i: Int]():
             indices_index[unrolled_i] = idx[unrolled_i + int(axis)]
 
-        unroll[indices_rank, indices_get]()
+        unroll[indices_get, indices_rank]()
 
         # The index we are gathering.
         let data_index = indices_fn[1, indices_rank](indices_index)
@@ -440,7 +440,7 @@ fn gather_elementwise_fn_wrapper[
             else:
                 data_indices[unrolled_i] = idx[unrolled_i]
 
-        unroll[input_rank, input_indices_get]()
+        unroll[input_indices_get, input_rank]()
 
         # Load the the data.
         @parameter

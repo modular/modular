@@ -37,7 +37,7 @@ fn reshape[
         stride_tuple[i] = stride
         stride *= new_shape[i]
 
-    unroll[output_rank, body]()
+    unroll[body, output_rank]()
 
     # Return the a view with the new shape.
     return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)

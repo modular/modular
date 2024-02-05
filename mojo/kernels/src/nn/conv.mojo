@@ -894,7 +894,7 @@ struct ConvDirectNHWC[
                 Index(idx0, idx1 * simd_size), SIMD[output_type, simd_size](0.0)
             )
 
-        unroll[micro_kernel_height, micro_kernel_width, body]()
+        unroll[body, micro_kernel_height, micro_kernel_width]()
 
     @always_inline
     fn _load_output_micro_tile[
@@ -2051,7 +2051,7 @@ struct ConvDirectNHWC[
                 filter_ptr = filter_ptr.offset(filter_S_stride)
                 input_ptr = input_ptr.offset(s_stride_in_input)
 
-            unroll[S, body]()
+            unroll[body, S]()
 
             h_shift += conv_attr.dilations()[0]
 
@@ -2760,7 +2760,7 @@ fn pack_conv_filter_shape[
     fn assign[i: Int]():
         packed_shape[i + 1] = filter.dim[i]()
 
-    unroll[filter.rank - 1, assign]()
+    unroll[assign, filter.rank - 1]()
 
     return packed_shape
 
@@ -2789,7 +2789,7 @@ fn _get_group_filter_base(
     fn multiply[i: Int]():
         filter_window_size *= packed_filter.dim[i + 1]()
 
-    unroll[rank - 3, multiply]()
+    unroll[multiply, rank - 3]()
 
     # Size of one group's packed filter.
     # fmt: off
@@ -2868,7 +2868,7 @@ fn pack_filter[
     fn multiply[i: Int]():
         outer_dims_prod *= filter.dim[i]()
 
-    unroll[filter.rank - 1, multiply]()
+    unroll[multiply, filter.rank - 1]()
 
     let F = filter.dim[filter.rank - 1]()
     let F_per_group = F // num_groups
