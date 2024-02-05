@@ -151,7 +151,7 @@ fn test_static_shape_deduction[
         else:
             print(dim.get())
 
-    unroll[rank, body]()
+    unroll[body, rank]()
 
 
 @mogg_register("test_static_shape_output")
@@ -170,7 +170,7 @@ fn test_static_shape_output[
         else:
             print(dim.get())
 
-    unroll[rank, body]()
+    unroll[body, rank]()
     return NDBuffer[type, rank, output_0_static_shape](
         DTypePointer[type](), StaticIntTuple[rank](), StaticIntTuple[rank]()
     )
@@ -190,7 +190,7 @@ fn test_int_list_param[length: Int, int_list: DimList]():
         else:
             print(dim.get())
 
-    unroll[length, body]()
+    unroll[body, length]()
 
 
 @mogg_register("test_custom_op")

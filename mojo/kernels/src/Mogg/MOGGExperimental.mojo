@@ -79,7 +79,7 @@ fn to_tensor[
             strides[i] = stride
             stride *= shape[i]
 
-        unroll[rank, body]()
+        unroll[body, rank]()
     else:
         # Start from the back so we can accumulate the strides.
         for i in range(length - 1, -1, -1):
@@ -202,7 +202,7 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
         new_shape[i] = x.shape[dim]
         new_stride[i] = x.strides[dim]
 
-    unroll[x.static_rank, body]()
+    unroll[body, x.static_rank]()
 
     return Tensor[x.type, x.same_rank_param()](
         x.data, new_shape, new_stride, x.refcount()
@@ -318,7 +318,7 @@ fn view_like_custom_op_target(
         new_shape[i] = x.shape[i] * y.shape[i]
         new_stride[i] = 0
 
-    unroll[x.static_rank, body]()
+    unroll[body, x.static_rank]()
 
     return Tensor[x.type, x.same_rank_param()](
         x.data, new_shape, new_stride, x.refcount()

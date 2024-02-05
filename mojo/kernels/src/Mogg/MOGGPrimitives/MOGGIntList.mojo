@@ -208,7 +208,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             fn body[idx: Int]():
                 num_elms *= self[idx]
 
-            unroll[Self._length, body]()
+            unroll[body, Self._length]()
         else:
             for i in range(len(self)):
                 num_elms *= self[i]

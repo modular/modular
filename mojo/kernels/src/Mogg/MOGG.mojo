@@ -432,7 +432,7 @@ fn to_buffer[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    unroll[rank, body]()
+    unroll[body, rank]()
 
     return NDBuffer[type, rank](
         DTypePointer[type](data), shape_tuple, stride_tuple
@@ -451,7 +451,7 @@ fn to_shape[
     fn body[idx: Int]():
         shape_tuple[idx] = shape_ptr.load(idx)
 
-    unroll[rank, body]()
+    unroll[body, rank]()
 
     return shape_tuple
 
@@ -606,7 +606,7 @@ fn _compute_flat_index[
     fn body[idx: Int]():
         flat_index = fma(index[idx], buffer.dynamic_stride[idx], flat_index)
 
-    unroll[iters, body]()
+    unroll[body, iters]()
     return flat_index
 
 
@@ -813,13 +813,13 @@ fn broadcast_to_tensor[
     # using the unroll construct to help codegeneration.
     @parameter
     if target_rank < original_rank:
-        unroll[original_rank - target_rank, add_new_dims]()
+        unroll[add_new_dims, original_rank - target_rank]()
         offset = original_rank - target_rank
-        unroll[target_rank, broadcast_dim]()
+        unroll[broadcast_dim, target_rank]()
     else:
-        unroll[target_rank - original_rank, add_new_dims]()
+        unroll[add_new_dims, target_rank - original_rank]()
         offset = target_rank - original_rank
-        unroll[original_rank, broadcast_dim]()
+        unroll[broadcast_dim, original_rank]()
 
     # Create a view of the original data with the new shape and strides.
     var out = NDBuffer[type, output_rank](
@@ -1845,7 +1845,7 @@ fn transpose[
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
-    unroll[rank, body]()
+    unroll[body, rank]()
 
     # Create the transposed view.
     return NDBuffer[type, rank](input.data, new_shape, new_stride)

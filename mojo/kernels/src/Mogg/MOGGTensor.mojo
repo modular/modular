@@ -67,7 +67,7 @@ fn _get_start_indices_of_nth_subvolume[
             out[i] = curr_index % shape[i]
             curr_index //= shape[i]
 
-        unroll[rank - subvolume_rank, compute_shape]()
+        unroll[compute_shape, rank - subvolume_rank]()
     else:
         let rank = len(out)
         for i in range(rank - subvolume_rank - 1, -1, -1):
@@ -287,7 +287,7 @@ struct Tensor[
             fn body[idx: Int]():
                 flat_index = fma(index[idx], self.strides[idx], flat_index)
 
-            unroll[Self.static_rank, body]()
+            unroll[body, Self.static_rank]()
         else:
             # Dynamic case for dynamic ranks.
             for idx in range(self.dyn_rank):
