@@ -227,8 +227,7 @@ def test_c_package(package_path: Path):
 
 def _get_np_dtype(dtype):
     import numpy as np
-
-    from modular import engine
+    from max import engine
 
     mtype = engine.DType
     if dtype == mtype.bool:
@@ -287,7 +286,7 @@ def generate_clipvit_inputs_python():
 
 
 def load_and_execute_on_random_input(model_path: Path, framework: str):
-    from modular import engine
+    from max import engine
 
     session = engine.InferenceSession()
     print("\t Loading ...", end="")

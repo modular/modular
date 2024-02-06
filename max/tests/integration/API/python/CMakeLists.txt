@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-if(NOT TARGET modular-pybind-ext)
+if(NOT TARGET max-pybind-ext)
   return()
 endif()
 
@@ -16,7 +16,7 @@ add_custom_command(
   OUTPUT ${CUSTOM_OP_OUTPUT}
 )
 
-add_modular_pytest(modular-engine
+add_modular_pytest(max-engine
 
   TOP_LEVEL_CHECK
   check-api
@@ -31,5 +31,5 @@ add_modular_pytest(modular-engine
   ${CUSTOM_OP_OUTPUT}
   mof
   is-cuda-available
-  modular-pybind-ext
+  max-pybind-ext
 )

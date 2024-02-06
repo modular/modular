@@ -3,17 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Test the modular.engine Python bindings with MOF."""
+"""Test the max.engine Python bindings with MOF."""
 
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from subprocess import run
 
+import max.engine as me
 import numpy as np
 import pytest
-
-import modular.engine as me
 
 
 @pytest.fixture
