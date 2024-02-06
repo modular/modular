@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._context import *
+from ._context import _Device
 from ._status import *
 from ._compilation import *
 from .model import *
@@ -28,7 +29,7 @@ struct _InferenceSessionImpl(Movable):
     fn __init__(
         inout self,
         lib_path: String,
-        device: String = "cpu",
+        device: _Device,
         num_threads: Optional[Int] = None,
     ):
         self.engine = _EngineImpl(lib_path)
@@ -337,21 +338,41 @@ struct LoadOptions(CollectionElement):
 
 
 @value
+struct SessionOptions:
+    var _num_threads: Optional[Int]
+    var _device: _Device
+
+    fn __init__(inout self):
+        self = Self(None, _Device.CPU)
+
+    fn set_num_threads(inout self, num_threads: Int):
+        """Configure number of threads used by engine's threadpool.
+
+        Args:
+            num_threads: Number of threads to use.
+        """
+        self._num_threads = num_threads
+
+    fn _set_device(inout self, device: _Device):
+        self._device = device
+
+
+@value
 @register_passable
 struct InferenceSession:
     var ptr: AnyPointer[_InferenceSessionImpl]
 
-    fn __init__(
-        device: String = "cpu", num_threads: Optional[Int] = None
-    ) raises -> Self:
+    fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
         let path = _get_engine_path()
-        let self = Self._allocateAndInit(path, device, num_threads)
+        let self = Self._allocateAndInit(
+            path, options._device, options._num_threads
+        )
         return Self {ptr: self}
 
     @staticmethod
     fn _allocateAndInit(
         lib_path: String,
-        device: String,
+        device: _Device,
         num_threads: Optional[Int],
     ) raises -> AnyPointer[_InferenceSessionImpl]:
         let ptr = AnyPointer[_InferenceSessionImpl].alloc(1)

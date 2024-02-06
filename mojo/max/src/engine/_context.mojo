@@ -42,15 +42,34 @@ struct CRuntimeConfig:
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
     fn set_device(self, borrowed lib: DLHandle, device: String):
-        call_dylib_func(
-            lib, Self.SetDeviceFnName, self, device._strref_dangerous(), 0
-        )
+        let device_ref = device._strref_dangerous()
+        call_dylib_func(lib, Self.SetDeviceFnName, self, device_ref.data, 0)
         device._strref_keepalive()
 
     fn set_allocator_type(
         self, borrowed lib: DLHandle, allocator_type: AllocatorType
     ):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
+
+
+@value
+@register_passable
+struct _Device(Stringable):
+    var value: Int
+
+    alias CPU = _Device(0)
+    alias CUDA = _Device(1)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.value == other.value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __str__(self) -> String:
+        if self == _Device.CPU:
+            return "cpu"
+        return "cuda"
 
 
 struct RuntimeConfig:
@@ -62,7 +81,7 @@ struct RuntimeConfig:
     fn __init__(
         inout self,
         lib: DLHandle,
-        device: String = "cpu",
+        device: _Device,
         num_threads: Optional[Int] = None,
         allocator_type: AllocatorType = AllocatorType.SYSTEM,
     ):
@@ -77,7 +96,7 @@ struct RuntimeConfig:
 
         @parameter
         if MODULAR_RELEASE_PACKAGE_BUILD:
-            if device != "cpu":
+            if device != _Device.CPU:
                 print(
                     "The device",
                     device,
@@ -85,7 +104,7 @@ struct RuntimeConfig:
                 )
             return
         else:
-            if device == "cuda":
+            if device == _Device.CUDA:
                 self.ptr.set_device(self.lib, device)
 
     fn __moveinit__(inout self, owned existing: Self):
