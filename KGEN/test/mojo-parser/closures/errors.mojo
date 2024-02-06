@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s --mojo-disable-builtins
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
 # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
@@ -25,3 +25,22 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
 
     # expected-error @below {{cannot implicitly convert 'fn() escaping -> StringNoCopy' value to 'fn() escaping -> None' in 'var' initializer}}
     var y: fn () escaping -> None = myclosure
+
+
+alias Int = __mlir_type.index
+
+
+# COM: https://github.com/modularml/mojo/issues/1223
+# COM: When a runtime argument has incorrect type, nested function bodies may
+# COM: still be resolved. Ensure that we don't crash when the arg is used.
+@value
+struct Parametric[a: Int]:
+    pass
+
+
+fn test_suppressed_dyn_binding_error[
+    x: Int
+    # expected-error @below {{runtime function argument cannot be parametric function (hint: try passing it as a parameter)}}
+](pval: Parametric[x], func: fn[y: Int] (p: Parametric[y]) -> None):
+    fn nested():
+        func(pval)

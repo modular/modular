@@ -1323,11 +1323,17 @@ struct RegType: pass
 @register_passable
 struct ParamType[a: Int]: pass
 
-@value
-struct MemType: pass
-
 # CHECK-LABEL: lit.func @"function_types
-fn function_types(
+fn function_types[
+  # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!kgen.declref<@{{.*}}::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
+  p0: fn[a: Int](ParamType[a]) -> None,
+
+  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": @{{.*}}::@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
+  p1: def[a: Int, b: ParamType[a]]() -> None,
+
+  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|ownedresult|packvararg|param_vararg -> !kgen.variant<!Error, none>
+  p2: async def[*Ts: AnyRegType](* *Ts) -> None,
+](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
   float0: fn(Int) -> Int,
 
@@ -1352,20 +1358,11 @@ fn function_types(
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow) throws|ownedresult|vararg -> !kgen.variant<!Error, none>
   float7: def(*Int) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
-  float8: fn[a: Int](ParamType[a]) -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
-  float10: def[a: Int, b: ParamType[a]]() -> None,
-
-  # CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|ownedresult|packvararg|param_vararg -> !kgen.variant<!Error, none>
-  float11: async def[*Ts: AnyRegType](* *Ts) -> None,
-
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem) -> !Int>
-  named: fn(x: MemType) -> Int
+  # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem) -> !Int>
+  named: fn(x: MemoryType) -> Int
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
