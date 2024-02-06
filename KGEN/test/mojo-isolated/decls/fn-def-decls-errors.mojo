@@ -86,3 +86,7 @@ fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
 # expected-error @+1 {{keyword-only arguments after variadics not supported yet}}
 fn variadic_and_kw_only(a: Int, *b: Int, c: Int):
     pass
+
+# expected-error @+1 {{runtime function argument cannot be parametric function (hint: try passing it as a parameter)}}
+fn foo(x: fn[a: Int] () -> None):
+    pass

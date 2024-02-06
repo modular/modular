@@ -1225,8 +1225,20 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   // inferred parameters must be a PValue.
   if (!fitness.getParamBindings().empty()) {
     SmallVector<TypedAttr> bindOperands;
-    bindOperands.push_back(calleeRV.getIfPValue());
-    assert(bindOperands.front() && "binding a dynamic callee?");
+    if (auto calleePVal = calleeRV.getIfPValue()) {
+      bindOperands.push_back(calleePVal);
+    } else {
+      // The callee can be dynamic in cases where one of the parents had a
+      // resolution error but we are inside the body of a closure. In this case
+      // we want to silently error.
+      for (ASTDecl *scope = &declScope; scope; scope = scope->getParentDecl()) {
+        if (scope->hasReferenceError) {
+          dest.resetForError();
+          return {};
+        }
+      }
+      assert(false && "binding a dynamic callee?");
+    }
     llvm::append_range(bindOperands, fitness.getParamBindings());
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
