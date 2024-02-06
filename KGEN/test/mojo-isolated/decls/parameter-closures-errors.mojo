@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages -warn-on-let -verify-diagnostics %s
+# RUN: %translate-with-packages -verify-diagnostics %s
 
 
 fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
