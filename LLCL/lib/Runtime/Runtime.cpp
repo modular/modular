@@ -108,19 +108,30 @@ void Runtime::restartFromCancellation() {
   AnyAsyncValueRef::take(value);
 }
 
+static std::unique_ptr<Allocator> getAllocator(const RuntimeOptions &options) {
+  if (options.useAfterFreeAllocator) {
+#ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
+    return createUseAfterFreeAllocator();
+#else
+    llvm_unreachable("cannot use the user-after-free allocator");
+#endif
+  }
+  if (options.tcmallocAllocator) {
+#ifdef USE_TCMALLOC
+    return createTCMallocAllocator();
+#else
+    llvm_unreachable("cannot use the tcmalloc allocator because the code was "
+                     "not compiled with the tcmalloc library");
+#endif
+  }
+
+  return createMallocAllocator();
+}
+
 static std::unique_ptr<Runtime>
 createRuntimeImpl(const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
-  std::unique_ptr<Allocator> allocator =
-      options.useAfterFreeAllocator ? createUseAfterFreeAllocator()
-      : options.tcmallocAllocator   ? createTCMallocAllocator()
-                                    : createMallocAllocator();
-#else
-  std::unique_ptr<Allocator> allocator = options.tcmallocAllocator
-                                             ? createTCMallocAllocator()
-                                             : createMallocAllocator();
-#endif
+  std::unique_ptr<Allocator> allocator = getAllocator(options);
   if (options.leakCheckedAllocator)
     allocator = createLeakCheckAllocator(std::move(allocator));
   if (options.profilingAllocator)

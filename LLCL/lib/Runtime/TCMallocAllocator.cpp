@@ -37,6 +37,7 @@ std::unique_ptr<Allocator> M::LLCL::createTCMallocAllocator() {
 #ifdef USE_TCMALLOC
   return std::make_unique<TCMallocAllocator>();
 #else  // USE_TCMALLOC
-  llvm::report_fatal_error("LLCL was not built with tcmalloc support");
+  llvm::report_fatal_error("--allocator=tcmalloc not built for target. Please "
+                           "use a different allocator");
 #endif // USE_TCMALLOC
 }

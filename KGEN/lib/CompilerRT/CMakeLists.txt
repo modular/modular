@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
+
 include(AddTCMalloc)
+
 set(SOURCES
   Config.cpp
   Globals.cpp
