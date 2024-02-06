@@ -12,12 +12,31 @@ from testing import assert_true
 
 
 fn main() raises:
+    let t1 = IntTuple(IntTuple(IntTuple()))
+    assert_true(str(t1) == "((()))")
+
+    let t2 = IntTuple(IntTuple(IntTuple(3)))
+    assert_true(str(t2) == "((3))")
+
+    let t3 = IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6)))
+    assert_true(str(t3) == "(7, (2, 3, 4, (5, 6)))")
+
+    var t4 = IntTuple(2, IntTuple(3, 4))
+    assert_true(str(t4) == "(2, (3, 4))")
+
     # Test some basic tuple construction functionality
     var tt = IntTuple(
-        5, 7, 2, IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))), 42
+        5,
+        7,
+        2,
+        IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))),
+        42,
     )
 
-    assert_true(str(tt) == "(5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
+    # Make sure assignment works
+    tt[1] = 8
+
+    assert_true(str(tt) == "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
 
     tt.append(8, 3, 1)
     tt.append(81)
@@ -29,7 +48,7 @@ fn main() raises:
 
     assert_true(
         str(flatten(tt))
-        == "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42, 8, 3, 1, 81, 32, 32)"
+        == "(5, 8, 2, 3, 66, 6, 99, 4, 68, 721, 42, 8, 3, 1, 81, 32, 32)"
     )
 
     # IntTuple Unit Tests, see: https://github.com/NVIDIA/cutlass/blob/main/test/python/pycute/test_int_tuple.py
