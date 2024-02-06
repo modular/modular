@@ -159,7 +159,7 @@ struct SharedState::Impl {
 
   /// If true, emit warning when there is a capture of a let in a parametric
   /// closure.
-  bool warnOnLet = false;
+  bool warnOnLet = true;
 
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
