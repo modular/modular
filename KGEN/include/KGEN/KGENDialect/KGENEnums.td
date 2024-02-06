@@ -178,20 +178,12 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Throws", 0, "throws">,
   /// This is an async function.
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
-  /// This function has vararg arguments.
-  I16BitEnumAttrCaseBit<"VarArg", 2, "vararg">,
-  /// This function has pack arguments.
-  I16BitEnumAttrCaseBit<"PackVarArg", 3, "packvararg">,
-  /// This function has keyword vararg arguments.
-  I16BitEnumAttrCaseBit<"KWVarArg", 4, "kwvararg">,
-  /// This function has vararg input parameters.
-  I16BitEnumAttrCaseBit<"ParamVarArg", 5, "param_vararg">,
   /// This function captures state.
-  I16BitEnumAttrCaseBit<"Capturing", 6, "capturing">,
+  I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
   /// The return value of this function is a non-trivial owned register value.
-  I16BitEnumAttrCaseBit<"OwnedResult", 7, "ownedresult">,
+  I16BitEnumAttrCaseBit<"OwnedResult", 3, "ownedresult">,
   /// This local function has state that may live beyond its defined scope.
-  I16BitEnumAttrCaseBit<"Escaping", 8, "escaping">,
+  I16BitEnumAttrCaseBit<"Escaping", 4, "escaping">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

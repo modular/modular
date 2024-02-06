@@ -747,33 +747,37 @@ size_t LITSignatureType::getNumImplicitLifetimeDecls() {
 LITSignatureType LITSignatureType::dropParamValues() {
   return get(getValues(), /*paramTypes=*/{}, getArgConventions(),
              getFnEffects(),
-             FnMetadataAttr::get(getMetadata().getArgListAttrs()));
+             FnMetadataAttr::get(getMetadata().getArgListAttrs(),
+                                 /*numImplicitLifetimeDecls=*/0,
+                                 getMetadata().getVariadicEffects()));
 }
 
 bool LITSignatureType::isVarArg(size_t index) {
-  if (!getFnEffects().hasVarArgs())
+  VariadicEffects varEffects = getMetadata().getVariadicEffects();
+  if (!varEffects.hasVarArgs())
     return false;
-  return getFnEffects().isVarArg(getNumArguments(), index);
+  return varEffects.isVarArg(getNumArguments(), index);
 }
 
 bool LITSignatureType::isPackVarArg(size_t index) {
-  if (!getFnEffects().hasPackVarArgs())
+  VariadicEffects varEffects = getMetadata().getVariadicEffects();
+  if (!varEffects.hasPackVarArgs())
     return false;
-  return getFnEffects().isVarArg(getNumArguments(), index);
+  return varEffects.isVarArg(getNumArguments(), index);
 }
 
 bool LITSignatureType::isKWVarArg(size_t index) {
-  if (!getFnEffects().hasKWVarArgs())
+  if (!getMetadata().getVariadicEffects().hasKWVarArgs())
     return false;
   return index + 1 == getNumArguments();
 }
 
-bool LITSignatureType::hasParamVarArgs() const {
-  return getFnEffects().hasParamVarArgs();
+bool LITSignatureType::hasParamVarArgs() {
+  return getMetadata().getVariadicEffects().hasParamVarArgs();
 }
 
-bool LITSignatureType::hasPackVarArgs() const {
-  return getFnEffects().hasPackVarArgs();
+bool LITSignatureType::hasPackVarArgs() {
+  return getMetadata().getVariadicEffects().hasPackVarArgs();
 }
 
 /// Substitute the specified implicit lifetime references into the specified

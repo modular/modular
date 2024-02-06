@@ -344,8 +344,6 @@ SignatureType SignatureType::getSpecializedSignature(
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.addInputValue(value);
     } else {
-      if (::isa<VariadicType>(type))
-        effects.setParamVarArgs(false);
       evaluator.addInputValue(value);
       boundParams.set(paramNo);
     }
@@ -438,13 +436,6 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  unsigned minNumArgs = effects.hasAnyVarArgs() + effects.hasKWVarArgs();
-  if (values.getNumInputs() < minNumArgs) {
-    return emitError()
-           << "function has varargs and/or kwvarargs but signature only has "
-           << values.getNumInputs() << " arguments";
-  }
-
   // If the signature has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN signature verification.
   if (metadata) {
@@ -458,16 +449,8 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
        llvm::enumerate(values.getInputs(), argConventions)) {
     Type type = argType;
     // Verify variadics.
-    if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
-      auto variadic = ::dyn_cast<VariadicType>(type);
-      if (!variadic) {
-        return emitError() << "argument #" << i
-                           << " in signature with varargs should be a "
-                              "`!kgen.variadic` but got: "
-                           << type;
-      }
+    if (auto variadic = ::dyn_cast<VariadicType>(type))
       type = variadic.getElementType();
-    }
     // Verify argument conventions.  Before lit lowering, they need to be
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
     if (hasAddress(conv)) {

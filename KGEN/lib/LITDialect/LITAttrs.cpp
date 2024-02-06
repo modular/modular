@@ -158,7 +158,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       getContext(), newArgNames, newArgPassingKind, newDefaultPosArgs,
       getDefaultKwOnlyArgs(), /*variadicIndices=*/{}, /*packIndices=*/{});
   return get(newArgListAttrs, getParamListAttrs(),
-             getNumImplicitLifetimeDecls());
+             getNumImplicitLifetimeDecls(), getVariadicEffects());
 }
 
 FnMetadataAttrInterface
@@ -183,7 +183,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   auto newParamAttrs = ArgParamListAttr::get(
       getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
       newDefaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
-  return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
+  return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls(),
+             getVariadicEffects());
 }
 
 FnMetadataAttrInterface
@@ -196,7 +197,7 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
 
   return get(getArgListAttrs(),
              getParamListAttrs().cloneWith(newParamNames, newPassingKinds),
-             getNumImplicitLifetimeDecls());
+             getNumImplicitLifetimeDecls(), getVariadicEffects());
 }
 
 LogicalResult FnMetadataAttr::verifySignature(
@@ -221,7 +222,9 @@ LogicalResult FnMetadataAttr::verifySignature(
        llvm::enumerate(values.getInputs(), argConventions)) {
     Type type = argType;
     // Verify variadics.
-    if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
+    VariadicEffects varEffects = getVariadicEffects();
+    if (varEffects.hasVarArgs() &&
+        varEffects.isVarArg(values.getNumInputs(), i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i

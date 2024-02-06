@@ -1634,7 +1634,7 @@ kgen.generator @param_apply() {
 // COM: This crashes if you don't handle nested parameter ifs correctly *with* multi-versioned kgen.param.apply.
 
 
-kgen.generator @init_variadic<ty: type>(%arg0: !kgen.variadic<ty>) vararg -> !kgen.variadic<ty> {
+kgen.generator @init_variadic<ty: type>(%arg0: !kgen.variadic<ty>) -> !kgen.variadic<ty> {
   %0 = kgen.call @pass_variadic<:type ty>(%arg0) : (!kgen.variadic<ty>) -> !kgen.variadic<ty>
   kgen.return %0 : !kgen.variadic<ty>
 }
@@ -1644,7 +1644,7 @@ kgen.generator @pass_variadic<ty: type>(%arg0: !kgen.variadic<ty>) -> !kgen.vari
 
 kgen.generator @make_index_list() -> !kgen.variadic<scalar<index>> {
   %0 = kgen.param.constant: variadic<scalar<index>> = <[0, 1, 2]>
-  %1 = kgen.call @init_variadic<:type scalar<index>>(%0) : (!kgen.variadic<scalar<index>>) vararg -> !kgen.variadic<scalar<index>>
+  %1 = kgen.call @init_variadic<:type scalar<index>>(%0) : (!kgen.variadic<scalar<index>>) -> !kgen.variadic<scalar<index>>
   kgen.return %1 : !kgen.variadic<scalar<index>>
 }
 

@@ -26,8 +26,8 @@ enum class EmissionKind : uint8_t { ASM, LLVM };
 //===----------------------------------------------------------------------===//
 
 /// This class represents the effects of a callable. A callable can throw an
-/// error, be an async function, have different kinds of varargs, etc. The
-/// effect of a callable is load-bearing on its type.
+/// error, be an async function, etc. The effect of a callable is load-bearing
+/// on its type.
 class FnEffects {
   using Impl = impl::FnEffects;
 
@@ -39,26 +39,6 @@ public:
 
   FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
   bool isAsync() const { return get(Impl::Async); }
-
-  FnEffects setVarArgs(bool varArgs = true) {
-    return set(Impl::VarArg, varArgs);
-  }
-  FnEffects setPackVarArgs(bool packVarArgs = true) {
-    return set(Impl::PackVarArg, packVarArgs);
-  }
-  bool hasVarArgs() const { return get(Impl::VarArg); }
-  bool hasPackVarArgs() const { return get(Impl::PackVarArg); }
-  bool hasAnyVarArgs() const { return hasVarArgs() || hasPackVarArgs(); }
-
-  FnEffects setKWVarArgs(bool kwVarArgs = true) {
-    return set(Impl::KWVarArg, kwVarArgs);
-  }
-  bool hasKWVarArgs() const { return get(Impl::KWVarArg); }
-
-  FnEffects setParamVarArgs(bool paramVarArgs = true) {
-    return set(Impl::ParamVarArg, paramVarArgs);
-  }
-  bool hasParamVarArgs() const { return get(Impl::ParamVarArg); }
 
   FnEffects setOwnedRegisterResult(bool ownedRegisterResult = true) {
     return set(Impl::OwnedResult, ownedRegisterResult);
@@ -78,14 +58,6 @@ public:
   bool operator!=(FnEffects rhs) const { return getImpl() != rhs.getImpl(); }
 
   Impl getImpl() const { return impl; }
-
-  /// Given a function with `numInputs` inputs, return true if the argument at
-  /// `index` is the variadic argument.
-  bool isVarArg(size_t numInputs, size_t index) {
-    // If the function has keyword varargs, the vararg index is the second last.
-    // Otherwise, it's the last.
-    return (index + 1 + hasKWVarArgs()) == numInputs;
-  }
 
 private:
   FnEffects set(Impl bit, bool value) {

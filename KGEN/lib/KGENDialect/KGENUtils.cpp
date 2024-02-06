@@ -114,8 +114,7 @@ static OptionalParseResult parseOptionalSignatureValues(
   auto effectsValue = impl::FnEffects::None;
   StringRef kw;
   while (succeeded(p.parseOptionalKeyword(
-      &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
-            "param_vararg", "capturing", "ownedresult", "escaping"}))) {
+      &kw, {"throws", "async", "capturing", "ownedresult", "escaping"}))) {
     effectsValue |= *impl::symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
