@@ -4,15 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %lldb -b -o 'b test.mojo:9' -o run -- mojo run %mojo_args --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
+# RUN: %debug -Xlldb -b -Xlldb -o -Xlldb 'b jit.mojo:9' -Xlldb -o -Xlldb 'run' '%S/Inputs/jit.mojo' | FileCheck %s
 
 # COM: Here we test debugging of a source file passed by relative path.
 # RUN: mkdir -p debug-jit/Inputs
-# RUN: cp '%S/Inputs/test.mojo' debug-jit/Inputs/test.mojo
-# RUN: %lldb -b -o 'b test.mojo:9' -o run -- mojo run %mojo_args --debug-level full -O0 'debug-jit/Inputs/test.mojo' | FileCheck %s
+# RUN: cp '%S/Inputs/jit.mojo' debug-jit/Inputs/jit.mojo
+# RUN: %debug -Xlldb -b -Xlldb -o -Xlldb 'b jit.mojo:9' -Xlldb -o -Xlldb run  'debug-jit/Inputs/jit.mojo' | FileCheck %s
 
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped
 # CHECK: stop reason = breakpoint 1.1
-# CHECK: JIT(0x{{.*}})`{{.*}}jitbp{{.*}} at test.mojo:9:10
+# CHECK: JIT(0x{{.*}})`{{.*}}jitbp{{.*}} at jit.mojo:9:10
 # CHECK: -> 9        print("hello\n")

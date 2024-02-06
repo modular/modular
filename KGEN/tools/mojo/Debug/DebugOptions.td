@@ -19,8 +19,15 @@ def LLDBOptionGroup : OptionGroup<"LLDB options">, Index<1>;
 defm xlldb: CommandOption<["--", "-"], "Xlldb",
   LLDBOptionGroup, Index<1>, MetaVarName<"ARG">,
   HelpText<"Passes ARG as an argument to LLDB when the debug session is "
-  "launched using the LLDB command line interface. This option can be "
-  "specified multiple times.">>;
+  "launched using the LLDB command-line interface. This option can be "
+  "specified multiple times. It is ignored when using the RPC mode.">>;
+
+def dry_run: Flag<["--", "-"], "dry-run">,
+  Group<LLDBOptionGroup>, Index<10>,
+  Flags<[HelpHidden]>,
+  HelpText<"Instead of executing LLDB on the CLI, dump the command that would "
+  "be used to start the LLDB command-line interface. It is ignored when using "
+  "the RPC mode.">;
 
 //===----------------------------------------------------------------------===//
 // Attach Options
@@ -33,7 +40,7 @@ defm pid: CommandOption<["--", "-"], "pid",
   HelpText<"Indicates the debugger to attach to the process with the given "
   "PID.">>;
 
-defm name: CommandOption<["--", "-"], "name",
+defm process_name: CommandOption<["--", "-"], "process-name",
   AttachOptionGroup, Index<2>, MetaVarName<"NAME">,
   HelpText<"Indicates the debugger to attach to the process with the given "
   "name.">>;
@@ -52,10 +59,10 @@ def rpc: Flag<["--", "-"], "rpc">,
 defm port: CommandOption<["--", "-"], "port",
   RPCOptionGroup, Index<2>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
-  "Defaults to 12345.">>;
+  "Defaults to 12346.">>;
 
 defm secret: CommandOption<["--", "-"], "secret",
   RPCOptionGroup, Index<3>, MetaVarName<"SECRET">,
-  HelpText<"Uses the given SECRET string as a minimal authentication mechanism "
-  "when communicating with the RPC debug server. It must be used only if the "
-  "RPC debug server expects it.">>;
+  HelpText<"Uses the given optional SECRET string as a minimal authentication "
+  "mechanism when communicating with the RPC debug server. It must be used if "
+  "the RPC debug server expects it.">>;

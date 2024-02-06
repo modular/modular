@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLDB.h"
-#include "../Common/Telemetry.h"
 #include "Debug/MojoDebug.h"
 #include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Program.h"
@@ -18,6 +18,9 @@
 #if !defined(_WIN32)
 #include <unistd.h>
 #endif
+
+#define DRIVER_OPTIONS_PATH "Debug/DebugOptions.inc"
+#include "Support/Driver/OptTable.inc"
 
 using namespace M;
 
@@ -40,17 +43,8 @@ static ErrorOr<std::string> getMojoLLDB(KGEN::MojoConfig &config) {
   return mojoLLDB.str();
 }
 
-int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
-                  std::initializer_list<StringRef> extraOptions) {
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-
-  // Initialize telemetry.
-  auto &telemetryCtx =
-      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, state, args);
-
+int M::invokeLLDB(const State &state, ArrayRef<std::string> lldbArgs,
+                  ArrayRef<std::string> runArgs, bool dryRun) {
   // Find the path to the LLDB executable and the MojoLLDB plugin library.
   // Read the mojo configuration.
   ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
@@ -67,20 +61,44 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
   if (failed(mojoLLDB))
     return state.reportError(mojoLLDB.getError());
 
-  // We forward all unparsed command line arguments to LLDB.
-  SmallVector<StringRef> lldbArgs(state.arguments);
   std::string loadCommand = llvm::formatv("plugin load \"{0}\"", *mojoLLDB);
-  lldbArgs.insert(lldbArgs.begin(),
-                  {lldb.get(), "-Q", "--one-line-before-file", loadCommand});
-  lldbArgs.insert(lldbArgs.end(), extraOptions);
+  SmallVector<StringRef> subprocessArgs = {
+      lldb.get(), "-Q", "--one-line-before-file", loadCommand};
+
+  llvm::append_range(subprocessArgs, lldbArgs);
+
+  // LLDB guarantees that any arguments that come after `--` are considered
+  // run arguments of the debuggee.
+  if (!runArgs.empty()) {
+    subprocessArgs.push_back("--");
+    llvm::append_range(subprocessArgs, runArgs);
+  }
+
+  if (dryRun) {
+    llvm::interleave(
+        subprocessArgs, llvm::outs(),
+        [](StringRef arg) {
+          // This is just a simple shell quoting mechanism. We don't use
+          // anything fancy because the dry-run command is intended for
+          // internal development.
+          if (arg.contains(' '))
+            llvm::outs() << "'" << arg << "'";
+          else
+            llvm::outs() << arg;
+        },
+        " ");
+    llvm::outs() << "\n";
+    return 0;
+  }
 
   // We use execv to ensure LLDB replaces the same process so that we can more
   // easily debug it with `lldb -- mojo debug` or `lldb -- mojo repl`.
-  size_t size = lldbArgs.size();
+  size_t size = subprocessArgs.size();
   char **execvArgs = new char *[size + 1];
   for (size_t i = 0; i < size; ++i)
-    execvArgs[i] = const_cast<char *>(lldbArgs[i].data());
+    execvArgs[i] = const_cast<char *>(subprocessArgs[i].data());
   execvArgs[size] = nullptr;
+
 #if defined(_WIN32)
   return llvm::sys::ExecuteAndWait(lldb.get(), lldbArgs);
 #else

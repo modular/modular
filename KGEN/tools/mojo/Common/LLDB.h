@@ -13,8 +13,8 @@
 namespace M {
 
 /// Invokes an LLDB process with the provided arguments.
-int invokeLLDB(const State &state, llvm::opt::InputArgList &args,
-               std::initializer_list<StringRef> extraOptions);
+int invokeLLDB(const State &state, ArrayRef<std::string> lldbArgs,
+               ArrayRef<std::string> runArgs = {}, bool dryRun = false);
 
 } // namespace M
 

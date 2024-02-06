@@ -17,7 +17,7 @@ if config.root.host_os == "Windows":
 config.name = "mojo-debug"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".lldb"]
+config.suffixes = [".lldb", ".mojo"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -29,10 +29,10 @@ config.test_exec_root = os.path.join(
 
 config.substitutions.append(
     (
-        "%lldb",
+        "%debug",
         (
-            f"{config.lldb_env} mojo debug --source-quietly -S"
-            f" {config.lit_lldb_init}"
+            f"{config.lldb_env} mojo debug -Xlldb --source-quietly -Xlldb -S "
+            f"-Xlldb {config.lit_lldb_init}"
         ),
     )
 )
