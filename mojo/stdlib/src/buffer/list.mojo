@@ -12,7 +12,6 @@ from utils.list import Dim
 ```
 """
 
-from memory.unsafe import Pointer
 from utils._optional import Optional
 
 # ===----------------------------------------------------------------------===#
