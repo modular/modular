@@ -11,12 +11,11 @@ from sys import version_info
 from typing import Any, Optional, Type, Union
 
 import numpy as np
-
-import modular.engine.core as _mecore
-from modular.engine.core import DType as _DType
-from modular.engine.core import InferenceSession as _InferenceSession
-from modular.engine.core import Model as _Model
-from modular.engine.core import TensorSpec as _TensorSpec
+from max.engine import core as _mecore
+from max.engine.core import DType as _DType
+from max.engine.core import InferenceSession as _InferenceSession
+from max.engine.core import Model as _Model
+from max.engine.core import TensorSpec as _TensorSpec
 
 if version_info.minor <= 8:
     from typing import Dict, List, Tuple
