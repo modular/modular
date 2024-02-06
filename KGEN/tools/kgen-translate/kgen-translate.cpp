@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
       "warn-on-let",
       cl::desc("Emits a warning when there is a capture of a let in a "
                "parametric closure"),
-      cl::init(false)};
+      cl::init(true)};
 
   M::cl::MOpt<std::string> parserBytecodeOutput{
       "bytecode-output",

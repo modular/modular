@@ -77,7 +77,7 @@ struct ParserConfig {
 
   /// If true the parser will emit a warning if there is a let capture in a
   /// parameteric closure.
-  bool warnOnLetCapture = false;
+  bool warnOnLetCapture = true;
 
   /// If true, the inputs are parsed as if they belong to the Mojo standard
   /// library.

@@ -553,7 +553,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     } else if (VarLetDeclOp declaration = dyn_cast<VarLetDeclOp>(declRef)) {
       if (declaration.getKind() == VarLetDeclKind::Let &&
           !declaration.isSynthetic()) {
-
         emitter.emitWarning(getLoc(), "cannot capture let without copy: ")
             << spelling;
       }
