@@ -584,8 +584,10 @@ static ParseResult parseLITFunctionSignature(
   };
 
   FnEffects effects;
-  if (failed(parseSignatureValues(p, parseArg, functionType, effects,
-                                  /*optionalResultList=*/true)))
+  VariadicEffects varEffects;
+  if (failed(LIT::parseSignatureValues(p, parseArg, functionType, effects,
+                                       varEffects,
+                                       /*optionalResultList=*/true)))
     return failure();
 
   SmallVector<PassingKind> argPassingKinds;
@@ -677,8 +679,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(i);
   };
-  printSignatureValues(p, printElt, functionType, signature,
-                       /*optionalResultList=*/true);
+  LIT::printSignatureValues(p, printElt, functionType, signature,
+                            /*optionalResultList=*/true);
 }
 
 /// Parses a LIT Generator.

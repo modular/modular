@@ -28,6 +28,7 @@ template <typename T>
 class ErrorOr;
 
 namespace KGEN {
+class FnEffects;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class ParameterEvaluator;
@@ -35,6 +36,7 @@ class ParameterExprArrayAttr;
 enum class ArgConvention : uint32_t;
 
 namespace LIT {
+class VariadicEffects;
 class LITSignatureType;
 class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
@@ -119,6 +121,19 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
                                  ArrayRef<PassingKind> paramPassingKinds,
                                  ArrayRef<TypedAttr> defaultPosParams,
                                  ArrayRef<TypedAttr> defaultKwOnlyParams);
+
+/// TODO: remove this (in favor of KGEN::parseSignatureValues) when function
+/// effects are moved to metadata.
+ParseResult parseSignatureValues(
+    AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
+    FunctionType &values, FnEffects &effects, VariadicEffects &variadicEffects,
+    bool optionalResultList);
+
+/// TODO: remove this (in favor of KGEN::printSignatureValues) when function
+/// effects are moved to metadata.
+void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
+                          FunctionType functionType, LITSignatureType signature,
+                          bool optionalResultList);
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
