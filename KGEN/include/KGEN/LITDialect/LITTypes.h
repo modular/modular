@@ -71,31 +71,19 @@ public:
   LITSignatureType dropParamValues();
 
   /// Returns true if the argument at this index is a vararg.
-  bool isVarArg(size_t index) {
-    if (!getFnEffects().hasVarArgs())
-      return false;
-    return getFnEffects().isVarArg(getNumArguments(), index);
-  }
+  bool isVarArg(size_t index);
 
   /// Returns true if the argument at this index is a pack vararg.
-  bool isPackVarArg(size_t index) {
-    if (!getFnEffects().hasPackVarArgs())
-      return false;
-    return getFnEffects().isVarArg(getNumArguments(), index);
-  }
+  bool isPackVarArg(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.
-  bool isKWVarArg(size_t index) {
-    if (!getFnEffects().hasKWVarArgs())
-      return false;
-    return index + 1 == getNumArguments();
-  }
+  bool isKWVarArg(size_t index);
 
   /// Returns true if the signature has variadic parameters.
-  bool hasParamVarArgs() const { return getFnEffects().hasParamVarArgs(); }
+  bool hasParamVarArgs() const;
 
   /// Returns true if the signature has has pack arguments.
-  bool hasPackVarArgs() const { return getFnEffects().hasPackVarArgs(); }
+  bool hasPackVarArgs() const;
 
   /// Substitute the specified implicit lifetime references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
