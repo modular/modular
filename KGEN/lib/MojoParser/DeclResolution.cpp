@@ -870,7 +870,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (paramList.isVarArgs ||
       // If the parent struct has param varargs, any member functions will too.
       (structDecl && structDecl.getSignature().getParamVarArg()))
-    fnSignature.effects.setParamVarArgs();
+    fnSignature.varEffects.setParamVarArgs();
 
   // Parse the argument list next if present.
   if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
@@ -2100,7 +2100,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
   auto metadata = FnMetadataAttr::get(
       newArgListAttrs, traitSig.getMetadata().getParamListAttrs(),
-      numImplicitLifetimeDecls);
+      numImplicitLifetimeDecls, traitSig.getMetadata().getVariadicEffects());
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
@@ -2132,7 +2132,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       memSig.getArguments(), memSig.getArgConventions(),
       memSig.getMetadata().getArgListAttrs(), memSig.getResultType(),
       structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      "`thunk_");
+      memSig.getMetadata().getVariadicEffects(), "`thunk_");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2265,7 +2265,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         ArgParamListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "`thunk_");
+        shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
+        "`thunk_");
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
@@ -2290,7 +2291,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         {ArgConvention::InitSelf, existingConv},
         ArgParamListAttr::get(shared.getContext(), {empty, empty},
                               {PassingKind::PosOnly, PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "`thunk_");
+        shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
+        "`thunk_");
     func = ctor;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());

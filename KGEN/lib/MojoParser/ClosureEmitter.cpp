@@ -147,7 +147,8 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
       FnMetadataAttr::get(oldMetadata.getArgListAttrs().cloneWith(
                               callMemberArgNames, callMemberArgPassingKinds),
                           oldMetadata.getParamListAttrs(),
-                          oldMetadata.getNumImplicitLifetimeDecls());
+                          oldMetadata.getNumImplicitLifetimeDecls(),
+                          oldMetadata.getVariadicEffects());
   return SignatureType::get(
       FunctionType::get(ctx, callMemberSignatureInputs, sig.getResults()),
       sig.getParamTypes(), /*resultParamTypes=*/{}, callMemberArgConventions,
@@ -296,7 +297,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto sigMetadata = FnMetadataAttr::get(
       ArgParamListAttr::get(ctx, dependentSignatureType.getArgNames(),
                             dependentSignatureType.getArgPassingKinds()),
-      dependentSignatureType.getNumImplicitLifetimeDecls());
+      dependentSignatureType.getNumImplicitLifetimeDecls(),
+      dependentSignatureType.getMetadata().getVariadicEffects());
   Type resultType = dependentSignatureType.getResults().front();
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getArguments(), resultType);

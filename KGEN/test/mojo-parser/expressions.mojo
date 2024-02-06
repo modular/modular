@@ -1349,7 +1349,7 @@ fn function_types(
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) throws|async|capturing|ownedresult -> !kgen.variant<!Error, none>
   float6: async fn(Int) capturing raises -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow) throws|vararg|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow) throws|ownedresult|vararg -> !kgen.variant<!Error, none>
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
@@ -1358,7 +1358,7 @@ fn function_types(
   # CHECK-SAME: %{{.*}}: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
   float10: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: %{{.*}}: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|ownedresult|packvararg|param_vararg -> !kgen.variant<!Error, none>
   float11: async def[*Ts: AnyRegType](* *Ts) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>

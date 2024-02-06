@@ -586,11 +586,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   // Determine the required function effects from the conventions.
   if (arg.vararg == VarArgKind::VarArg)
-    tcSignature.argList.effects.setVarArgs();
+    tcSignature.argList.varEffects.setVarArgs();
   else if (arg.vararg == VarArgKind::PackVarArg)
-    tcSignature.argList.effects.setPackVarArgs();
+    tcSignature.argList.varEffects.setPackVarArgs();
   else if (arg.vararg == VarArgKind::KWVarArg)
-    tcSignature.argList.effects.setKWVarArgs();
+    tcSignature.argList.varEffects.setKWVarArgs();
 
   // If no convention was explicitly specified, provide a default.  We default
   // to borrowed in an 'fn' or owned in a 'def'.

@@ -2843,7 +2843,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   argList.effects = this->effects;
   argList.varEffects = this->varEffects;
   if (paramList.isVarArgs)
-    argList.effects.setParamVarArgs();
+    argList.varEffects.setParamVarArgs();
 
   SpecialFunctionInfo fnInfo; // Not a named function.
   TypeCheckedFnSignature tcSignature(paramList, argList, resultTypeExpr,

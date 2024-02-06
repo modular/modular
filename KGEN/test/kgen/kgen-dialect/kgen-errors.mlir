@@ -749,26 +749,6 @@ module attributes {kgen.env = #kgen.env<{fp = 2.0}>} {}
 
 // -----
 
-// expected-error @below {{function has varargs and/or kwvarargs but signature only has 0 arguments}}
-!type = !kgen.signature<() vararg -> ()>
-
-// -----
-
-// expected-error @below {{function has varargs and/or kwvarargs but signature only has 1 arguments}}
-!type = !kgen.signature<(!kgen.variadic<index>) vararg|kwvararg -> ()>
-
-// -----
-
-// expected-error @below {{argument #0 in signature with varargs should be a `!kgen.variadic` but got: 'index'}}
-!type = !kgen.signature<(index) vararg -> ()>
-
-// -----
-
-// expected-error @below {{argument #0 with convention 'owned_in_mem' in signature type should be a `!kgen.pointer` but got: 'index'}}
-!type = !kgen.signature<(index owned_in_mem) -> ()>
-
-// -----
-
 // expected-error @below {{a throwing function should have 1 variant result}}
 !type = !kgen.signature<() throws -> ()>
 

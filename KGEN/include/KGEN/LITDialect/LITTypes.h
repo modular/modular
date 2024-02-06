@@ -80,10 +80,10 @@ public:
   bool isKWVarArg(size_t index);
 
   /// Returns true if the signature has variadic parameters.
-  bool hasParamVarArgs() const;
+  bool hasParamVarArgs();
 
   /// Returns true if the signature has has pack arguments.
-  bool hasPackVarArgs() const;
+  bool hasPackVarArgs();
 
   /// Substitute the specified implicit lifetime references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing

@@ -368,6 +368,7 @@ ParseResult LIT::parseSignatureValues(
       break;
   }
   effects = FnEffects(effectsValue);
+  variadicEffects = VariadicEffects(varEffectsValue);
 
   if (optionalResultList ? p.parseOptionalArrowTypeList(resTypes)
                          : p.parseArrowTypeList(resTypes))
