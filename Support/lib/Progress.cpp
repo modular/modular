@@ -23,19 +23,20 @@ using namespace std::chrono_literals;
 namespace {
 class CLIProgress : public Progress {
 public:
-  CLIProgress(llvm::raw_ostream &os) : os(os) {}
-  virtual ~CLIProgress() { disable(); }
-  virtual void addFile() override { totalFiles += 1; }
-  virtual void addBytes(size_t bytes) override { totalBytes += bytes; }
-  virtual void finishedBytes(size_t bytes) override { doneBytes += bytes; }
-  virtual void skippedBytes(size_t bytes) override { doneBytes += bytes; }
-  virtual void finishedFile() override { doneFiles += 1; }
-  virtual void skippedFile() override { doneFiles += 1; }
-  virtual void enable() override;
-  virtual void disable() override;
+  CLIProgress(llvm::raw_ostream &os, bool singleFileMode)
+      : os(os), singleFileMode(singleFileMode) {}
+  ~CLIProgress() override { disable(); }
+  void addFile(size_t count) override { totalFiles += count; }
+  void addBytes(size_t bytes) override { totalBytes += bytes; }
+  void finishedBytes(size_t bytes) override { doneBytes += bytes; }
+  void skippedBytes(size_t bytes) override { doneBytes += bytes; }
+  void finishedFile() override { doneFiles += 1; }
+  void skippedFile() override { doneFiles += 1; }
+  void enable() override;
+  void disable() override;
 
 private:
-  void emit(const std::chrono::time_point<std::chrono::system_clock> now);
+  void emit(std::chrono::time_point<std::chrono::system_clock> now);
   void update();
 
   std::atomic<size_t> totalFiles = 0;
@@ -54,6 +55,7 @@ private:
   size_t lastDoneBytes = 0;
   double lastRate = 0.0;
   double maxRate = 0.0;
+  bool singleFileMode = false;
 };
 } // namespace
 
@@ -174,13 +176,20 @@ void CLIProgress::emit(
   bytes << prettyBytes(doneBytes) << "/" << prettyBytes(totalBytes);
 
   std::stringstream details;
-  details << "[files " << std::setw(10) << files.str() << "]";
+  if (!singleFileMode)
+    details << "[files " << std::setw(10) << files.str() << "]";
   details << "[bytes " << std::setw(16) << bytes.str() << " @ " << std::setw(8)
           << prettyBytes(static_cast<size_t>(rate)) << "/s]";
 
-  double percentage = std::min(
-      static_cast<double>(doneFiles) / static_cast<double>(totalFiles),
-      static_cast<double>(doneBytes) / static_cast<double>(totalBytes));
+  double percentage = 0;
+  if (singleFileMode) {
+    percentage = std::min(
+        static_cast<double>(doneBytes) / static_cast<double>(totalBytes), 1.0);
+  } else {
+    percentage = std::min(
+        static_cast<double>(doneFiles) / static_cast<double>(totalFiles),
+        static_cast<double>(doneBytes) / static_cast<double>(totalBytes));
+  }
   std::stringstream perstr;
   if (doneFiles == totalFiles) {
     perstr << "💯%"; // Emoji width is two characters.
@@ -212,10 +221,12 @@ void CLIProgress::emit(
   os << "] " << perstr.str();
 }
 
-ErrorOr<std::unique_ptr<Progress>> M::makeProgress(llvm::raw_ostream &os) {
+ErrorOr<std::unique_ptr<Progress>> M::makeProgress(llvm::raw_ostream &os,
+                                                   bool singleFileMode) {
   // Check if the output is a tty.
   if (os.is_displayed()) {
-    std::unique_ptr<Progress> r = std::make_unique<CLIProgress>(os);
+    std::unique_ptr<Progress> r =
+        std::make_unique<CLIProgress>(os, singleFileMode);
     return std::move(r);
   }
   return Error("not a tty"); // Handled appropriately by the caller.

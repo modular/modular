@@ -21,13 +21,13 @@ namespace M {
 /// this class, which can be used directly in this case.
 class Progress {
 public:
-  virtual ~Progress() {}
+  virtual ~Progress() = default;
 
   /// Add a new file to be processed. Files may be tracked independently from
   /// bytes. Each call to addFile should be followed by a corresponding call
   /// to either finishedFile or skippedFile. This should be called as early as
   /// possible, and can be called any number of times.
-  virtual void addFile() = 0;
+  virtual void addFile(size_t count = 1) = 0;
 
   /// Add new bytes that will be processed (followed by a corresponding call to
   /// either finishedBytes or skippedBytes). Like addFile, this should be called
@@ -59,7 +59,8 @@ public:
 
 /// makeProgress returns an instance of the Progress class which emits a
 /// simple progress bar to the console (if appropriate).
-ErrorOr<std::unique_ptr<Progress>> makeProgress(llvm::raw_ostream &os);
+ErrorOr<std::unique_ptr<Progress>> makeProgress(llvm::raw_ostream &os,
+                                                bool singleFileMode = false);
 
 } // namespace M
 
