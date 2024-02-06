@@ -71,6 +71,7 @@ private:
   LLVM::DISubroutineTypeAttr convertTypeImpl(DISubroutineType type);
   LLVM::DITypeAttr convertTypeImpl(DIUnresolvedMLIRType type);
   LLVM::DIBasicTypeAttr convertTypeImpl(DIUnspecifiedType type);
+  LLVM::DITypeAttr convertTypeImpl(DIVariantType type);
   LLVM::DITypeAttr convertTypeImpl(DIVectorType type);
 
   DebugInfo::DebugInfoTypeConverter &typeConverter;
@@ -228,7 +229,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIType type) {
       TypeSwitch<DIType, LLVM::DITypeAttr>(type)
           .Case<DIArrayType, DIBasicType, DIPointerType, DIStructType,
                 DISubroutineType, DIUnresolvedMLIRType, DIUnspecifiedType,
-                DIVectorType>([&](auto type) { return convertTypeImpl(type); });
+                DIVariantType, DIVectorType>(
+              [&](auto type) { return convertTypeImpl(type); });
   return convertedTypes[type] = result;
 }
 
@@ -317,6 +319,40 @@ MetadataConverter::convertTypeImpl(DIUnspecifiedType type) {
   return LLVM::DIBasicTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_unspecified_type, type.getName(),
       /*sizeInBits=*/0, /*encoding=*/0);
+}
+
+LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
+  MLIRContext *context = type.getContext();
+  SmallVector<LLVM::DINodeAttr> variantTypes;
+
+  // Convert each of the members.
+  uint64_t largestVariantSize = 0;
+  uint32_t largestVariantAlign = 0;
+  for (DIMemberType member : type.getVariants()) {
+    // Compute the offset/align of the element.
+    uint64_t sizeInBits = member.getSizeInBits();
+    uint32_t alignInBits = member.getAlignInBits();
+    largestVariantSize = std::max(largestVariantSize, sizeInBits);
+    largestVariantAlign = std::max(largestVariantAlign, alignInBits);
+
+    // TODO(#30619): add discriminator value to the DW_TAG_variant entry once
+    // upstream is ready.
+    LLVM::DITypeAttr memberType = LLVM::DIDerivedTypeAttr::get(
+        context, llvm::dwarf::DW_TAG_member, member.getName(),
+        convertType(member.getType()), sizeInBits, alignInBits, 0);
+    variantTypes.push_back(memberType);
+  }
+
+  // Pad the variant part size to the largest element alignment.
+  if (largestVariantAlign)
+    largestVariantSize = llvm::alignTo(largestVariantSize, largestVariantAlign);
+
+  // TODO(#30619): add discriminator field to the DW_TAG_variant_part entry once
+  // upstream is ready.
+  return LLVM::DICompositeTypeAttr::get(
+      context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
+      nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, largestVariantSize,
+      largestVariantAlign, variantTypes);
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
