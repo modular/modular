@@ -316,20 +316,34 @@ struct CompiledModel:
 
         return self.ptr.num_model_inputs(self.lib)
 
-    fn get_model_input_names(self) raises -> InputTensorNames:
+    fn get_model_input_names(self) raises -> DynamicVector[String]:
         """Gets the names of model inputs."""
 
-        return InputTensorNames(self.ptr, self.num_model_inputs(), self.lib)
+        let names = InputTensorNames(
+            self.ptr, self.num_model_outputs(), self.lib
+        )
+        var name_vec = DynamicVector[String]()
+        name_vec.reserve(len(names))
+        for i in range(len(names)):
+            name_vec.push_back(names[i])
+        return name_vec
 
     fn num_model_outputs(self) raises -> Int:
         """Gets the number of inputs of the model."""
 
         return self.ptr.num_model_outputs(self.lib)
 
-    fn get_model_output_names(self) raises -> OutputTensorNames:
+    fn get_model_output_names(self) raises -> DynamicVector[String]:
         """Gets the names of model outputs."""
 
-        return OutputTensorNames(self.ptr, self.num_model_outputs(), self.lib)
+        let names = OutputTensorNames(
+            self.ptr, self.num_model_outputs(), self.lib
+        )
+        var name_vec = DynamicVector[String]()
+        name_vec.reserve(len(names))
+        for i in range(len(names)):
+            name_vec.push_back(names[i])
+        return name_vec
 
     fn borrow_ptr(self) -> CCompiledModel:
         return self.ptr

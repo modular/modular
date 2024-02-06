@@ -93,9 +93,6 @@ struct TensorNames(Sized):
     fn __getitem__(self, idx: Int) raises -> String:
         return self.ptr.get_name_at(idx, self.lib)
 
-    fn __iter__(self) -> TensorNamesIterator:
-        return TensorNamesIterator(self.ptr, self.length, self.lib)
-
     fn __len__(self) -> Int:
         return self.length
 
@@ -126,9 +123,6 @@ struct InputTensorNames(Sized):
     fn __getitem__(self, idx: Int) raises -> String:
         return self.names[idx]
 
-    fn __iter__(self) -> TensorNamesIterator:
-        return self.names.__iter__()
-
     fn __len__(self) -> Int:
         return len(self.names)
 
@@ -155,9 +149,6 @@ struct OutputTensorNames(Sized):
 
     fn __getitem__(self, idx: Int) raises -> String:
         return self.names[idx]
-
-    fn __iter__(self) -> TensorNamesIterator:
-        return self.names.__iter__()
 
     fn __len__(self) -> Int:
         return len(self.names)

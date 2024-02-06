@@ -257,23 +257,38 @@ struct Model:
         return self.execute(input_map)
 
     fn num_model_inputs(self) raises -> Int:
-        """Gets the number of inputs of the model."""
+        """Gets the number of inputs of the model.
+
+        Returns:
+            Number of inputs of model.
+        """
 
         return self._compiled_model.num_model_inputs()
 
-    fn get_model_input_names(self) raises -> InputTensorNames:
-        """Gets the names of model inputs."""
+    fn get_model_input_names(self) raises -> DynamicVector[String]:
+        """Gets the names of model inputs.
+
+        Returns:
+            Input names of the model.
+        """
 
         return self._compiled_model.get_model_input_names()
 
     fn num_model_outputs(self) raises -> Int:
-        """Gets the number of inputs of the model."""
+        """Gets the number of outputs of the model.
+
+        Returns:
+            Number of model outputs.
+        """
 
         return self._compiled_model.num_model_outputs()
 
-    fn get_model_output_names(self) raises -> OutputTensorNames:
-        """Gets the names of model outputs."""
+    fn get_model_output_names(self) raises -> DynamicVector[String]:
+        """Gets the names of model outputs.
 
+        Returns:
+            Output names of the model.
+        """
         return self._compiled_model.get_model_output_names()
 
     fn __del__(owned self):
