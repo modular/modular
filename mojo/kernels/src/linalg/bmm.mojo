@@ -112,6 +112,7 @@ fn _small_batched_matmul[
             let b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, (K))
 
             @always_inline
+            @__copy_capture(a_view, b_view)
             @parameter
             fn input_fn[
                 type: DType, width: Int, rank: Int
@@ -174,6 +175,7 @@ fn _small_batched_matmul[
                     let a_val = a_buf[indices]
 
                     @always_inline
+                    @__copy_capture(a_val)
                     @parameter
                     fn compute_fn[simd_width: Int](n: Int):
                         indices[rank - 1] = n
@@ -332,6 +334,7 @@ fn _batched_matmul_cpu[
     let num_tasks = num_tasks_batch * num_tasks_matmul
 
     @always_inline
+    @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
     @parameter
     fn task_func(task_id: Int):
         let a_stride_between_batches = a.size() // a.dim[0]()

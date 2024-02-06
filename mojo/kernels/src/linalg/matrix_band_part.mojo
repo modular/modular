@@ -37,6 +37,7 @@ fn matrix_band_part[
 
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
+    @__copy_capture(lower_diagonal_index, upper_diagonal_index, exclude)
     @parameter
     @always_inline
     fn func[

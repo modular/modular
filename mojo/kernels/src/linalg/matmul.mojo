@@ -212,6 +212,7 @@ struct PackMatrixRows[
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
         @always_inline
+        @__copy_capture(read_bound, start_idx_global)
         @parameter
         fn body[idx: Int]():
             alias inner_row_idx = idx
@@ -256,6 +257,7 @@ struct PackMatrixRows[
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
         @always_inline
+        @__copy_capture(write_bound)
         @parameter
         fn transposed_inner_row_body[idx: Int]():
             let transposed_data = transpose_buffer.simd_load[simd_size](
@@ -308,6 +310,7 @@ struct PackMatrixRows[
 
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline
+        @__copy_capture(transpose_buffer)
         @parameter
         fn transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
@@ -526,6 +529,7 @@ struct PackMatrixCols[
         var col_idx: Int = 0
 
         @always_inline
+        @__copy_capture(valid_row_count)
         @parameter
         fn pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
@@ -1585,6 +1589,7 @@ struct TiledMatmul[
             self.global_tile_shape + self.global_tile_offset - global_offset
         )
 
+        @__copy_capture(knm_bounds)
         @parameter
         @always_inline
         fn unswitch_residual_n[skip_col_bound: Bool]():
@@ -1603,6 +1608,7 @@ struct TiledMatmul[
                 min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
             )
 
+            @__copy_capture(sub_tile_n_k, b_packed_tile)
             @parameter
             @always_inline
             fn row_iteration[tile_size: Int](row_offset: Int):
@@ -2358,6 +2364,7 @@ fn _small_matmul[
                 c.simd_store[width](coords, rebind[SIMD[type, width]](val))
 
         @always_inline
+        @__copy_capture(N, a_val)
         @parameter
         fn accum_out_row[
             output_func: fn[type: DType, width: Int] (
@@ -2367,6 +2374,7 @@ fn _small_matmul[
             let a_val = a[m, k]
 
             @always_inline
+            @__copy_capture(a_val)
             @parameter
             fn _wrapper[simd_width: Int](n: Int):
                 output_func[type, simd_width](
@@ -2833,6 +2841,7 @@ fn matmul_kernel[
     let K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
     @parameter
+    @__copy_capture(row, localCol, a, b, localRow, col, a_shared, b_shared)
     @always_inline
     fn update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
         # If K is not multiple of tile_size, the last tile contains less than
@@ -3306,11 +3315,13 @@ fn _matmul_cpu[
         )
 
         @always_inline
+        @__copy_capture(k, kh)
         @parameter
         fn packA_i8mm(t0: Int, t1: Int):
             let kl = align_down(k, 8)
 
             @always_inline
+            @__copy_capture(k, kh, kl)
             @parameter
             fn packA_helper[nrow: Int](offset: Int):
                 let j = t0 + offset
@@ -3336,6 +3347,7 @@ fn _matmul_cpu[
             vectorize[packA_helper, 2](t1 - t0)
 
         @always_inline
+        @__copy_capture(m, k, num_tasks)
         @parameter
         fn pack_task_func(task_id: Int):
             let sub_matmul_config = get_partitioned_matmul[
@@ -3346,6 +3358,7 @@ fn _matmul_cpu[
             packA_i8mm(t0, t1)
 
         @always_inline
+        @__copy_capture(m, k, num_tasks, n, a_packed)
         @parameter
         fn task_func(task_id: Int):
             let sub_matmul_config = get_partitioned_matmul[

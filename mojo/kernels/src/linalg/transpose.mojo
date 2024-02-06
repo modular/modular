@@ -533,9 +533,10 @@ fn _process_tile[
     let input_tile_offset = M * n + m
     let output_tile_offset = N * m + n
 
-    let input_vals: StaticTuple[tile_size_n, SIMD[type, tile_size_m]]
-    let output_vals: StaticTuple[tile_size_m, SIMD[type, tile_size_n]]
+    var input_vals = StaticTuple[tile_size_n, SIMD[type, tile_size_m]]()
+    var output_vals = StaticTuple[tile_size_m, SIMD[type, tile_size_n]]()
 
+    @__copy_capture(input_tile_offset)
     @parameter
     @always_inline
     fn load_input_vals[count: Int]():
@@ -552,6 +553,7 @@ fn _process_tile[
 
     unroll[compute_output_vals, tile_size_m, tile_size_n]()
 
+    @__copy_capture(output_tile_offset, output_vals)
     @parameter
     @always_inline
     fn store_output_vals[count: Int]():
@@ -591,6 +593,7 @@ fn _transpose_2d_serial_tiled[
     let M = simplified_input_shape[simplified_rank - 1]
 
     @parameter
+    @__copy_capture(N, M)
     @always_inline
     fn process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
         _process_tile[tile_size_m, tile_size_n, type](
@@ -671,6 +674,7 @@ fn _transpose_2d_parallel_tiled[
     let work_block_size = div_ceil(work, num_tasks)
 
     @parameter
+    @__copy_capture(work_block_size, m_tiles, N, M)
     @always_inline
     fn _parallel_tile(thread_id: Int):
         let n_tile_begin = work_block_size * thread_id
@@ -778,6 +782,7 @@ fn _transpose_4d_swap_middle_helper[
         let work_block_size = div_ceil(work, num_tasks)
 
         @parameter
+        @__copy_capture(work, work_block_size)
         @always_inline
         fn _parallel_copy(thread_id: Int):
             let begin = work_block_size * thread_id
@@ -962,6 +967,7 @@ fn _copy_with_strides[
         else:
 
             @always_inline
+            @__copy_capture(input_axis_stride, output_axis_stride)
             @parameter
             fn _copy[simd_width: Int](offset: Int):
                 strided_store(
@@ -1010,6 +1016,13 @@ fn _copy_with_strides[
         let work_block_size = div_ceil(work, num_tasks)
 
         @always_inline
+        @__copy_capture(
+            work_block_size,
+            work,
+            next_axis,
+            input_axis_stride,
+            output_axis_stride,
+        )
         @parameter
         fn _parallel_copy(thread_id: Int) raises:
             var next_input_offset = (
