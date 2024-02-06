@@ -57,7 +57,7 @@ struct Model:
             Self._ExecuteFnName,
             self._ctx,
             self._ptr,
-            inputs.borrow_ptr(),
+            inputs._borrow_ptr(),
             status.borrow_ptr(),
         )
         if status:

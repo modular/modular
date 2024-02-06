@@ -54,6 +54,14 @@ struct TensorMap(SizedRaising):
         self.session = existing.session ^
 
     fn borrow[type: DType](self, key: String, value: Tensor[type]) raises:
+        """Borrow the given tensor into the map at the key location.
+           User needs to make sure tensor is alive for
+           the duration of map.
+
+        Args:
+            key: Name of tensor in map.
+            value: Tensor to be held in map.
+        """
         let spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
@@ -63,6 +71,14 @@ struct TensorMap(SizedRaising):
         key._strref_keepalive()
 
     fn borrow(self, key: String, value: EngineTensorView) raises:
+        """Borrow the given tensor view into the map at the key location.
+           User needs to make sure tensor backing the view is alive for
+           the duration of map.
+
+        Args:
+            key: Name of tensor in map.
+            value: View of a tensor.
+        """
         let spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
@@ -70,6 +86,14 @@ struct TensorMap(SizedRaising):
         key._strref_keepalive()
 
     fn borrow(self, key: String, value: EngineNumpyView) raises:
+        """Borrow the given numpy view into the map at the key location.
+           User needs to make sure numpy array backing the view is alive for
+           the duration of map.
+
+        Args:
+            key: Name of numpy array in map.
+            value: View of a numpy array.
+        """
         let spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
@@ -77,6 +101,12 @@ struct TensorMap(SizedRaising):
         key._strref_keepalive()
 
     fn get[type: DType](self, key: String) raises -> Tensor[type]:
+        """Gets the tensor / numpy array indicated by the key.
+           The value is copied and returned to the user.
+
+        Args:
+            key: Name of tensor / numpy array in the map.
+        """
         let tensor_ptr = self.ptr.get_tensor_by_name(
             key._strref_dangerous().data, self.lib
         )
@@ -86,6 +116,14 @@ struct TensorMap(SizedRaising):
         return tensor ^
 
     fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
+        """Gets a buffer to the tensor pointed by the key.
+
+        Args:
+            key: Name in TensorMap.
+
+        Returns:
+            Buffer of the tensor pointed by the key.
+        """
         let tensor_ptr = self.ptr.get_tensor_by_name(
             key._strref_dangerous().data, self.lib
         )
@@ -97,7 +135,7 @@ struct TensorMap(SizedRaising):
     fn __len__(self) raises -> Int:
         return self.ptr.size(self.lib)
 
-    fn borrow_ptr(self) -> CTensorMap:
+    fn _borrow_ptr(self) -> CTensorMap:
         return self.ptr
 
     fn __del__(owned self):
