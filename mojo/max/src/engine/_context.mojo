@@ -41,8 +41,11 @@ struct CRuntimeConfig:
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
-    fn set_device(self, borrowed lib: DLHandle, device: StringRef):
-        call_dylib_func(lib, Self.SetDeviceFnName, self, device.data, 0)
+    fn set_device(self, borrowed lib: DLHandle, device: String):
+        call_dylib_func(
+            lib, Self.SetDeviceFnName, self, device._strref_dangerous(), 0
+        )
+        device._strref_keepalive()
 
     fn set_allocator_type(
         self, borrowed lib: DLHandle, allocator_type: AllocatorType
@@ -59,7 +62,7 @@ struct RuntimeConfig:
     fn __init__(
         inout self,
         lib: DLHandle,
-        device: StringRef = "cpu",
+        device: String = "cpu",
         num_threads: Optional[Int] = None,
         allocator_type: AllocatorType = AllocatorType.SYSTEM,
     ):

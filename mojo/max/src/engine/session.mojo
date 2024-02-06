@@ -28,7 +28,7 @@ struct _InferenceSessionImpl(Movable):
     fn __init__(
         inout self,
         lib_path: String,
-        device: StringRef = "cpu",
+        device: String = "cpu",
         num_threads: Optional[Int] = None,
     ):
         self.engine = _EngineImpl(lib_path)
@@ -342,19 +342,16 @@ struct InferenceSession:
     var ptr: AnyPointer[_InferenceSessionImpl]
 
     fn __init__(
-        device: StringRef = "cpu", num_threads: Optional[Int] = None
+        device: String = "cpu", num_threads: Optional[Int] = None
     ) raises -> Self:
         let path = _get_engine_path()
-        let self = Self._allocateAndInit(
-            path._strref_dangerous(), device, num_threads
-        )
-        path._strref_keepalive()
+        let self = Self._allocateAndInit(path, device, num_threads)
         return Self {ptr: self}
 
     @staticmethod
     fn _allocateAndInit(
         lib_path: String,
-        device: StringRef,
+        device: String,
         num_threads: Optional[Int],
     ) raises -> AnyPointer[_InferenceSessionImpl]:
         let ptr = AnyPointer[_InferenceSessionImpl].alloc(1)
