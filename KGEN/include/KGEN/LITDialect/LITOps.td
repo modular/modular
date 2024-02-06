@@ -817,7 +817,7 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
     This op consumes the ownership of its input value, and takes ownership.
   }];
 
-  let arguments = (ins StrAttr:$name, AnyType:$value);
+  let arguments = (ins StrAttr:$name, AnyType:$value, UnitAttr:$isSynthetic);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
 

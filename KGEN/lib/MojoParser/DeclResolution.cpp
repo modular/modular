@@ -641,6 +641,19 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
         return;
       }
 
+      // Mark the copy as synthetic.
+      auto markAsSynthetic = [](Operation *op) {
+        if (VarLetDeclOp varLetDeclOp = dyn_cast<VarLetDeclOp>(op))
+          varLetDeclOp.setKind(VarLetDeclKind::Synthesized);
+        if (LetRegDeclOp letRegDeclOp = dyn_cast<LetRegDeclOp>(op))
+          letRegDeclOp.setIsSynthetic(true);
+      };
+
+      if (SRValue srValue = declVal.dyn_cast<SRValue>())
+        markAsSynthetic(srValue.getDefiningOp());
+      else if (MRValue mrValue = declVal.dyn_cast<MRValue>())
+        markAsSynthetic(mrValue.getDefiningOp());
+
       copyEmitter.getDeclResolver().addFullyResolvedDecl(
           declVal, declRef->spelling, sigDecl.getLoc(), &sigDecl);
       shared.addCaptureToScope(decl, decls.front(),
