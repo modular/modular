@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "./Memory.h"
 #include "KGEN/CompilerRT/Registration.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/FileSystem.h"
@@ -12,22 +13,22 @@
 
 #ifdef _MSC_VER
 #include <io.h>
-#else
-#include <unistd.h>
 #endif
 
 using namespace M;
 
 static llvm::StringRef copyBytes(llvm::ArrayRef<char> data,
                                  size_t alignment = kPreferredMemoryAlignment) {
-  char *ptr = reinterpret_cast<char *>(alignedAlloc(alignment, data.size()));
+  char *ptr = reinterpret_cast<char *>(
+      KGEN_CompilerRT_AlignedAlloc(alignment, data.size()));
   llvm::copy(data, ptr);
-  return {ptr, data.size()};
+  return llvm::StringRef(ptr, data.size());
 }
 
-static llvm::StringRef copyString(llvm::StringRef str) {
+static llvm::StringRef
+copyString(llvm::StringRef str, size_t alignment = kPreferredMemoryAlignment) {
   char *ptr = reinterpret_cast<char *>(
-      alignedAlloc(kPreferredMemoryAlignment, str.size() + 1));
+      KGEN_CompilerRT_AlignedAlloc(alignment, str.size() + 1));
   memcpy(ptr, str.data(), str.size());
   ptr[str.size()] = '\0';
   return llvm::StringRef(ptr, str.size());
@@ -104,7 +105,7 @@ struct FileHandle {
   /// Returns the resulting string null-terminated.
   llvm::StringRef read(int64_t size, llvm::StringRef *errMsg) {
     char *ptr = reinterpret_cast<char *>(
-        alignedAlloc(kPreferredMemoryAlignment, size + 1));
+        KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment, size + 1));
     llvm::MutableArrayRef<char> buf(ptr, size);
 
     auto numReadOr = llvm::sys::fs::readNativeFile(
@@ -132,8 +133,8 @@ struct FileHandle {
 
   /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
   llvm::StringRef readBytes(int64_t size, llvm::StringRef *errMsg) {
-    char *ptr =
-        reinterpret_cast<char *>(alignedAlloc(kPreferredMemoryAlignment, size));
+    char *ptr = reinterpret_cast<char *>(
+        KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment, size));
     llvm::MutableArrayRef<char> buf(ptr, size);
 
     auto numReadOr = llvm::sys::fs::readNativeFile(

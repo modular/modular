@@ -218,7 +218,7 @@ struct RuntimeOptions {
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
-    /// Allocator that calls tc_new/delete for bufferRefs.
+    /// Allocator that calls into tcmalloc.
     kTCMalloc,
     /// Allocator that does leak checking.
     kLeakChecker,
@@ -248,7 +248,11 @@ struct RuntimeOptions {
   std::string_view poolName = "🔥 Thread";
   bool paranoid = false;
   bool leakCheckedAllocator = false;
+#ifdef USE_TCMALLOC
+  bool tcmallocAllocator = true;
+#else  // USE_TCMALLOC
   bool tcmallocAllocator = false;
+#endif // USE_TCMALLOC
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
   OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
@@ -260,7 +264,6 @@ struct RuntimeOptions {
 #else
       RuntimeOptions::AllocatorType::kMalloc
 #endif
-
   };
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
   RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =

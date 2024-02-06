@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "llvm/Support/raw_ostream.h"
 
 #if defined(_WIN32)
@@ -69,6 +70,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
 #else
 int main() {
 #endif
+  // Create a runtime for the entry-point. Mojo allocators assume that a global
+  // runtime already exists for simplicity, so we must create one at the top
+  // level here.
+  auto rt = LLCL::createUniqueRuntime(LLCL::RuntimeOptions());
   forceLinkExportedSymbols();
   forceLinkCompilerRT();
   KGEN_CompilerRT_Python_SetPythonPath();

@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "./Memory.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Configuration.h"
 #include "Support/SymbolExport.h"
@@ -22,8 +23,8 @@ KGEN_CompilerRT_getConfigValue(const char *key) {
   // getValue may return empty string if key does not exist,
   // in which case we finally return an empty string.
   value = cfg.getValue(key);
-  char *cvalue =
-      (char *)alignedAlloc(kPreferredMemoryAlignment, value.size() + 1);
+  char *cvalue = (char *)KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment,
+                                                      value.size() + 1);
   strcpy(cvalue, value.str().c_str());
   return cvalue;
 }
