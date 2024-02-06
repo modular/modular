@@ -10,7 +10,7 @@ add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
 add_subdirectory(EngineCLI)
 
-if (TARGET modular-pybind-ext)
+if (TARGET max-pybind-ext)
   add_subdirectory(API)
 endif()
 
