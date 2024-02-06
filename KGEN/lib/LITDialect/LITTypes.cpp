@@ -750,6 +750,32 @@ LITSignatureType LITSignatureType::dropParamValues() {
              FnMetadataAttr::get(getMetadata().getArgListAttrs()));
 }
 
+bool LITSignatureType::isVarArg(size_t index) {
+  if (!getFnEffects().hasVarArgs())
+    return false;
+  return getFnEffects().isVarArg(getNumArguments(), index);
+}
+
+bool LITSignatureType::isPackVarArg(size_t index) {
+  if (!getFnEffects().hasPackVarArgs())
+    return false;
+  return getFnEffects().isVarArg(getNumArguments(), index);
+}
+
+bool LITSignatureType::isKWVarArg(size_t index) {
+  if (!getFnEffects().hasKWVarArgs())
+    return false;
+  return index + 1 == getNumArguments();
+}
+
+bool LITSignatureType::hasParamVarArgs() const {
+  return getFnEffects().hasParamVarArgs();
+}
+
+bool LITSignatureType::hasPackVarArgs() const {
+  return getFnEffects().hasPackVarArgs();
+}
+
 /// Substitute the specified implicit lifetime references into the specified
 /// type, replacing them with `values` if they are at depth 0, or decrementing
 /// their depth if not.  This returns the resultant FunctionType on success,
