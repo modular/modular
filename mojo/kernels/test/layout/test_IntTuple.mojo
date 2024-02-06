@@ -21,7 +21,7 @@ fn main() raises:
     let t3 = IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6)))
     assert_true(str(t3) == "(7, (2, 3, 4, (5, 6)))")
 
-    var t4 = IntTuple(2, IntTuple(3, 4))
+    let t4 = IntTuple(2, IntTuple(3, 4))
     assert_true(str(t4) == "(2, (3, 4))")
 
     # Test some basic tuple construction functionality
@@ -35,9 +35,12 @@ fn main() raises:
 
     # Make sure assignment works
     tt[1] = 8
-
     assert_true(str(tt) == "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
 
+    tt[3][2][2] = IntTuple(5, 69, 722)
+    assert_true(str(tt) == "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42)")
+
+    # Test append
     tt.append(8, 3, 1)
     tt.append(81)
 
@@ -48,7 +51,7 @@ fn main() raises:
 
     assert_true(
         str(flatten(tt))
-        == "(5, 8, 2, 3, 66, 6, 99, 4, 68, 721, 42, 8, 3, 1, 81, 32, 32)"
+        == "(5, 8, 2, 3, 66, 6, 99, 5, 69, 722, 42, 8, 3, 1, 81, 32, 32)"
     )
 
     # IntTuple Unit Tests, see: https://github.com/NVIDIA/cutlass/blob/main/test/python/pycute/test_int_tuple.py

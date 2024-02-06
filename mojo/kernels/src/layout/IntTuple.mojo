@@ -6,28 +6,6 @@
 
 from utils.variant import Variant
 
-# Python-style reduce functions
-# FIXME: Can we unify the two versions?
-
-
-fn reduce[
-    T: AnyRegType
-](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
-    var result: T = initializer
-    for e in t:
-        result = func(result, e)
-    return result
-
-
-fn reduce[
-    T: CollectionElement
-](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
-    var result: T = initializer
-    for e in t:
-        result = func(result, e)
-    return result
-
-
 # IntTuple definition
 
 
@@ -36,12 +14,14 @@ struct _IntTupleIter:
     var index: Int
     var src: IntTupleBase.Element
 
+    @always_inline
     fn __next__(inout self) -> IntTupleBase.Element:
         self.index += 1
         return self.src.get[Int]() if is_int(self.src) else self.src.get[
             IntTupleBase
         ]()[self.index - 1]
 
+    @always_inline
     fn __len__(self) -> Int:
         return (
             1 if is_int(self.src) else len(self.src.get[IntTupleBase]())
@@ -55,21 +35,16 @@ struct IntTupleBase(CollectionElement, Sized, Stringable):
 
     var elts: DynamicVector[Self.Element]
 
+    @always_inline
     fn __init__(inout self: Self, owned *values: Self.Element):
-        self.elts = DynamicVector[Self.Element](len(values))
+        self.elts = DynamicVector[Self.Element]()
         for v in values:
             self.append(v[])
 
+    @always_inline
     fn __init__(inout self: Self, owned value: IntTuple):
-        if is_tuple(value):
-            self.elts = DynamicVector[Self.Element]()
-            var t = IntTupleBase()
-            for v in value:
-                t.append(v)
-            self.append(t)
-        else:
-            self.elts = DynamicVector[Self.Element](1)
-            self.append(int(value))
+        self.elts = DynamicVector[Self.Element]()
+        self.append(value)
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
@@ -90,8 +65,8 @@ struct IntTupleBase(CollectionElement, Sized, Stringable):
         return self.elts[index]
 
     @always_inline
-    fn __setitem__(inout self, i: Int, val: Self.Element):
-        self.elts[i] = val
+    fn __setitem__(inout self, index: Int, val: Self.Element):
+        self.elts[index] = val
 
     @always_inline
     fn __len__(self) -> Int:
@@ -121,6 +96,7 @@ struct IntTupleBase(CollectionElement, Sized, Stringable):
                     return False
         return True
 
+    @always_inline
     fn __ne__(self, other: IntTupleBase) -> Bool:
         return not self == other
 
@@ -164,7 +140,6 @@ struct IntTuple(CollectionElement, Sized, Intable, Stringable):
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
         if is_int(self):
-            # FIXME: assert index == 0
             return int(self)
         else:
             return tuple(self)[index]
@@ -172,15 +147,13 @@ struct IntTuple(CollectionElement, Sized, Intable, Stringable):
     @always_inline
     fn __setitem__(inout self, index: Int, val: Self):
         if is_int(self) and is_int(val):
-            # FIXME: assert index == 0
             self.value = int(val)
-        elif is_int(val):
-            var new_value: IntTupleBase = tuple(self)
-            new_value[index] = int(val)
-            self.value = new_value
         else:
             var new_value: IntTupleBase = tuple(self)
-            new_value[index] = IntTupleBase(val)
+            if is_int(val):
+                new_value[index] = int(val)
+            else:
+                new_value[index] = tuple(val)
             self.value = new_value
 
     fn __mul__(self, rhs: Int) -> Self:
@@ -227,6 +200,7 @@ struct IntTuple(CollectionElement, Sized, Intable, Stringable):
     fn __int__(self) -> Int:
         return self.value.get[Int]()
 
+    @always_inline
     fn tuple(self) -> IntTupleBase:
         return self.value.get[IntTupleBase]()
 
@@ -234,20 +208,46 @@ struct IntTuple(CollectionElement, Sized, Intable, Stringable):
 # IntTuple operations, see: https://github.com/NVIDIA/cutlass/blob/main/python/pycute/int_tuple.py
 
 
+@always_inline
 fn tuple(owned tv: IntTuple) -> IntTupleBase:
     return tv.tuple()
 
 
+@always_inline
 fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
 
+@always_inline
 fn is_int(t: IntTuple) -> Bool:
     return t.value.isa[Int]()
 
 
+@always_inline
 fn is_tuple(t: IntTuple) -> Bool:
     return t.value.isa[IntTupleBase]()
+
+
+# Python-style reduce functions
+# FIXME: Can we unify the two versions?
+
+
+fn reduce[
+    T: AnyRegType
+](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
+    var result: T = initializer
+    for e in t:
+        result = func(result, e)
+    return result
+
+
+fn reduce[
+    T: CollectionElement
+](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
+    var result: T = initializer
+    for e in t:
+        result = func(result, e)
+    return result
 
 
 # IntTuple reductions
