@@ -1355,23 +1355,23 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
-    PValue typeValue, const SubscriptNode &subscript, ExprEmitter &emitter) {
+    PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
+    SMLoc rhsLoc, ExprEmitter &emitter) {
   auto metaType = cast<MetaTypeType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
-    emitter.emitError(subscript.getLoc(), "unknown parameterized type ")
-        << ASTType(typeValue) << subscript.base->getRange();
+    emitter.emitError(loc, "unknown parameterized type ")
+        << ASTType(typeValue) << SourceRange{loc, rhsLoc};
     return {};
   }
 
   // Notify the listener on the parameter binding.
-  emitter.shared.notifyListenerOnParameterBinding(
-      typeDecl, subscript.rsquareLoc, subscript.operands);
+  emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
 
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter);
-  for (const Operand &operand : subscript.operands) {
+  for (const Operand &operand : operands) {
     auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
       return {};
@@ -1385,9 +1385,9 @@ static PValue substituteParametersIntoUserDefinedType(
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
-  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structOp, metaType.getSignature(), subscript.getLoc(),
-      /*allowPartiallyBound=*/true);
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings.verifyBindings(structOp, metaType.getSignature(), loc,
+                                   /*allowPartiallyBound=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -1575,7 +1575,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Handle user-defined types.
     if (isa<MetaTypeType>(baseValue.getType())) {
       PValue result = substituteParametersIntoUserDefinedType(
-          baseValue.getIfPValue(), *this, emitter);
+          baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
+          emitter);
       return emitter.emitResult(result, this, dest);
     }
 
@@ -1682,46 +1683,11 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
-  bool allEltsLValue = true;
-  bool allEltsTypes = true;
   for (ExprNode *expr : exprs) {
     auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
     if (!exprVal)
       return {};
-    allEltsLValue &= !exprVal.getIfLValue().isNull();
-    allEltsTypes &= !exprVal.getIfTypeValue().isNull();
-
     elements.push_back({std::move(exprVal), expr});
-  }
-
-  // If this is a tuple with all LValue elements, return a DLValue since we can
-  // assign into this expression.
-  // TODO: Add support for list LValues as well.
-  if (allEltsLValue && isa<TupleNode>(node)) {
-    SmallVector<Type> typeElts;
-    for (ASTExprAnd<AnyValue> elt : elements)
-      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    type = emitter.shared.getBuiltinTupleInstantiation(
-        emitter.declScope, node->getLoc(), typeElts);
-    if (type.isTypeCheckErrorType())
-      return {};
-    DLValue result(RCRef<TupleDLValue>::create(elements, type, node));
-    return emitter.emitResult(result, node, dest);
-  }
-
-  // If this tuple has all type elements (and is not empty) then we can form a
-  // tuple type.  Note that we do not treat () as a type here, it is considered
-  // a value, and the ambiguity is handled in emitExprType.
-  if (allEltsTypes && isa<TupleNode>(node) && !elements.empty()) {
-    SmallVector<Type> typeElts;
-    for (ASTExprAnd<AnyValue> elt : elements)
-      typeElts.push_back(elt.ir.getIfTypeValue());
-
-    auto result = emitter.shared.getBuiltinTupleInstantiation(
-        emitter.declScope, node->getLoc(), typeElts);
-    if (type.isTypeCheckErrorType())
-      return {};
-    return emitter.emitResult(PValue(result), node, dest);
   }
 
   // The ASTType will carry around parameters bound, we want to unbind them so
@@ -1733,13 +1699,6 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // The type parameters are inferred from the element types.
   return emitter.emitConstructorCall(type, elements, node,
                                      CallSyntax::kImplicitConvert, dest);
-}
-
-AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Lookup the builtin Tuple type, in order to call its constructor.
-  ASTType type =
-      emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
-  return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -3082,4 +3041,68 @@ AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
           {StringAttr::get(*func.getSourceName(), stringType), this},
           {b.getIndexAttr(loc.getLine()), this}},
       this, CallSyntax::kImplicitConvert, dest);
+}
+
+// There are two options. We are either emitting a type or an instance of Tuple.
+// That is, either
+//      (T,T) is sugar for Tuple[T,T]
+// and we want to reuse 'substituteParametersIntoUserDefinedType' so
+// that bindings are verified and parameter evaluation is used or
+//      (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
+// and we want to emit a constructor call and infer the parameter types
+// of Tuple.
+AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  Type tupleType =
+      emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
+  bool allEltsLValue = true;
+  bool allEltsTypes = true;
+  SmallVector<ASTExprAnd<AnyValue>> elements;
+  for (ExprNode *expr : exprs) {
+    auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
+    if (!exprVal)
+      return {};
+    allEltsLValue &= !exprVal.getIfLValue().isNull();
+    allEltsTypes &= !exprVal.getIfTypeValue().isNull();
+    elements.push_back({std::move(exprVal), expr});
+  }
+  assert(!(allEltsTypes && allEltsLValue && !elements.empty()));
+
+  // HACK: Tuple emission should not be context dependent.
+  if (allEltsTypes && !elements.empty()) {
+    PValue pValue(tupleType);
+    SmallVector<Operand> operands;
+    for (ExprNode *exprNode : exprs)
+      operands.push_back(Operand(exprNode, exprNode->getLoc(),
+                                 Operand::PassKind::kPositional));
+    PValue concretizedTupleType = substituteParametersIntoUserDefinedType(
+        pValue, operands, getLoc(), exprs.front()->getRangeStart(),
+        exprs.back()->getRangeEnd(), emitter);
+
+    return emitter.emitResult(concretizedTupleType, this, dest);
+  }
+  // If this is a tuple with all LValue elements, return a DLValue since we
+  // can assign into this expression.
+  // TODO: Add support for list LValues as well.
+  if (allEltsLValue) {
+    SmallVector<Type> typeElts;
+    for (ASTExprAnd<AnyValue> elt : elements)
+      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
+    auto concretizedTupleType = emitter.shared.getBuiltinTupleInstantiation(
+        emitter.declScope, getLoc(), typeElts);
+    if (concretizedTupleType.isTypeCheckErrorType())
+      return {};
+    DLValue result(
+        RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  // The ASTType will carry around parameters bound, we want to unbind them so
+  // they can be inferred from the elements.
+  auto declRef = cast<DeclRefType>(tupleType);
+  tupleType = DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
+
+  // Emit a call to the builtin type constructor as an implicit conversion.
+  // The type parameters are inferred from the element types.
+  return emitter.emitConstructorCall(tupleType, elements, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
