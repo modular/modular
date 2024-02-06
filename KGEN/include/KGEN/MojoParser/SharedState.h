@@ -107,6 +107,10 @@ public:
   /// Returns if we should generate lifetimes using !lit.ref<>.
   bool useExperimentalLifetimes() const;
 
+  /// Returns true if we should issue a warning on let capture in parametric
+  /// closures.
+  bool shouldWarnOnLetCapture() const;
+
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
 

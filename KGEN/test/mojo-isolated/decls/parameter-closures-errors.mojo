@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages -verify-diagnostics %s
+# RUN: %translate-with-packages -warn-on-let -verify-diagnostics %s
 
 
 fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
@@ -14,6 +14,7 @@ fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
 fn bind_fat_to_thin_main():
     let x = __mlir_attr.`4 : index`
 
+    @__copy_capture(x)
     @parameter
     fn g(y: Int) -> Int:
         return x
@@ -69,3 +70,10 @@ fn makeClosure(x: MemType):
         return z.a
 
     let y = formatter()
+
+fn makeClosureWithCaptureLetWarn(x: Int):
+    let z = x
+    @parameter
+    async fn formatter() -> Int:
+        # expected-warning @below {{cannot capture let without copy: z}}
+        return z

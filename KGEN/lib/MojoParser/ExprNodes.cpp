@@ -497,9 +497,28 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(result, this, dest);
 
   // Find the nearest escaping closure, if there is one.
-  ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
-  while (funcDecl && cast<LIT::FuncOp>(funcDecl).getSignature().isCapturing())
-    funcDecl = funcDecl->getParentDecl()->getNearestDeclOfType<LIT::FuncOp>();
+  ASTDecl *nearestEscapingFnOrNone =
+      container.getNearestDeclOfType<LIT::FuncOp>();
+  while (nearestEscapingFnOrNone &&
+         cast<M::KGEN::LIT::FuncOp>(nearestEscapingFnOrNone)
+             .getSignature()
+             .isCapturing())
+    nearestEscapingFnOrNone = nearestEscapingFnOrNone->getParentDecl()
+                                  ->getNearestDeclOfType<LIT::FuncOp>();
+
+  ASTDecl *nearestCapturingFnOrNone =
+      container.getNearestDeclOfType<LIT::FuncOp>();
+  while (nearestCapturingFnOrNone &&
+         cast<M::KGEN::LIT::FuncOp>(nearestCapturingFnOrNone)
+             .getSignature()
+             .isEscaping())
+    nearestCapturingFnOrNone = nearestCapturingFnOrNone->getParentDecl()
+                                   ->getNearestDeclOfType<LIT::FuncOp>();
+  if (nearestCapturingFnOrNone &&
+      !cast<M::KGEN::LIT::FuncOp>(nearestCapturingFnOrNone)
+           .getSignature()
+           .isCapturing())
+    nearestCapturingFnOrNone = nullptr;
 
   ASTDecl *declRef = nullptr;
   if (!isa<LIT::FuncOp>(*decls[0])) {
@@ -507,18 +526,38 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     declRef = decls[0];
   }
 
+  auto needsApplyCapture = [&](ASTDecl *funcDecl) -> bool {
+    if (funcDecl && declRef) {
+      for (ASTDecl *decl = declRef->getParentDecl(); decl;
+           decl = decl->getParentDecl()) {
+        if (decl == funcDecl)
+          return false;
+      }
+      return true;
+    }
+    return false;
+  };
+
   // Record Runtime Value Capture.
-  if (funcDecl && declRef) {
-    bool inParentFunc = false;
-    for (ASTDecl *decl = declRef->getParentDecl(); decl;
-         decl = decl->getParentDecl()) {
-      if (decl == funcDecl) {
-        inParentFunc = true;
-        break;
+  if (needsApplyCapture(nearestEscapingFnOrNone))
+    emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
+                                     *capture);
+
+  // Warn about capturing lets.
+  if (emitter.shared.shouldWarnOnLetCapture() &&
+      needsApplyCapture(nearestCapturingFnOrNone)) {
+    if (LetRegDeclOp declaration = dyn_cast<LetRegDeclOp>(declRef)) {
+      if (!declaration.isSynthetic())
+        emitter.emitWarning(getLoc(), "cannot capture let without copy: ")
+            << spelling;
+    } else if (VarLetDeclOp declaration = dyn_cast<VarLetDeclOp>(declRef)) {
+      if (declaration.getKind() == VarLetDeclKind::Let &&
+          !declaration.isSynthetic()) {
+
+        emitter.emitWarning(getLoc(), "cannot capture let without copy: ")
+            << spelling;
       }
     }
-    if (!inParentFunc)
-      emitter.shared.addCaptureToScope(*funcDecl, declRef, *capture);
   }
 
   return emitter.emitResult(result, this, dest);

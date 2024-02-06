@@ -75,6 +75,10 @@ struct ParserConfig {
   /// If true, use !lit.ref representation for full lifetimes support in Mojo.
   bool experimentalLifetimes = false;
 
+  /// If true the parser will emit a warning if there is a let capture in a
+  /// parameteric closure.
+  bool warnOnLetCapture = false;
+
   /// If true, the inputs are parsed as if they belong to the Mojo standard
   /// library.
   ///

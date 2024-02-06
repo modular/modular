@@ -157,6 +157,10 @@ struct SharedState::Impl {
   /// If true, use !lit.ref representation for full lifetimes support in Mojo.
   bool experimentalLifetimes = false;
 
+  /// If true, emit warning when there is a capture of a let in a parametric
+  /// closure.
+  bool warnOnLet = false;
+
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -201,6 +205,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   }
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
+  impl->warnOnLet = config.warnOnLetCapture;
 
   preloadAllKGENDialects(config.context);
 
@@ -251,6 +256,8 @@ bool SharedState::shouldWarnMissingDocStrings() const {
 bool SharedState::useExperimentalLifetimes() const {
   return impl->experimentalLifetimes;
 }
+
+bool SharedState::shouldWarnOnLetCapture() const { return impl->warnOnLet; }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {
   assert(!impl->topLevelDecl && "already initialized");

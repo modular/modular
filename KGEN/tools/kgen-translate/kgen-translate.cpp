@@ -68,6 +68,12 @@ int main(int argc, char *argv[]) {
       "use-mlir-diagnostics", cl::desc("Whether to use MLIR diagnostics."),
       cl::init(true)};
 
+  M::cl::MOpt<bool> warnOnLet{
+      "warn-on-let",
+      cl::desc("Emits a warning when there is a capture of a let in a "
+               "parametric closure"),
+      cl::init(false)};
+
   M::cl::MOpt<std::string> parserBytecodeOutput{
       "bytecode-output",
       cl::desc("If specified, the parser output is also printed as bytecode."),
@@ -103,6 +109,7 @@ int main(int argc, char *argv[]) {
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
+        config.warnOnLetCapture = warnOnLet;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
         if (disableParserCaching)
