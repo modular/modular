@@ -600,7 +600,7 @@ static ParseResult parseLITFunctionSignature(
       ArgParamListAttr::get(p.getContext(), paramNames, paramPassingKinds,
                             defaultPosParams, defaultKwOnlyParams,
                             /*variadicIndices=*/{}, /*packIndices=*/{}),
-      lifetimeDecls.size());
+      lifetimeDecls.size(), varEffects);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });

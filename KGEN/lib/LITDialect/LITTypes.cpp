@@ -616,7 +616,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       ArgParamListAttr::get(ctx, paramNames, paramPassingKinds,
                             defaultPosParams, defaultKwOnlyParams,
                             /*variadicIndices=*/{}, /*packIndices=*/{}),
-      numLifetimeDecls);
+      numLifetimeDecls, varEffects);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       resultParamTypes, argConventions, effects, metadata);
