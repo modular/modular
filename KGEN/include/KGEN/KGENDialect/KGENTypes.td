@@ -648,6 +648,9 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
 
     /// Return the number of types in the variant.
     size_t getNumTypes() const;
+
+    /// Get the number of bits allocated for the discriminator.
+    int64_t getDiscrSizeInBits() const;
   }];
 }
 

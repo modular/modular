@@ -94,6 +94,19 @@ fn main():
 
     let c_simd = SIMD[DType.index, 2](5, 6)
 
+    let a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
+        _type = __mlir_type[
+            `!kgen.variant<`,
+            Float64,
+            `, `,
+            Bool,
+            `, `,
+            SIMD[DType.index, 2],
+            `>`,
+        ],
+        index = Int(2).value,
+    ](c_simd)
+
     let none = None
 
     print("breakpoint")

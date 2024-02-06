@@ -157,6 +157,33 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
        DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::VariantType type) {
+  // This must be kept in sync with how KGEN VariantTypes are represented in
+  // LLVM.
+  DIType discriminatorType = convertDebugType(
+      IntegerType::get(type.getContext(), type.getDiscrSizeInBits()));
+  DIMemberType discriminatorPart =
+      DIMemberType::get("discr", discriminatorType);
+
+  SmallVector<DIMemberType> variantMembers;
+  uint64_t maxMemberSizeInBits = 0;
+  for (auto [index, member] : llvm::enumerate(type.getTypes())) {
+    DIType debugType = convertDebugType(member);
+    variantMembers.push_back(DIMemberType::get("v" + Twine(index), debugType));
+    maxMemberSizeInBits =
+        std::max(maxMemberSizeInBits, debugType.getSizeInBits());
+  }
+
+  DIVariantType variantPart = DIVariantType::get(
+      StringAttr::get(type.getContext(), ""), maxMemberSizeInBits,
+      *type.getTypeAlign(tc.getTarget()) * CHAR_BIT, variantMembers,
+      discriminatorPart);
+
+  return DIStructType::get(
+      StringAttr::get(type.getContext(), mlir::debugString(type)),
+      {DIMemberType::get("", variantPart), discriminatorPart});
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::NoneType type) {
   return DIStructType::get(StringAttr::get(type.getContext(), "!kgen.none"));
 }
@@ -214,6 +241,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
+  addConversion([&](KGEN::VariantType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](POP::CoroutineType type) { return buildDebugType(type); });

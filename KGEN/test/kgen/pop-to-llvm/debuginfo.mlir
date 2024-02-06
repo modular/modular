@@ -9,6 +9,7 @@
 !scalarTest = !pop.scalar<bool>
 !simdTest = !pop.simd<8, ui32>
 !structTest = !kgen.struct<(scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>)>
+!variantTest = !kgen.variant<!simdTest, !pointerTest>
 
 // CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<kgen.dtype.bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
 // CHECK-DAG: ![[BASIC1:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
@@ -39,13 +40,21 @@
 // CHECK-DAG: ![[MEMBER27:.*]] = !debuginfo.member<m2: ![[STRUCT1]]>
 // CHECK-DAG: ![[STRUCT2:.*]] = !debuginfo.struct<"!kgen.struct<(scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>)>"(![[MEMBER22]], ![[MEMBER26]], ![[MEMBER27]])>
 
+// CHECK-DAG: ![[BASIC_I1:.*]] = !debuginfo.basic<i1
+// CHECK-DAG: ![[DISCR:.*]] = !debuginfo.member<discr: ![[BASIC_I1]]>
+// CHECK-DAG: ![[VARIANT1:.*]] = !debuginfo.member<v0: ![[VECTOR1]]>
+// CHECK-DAG: ![[VARIANT2:.*]] = !debuginfo.member<v1: ![[PTR]]>
+// CHECK-DAG: ![[VARIANT_PART:.*]] = !debuginfo.variant<""(![[VARIANT1]], ![[VARIANT2]]), ![[DISCR]] {sizeInBits = 256, alignInBits = 64}>
+// CHECK-DAG: ![[VARIANT_MEMBER:.*]] = !debuginfo.member<"": ![[VARIANT_PART]]>
+// CHECK-DAG: ![[VARIANT_STRUCT:.*]] = !debuginfo.struct<"!kgen.variant<simd<8, ui32>, pointer<scalar<bool>>>"(![[VARIANT_MEMBER]], ![[DISCR]])>
+
 // CHECK-DAG: ![[STRING_DATA:.*]] = !debuginfo.member<data: !ptr
 // CHECK-DAG: ![[STRING_SIZE:.*]] = !debuginfo.member<size: !basic
 // CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[STRING_DATA]], ![[STRING_SIZE]])>
 
 // CHECK-DAG: ![[NONE:.*]] = !debuginfo.struct<"!kgen.none"()>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[VECTOR_BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
+// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[VECTOR_BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[VARIANT_STRUCT]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!arrayTest>,
@@ -56,6 +65,7 @@
   !debuginfo.unresolved<!scalarTest>,
   !debuginfo.unresolved<!simdTest>,
   !debuginfo.unresolved<!structTest>,
+  !debuginfo.unresolved<!variantTest>,
   !debuginfo.unresolved<!kgen.string>,
   !debuginfo.unresolved<!kgen.none>
 ) -> (): DW_CC_normal>
