@@ -721,6 +721,7 @@ fn matmul_int4[
     alias grain_size = 8
     let num_workers = div_ceil(M, grain_size)
 
+    @__copy_capture(M, a_quant, a_scale)
     @parameter
     @always_inline
     fn task_func(task_id: Int):
