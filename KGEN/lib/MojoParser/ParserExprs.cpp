@@ -1006,7 +1006,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs), resultTypeExpr,
-      fnSignature.effects, endLoc, isDef, resultLoc);
+      fnSignature.effects, fnSignature.varEffects, endLoc, isDef, resultLoc);
   return success();
 }
 

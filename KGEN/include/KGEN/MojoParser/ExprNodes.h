@@ -17,6 +17,7 @@
 #define KGEN_MOJOPARSER_EXPRNODES_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
@@ -566,16 +567,19 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ExprNode *resultTypeExpr, FnEffects effects,
-                   SMLoc endLoc, bool isDef, SMLoc resultLoc)
+                   VariadicEffects varEffects, SMLoc endLoc, bool isDef,
+                   SMLoc resultLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultTypeExpr(resultTypeExpr),
-        effects(effects), endLoc(endLoc), isDef(isDef), resultLoc(resultLoc) {}
+        effects(effects), varEffects(varEffects), endLoc(endLoc), isDef(isDef),
+        resultLoc(resultLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
   ArrayRef<ParsedArgument> parsedArgs;   // Argument list
   const ExprNode *resultTypeExpr;
   FnEffects effects;
+  VariadicEffects varEffects;
   SMLoc endLoc;
   bool isDef;
   SMLoc resultLoc;

@@ -2841,6 +2841,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ParsedArgumentList argList;
   argList.parsedArgs = llvm::to_vector(parsedArgs);
   argList.effects = this->effects;
+  argList.varEffects = this->varEffects;
   if (paramList.isVarArgs)
     argList.effects.setParamVarArgs();
 

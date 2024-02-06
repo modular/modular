@@ -980,7 +980,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
                             paramList.defaultPosParams,
                             paramList.defaultKwOnlyParams,
                             /*variadicIndices=*/{}, /*packIndices=*/{}),
-      implicitLifetimeDecls.size());
+      implicitLifetimeDecls.size(), argList.varEffects);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.
