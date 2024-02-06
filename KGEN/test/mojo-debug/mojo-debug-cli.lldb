@@ -1,0 +1,41 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# COM: Check if we can produce a help message for the `mojo debug` command.
+# RUN: %debug --help | FileCheck %s --check-prefix=CHECK-DEBUGGER-HELP
+# CHECK-DEBUGGER-HELP: mojo-debug
+
+# COM: Check if the --help run arg is not processed as a debugger option.
+# RUN: %debug -Xlldb -o -Xlldb 'run' -Xlldb -b mojo run --help | FileCheck %s --check-prefix=CHECK-TARGET-HELP
+# CHECK-TARGET-HELP: mojo-run
+
+# COM: Check if the CLI attach command is created properly with pid.
+# RUN: %debug --pid 123 --dry-run | FileCheck %s --check-prefix=CHECK-PID
+# CHECK-PID: -p 123
+
+# COM: Check if the CLI attach command is created properly with process name.
+# RUN: %debug --process-name foo --dry-run | FileCheck %s --check-prefix=CHECK-PROC-NAME
+# CHECK-PROC-NAME: -n foo
+
+# COM: Check if the CLI attach command can fail in the presence of compilation options.
+# RUN: not %debug --pid 123 --dry-run -O0 2>&1 | FileCheck %s --check-prefix=CHECK-PID-WITH-COMPILATION-OPTION
+# CHECK-PID-WITH-COMPILATION-OPTION: unexpected compilation option '--no-optimization'
+
+# COM: Check if we can build correctly the JIT debug command.
+# RUN: %debug --debug-level=line-tables -Xlldb foo --debug-level none --dry-run target.mojo --debug-level full | FileCheck %s --check-prefix=CHECK-JIT-DEBUG
+# CHECK-JIT-DEBUG: foo -- {{.*}}/mojo run -O0 --debug-level=full --debug-level line-tables --debug-level none target.mojo --debug-level full
+
+# COM: Check if we can build correctly the binary debug command.
+# RUN: %debug -Xlldb foo --dry-run target.exe --debug-level full | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG
+# CHECK-BINARY-DEBUG: foo -- target.exe --debug-level full
+
+# COM: Check if we fail when building a binary debug command with additional compilation options.
+# RUN: not %debug --debug-level=line-tables -Xlldb foo --dry-run target.exe --debug-level full 2>&1 | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION
+# CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION: unexpected compilation option '--debug-level'
+
+# COM: Check that we can't use the RPC mode when using explicitly the CLI mode.
+# RUN: not %debug --rpc 2>&1 | FileCheck %s --check-prefix=CHECK-NO-CLI-RPC
+CHECK-NO-CLI-RPC: unexpected option '--rpc'

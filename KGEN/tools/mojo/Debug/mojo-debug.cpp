@@ -6,7 +6,10 @@
 
 #include "mojo-debug.h"
 #include "../Common/LLDB.h"
+#include "../Common/Telemetry.h"
+#include "KGEN/Support/Configuration.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 
@@ -19,23 +22,157 @@ struct DebugOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
+/// Returns the path to the mojo tool, or an error if not found.
+static ErrorOr<std::string> getMojoDriver() {
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr))
+    return Error(Twine("failed to parse 'modular.cfg': ") +
+                 configOr.getError());
+  std::error_code ec;
+  StringRef driver = configOr->getDriverPath();
+  if (!std::filesystem::exists(driver.str(), ec) || ec)
+    return Error("unable to resolve the mojo program path");
+  return driver.str();
+}
+
+static SmallVector<std::string>
+getLLDBArgs(llvm::opt::InputArgList &parsedArgs) {
+  SmallVector<std::string> lldbArgs;
+  for (StringRef value : parsedArgs.getAllArgValues(options::OPT_xlldb))
+    lldbArgs.push_back(value.str());
+  return lldbArgs;
+}
+
+auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
+  return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
+                             options::OPT_ExperimentalCompilationOptionGroup,
+                             options::OPT_DiagnosticOptionGroup);
+}
+
+static bool isMojoFile(StringRef file) {
+  return file.ends_with(".mojo") || file.ends_with(".🔥");
+}
+
 /// Launches LLDB with the Mojo plugin enabled.
 /// Exits unsuccessfully if LLDB could not be found in the SDK.
 static int debug(const State &state) {
-  // Parse command line arguments. We forward most arguments to the underlying
-  // invocation of lldb, and so don't check for invalid options.
+  // Parse command line arguments.
   DebugOptTable options;
+  // First, parse all arguments, in order to find the index of the input
+  // argument.
   unsigned unused = 0;
-  llvm::opt::InputArgList args =
+  llvm::opt::InputArgList parsedArgs =
       options.ParseArgs(state.arguments, unused, unused);
 
-  if (args.hasArg(options::OPT_help)) {
+  // Initialize the LLCL runtime. We don't allow users to configure runtime
+  // options, such as the allocator or the work queue threading model.
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+
+  // Initialize telemetry.
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, state, parsedArgs);
+
+  // LLVMOption treats all "positional arguments" (arguments that do not have a
+  // "-" or "--" prefix) as `INPUT`. The very first of these is our launch input
+  // (a Mojo source file or a binary), and each remaining positional argument is
+  // an argument being passed to the debuggee.
+  auto positionalArgs = parsedArgs.filtered(options::OPT_INPUT);
+  std::optional<std::string> target;
+  SmallVector<std::string> runArgs;
+  // If we have a positional argument, which is a target, everything that comes
+  // after that is a run arg. We then redefine parsedArgs as everything that
+  // comes before the target.
+  if (!positionalArgs.empty()) {
+    const llvm::opt::Arg &targetArg = **positionalArgs.begin();
+    target = targetArg.getSpelling();
+    runArgs = SmallVector<std::string>(
+        state.arguments.slice(targetArg.getIndex() + 1));
+    parsedArgs = options.ParseArgs(
+        state.arguments.slice(0, targetArg.getIndex()), unused, unused);
+  }
+
+  if (parsedArgs.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "Debug/DebugOptionsHelpText.inc"
     );
   }
 
-  return invokeLLDB(state, args, {});
+  bool useRpc = parsedArgs.hasArg(options::OPT_rpc);
+  bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
+  SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
+  bool isJITDebugging = target && isMojoFile(*target);
+  auto compilationOptions = getCompilationOptions(parsedArgs);
+
+  if (!isJITDebugging && !compilationOptions.empty()) {
+    // Compilation options are only allowed when doing JIT debugging.
+    return state.reportError(
+        Twine("unexpected compilation option '",
+              (**compilationOptions.begin()).getSpelling()) +
+        "'");
+  }
+
+  // This is a launch case.
+  if (target) {
+    // This is a JIT debug case, in which case LLDB will debug `mojo run`. We
+    // have to include the provided compilation options as run arguments for
+    // `mojo run`.
+    if (isJITDebugging) {
+      ErrorOr<std::string> mojoDriver = getMojoDriver();
+      if (failed(mojoDriver))
+        return state.reportError(mojoDriver.getError());
+
+      SmallVector<StringRef> mojoRunArgs{"run", "-O0", "--debug-level=full"};
+      for (auto arg : compilationOptions) {
+        mojoRunArgs.push_back(arg->getSpelling());
+        // If at some point we have an option with 2 or more values, we need to
+        // figure out a different way to pass the compilation options to the
+        // debuggee.
+        assert(arg->getNumValues() <= 1);
+        for (auto value : arg->getValues())
+          mojoRunArgs.push_back(value);
+      }
+      mojoRunArgs.push_back(*target);
+      // `mojo run` args will precede the regular run args, and the actual
+      // target will be the mojo driver.
+      runArgs.insert(runArgs.begin(), mojoRunArgs.begin(), mojoRunArgs.end());
+      target = *mojoDriver;
+    }
+    if (useRpc) {
+      // TODO
+    }
+    // When using the LLDB CLI, the first run arg has to be the target.
+    runArgs.insert(runArgs.begin(), *target);
+    return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+  }
+
+  std::optional<StringRef> pid;
+  if (parsedArgs.hasArg(options::OPT_pid))
+    pid = parsedArgs.getLastArgValue(options::OPT_pid);
+
+  std::optional<StringRef> processName;
+  if (parsedArgs.hasArg(options::OPT_process_name))
+    processName = parsedArgs.getLastArgValue(options::OPT_process_name);
+
+  //  This is an attach case.
+  if (pid || processName) {
+    if (useRpc) {
+      // TODO
+    } else {
+      if (pid)
+        llvm::append_values(lldbArgs, std::string("-p"), pid->str());
+      if (processName)
+        llvm::append_values(lldbArgs, std::string("-n"), processName->str());
+      return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+    }
+  }
+
+  for (auto rpcArg : parsedArgs.filtered(options::OPT_RPCOptionGroup))
+    return state.reportError(
+        Twine("unexpected option '", rpcArg->getSpelling()) + "'");
+
+  // This is a regular lldb cli passthrough.
+  return invokeLLDB(state, lldbArgs, runArgs, dryRun);
 }
 
 void M::registerDebugSubcommand(SubcommandRegistry &registry) {

@@ -6,6 +6,7 @@
 
 #include "mojo-repl.h"
 #include "../Common/LLDB.h"
+#include "../Common/Telemetry.h"
 #include "llvm/Option/ArgList.h"
 
 using namespace M;
@@ -30,15 +31,23 @@ static int repl(const State &state) {
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, unused, unused);
 
+  // Initialize the LLCL runtime. We don't allow users to configure runtime
+  // options, such as the allocator or the work queue threading model.
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+
+  // Initialize telemetry.
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, state, args);
+
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "REPL/REPLOptionsHelpText.inc"
     );
   }
-  return invokeLLDB(state, args,
-                    {"--one-line-before-file",
-                     "settings set show-progress false", "--repl-language",
-                     "mojo", "--repl"});
+  return invokeLLDB(state, {"--one-line-before-file",
+                            "settings set show-progress false",
+                            "--repl-language", "mojo", "--repl"});
 }
 
 void M::registerREPLSubcommand(SubcommandRegistry &registry) {

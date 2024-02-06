@@ -6,7 +6,7 @@
 
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:99' -o 'r' -o 'frame var' | FileCheck %s
+# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:99' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
 
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101

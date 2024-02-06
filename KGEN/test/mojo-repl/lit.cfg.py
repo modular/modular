@@ -29,15 +29,6 @@ config.test_exec_root = os.path.join(
 
 config.substitutions.append(
     (
-        "%lldb",
-        (
-            f"{config.lldb_env} mojo debug --source-quietly -S"
-            f" {config.lit_lldb_init}"
-        ),
-    )
-)
-config.substitutions.append(
-    (
         "%repl",
         (
             f"{config.lldb_env} mojo repl --source-quietly -S"

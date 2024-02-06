@@ -64,6 +64,10 @@ StringRef MojoConfig::getPythonLib() {
 //===----------------------------------------------------------------------===//
 // Driver Configurations
 
+StringRef MojoConfig::getDriverPath() {
+  return config.getValue(MOJO_CONFIG_SECTION ".driver_path");
+}
+
 StringRef MojoConfig::getMBlackPath() {
   return config.getValue(MOJO_CONFIG_SECTION ".mblack_path");
 }
