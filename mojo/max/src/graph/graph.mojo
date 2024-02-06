@@ -41,7 +41,7 @@ struct Graph:
         return self.g.region(0).first_block()
 
     fn module(self) raises -> Module:
-        """Returns the `Module` owning thir `Graph`."""
+        """Returns the `Module` owning this `Graph`."""
         return Module(mlir.Module.from_op(self.g.parent()))
 
     fn __getitem__(self, n: Int) raises -> Symbol:
@@ -179,9 +179,6 @@ struct Graph:
             ),
             MOTensor(dtype, len(range(start, stop, step))),
         )
-
-    fn output(self) raises:
-        _ = self.nvop("mo.output", SymbolTuple())
 
     fn output(self, outs: SymbolTuple) raises:
         _ = self.nvop("mo.output", outs)
