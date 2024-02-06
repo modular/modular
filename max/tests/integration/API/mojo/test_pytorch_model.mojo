@@ -34,10 +34,10 @@ fn test_pytorch_model() raises:
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
-    let input_names = compiled_model.get_model_input_names()
+    var input_names = compiled_model.get_model_input_names()
     # CHECK: x
     for name in input_names:
-        print(name)
+        print(name[])
 
     # CHECK: x
     print(input_names[0])
@@ -65,10 +65,10 @@ fn test_pytorch_model2() raises:
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
-    let input_names = compiled_model.get_model_input_names()
+    var input_names = compiled_model.get_model_input_names()
     # CHECK: x
     for name in input_names:
-        print(name)
+        print(name[])
 
     # CHECK: x
     print(input_names[0])

@@ -35,10 +35,10 @@ fn test_model_metadata() raises:
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
-    let input_names = compiled_model.get_model_input_names()
+    var input_names = compiled_model.get_model_input_names()
     # CHECK: input
     for name in input_names:
-        print(name)
+        print(name[])
 
     # CHECK: input
     print(input_names[0])
@@ -46,10 +46,10 @@ fn test_model_metadata() raises:
     # CHECK: 1
     print(compiled_model.num_model_outputs())
 
-    let output_names = compiled_model.get_model_output_names()
+    var output_names = compiled_model.get_model_output_names()
     # CHECK: output
     for name in output_names:
-        print(name)
+        print(name[])
 
     # CHECK: output
     print(output_names[0])
