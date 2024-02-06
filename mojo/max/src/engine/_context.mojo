@@ -20,9 +20,13 @@ alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
 @register_passable("trivial")
 struct AllocatorType:
     var value: Int32
-    # This needs to map M_AllocatorType enum on the c++ side.
-    alias CACHING = Int32(0)
-    alias SYSTEM = Int32(1)
+    # This needs to map M_AllocatorType enum on the C API side.
+    alias SYSTEM = Int32(0)
+    alias CACHING = Int32(1)
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: Int32) -> Bool:
+        return self.value != rhs.value
 
 
 @value
@@ -83,7 +87,7 @@ struct RuntimeConfig:
         lib: DLHandle,
         device: _Device,
         num_threads: Optional[Int] = None,
-        allocator_type: AllocatorType = AllocatorType.SYSTEM,
+        allocator_type: AllocatorType = AllocatorType.CACHING,
     ):
         self.ptr = call_dylib_func[CRuntimeConfig](
             lib, Self.NewRuntimeConfigFnName
@@ -92,7 +96,8 @@ struct RuntimeConfig:
             self.ptr.set_num_threads(lib, num_threads.value())
         self.lib = lib
 
-        self.ptr.set_allocator_type(self.lib, allocator_type)
+        if allocator_type != AllocatorType.CACHING:
+            self.ptr.set_allocator_type(self.lib, allocator_type)
 
         @parameter
         if MODULAR_RELEASE_PACKAGE_BUILD:
