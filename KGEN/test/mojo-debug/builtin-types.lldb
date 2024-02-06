@@ -6,7 +6,7 @@
 
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:99' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
+# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:112' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
 
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
@@ -91,6 +91,15 @@
 # CHECK: (simd<2, index>) c_simd = {
 # CHECK:   [0] = 5
 # CHECK:   [1] = 6
+# CHECK: }
+# CHECK: (Variant[scalar<f64>, scalar<bool>, simd<2, index>]) a_float_or_bool_or_simd = {
+# CHECK:   variant[0] =
+# CHECK:   variant[1] =
+# CHECK:   variant[2] = {
+# CHECK:     [0] = 5
+# CHECK:     [1] = 6
+# CHECK:   }
+# CHECK:   discriminator = 2
 # CHECK: }
 # CHECK: (None) none = None
 # CHECK: (si64) a_var_index = 48

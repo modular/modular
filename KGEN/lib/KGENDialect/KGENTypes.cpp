@@ -1171,15 +1171,15 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
 /// Get bitwidth of the integer used to represent the discriminator. The
 /// discriminator field is the smallest integer type whose maximum value is
 /// greater than the number of possible subtypes, but which is at least `i1`.
-static int64_t getVariantDiscrSizeInBits(VariantType type) {
-  return std::max(1u, llvm::Log2_32_Ceil(type.getTypes().size()));
+int64_t VariantType::getDiscrSizeInBits() const {
+  return std::max(1u, llvm::Log2_32_Ceil(getTypes().size()));
 }
 
 /// Get the width of the integer used to represent the discriminator in bytes.
 /// This returns at least 1, because the bitwidth of the discriminator is at
 /// least 1.
 static int64_t getVariantDiscrSize(VariantType type) {
-  return llvm::divideCeil(getVariantDiscrSizeInBits(type), CHAR_BIT);
+  return llvm::divideCeil(type.getDiscrSizeInBits(), CHAR_BIT);
 }
 
 std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {

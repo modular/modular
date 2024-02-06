@@ -578,6 +578,10 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return 0;
   }
 
+  // One for the discriminator, one for each variant.
+  if (auto variantType = dyn_cast<VariantType>(astType))
+    return 1 + variantType.getNumTypes();
+
   return 0;
 }
 
@@ -667,6 +671,21 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       childName = std::string(llvm::formatv("[{0}]", idx));
+      const auto &field = layout->getFields()[idx];
+      childByteOffset = field.getByteOffset();
+      childByteSize = field.getByteSize();
+      return createCompilerType(field.getConcreteType());
+    }
+    return {};
+  }
+
+  if (auto variantType = dyn_cast<VariantType>(astType)) {
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(astType)) {
+      // Name is hardcoded for now until we get proper DI variant type emission.
+      childName = idx == variantType.getNumTypes()
+                      ? "discriminator"
+                      : std::string(llvm::formatv("variant[{0}]", idx));
       const auto &field = layout->getFields()[idx];
       childByteOffset = field.getByteOffset();
       childByteSize = field.getByteSize();

@@ -36,6 +36,10 @@ struct MojoTypeDataLayoutContext::Impl {
   std::optional<MojoTypeDataLayout> calculateForPack(MojoASTTypeRef typeRef,
                                                      PackType packType);
 
+  /// Calculate the data layout of the given variant.
+  std::optional<MojoTypeDataLayout>
+  calculateForVariant(MojoASTTypeRef typeRef, VariantType variantType);
+
   /// Calculate the data layout of a struct-like collection of types.
   std::optional<MojoTypeDataLayout>
   calculateForStructLike(ArrayRef<MojoASTTypeRef> fieldTypes);
@@ -100,6 +104,38 @@ MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
       }));
 }
 
+std::optional<MojoTypeDataLayout>
+MojoTypeDataLayoutContext::Impl::calculateForVariant(MojoASTTypeRef typeRef,
+                                                     VariantType variantType) {
+  std::optional<uint64_t> overallAlign = variantType.getTypeAlign(targetInfo);
+  if (!overallAlign)
+    return {};
+
+  MojoTypeDataLayout layout;
+  uint64_t maxVariantSize = 0;
+  for (MojoASTTypeRef fieldType : variantType.getTypes()) {
+    auto &fieldLayout = getOrCalculate(fieldType);
+    if (!fieldLayout)
+      return {};
+
+    layout.addField({0, fieldLayout->getByteSize(), fieldLayout->getAlignment(),
+                     fieldType});
+    maxVariantSize = std::max(maxVariantSize, fieldLayout->getByteSize());
+  }
+  maxVariantSize = llvm::alignTo(maxVariantSize, *overallAlign);
+
+  uint64_t discrByteSize =
+      llvm::divideCeil(variantType.getDiscrSizeInBits(), CHAR_BIT);
+  Type discrType = IntegerType::get(variantType.getContext(),
+                                    variantType.getDiscrSizeInBits());
+  layout.addField({maxVariantSize, discrByteSize, *overallAlign, discrType});
+
+  layout.setByteSize(
+      llvm::alignTo(maxVariantSize + discrByteSize, *overallAlign));
+  layout.setAlignment(*overallAlign);
+  return layout;
+}
+
 const std::optional<MojoTypeDataLayout> &
 MojoTypeDataLayoutContext::Impl::getOrCalculate(MojoASTTypeRef type) {
   auto it = cache.find(type.getMLIRType());
@@ -124,6 +160,9 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
 
   if (auto packType = dyn_cast<KGEN::PackType>(type))
     return calculateForPack(type, packType);
+
+  if (auto variantType = dyn_cast<VariantType>(type))
+    return calculateForVariant(type, variantType);
 
   std::optional<uint64_t> size =
       DataLayoutInterface::getTypeStoreSize(targetInfo, type.getMLIRType());
