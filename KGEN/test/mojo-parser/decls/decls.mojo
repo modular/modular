@@ -1179,6 +1179,11 @@ fn returnTup2a() -> (Int, FloatLiteral):
 fn returnTup2b() -> (Int, FloatLiteral):
   return Int(4), 2.0
 
+# CHECK-LABEL: lit.func @"takesSugarTuple
+# CHECK-SAME: @Tuple<:variadic<type> [rebind(:!CollectionElement T), rebind(:!CollectionElement T)]>
+fn takesSugarTuple[T: CollectionElement](elements: (T, T)):
+   pass
+
 ##===----------------------------------------------------------------------===##
 # Global Variables
 ##===----------------------------------------------------------------------===##
