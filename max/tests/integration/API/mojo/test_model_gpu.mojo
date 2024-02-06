@@ -11,7 +11,9 @@ from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
+    SessionOptions,
 )
+from max.engine._context import _Device
 from sys import argv
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
@@ -30,8 +32,9 @@ fn test_model_metadata() raises:
     print(args[1])
 
     let model_path = args[1]
-
-    let session = InferenceSession(device="cuda")
+    var options = SessionOptions()
+    options._set_device(_Device.CUDA)
+    let session = InferenceSession(options)
     let compiled_model = session.load_model(Path(model_path))
     # CHECK: 1
     print(compiled_model.num_model_inputs())
@@ -70,7 +73,9 @@ fn test_model() raises:
 
     let model_path = args[1]
 
-    let session = InferenceSession(device="cuda")
+    var options = SessionOptions()
+    options._set_device(_Device.CUDA)
+    let session = InferenceSession(options)
     let model = session.load_model(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
