@@ -23,7 +23,7 @@
 //    MODULAR_PROFILE_FILENAME=<profile> $MODULAR_PYTHON run_modular_model.py
 //    ```
 //    Where `run_model_model.py` is a Python script that uses the
-//    `modular.engine` API.
+//    `max.engine` API.
 //
 // The above steps print out memory statistics to `llvm::dbgs()` alongside
 // instrumented profiler event dumps.
