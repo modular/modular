@@ -126,7 +126,49 @@ fn test_model_tuple_input() raises:
     print(expected_output == output_tensor)
 
 
+fn test_model_tuple_input_dynamic() raises:
+    # CHECK: test_model_tuple_input_dynamic
+    print("====test_model_tuple_input_dynamic")
+
+    let args = argv()
+
+    # CHECK: 2
+    print(len(args))
+
+    # CHECK: mo.model
+    print(args[1])
+
+    let model_path = args[1]
+
+    var input_tensor = Tensor[DType.float32](5)
+
+    for i in range(5):
+        input_tensor[i] = 1.0
+
+    let session = InferenceSession()
+    let model = session.load_model(Path(model_path))
+    let tensor_name: String = "input"
+    # TODO: Remove use of StringRef from `model.execute` APIs
+    # once we support std::Tuple on memory-only types.
+    # See https://github.com/modularml/modular/issues/30576
+    let outputs = model.execute(
+        (tensor_name._strref_dangerous(), EngineTensorView(input_tensor))
+    )
+    _ = input_tensor ^
+    let output_tensor = outputs.get[DType.float32]("output")
+
+    # CHECK: 5xfloat32
+    print(str(output_tensor.spec()))
+
+    var expected_output = Tensor[DType.float32](5)
+    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    # CHECK: True
+    print(expected_output == output_tensor)
+    tensor_name._strref_keepalive()
+
+
 fn main() raises:
     test_model_metadata()
     test_model()
     test_model_tuple_input()
+    test_model_tuple_input_dynamic()
