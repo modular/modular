@@ -600,8 +600,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   FunctionType functionType;
   FnEffects effects;
-  if (parseSignatureValues(p, parseArg, functionType, effects,
-                           /*optionalResultList=*/false))
+  VariadicEffects varEffects;
+  if (LIT::parseSignatureValues(p, parseArg, functionType, effects, varEffects,
+                                /*optionalResultList=*/false))
     return failure();
 
   SmallVector<PassingKind> argPassingKinds;
@@ -684,8 +685,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     passingKindPrinter.printOptionalTrailingSlash(i);
   };
 
-  printSignatureValues(p, printElt, signature.getValues(), signature,
-                       /*optionalResultList=*/false);
+  LIT::printSignatureValues(p, printElt, signature.getValues(), signature,
+                            /*optionalResultList=*/false);
   p << '>';
 }
 

@@ -332,6 +332,80 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+ParseResult LIT::parseSignatureValues(
+    AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
+    FunctionType &values, FnEffects &effects, VariadicEffects &variadicEffects,
+    bool optionalResultList) {
+
+  SmallVector<Type> argTypes, resTypes;
+
+  if (failed(p.parseOptionalLParen()))
+    return failure();
+  if (failed(p.parseOptionalRParen())) {
+    if (p.parseCommaSeparatedList([&]() { return parseArg(argTypes); }) ||
+        p.parseRParen())
+      return failure();
+  }
+
+  // Parse the function effects. Check for each case to disambiguate the syntax
+  // for interfaces.
+  auto effectsValue = KGEN::impl::FnEffects::None;
+  auto varEffectsValue = VariadicImpl::VariadicEffects::None;
+  StringRef kw;
+  while (succeeded(p.parseOptionalKeyword(
+      &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
+            "param_vararg", "capturing", "ownedresult", "escaping"}))) {
+    if (std::optional<KGEN::impl::FnEffects> effectsOr =
+            KGEN::impl::symbolizeFnEffects(kw)) {
+      effectsValue |= *effectsOr;
+    } else {
+      varEffectsValue |= *VariadicImpl::symbolizeVariadicEffects(kw);
+    }
+
+    // No vertical bar? We're done. It's not a parse error, but it does mean we
+    // can't specify more effects.
+    if (failed(p.parseOptionalVerticalBar()))
+      break;
+  }
+  effects = FnEffects(effectsValue);
+
+  if (optionalResultList ? p.parseOptionalArrowTypeList(resTypes)
+                         : p.parseArrowTypeList(resTypes))
+    return failure();
+
+  values = p.getBuilder().getFunctionType(argTypes, resTypes);
+  return mlir::success();
+}
+
+void LIT::printSignatureValues(AsmPrinter &p,
+                               function_ref<void(unsigned)> printElt,
+                               FunctionType functionType,
+                               LITSignatureType signature,
+                               bool optionalResultList) {
+  p << '(';
+  llvm::interleaveComma(
+      llvm::seq<unsigned>(0, signature.getArgConventions().size()), p,
+      printElt);
+  p << ')';
+
+  // Print the function effects.
+  VariadicImpl::VariadicEffects varEffectsImpl =
+      signature.getMetadata().getVariadicEffects().getImpl();
+  KGEN::impl::FnEffects effects = signature.getFnEffects().getImpl();
+  if (effects != KGEN::impl::FnEffects::None) {
+    p << ' ' << KGEN::impl::stringifyFnEffects(effects);
+    if (varEffectsImpl != VariadicImpl::VariadicEffects::None)
+      p << '|' << VariadicImpl::stringifyVariadicEffects(varEffectsImpl);
+  } else if (varEffectsImpl != VariadicImpl::VariadicEffects::None) {
+    p << ' ' << VariadicImpl::stringifyVariadicEffects(varEffectsImpl);
+  }
+
+  if (optionalResultList)
+    p.printOptionalArrowTypeList(functionType.getResults());
+  else
+    p.printArrowTypeList(functionType.getResults());
+}
+
 size_t LIT::countNumPosOnly(ArrayRef<PassingKind> kinds) {
   for (auto [idx, kind] : llvm::enumerate(kinds))
     if (kind != PassingKind::PosOnly)
