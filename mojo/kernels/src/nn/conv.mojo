@@ -309,12 +309,14 @@ fn _reduce_output[
     let buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
+    @__copy_capture(num_rows, buf_size)
     @parameter
     @always_inline
     fn reduce_task(tid: Int):
         # Use all threads in reduction.
         let reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
+        @__copy_capture(reduce_range)
         @parameter
         @always_inline
         fn sum[width: Int](offset: Int):
@@ -453,6 +455,9 @@ struct ConvDirectNHWC[
             output_ptr = DTypePointer[output_type].alloc(scratch_size)
         let output_scratch = Buffer[output_type](output_ptr, scratch_size)
 
+        @__copy_capture(
+            num_partitions, cf_tile_size, output_scratch, output_size
+        )
         @parameter
         @always_inline
         fn task_func(task_id: Int):
@@ -1859,6 +1864,7 @@ struct ConvDirectNHWC[
                 output_base = output_base.offset(micro_kernel_height_lbound * F)
 
                 # Update middle points if any. They aren't effected by padding.
+                @__copy_capture(filter_base)
                 @always_inline
                 @parameter
                 fn update_middle[height: Int](wo: Int):
@@ -1990,6 +1996,7 @@ struct ConvDirectNHWC[
             var filter_ptr = filter_base.offset(r * S * filter_S_stride)
             var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
 
+            @__copy_capture(output_micro_tile)
             @parameter
             @always_inline
             fn body[s: Int]():
@@ -2886,6 +2893,7 @@ fn pack_filter[
         let group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
         @always_inline
+        @__copy_capture(group_start, R, S, C, F_per_group, F)
         @parameter
         fn pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod

@@ -131,9 +131,7 @@ fn resize_nearest_neighbor[
             constrained[True, "round_mode not implemented"]()
             return val
 
-    # need a copy because `let` variables are captured by copy but `var` variables are not
-    let scales_copy = scales
-
+    @__copy_capture(scales)
     @parameter
     fn nn_interpolate[
         simd_width: Int, _rank: Int
@@ -149,7 +147,7 @@ fn resize_nearest_neighbor[
                             out_coords[i],
                             input.dim(i),
                             output.dim(i),
-                            scales_copy[i],
+                            scales[i],
                         )
                     )
                 ),

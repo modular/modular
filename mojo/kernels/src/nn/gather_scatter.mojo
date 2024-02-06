@@ -148,6 +148,13 @@ fn gather_reduce[
     let gather_axis_size = input.get_shape()[gather_axis]
 
     @always_inline
+    @__copy_capture(
+        output_bind,
+        input_bind,
+        indices_bind,
+        out_vecs_per_thread,
+        gather_axis_size,
+    )
     @parameter
     fn task_func(task_id: Int):
         alias prefetch_offset = -1
@@ -177,6 +184,7 @@ fn gather_reduce[
         for i in range(out_vec_start, out_vec_end):
 
             @always_inline
+            @__copy_capture(input, indices, output)
             @parameter
             fn gather_k_tile[simd_width: Int](k: Int):
                 @always_inline
@@ -256,6 +264,7 @@ fn gather[
     let end_indices_ptr = indices.flatten().data.offset(indices.size())
 
     @parameter
+    @__copy_capture(end_indices_ptr)
     @always_inline
     fn prefetch_fn[
         _input_rank: Int, _indices_rank: Int
@@ -428,6 +437,7 @@ fn gather_elementwise_fn_wrapper[
         # Build the indices for the input. We have replaced in index in 'axis'
         # with an index from the indices tensor.
         @always_inline
+        @__copy_capture(data_index, skip_factor)
         @parameter
         fn input_indices_get[unrolled_i: Int]():
             if unrolled_i == int(axis):
@@ -718,6 +728,9 @@ fn scatter_nd_generator[
     if target != "cuda":
         memcpy(output_flat, data_flat)
 
+    @__copy_capture(
+        r_minus_m, data_shape, last_shape_of_indices, output_flat, updates_flat
+    )
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
@@ -1040,6 +1053,7 @@ fn scatter_elements[
 
     let input_ax_dim = input.get_shape()[axis]
 
+    @__copy_capture(index_ax_dim, axis, input_ax_dim)
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
@@ -1160,6 +1174,7 @@ fn gather_elements[
 
     let input_ax_dim = input.get_shape()[axis]
 
+    @__copy_capture(input_ax_dim, axis)
     @parameter
     fn gather_func[
         simd_width: Int, _rank: Int

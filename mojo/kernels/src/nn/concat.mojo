@@ -130,6 +130,9 @@ fn _concat_parallel[
     alias parallel_chunk_size = 64 * KB  # TODO autotune
     let num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
 
+    @__copy_capture(
+        total_output_bytes, output_h, output_c, output_data, output_wc
+    )
     @parameter
     fn do_chunk(chunk_index: Int):
         # "Amount" refers to byte-offsets into logical copy order, not into

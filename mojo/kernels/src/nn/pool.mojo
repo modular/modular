@@ -184,6 +184,16 @@ fn max_pool[
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
 
     @always_inline
+    @__copy_capture(
+        stride_h,
+        padding_h_low,
+        padding_w_low,
+        stride_w,
+        dilation_h,
+        dilation_w,
+        pool_window_h,
+        pool_window_w,
+    )
     @parameter
     fn map_fn[
         rank: Int
@@ -202,6 +212,7 @@ fn max_pool[
         return lower_bound, upper_bound
 
     @always_inline
+    @__copy_capture(input_width, input_height)
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
@@ -352,6 +363,17 @@ fn avg_pool[
     let pad_value = 0
 
     @always_inline
+    @__copy_capture(
+        stride_h,
+        stride_w,
+        padding_h_high,
+        padding_w_low,
+        dilation_h,
+        dilation_w,
+        pool_window_h,
+        pool_window_w,
+        padding_h_low,
+    )
     @parameter
     fn map_fn[
         rank: Int
@@ -370,6 +392,7 @@ fn avg_pool[
         return lower_bound, upper_bound
 
     @always_inline
+    @__copy_capture(input_width, input_height, pad_value)
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
@@ -424,6 +447,16 @@ fn avg_pool[
             return pool_window_size
 
     @always_inline
+    @__copy_capture(
+        output_height,
+        padding_h_low,
+        padding_h_high,
+        pool_window_h,
+        output_width,
+        padding_w_low,
+        padding_w_high,
+        pool_window_w,
+    )
     @parameter
     fn avg_pool_compute_finalize_exclude_boundry[
         simd_width: Int
@@ -442,6 +475,7 @@ fn avg_pool[
         output.simd_store(point, res)
 
     @always_inline
+    @__copy_capture(pool_window_h, pool_window_w)
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int

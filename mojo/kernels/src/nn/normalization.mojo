@@ -58,6 +58,7 @@ fn layer_norm[
             out_buf._offset(start_coord), n
         )
 
+        @__copy_capture(sum_val, n)
         @parameter
         fn input_gen_wrapper[
             return_type: DType, simd_width: Int
@@ -74,6 +75,7 @@ fn layer_norm[
             _simd_sum,
         ](out_slice, 0)
 
+        @__copy_capture(sum_val, n)
         @parameter
         fn _sum_to_mean() -> SIMD[type, 1]:
             @parameter
@@ -87,6 +89,7 @@ fn layer_norm[
 
         let norm_factor = 1 / sqrt(var_val + eps)
 
+        @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
         fn _normalize[simd_width: Int](idx: Int):
             let out_val = out_slice.simd_load[simd_width](idx)

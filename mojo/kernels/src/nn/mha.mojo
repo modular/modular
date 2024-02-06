@@ -129,6 +129,7 @@ fn fused_attention[
     # fmt: on
     let score = NDBuffer[score_type, rank](score_ptr, score_shape)
 
+    @__copy_capture(M, N, score)
     @parameter
     @always_inline
     fn fuse_elementwise_fn[
@@ -178,6 +179,7 @@ fn fused_attention[
                 bitcast[DType.float32](c.data.offset(i * row_size)), row_size
             )
 
+            @__copy_capture(row_view)
             @parameter
             @always_inline
             fn input_fn_1d[
@@ -201,6 +203,7 @@ fn fused_attention[
     # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
     # They are properly transposed before this kernel.
     @always_inline
+    @__copy_capture(score)
     @parameter
     fn bmm_query_key[fuse_softmax: Bool]():
         batched_matmul[
@@ -1376,6 +1379,7 @@ fn _naive_attention[
 
     batched_matmul[4, type, type, type, False, transpose_k](score, q, k)
 
+    @__copy_capture(score)
     @parameter
     @always_inline
     fn scale_and_mask[width: Int, _rank: Int](coords: StaticIntTuple[_rank]):

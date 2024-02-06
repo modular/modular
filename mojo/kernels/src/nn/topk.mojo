@@ -111,6 +111,7 @@ fn _top_k[
 ):
     let shape = input.get_shape()
 
+    @__copy_capture(shape)
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
         var idxs = DynamicVector[Int64](shape[axis])

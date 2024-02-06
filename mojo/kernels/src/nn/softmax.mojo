@@ -288,6 +288,7 @@ fn _softmax_3_pass_step_3[
     let accum_proc = accum_proc_func[type, 1](accum)
 
     @always_inline
+    @__copy_capture(accum_proc)
     @parameter
     fn step_3[simd_width: Int](idx: Int):
         let accum_simd = SIMD[type, simd_width].splat(accum_proc)
@@ -336,7 +337,7 @@ fn _softmax_3_pass_base[
     """
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
-    let max_buff = Buffer[type, 1].stack_allocation()
+    var max_buff = Buffer[type, 1].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
@@ -532,6 +533,7 @@ fn logsoftmax[
     let chunk_size = div_ceil(outer_dim, num_workers)
 
     @parameter
+    @__copy_capture(chunk_size, outer_dim, inner_dim)
     @always_inline
     fn task_func(task_id: Int):
         let start_offset = task_id * chunk_size
@@ -623,6 +625,7 @@ fn _softmax_cpu[
         let num_workers = min(Runtime().parallelism_level(), outer_dim)
         let chunk_size = div_ceil(outer_dim, num_workers)
 
+        @__copy_capture(chunk_size, inner_dim, outer_dim)
         @parameter
         @always_inline
         fn task_func(task_id: Int):

@@ -142,6 +142,7 @@ fn pad_constant[
     alias init_axis = 0
     let constant_cast = rebind[SIMD[type, 1]](constant[0])
 
+    @__copy_capture(constant_cast)
     @parameter
     fn pad_constant_wrapper(
         output: DTypePointer[type],
