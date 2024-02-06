@@ -167,7 +167,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn get_as_engine_tensor_spec(
         self,
-        name: StringRef,
+        name: String,
         spec: TensorSpec,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
@@ -178,7 +178,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn get_as_engine_tensor_spec(
         self,
-        name: StringRef,
+        name: String,
         shape: Optional[DynamicVector[Optional[Int64]]],
         dtype: DType,
         owned session: InferenceSession,
@@ -413,7 +413,7 @@ struct InferenceSession:
         )
 
     fn get_as_engine_tensor_spec(
-        self, name: StringRef, spec: TensorSpec
+        self, name: String, spec: TensorSpec
     ) raises -> EngineTensorSpec:
         """Gets a TensorSpec compatible with Max Engine.
 
@@ -431,7 +431,7 @@ struct InferenceSession:
 
     fn get_as_engine_tensor_spec(
         self,
-        name: StringRef,
+        name: String,
         shape: Optional[DynamicVector[Optional[Int64]]],
         dtype: DType,
     ) raises -> EngineTensorSpec:

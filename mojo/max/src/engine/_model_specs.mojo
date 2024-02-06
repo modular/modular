@@ -67,15 +67,16 @@ struct TensorNames(Sized):
 
     fn __init__(
         inout self,
-        fn_name: StringRef,
+        fn_name: String,
         ptr: CCompiledModel,
         length: Int,
         lib: DLHandle,
     ):
         let status = Status(lib)
         self.ptr = call_dylib_func[CTensorNameArray](
-            lib, fn_name, ptr, status.borrow_ptr()
+            lib, fn_name._strref_dangerous(), ptr, status.borrow_ptr()
         )
+        fn_name._strref_keepalive()
         if status:
             print(status.__str__())
             self.ptr = DTypePointer[DType.invalid]()

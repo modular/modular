@@ -44,7 +44,7 @@ struct EngineTensorSpec(Stringable, Movable):
 
     fn __init__(
         inout self,
-        name: StringRef,
+        name: String,
         spec: TensorSpec,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -52,7 +52,7 @@ struct EngineTensorSpec(Stringable, Movable):
         let dtype = spec.dtype()
         let rank = spec.rank()
         var shape = DynamicVector[Int64]()
-        let name_str: CString = name.data
+        let name_str = name._as_ptr()
         for i in range(rank):
             shape.push_back(spec[i])
         self.ptr = call_dylib_func[CTensorSpec](
@@ -70,13 +70,13 @@ struct EngineTensorSpec(Stringable, Movable):
 
     fn __init__(
         inout self,
-        name: StringRef,
+        name: String,
         shape: Optional[DynamicVector[Optional[Int64]]],
         dtype: DType,
         lib: DLHandle,
         owned session: InferenceSession,
     ):
-        let name_str: CString = name.data
+        let name_str = name._as_ptr()
         if shape:
             let inner_shape = shape.value()
             let rank = len(inner_shape)
