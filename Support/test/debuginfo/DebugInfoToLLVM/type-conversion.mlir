@@ -24,16 +24,26 @@
 // CHECK-DAG: #[[UNSPECIFIED:.*]] =  #llvm.di_basic_type<tag = DW_TAG_unspecified_type, name = "void">
 !unspecifiedType = !debuginfo.unspecified<"void">
 
+// TODO: Check for discriminator field once upstream is ready.
+!i1Type = !debuginfo.basic<i1 { sizeInBits = 1, alignInBits = 1, encoding = DW_ATE_unsigned }>
+!discriminator = !debuginfo.member<discr: !i1Type>
+// CHECK-DAG: #[[VARIANT1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "v0", baseType = #[[STRUCT]], sizeInBits = 128, alignInBits = 64>
+!variant1 = !debuginfo.member<v0: !structType>
+// CHECK-DAG: #[[VARIANT2:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "v1", baseType = #[[BASIC]], sizeInBits = 32, alignInBits = 32>
+!variant2 = !debuginfo.member<v1: !f32Type>
+// CHECK-DAG: #[[VARIANT:.*]] = #llvm.di_composite_type<tag = DW_TAG_variant_part, name = "", sizeInBits = 128, alignInBits = 64, elements = #[[VARIANT1]], #[[VARIANT2]]>
+!variantType = !debuginfo.variant<"Variant"(!variant1, !variant2), !discriminator { sizeInBits = 128, alignInBits = 64 }>
+
 // CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !vectorType = !debuginfo.vector<10 x !f32Type>
 
 // CHECK-DAG: #[[NAMEDVECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "test.op", baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !namedVectorType = !debuginfo.vector<10 x !f32Type {name = "test.op"}>
 
-// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[BASIC]], #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]], #[[NAMEDVECTOR]]>
+// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[BASIC]], #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]], #[[NAMEDVECTOR]], #[[VARIANT]]>
 !subroutineType = !debuginfo.subroutine<(
   !arrayType, !pointerType, !structType,
-  !unresolvedType, !unspecifiedType, !vectorType, !namedVectorType
+  !unresolvedType, !unspecifiedType, !vectorType, !namedVectorType, !variantType
 ) -> (!f32Type): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">

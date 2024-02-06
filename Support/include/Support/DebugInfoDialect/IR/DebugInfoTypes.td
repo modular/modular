@@ -340,6 +340,58 @@ def DebugInfo_DIUnspecifiedType : DIType<"DIUnspecified", "unspecified"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DIVariantType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIVariantType : DIType<"DIVariant", "variant"> {
+  let summary = "Variant type debug info description";
+  let description = [{
+    The `debuginfo.variant` type represents the debug information for a variant
+    type.
+    
+    It is emitted as a DWARF composite type with DW_TAG_variant_part, and with
+    each of the variant types as members of the composite type.
+
+    A variant type can optionally reference a discriminator. However, the
+    discriminator entry is not a member of the emitted composite type. This
+    allows the frontend to compose this with DIStructType to freely arrange the
+    discriminator in memory.
+
+    Example:
+
+    ```mlir
+    !debuginfo.variant<Foo(!variant1, !variant2), !discriminator,
+                       {sizeInBits = 64, alignInBits = 64}>
+    ```
+  }];
+  let parameters = (ins
+    "StringAttr":$name,
+    "uint64_t":$sizeInBits,
+    "uint32_t":$alignInBits,
+    OptionalArrayRefParameter<"DIMemberType">:$variants,
+    OptionalParameter<"DIMemberType">:$discriminatorRef
+  );
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "StringAttr":$name,
+      "uint64_t":$sizeInBits,
+      "uint32_t":$alignInBits,
+      CArg<"ArrayRef<DIMemberType>", "std::nullopt">:$variants,
+      CArg<"DIMemberType", "{}">:$discriminatorRef
+    ), [{
+      return $_get(name.getContext(), name, sizeInBits, alignInBits, variants,
+                   discriminatorRef);
+    }]>
+  ];
+  let assemblyFormat = [{
+    `<`
+      custom<Name>($name) `(` (`)`):($variants^ `)`)? (`,` $discriminatorRef^)?
+      `{` struct($sizeInBits, $alignInBits) `}`
+    `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DIVectorType
 //===----------------------------------------------------------------------===//
 

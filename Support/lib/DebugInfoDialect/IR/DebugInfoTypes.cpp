@@ -80,6 +80,8 @@ uint64_t DIType::getSizeInBits() const {
     return pointerType.getSizeInBits();
   if (auto structType = dyn_cast<DIStructType>())
     return structType.getSizeInBits();
+  if (auto variantType = dyn_cast<DIVariantType>())
+    return variantType.getSizeInBits();
   if (auto vectorType = dyn_cast<DIVectorType>()) {
     return vectorType.getElementCount() *
            vectorType.getElementType().getSizeInBits();
@@ -98,6 +100,8 @@ uint32_t DIType::getAlignInBits() const {
     return pointerType.getAlignInBits();
   if (auto structType = dyn_cast<DIStructType>())
     return structType.getAlignInBits();
+  if (auto variantType = dyn_cast<DIVariantType>())
+    return variantType.getAlignInBits();
   if (auto vectorType = dyn_cast<DIVectorType>())
     return vectorType.getElementType().getAlignInBits();
   return 0;
@@ -137,7 +141,7 @@ DIBasicType DIBasicFloatType::get(MLIRContext *ctx, const Twine &name,
 
 uint64_t DIStructType::getSizeInBits() const {
   uint64_t structSize = 0;
-  uint32_t structAlign = 0;
+  uint32_t structAlign = 1;
   for (DIMemberType member : getMembers()) {
     uint32_t memberAlign = member.getAlignInBits();
     if (!memberAlign)
@@ -156,7 +160,7 @@ uint64_t DIStructType::getSizeInBits() const {
 
 uint32_t DIStructType::getAlignInBits() const {
   // The alignment is the max alignment of any of the members.
-  uint32_t align = 0;
+  uint32_t align = 1;
   for (DIMemberType member : getMembers()) {
     uint32_t memberAlign = member.getAlignInBits();
     if (!memberAlign)
