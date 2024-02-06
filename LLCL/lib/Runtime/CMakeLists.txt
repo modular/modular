@@ -6,6 +6,7 @@
 
 find_package(Threads)
 include(AddTCMalloc)
+
 add_modular_library(LLCLRuntime
   STATIC OBJECT # Always generate an obj.${name} target.
 
@@ -26,6 +27,7 @@ add_modular_library(LLCLRuntime
   MProfiling
   Threads::Threads
 )
+
 if (TCMALLOC_LIBRARY)
   target_link_libraries(LLCLRuntime PUBLIC libtcmalloc)
   target_link_libraries(obj.LLCLRuntime PUBLIC libtcmalloc)
