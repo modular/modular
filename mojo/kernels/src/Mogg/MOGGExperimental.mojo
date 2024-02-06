@@ -71,6 +71,7 @@ fn to_tensor[
         alias rank = len(static_shape)
 
         @always_inline
+        @__copy_capture(shape_ptr)
         @parameter
         fn body[idx: Int]():
             # Start from the back so we can accumulate the strides.
@@ -366,6 +367,7 @@ fn gather[
     except e:
         trap(e)
 
+    @__copy_capture(indices_buf)
     @parameter
     @always_inline
     fn load_indices[
@@ -375,7 +377,7 @@ fn gather[
             rebind[StaticIntTuple[indices.static_rank]](coords)
         )
 
-    let output = empty_tensor[input.type](
+    var output = empty_tensor[input.type](
         IntList[
             DimList.create_unknown[
                 # cannot use out_rank because then output type does not match return type

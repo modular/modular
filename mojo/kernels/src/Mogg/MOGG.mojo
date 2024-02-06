@@ -424,6 +424,7 @@ fn to_buffer[
     var stride: Int = 1
 
     @always_inline
+    @__copy_capture(shape_ptr)
     @parameter
     fn body[idx: Int]():
         # Start from the back so we can accumulate the strides.
@@ -447,6 +448,7 @@ fn to_shape[
     var shape_tuple = StaticIntTuple[rank]()
 
     @always_inline
+    @__copy_capture(shape_ptr)
     @parameter
     fn body[idx: Int]():
         shape_tuple[idx] = shape_ptr.load(idx)
@@ -2995,6 +2997,7 @@ fn conv[
         )
 
     @always_inline
+    @__copy_capture(strides_tuple, pad_h_tuple, pad_w_tuple)
     @parameter
     fn description_fn() -> String:
         let input_shape_str = String("input=") + String("x").join(
@@ -3149,6 +3152,9 @@ fn mogg_layer_norm[
         )
         let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
 
+        @__copy_capture(
+            chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps
+        )
         @parameter
         fn task_func(thread_id: Int):
             let num_rows = min(
@@ -3161,6 +3167,7 @@ fn mogg_layer_norm[
                 output_buf._offset(thread_starting_coord), per_thread_dims
             )
 
+            @__copy_capture(row_idx, eps)
             @parameter
             @always_inline
             # Translate given 2d index back to original Nd tensor

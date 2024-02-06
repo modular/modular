@@ -482,6 +482,7 @@ struct Tensor[
             )
 
             @always_inline
+            @__copy_capture(rank)
             @parameter
             fn func_wrapper[width: Int](idx: Int):
                 # The inner most dimension is vectorized, so we set it
