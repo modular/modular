@@ -25,7 +25,7 @@ def main():
 
         # Update the various names to include "nightly".
         package["name"] = "vscode-mojo-nightly"
-        package["displayName"] = "Modular 🔥 (nightly)"
+        package["displayName"] = "Mojo 🔥 (nightly)"
         package["description"] = "Mojo language support (nightly)"
 
         # The nightly version uses calver YYYY.MM.DDHH, update it.
@@ -34,6 +34,18 @@ def main():
         # Write the updated package.json file.
         with open(package_json, "w") as f:
             json.dump(package, f, ensure_ascii=False, indent=2)
+
+    readme = extension_dir / "README.md"
+    readme_prefix = """# Mojo for Visual Studio Code - Nightly
+
+    > Attention: this is the nightly build of the vscode-mojo extension used for early feedback and testing.
+
+    > Note: this extension requires that the stable vscode-mojo extension is not enabled on the editor.
+    """
+    with open(readme, "r") as f:
+        text = readme_prefix + "".join(f.readlines()[1:])
+        with open(readme, "w") as f:
+            f.write(text)
 
 
 if __name__ == "__main__":
