@@ -71,6 +71,11 @@ struct Symbol(CollectionElement, Stringable):
     fn tensor_type(self) raises -> MOTensor:
         return self.type().tensor()
 
+    fn cast(self, dtype: ElementType) raises -> Self:
+        if dtype.dtype == self.tensor_type().dtype.dtype:
+            return self
+        return cast(self, dtype)
+
     # ===------------------------------------------------------------------=== #
     # Stringable trait
     # ===------------------------------------------------------------------=== #

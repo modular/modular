@@ -7,6 +7,7 @@
 from math import max
 
 from max.graph.type import Dim, ElementType, MOTensor
+from max.graph.type_promotion import promote
 
 
 # ===----------------------------------------------------------------------=== #
@@ -68,11 +69,11 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 # Binary Ops
 # ===----------------------------------------------------------------------=== #
 # Note: Keep alphabetized.
-# TODO: Type promotion
 
 
 def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
-    let operands = elementwise_broadcast(lhs, rhs)
+    let broadcast_operands = elementwise_broadcast(lhs, rhs)
+    let operands = promote(broadcast_operands[0], broadcast_operands[1])
     return lhs.graph().op(op_name, operands, operands[0].tensor_type())
 
 
