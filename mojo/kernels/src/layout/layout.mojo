@@ -4,15 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .int_tuple import (
-    IntTuple,
-    inner_product,
-    product,
-    flatten,
-    is_tuple,
-    shape_div,
-    elementwise_min,
-)
+from .int_tuple import *
+
+from builtin.io import _printf
+from builtin.string import _calc_initial_buffer_size_int32
 
 
 @value
@@ -73,6 +68,14 @@ struct Layout(Sized, Stringable, CollectionElement):
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
         return Layout(self.shape[index], self.stride[index])
+
+    @always_inline
+    fn rank(self) -> Int:
+        return self.shape.value.get[IntTupleBase]().elts.size
+
+    @always_inline
+    fn __call__(self, idx: IntTuple) raises -> Int:
+        return crd2idx(idx, self.shape, self.stride)
 
 
 fn coalesce(src: Layout) -> Layout:
@@ -257,3 +260,31 @@ fn logical_product(
         res_stride.append(res.stride)
 
     return Layout(res_shape, res_stride)
+
+
+fn print_layout(layout: Layout) raises:
+    if layout.rank() != 2:
+        raise Error("print_layout only supports 2D layouts")
+
+    let idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
+    let delim = "+-----------------------"
+    print(layout)
+    _printf("    ")
+    for n in range(layout[1].size()):
+        _printf("  %*d ", idx_width - 2, n)
+    _printf("\n")
+
+    for m in range(layout[0].size()):
+        _printf("    ")
+        for n in range(layout[1].size()):
+            _printf("%.*s", idx_width + 1, delim)
+        _printf("+\n")
+
+        _printf("%2d  ", m)
+        for n in range(layout[1].size()):
+            _printf("| %*d ", idx_width - 2, int(layout(IntTuple(m, n))))
+        _printf("|\n")
+    _printf("    ")
+    for n in range(layout[1].size()):
+        _printf("%.*s", idx_width + 1, delim)
+    _printf("+\n")

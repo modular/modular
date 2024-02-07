@@ -386,3 +386,41 @@ fn shape_div(a: IntTuple, b: IntTuple) raises -> IntTuple:
                 )
 
             return va // vb if va % vb == 0 else signum(va * vb)
+
+
+fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) raises -> Int:
+    if is_tuple(crd):
+        if not is_tuple(shape):
+            raise Error("crd and shape should be both IntTuple!")
+        var res = 0
+        for i in range(len(shape)):
+            res += crd2idx(crd[i], shape[i], stride[i])
+        return res
+
+    if is_tuple(shape):
+        if len(shape) != len(stride):
+            raise Error("Can't compute idx, shape != stride")
+        var result = 0
+        var curd_int = int(crd)
+        for i in range(len(shape) - 1):
+            result += crd2idx(
+                int(curd_int) % product(shape[i]), shape[i], stride[i]
+            )
+            curd_int = curd_int // product(shape[i])
+        return result + crd2idx(
+            curd_int, shape[len(shape) - 1], stride[len(stride) - 1]
+        )
+
+    return int(stride) * int(crd)
+
+
+fn idx2crd(idx: Int, shape: IntTuple, stride: IntTuple) raises -> IntTuple:
+    if is_tuple(shape):
+        if len(shape) != len(stride):
+            raise Error("shape and stride should be the same length")
+        var res = IntTuple()
+        for i in range(len(shape)):
+            res.append(idx2crd(idx, shape[i], stride[i]))
+        return res
+
+    return (idx // int(stride)) % int(shape)

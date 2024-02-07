@@ -14,6 +14,7 @@ from kernel_utils.layout import (
     complement,
     logical_divide,
     logical_product,
+    print_layout,
 )
 
 
@@ -101,6 +102,36 @@ fn test_logical_product() raises:
     print(logical_product(Layout(IntTuple(2, 5), IntTuple(5, 1)), tiler))
 
 
+# CHECK-LABEL: test_print_layout
+# CHECK: Layout((2, 2):(1, 2))
+# CHECK:       0   1
+# CHECK:     +---+---+
+# CHECK:  0  | 0 | 2 |
+# CHECK:     +---+---+
+# CHECK:  1  | 1 | 3 |
+# CHECK:     +---+---+
+# CHECK: Layout(((2, 2), (2, 2)):((2, 8), (1, 4)))
+# CHECK:        0    1    2    3
+# CHECK:     +----+----+----+----+
+# CHECK:  0  |  0 |  1 |  4 |  5 |
+# CHECK:     +----+----+----+----+
+# CHECK:  1  |  2 |  3 |  6 |  7 |
+# CHECK:     +----+----+----+----+
+# CHECK:  2  |  8 |  9 | 12 | 13 |
+# CHECK:     +----+----+----+----+
+# CHECK:  3  | 10 | 11 | 14 | 15 |
+# CHECK:     +----+----+----+----+
+fn test_print_layout() raises:
+    print("== test_print_layout")
+    print_layout(Layout(IntTuple(2, 2), IntTuple(1, 2)))
+    print_layout(
+        Layout(
+            IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
+            IntTuple(IntTuple(2, 8), IntTuple(1, 4)),
+        )
+    )
+
+
 fn main() raises:
     test_layout_basic()
     test_coalesce()
@@ -108,3 +139,4 @@ fn main() raises:
     test_complement()
     test_logcial_divide()
     test_logical_product()
+    test_print_layout()
