@@ -68,11 +68,14 @@ output. You can work around this with explicit casts, eg.
 `b16.cast(DType.float16) ** f16`.
 """
 
+# TODO: Clean up visibility, rules.
+
 
 from collections import Dict, KeyElement, Optional
 from collections.set import Set
 
 from max.graph.symbol import Symbol
+from max.graph.ops import cast
 
 
 fn promotion_semilattice() -> Dict[DType, DynamicVector[DType]]:
@@ -242,24 +245,21 @@ fn promote(t0: DType, t1: DType) raises -> DType:
         raise "No legal promotion for (" + str(t0) + ", " + str(t1) + ")"
 
 
-fn promote(s0: Symbol, s1: Symbol) raises -> SymbolTuple:
-    """Given two graph symbols, promote each of them according
-    to the promotion rules.
+fn promote(lhs: Symbol, rhs: Symbol) raises -> SymbolTuple:
+    """Performs type promotion between two arguments of a binary operation.
 
-    See the `max.graph.type_promotion` documentation for more details
-    and a full type promotion matrix.
-
-    Cast ops are not added to types which don't need to be promoted.
+    See the `max.graph.type_promotion` documentation for details on the
+    promotion rules.
 
     Args:
-        s0: A graph symbol in a binary operation.
-        s1: The other symbol in the binary operation.
+        lhs: The left-hand-side argument.
+        rhs: The left-hand-side argument.
 
     Returns:
-        A 2-tuple of the same symbols, possibly cast to their correctly
-        promoted type according to the type promotion rules.
+        A `SymbolTuple` containing `lhs` and `rhs`, cast to the promoted dtype
+        if necessary.
     """
     let dtype = promote(
-        s0.tensor_type().dtype.dtype, s1.tensor_type().dtype.dtype
+        lhs.tensor_type().dtype.dtype, rhs.tensor_type().dtype.dtype
     )
-    return (s0.cast(dtype), s1.cast(dtype))
+    return (cast(lhs, dtype), cast(rhs, dtype))

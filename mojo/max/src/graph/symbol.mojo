@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.optional import Optional
 from memory.unsafe import _LITRef
 from tensor import Tensor, TensorShape, TensorSpec
 
@@ -51,40 +52,37 @@ struct Symbol(CollectionElement, Stringable):
         let graph_op = block.parent()
         return Graph(graph_op)
 
-    fn replace_all_uses_with(self, other: Symbol):
-        self.s.replace_all_uses_with(other.s)
-
-    fn replace_all_uses_with(
-        self, transform: fn (Symbol) raises -> Symbol
-    ) raises:
-        let dummy = self.graph().constant[DType.int64](0)
-        self.replace_all_uses_with(dummy)
-        dummy.replace_all_uses_with(transform(self))
-
-    # ===------------------------------------------------------------------=== #
-    # Type accessors
-    # ===------------------------------------------------------------------=== #
-
     fn type(self) raises -> AnyMOType:
         return AnyMOType.from_mlir(self.s.type())
 
     fn tensor_type(self) raises -> MOTensor:
         return self.type().tensor()
 
-    fn cast(self, dtype: ElementType) raises -> Self:
-        if dtype.dtype == self.tensor_type().dtype.dtype:
-            return self
-        return cast(self, dtype)
-
-    # ===------------------------------------------------------------------=== #
-    # Stringable trait
-    # ===------------------------------------------------------------------=== #
-
     fn __str__(self) -> String:
         return str(self.s)
 
     # ===------------------------------------------------------------------=== #
     # Overloaded operators
+    # ===------------------------------------------------------------------=== #
+
+    fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
+        return ops.slice(self, i, axis=axis)
+
+    fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
+        let g = self.graph()
+        return ops.slice(self, g.scalar(Int64(i)), axis=axis)
+
+    fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
+        var slices = DynamicVector[SymbolicSlice]()
+        for sval in s:
+            slices.append(sval[])
+        return ops.slice(self, slices)
+
+    fn __getitem__(self, s: Slice) raises -> Symbol:
+        return ops.slice(self, s)
+
+    # ===------------------------------------------------------------------=== #
+    # ... to tidy up ...
     # ===------------------------------------------------------------------=== #
 
     fn list_get(self, i: Int) raises -> Symbol:
@@ -102,39 +100,6 @@ struct Symbol(CollectionElement, Stringable):
         let g = self.graph()
         let result_type = self.type().list().eltype
         return g.op("mo.list.insert", (self, v, i), result_type)
-
-    fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
-        let g = self.graph()
-        return self[g.scalar(Int64(i)), axis=axis]
-
-    fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
-        return ops.slice(self, i, axis=axis)
-
-    # ===------------------------------------------------------------------=== #
-    # ... to tidy up ...
-    # ===------------------------------------------------------------------=== #
-
-    fn __getitem__(self, span: Slice) raises -> Symbol:
-        if not span._has_end():
-            raise "slice expects stop to be specified"
-
-        let spec = self.tensor_type()
-        if len(spec.dims) != 1:
-            raise "__getitem__ with slice object on `Symbol` only supports 1D tensors"
-
-        # TODO: Use ops.get, once it supports passing a static type.
-
-        var g = self.graph()
-        return g.op(
-            "mo.slice",
-            (
-                self,
-                g.scalar(Int64(span.start), rank=1),
-                g.scalar(Int64(span.end), rank=1),
-                g.scalar(Int64(span.step), rank=1),
-            ),
-            MOTensor(DType.int64, len(span)),
-        )
 
     fn print(self, label: StringRef = "debug_tensor") raises:
         var g = self.graph()
@@ -329,6 +294,38 @@ struct Symbol(CollectionElement, Stringable):
         var g = self.graph()
         return g.scalar(Float32(rhs)) ** self
 
+    # ===------------------------------------------------------------------=== #
+    # Graph manipulation
+    # ===------------------------------------------------------------------=== #
+
+    fn replace_all_uses_with(self, other: Symbol):
+        self.s.replace_all_uses_with(other.s)
+
+    fn replace_all_uses_with(
+        self, transform: fn (Symbol) raises -> Symbol
+    ) raises:
+        let dummy = self.graph().constant[DType.float32](0)
+        self.replace_all_uses_with(dummy)
+        dummy.replace_all_uses_with(transform(self))
+
+
+@value
+struct SymbolicSlice(CollectionElement):
+    var start: Optional[Symbol]
+    var stop: Optional[Symbol]
+    var step: Optional[Symbol]
+
+    def __init__(inout self, g: Graph, s: Slice):
+        self.start = Optional[Symbol]()
+        self.stop = Optional[Symbol]()
+        self.step = Optional[Symbol]()
+        if s.start:
+            self.start = g.scalar(Int64(s.start))
+        if s.end:
+            self.stop = g.scalar(Int64(s.end))
+        if s.step:
+            self.step = g.scalar(Int64(s.step))
+
 
 @value
 struct SymbolTuple(Sized):
@@ -342,12 +339,6 @@ struct SymbolTuple(Sized):
         self.symbols = DynamicVector[Symbol]()
         for symbol in symbols:
             self.symbols.append(symbol[])
-
-    # TODO: issue
-    # fn __init__(inout self, symbols: VariadicListMem[Symbol]):
-    #     self.symbols = DynamicVector[Symbol]()
-    #     for symbol in symbols:
-    #         self.symbols.append(symbol[])
 
     # ===------------------------------------------------------------------=== #
     # Convenience tuple adapters
@@ -391,9 +382,6 @@ struct SymbolTuple(Sized):
                 ptr.offset(symbols._offset[3]()).bitcast[Symbol]().address
             ),
         )
-
-    fn get[idx: Int, T: AnyType](self) -> Symbol:
-        return self.symbols[idx]
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors

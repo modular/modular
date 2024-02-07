@@ -57,6 +57,11 @@ struct Graph:
             within the `Graph`'s body.
         """
         # TODO: Add an exmple, after we cleaned up the Arity thing.
+        let num_args = self._body().num_arguments()
+        if (n >= num_args) or (n < 0):
+            raise "index out of bounds: " + str(
+                n
+            ) + ", graph has " + num_args + " arguments"
         return Symbol(self._body().argument(n))
 
     # ===------------------------------------------------------------------=== #

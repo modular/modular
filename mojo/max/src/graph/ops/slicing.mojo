@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.optional import Optional
 from tensor import TensorShape
 
-from max.graph.symbol import SymbolTuple
+from max.graph.symbol import SymbolTuple, SymbolicSlice
 from max.graph.type import *
 
 
@@ -37,9 +38,9 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     for i in range(input_type.rank()):
         if i == axis:
             for j in range(indices_type.rank()):
-                dims.push_back(indices_type.dims[j])
+                dims.append(indices_type.dims[j])
         else:
-            dims.push_back(input_type.dims[i])
+            dims.append(input_type.dims[i])
 
     return g.op(
         "mo.gather",
@@ -48,77 +49,96 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     )
 
 
-# TODO: Come up with a satisfactory name for this single-slice thing
-def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
-    var g = input.graph()
-    let input_type = input.tensor_type()
-    let rank = input_type.rank()
-
-    let input_shape = shape_of(input)
-    if axis < 0:
-        axis = rank + axis
-
-    var slice_dims = DynamicVector[Dim]()
-    var start = DynamicVector[Symbol]()
-    var stop = DynamicVector[Symbol]()
-    var step = DynamicVector[Int64]()
-    for i in range(rank):
-        if i == axis:
-            slice_dims.append(1)
-            start.append(idx)
-            stop.append(idx + 1)
-        else:
-            slice_dims.append(input_type.dims[i])
-            start.append(g.scalar(Int64(0)))
-            stop.append(slice(input_shape, g.scalar(Int64(i))))
-        step.append(1)
-
-    let slice = g.op(
-        "mo.slice",
-        (input, stack(start), stack(stop), g.vector[DType.int64](step)),
-        MOTensor(input_type.dtype, slice_dims),
-    )
-
-    return squeeze(slice, axis)
-
-
-def slice(input: Symbol, *slices: SymbolTuple) -> Symbol:
+def slice(
+    input: Symbol,
+    slices: DynamicVector[SymbolicSlice],
+    static_shape: Optional[DynamicVector[Dim]] = None,
+) -> Symbol:
     let g = input.graph()
     let input_type = input.tensor_type()
+
+    let out_shape: DynamicVector[Dim]
+    if static_shape:
+        out_shape = static_shape.value()
+    else:
+        var dims = DynamicVector[Dim]()
+        for axis in range(input_type.rank()):
+            if axis < len(slices):
+                dims.append(Dim.dynamic())
+            else:
+                dims.append(input_type.dims[axis])
+        out_shape = dims
+
     let input_shape = shape_of(input)
-
-    var dims = DynamicVector[Dim]()
-    for slice in slices:
-        # TODO: This can actually be calculated.
-        dims.push_back(Dim.dynamic())
-    for i in range(len(slices), input_type.rank()):
-        dims.push_back(input_type.dims[i])
-
     var starts = DynamicVector[Symbol]()
     var stops = DynamicVector[Symbol]()
     var steps = DynamicVector[Symbol]()
 
-    let input_t = input.tensor_type()
+    for axis in range(input_type.rank()):
+        var start: Optional[Symbol] = None
+        var stop: Optional[Symbol] = None
+        var step: Optional[Symbol] = None
+        if axis < len(slices):
+            start = slices[axis].start
+            stop = slices[axis].stop
+            step = slices[axis].step
 
-    for s in slices:
-        starts.push_back(s[][0])
-        stops.push_back(s[][1])
-        if len(s[]) == 3:
-            steps.push_back(s[][2])
+        # TODO: Fix start/stop for negative step. Needs a select op.
+        if start:
+            starts.append(start.value())
         else:
-            steps.push_back(g.scalar(Int64((1))))
-    for dim in range(len(slices), input_t.rank()):
-        starts.push_back(g.scalar(Int64(0)))
-        stops.push_back(input_shape[dim])
-        steps.push_back(g.scalar(Int64((1))))
+            starts.append(g.scalar(Int64(0)))
+        if stop:
+            stops.append(stop.value())
+        else:
+            stops.append(input_shape[axis])
+        if step:
+            steps.append(step.value())
+        else:
+            steps.append(g.scalar(Int64(1)))
 
     let start = stack(starts, axis=0)
     let stop = stack(stops, axis=0)
     let step = stack(steps, axis=0)
 
     return g.op(
-        "mo.slice", (input, start, stop, step), MOTensor(input_t.dtype, dims)
+        "mo.slice",
+        (input, start, stop, step),
+        MOTensor(input_type.dtype, out_shape),
     )
+
+
+# TODO: Change to DynamicVector once Slice is a CollectionElement.
+def slice(input: Symbol, s: Slice) -> Symbol:
+    let t = input.tensor_type()
+    var dims = DynamicVector[Dim]()
+    var sym_slices = DynamicVector[SymbolicSlice]()
+    for i in range(t.rank()):
+        if i < 1:
+            dims.append(len(s))
+            sym_slices.append(SymbolicSlice(input.graph(), s))
+        else:
+            dims.append(t.dims[i])
+    return slice(input, sym_slices, static_shape=dims)
+
+
+def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
+    let input_type = input.tensor_type()
+    let rank = input_type.rank()
+
+    if axis < 0:
+        axis = rank + axis
+
+    var slices = DynamicVector[SymbolicSlice]()
+    var dims = DynamicVector[Dim]()
+    for i in range(rank):
+        if i == axis:
+            slices.append(SymbolicSlice(idx, idx + 1, None))
+            dims.append(1)
+        else:
+            slices.append(SymbolicSlice(None, None, None))
+            dims.append(input_type.dims[i])
+    return squeeze(slice(input, slices, static_shape=dims), axis)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -193,13 +213,13 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
             )
 
     var concat_args = DynamicVector[Symbol]()
-    concat_args.push_back(g.scalar(Int64(norm_axis)))
+    concat_args.append(g.scalar(Int64(norm_axis)))
     for i in range(len(values)):
-        concat_args.push_back(values[i])
+        concat_args.append(values[i])
 
     var dims = DynamicVector[Dim](rank)
     for i in range(rank):
-        dims.push_back(v0_type.dims[i])
+        dims.append(v0_type.dims[i])
     dims[norm_axis] = concat_dim
 
     return g.op("mo.concat", concat_args, MOTensor(v0_type.dtype, dims))
@@ -208,5 +228,5 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
 def stack(values: SymbolTuple, axis: Int = 0) -> Symbol:
     var unsqueezed = DynamicVector[Symbol]()
     for i in range(len(values)):
-        unsqueezed.push_back(unsqueeze(values[i], axis))
+        unsqueezed.append(unsqueeze(values[i], axis))
     return concat(unsqueezed, axis=axis)

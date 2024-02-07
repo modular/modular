@@ -58,10 +58,10 @@ def mul_complex(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Multiply complex-like real valued tensors."""
     let lhs_pair = as_real(lhs)
     let rhs_pair = as_real(lhs)
-    let l_real = lhs_pair.get[0, Symbol]()
-    let l_imag = lhs_pair.get[1, Symbol]()
-    let r_real = rhs_pair.get[0, Symbol]()
-    let r_imag = rhs_pair.get[1, Symbol]()
+    let l_real = lhs_pair[0]
+    let l_imag = lhs_pair[1]
+    let r_real = rhs_pair[0]
+    let r_imag = rhs_pair[1]
 
     let out_real = (l_real * r_real) - (l_imag * r_imag)
     let out_imag = (l_real * r_imag) + (l_imag * r_real)
