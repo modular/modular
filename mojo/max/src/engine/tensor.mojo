@@ -42,14 +42,33 @@ struct EngineTensorView:
         }
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
+        """Returns pointer to the start of tensor.
+
+        Returns:
+            DTypePointer of given type.
+
+        Raises:
+            If the given type does not match the type of tensor.
+        """
         if type != self.dtype:
             raise String("Expected type: ") + self.dtype.__str__()
         return bitcast[type](self.data_ptr)
 
     fn data(self) -> DTypePointer[DType.invalid]:
+        """Returns type erased pointer to the start of tensor.
+
+        Returns
+            DTypePointer of invalid type.
+        """
         return self.data_ptr
 
     fn spec(self) raises -> TensorSpec:
+        """Returns the spec of tensor backing the view.
+
+        Returns:
+            Stdlib TensorSpec of the tensor.
+        """
+
         @always_inline
         @parameter
         fn get_spec[ty: DType]() -> TensorSpec:
@@ -106,12 +125,22 @@ struct EngineNumpyView:
         }
 
     fn data(self) raises -> DTypePointer[DType.invalid]:
+        """Returns type erased pointer to the start of numpy array.
+
+        Returns:
+            DTypePointer of given type.
+        """
         let data_ptr = __get_address_as_lvalue(
             self.ptr.address
         ).ctypes.data.__index__()
         return bitcast[DType.invalid](data_ptr)
 
     fn dtype(self) raises -> DType:
+        """Get DataType of the array backing the view.
+
+        Returns
+            DataType of the array backing the view.
+        """
         let self_type = __get_address_as_lvalue(self.ptr.address).dtype
         if self_type == self.np.int8:
             return DType.int8
@@ -141,6 +170,12 @@ struct EngineNumpyView:
         raise "Unknown datatype"
 
     fn spec(self) raises -> TensorSpec:
+        """Returns the spec of numpy array backing the view.
+
+        Returns:
+            Numpy array spec in format of Stdlib TensorSpec.
+        """
+
         @always_inline
         @parameter
         fn get_spec[ty: DType]() raises -> TensorSpec:
