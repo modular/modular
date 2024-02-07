@@ -76,7 +76,7 @@ from NN.Concat import (
 from NN.Conv import ConvInfo, ConvInfoStatic, conv_nhwc_direct, conv_shape
 from NN.Conv import pack_filter as _pack_conv_filter
 from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
-from NN.ConvTranspose import conv_transpose as conv_transpose_impl
+from NN.ConvTranspose import conv_transposed as conv_transpose_impl
 from NN.ConvTranspose import conv_transpose_shape
 from NN.Cumsum import cumsum as _cumsum
 from NN.GatherScatter import gather as _gather, async_gather as _async_gather
@@ -3094,13 +3094,68 @@ fn conv_transpose[
     if paddings.size() != 4:
         return ctx.set_to_error("4 values expected in paddings input")
 
-    conv_transpose_impl[
-        4,
-        input_type,
-        strides_type,
-        dilation_type,
-        padding_type,
-    ](output, input, filter, strides, dilation, paddings)
+    let stride_tuple = Index(strides[0], strides[1])
+    let dilation_tuple = Index(dilation[0], dilation[1])
+    let pad_h = Index(paddings[0], paddings[2])
+    let pad_w = Index(paddings[1], paddings[3])
+
+    @always_inline
+    @__copy_capture(stride_tuple, pad_h, pad_w)
+    @parameter
+    fn description_fn() -> String:
+        let input_shape_str = String("input=") + String("x").join(
+            input.dynamic_shape
+        )
+        let filter_shape_str = String("filter=") + String("x").join(
+            filter.dynamic_shape
+        )
+        let output_shape_str = String("output=") + String("x").join(
+            output.dynamic_shape
+        )
+        let group_str = String("group=") + 1
+        let stride_str = String("stride=") + String("x").join(stride_tuple)
+        let padding_d_str = String("padding_d=") + String("x").join(Index(0, 0))
+        let padding_h_str = String("padding_h=") + String("x").join(pad_h)
+        let padding_w_str = String("padding_w=") + String("x").join(pad_w)
+
+        return String(";").join(
+            input_shape_str,
+            filter_shape_str,
+            output_shape_str,
+            group_str,
+            stride_str,
+            padding_d_str,
+            padding_h_str,
+            padding_w_str,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.conv_transposed",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        try:
+            conv_transpose_impl[
+                4,
+                4,  # Filter rank w/o packing.
+                DimList.create_unknown[4](),  # Input shape.
+                DimList.create_unknown[4](),  # Filter shape.
+                DimList.create_unknown[4](),  # Output shape.
+                input_type,
+                input_type,  # Filter type, same as input.
+                input_type,  # Output type, same as filter.
+                False,  # filter is not packed.
+            ](
+                output,
+                input,
+                filter,
+                stride_tuple,
+                dilation_tuple,
+                Index(0, 0),
+                pad_h,
+                pad_w,
+            )
+        except e:
+            ctx.set_to_error(e)
 
 
 # ===----------------------------------------------------------------------===#
