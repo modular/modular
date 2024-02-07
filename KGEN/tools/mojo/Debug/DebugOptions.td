@@ -22,12 +22,14 @@ defm xlldb: CommandOption<["--", "-"], "Xlldb",
   "launched using the LLDB command-line interface. This option can be "
   "specified multiple times. It is ignored when using the RPC mode.">>;
 
+// As this option is hidden, it needs to exist within a non-empty option group,
+// so we put it here just because there's no place better.
 def dry_run: Flag<["--", "-"], "dry-run">,
   Group<LLDBOptionGroup>, Index<10>,
   Flags<[HelpHidden]>,
-  HelpText<"Instead of executing LLDB on the CLI, dump the command that would "
-  "be used to start the LLDB command-line interface. It is ignored when using "
-  "the RPC mode.">;
+  HelpText<"Instead of executing LLDB on the CLI, dumps the command that would "
+  "be used to start the LLDB command-line interface. If using the RPC mode, "
+  "dumps the payload that would be sent to the RPC server.">;
 
 //===----------------------------------------------------------------------===//
 // Attach Options
@@ -56,13 +58,25 @@ def rpc: Flag<["--", "-"], "rpc">,
   HelpText<"Launches the debug session in the external editor that has an "
   "active RPC debug server.">;
 
+defm terminal: CommandOptionWithValues<
+          ["--"], "terminal", RPCOptionGroup, Index<2>,
+          MetaVarName<"TERMINAL">,
+          HelpText<"The type of terminal to use when starting a launch debug "
+                   "session.\n\n"
+                   "* `console` (default): the debuggee will be launched in the"
+                   " default environment for the editor. If using VS Code, this"
+                   " will be the Debug Console.\n"
+                   "* `dedicated`: the debuggee will be launched in a dedicated"
+                   " terminal within the editor.">,
+          Values<"console,integrated">>;
+
 defm port: CommandOption<["--", "-"], "port",
-  RPCOptionGroup, Index<2>, MetaVarName<"PORT">,
+  RPCOptionGroup, Index<3>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
   "Defaults to 12346.">>;
 
 defm secret: CommandOption<["--", "-"], "secret",
-  RPCOptionGroup, Index<3>, MetaVarName<"SECRET">,
+  RPCOptionGroup, Index<4>, MetaVarName<"SECRET">,
   HelpText<"Uses the given optional SECRET string as a minimal authentication "
   "mechanism when communicating with the RPC debug server. It must be used if "
   "the RPC debug server expects it.">>;
