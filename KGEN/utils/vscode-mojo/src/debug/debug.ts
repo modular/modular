@@ -309,37 +309,31 @@ export class MojoDebugContext extends DisposableContext {
     // fetch settings from different contexts and reuse servers whenever
     // possible.
     for (const folder of vscode.workspace.workspaceFolders || []) {
-      this.updateOrCreateRpcServer(folder);
+      let options = config.get<{port : number, secret?: string}>(
+          'lldb.rpcServer', folder);
+      if (options != null && Object.keys(options).length > 0 &&
+          options.port !== undefined) {
+        this.updateOrCreateRpcServer(options.port, options.secret);
+      }
     }
-    this.updateOrCreateRpcServer();
+    if (!config.get<boolean>('lldb.disableDefaultRPCServer',
+                             /*workspaceFolder=*/ undefined))
+      this.updateOrCreateRpcServer(12346);
   }
 
   /**
-   * Create a debug rpc server using the config from the given workspace. If the
-   * workspace is undefined, then a global config is used instead.
+   * Create a debug RPC server with the port and secret.
    */
-  private updateOrCreateRpcServer(workspaceFolder?: vscode.WorkspaceFolder) {
-    let options = config.get<{port?: number, token?: string}>('lldb.rpcServer',
-                                                              workspaceFolder);
-    if (!options || Object.keys(options).length == 0)
-      return;
-    const port = options.port;
-    if (port === undefined) {
-      this.context.loggingService.logInfo(
-          `The 'port' key was not found in the mojo.lldb.rpcServer settings.`,
-          options);
-      return;
-    }
-
+  private updateOrCreateRpcServer(port: number, secret?: string) {
     const key = `${port}`;
     const existingServer = this.rpcServers.get(key);
     if (existingServer) {
-      existingServer.addServerToken(options.token);
+      existingServer.addServerSecret(secret);
     } else {
       let rpcServer =
-          new RpcLaunchServer(this.context.loggingService, port, options.token);
-      this.context.loggingService.logInfo(`Starting RPC server for port:`,
-                                          port);
+          new RpcLaunchServer(this.context.loggingService, port, secret || "");
+      this.context.loggingService.logInfo(
+          `Starting RPC server for port '${port}' and secret '${secret}'`);
       this.pushSubscription(rpcServer);
       rpcServer.listen();
       this.rpcServers.set(key, rpcServer);
