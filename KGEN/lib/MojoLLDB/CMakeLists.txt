@@ -16,6 +16,7 @@ add_modular_library(MojoLLDB SHARED
   ExpressionParser/MojoUserExpression.cpp
   Language/Formatters/MojoDecoratorBasedTypeFormatter.cpp
   Language/Formatters/MojoDynamicVectorTypeFormatter.cpp
+  Language/Formatters/MojoKGENVariantTypeFormatter.cpp
   Language/Formatters/MojoLLDBResultRefTypeFormatter.cpp
   Language/Formatters/MojoWrappingTypeSyntheticFrontEnd.cpp
   Language/MojoLanguage.cpp
