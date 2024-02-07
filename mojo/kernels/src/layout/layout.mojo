@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from kernel_utils.IntTuple import (
+from .int_tuple import (
     IntTuple,
     inner_product,
     product,

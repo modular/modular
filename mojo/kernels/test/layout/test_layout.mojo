@@ -6,7 +6,7 @@
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils.IntTuple import IntTuple
+from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
     coalesce,
