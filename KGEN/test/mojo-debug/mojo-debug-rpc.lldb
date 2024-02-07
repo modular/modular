@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Check that we can't use the RPC mode when using explicitly the CLI mode.
-# RUN: not %debug --rpc 2>&1 | FileCheck %s --check-prefix=CHECK-NO-CLI-RPC
-CHECK-NO-CLI-RPC: unexpected option '--rpc'
+# RUN: not env %debug --rpc 2>&1 | FileCheck %s --check-prefix=CHECK-NO-CLI-RPC
+# CHECK-NO-CLI-RPC: unexpected option '--rpc'
 
 # COM: Check if the RPC attach command is created properly with pid.
 # RUN: %debug --rpc --pid 123 --dry-run | FileCheck %s --check-prefix=CHECK-PID

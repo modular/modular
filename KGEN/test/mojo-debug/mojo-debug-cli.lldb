@@ -21,7 +21,7 @@
 # CHECK-PROC-NAME: -n foo
 
 # COM: Check if the CLI attach command can fail in the presence of compilation options.
-# RUN: not %debug --pid 123 --dry-run -O0 2>&1 | FileCheck %s --check-prefix=CHECK-PID-WITH-COMPILATION-OPTION
+# RUN: not env %debug --pid 123 --dry-run -O0 2>&1 | FileCheck %s --check-prefix=CHECK-PID-WITH-COMPILATION-OPTION
 # CHECK-PID-WITH-COMPILATION-OPTION: unexpected compilation option '--no-optimization'
 
 # COM: Check if we can build correctly the JIT debug command.
@@ -33,5 +33,5 @@
 # CHECK-BINARY-DEBUG: foo -- target.exe --debug-level full
 
 # COM: Check if we fail when building a binary debug command with additional compilation options.
-# RUN: not %debug --debug-level=line-tables -Xlldb foo --dry-run target.exe --debug-level full 2>&1 | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION
+# RUN: not env %debug --debug-level=line-tables -Xlldb foo --dry-run target.exe --debug-level full 2>&1 | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION
 # CHECK-BINARY-DEBUG-WITH-COMPILATION-OPTION: unexpected compilation option '--debug-level'
