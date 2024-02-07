@@ -4,9 +4,66 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
 from memory.memory import memset_zero
+
+from math import align_down, align_down_residual, div_ceil, fma, max, min
+from sys.info import (
+    alignof,
+    has_avx2,
+    has_avx512f,
+    has_neon,
+    simdbytewidth,
+    simdwidthof,
+)
+from sys.intrinsics import PrefetchOptions
+from .ConvUtils import (
+    ConvInfo,
+    ConvInfoStatic,
+    ConvShape,
+    ConvPartition,
+    get_conv2d_shape,
+    get_conv_num_tasks,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+    get_micro_kernel_shape,
+    get_conv_shape,
+)
+
+from algorithm import (
+    sync_parallelize,
+    sync_parallelize,
+    tile,
+    tile_middle_unswitch_boundaries,
+    unroll,
+    unswitch,
+    vectorize,
+)
+from .AccumulateSIMD import (
+    accumulate,
+    init_register_tile,
+    load_register_tile,
+    store_register_tile,
+)
+
+from MatmulUtils import partition_work
+
+from memory.buffer import (
+    Buffer,
+    DynamicRankBuffer,
+    NDBuffer,
+    _compute_ndbuffer_offset,
+    partial_simd_load,
+    partial_simd_store,
+    prod_dims,
+)
+from memory.unsafe import DTypePointer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList
+from utils._optional import Optional
 from runtime.llcl import Runtime
+
 
 # Indicate position in pads tensor for height, width.
 alias PADS_H_START = 0
@@ -32,7 +89,7 @@ alias PADS_W_END = 3
 
 
 @always_inline
-fn conv_transpose[
+fn conv_transpose_naive[
     rank: Int,
     type: DType,
     strides_type: DType,
@@ -208,3 +265,886 @@ fn conv_transpose_shape[
     output_shape[3] = output_channels
 
     return output_shape
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Transposed Convolution Helpers                                        #
+# ===----------------------------------------------------------------------=== #
+
+
+fn get_num_partitions[
+    micro_kernel_height: Int, micro_kernel_f_size: Int
+](num_threads: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
+    """Partition the worload in (batch&group, C, F, H) dimensions.
+    HOWO is the combination of HO and WO dimensions.
+    The actual number of tasks are the product of return num_partitions.
+    """
+
+    let max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+
+    let num_batches_and_groups = conv_shape.n * conv_shape.num_groups
+
+    let max_f_tasks = div_ceil(conv_shape.f, micro_kernel_f_size)
+
+    var num_partitions = StaticIntTuple[4](1)
+
+    num_partitions[0] = min(max_num_tasks, num_batches_and_groups)
+    num_partitions[2] = min(max_f_tasks, max_num_tasks // num_partitions[0])
+
+    return num_partitions
+
+
+fn get_partition(
+    task_id: Int,
+    num_partitions: StaticIntTuple[4],
+    conv_shape: ConvShape,
+    micro_kernel_height: Int,
+    micro_kernel_f_size: Int,
+) -> ConvPartition:
+    let task_id_f = task_id % num_partitions[2]
+    var quotient = task_id // num_partitions[2]
+    let task_id_c = 0
+    let task_id_howo = quotient % num_partitions[3]
+    let task_id_ng = quotient // num_partitions[3]
+
+    let ng_range = partition_work(
+        task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1
+    )
+
+    let c_range = Index(0, conv_shape.c)
+
+    let f_range = partition_work(
+        task_id_f,
+        num_partitions[2],
+        conv_shape.f // conv_shape.num_groups,
+        micro_kernel_f_size,
+    )
+
+    let howo_range = partition_work(
+        task_id_howo, num_partitions[3], conv_shape.h(), 1
+    )
+
+    return ConvPartition {
+        ng_offset: ng_range[0],
+        ng_size: ng_range[1],
+        f_offset: f_range[0],
+        f_size: f_range[1],
+        ho_or_howo_offset: howo_range[0],
+        ho_or_howo_size: howo_range[1],
+        c_offset: c_range[0],
+        c_size: c_range[1],
+    }
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Transposed Convolution Entry Point                                    #
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct ConvTransposedPacked[
+    input_rank: Int,
+    filter_rank: Int,
+    output_rank: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    conv_attr: ConvInfoStatic,
+]:
+    var output: NDBuffer[output_type, output_rank, output_shape]
+    var input: NDBuffer[input_type, input_rank, input_shape]
+    var filter: NDBuffer[filter_type, filter_rank, filter_shape]
+
+    var conv_shape: ConvShape[input_rank - 2]
+
+    # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
+    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, only ho is partitioned for now.
+    var partition: ConvPartition
+
+    var cf_tile_size: StaticIntTuple[2]
+
+    @staticmethod
+    fn run(
+        output: NDBuffer[output_type, output_rank, output_shape],
+        input: NDBuffer[input_type, input_rank, input_shape],
+        filter: NDBuffer[filter_type, filter_rank, filter_shape],
+        conv_shape: ConvShape[input_rank - 2],
+    ) raises:
+        alias simd_size = simdwidthof[output_type]()
+        alias micro_kernel_shape = get_micro_kernel_shape[
+            output_shape.at[output_rank - 2](),  # WO
+            output_shape.at[output_rank - 1](),  # F
+            conv_attr,
+            simd_size,
+        ]()
+        alias micro_kernel_height = micro_kernel_shape[0]
+        alias micro_kernel_width = micro_kernel_shape[1]
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        let cf_tile_size = get_conv_tile_shape[filter_type](
+            conv_shape.c,
+            conv_shape.filter_window_flat_size(),
+            micro_kernel_width,
+        )
+
+        @parameter
+        if conv_attr.num_groups:
+            constrained[
+                conv_attr.num_groups == Dim(1),
+                "Don't support grouped transposed conv for now.",
+            ]()
+
+        # Number of partitions in n, ho_wo, c, f dimensions.
+        let num_threads = Runtime().parallelism_level()
+        let num_partitions = get_num_partitions[
+            micro_kernel_height, micro_kernel_f_size
+        ](num_threads, conv_shape)
+        let num_tasks = num_partitions.flattened_length()
+
+        @__copy_capture(num_partitions, cf_tile_size)
+        @parameter
+        fn task_func(task_id: Int):
+            let partition = get_partition(
+                task_id,
+                num_partitions,
+                conv_shape,
+                micro_kernel_height,
+                micro_kernel_f_size,
+            )
+
+            if partition.empty():
+                return
+
+            let task_tile_size = Index(
+                min(cf_tile_size[0], partition.c_size), cf_tile_size[1]
+            )
+
+            let instance = ConvTransposedPacked[
+                input_rank,
+                filter_rank,
+                output_rank,
+                input_shape,
+                filter_shape,
+                output_shape,
+                input_type,
+                filter_type,
+                output_type,
+                conv_attr,
+            ](
+                output,
+                input,
+                filter,
+                conv_shape,
+                partition,
+                task_tile_size,
+            )
+            instance._batch_group_loop()
+
+        sync_parallelize[task_func](num_tasks)
+
+    fn _zero_output(self, n: Int, g: Int):
+        """Zero the output buffer."""
+        alias simd_size = simdwidthof[output_type]()
+
+        let f_offset = g * self.conv_shape.f_per_group() + self.partition.f_offset
+        let num_rows = self.conv_shape.output_image_flat_size()
+        var output_ptr = self.output.data + n * num_rows * self.conv_shape.f + f_offset
+
+        for i in range(num_rows):
+
+            @always_inline
+            @parameter
+            fn zero[width: Int](offset: Int):
+                output_ptr.simd_store[width](offset, 0)
+
+            vectorize[zero, simd_size](self.partition.f_size)
+
+            output_ptr += self.conv_shape.f
+
+    fn _batch_group_loop(self):
+        """Loop over the batch and group dimensions. Only support groups = 1 for now.
+        """
+
+        for ng in range(
+            self.partition.ng_offset,
+            self.partition.ng_offset + self.partition.ng_size,
+        ):
+            let n = ng // self.conv_shape.num_groups
+            let g = ng % self.conv_shape.num_groups
+            # Initailize the output buffer for current batch and group.
+            self._zero_output(n, g)
+            self._c_tile_loop(n, g, self.cf_tile_size[0])
+
+    fn _c_tile_loop(self, n: Int, g: Int, c_tile_size: Int):
+        """Loop over C tiles."""
+
+        @always_inline
+        @parameter
+        fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
+            self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
+
+        let c_offset = g * self.conv_shape.c_per_group()
+        let c_round_by_tile = align_down(
+            (self.conv_shape.c_per_group() - 1), c_tile_size
+        )
+
+        # Update c tiles before the last one.
+        for c_tile_offset in range(c_offset, c_round_by_tile, c_tile_size):
+            self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
+
+        # Update the last c tile with fusion
+        let c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
+        self._f_tile_loop[True](
+            n,
+            g,
+            c_offset + c_round_by_tile,
+            c_round_by_tile_residual,
+        )
+
+    fn _f_tile_loop[
+        last_c_tile: Bool
+    ](self, n: Int, g: Int, c_tile_offset: Int, c_tile_size: Int):
+        """Loop over F tiles."""
+        alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
+        alias simd_size = simdwidthof[output_type]()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        @always_inline
+        @parameter
+        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+            self.input_space_loop[
+                micro_kernel_height, size // simd_size, False, last_c_tile
+            ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
+
+        let f_per_group = self.conv_shape.f_per_group()
+
+        # The partition heuristic sees F_per_group and may partition it.
+        # The partition's F_offset should be added to the group's F offset to
+        # get the actually offset in output's F dim.
+        let group_f_offset = g * f_per_group + self.partition.f_offset
+
+        let group_f_end_align_simd = group_f_offset + align_down(
+            self.partition.f_size, simd_size
+        )
+
+        # The first tile size is based on cache size. Within the tile
+        # it's stepped by the micro kernel size in F. The rest is stepped
+        # by simd_size. If F is not multiple of simd_size, the residual
+        # is padded with 0 to fit a simd vector in the packed filter.
+        tile[
+            VariadicList[Int](micro_kernel_f_size, simd_size),
+            simd_size,
+            f_tile_iteration,
+        ](
+            group_f_offset,
+            group_f_end_align_simd,
+            VariadicList[Int](micro_kernel_f_size, simd_size),
+            simd_size,
+        )
+
+        # If this is the last partition in F and it's not a multiple of simd_size.
+        # The partition is aligned by micro_kernel_f_size, so only the last
+        # partition is possible to have residual.
+        let residual = align_down_residual(f_per_group, simd_size)
+        if (
+            self.partition.f_offset + self.partition.f_size == f_per_group
+            and residual > 0
+        ):
+            self.input_space_loop[micro_kernel_height, 1, True, last_c_tile](
+                n,
+                group_f_end_align_simd,
+                simd_size,
+                c_tile_offset,
+                c_tile_size,
+            )
+
+    @always_inline
+    fn input_space_loop[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        has_residual: Bool,
+        last_c_tile: Bool,
+    ](
+        self,
+        n: Int,
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        c_tile_offset: Int,
+        c_tile_size: Int,
+    ):
+        alias simd_size = simdwidthof[output_type]()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        # Current group index.
+        let g = self.conv_shape.f_to_group(f_tile_offset)
+
+        # Filter pointer to the current cf tile offset location.
+        var filter_ptr: DTypePointer[filter_type]
+
+        # Move the pointer to the current group's start.
+        filter_ptr = _get_group_filter_base(
+            self.filter, g, self.conv_shape.f_per_group()
+        )
+        # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
+        # current group.
+        filter_ptr = filter_ptr.offset(
+            # Jump over f_tile_offset in current group.
+            self.conv_shape.f_in_group(f_tile_offset)
+            * self.conv_shape.c_per_group()
+            * self.conv_shape.filter_window_flat_size()
+            # Jump over c_tile_offset in current group.
+            + self.conv_shape.c_in_group(c_tile_offset) * micro_kernel_f_size
+        )
+
+        # Pointer to input and output of the current sample (batch dim).
+        # fmt: off
+        let input_ptr  = self.input.data + c_tile_offset \
+                       + self.conv_shape.input_image_flat_size() \
+                       * self.conv_shape.c * n
+
+        let output_ptr = self.output.data + f_tile_offset \
+                       + self.conv_shape.output_image_flat_size() \
+                       * self.conv_shape.f * n
+
+        # fmt: on
+
+        # Divide each input row into three parts:
+        # [0, left_pad_impact_end)
+        # [left_pad_impact_end, right_pad_impact_start)
+        # [right_pad_impact_start, WO)
+        let left_pad_impact_end = div_ceil(
+            self.conv_shape.pad_w[0], self.conv_shape.stride[input_rank - 3]
+        )
+        let right_pad_impact_start = (
+            self.conv_shape.wo()
+            + self.conv_shape.pad_w[0]
+            - self.conv_shape.s() * self.conv_shape.dilation[input_rank - 3]
+        ) // self.conv_shape.stride[input_rank - 3] + 1
+        # print("pad effect", left_pad_impact_end, right_pad_impact_start)
+
+        @parameter
+        if input_rank == 4:
+            self.input_space_loop_2d[
+                micro_kernel_height,
+                micro_kernel_width,
+                has_residual,
+                last_c_tile,
+            ](
+                output_ptr,
+                input_ptr,
+                filter_ptr,
+                n,
+                # self.is_new_c_accum(c_tile_offset),
+                False,
+                c_tile_size,
+                f_tile_offset,
+                f_tile_size,
+                left_pad_impact_end,
+                right_pad_impact_start,
+            )
+        elif input_rank == 5:
+            self.input_space_loop_3d[
+                micro_kernel_height,
+                micro_kernel_width,
+                has_residual,
+                last_c_tile,
+            ](
+                output_ptr,
+                input_ptr,
+                filter_ptr,
+                n,
+                # self.is_new_c_accum(c_tile_offset),
+                False,
+                c_tile_size,
+                f_tile_offset,
+                f_tile_size,
+                left_pad_impact_end,
+                right_pad_impact_start,
+            )
+
+    @always_inline
+    fn input_space_loop_2d[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        has_residual: Bool,
+        last_c_tile: Bool,
+    ](
+        self,
+        output: DTypePointer,
+        input: DTypePointer,
+        filter: DTypePointer,
+        n: Int,
+        first_c_tile_in_group: Bool,
+        c_tile_size: Int,
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        left_pad_impact_end: Int,
+        right_pad_impact_start: Int,
+    ):
+        alias simd_size = simdwidthof[output_type]()
+
+        for h in range(
+            self.partition.ho_or_howo_offset,
+            self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
+        ):
+            # < 0 while the actual output ho index is within [0, ho). In the
+            # inner loops, `ho_nbr = ho + r * dilation` where r within [0, R)
+            # can tell if a row is in padding i.e. ho_nbr < 0  or ho_nbr > wo-1.
+            let ho = h * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+
+            var input_base = input + self.conv_shape.c * self.conv_shape.w() * h
+            # Compute the row index as if there is no padding. This index may be
+
+            # Points output to the start of the row
+            var output_base = output + self.conv_shape.f * (
+                -self.conv_shape.pad_w[0] + self.conv_shape.wo() * ho
+            )
+
+            @parameter
+            @always_inline
+            fn work_fn[height: Int, effected_by_padding: Bool](w: Int):
+                update_w_tile_2d[
+                    height,
+                    micro_kernel_width,
+                    simd_size,
+                    effected_by_padding,
+                    has_residual,
+                    last_c_tile,
+                ](
+                    output_base,
+                    input_base,
+                    filter,
+                    first_c_tile_in_group,
+                    c_tile_size,
+                    f_tile_offset,
+                    f_tile_size,
+                    rebind[ConvShape[2]](self.conv_shape),
+                    n,
+                    Index(h, w),
+                )
+
+                input_base = input_base.offset(
+                    height * self.conv_shape.c,
+                )
+                output_base = output_base.offset(
+                    height * self.conv_shape.stride[1] * self.conv_shape.f
+                )
+
+                # print("output", self.output[0, 0, 0, 0], self.output[0, 0, 1, 0], self.output[0, 0, 2, 0])
+
+            tile_middle_unswitch_boundaries[
+                work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+            ](
+                0,
+                left_pad_impact_end,
+                right_pad_impact_start,
+                self.conv_shape.w(),
+            )
+
+    @always_inline
+    fn input_space_loop_3d[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        has_residual: Bool,
+        last_c_tile: Bool,
+    ](
+        self,
+        output: DTypePointer,
+        input: DTypePointer,
+        filter: DTypePointer,
+        n: Int,
+        first_c_tile_in_group: Bool,
+        c_tile_size: Int,
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        left_pad_impact_end: Int,
+        right_pad_impact_start: Int,
+    ):
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Transposed Convolution 2D Resigter Tiling
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn update_w_tile_2d[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    effected_by_padding: Bool,
+    has_residual: Bool,
+    last_c_tile: Bool,
+    # elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+](
+    output: DTypePointer,
+    input: DTypePointer,
+    filter: DTypePointer,
+    _init_output: Bool,
+    c_tile_size: Int,
+    f_tile_offset: Int,
+    f_tile_size: Int,
+    conv_shape: ConvShape[2],
+    n: Int,
+    hw: StaticIntTuple[2],
+):
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Output stride to neighbor point in the filter window (R, S).
+    # fmt: off
+    let output_stride_by_s = conv_shape.dilation[1] * conv_shape.f
+    let output_stride_by_r = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.f
+    # fmt: on
+    # print("output stride", output_stride_by_r, output_stride_by_s)
+
+    # Filter stride when s increments by 1.
+    let filter_stride_by_s = conv_shape.c_per_group() * micro_kernel_f_size
+
+    let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
+
+    # Filter stride in F dimension in FRSCf or RSFC
+    let filter_stride = micro_kernel_f_size
+    # print("fitler stride", filter_stride_by_r, filter_stride_by_s, filter_stride)
+
+    # Output coordinates
+    let howo = Index(
+        hw[0] * conv_shape.stride[0] - conv_shape.pad_h[0],
+        hw[1] * conv_shape.stride[1] - conv_shape.pad_w[0],
+    )
+
+    # This will be all lifted to simd registers for FMA unless the micro
+    # kernel is too large that spills named registers.
+    let register_tile = NDBuffer[
+        output.type,
+        2,
+        DimList(micro_kernel_height, micro_kernel_width * simd_size),
+    ].stack_allocation()
+
+    @always_inline
+    fn updated[
+        rank: Int
+    ](
+        output_coord: StaticIntTuple[rank],
+        window_coord: StaticIntTuple[rank],
+        stride: StaticIntTuple[rank],
+        dilation: StaticIntTuple[rank],
+    ) -> Bool:
+        var res = True
+
+        @unroll
+        for i in range(rank):
+            let tmp = output_coord[i] - (window_coord[i] + 1) * dilation[i]
+            res = res and tmp >= 0 and tmp % stride[i] == 0
+
+        return res
+
+    for r in range(conv_shape.r()):
+        # Skip the row if it falls into padding.
+        let ho_nbr = howo[0] + r * conv_shape.dilation[0]
+        if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
+            continue
+
+        for s in range(conv_shape.s()):
+            let output_ptr = output + r * output_stride_by_r + s * output_stride_by_s
+            let filter_ptr = filter + r * filter_stride_by_r + s * filter_stride_by_s
+
+            @parameter
+            if effected_by_padding:
+                constrained[
+                    micro_kernel_height == 1,
+                    "The tile must only have 1 point when effected bypadding.",
+                ]()
+                let wo_nbr = howo[1] + s * conv_shape.dilation[1]
+                if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
+                    continue
+
+            # print("  (r, s)", r, s, "load")
+            load_register_tile[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                partial_load=has_residual,
+            ](
+                register_tile.data,
+                output_ptr,
+                conv_shape.f * conv_shape.stride[1],
+                conv_shape.f_per_group() % simd_size,
+            )
+
+            accumulate[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                prefetch_offset=4,
+                partial_load_b=has_residual,
+            ](
+                c_tile_size,
+                register_tile.data,
+                input,
+                conv_shape.c,  # input_stride
+                filter_ptr,
+                filter_stride,
+                conv_shape.f % simd_size,
+            )
+
+            # Store the micro tile
+            store_register_tile[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                partial_store=has_residual,
+            ](
+                output_ptr,
+                conv_shape.f * conv_shape.stride[1],
+                register_tile.data,
+                conv_shape.f_per_group() % simd_size,
+            )
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Transposed Convolution Filter Packing                                 #
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn _get_group_filter_base(
+    packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
+) -> DTypePointer[packed_filter.type, packed_filter.address_space]:
+    # TODO: support groups > 1.
+    return packed_filter.data
+
+
+@always_inline
+fn pack_filter_shape(
+    filter: NDBuffer, num_groups: Int
+) -> StaticIntTuple[filter.rank + 1]:
+    """
+    Compute the output shape of transposed convolution filter packing.
+
+    Args:
+        filter: The filter to be packed.
+        num_groups: The number of groups in the convolution.
+
+    Returns:
+        The output shape.
+    """
+
+    alias simd_size = simdwidthof[filter.type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Filter is in RSFC layout. The 2nd last dim is F.
+    let F = filter.dim[filter.rank - 2]()
+
+    debug_assert(
+        F % num_groups == 0,
+        "number of filters F must be divisible by number of groups",
+    )
+    let F_per_group = F // num_groups
+
+    # FRSCf layout.
+    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
+    packed_shape[filter.rank] = micro_kernel_f_size
+    # Input channel
+    packed_shape[filter.rank - 1] = filter.dim[filter.rank - 1]()
+
+    @always_inline
+    @parameter
+    fn assign[i: Int]():
+        packed_shape[i + 1] = filter.dim[i]()
+
+    unroll[assign, filter.rank - 2]()
+
+    return packed_shape
+
+
+@always_inline
+fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+    """This packs the filter form RSFC to FRSCf."""
+
+    alias simd_size = simdwidthof[filter.type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Product of filter window dims.
+    var window_dims_prod = 1
+
+    @always_inline
+    @parameter
+    fn multiply[i: Int]():
+        window_dims_prod *= filter.dim[i]()
+
+    unroll[multiply, filter.rank - 2]()
+
+    let C = filter.dim[filter.rank - 1]()
+    let F = filter.dim[filter.rank - 2]()
+    let F_per_group = F // num_groups
+
+    packed_filter.zero()
+
+    # Each group is zero padded to
+    #
+    #                   div_ceil(F_per_group, micro_kernel_f_size)
+    #                 * outer_dims_prod
+    #                 * micro_kernel_f_size.
+    #
+    # There can be a remainder: F_per_group % micro_kernel_f_size. That's further
+    # tiled by simd_size. The elements beyond the remainder is set to 0. E.x.
+    # micro_kernel_f_size = 8, simd_size = 2, 21 values in total, follows
+    #
+    #                       |--------|--------|--|--|-0|00|
+
+    for g in range(num_groups):
+        let group_start = _get_group_filter_base(packed_filter, g, F_per_group)
+
+        @always_inline
+        @__copy_capture(group_start, R, S, C, F_per_group, F)
+        @parameter
+        fn pack[f_tile_size: Int](f_tile_start: Int):
+            var packed_filter_ptr = group_start + f_tile_start * window_dims_prod * C
+
+            # Consider a point in filter window as a neighbor to input point.
+            for nbr in range(window_dims_prod):
+                var filter_ptr = filter.data + nbr * F * C + (
+                    g * F_per_group + f_tile_start
+                ) * C
+
+                for c in range(C):
+                    for f in range(f_tile_size):
+                        packed_filter_ptr.store(
+                            f,
+                            filter_ptr.load(f * C).cast[
+                                packed_filter_ptr.type
+                            ](),
+                        )
+
+                    # FRSCf layout. Increment by `f` in c loop.
+                    packed_filter_ptr += f_tile_size
+                    # RSFC layout. Increment by 1 in c loop.
+                    filter_ptr += 1
+
+        # If F % simd_size != 0, the following won't touch the remainder.
+        tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](
+            0, F_per_group
+        )
+
+    # Check the remainder if any
+    let F_round_by_simd = align_down(F_per_group, simd_size)
+    let residual = F_per_group - F_round_by_simd
+
+    # Handle the remainder if any
+    if residual > 0:
+        for g in range(num_groups):
+            let group_start = _get_group_filter_base(
+                packed_filter, g, F_per_group
+            )
+            var packed_filter_ptr = group_start + F_round_by_simd * window_dims_prod * C
+
+            for nbr in range(window_dims_prod):
+                var filter_ptr = filter.data + nbr * F * C + (
+                    g * F_per_group + F_round_by_simd
+                ) * C
+
+                for c in range(C):
+                    for f in range(residual):
+                        packed_filter_ptr.store(
+                            f,
+                            filter_ptr.load(f * C).cast[
+                                packed_filter_ptr.type
+                            ](),
+                        )
+
+                    filter_ptr += 1
+                    packed_filter_ptr = packed_filter_ptr + simd_size
+
+
+# ===----------------------------------------------------------------------=== #
+# Direct Transposed Convolution API to MOGG                                    #
+# ===----------------------------------------------------------------------=== #
+
+
+fn conv_transposed[
+    input_rank: Int,
+    filter_rank: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_packed: Bool,
+](
+    output: NDBuffer[output_type, input_rank, output_shape],
+    input: NDBuffer[input_type, input_rank, input_shape],
+    filter: NDBuffer[filter_type, filter_rank, filter_shape],
+    stride: StaticIntTuple[input_rank - 2],
+    dilation: StaticIntTuple[input_rank - 2],
+    pad_d: StaticIntTuple[2],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+) raises:
+    alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
+
+    var packed_filter_ptr = filter.data
+    var packed_filter_shape = StaticIntTuple[packed_filter_rank](1)
+
+    # If filter is not packed, we have to pack it before the kernel.
+    @parameter
+    if not filter_packed:
+        # Only support single group.
+        packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+            pack_filter_shape(filter, 1)
+        )
+        packed_filter_ptr = DTypePointer[filter.type].alloc(
+            packed_filter_shape.flattened_length()
+        )
+    else:
+        packed_filter_shape = rebind[StaticIntTuple[packed_filter_rank]](
+            filter.dynamic_shape
+        )
+
+    let packed_filter = NDBuffer[filter_type, packed_filter_rank](
+        packed_filter_ptr, packed_filter_shape
+    )
+
+    @parameter
+    if not filter_packed:
+        pack_filter(filter, packed_filter, 1)
+
+    alias conv_attr = ConvInfoStatic.create_unknown[input_rank - 2]()
+
+    let conv_shape = get_conv_shape[input_rank - 2, True](
+        output,
+        input,
+        packed_filter,
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
+        1,
+    )
+
+    ConvTransposedPacked[
+        input_rank,
+        packed_filter_rank,
+        input_rank,
+        input_shape,
+        DimList.create_unknown[packed_filter_rank](),
+        output_shape,
+        input_type,
+        filter_type,
+        output_type,
+        conv_attr,
+    ].run(output, input, packed_filter, conv_shape)
+
+    @parameter
+    if not filter_packed:
+        packed_filter_ptr.free()

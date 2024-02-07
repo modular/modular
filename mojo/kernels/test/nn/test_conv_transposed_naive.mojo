@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from NN.ConvTranspose import conv_transpose
+from NN.ConvTranspose import conv_transpose_naive
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 
@@ -128,7 +128,7 @@ fn test_convtranspose_pads():
     pads[2] = 1
     pads[3] = 2
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
         kernel.make_dims_unknown(),
@@ -261,7 +261,7 @@ fn test_convtranspose():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
         kernel.make_dims_unknown(),
@@ -373,7 +373,7 @@ fn test_convtranspose_dilation():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
         kernel.make_dims_unknown(),
@@ -518,7 +518,7 @@ fn test_convtranspose_attributes():
     pads[2] = 0
     pads[3] = 0
 
-    conv_transpose[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
         kernel.make_dims_unknown(),
