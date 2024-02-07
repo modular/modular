@@ -8,8 +8,8 @@
 #include "../Common/LLDB.h"
 #include "../Common/Telemetry.h"
 #include "KGEN/Support/Configuration.h"
+#include "RPCServer.h"
 #include "llvm/Option/ArgList.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 
@@ -41,6 +41,14 @@ getLLDBArgs(llvm::opt::InputArgList &parsedArgs) {
   for (StringRef value : parsedArgs.getAllArgValues(options::OPT_xlldb))
     lldbArgs.push_back(value.str());
   return lldbArgs;
+}
+
+static std::optional<StringRef>
+getRPCSecret(llvm::opt::InputArgList &parsedArgs) {
+  StringRef secret = parsedArgs.getLastArgValue(options::OPT_secret);
+  if (!secret.empty())
+    return secret;
+  return {};
 }
 
 auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
@@ -99,10 +107,18 @@ static int debug(const State &state) {
   }
 
   bool useRpc = parsedArgs.hasArg(options::OPT_rpc);
+  std::optional<StringRef> rpcSecret = getRPCSecret(parsedArgs);
+  StringRef rawRPCPort = parsedArgs.getLastArgValue(options::OPT_port, "12346");
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
+  StringRef rpcTerminal =
+      parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> lldbArgs = getLLDBArgs(parsedArgs);
   bool isJITDebugging = target && isMojoFile(*target);
   auto compilationOptions = getCompilationOptions(parsedArgs);
+
+  int rpcPort;
+  if (rawRPCPort.getAsInteger(10, rpcPort))
+    return state.reportError(Twine("invalid RPC port '") + rawRPCPort + "'");
 
   if (!isJITDebugging && !compilationOptions.empty()) {
     // Compilation options are only allowed when doing JIT debugging.
@@ -139,7 +155,11 @@ static int debug(const State &state) {
       target = *mojoDriver;
     }
     if (useRpc) {
-      // TODO
+      ErrorOrSuccess status = invokeLaunchRPC(dryRun, rpcPort, rpcSecret,
+                                              *target, runArgs, rpcTerminal);
+      if (failed(status))
+        return state.reportError(status.getError());
+      return 0;
     }
     // When using the LLDB CLI, the first run arg has to be the target.
     runArgs.insert(runArgs.begin(), *target);
@@ -157,13 +177,17 @@ static int debug(const State &state) {
   //  This is an attach case.
   if (pid || processName) {
     if (useRpc) {
-      // TODO
+      ErrorOrSuccess status =
+          invokeAttachRPC(dryRun, rpcPort, rpcSecret, pid, processName);
+      if (failed(status))
+        return state.reportError(status.getError());
+      return 0;
     } else {
       if (pid)
         llvm::append_values(lldbArgs, std::string("-p"), pid->str());
       if (processName)
         llvm::append_values(lldbArgs, std::string("-n"), processName->str());
-      return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+      return invokeLLDB(state, lldbArgs, {}, dryRun);
     }
   }
 
@@ -172,7 +196,7 @@ static int debug(const State &state) {
         Twine("unexpected option '", rpcArg->getSpelling()) + "'");
 
   // This is a regular lldb cli passthrough.
-  return invokeLLDB(state, lldbArgs, runArgs, dryRun);
+  return invokeLLDB(state, lldbArgs, {}, dryRun);
 }
 
 void M::registerDebugSubcommand(SubcommandRegistry &registry) {

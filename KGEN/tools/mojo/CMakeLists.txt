@@ -24,6 +24,7 @@ add_modular_tool(mojo
   Doc/mojo-doc.cpp
   Format/mojo-format.cpp
   Debug/mojo-debug.cpp
+  Debug/RPCServer.cpp
   Package/mojo-package.cpp
   REPL/mojo-repl.cpp
   Run/mojo-run.cpp
