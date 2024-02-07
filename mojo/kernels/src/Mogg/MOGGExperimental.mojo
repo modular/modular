@@ -326,6 +326,35 @@ fn view_like_custom_op_target(
     )
 
 
+@mogg_register_override("mo.static.broadcast_to", 1000)
+@export
+fn broadcast(
+    x: Tensor, shape: StaticIntTuple
+) -> Tensor[x.type, DimList.create_unknown[shape.size]()]:
+    var new_shape = IntList[DimList.create_unknown[shape.size]()]()
+    var new_stride = IntList[DimList.create_unknown[shape.size]()]()
+
+    let delta = shape.size - x.rank()
+
+    @always_inline
+    @parameter
+    fn body[i: Int]():
+        new_shape[i] = shape[i]
+
+        if i < delta:
+            new_stride[i] = 0
+        elif x.shape[i - delta] <= 1:
+            new_stride[i] = 0
+        else:
+            new_stride[i] = x.strides[i - delta]
+
+    unroll[body, shape.size]()
+
+    return Tensor[x.type, DimList.create_unknown[shape.size]()](
+        x.data, new_shape, new_stride, x.refcount()
+    )
+
+
 fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
     if input_rank == -1 or indices_rank == -1:
         return 0
