@@ -9,16 +9,16 @@ from sys import argv
 
 # COM: Verify that the Closure Impl defined in `main` copies the captures x, y on the heap in the init and frees in the del.
 
-# CHECK: kgen.func @"${{.*}}::`_CI_${{.*}}::__del__{{.*}}"
+# CHECK: kgen.func @"{{.*}}::`_CI_{{.*}}::__del__{{.*}}"
 # CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> owned_in_mem) -> !kgen.none {
 # CHECK:      [[CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg0[0]
 # CHECK-NEXT: [[CAPTURE_FIELD_PTR:%.*]] = pop.load [[CAPTURE_FIELD_ADD]]
 # CHECK-NEXT: pop.aligned_free [[CAPTURE_FIELD_PTR]]
 
-# CHECK:  kgen.func @"${{.*}}::`_CI_${{.*}}::__copyinit__{{.*}}"
+# CHECK:  kgen.func @"{{.*}}::`_CI_{{.*}}::__copyinit__{{.*}}"
 # CHECK: pop.aligned_alloc
 
-# CHECK:  kgen.func @"${{.*}}::`_CI_${{.*}}::__init__{{.*}}"
+# CHECK:  kgen.func @"{{.*}}::`_CI_{{.*}}::__init__{{.*}}"
 # CHECK-SAME: (%arg0: !kgen.struct<(index)>, %arg1: !kgen.struct<(index)>,
 # CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
 # CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {

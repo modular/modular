@@ -48,7 +48,7 @@
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
-# CHECK: (ParamStruct[_"$stdlib::$builtin::$int::Int" : metatype<_"$stdlib::$builtin::$int::Int">]) p_struct_int = {
+# CHECK: (ParamStruct[_"stdlib::builtin::int::Int" : metatype<_"stdlib::builtin::int::Int">]) p_struct_int = {
 # CHECK:   t = 8
 # CHECK: }
 # CHECK: (scalar<f32>) another_float = {

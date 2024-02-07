@@ -28,28 +28,28 @@ namespace {
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
 constexpr StringLiteral registerDecorator =
-    "$stdlib::$utils::$_annotations::mogg_register";
+    "stdlib::utils::_annotations::mogg_register";
 // TODO(#27757): Temporary as transition to Mojo async/await.
 constexpr StringLiteral willBecomeAsyncDecorator =
-    "$stdlib::$utils::$_annotations::mogg_will_become_async";
+    "stdlib::utils::_annotations::mogg_will_become_async";
 constexpr StringLiteral registerOverrideDecorator =
-    "$stdlib::$utils::$_annotations::mogg_register_override";
+    "stdlib::utils::_annotations::mogg_register_override";
 
 constexpr StringLiteral tensorAllocDecorator =
-    "$stdlib::$utils::$_annotations::mogg_tensor_allocator";
+    "stdlib::utils::_annotations::mogg_tensor_allocator";
 constexpr StringLiteral tensorCopyConstructDecorator =
-    "$stdlib::$utils::$_annotations::mogg_tensor_copy_constructor";
+    "stdlib::utils::_annotations::mogg_tensor_copy_constructor";
 constexpr StringLiteral tensorDeconstructDecorator =
-    "$stdlib::$utils::$_annotations::mogg_tensor_deconstructor";
+    "stdlib::utils::_annotations::mogg_tensor_deconstructor";
 
 constexpr StringLiteral elementwiseHook =
-    "$stdlib::$utils::$_annotations::mogg_elementwise_hook";
+    "stdlib::utils::_annotations::mogg_elementwise_hook";
 constexpr StringLiteral tensorEnableFusion =
-    "$stdlib::$utils::$_annotations::mogg_enable_fusion";
+    "stdlib::utils::_annotations::mogg_enable_fusion";
 constexpr StringLiteral tensorInputFusionHook =
-    "$stdlib::$utils::$_annotations::mogg_input_fusion_hook";
+    "stdlib::utils::_annotations::mogg_input_fusion_hook";
 constexpr StringLiteral tensorOutputFusionHook =
-    "$stdlib::$utils::$_annotations::mogg_output_fusion_hook";
+    "stdlib::utils::_annotations::mogg_output_fusion_hook";
 
 // Basic struct to extract the KGEN parameters used in the tensor.
 struct KGENParamsOfTensor {
@@ -89,7 +89,7 @@ bool isTensor(KGEN::DeclRefType maybeTensor) {
   if (attr.size() == 0)
     return false;
 
-  if (maybeTensor.getSymbol().getRootReference() != "$MOGGTensor")
+  if (maybeTensor.getSymbol().getRootReference() != "MOGGTensor")
     return false;
 
   StringRef className = attr[attr.size() - 1].getValue();

@@ -1,8 +1,8 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect --kgen-print-inline-vtables | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect --kgen-print-inline-vtables | FileCheck %s
 
-// CHECK: *"mangled_fn{{.*}}$int
-"some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$int\22::_Int>])" : index>} : () -> ()
+// CHECK: *"mangled_fn{{.*}}int
+"some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22int\22::_Int>])" : index>} : () -> ()
 
 kgen.generator @return_one() -> index {
   %0 = index.constant 1

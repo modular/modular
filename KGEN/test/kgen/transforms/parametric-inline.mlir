@@ -1142,14 +1142,14 @@ kgen.generator @bar() always_inline {
 
 // CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
 // CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N0, DT0>>
-// CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"$builtin::$simd::SIMD"(![[M]])>
-// CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"$builtin::$simd::SIMD"(![[M0]])>
+// CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M]])>
+// CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M0]])>
 // CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(![[STR]]) -> (![[STR]]): DW_CC_normal>
 // CHECK-DAG: ![[SR0:.*]] = !debuginfo.subroutine<(![[STR0]]) -> (![[STR0]]): DW_CC_normal>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR]]
 // CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, name = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR0]]
 
-!struct = !debuginfo.struct<"$builtin::$simd::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
+!struct = !debuginfo.struct<"builtin::$simd::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
 #file = #debuginfo.file<"foo.mlir" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>

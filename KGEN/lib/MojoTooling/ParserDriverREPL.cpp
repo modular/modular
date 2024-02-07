@@ -967,6 +967,7 @@ std::vector<Mojo::CodeCompletionResult>
 MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
+  llvm::errs() << exprText << "\n";
   return codeCompleteREPLExpression(exprText, completionPosition, replVariables,
                                     MojoASTDeclRef());
 }

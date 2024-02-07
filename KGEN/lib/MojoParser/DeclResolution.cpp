@@ -1350,7 +1350,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // referenced.
   for (StringRef name : nestedModules) {
     StringAttr importName = builder.getStringAttr("." + name);
-    StringAttr boundName = builder.getStringAttr("$" + name);
+    StringAttr boundName = builder.getStringAttr(name);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
         /*importNameLoc=*/mlir::LocationAttr(),
