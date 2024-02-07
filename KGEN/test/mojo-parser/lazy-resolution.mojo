@@ -12,12 +12,13 @@
 # CHECK: lit.func @"use_of_error_type
 # CHECK: except (%{{.*}}: !Error)
 
-# CHECK: lit.package @"$builtin"
-# CHECK: lit.file_module @"$error"
+# CHECK: lit.package @builtin
+# CHECK: lit.file_module @error
 # CHECK: lit.struct.decl @Error
 
+
 fn use_of_error_type():
-  try:
-    return
-  except:
-    pass
+    try:
+        return
+    except:
+        pass

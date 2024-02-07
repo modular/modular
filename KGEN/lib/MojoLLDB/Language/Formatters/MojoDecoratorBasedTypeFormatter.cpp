@@ -52,9 +52,9 @@ static bool isUsingLLDBFormatterWrappingType(const ValueObjectSP &valobjSP) {
       SymbolRefAttr symbol = constantSymbol.getSymbol();
       auto nestedReferences = symbol.getNestedReferences();
       if (nestedReferences.size() == 3 &&
-          symbol.getRootReference() == "$stdlib" &&
-          nestedReferences[0].getValue() == "$debug" &&
-          nestedReferences[1].getValue() == "$lldb" &&
+          symbol.getRootReference() == "stdlib" &&
+          nestedReferences[0].getValue() == "debug" &&
+          nestedReferences[1].getValue() == "lldb" &&
           nestedReferences[2].getValue() == "lldb_formatter_wrapping_type()") {
         return true;
       }

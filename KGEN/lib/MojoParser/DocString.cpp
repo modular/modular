@@ -49,7 +49,7 @@ static bool requiresDocString(ASTDeclInterface op) {
          isa<FileModuleOp>(op->getParentOp());
 }
 
-/// Given a function name such as "__init__($module::Struct=&)", returns whether
+/// Given a function name such as "__init__(module::Struct=&)", returns whether
 /// it is a "special function," also known as a "dunder method"
 /// (double-underscore method).
 static bool isSpecialFunction(StringRef name) {
@@ -103,10 +103,10 @@ static bool isOpInPrivateModule(Operation *declOp) {
   for (Operation *op = declOp->getParentOp(); op; op = op->getParentOp()) {
     if (auto fileOp = dyn_cast<FileModuleOp>(op)) {
       StringRef name = fileOp.getName();
-      if (name.starts_with("$_") && name != "$__init__")
+      if (name.starts_with("_") && name != "__init__")
         return true;
     } else if (auto packageOp = dyn_cast<PackageOp>(op)) {
-      if (packageOp.getName().starts_with("$_"))
+      if (packageOp.getName().starts_with("_"))
         return true;
     }
   }

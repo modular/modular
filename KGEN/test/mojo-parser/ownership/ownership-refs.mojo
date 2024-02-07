@@ -246,14 +246,14 @@ fn testLifetimeOf2(a: MemExample) -> _LITRef[
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
-  # CHECK: lit.varlet.decl "l1" var : !lit.ref<@"$ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
+  # CHECK: lit.varlet.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.varlet.decl "l2" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`")>
+  # CHECK: lit.varlet.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`")>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.varlet.decl "l3" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
+  # CHECK: %l3 = lit.varlet.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.varlet.decl "l4" var : !lit.ref<@"$ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`", :lifetime<0> *"z`">
+  # CHECK: %l4 = lit.varlet.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`", :lifetime<0> *"z`">
   var l4 = returnTwoArgLifetimes(z, z)
 
 fn returnOneArgLifetime(a: MemExample)

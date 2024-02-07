@@ -681,12 +681,8 @@ FailureOr<MangledSymbol> MangledSymbol::demangle(StringAttr mangled,
     m = m.drop_front(separator);
     // Skip past the separator as well (if it exists).
     m.consume_front("::");
-    // It's a module name if it starts with a leading `$`.
-    if (current.starts_with("$"))
-      out.moduleNames.push_back(
-          StringAttr::get(mangled.getContext(), current.drop_front()));
-    else
-      out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
+    // FIXME: Can't distinguish between struct and modules, but does it matter?
+    out.moduleNames.push_back(StringAttr::get(mangled.getContext(), current));
   }
   // Get the name of the func and the types of its arguments.
   StringRef nameWithParameters = m.take_front(m.find('('));

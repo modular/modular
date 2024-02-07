@@ -838,9 +838,8 @@ MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
       parentDeclRef ? *parentDeclRef
                     : impl->parserContext->getSharedState().getTopLevelDecl();
   auto &declsInScope = parentDecl.getDeclsInScope();
-  StringAttr mangledName =
-      sharedState.getMangledModuleName(&impl->mlirContext, name);
-  if (auto it = declsInScope.find(mangledName); it != declsInScope.end()) {
+  if (auto it = declsInScope.find(StringAttr::get(getMLIRContext(), name));
+      it != declsInScope.end()) {
     assert(it->second.size() == 1 &&
            "We expect one single package decl with a given name.");
     return it->second[0];
@@ -936,10 +935,10 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 
   // We first check if the module already exists, in which case we just return
   // its decl.
-  StringAttr mangledName =
-      sharedState.getMangledModuleName(getMLIRContext(), moduleName);
   auto &declsInScope = parentDecl.getDeclsInScope();
-  if (auto it = declsInScope.find(mangledName); it != declsInScope.end()) {
+  if (auto it =
+          declsInScope.find(StringAttr::get(getMLIRContext(), moduleName));
+      it != declsInScope.end()) {
     assert(it->second.size() == 1 &&
            "We expect one single module decl with a given name.");
     return it->second[0];
@@ -957,11 +956,11 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
       sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
   LIT::Lexer lexer(impl->parserContext->getSharedState().diags, sourceBuf);
 
+  auto name = StringAttr::get(sharedState.getContext(), moduleName);
   Operation *fileOp = parentDecl.getDeclEndBuilder().create<LIT::FileModuleOp>(
-      sharedState.translateLocation(parentDecl.getLoc()), mangledName,
-      StringAttr::get(sharedState.getContext(), moduleName));
+      sharedState.translateLocation(parentDecl.getLoc()), name, name);
   return &sharedState.declResolver->addFullyResolvedDecl(
-      fileOp, mangledName, lexer.getToken().getLoc(), &parentDecl);
+      fileOp, name, lexer.getToken().getLoc(), &parentDecl);
 }
 
 MojoASTDeclRef

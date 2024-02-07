@@ -63,14 +63,17 @@ struct BaseCompletionListener : public ParserListener {
 /// Returns true if the given member should be shown during lookup within
 /// `decl`. If `isModuleLookup` is true, we are looking up nested modules.
 static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
+                                 MojoASTDeclRef child,
                                  bool isModuleLookup = false) {
   if (llvm::isa_and_present<PackageOp>(decl.getIfOperation())) {
+    bool childIsPackageOrModule =
+        llvm::isa_and_present<FileModuleOp, PackageOp>(child.getIfOperation());
     // If this is a module lookup, we only want to show non-init modules defined
     // within the package.
     if (isModuleLookup)
-      return member.consume_front("$") && member != "__init__";
+      return childIsPackageOrModule && member != "__init__";
     // Otherwise, show everything but internally defined modules.
-    return !member.starts_with("$");
+    return !childIsPackageOrModule;
   }
   return true;
 }
@@ -148,10 +151,12 @@ struct CodeCompletionListener : public BaseCompletionListener {
     MojoASTDeclRef packageDecl = getPackageDecl();
     for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
       StringRef name = child.getName();
-      if (!showDeclDuringLookup(packageDecl, name, /*isModuleLookup=*/true))
+      MojoASTDeclRef childDecl = *child.getDecls().begin();
+      if (!showDeclDuringLookup(packageDecl, name, childDecl,
+                                /*isModuleLookup=*/true))
         continue;
 
-      addCompletionForOp(name, *child.getDecls().begin(), [](Operation *op) {
+      addCompletionForOp(name, childDecl, [](Operation *op) {
         return isa<FileModuleOp, PackageOp>(op);
       });
     }
@@ -166,12 +171,13 @@ struct CodeCompletionListener : public BaseCompletionListener {
     auto collectDeclChildren = [&](MojoASTDeclRef decl) {
       for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
         StringRef name = child.getName();
-        if (!showDeclDuringLookup(decl, name))
+        MojoASTDeclRef childDecl = *child.getDecls().begin();
+        if (!showDeclDuringLookup(decl, name, childDecl))
           continue;
 
         // TODO: Include information about overloads here and just handle multi
         // decls in general.
-        addCompletionForOp(name, *child.getDecls().begin());
+        addCompletionForOp(name, childDecl);
       }
     };
 

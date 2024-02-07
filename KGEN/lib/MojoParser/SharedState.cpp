@@ -316,11 +316,6 @@ ASTType SharedState::getTypeCheckErrorType() const {
 ASTType SharedState::getNoneType() const { return impl->noneType; }
 NoneAttr SharedState::getNoneAttr() const { return impl->noneAttr; }
 
-StringAttr SharedState::getMangledModuleName(MLIRContext *ctx,
-                                             StringRef moduleName) {
-  return StringAttr::get(ctx, "$" + moduleName);
-}
-
 /// Add declarations for magic things to the builtins decl.
 void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   DeclResolver &resolver = *declResolver;
@@ -825,10 +820,10 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   // Mangle the module name during import to avoid conflicts with symbols that
   // are actually visible. We may import a module, but not directly expose it
   // via its module name.
-  StringAttr mangledName = getMangledModuleName(getContext(), name);
+  StringAttr moduleName = StringAttr::get(getContext(), name);
 
   // Check to see if we've already imported this module.
-  auto it = parentState->nestedModules.find(mangledName);
+  auto it = parentState->nestedModules.find(moduleName);
   if (it != parentState->nestedModules.end())
     return *it->second;
 
@@ -837,7 +832,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   auto declName = StringAttr::get(getContext(), name);
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath) {
-      return createErrorModuleState(loc, mangledName, *parentState->decl,
+      return createErrorModuleState(loc, moduleName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
     modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
@@ -849,9 +844,9 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     if (impl->stdlibPackageState && name != "stdlib") {
       // Check for an existing module for this name. If we find one, insert it
       // into the parent state and return it.
-      auto it = impl->stdlibPackageState->nestedModules.find(mangledName);
+      auto it = impl->stdlibPackageState->nestedModules.find(moduleName);
       if (it != impl->stdlibPackageState->nestedModules.end()) {
-        parentState->nestedModules.insert({mangledName, it->second});
+        parentState->nestedModules.insert({moduleName, it->second});
         return *it->second;
       }
 
@@ -864,7 +859,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
         if (modulePath) {
           ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
                                                        impl->topLevelDecl, loc);
-          parentState->nestedModules.insert({mangledName, &moduleState});
+          parentState->nestedModules.insert({moduleName, &moduleState});
           return moduleState;
         }
       }
@@ -874,7 +869,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
   if (!modulePath) {
-    return createErrorModuleState(loc, mangledName, *parentState->decl,
+    return createErrorModuleState(loc, moduleName, *parentState->decl,
                                   "unable to locate module '" + name + "'");
   }
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
@@ -883,14 +878,14 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   if (std::filesystem::is_directory(*modulePath)) {
     auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
         *modulePath, /*line=*/0, /*column=*/0);
-    return createPackageState(declName, mangledName, *modulePath, *parentState,
+    return createPackageState(declName, moduleName, *modulePath, *parentState,
                               fileLoc);
   }
 
   // Check if the path is a binary package.
   StringRef pathRef(*modulePath);
   if (pathRef.ends_with(".mojopkg") || pathRef.ends_with(".📦"))
-    return createBinaryPackageState(loc, declName, mangledName, *modulePath,
+    return createBinaryPackageState(loc, declName, moduleName, *modulePath,
                                     *parentState);
 
   // Open the module file within the source manager. Reuse an existing file if
@@ -914,7 +909,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
       moduleBuffer->getBufferIdentifier(), /*line=*/0, /*column=*/0);
-  return createModuleState(declName, mangledName, moduleBuffer, *parentState,
+  return createModuleState(declName, moduleName, moduleBuffer, *parentState,
                            fileLoc, enableCaching);
 }
 
@@ -922,7 +917,7 @@ SharedState::ModuleState &
 SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
                                        llvm::SMLoc loc) {
   auto emitError = [&](const Twine &message = "") -> ModuleState & {
-    return createErrorModuleState(loc, getMangledModuleName(getContext(), name),
+    return createErrorModuleState(loc, StringAttr::get(getContext(), name),
                                   *parentDecl, message);
   };
 
@@ -1247,9 +1242,6 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
 
     for (StringRef name :
          llvm::make_first_range(builtinsPackageDecl.getDeclsInScope())) {
-      // Directly nested modules/packages look like `$foo`.
-      if (!name.consume_front("$"))
-        continue;
       impl->implicitBuiltinImports.emplace_back(
           StringAttr::get(getContext(), "builtin." + name));
     }
@@ -1263,13 +1255,12 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
 ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
-  StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
-
   // Create a new module state. This isn't an imported module, so we can only
   // cache if we're caching everything.
   ModuleState &state =
-      createModuleState(StringAttr::get(getContext(), moduleName), mangledName,
-                        moduleBuffer, *impl->topLevelModuleState, loc,
+      createModuleState(StringAttr::get(getContext(), moduleName),
+                        StringAttr::get(getContext(), moduleName), moduleBuffer,
+                        *impl->topLevelModuleState, loc,
                         impl->moduleCachingLevel == ParserConfig::kCacheAll);
   return *state.decl;
 }
@@ -1277,17 +1268,16 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc =
       FileLineColLoc::get(getContext(), path, /*line=*/0, /*column=*/0);
-  StringAttr mangledName = getMangledModuleName(getContext(), name);
-  ModuleState &state =
-      createPackageState(StringAttr::get(getContext(), name), mangledName, path,
-                         *impl->topLevelModuleState, fileLoc);
+  ModuleState &state = createPackageState(
+      StringAttr::get(getContext(), name), StringAttr::get(getContext(), name),
+      path, *impl->topLevelModuleState, fileLoc);
   return *state.decl;
 }
 
 ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
-  StringAttr mangledName = getMangledModuleName(getContext(), name);
+  auto moduleName = StringAttr::get(getContext(), name);
   ModuleState &state = createBinaryPackageState(
-      SMLoc(), mangledName, mangledName, path, *impl->topLevelModuleState);
+      SMLoc(), moduleName, moduleName, path, *impl->topLevelModuleState);
   return *state.decl;
 }
 
@@ -1697,10 +1687,8 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     // Resolve the top-level container for the reference. This should be a
     // package or module.
     StringRef moduleName = symbol.getRootReference();
-    assert(moduleName.starts_with("$") &&
-           "expected all references to be bound to a module/package");
-    ASTDecl *decl = &shared.importModule(moduleName.drop_front(),
-                                         /*currentPackage=*/nullptr, loc);
+    ASTDecl *decl =
+        &shared.importModule(moduleName, /*currentPackage=*/nullptr, loc);
     if (decl->hasReferenceError ||
         failed(shared.declResolver->resolveFully(*decl, loc)))
       return {};
@@ -1914,14 +1902,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case<FileModuleOp, PackageOp>([&](auto op) {
             assert(packageState &&
                    "FileModule or Package nested in non-package");
-            StringAttr name = op.getNameAttr();
+            StringAttr name = op.getSymNameAttr();
             ASTDecl &decl = addDeclForOp(op, name);
-
-            // Alias this without the `$` to allow users to resolve this nested
-            // package/module using the name.
-            packageState->decl->declsInScope.insert(
-                {StringAttr::get(getContext(), name.getValue().drop_front()),
-                 {&decl}});
 
             // Record a nested module state for this decl.
             ModuleState &moduleState = packageState->insertNestedModule(

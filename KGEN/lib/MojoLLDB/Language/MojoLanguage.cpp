@@ -182,11 +182,11 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
   constexpr const char *kDynamicVectorREPLRegex =
-      R"(^!kgen.declref<@"\$stdlib"::@"\$collections"::@"\$vector"::@"?DynamicVector[\[<].*$)";
+      R"(^!kgen.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*$)";
   // TODO(29742): we can't parse the SourceName of DynamicVector correctly, so
   // we have to handle this ugly type name.
   constexpr const char *kDynamicVectorDWARFRegex =
-      R"(^!kgen.declref<@"\$__lldb_anonymous__"::@"pkg stdlib::pkg collections::module vector::struct DynamicVector\[.*)";
+      R"(^!kgen.declref<@__lldb_anonymous__::@"pkg stdlib::pkg collections::module vector::struct DynamicVector\[.*)";
   constexpr const char *kREPLResultRegex = "^!lit.replresultref<.*>$";
 
   // Formatters are matched in reverse order, so this one that uses .* should
@@ -238,14 +238,14 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   // For the REPL
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
-      "$builtin::string::String summary provider",
-      R"(!kgen.declref<@"$stdlib"::@"$builtin"::@"$string"::@String, !lit.metatype<@"$stdlib"::@"$builtin"::@"$string"::@String>>)",
+      "builtin::string::String summary provider",
+      R"(!kgen.declref<@stdlib::@builtin::@string::@String, !lit.metatype<@stdlib::@builtin::@string::@String>>)",
       summaryFlags, /*regex=*/false);
   // For DWARF
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
-      "$builtin::string::String summary provider",
-      R"(!kgen.declref<@"$builtin"::@"$string"::@String, !lit.metatype<@"$builtin"::@"$string"::@String>>)",
+      "builtin::string::String summary provider",
+      R"(!kgen.declref<@builtin::@string::@String, !lit.metatype<@builtin::@string::@String>>)",
       summaryFlags, /*regex=*/false);
   AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
                 "REPLResultRefType summary provider", kREPLResultRegex,
@@ -256,12 +256,12 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   // FIXME(26722): add support for this summary provider in the REPL. Right now
   // the regex only includes the DWARF version of this type.
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-                "$utils::vector::DynamicVector summary provider",
+                "utils::vector::DynamicVector summary provider",
                 kDynamicVectorDWARFRegex, summaryFlags, /*regex=*/true);
   // FIXME(28737): We need to remove the REPL resultant type synthetic value
   // in order to enable summaries for synthetic types.
   // AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-  //               "$utils::vector::DynamicVector summary provider",
+  //               "utils::vector::DynamicVector summary provider",
   //               kDynamicVectorREPLRegex, summaryFlags, /*regex=*/true);
 }
 

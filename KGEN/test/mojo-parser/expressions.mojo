@@ -64,7 +64,7 @@ struct MemoryOnlyPair:
     # CHECK: %1 = lit.ref.struct.ger %arg[x]
     # CHECK: %2 = lit.ref.load %0
     # CHECK: %3 = lit.ref.load %1
-    # CHECK: %4 = lit.call @"{{.*}}__add__{{.*}}"(%2, %3)
+    # CHECK: %4 = lit.call @{{.*}}__add__{{.*}}"(%2, %3)
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
@@ -252,7 +252,7 @@ fn precedence_associativity(a: Int):
   z = -2**z
   # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}#lit.struct<{value = 1}>
-  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"(%[[Z]], %[[ONE]])
+  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}int::Int,{{.*}}int::Int)"(%[[Z]], %[[ONE]])
   # CHECK-NEXT: lit.ref.store %[[RES]], %z
   z = Int(1).value + z
 
@@ -265,40 +265,40 @@ fn precedence_associativity(a: Int):
 
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
-  # CHECK: lit.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__radd__({{.*}}int::Int,{{.*}}int::Int)"
   var z = Int(1).value + a
 
-  # CHECK: lit.call {{.*}}Int::@"__rsub__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rsub__({{.*}}int::Int,{{.*}}int::Int)"
   z = Int(2).value - z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmul__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rmul__({{.*}}int::Int,{{.*}}int::Int)"
   z = Int(3).value * z
 
   # div tests
   # CHECK: lit.call {{.*}}__rtruediv__
-  # CHECK: lit.call {{.*}}Int::@"__rfloordiv__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rfloordiv__({{.*}}int::Int,{{.*}}int::Int)"
   var r1 = 33.0 / Float32(42.0)
   z = Int(33).value // z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmod__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rmod__({{.*}}int::Int,{{.*}}int::Int)"
   var i0 = Int(10).value % z
 
-# CHECK: lit.call {{.*}}Int::@"__rpow__({{.*}}$int::Int,{{.*}}$int::Int)"
+# CHECK: lit.call {{.*}}Int::@"__rpow__({{.*}}int::Int,{{.*}}int::Int)"
   var i1 = Int(3).value ** z
 
-  # CHECK: lit.call {{.*}}Int::@"__rlshift__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rlshift__({{.*}}int::Int,{{.*}}int::Int)"
   var i2 = Int(1).value << z
 
-  # CHECK: lit.call {{.*}}Int::@"__rrshift__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rrshift__({{.*}}int::Int,{{.*}}int::Int)"
   var i3 = Int(1).value >> z
 
-  # CHECK: lit.call {{.*}}Int::@"__rand__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rand__({{.*}}int::Int,{{.*}}int::Int)"
   z = Int(1).value & z
 
-  # CHECK: lit.call {{.*}}Int::@"__ror__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__ror__({{.*}}int::Int,{{.*}}int::Int)"
   z = Int(2).value | z
 
-  # CHECK: lit.call {{.*}}Int::@"__rxor__({{.*}}$int::Int,{{.*}}$int::Int)"
+  # CHECK: lit.call {{.*}}Int::@"__rxor__({{.*}}int::Int,{{.*}}int::Int)"
   z = Int(3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
@@ -352,17 +352,17 @@ struct MemBoolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
-  # CHECK: %0 = lit.call {{.*}}@"$bool"::@Bool::@"__bool__({{.*}}$bool::Bool)"(%a)
-  # CHECK: %1 = lit.call {{.*}}@"$bool"::@Bool::@"__invert__({{.*}}$bool::Bool)"(%0)
+  # CHECK: %0 = lit.call {{.*}}Bool::@"__bool__({{.*}}Bool)"(%a)
+  # CHECK: %1 = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"(%0)
   _ = not a
 
-  # CHECK: [[EQ:%.*]] = lit.call {{.*}}Int::@"__eq__({{.*}}$int::Int,{{.*}}$int::Int)"
-  # CHECK: [[EQBOOL:%.*]] = lit.call {{.*}}@"$bool"::@Bool::@"__bool__({{.*}}$bool::Bool)"([[EQ]])
-  # CHECK:  = lit.call {{.*}}@"$bool"::@Bool::@"__invert__({{.*}}$bool::Bool)"([[EQBOOL]])
+  # CHECK: [[EQ:%.*]] = lit.call {{.*}}Int::@"__eq__({{.*}}int::Int,{{.*}}int::Int)"
+  # CHECK: [[EQBOOL:%.*]] = lit.call {{.*}}Bool::@"__bool__({{.*}}Bool)"([[EQ]])
+  # CHECK:  = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"([[EQBOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%c)
-  # CHECK:  = lit.call {{.*}}@"$bool"::@Bool::@"__invert__({{.*}}$bool::Bool)"([[BOOL]])
+  # CHECK:  = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"([[BOOL]])
   _ = not c
 
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}@"__bool__{{.*}}(%d)
@@ -474,7 +474,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   x = \
 z
 
-  # CHECK-NEXT: lit.call @"$expressions"::@"noop()"()
+  # CHECK-NEXT: lit.call @{{.*}}noop()"()
   noop()
 
   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
@@ -565,14 +565,14 @@ fn returnIndex() -> Int:
 
 # CHECK-LABEL: lit.func @"returnIndex2()"() -> !Int
 fn returnIndex2() -> Int:
-  # CHECK-NEXT: %0 = lit.call @"$expressions"::@"takeIndexParam{{.*}}"<:!Int apply({{.*}}@"$expressions"::@"returnIndex()")>()
+  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
 # CHECK-SAME: <callable: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
+  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
@@ -619,11 +619,11 @@ fn patterns():
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
-  # CHECK: {{%.*}} = lit.call {{.*}}@"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: {{%.*}} = lit.call {{.*}}@builtin::@simd::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"{{.*}}(%a: !Int borrow, %b: !lit.ref<!Int, mut {{.*}}> byref) -> !kgen.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}int::Int,{{.*}}int::Int&)"{{.*}}(%a: !Int borrow, %b: !lit.ref<!Int, mut {{.*}}> byref) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
@@ -853,28 +853,28 @@ world"
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: Float32):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
-    # CHECK: lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
     _ = ()
 
     # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
-    # CHECK: lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = (a, b)
 
     # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
-    # CHECK: lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = a, b
 
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = (a,)
 
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = a,
 
     # CHECK: %c = lit.varlet.decl "c"
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: [[TUP2:%.*]] = lit.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     # CHECK: lit.ref.store [[TUP2]], %c
     var c = a,
 
@@ -1022,7 +1022,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
 
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
-  # CHECK: lit.call @"{{.*}}__init__{{.*}}([[ANON]],
+  # CHECK: lit.call @{{.*}}__init__{{.*}}([[ANON]],
   # CHECK: lit.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
 
@@ -1052,7 +1052,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
 
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
-    # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
+    # CHECK-LABEL: lit.func @"__init__(expressions::MyInlineIntInit=&,expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, |, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn __init__(inout self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]

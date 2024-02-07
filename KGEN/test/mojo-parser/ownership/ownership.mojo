@@ -39,7 +39,7 @@ struct MemPair:
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
-# CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del__
+# CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@ownership::@RegExample::@"__del__
 @register_passable
 struct RegExample:
   fn __init__() -> Self:
@@ -351,7 +351,7 @@ fn test_result_optimization():
 
   # CHECK: [[IMMREF:%.*]] = lit.ref.immut %example
   # CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl
-  # CHECK-NEXT: lit.call @"$ownership{{.*}}(%__call_result_tmp__, [[IMMREF]])
+  # CHECK-NEXT: lit.call @ownership{{.*}}(%__call_result_tmp__, [[IMMREF]])
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
   # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}(%example, [[IMMREF]])
@@ -363,7 +363,7 @@ fn test_result_optimization():
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
   # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
-  # CHECK-NEXT: lit.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, [[IMMREF]])
+  # CHECK-NEXT: lit.call @ownership::@"use_and_return2{{.*}}(%__call_result_tmp___0, [[IMMREF]])
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger [[IMMREF]][f1]
   # CHECK-NEXT: [[MUTREF:%.*]] = kgen.rebind [[F1_2]]
