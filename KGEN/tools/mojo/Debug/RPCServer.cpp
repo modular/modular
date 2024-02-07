@@ -53,7 +53,7 @@ createBasicRPCPayload(const std::optional<StringRef> &secret) {
                        {"type", "mojo-lldb"}};
 
   if (secret)
-    payload.insert({"token", *secret});
+    payload.insert({"secret", *secret});
 
   return payload;
 }

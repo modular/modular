@@ -45,7 +45,7 @@ defm pid: CommandOption<["--", "-"], "pid",
 defm process_name: CommandOption<["--", "-"], "process-name",
   AttachOptionGroup, Index<2>, MetaVarName<"NAME">,
   HelpText<"Indicates the debugger to attach to the process with the given "
-  "name.">>;
+  "name or path.">>;
 
 //===----------------------------------------------------------------------===//
 // RPC Options

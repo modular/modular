@@ -10,6 +10,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "RPCServer.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/Path.h"
 
 using namespace M;
 
@@ -59,6 +60,22 @@ auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
 
 static bool isMojoFile(StringRef file) {
   return file.ends_with(".mojo") || file.ends_with(".🔥");
+}
+
+// Given a path, resolve it to an actual full path without dots. If the input is
+// a program name, it will be searched in the PATH.
+static std::string resolvePath(std::string path) {
+  if (!llvm::sys::path::is_absolute(path)) {
+    if (std::optional<std::string> fullPath =
+            llvm::sys::Process::FindInEnvPath("PATH", path)) {
+      path = *fullPath;
+    }
+  }
+  std::error_code ec;
+  std::filesystem::path canonicalPath = std::filesystem::canonical(path, ec);
+  if (ec)
+    return path;
+  return canonicalPath.string();
 }
 
 /// Launches LLDB with the Mojo plugin enabled.
@@ -130,6 +147,8 @@ static int debug(const State &state) {
 
   // This is a launch case.
   if (target) {
+    target = resolvePath(*target);
+
     // This is a JIT debug case, in which case LLDB will debug `mojo run`. We
     // have to include the provided compilation options as run arguments for
     // `mojo run`.
@@ -186,7 +205,8 @@ static int debug(const State &state) {
       if (pid)
         llvm::append_values(lldbArgs, std::string("-p"), pid->str());
       if (processName)
-        llvm::append_values(lldbArgs, std::string("-n"), processName->str());
+        llvm::append_values(lldbArgs, std::string("-n"),
+                            resolvePath(processName->str()));
       return invokeLLDB(state, lldbArgs, {}, dryRun);
     }
   }

@@ -11,6 +11,7 @@
 import * as net from 'net';
 import * as querystring from 'querystring';
 import stringArgv from 'string-argv';
+import * as vscode from 'vscode';
 import {
   debug,
   DebugConfiguration,
@@ -123,21 +124,20 @@ export class UriLaunchServer implements UriHandler {
 export class RpcLaunchServer extends DisposableContext {
   private inner: net.Server;
   private port: number;
-  private tokens = new Set<string>();
+  private secrets = new Set<string>();
   private errorEmitter = new EventEmitter<Error>();
   private loggingService: LoggingService;
 
   /**
-   * This constructor receives an optional token, which is expected to match the
-   * `token` attribute from the incoming debug configuration requests as a
+   * This constructor receives an secret, which is expected to match the
+   * `secret` attribute from the incoming debug configuration requests as a
    * safety mechanism.
    */
-  constructor(loggingService: LoggingService, port: number,
-              token: string|undefined) {
+  constructor(loggingService: LoggingService, port: number, secret: string) {
     super();
     this.loggingService = loggingService;
     this.port = port;
-    this.addServerToken(token);
+    this.addServerSecret(secret);
 
     this.pushSubscription(this.errorEmitter.event((e: Error) => {
       this.loggingService.logError(
@@ -162,19 +162,17 @@ export class RpcLaunchServer extends DisposableContext {
   }
 
   /**
-   * Adds the given token, if not undefined, to the list of tokens used for
-   * basic security of this server.
+   * Adds the given secret to the list of secrets used for basic authentication
+   * of this server.
    */
-  addServerToken(token: string|undefined) {
-    if (token !== undefined)
-      this.tokens.add(token)
-  }
+  addServerSecret(secret: string|undefined) { this.secrets.add(secret || '') }
 
   /**
-   * Process a JSON debug configuration. It should contain a token field with
+   * Process a JSON debug configuration. It should contain a secret field with
    * the same value as the one defined to create the RPC server.
    */
   async processRequest(request: string) {
+    this.loggingService.logInfo("Received RPC debug request", request);
     let debugConfig: DebugConfiguration = {
       type : 'mojo-lldb',
       request : 'launch',
@@ -182,11 +180,13 @@ export class RpcLaunchServer extends DisposableContext {
     };
     Object.assign(debugConfig, YAML.parse(request));
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (this.tokens.size != 0) {
-      if (!this.tokens.has(debugConfig.token || ''))
-        return 'Invalid token. This mojo.lldb.rpcServer expects a different `token` attribute for the launch configuration.';
-      delete debugConfig.token;
+    if (!this.secrets.has(debugConfig.secret || '')) {
+      const message =
+          'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.';
+      vscode.window.showErrorMessage(message);
+      return message;
     }
+    delete debugConfig.secret;
     try {
       let success = await debug.startDebugging(/*workspaceFolder=*/ undefined,
                                                debugConfig);
