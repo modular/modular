@@ -1,0 +1,26 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %repl <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+let a_bool_or_float = __mlir_op.`kgen.variant.create`[
+        _type = __mlir_type[
+            `!kgen.variant<`,
+            Bool,
+            `, `,
+            Float64,
+            `>`,
+        ],
+        index = Int(1).value,
+    ](Float64(42.5))
+
+# CHECK: (Variant[Bool, SIMD[f64, 1]]) a_bool_or_float = {
+# CHECK:   (SIMD[f64, 1]) variant[1] = {
+# CHECK:     (f64) [0] = 42.5
+# CHECK:   }
+# CHECK: }

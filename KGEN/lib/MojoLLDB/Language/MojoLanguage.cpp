@@ -7,6 +7,7 @@
 #include "MojoLanguage.h"
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoDynamicVectorTypeFormatter.h"
+#include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoLLDBResultRefTypeFormatter.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -207,6 +208,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
                   "Mojo DynamicVector synthetic children",
                   kDynamicVectorREPLRegex, synthFlags, /*regex=*/true);
+  AddCXXSynthetic(mojoCategorySP, mojoKGENVariantSyntheticFrontEndCreator,
+                  "Mojo !kgen.variant synthetic children",
+                  R"(^!kgen\.variant<.*>)", synthFlags, /*regex=*/true);
 
   // These settings are the same as the C++ ones.
   TypeSummaryImpl::Flags summaryFlags;

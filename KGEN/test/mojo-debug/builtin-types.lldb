@@ -93,13 +93,10 @@
 # CHECK:   [1] = 6
 # CHECK: }
 # CHECK: (Variant[scalar<f64>, scalar<bool>, simd<2, index>]) a_float_or_bool_or_simd = {
-# CHECK:   variant[0] =
-# CHECK:   variant[1] =
 # CHECK:   variant[2] = {
 # CHECK:     [0] = 5
 # CHECK:     [1] = 6
 # CHECK:   }
-# CHECK:   discriminator = 2
 # CHECK: }
 # CHECK: (None) none = None
 # CHECK: (si64) a_var_index = 48
