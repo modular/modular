@@ -287,75 +287,91 @@ fn max(t: IntTuple) -> Int:
     return reduce(reducer, t, 1)
 
 
+# IntTuple zip iterator
+
+
+@value
+struct _ZipIter:
+    var index: Int
+    var a: IntTuple
+    var b: IntTuple
+
+    @always_inline
+    fn __next__(inout self) -> IntTuple:
+        self.index += 1
+        return IntTuple(self.a[self.index - 1], self.b[self.index - 1])
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return math.min(len(self.a), len(self.b)) - self.index
+
+
+@value
+struct zip(Sized):
+    var a: IntTuple
+    var b: IntTuple
+
+    alias IterType = _ZipIter
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(0, self.a, self.b)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return math.min(len(self.a), len(self.b))
+
+
 # Layout operations
 
 
 fn elementwise_min(a: IntTuple, b: IntTuple) raises -> IntTuple:
+    if len(a) != len(b):
+        raise Error(
+            "Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b))
+        )
+    if is_int(a):
+        return math.min(int(a), int(b))
     var res = IntTuple()
-    # keep an iterator on b to move in the same way as a
-    for i in range(len(a)):
-        let elem_1 = a[i]
-        let elem_2 = b[i]
-        if is_int(elem_1):
-            let elem_1_int = int(elem_1)
-            let elem_2_int = int(elem_2)
-            res.append(math.min(elem_1_int, elem_2_int))
-        else:
-            let elem_1_tuple = tuple(elem_1)
-            let elem_2_tuple = tuple(elem_2)
-            for j in range(len(elem_1_tuple)):
-                res.append(elementwise_min(elem_1_tuple, elem_2_tuple[j]))
+    for z in zip(a, b):
+        res.append(elementwise_min(z[0], z[1]))
     return res
 
 
 fn inner_product(a: IntTuple, b: IntTuple) raises -> Int:
-    if is_tuple(a):  # tuple tuple
-        let ta = tuple(a)
-        let tb = tuple(b)
-        if len(ta) != len(tb):
-            raise Error(
-                "Tuple sizes don't match: "
-                + str(len(ta))
-                + " != "
-                + str(len(tb))
-            )
-
-        var r: Int = 0
-        for i in range(len(ta)):
-            r += inner_product(ta[i], tb[i])
-        return r
-    else:  # "int" "int"
-        if not is_int(b):
-            raise Error("Input types don't match.")
+    if len(a) != len(b):
+        raise Error(
+            "Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b))
+        )
+    if is_int(a):
         return int(a) * int(b)
+    var r: Int = 0
+    for z in zip(a, b):
+        r += inner_product(z[0], z[1])
+    return r
 
 
 fn shape_div(a: IntTuple, b: IntTuple) raises -> IntTuple:
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
-            let ta = tuple(a)
-            let tb = tuple(b)
-            if len(ta) != len(tb):
+            if len(a) != len(b):
                 raise Error(
                     "Tuple sizes don't match: "
-                    + str(len(ta))
+                    + str(len(a))
                     + " != "
-                    + str(len(tb))
+                    + str(len(b))
                 )
 
             var r = IntTuple()
-            for i in range(len(ta)):
-                let x = ta[i]
-                let y = tb[i]
-                r.append(shape_div(x, y))
+            for z in zip(a, b):
+                r.append(shape_div(z[0], z[1]))
             return r
         else:  # tuple "int"
-            var r = IntTuple()
-            let ta = tuple(a)
             var vb = int(b)
-            for v in ta:
+            var r = IntTuple()
+            for v in tuple(a):
                 r.append(shape_div(v, vb))
-                vb = int(shape_div(vb, IntTuple(product(v))))
+                vb = int(shape_div(vb, product(v)))
             return r
     else:
         if is_tuple(b):  # "int" tuple
