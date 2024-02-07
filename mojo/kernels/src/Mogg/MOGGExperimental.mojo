@@ -428,3 +428,19 @@ fn gather[
         trap(e)
 
     return output
+
+
+@mogg_register_override("single_thread_blocking_override_test", 1000)
+@export
+fn single_thread_blocking_override_test[
+    single_thread_blocking_override: Bool
+](x: Tensor) -> Tensor[x.type, x.static_shape, x.static_strides]:
+    @parameter
+    if single_thread_blocking_override:
+        print("Running with a single blocking thread")
+    else:
+        print("Running in async mode")
+
+    return Tensor[x.type, x.static_shape, x.static_strides](
+        x.data, x.shape, x.strides, x.refcount()
+    )
