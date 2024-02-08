@@ -14,6 +14,7 @@ from kernel_utils.layout import (
     complement,
     logical_divide,
     logical_product,
+    zipped_divide,
     print_layout,
 )
 
@@ -132,6 +133,25 @@ fn test_print_layout() raises:
     )
 
 
+# CHECK-LABEL: test_zipped_divide
+fn test_zipped_divide() raises:
+    print("== test_zipped_divide")
+    # CHECK: Layout((2, (2, 4)):(4, (8, 1)))
+    let layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    let tile_layout = Layout(2, 1)
+    print(zipped_divide(layout_4x4_row_major, tile_layout))
+    var tiler = DynamicVector[Layout]()
+    tiler.append(tile_layout)
+    tiler.append(tile_layout)
+    # CHECK: Layout(((2, 2), (2, 2)):((4, 1), (8, 2)))
+    print(
+        zipped_divide(
+            layout_4x4_row_major,
+            tiler,
+        )
+    )
+
+
 fn main() raises:
     test_layout_basic()
     test_coalesce()
@@ -140,3 +160,4 @@ fn main() raises:
     test_logcial_divide()
     test_logical_product()
     test_print_layout()
+    test_zipped_divide()

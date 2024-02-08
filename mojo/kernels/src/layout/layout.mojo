@@ -30,6 +30,10 @@ struct Layout(Sized, Stringable, CollectionElement):
     var shape: IntTuple
     var stride: IntTuple
 
+    fn __init__(inout self):
+        self.shape = IntTuple()
+        self.stride = IntTuple()
+
     fn __init__(inout self, shape: IntTuple, stride: IntTuple):
         self.shape = shape
         self.stride = stride
@@ -76,6 +80,11 @@ struct Layout(Sized, Stringable, CollectionElement):
     @always_inline
     fn __call__(self, idx: IntTuple) raises -> Int:
         return crd2idx(idx, self.shape, self.stride)
+
+    @always_inline
+    fn append(inout self, item: Layout):
+        self.shape.append(item.shape)
+        self.stride.append(item.stride)
 
 
 fn coalesce(src: Layout) -> Layout:
@@ -209,6 +218,20 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     return coalesce(Layout(result_shape, result_stride))
 
 
+fn apply_tiler(
+    func: fn (Layout, Layout) raises -> Layout,
+    layout_a: Layout,
+    tiler: DynamicVector[Layout],
+) raises -> Layout:
+    if tiler.size == 0:
+        return layout_a
+    var res = Layout()
+    for i in range(len(tiler)):
+        let layout_b = tiler[i]
+        res.append(func(layout_a[i], layout_b))
+    return res
+
+
 fn logical_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
     let res_comp = complement(layout_b, layout_a.size())
     var res = layout_b
@@ -220,20 +243,7 @@ fn logical_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
 fn logical_divide(
     layout_a: Layout, tiler: DynamicVector[Layout]
 ) raises -> Layout:
-    if tiler.size == 0:
-        return layout_a
-    if tiler.size == 1:
-        return logical_divide(layout_a, tiler[0])
-
-    var res_shape = IntTuple()
-    var res_stride = IntTuple()
-    for i in range(len(tiler)):
-        let layout_b = tiler[i]
-        let res = logical_divide(layout_a[i], layout_b)
-        res_shape.append(res.shape)
-        res_stride.append(res.stride)
-
-    return Layout(res_shape, res_stride)
+    return apply_tiler(logical_divide, layout_a, tiler)
 
 
 fn logical_product(layout_a: Layout, layout_b: Layout) raises -> Layout:
@@ -250,16 +260,47 @@ fn logical_product(
 ) raises -> Layout:
     if tiler.size == 1:
         return logical_product(layout_a, tiler[0])
+    return apply_tiler(logical_product, layout_a, tiler)
 
-    var res_shape = IntTuple()
-    var res_stride = IntTuple()
+
+fn hier_unzip(
+    splitter: fn (Layout, Layout) raises -> Layout,
+    layout_a: Layout,
+    tiler: DynamicVector[Layout],
+) raises -> Layout:
+    var split = Layout()
     for i in range(len(tiler)):
-        let layout_b = tiler[i]
-        let res = logical_product(layout_a[i], layout_b)
-        res_shape.append(res.shape)
-        res_stride.append(res.stride)
+        split.append(hier_unzip(splitter, layout_a[i], tiler[i]))
+    var res_1 = Layout()
+    for i in range(len(tiler)):
+        res_1.append(split[i][0])
+    var res_2 = Layout()
+    for i in range(len(tiler)):
+        res_2.append(split[i][1])
+    for i in range(len(tiler), len(layout_a)):
+        res_2.append(layout_a[i])
+    var res = Layout()
+    res.append(res_1)
+    res.append(res_2)
+    return res
 
-    return Layout(res_shape, res_stride)
+
+fn hier_unzip(
+    splitter: fn (Layout, Layout) raises -> Layout,
+    layout_a: Layout,
+    layout_b: Layout,
+) raises -> Layout:
+    return splitter(layout_a, layout_b)
+
+
+fn zipped_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
+    return hier_unzip(logical_divide, layout_a, layout_b)
+
+
+fn zipped_divide(
+    layout_a: Layout, tiler: DynamicVector[Layout]
+) raises -> Layout:
+    return hier_unzip(logical_divide, layout_a, tiler)
 
 
 fn print_layout(layout: Layout) raises:
