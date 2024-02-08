@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Library for graph Symbol Types."""
 
 from tensor import TensorSpec
 from utils.variant import Variant
@@ -18,28 +19,98 @@ fn _dyn() -> Int64:
 
 @value
 struct DynamicDim(CollectionElement):
+    """A dynamic tensor dimension.
+
+    `DynamicDim`s are printed in MO tensor types as `?`, eg.
+    `!mo.tensor<[?, 4, ?], si32]>` has 2 dynamic dimensions.
+
+    Dynamic dimensions reduce the compiler's ability to reason about
+    tensor shapes as data moves through the model, and may therefore
+    limit the available optimizations it can perform. Reducing usage
+    of dynamic dims can be an avenue to improving model performance.
+
+    Create a dynamic dimension via `Dim.dynamic()`.
+    """
+
     pass
 
 
 @value
 struct SymbolicDim(CollectionElement):
+    """A symbolic tensor dimension.
+
+    `SymbolicDims`s have a name and are printed as their name on MO types, eg.
+    `!mo.tensor<[batch, x, 10], si32]>` the first and second dimensions are
+    named "batch" and "x" respectively.
+
+    Symbolic dimensions don't have a static value, but they allow a readable
+    name to understand what's going on in the model IR better, and they also
+    allow users to hint to the compiler that two dimensions will have the same
+    value, which can often allow important speedups.
+
+    Create a symbolic dimension via `Dim.symbolic("name")`, or just by passing
+    the string name, eg. `MOTensor(DType.bool, "batch", Dim.dynamic(), 10)`.
+    """
+
     var name: String
+    """The name of the dimension."""
 
     fn __eq__(self, other: SymbolicDim) -> Bool:
+        """Whether the dimension is the same as another symbolic dimension.
+
+        Symbolic dimensions with the same name are interpreted as the same
+        dimensionality! If you use Symbolic dimensions, make sure you're naming
+        them consistently, your model will likely fail to compile if you name
+        two actually different dimensions the same name.
+
+        Args:
+            other: The other dimension to check equality against.
+
+        Returns:
+            True if the dimensions have the same name, False otherwise.
+        """
         return self.name == other.name
 
 
 @value
 struct StaticDim(CollectionElement):
+    """A static tensor dimension.
+
+    Static tensor dimensions will always have exactly the same value,
+    and are key to good model performance.
+
+    Static dimensions can be created implicitly in most cases:
+    `MOTensor(DType.int64, 4, 5)` is a tensor with 2 static dimensions,
+    `4` and `5` respectively.
+    """
+
     var dim: Int64
+    """The size of the static dimension."""
 
     fn __init__(inout self, dim: IntLiteral):
+        """IntLiteral conversion constructor.
+
+        Args:
+            dim: The size of the static dimension.
+        """
         self.dim = dim
 
     fn __init__(inout self, dim: Int):
+        """Int conversion constructor.
+
+        Args:
+            dim: The size of the static dimension.
+        """
         self.dim = dim
 
     fn __eq__(self, other: StaticDim) -> Bool:
+        """Whether the dimension has the same size as another dimension.
+
+        Args:
+            other: The other dimension to check equality against.
+        Returns:
+            True if both dimensions have the same static size, False otherwise.
+        """
         return self.dim == other.dim
 
 
