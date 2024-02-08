@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model | FileCheck %s
+# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir | FileCheck %s
 
 from max.engine import (
     InferenceSession,
@@ -21,13 +21,6 @@ fn test_model_metadata() raises:
     print("====test_model_metadata")
 
     let args = argv()
-
-    # CHECK: 2
-    print(len(args))
-
-    # CHECK: mo.model
-    print(args[1])
-
     let model_path = args[1]
 
     let session = InferenceSession()
@@ -55,18 +48,48 @@ fn test_model_metadata() raises:
     print(output_names[0])
 
 
+fn test_model_mismatched_input_output_count() raises:
+    # CHECK: test_model_mismatched_input_output_count
+    print("====test_model_mismatched_input_output_count")
+
+    let args = argv()
+    let model_path = args[2]
+
+    let session = InferenceSession()
+    let compiled_model = session.load_model(Path(model_path))
+    # CHECK: 2
+    print(compiled_model.num_model_inputs())
+
+    var input_names = compiled_model.get_model_input_names()
+
+    # CHECK: 2
+    print(len(input_names))
+
+    # CHECK: input0
+    # CHECK: input1
+    for name in input_names:
+        print(name[])
+
+    # CHECK: input1
+    print(input_names[1])
+
+    # CHECK: 1
+    print(compiled_model.num_model_outputs())
+
+    var output_names = compiled_model.get_model_output_names()
+    # CHECK: output
+    for name in output_names:
+        print(name[])
+
+    # CHECK: output
+    print(output_names[0])
+
+
 fn test_model() raises:
     # CHECK: test_model
     print("====test_model")
 
     let args = argv()
-
-    # CHECK: 2
-    print(len(args))
-
-    # CHECK: mo.model
-    print(args[1])
-
     let model_path = args[1]
 
     let session = InferenceSession()
@@ -97,13 +120,6 @@ fn test_model_tuple_input() raises:
     print("====test_model_tuple_input")
 
     let args = argv()
-
-    # CHECK: 2
-    print(len(args))
-
-    # CHECK: mo.model
-    print(args[1])
-
     let model_path = args[1]
 
     var input_tensor = Tensor[DType.float32](5)
@@ -131,13 +147,6 @@ fn test_model_tuple_input_dynamic() raises:
     print("====test_model_tuple_input_dynamic")
 
     let args = argv()
-
-    # CHECK: 2
-    print(len(args))
-
-    # CHECK: mo.model
-    print(args[1])
-
     let model_path = args[1]
 
     var input_tensor = Tensor[DType.float32](5)
@@ -169,6 +178,7 @@ fn test_model_tuple_input_dynamic() raises:
 
 fn main() raises:
     test_model_metadata()
+    test_model_mismatched_input_output_count()
     test_model()
     test_model_tuple_input()
     test_model_tuple_input_dynamic()
