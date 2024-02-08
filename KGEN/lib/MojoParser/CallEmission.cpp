@@ -1450,6 +1450,18 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
         return {};
       }
 
+      if (auto metaTy = dyn_cast<MetaTypeType>(operandType)) {
+        if (type.getMetaType() == metaTy) {
+          emitError(expr->getLoc())
+              << "cannot implicitly convert " << operandType
+              << " type value to an instance of " << type
+              << getContextMessage(dest.getContext())
+              << " (hint: did you mean to instantiate " << operandType << "?)"
+              << expr->getRange();
+          return {};
+        }
+      }
+
       emitError(expr->getLoc())
           << "cannot implicitly convert " << operandType << " value to " << type
           << getContextMessage(dest.getContext()) << expr->getRange();

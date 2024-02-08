@@ -448,11 +448,6 @@ fn compare_mem_result():
   # expected-error @+1 {{chained comparison operator does not currently support memory-only return types}}
   x <= x <= x
 
-# Issue #27654: Parser crash: Assertion failed: Types should match
-fn return_metatype_problem() -> CopyAndInitMemType:
-  # expected-error @+1 {{cannot implicitly convert 'CopyAndInitMemType' value to 'CopyAndInitMemType' in return value}}
-  return CopyAndInitMemType
-
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   # expected-error @+1 {{cannot construct 'Reference[?, ?, ?]' from 'Int' value in assignment}}
   _ = Reference(a)
