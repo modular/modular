@@ -35,6 +35,34 @@ struct PoolMethod:
 
 
 @always_inline
+fn pool_shape_ceil[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+        True,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@always_inline
 fn pool_shape[
     input_rank: Int,
     input_type: DType,
@@ -43,6 +71,7 @@ fn pool_shape[
     dilations_type: DType,
     paddings_type: DType,
     single_thread_blocking_override: Bool,
+    ceil_mode: Bool = False,
 ](
     input_buf: NDBuffer[input_type, input_rank],
     filter_buf: NDBuffer[filter_type, 1],
@@ -63,6 +92,7 @@ fn pool_shape[
         paddings_type: Type of the paddings tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
+        ceil_mode: Define rounding mode for shape calculation.
 
     Args:
         input_buf: The input tensor.
@@ -110,10 +140,10 @@ fn pool_shape[
     let pad_height = int(paddings_buf[0] + paddings_buf[1])
     let pad_width = int(paddings_buf[2] + paddings_buf[3])
 
-    let output_height = get_sliding_window_out_dim(
+    let output_height = get_sliding_window_out_dim[ceil_mode](
         input_height, filter_height, dilation_height, stride_height, pad_height
     )
-    let output_width = get_sliding_window_out_dim(
+    let output_width = get_sliding_window_out_dim[ceil_mode](
         input_width, filter_width, dilation_width, stride_width, pad_width
     )
 
@@ -139,6 +169,7 @@ fn max_pool[
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, rank],
+    ceil_mode: Bool = False,
 ):
     """Computes fp32 pooling.
 
@@ -153,6 +184,7 @@ fn max_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
+        ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
     var empty_padding = True
@@ -292,7 +324,10 @@ fn max_pool[
         max_pool_compute,
         max_pool_compute_finalize,
     ]
-    if empty_padding:
+    # ceil_mode = True implies padding to the right/bottom with neginfinity
+    # value, so in that case we use stencil_with_padding that uses load_fn (vs.
+    # load_fn_no_padding)
+    if empty_padding and not ceil_mode:
         return stencil_empty_padding(output.get_shape())
     else:
         return stencil_with_padding(output.get_shape())
@@ -311,6 +346,7 @@ fn avg_pool[
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, rank],
+    ceil_mode: Bool = False,
 ):
     """Computes the average pool.
 
@@ -328,6 +364,7 @@ fn avg_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
+        ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
     var empty_padding = True
@@ -337,9 +374,25 @@ fn avg_pool[
             break
 
     let padding_h_low = 0 if empty_padding else int(paddings[0])
-    let padding_h_high = 0 if empty_padding else int(paddings[1])
+    var padding_h_high = 0 if empty_padding else int(paddings[1])
     let padding_w_low = 0 if empty_padding else int(paddings[2])
-    let padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_w_high = 0 if empty_padding else int(paddings[3])
+
+    # If ceil_mode = True, there can be an implicit padding to the right
+    # and bottom, so this needs to be added (to later be ignored in
+    # avg_pool_compute_finalize_exclude_boundary).
+    # Implicit padding equals SAME_UPPER calculations as shown at:
+    # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
+    if ceil_mode and not count_boundary:
+        let implicit_pad0 = (output.dim(1) - 1) * int(strides[0]) + (
+            (int(filter[0]) - 1) * int(dilations[0]) + 1
+        ) - input.dim(1)
+        let implicit_pad1 = (output.dim(2) - 1) * int(strides[1]) + (
+            (int(filter[1]) - 1) * int(dilations[1]) + 1
+        ) - input.dim(2)
+        # Add implicit padding to any specified explicit padding.
+        padding_h_high = padding_h_high + implicit_pad0
+        padding_w_high = padding_w_high + implicit_pad1
 
     alias simd_width = simdwidthof[type]()
 
@@ -458,7 +511,7 @@ fn avg_pool[
         pool_window_w,
     )
     @parameter
-    fn avg_pool_compute_finalize_exclude_boundry[
+    fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
         let window_h = pool_dim_size(
@@ -502,7 +555,7 @@ fn avg_pool[
         avg_pool_compute_finalize,
     ]
 
-    alias stencil_with_padding_count_exclude_boundry = stencil[
+    alias stencil_with_padding_count_exclude_boundary = stencil[
         rank,
         stencil_rank,
         stencil_axis,
@@ -513,7 +566,7 @@ fn avg_pool[
         load_fn,
         avg_pool_compute_init,
         avg_pool_compute,
-        avg_pool_compute_finalize_exclude_boundry,
+        avg_pool_compute_finalize_exclude_boundary,
     ]
 
     alias stencil_empty_padding = stencil[
@@ -530,7 +583,7 @@ fn avg_pool[
         avg_pool_compute_finalize,
     ]
 
-    if empty_padding:
+    if empty_padding and not ceil_mode:
         return stencil_empty_padding(output.get_shape())
     else:
 
@@ -538,6 +591,6 @@ fn avg_pool[
         if count_boundary:
             return stencil_with_padding(output.get_shape())
         else:
-            return stencil_with_padding_count_exclude_boundry(
+            return stencil_with_padding_count_exclude_boundary(
                 output.get_shape()
             )

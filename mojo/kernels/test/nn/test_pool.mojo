@@ -9,7 +9,7 @@ import builtin
 
 from NN.Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
-from NN.Pool import max_pool, avg_pool, PoolMethod
+from NN.Pool import max_pool, avg_pool, PoolMethod, pool_shape
 from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
@@ -204,11 +204,100 @@ fn test_avg_pool_2d_with_padding[count_boundary: Bool = False]():
     _ = dilation_tensor
 
 
-fn main():
+fn pool_ceil_test[
+    count_boundary: Bool = False, ceil_mode: Bool = True
+](pool_method: PoolMethod) raises:
+    alias in_shape = DimList(1, 4, 4, 1)
+    alias out_shape = DimList(1, 2, 2, 1)
+
+    let input_tensor = Tensor[DType.float32](1, 4, 4, 1)
+    let output_tensor = Tensor[DType.float32](1, 2, 2, 1)
+    fill_tensor[4](input_tensor)
+    fill_tensor[4](output_tensor, 0.0)
+
+    let paddings = StaticIntTuple[4](0, 0, 0, 0)
+    let filter = StaticIntTuple[2](3, 3)
+    let stride = StaticIntTuple[2](2, 2)
+    let dilation = StaticIntTuple[2](1, 1)
+
+    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    let filter_tensor = _static_int_tuple_to_tensor(filter)
+    let stride_tensor = _static_int_tuple_to_tensor(stride)
+    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+
+    alias simd_width = simdwidthof[DType.float32]()
+
+    let output_shape = pool_shape[
+        4,
+        DType.float32,
+        DType.int32,
+        DType.int32,
+        DType.int32,
+        DType.int32,
+        True,
+        ceil_mode,
+    ](
+        input_tensor._to_ndbuffer[4](),
+        filter_tensor._to_ndbuffer[1](),
+        stride_tensor._to_ndbuffer[1](),
+        dilation_tensor._to_ndbuffer[1](),
+        paddings_tensor._to_ndbuffer[1](),
+    )
+
+    if pool_method == PoolMethod.MAX:
+        max_pool[int_type = DType.int32](
+            input_tensor._to_ndbuffer[4](),
+            filter_tensor._to_ndbuffer[1](),
+            stride_tensor._to_ndbuffer[1](),
+            dilation_tensor._to_ndbuffer[1](),
+            paddings_tensor._to_ndbuffer[1](),
+            output_tensor._to_ndbuffer[4](),
+            ceil_mode,
+        )
+    else:
+        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+            input_tensor._to_ndbuffer[4](),
+            filter_tensor._to_ndbuffer[1](),
+            stride_tensor._to_ndbuffer[1](),
+            dilation_tensor._to_ndbuffer[1](),
+            paddings_tensor._to_ndbuffer[1](),
+            output_tensor._to_ndbuffer[4](),
+            ceil_mode,
+        )
+
+    print_buffer[4](output_tensor._to_ndbuffer[4]())
+
+    _ = input_tensor
+    _ = output_tensor
+    _ = paddings_tensor
+    _ = filter_tensor
+    _ = stride_tensor
+    _ = dilation_tensor
+
+
+fn test_maxpool_2d_ceil() raises:
+    print("== test_max_pool_2d_ceil")
+
+    pool_ceil_test(PoolMethod.MAX)
+
+
+fn test_average_pool_2d_ceil_excludeBound() raises:
+    print("== test_average_pool_2d_ceil_excludeBound")
+
+    pool_ceil_test(PoolMethod.AVG)
+
+
+fn test_average_pool_2d_ceil_includeBound() raises:
+    print("== test_average_pool_2d_ceil_includeBound")
+
+    pool_ceil_test[True, True](PoolMethod.AVG)
+
+
+fn main() raises:
     test_max_pool_2d()
     test_avg_pool_2d()
 
-    # CHECK: test_avg_pool_2d_count_boundary: True
+    # CHECK-LABEL: test_avg_pool_2d_count_boundary: True
     # CHECK: 1.7778
     # CHECK: 3.0000
     # CHECK: 3.6667
@@ -261,7 +350,7 @@ fn main():
 
     test_avg_pool_2d_with_padding[True]()
 
-    # CHECK: test_avg_pool_2d_count_boundary: False
+    # CHECK-LABEL: test_avg_pool_2d_count_boundary: False
     # CHECK: 4.0000
     # CHECK: 4.5000
     # CHECK: 5.5000
@@ -312,3 +401,24 @@ fn main():
     # CHECK: 43.5000
     # CHECK: 44.0000
     test_avg_pool_2d_with_padding[False]()
+
+    # CHECK-LABEL: test_max_pool_2d_ceil
+    # CHECK: 10.0000
+    # CHECK: 11.0000
+    # CHECK: 14.0000
+    # CHECK: 15.0000
+    test_maxpool_2d_ceil()
+
+    # CHECK-LABEL: test_average_pool_2d_ceil_excludeBound
+    # CHECK: 5.0000
+    # CHECK: 6.5000
+    # CHECK: 11.0000
+    # CHECK: 12.5000
+    test_average_pool_2d_ceil_excludeBound()
+
+    # CHECK-LABEL: test_average_pool_2d_ceil_includeBound
+    # CHECK: 5.0000
+    # CHECK: 4.3333
+    # CHECK: 7.3333
+    # CHECK: 5.5556
+    test_average_pool_2d_ceil_includeBound()
