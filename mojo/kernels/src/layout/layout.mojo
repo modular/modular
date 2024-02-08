@@ -4,7 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .int_tuple import *
+# from .dynamic_tuple import *
+from .int_tuple import (
+    IntTuple,
+    IntTupleBase,
+    inner_product,
+    product,
+    flatten,
+    is_tuple,
+    int,
+    tuple,
+    mul,
+    shape_div,
+    elementwise_min,
+    crd2idx,
+)
 
 from builtin.io import _printf
 from builtin.string import _calc_initial_buffer_size_int32
@@ -75,7 +89,7 @@ struct Layout(Sized, Stringable, CollectionElement):
 
     @always_inline
     fn rank(self) -> Int:
-        return self.shape.value.get[IntTupleBase]().elts.size
+        return self.shape.content.get[IntTupleBase]().elts.size
 
     @always_inline
     fn __call__(self, idx: IntTuple) raises -> Int:
@@ -155,13 +169,13 @@ fn composition(layout_a: Layout, layout_b: Layout) raises -> Layout:
             let d = int(flatten_a_strides[i])
             let s1 = shape_div(s, rest_stride)
             result_shape.append(elementwise_min(s1, rest_shape))
-            result_stride.append(rest_stride * d)
+            result_stride.append(mul(rest_stride, d))
             rest_shape = shape_div(rest_shape, s1)
             rest_stride = shape_div(rest_stride, s)
 
         result_shape.append(rest_shape)
         result_stride.append(
-            rest_stride * int(flatten_a_strides[len(flatten_a_strides) - 1])
+            mul(rest_stride, int(flatten_a_strides[len(flatten_a_strides) - 1]))
         )
 
         return coalesce(Layout(result_shape, result_stride))

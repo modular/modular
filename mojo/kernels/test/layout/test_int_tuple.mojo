@@ -37,6 +37,22 @@ fn test_tuple_basic() raises:
     tt.append(81)
     # CHECK: (5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 8, 3, 1, 81)
     print(tt)
+    tt[3][2][2] = IntTuple(5, 69, 722)
+    print(tt)
+    # CHECK: (5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 8, 3, 1, 81)
+
+    # CHECK: True
+    # CHECK: False
+    # CHECK: False
+    # CHECK: True
+    # CHECK: False
+    # CHECK: False
+    print(IntTuple(1, 2) == IntTuple(1, 2))
+    print(IntTuple(1, 2) == IntTuple(1, 3))
+    print(IntTuple(1, 2) == IntTuple(1, 2, 3))
+    print(IntTuple(1, 2, IntTuple(3, 4)) == IntTuple(1, 2, IntTuple(3, 4)))
+    print(IntTuple(1, 2, IntTuple(2, 4)) == IntTuple(1, 2, IntTuple(3, 4)))
+    print(IntTuple(1, 2, IntTuple(3, 5)) == IntTuple(1, 2, IntTuple(3, 4)))
 
 
 # CHECK-LABEL: test_tuple_basic_ops
@@ -56,10 +72,7 @@ fn test_tuple_basic_ops() raises:
         IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))),
         42,
     )
-    tt[1] = 8
-    tt.append(8, 3, 1)
-    tt.append(81)
-    # CHECK: (5, 8, 2, 3, 66, 6, 99, 4, 68, 721, 42, 8, 3, 1, 81)
+    # CHECK: (5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)
     print(flatten(tt))
 
     # CHECK: 9
