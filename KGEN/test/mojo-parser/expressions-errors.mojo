@@ -354,42 +354,15 @@ def doIsNot(a: Int, b: Int):
 # Computed Properties and Subscripts
 ##===----------------------------------------------------------------------===##
 
-struct WeirdArray:
-  # expected-note @+1 {{function declared here}}
-  fn __getitem__(self, x: Int) -> Int:
-    return 1
-
-struct MultiSetItem:
-  # expected-note @+1 {{candidate declared here}}
-  fn __setitem__(self, x: Int, y: Int): pass
-  # expected-note @+1 {{candidate declared here}}
-  fn __setitem__(self, x: Int, y: Float32): pass
-
 struct IncompatElementTypes:
   fn __getitem__(self, x: Int) -> Int: pass
   fn __setitem__(self, x: Int, y: Float32): pass
 
-fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
-  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'FloatLiteral' to 'Int'}}
-  _ = a[1.0]
-
-  # expected-error @+1 {{invalid call to '__getitem__': expected at most 2 positional arguments, got 3}}
-  _ = a[1, 2]
-
-  # expected-error @+1 {{expression must be mutable in assignment}}
-  a[1] = 4
-
-  # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
-  b[1] = 4
-
+fn test_subscript_implicit_conversion(c: IncompatElementTypes):
   let tmp : Int = c[1]
   # expected-error-re @+1 {{cannot implicitly convert 'SIMD[f32, 1]' value to 'Int' in assignment}}
   c[1] = Float32(4.0)
   c[1] = tmp
-
-  # expected-error @+1 {{keyword operands for __setitem__ not supported yet}}
-  c[x=1] = 4
-
 
 struct GetAttrNotString:
     fn __init__(inout self):

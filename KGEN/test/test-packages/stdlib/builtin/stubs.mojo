@@ -41,6 +41,20 @@ struct Bool(AnyType):
         return self.x
 
 
+@register_passable("trivial")
+struct Slice:
+    fn __init__(end: Int) -> Self:
+        return Self {}
+
+    fn __init__(start: Int, end: Int) -> Self:
+        return Self {}
+
+    fn __init__[
+        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType
+    ](start: T0, end: T1, step: T2) -> Self:
+        return Self {}
+
+
 # ===----------------------------------------------------------------------=== #
 # Value Stubs
 # ===----------------------------------------------------------------------=== #
