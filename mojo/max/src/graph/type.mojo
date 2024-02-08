@@ -308,22 +308,66 @@ struct Dim(CollectionElement):
 
 
 trait MOType:
+    """An internal helper trait for MLIR construction.
+
+    MOTypes have methods to help us convert between our structured types
+    and their MLIR representations.
+    """
+
     fn to_mlir(self, m: Module) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
         ...
 
     fn to_string(self, m: Module) -> String:
+        """Converts to a maybe-human-readable string.
+
+        Args:
+            m: A module object to help with string construction.
+
+        Returns:
+            A string representation of the type.
+        """
         ...
 
 
 @value
 struct ElementType(MOType):
-    # TODO: This mey be insufficient, if we ever need parametric dtypes.
+    """The element type of a data container, like a tensor or scalar.
+
+    Prefer to use the standard library DType and implicitly convert
+    to this type rather than using it directly.
+    """
+
     var dtype: DType
+    """The underlying dtype."""
 
     fn to_mlir(self, m: Module) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
         return capi.dtype_new(m.m, self.dtype)
 
     fn to_string(self, m: Module) -> String:
+        """Converts to a maybe-human-readable string.
+
+        Args:
+            m: A module object to help with string construction.
+
+        Returns:
+            A string representation of the type.
+        """
         return str(self.to_mlir(m))
 
 
@@ -376,6 +420,14 @@ struct MOTensor(MOType, CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
         var dims = DynamicVector[mlir.Attribute](len(self.dims))
         for i in range(len(self.dims)):
             dims.append(self.dims[i].to_mlir(m))
@@ -387,6 +439,14 @@ struct MOTensor(MOType, CollectionElement):
         )
 
     fn to_string(self, m: Module) -> String:
+        """Converts to a maybe-human-readable string.
+
+        Args:
+            m: A module object to help with string construction.
+
+        Returns:
+            A string representation of the type.
+        """
         return str(self.to_mlir(m))
 
     @staticmethod
@@ -475,9 +535,25 @@ struct MOList(MOType, CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
         return capi.list_type_new(m.m, self.eltype.to_mlir(m))
 
     fn to_string(self, m: Module) -> String:
+        """Converts to a maybe-human-readable string.
+
+        Args:
+            m: A module object to help with string construction.
+
+        Returns:
+            A string representation of the type.
+        """
         return str(self.to_mlir(m))
 
 
@@ -502,6 +578,14 @@ struct AnyMOType(MOType, CollectionElement):
         return self.type.get[MOTensor]()
 
     fn to_mlir(self, m: Module) -> mlir.Type:
+        """Converts to an mlir.Type instance.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            An mlir.Type in the specified Context.
+        """
         if self.type.isa[MOTensor]():
             return self.type.get[MOTensor]().to_mlir(m)
         else:
@@ -520,6 +604,14 @@ struct AnyMOType(MOType, CollectionElement):
             return Self(MOTensor.from_mlir(t))
 
     fn to_string(self, m: Module) -> String:
+        """Converts to a maybe-human-readable string.
+
+        Args:
+            m: A module object to help with string construction.
+
+        Returns:
+            A string representation of the type.
+        """
         return str(self.to_mlir(m))
 
 
