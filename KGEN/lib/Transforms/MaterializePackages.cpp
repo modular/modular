@@ -8,7 +8,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/Transforms/PackageUtils.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -42,9 +41,23 @@ namespace {
 class MaterializePackagesPass
     : public impl::MaterializePackagesBase<MaterializePackagesPass> {
 public:
-  using MaterializePackagesBase::MaterializePackagesBase;
+  explicit MaterializePackagesPass(
+      PackageGenLibraryFn packageGenLibraryFn = nullptr)
+      : MaterializePackagesBase(),
+        packageGenLibraryFn(std::move(packageGenLibraryFn)) {}
+
+  LogicalResult initialize(MLIRContext *context) override {
+    if (!packageGenLibraryFn)
+      packageGenLibraryFn = [](PackageLinkOp packageLink) {
+        return Error("package link handler is null");
+      };
+    return success();
+  }
 
   void runOnOperation() override;
+
+private:
+  PackageGenLibraryFn packageGenLibraryFn;
 };
 } // namespace
 
@@ -68,8 +81,7 @@ void MaterializePackagesPass::runOnOperation() {
     }
 
     ErrorOr<DenseResourceElementsAttr> bytecodeOr =
-        loadPreElaboratedBytecodeForLinking(
-            packageLink.getPreElaborationModuleAttr());
+        packageGenLibraryFn(packageLink);
     if (bytecodeOr.isError()) {
       mlir::emitError(packageLink.getLoc(),
                       "failed to load precompiled module and its dependencies "
@@ -143,4 +155,10 @@ void MaterializePackagesPass::runOnOperation() {
     if (failed(reader.finalize()))
       return signalPassFailure();
   }
+}
+
+std::unique_ptr<mlir::Pass>
+M::KGEN::createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn) {
+  return std::make_unique<MaterializePackagesPass>(
+      std::move(packageGenLibraryFn));
 }

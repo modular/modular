@@ -9,12 +9,12 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/Transforms/PackageUtils.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "llvm/Support/BLAKE3.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -196,6 +196,8 @@ ErrorOr<PackageArchiveAttr> M::KGEN::loadAndElaborateBytecode(
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
   DenseResourceElementsAttr preElaborationModuleAttr =
       packageLink.getPreElaborationModuleAttr();
+  if (!preElaborationModuleAttr)
+    return Error("package link does not have a pre-elaboration module");
 
   // Run elaboration passes on the pre-elaborated module.
   auto cacheBackends = getMojoCacheBackends(runtime);
@@ -293,6 +295,92 @@ ErrorOr<PackageArchiveAttr> M::KGEN::loadAndElaborateBytecode(
 }
 
 //===----------------------------------------------------------------------===//
+// specializeModuleForPreElaborationLinking
+//===----------------------------------------------------------------------===//
+
+/// Loads the serialized MLIR bytecode representing a post-parser module in
+/// `bytecodeAttr`, and prepare to link it into directly another module. Returns
+/// the module if successful, or an error. If `exportedPreElaborationAttr` is
+/// non-null, it will be set to the exported pre-elaboration bytecode.
+static ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaboration(
+    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions,
+    DenseResourceElementsAttr *exportedPreElaborationAttr = nullptr) {
+  OwningOpRef<ModuleOp> packageModuleOr =
+      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+  if (!packageModuleOr)
+    return Error("unable to load parsed module bytecode");
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
+  auto regionCache =
+      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
+
+  // Generate a library from the module, processing the pipeline up to the
+  // elaboration phase.
+  mlir::PassManager genLibPM(packageModuleOr->getContext());
+  buildGenerateLibraryPipeline(genLibPM, runtime, compileOptions);
+  genLibPM.addPass(
+      createMaterializePackagesWithDefaultGen(runtime, compileOptions));
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      *packageModuleOr, regionCache.copy(), transformCache.copy(),
+      runtime.getReadyChain().copy(), genLibPM, /*deflateTarget=*/false);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Build the exported pre-elaboration bytecode if requested.
+  if (exportedPreElaborationAttr) {
+    DenseResourceElementsAttr bytecodeResource =
+        writeModuleToBytecodeAttr(*packageModuleOr);
+    if (!bytecodeResource)
+      return Error("failed to write bytecode for package module");
+    *exportedPreElaborationAttr = bytecodeResource;
+  }
+
+  // Strip the implicit package exports, we don't need these because we're going
+  // to link the package into an existing module as-is.
+  for (ExportInterface op : packageModuleOr->getOps<ExportInterface>())
+    if (op.isPackageExported())
+      op.setNotExported();
+
+  return std::move(packageModuleOr);
+}
+
+ErrorOr<OwningOpRef<ModuleOp>> KGEN::specializeModuleForPreElaborationLinking(
+    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions) {
+  return specializeModuleForPreElaboration(bytecodeAttr, runtime,
+                                           compileOptions);
+}
+
+//===----------------------------------------------------------------------===//
+// specializePackageLinkForPreElaborationLinking
+//===----------------------------------------------------------------------===//
+
+ErrorOr<DenseResourceElementsAttr>
+KGEN::specializePackageLinkForPreElaborationLinking(
+    PackageLinkOp packageLink, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions) {
+  DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
+  DenseResourceElementsAttr preElaborationBytecode;
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      specializeModuleForPreElaboration(bytecodeAttr, runtime, compileOptions,
+                                        &preElaborationBytecode);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+  packageLink.setPreElaborationModuleAttr(preElaborationBytecode);
+
+  DenseResourceElementsAttr bytecodeResource =
+      writeModuleToBytecodeAttr(cast<ModuleOp>(**packageModuleOr));
+  if (!bytecodeResource)
+    return Error("failed to write bytecode for package module");
+  return bytecodeResource;
+}
+
+//===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
@@ -302,8 +390,24 @@ void M::KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                             const CompilationOptions &options) {
   populateElaborateModulePasses(
       pm, runtime, target, options,
+      [=, &runtime](PackageLinkOp packageLink) {
+        return specializePackageLinkForPreElaborationLinking(packageLink,
+                                                             runtime, options);
+      },
       [=, &runtime](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
         return loadAndElaborateBytecode(packageLink, targetInfo, options,
                                         runtime);
       });
+}
+
+//===----------------------------------------------------------------------===//
+// createMaterializePackagesWithDefaultGen
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<Pass> KGEN::createMaterializePackagesWithDefaultGen(
+    LLCL::Runtime &runtime, const CompilationOptions &options) {
+  return createMaterializePackages([&](KGEN::PackageLinkOp packageLink) {
+    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
+                                                         options);
+  });
 }

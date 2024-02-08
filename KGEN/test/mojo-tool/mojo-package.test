@@ -12,7 +12,7 @@
 
 // CHECK: lit.package @test_package
 // CHECK-SAME: {compiledEnv =
-// CHECK-SAME: fire = "\F0\9F\94\A5"{{.*}}, preElaborationModule = {{.*}}
+// CHECK-SAME: fire = "\F0\9F\94\A5"{{.*}}, postParseModule = {{.*}}
 
 // CHECK: lit.package @inner1
 // CHECK:   lit.file_module @myfile

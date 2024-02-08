@@ -497,7 +497,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   // "source package." This means that there are no link directives to insert.
   // FIXME: Once "source packages" no longer exist, insert a link directive
   // regardless, and compile for the build target on-demand.
-  if (!package.getPreElaborationModuleAttr())
+  if (!package.getPostParseModuleAttr())
     return success();
 
   // We have at least some pre-compiled bytecode available, so insert a link
@@ -505,8 +505,9 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   OpBuilder b(package.getContext());
   auto linkOp = b.create<PackageLinkOp>(
       package.getLoc(), package.getSymNameAttr(),
-      package.getPreElaborationModuleAttr(), package.getCompiledEnvAttr(),
-      package.getArchivesAttr());
+      package.getPostParseModuleAttr(),
+      /*preElaborationModule=*/mlir::DenseResourceElementsAttr(),
+      package.getCompiledEnvAttr(), package.getArchivesAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do

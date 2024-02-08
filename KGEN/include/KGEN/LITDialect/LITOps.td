@@ -310,7 +310,7 @@ def PackageOp : LITOp<"package", [
     `lit.file_module` and `lit.package` operations.
 
     If the package was precompiled it may also contain:
-    - The full pre-elaboration IR module, `preElaborationModule`.
+    - The full post-parser IR module, `postParseModule`.
     - The definitions used at compile time, `compiledEnv`.
     - Any and all precompiled, standalone archives of the package, `archives`.
 
@@ -328,9 +328,9 @@ def PackageOp : LITOp<"package", [
     SymbolNameAttr:$sym_name,
     OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString,
-    // The module containing the pre-elaboration IR of this package when it was
+    // The module containing the post-parser IR of this package when it was
     // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
 
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
     // Zero or more precompiled archives for the package.

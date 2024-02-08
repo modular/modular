@@ -107,7 +107,7 @@ using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
 
 /// During module elaboration, `kgen.package_link` ops that link to `.mojopkg`
 /// packages may appear in the module. These linked packages may only contain
-/// pre-elaborated MLIR bytecode for the target being built. In that case, this
+/// post-parser MLIR bytecode for the target being built. In that case, this
 /// callback is invoked. The callback is expected to return an attribute
 /// containing the MLIR bytecode that the `materialize-packages` pass will load
 /// into the module that is importing the package (i.e.: the module that
@@ -231,6 +231,24 @@ void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 void registerLowerToLLVMPipeline();
 
 //===----------------------------------------------------------------------===//
+// MaterializePackages
+//===----------------------------------------------------------------------===//
+
+/// When materializing packages, `kgen.package_link` ops that link to `.mojopkg`
+/// packages may appear in the module. These linked packages may only contain
+/// post-parse MLIR bytecode. In that case, this callback is invoked. The
+/// callback is expected to return an attribute containing the MLIR bytecode
+/// that the `materialize-packages` pass will load into the module that is
+/// importing the package (i.e.: the module that contains the
+/// `kgen.package_link` op).
+using PackageGenLibraryFn =
+    std::function<ErrorOr<DenseResourceElementsAttr>(PackageLinkOp)>;
+
+/// Create a MaterializePackages pass with the specified behavior.
+std::unique_ptr<mlir::Pass>
+createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn = nullptr);
+
+//===----------------------------------------------------------------------===//
 // CHECKLITPipeline
 //===----------------------------------------------------------------------===//
 
@@ -260,7 +278,9 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                   const CompilationOptions &options,
                                   EvaluatorExecutorFn evaluatorExecutorFn,
                                   ElaboratorCompileAsmFn compileAsmFn,
+                                  PackageGenLibraryFn packageGenLibraryFn,
                                   PackageLinkHandlerFn packageLinkHandlerFn);
+
 //===----------------------------------------------------------------------===//
 // PostElaborationPipeline
 //===----------------------------------------------------------------------===//

@@ -5,8 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Buffer.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
@@ -64,6 +68,27 @@ Attribute M::readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer,
     return nullptr;
   // Pull out the encoded attribute from the operation.
   return rawOp->getAttr("bytecode.attr");
+}
+//===----------------------------------------------------------------------===//
+// writeModuleToBytecodeAttr
+//===----------------------------------------------------------------------===//
+
+DenseResourceElementsAttr M::writeModuleToBytecodeAttr(ModuleOp module) {
+  // Write the package bytecode to the given buffer. This will be attached to
+  // the exported high level functions.
+  WriteableBufferRef str = WriteableBuffer::get();
+  if (failed(mlir::writeBytecodeToFile(module, *str)))
+    return nullptr;
+
+  // Hash the bytecode itself - this will give us a unique'd attr name that
+  // shouldn't clash even when a large number of packages get imported - and
+  // if they do clash, they're guaranteed to be exactly the same.
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                        (const uint8_t *)str->getBufferEnd()));
+  return createResourceAttr(module->getContext(), str->getBuffer(),
+                            "bytecode_" +
+                                llvm::toHex(hash, /*LowerCase=*/true));
 }
 
 //===----------------------------------------------------------------------===//

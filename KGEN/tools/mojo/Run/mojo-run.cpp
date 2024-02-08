@@ -214,12 +214,16 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // Add the module into the layer. This will actually compile it down to the
   // post-elaboration phase, because before that phase we don't have flat
   // symbols.
+  auto packageGenLibraryFn = [&](PackageLinkOp packageLink) {
+    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
+                                                         options);
+  };
   auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
                                   TargetInfoAttr targetInfo) {
     return loadAndElaborateBytecode(packageLink, targetInfo, options, runtime);
   };
-  if (ErrorOrSuccess err =
-          compilerLayer.add("exec", moduleOp, packageLinkHandlerFn))
+  if (ErrorOrSuccess err = compilerLayer.add(
+          "exec", moduleOp, packageGenLibraryFn, packageLinkHandlerFn))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.
