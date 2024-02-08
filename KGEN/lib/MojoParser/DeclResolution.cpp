@@ -351,10 +351,15 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
         return; // ok!
       }
 
-      // Otherwise, this is an unrecognized self type.
-      auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ")
-                  << selfType << " but actually has type "
-                  << ASTType(argTypes[kSelfArgNo]);
+      // Otherwise, this is an unrecognized self type. If this is a trait, the
+      // explicit self type is very hard to specify in mojo, so we suggest to
+      // use 'Self' instead.
+      auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ");
+      if (isa<TraitDeclOp>(*decl.getParentDecl()))
+        diag << "'Self' in trait method declaration";
+      else
+        diag << selfType;
+      diag << ", but actually has type " << ASTType(argTypes[kSelfArgNo]);
       selfArg.isErroneous = true;
       if (selfArg.typeExpr)
         diag << selfArg.typeExpr->getRange();

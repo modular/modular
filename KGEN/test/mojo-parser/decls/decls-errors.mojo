@@ -509,7 +509,7 @@ struct WrongType:
 
 
 struct WrongSelfType[a: Int]:
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]' but actually has type 'Int'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
   fn badMethod(self: Int): pass
   fn goodMethod(inout self: WrongSelfType[a]): pass
 
