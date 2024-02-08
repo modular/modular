@@ -101,11 +101,6 @@ private:
   OverloadFitness(ParameterExprArrayAttr paramBindings, Payload payload)
       : paramBindings(paramBindings), payload(payload) {}
 
-  /// Calculate the minimum required and maximum allowed number of arguments
-  /// from a signature.
-  static std::pair<size_t, size_t>
-  calculateMinMaxArgs(LITSignatureType signature);
-
   /// Check the expected type against the provided operand. This identifies any
   /// problems with the operand type and also returns the type to be used for
   /// error propagation.
