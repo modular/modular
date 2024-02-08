@@ -45,6 +45,9 @@ using namespace Exporter;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 static Level levelFromString(StringRef levelStr) {
+  if (levelStr.empty())
+    return Level::L1;
+
   int level;
   if (levelStr.getAsInteger(10, level))
     assert(false && "Non-integer telemetry level specified");
@@ -58,13 +61,12 @@ static Level levelFromString(StringRef levelStr) {
   llvm_unreachable("unknown telemetry level");
 }
 
-static void configureInternalLogging(Config &cfg) {
+static void configureInternalLogging(StringRef internalLogConfig) {
   // OTel internal logging (e.g. warnings and errors related to OTel's
   // operation) is off by default and controlled with `telemetry.internal_log`
   // config key (or equivalently with `TELEMETRY_INTERNAL_LOG` env var).
   bool internalLogsOff = false;
   opentelemetry::sdk::common::internal_log::LogLevel logLevel;
-  StringRef internalLogConfig = cfg.getValue("telemetry.internal_log");
   if (internalLogConfig.empty() || internalLogConfig == "off") {
     internalLogsOff = true;
   } else {
@@ -199,14 +201,13 @@ TelemetryContext::TelemetryContext(
 
   // Get telemetry level.
   StringRef cfgLevel = cfg.getValue("telemetry.level");
-  if (cfgLevel == "")
-    telemetryLevel = Level::L1;
-  else
-    telemetryLevel = levelFromString(cfgLevel);
+  telemetryLevel = levelFromString(cfgLevel);
 
   // Configure OTel internal logging.
   static llvm::once_flag flag;
-  llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
+  llvm::call_once(flag, [&]() {
+    configureInternalLogging(cfg.getValue("telemetry.internal_log"));
+  });
 
   // Get the user ID out of the EntitlementStore if we can, out of the config if
   // we can't.
