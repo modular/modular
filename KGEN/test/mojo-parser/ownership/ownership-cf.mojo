@@ -221,7 +221,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
   a = MemExample()
 
   # Unneeded boilerplate due to 'while True':
-  # CHECK-NEXT: hlcf.loop {
+  # CHECK-NEXT: hlcf.loop "_loop_0" {
   # CHECK-NEXT:  = kgen.param.constant: i1 = <1>
   # CHECK-NEXT:      hlcf.if
   # CHECK-NEXT:        hlcf.yield
@@ -273,7 +273,7 @@ struct TestLoopWithWholeObjectBit:
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
         let buf = MemExample()
 
-        # CHECK-NEXT: hlcf.loop {
+        # CHECK-NEXT: hlcf.loop "_loop_0" {
         # CHECK-NEXT:   hlcf.if %cond {
         # CHECK-NEXT:     hlcf.yield
         # CHECK-NEXT:   } else {
@@ -295,7 +295,7 @@ struct TestLoopWithWholeObjectBit:
 
 # CHECK-LABEL: lit.func @"testInfiniteloop
 fn testInfiniteloop():
-  # CHECK-NEXT:  hlcf.loop {
+  # CHECK-NEXT:  hlcf.loop "_loop_0" {
   # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
   # CHECK-NEXT:    hlcf.if %0 {
   # CHECK-NEXT:      hlcf.yield

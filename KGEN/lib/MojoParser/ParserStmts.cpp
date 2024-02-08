@@ -829,11 +829,7 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
                                                  StringRef opName) {
   llvm::SMLoc loc = consumeToken(kind).getLoc();
 
-  // Ensure the break statement is being parsed within a loop context.
-  if (!getBlockParentOfType<LIT::LoopOp>(builder.getInsertionBlock())) {
-    emitError(loc, "'" + name + "' not inside a loop");
-    return success();
-  }
+  // We diagnose break/continue that are not in a loop in LowerSemanticCF.
 
   // Split the block at the insertion point. Any subsequent statements are dead
   // code. Let region DCE handle it.

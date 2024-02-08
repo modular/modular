@@ -478,7 +478,7 @@ lit.func @finally_breaks() -> index {
 lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
   %true = index.bool.constant true
 
-  // CHECK: hlcf.loop {
+  // CHECK: hlcf.loop "_loop_0" {
   // CHECK-NEXT: hlcf.if %true {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
@@ -529,7 +529,7 @@ lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
 lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
   %true = index.bool.constant true
 
-  // CHECK: hlcf.loop {
+  // CHECK: hlcf.loop "_loop_0" {
   // CHECK-NEXT: hlcf.if %true {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
@@ -680,7 +680,7 @@ lit.func @loop_with_else(%arg0: i1) {
       // CHECK-NEXT: } else {
       // CHECK-NEXT:   hlcf.break
       // CHECK-NEXT: }
-      // CHECK-NEXT: hlcf.loop {
+      // CHECK-NEXT: hlcf.loop "_loop_1" {
       // CHECK-NEXT:   hlcf.if %arg0 {
       // CHECK-NEXT:     hlcf.yield
       // CHECK-NEXT:   } else {
@@ -692,6 +692,7 @@ lit.func @loop_with_else(%arg0: i1) {
       lit.loop.continue
     } else {
       lit.continue
+      lit.break     // expected-warning {{unreachable code after continue statement}}
       lit.loop.yield
     }
     lit.loop.continue
