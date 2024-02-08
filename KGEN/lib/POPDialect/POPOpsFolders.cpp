@@ -311,14 +311,14 @@ OpFoldResult MaxOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),
       [](APSInt lhs, APSInt rhs) { return lhs > rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) { return llvm::maximum(lhs, rhs); });
+      [](APFloat lhs, APFloat rhs) { return llvm::maxnum(lhs, rhs); });
 }
 
 OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),
       [](APSInt lhs, APSInt rhs) { return lhs < rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) { return llvm::minimum(lhs, rhs); });
+      [](APFloat lhs, APFloat rhs) { return llvm::minnum(lhs, rhs); });
 }
 
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
