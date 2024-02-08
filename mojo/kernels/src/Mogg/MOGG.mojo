@@ -114,7 +114,12 @@ from NN.Pad import (
     pad_repeat as _pad_repeat,
     pad_shape,
 )
-from NN.Pool import avg_pool as _avg_pool, max_pool, pool_shape
+from NN.Pool import (
+    avg_pool as _avg_pool,
+    max_pool as _max_pool,
+    pool_shape,
+    pool_shape_ceil,
+)
 from random import randn, seed
 from NN.Resize import CoordinateTransformationMode, RoundMode
 from NN.Resize import resize_linear as resize_linear_kernel
@@ -155,6 +160,7 @@ fn MOGGExport():
     alias _to_shape = to_shape
     alias _add = add
     alias _avg_pool_shape = pool_shape
+    alias _avg_pool_shape_ceil = pool_shape_ceil
     alias _cast = cast
     alias _ceil = ceil
     alias _concat_shape = concat_shape
@@ -186,7 +192,7 @@ fn MOGGExport():
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _pack_conv_filter = pack_conv_filter
     alias _max_pool_shape = pool_shape
-    alias _max_pool = max_pool
+    alias _max_pool_shape_ceil = pool_shape_ceil
     alias _matrix_solve = mogg_matrix_solve
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
@@ -1110,6 +1116,72 @@ fn avg_pool[
     return _avg_pool[count_boundary=count_boundary](
         input, filter, strides, dilations, paddings, output
     )
+
+
+# This handles avg_pool in the case where ceilMode = True. The default
+# (ceilMode = False) case is handled by avg_pool above.
+@mogg_register("mo.avg_pool_ceil_mode_true")
+@always_inline
+@export
+fn avg_pool_ceil_mode_true[
+    type: DType,
+    int_type: DType,
+    count_boundary: Bool,
+](
+    input: NDBuffer[type, 4],
+    filter: NDBuffer[int_type, 1],
+    strides: NDBuffer[int_type, 1],
+    dilations: NDBuffer[int_type, 1],
+    paddings: NDBuffer[int_type, 1],
+    output: NDBuffer[type, 4],
+    ctx: MojoCallContextPtr,
+):
+    return _avg_pool[count_boundary=count_boundary](
+        input, filter, strides, dilations, paddings, output, True
+    )
+
+
+# ===----------------------------------------------------------------------===#
+# max_pool
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.max_pool")
+@always_inline
+@export
+fn max_pool[
+    type: DType,
+    int_type: DType,
+](
+    input: NDBuffer[type, 4],
+    filter: NDBuffer[int_type, 1],
+    strides: NDBuffer[int_type, 1],
+    dilations: NDBuffer[int_type, 1],
+    paddings: NDBuffer[int_type, 1],
+    output: NDBuffer[type, 4],
+    ctx: MojoCallContextPtr,
+):
+    return _max_pool(input, filter, strides, dilations, paddings, output)
+
+
+# This handles max_pool in the case where ceilMode = True. The default
+# (ceilMode = False) case is handled by max_pool above.
+@mogg_register("mo.max_pool_ceil_mode_true")
+@always_inline
+@export
+fn max_pool_ceil_mode_true[
+    type: DType,
+    int_type: DType,
+](
+    input: NDBuffer[type, 4],
+    filter: NDBuffer[int_type, 1],
+    strides: NDBuffer[int_type, 1],
+    dilations: NDBuffer[int_type, 1],
+    paddings: NDBuffer[int_type, 1],
+    output: NDBuffer[type, 4],
+    ctx: MojoCallContextPtr,
+):
+    return _max_pool(input, filter, strides, dilations, paddings, output, True)
 
 
 # ===----------------------------------------------------------------------===#
