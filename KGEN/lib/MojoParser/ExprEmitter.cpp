@@ -177,8 +177,19 @@ void ValueDest::dump() const {
 /// into an LValue to store to.
 ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
                                       ExprEmitter &emitter) {
+  // Operations generally don't have implied types, except if this is global
+  // variable declaration.
+  if (auto op = dyn_cast<Operation *>(representation)) {
+    if (auto globalVarDecl = dyn_cast<GlobalVarDeclOp>(*op)) {
+      if (isa<UnresolvedType>(globalVarDecl.getType()))
+        return existingValueType;
+      return globalVarDecl.getType();
+    }
+    return {};
+  }
+
   // These have no implied type.
-  if (isa<NullRepresentation, LValueBufferTaken, Operation *>(representation))
+  if (isa<NullRepresentation, LValueBufferTaken>(representation))
     return {};
 
   // If we just have a contextual type, return it.
@@ -188,7 +199,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   assert(!isa<LValueInitializerType>(representation) &&
          "LValueInitializerType should be resolved before this");
 
-  // If we have an un-emitted expression, emit it using our existintValueType to
+  // If we have an un-emitted expression, emit it using our existingValueType to
   // get an LValue.
   if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
     // If we have a contextual type available, pass that down to the emitter so
