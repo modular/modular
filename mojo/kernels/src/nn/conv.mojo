@@ -2990,8 +2990,8 @@ fn conv_shape[
         The output shape.
     """
 
-    if input_rank != 4:
-        raise Error("[convolution] requires (input_rank == 4)")
+    if input_rank != 4 and input_rank != 5:
+        raise Error("[convolution] requires (input_rank == 4 or 5)")
     if input_rank != filter_rank:
         raise Error("[convolution] requires (input_rank == filter_rank)")
     if (
@@ -3007,50 +3007,112 @@ fn conv_shape[
             "[convolution] requires (len(paddings) == 2 * (input rank - 2))"
         )
 
-    # Assume input has layout NHWC
-    let batch_size = input_buf.dim(0)
-    let input_channels = input_buf.dim(3)
-    # Assume filter has layout RSCF
-    let filter_channels = filter_buf.dim(2)
-    let num_groups = int(num_groups_buf[0])
-    let output_channels = filter_buf.dim(3)
+    @parameter
+    if input_rank == 4:
+        # Assume input has layout NHWC
+        let batch_size = input_buf.dim(0)
+        let input_channels = input_buf.dim(3)
+        # Assume filter has layout RSCF
+        let filter_channels = filter_buf.dim(2)
+        let num_groups = int(num_groups_buf[0])
+        let output_channels = filter_buf.dim(3)
 
-    if input_channels != (num_groups * filter_channels):
-        raise Error(
-            "[convolution] requires (input_channels == num_groups *"
-            " filter_channels)"
+        if input_channels != (num_groups * filter_channels):
+            raise Error(
+                "[convolution] requires (input_channels == num_groups *"
+                " filter_channels)"
+            )
+        if (output_channels % num_groups) != 0:
+            raise Error(
+                "[convolution] output_channels must be divisible by num_groups"
+            )
+
+        # compute and return the output shape
+        let output_height = get_sliding_window_out_dim(
+            input_buf.dim(1),
+            filter_buf.dim(0),
+            int(dilations_buf[0]),
+            int(strides_buf[0]),
+            int(paddings_buf[0] + paddings_buf[1]),
         )
-    if (output_channels % num_groups) != 0:
-        raise Error(
-            "[convolution] output_channels must be divisible by num_groups"
+        let output_width = get_sliding_window_out_dim(
+            input_buf.dim(2),
+            filter_buf.dim(1),
+            int(dilations_buf[1]),
+            int(strides_buf[1]),
+            int(paddings_buf[2] + paddings_buf[3]),
         )
 
-    # compute and return the output shape
-    let output_height = get_sliding_window_out_dim(
-        input_buf.dim(1),
-        filter_buf.dim(0),
-        int(dilations_buf[0]),
-        int(strides_buf[0]),
-        int(paddings_buf[0] + paddings_buf[1]),
-    )
-    let output_width = get_sliding_window_out_dim(
-        input_buf.dim(2),
-        filter_buf.dim(1),
-        int(dilations_buf[1]),
-        int(strides_buf[1]),
-        int(paddings_buf[2] + paddings_buf[3]),
-    )
+        if output_height <= 0:
+            raise Error("[convolution] output height must be positive")
+        if output_width <= 0:
+            raise Error("[convolution] output width must be positive")
 
-    if output_height <= 0:
-        raise Error("[convolution] output height must be positive")
-    if output_width <= 0:
-        raise Error("[convolution] output width must be positive")
+        var output_shape = StaticIntTuple[input_rank](
+            batch_size, output_height, output_width, output_channels
+        )
 
-    var output_shape = StaticIntTuple[input_rank](
-        batch_size, output_height, output_width, output_channels
-    )
+        return output_shape
 
-    return output_shape
+    else:
+        # Assume input has layout NHWC
+        let batch_size = input_buf.dim(0)
+        let input_channels = input_buf.dim(4)
+        # Assume filter has layout RSCF
+        let filter_channels = filter_buf.dim(3)
+        let num_groups = int(num_groups_buf[0])
+        let output_channels = filter_buf.dim(4)
+
+        if input_channels != (num_groups * filter_channels):
+            raise Error(
+                "[convolution] requires (input_channels == num_groups *"
+                " filter_channels)"
+            )
+        if (output_channels % num_groups) != 0:
+            raise Error(
+                "[convolution] output_channels must be divisible by num_groups"
+            )
+
+        # compute and return the output shape
+        let output_depth = get_sliding_window_out_dim(
+            input_buf.dim(1),
+            filter_buf.dim(0),
+            int(dilations_buf[0]),
+            int(strides_buf[0]),
+            int(paddings_buf[0] + paddings_buf[1]),
+        )
+        let output_height = get_sliding_window_out_dim(
+            input_buf.dim(2),
+            filter_buf.dim(1),
+            int(dilations_buf[1]),
+            int(strides_buf[1]),
+            int(paddings_buf[2] + paddings_buf[3]),
+        )
+
+        let output_width = get_sliding_window_out_dim(
+            input_buf.dim(3),
+            filter_buf.dim(2),
+            int(dilations_buf[2]),
+            int(strides_buf[2]),
+            int(paddings_buf[4] + paddings_buf[5]),
+        )
+
+        if output_depth <= 0:
+            raise Error("[convolution] output depth must be positive")
+        if output_height <= 0:
+            raise Error("[convolution] output height must be positive")
+        if output_width <= 0:
+            raise Error("[convolution] output width must be positive")
+
+        var output_shape = StaticIntTuple[input_rank](
+            batch_size,
+            output_depth,
+            output_height,
+            output_width,
+            output_channels,
+        )
+
+        return output_shape
 
 
 fn conv_nhwc_direct[
