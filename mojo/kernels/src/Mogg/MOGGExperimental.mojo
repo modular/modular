@@ -334,7 +334,7 @@ fn broadcast(
     var new_shape = IntList[DimList.create_unknown[shape.size]()]()
     var new_stride = IntList[DimList.create_unknown[shape.size]()]()
 
-    let delta = shape.size - x.rank()
+    var delta = shape.size - x.rank()
 
     @always_inline
     @parameter
