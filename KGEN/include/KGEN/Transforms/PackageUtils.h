@@ -11,10 +11,6 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M::KGEN {
-/// Load the given bytecode module and return it.
-ErrorOr<OwningOpRef<ModuleOp>>
-loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr);
-
 /// Loads the serialized MLIR bytecode representing a pre-elaborated module in
 /// `bytecodeAttr`, and prepare to link it into directly another module. Returns
 /// the module if successful, or an error.

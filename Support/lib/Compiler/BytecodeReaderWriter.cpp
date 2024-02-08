@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/BytecodeReaderWriter.h"
-#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
-#include <mlir/IR/BuiltinOps.h>
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 
@@ -17,6 +17,28 @@ M::readOpFromBytecodeFile(llvm::MemoryBufferRef buffer,
   Block b;
   if (failed(mlir::readBytecodeFile(buffer, &b, config)) ||
       !llvm::hasSingleElement(b))
+    return nullptr;
+
+  // Take ownership of the op from the block.
+  Operation *op = &b.front();
+  op->remove();
+  return op;
+}
+
+OwningOpRef<Operation *>
+M::readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr,
+                          const mlir::ParserConfig &config) {
+  mlir::AsmResourceBlob *blob = bytecodeAttr.getRawHandle().getBlob();
+  if (!blob)
+    return OwningOpRef<Operation *>();
+  ArrayRef<char> bytecode = blob->getData();
+  llvm::MemoryBufferRef bufferRef(StringRef(bytecode.begin(), bytecode.size()),
+                                  "");
+
+  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+  mlir::BytecodeReader reader(bufferRef, config, /*lazyLoad=*/false, sourceMgr);
+  Block b;
+  if (failed(reader.readTopLevel(&b)) || !llvm::hasSingleElement(b))
     return nullptr;
 
   // Take ownership of the op from the block.
