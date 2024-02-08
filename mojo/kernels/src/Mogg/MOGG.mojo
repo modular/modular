@@ -3133,18 +3133,24 @@ fn conv[
 @export
 fn conv_transpose[
     input_type: DType,
+    filter_type: DType,
+    output_type: DType,
     strides_type: DType,
     dilation_type: DType,
     padding_type: DType,
     output_padding_type: DType,
+    lambdas_have_fusion: Bool,
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[output_type, width]
+    ) capturing -> None,
 ](
     input: NDBuffer[input_type, 4],
-    filter: NDBuffer[input_type, 4],
+    filter: NDBuffer[filter_type, 4],
     strides: NDBuffer[strides_type, 1],
     dilation: NDBuffer[dilation_type, 1],
     paddings: NDBuffer[padding_type, 1],
     output_paddings: NDBuffer[output_padding_type, 1],
-    output: NDBuffer[input_type, 4],
+    output: NDBuffer[output_type, 4],
     ctx: MojoCallContextPtr,
 ):
     constrained[
@@ -3201,6 +3207,15 @@ fn conv_transpose[
             padding_w_str,
         )
 
+    @parameter
+    @always_inline
+    fn epilogue_wrapper[
+        _type: DType, _rank: Int, _width: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+        output_0_fn[_width, _rank](
+            coords, rebind[SIMD[output_type, _width]](val)
+        )
+
     with Trace[TraceLevel.OP](
         "mojo.conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -3213,9 +3228,11 @@ fn conv_transpose[
                 DimList.create_unknown[4](),  # Filter shape.
                 DimList.create_unknown[4](),  # Output shape.
                 input_type,
-                input_type,  # Filter type, same as input.
-                input_type,  # Output type, same as filter.
+                filter_type,  # Filter type.
+                output_type,  # Output type.
                 False,  # filter is not packed.
+                lambdas_have_fusion,
+                epilogue_wrapper,
             ](
                 output,
                 input,
