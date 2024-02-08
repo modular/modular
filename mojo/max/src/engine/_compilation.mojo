@@ -264,7 +264,7 @@ struct CCompiledModel:
 
     alias FreeCompiledModelFnName = "M_freeCompiledModel"
     alias GetNumInputsFnName = "M_getNumModelInputs"
-    alias GetNumOutputsFnName = "M_getNumModelInputs"
+    alias GetNumOutputsFnName = "M_getNumModelOutputs"
 
     fn num_model_inputs(self, borrowed lib: DLHandle) raises -> Int:
         """Gets the number of inputs of the model."""
@@ -278,7 +278,7 @@ struct CCompiledModel:
         return num_inputs
 
     fn num_model_outputs(self, borrowed lib: DLHandle) raises -> Int:
-        """Gets the number of inputs of the model."""
+        """Gets the number of outputs of the model."""
 
         let status = Status(lib)
         let num_outputs = call_dylib_func[Int](
@@ -320,7 +320,7 @@ struct CompiledModel:
         """Gets the names of model inputs."""
 
         let names = InputTensorNames(
-            self.ptr, self.num_model_outputs(), self.lib
+            self.ptr, self.num_model_inputs(), self.lib
         )
         var name_vec = DynamicVector[String]()
         name_vec.reserve(len(names))
@@ -329,7 +329,7 @@ struct CompiledModel:
         return name_vec
 
     fn num_model_outputs(self) raises -> Int:
-        """Gets the number of inputs of the model."""
+        """Gets the number of outputs of the model."""
 
         return self.ptr.num_model_outputs(self.lib)
 
