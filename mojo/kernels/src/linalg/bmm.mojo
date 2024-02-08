@@ -20,7 +20,7 @@ from MatmulUtils import (
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,
-    is_critical_stride,
+    get_kernel_type,
     partition_work,
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
@@ -300,7 +300,9 @@ fn _batched_matmul_cpu[
     # Prevent parallelizing matmul with too many threads.
     let max_num_tasks_matmul = get_matmul_num_tasks[
         a_type, b_type, c_type, simdwidthof[c_type](), True
-    ](m, n, k, num_threads) if is_critical_stride(k) else get_matmul_num_tasks[
+    ](m, n, k, num_threads) if get_kernel_type(
+        m, n, k
+    ) else get_matmul_num_tasks[
         a_type, b_type, c_type, simdwidthof[c_type](), False
     ](
         m, n, k, num_threads

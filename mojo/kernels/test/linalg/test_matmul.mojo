@@ -10,14 +10,11 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from Matmul import matmul, pack_b_ndbuffer_M, pack_matmul_b_shape_func_M
 from Matrix import Matrix
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
-
 from sys.info import has_avx2, has_neon_int8_matmul
-
-
 from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
@@ -58,7 +55,7 @@ fn test_matmul[
     let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
-    padded_n_k = pack_matmul_b_shape_func[
+    padded_n_k = pack_matmul_b_shape_func_M[
         a_type,
         DimList.create_unknown[2](),
         b_type,
@@ -67,7 +64,7 @@ fn test_matmul[
         DimList.create_unknown[2](),
         transpose_b,
         True,
-    ](b)
+    ](b, m)
 
     let padded_n = padded_n_k[1] if b_packed else n
     let padded_k = padded_n_k[0] if b_packed else k
@@ -122,14 +119,14 @@ fn test_matmul[
             cm1[i, j] = cm0[i, j]
 
     if b_packed:
-        pack_b_ndbuffer[
+        pack_b_ndbuffer_M[
             a_type,
             DimList.create_unknown[2](),
             b_type,
             DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
-        ](b, bp)
+        ](b, bp, m)
 
     matmul[
         a_type,

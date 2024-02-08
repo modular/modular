@@ -321,22 +321,27 @@ fn calculate_tile_n_k[
 
 # The number of registers used for the inner kernel is:
 #   a_row_size*pack_inner_size + 1*pack_inner_size + 1
-fn get_matmul_kernel_shape_x86() -> MicroKernelShape:
+fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
     @parameter
     if has_avx512f():
-        return MicroKernelShape(6, 4)
+
+        @parameter
+        if kernel_type:
+            return MicroKernelShape(8, 3)
+        else:
+            return MicroKernelShape(8, 3)
     else:
         return MicroKernelShape(4, 3)
 
 
 fn get_matmul_kernel_shape_ARM[
-    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
+    a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
     @parameter
     if is_neoverse_n1():
 
         @parameter
-        if critical_stride:
+        if kernel_type:
             return MicroKernelShape(4, 4)
         else:
             return MicroKernelShape(8, 2)
@@ -346,10 +351,10 @@ fn get_matmul_kernel_shape_ARM[
         @parameter
         if use_i8mm:
             return MicroKernelShape(4, 6)
-        elif critical_stride:
-            return MicroKernelShape(4, 4)
-        else:
+        elif kernel_type:
             return MicroKernelShape(8, 2)
+        else:
+            return MicroKernelShape(6, 4)
 
 
 # AVX512 and Neon have 32 registers and AVX has 16.
@@ -358,17 +363,17 @@ fn get_matmul_kernel_shape_ARM[
 # For the Graviton 2 a 8x2 kernel gives the best result in most cases.
 # For the Graviton 3 a 6x4 or 4x6 kernel gives the best result.
 fn get_matmul_kernel_shape[
-    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
+    a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
     if has_neon():
         return get_matmul_kernel_shape_ARM[
-            a_type, b_type, c_type, critical_stride
+            a_type, b_type, c_type, kernel_type
         ]()
     else:
-        return get_matmul_kernel_shape_x86()
+        return get_matmul_kernel_shape_x86[kernel_type]()
 
 
 fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
@@ -410,7 +415,7 @@ fn get_matmul_num_tasks[
     b_type: DType,
     c_type: DType,
     simd_size: Int,
-    critical_stride: Bool,
+    kernel_type: Bool,
 ](m: Int, n: Int, k: Int, max_num_tasks: Int) -> Int:
     """Compute the number of tasks for parallel matmul.
     The max number of tasks is typically the number of threads/cores."""
@@ -425,7 +430,7 @@ fn get_matmul_num_tasks[
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
     alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, critical_stride
+        a_type, b_type, c_type, kernel_type
     ]()
     let max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
     let max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
@@ -491,7 +496,7 @@ fn partition_work(
 fn get_partitioned_matmul[
     a_type: DType, b_type: DType, c_type: DType, heuristic: PartitionHeuristic
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    if is_critical_stride(k):
+    if get_kernel_type(m, n, k):
         return get_partitioned_matmul[a_type, b_type, c_type, heuristic, True](
             m, n, k, task_id, num_tasks
         )
@@ -506,10 +511,10 @@ fn get_partitioned_matmul[
     b_type: DType,
     c_type: DType,
     heuristic: PartitionHeuristic,
-    critical_stride: Bool,
+    kernel_type: Bool,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, critical_stride
+        a_type, b_type, c_type, kernel_type
     ]()
 
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
@@ -860,11 +865,11 @@ fn search_mm_config[
     b_type: DType,
     c_type: DType,
     b_packed: Bool,
-    critical_stride: Bool,
+    kernel_type: Bool,
     saturated_vnni: Bool,
 ]() -> MatmulConfig:
     alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, critical_stride
+        a_type, b_type, c_type, kernel_type
     ]()
     alias mm_config1 = get_matmul_config[
         a_type,
@@ -883,20 +888,18 @@ fn search_mm_config[
     b_type: DType,
     c_type: DType,
     b_packed: Bool,
-    critical_stride: Bool,
+    kernel_type: Bool,
 ]() -> MatmulConfig:
     return search_mm_config[
-        a_type, b_type, c_type, b_packed, critical_stride, False
+        a_type, b_type, c_type, b_packed, kernel_type, False
     ]()
 
 
 @always_inline
 fn search_mm_config[
-    type: DType, b_packed: Bool, critical_stride: Bool
+    type: DType, b_packed: Bool, kernel_type: Bool
 ]() -> MatmulConfig:
-    return search_mm_config[
-        type, type, type, b_packed, critical_stride, False
-    ]()
+    return search_mm_config[type, type, type, b_packed, kernel_type, False]()
 
 
 @always_inline
@@ -967,9 +970,22 @@ fn get_matmul_config[
     }
 
 
+# Determines which kernel shape to use based on the matmul shape MxNxK.
+# Currently only allows two shapes.
 @always_inline
-fn is_critical_stride(k: Int) -> Bool:
-    return has_neon() and not os_is_macos() and ((k % 4096) == 0)
+fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
+    @parameter
+    if has_avx512f():
+        return m > 0 and m <= 32
+    elif has_neon():
+
+        @parameter
+        if is_neoverse_n1():
+            return (k % 4096) == 0
+        else:
+            return m > 0 and m == 8
+    else:
+        return False
 
 
 @always_inline
@@ -1004,18 +1020,10 @@ fn get_trace_information(
     )
 
 
-fn dispatch_is_critical_stride[
+fn dispatch_get_kernel_type[
     func: fn[x: Bool] () capturing -> None,
-](k: Int):
-    # The critical stride dispatch is only useful on neon systems (we can
-    # actually restrict that even further to just graviton). So, do not
-    # perform the dispatch on x86 systems.
-    @parameter
-    if not has_neon():
-        func[False]()
-        return
-
-    if is_critical_stride(k):
+](m: Int, n: Int, k: Int):
+    if get_kernel_type(m, n, k):
         func[True]()
     else:
         func[False]()

@@ -34,12 +34,12 @@ from MatmulUtils import (
     SubMatmulConfig,
     _get_tile_n_k,
     calculate_tile_n_k,
-    dispatch_is_critical_stride,
+    dispatch_get_kernel_type,
     elementwise_epilogue_type,
     get_min_task_size,
     get_packB_unroll_factor,
     get_partitioned_matmul,
-    is_critical_stride,
+    get_kernel_type,
     search_mm_config,
     use_vnni_fn,
     use_i8mm_fn,
@@ -1793,7 +1793,7 @@ struct TiledMatmul[
 
 
 @always_inline
-fn pack_matmul_b_shape_func[
+fn pack_matmul_b_shape_func_M[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -1802,7 +1802,7 @@ fn pack_matmul_b_shape_func[
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
+](b_input: NDBuffer[b_type, 2, b_shape], m_override: Int) -> StaticIntTuple[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
 
@@ -1811,10 +1811,12 @@ fn pack_matmul_b_shape_func[
 
     var output = StaticIntTuple[2]()
 
+    let m = a_shape.at[0]().get() if m_override == 0 else m_override
+    let n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
     let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
 
-    if is_critical_stride(k):
+    if get_kernel_type(m, n, k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         tile_n_k = _get_tile_n_k[
             config,
@@ -1851,6 +1853,29 @@ fn pack_matmul_b_shape_func[
     output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
 
     return output
+
+
+@always_inline
+fn pack_matmul_b_shape_func[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_in_0: Bool,
+    single_thread_blocking_override: Bool,
+](b_input: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
+    return pack_matmul_b_shape_func_M[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_in_0,
+        single_thread_blocking_override,
+    ](b_input, 0)
 
 
 fn pack_b[
@@ -1981,7 +2006,11 @@ fn _pack_b_ndbuffer_impl[
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
-](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+](
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
+    m_override: Int,
+):
     """Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
     `output_buffer`.
@@ -1995,12 +2024,14 @@ fn _pack_b_ndbuffer_impl[
         memcpy(output_buffer.data, b_input.data, b_input.dim(0))
 
     else:
+        let m = a_shape.at[0]().get() if m_override == 0 else m_override
+        let n = b_input.dim(0) if transposed else b_input.dim(1)
         let k = b_input.dim(1) if transposed else b_input.dim(0)
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
         # values used in the matmul algorithm consuming this packed b matrix
 
-        if is_critical_stride(k):
+        if get_kernel_type(m, n, k):
             alias config = search_mm_config[
                 a_type, b_type, c_type, True, True
             ]()
@@ -2051,14 +2082,18 @@ fn _pack_b_ndbuffer_impl[
 
 
 @always_inline
-fn pack_b_ndbuffer[
+fn pack_b_ndbuffer_M[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+](
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
+    m_override: Int,
+):
     """
     Perform matmul weight packing on the given input.
 
@@ -2086,11 +2121,10 @@ fn pack_b_ndbuffer[
         c_type,
         c_shape,
         transposed=False,
-    ](b_input, output_buffer)
+    ](b_input, output_buffer, m_override)
 
 
-@always_inline
-fn pack_transposed_b_ndbuffer[
+fn pack_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -2098,6 +2132,29 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    return pack_b_ndbuffer_M[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+    ](b_input, output_buffer, 0)
+
+
+@always_inline
+fn pack_transposed_b_ndbuffer_M[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+](
+    b_input: NDBuffer[b_type, 2, b_shape],
+    output_buffer: NDBuffer[b_type, 2],
+    m_override: Int,
+):
     """
     Perform matmul weight packing on a transposed input.
 
@@ -2125,7 +2182,25 @@ fn pack_transposed_b_ndbuffer[
         c_type,
         c_shape,
         transposed=True,
-    ](b_input, output_buffer)
+    ](b_input, output_buffer, m_override)
+
+
+fn pack_transposed_b_ndbuffer[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    return pack_transposed_b_ndbuffer_M[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+    ](b_input, output_buffer, 0)
 
 
 @value
@@ -3467,12 +3542,14 @@ fn _submatmul_sequential_sync[
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
+    let m = shape.M
+    let n = shape.N
     let k = shape.K
 
     @parameter
-    fn dispatch_on_critical_stride[critical_stride: Bool]():
+    fn dispatch_on_kernel_type[kernel_type: Bool]():
         alias mm_config = search_mm_config[
-            a_type, b_type, c_type, b_packed, critical_stride, saturated_vnni
+            a_type, b_type, c_type, b_packed, kernel_type, saturated_vnni
         ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
@@ -3512,7 +3589,9 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
         )
 
-    dispatch_is_critical_stride[dispatch_on_critical_stride](k)
+    dispatch_get_kernel_type[dispatch_on_kernel_type](
+        m if a_shape.at[0]().has_value() else 0, n, k
+    )
 
 
 fn _submatmul_sequential_sync[
