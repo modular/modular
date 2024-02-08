@@ -175,7 +175,7 @@ fn badCalls(arg: Int):
   # The user hasn't provided any arguments that could be used to infer `T`.
   # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
   parameterizedVariadic()
-  # expected-error @+1 {{could not deduce parameter #0 ('T') of parent struct ParameterizedStruct}}
+  # expected-error @+1 {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
   let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
@@ -391,9 +391,23 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 struct Parametric[a: Int]: pass
 
 # expected-note @+1 {{function declared here}}
-fn test_missing_args_deduction_crash[x: Int](b: Parametric[x]):
-  # expected-error @+1 {{missing 1 required positional argument: 'b'}}
-  test_missing_args_deduction_crash[_]()
+fn takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
+
+fn test_param_deduction_failure[
+    func: fn[y: Int] (c: Parametric[y], d: Parametric[y]) -> None,
+](u: Int, v: Int):
+    # expected-error @+1 {{missing 1 required positional argument: 'b'}}
+    takes_same_arg_types[_](u)
+
+    # expected-error @+1 {{could not deduce parameter 'x' of callee 'takes_same_arg_types'}}
+    takes_same_arg_types[_](u, v)
+
+    # expected-error @+1 {{missing 1 required positional argument: 'd'}}
+    func[_](u)
+
+    # COM: TODO: improve this error message
+    # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
+    func[_](u, v)
 
 ##===----------------------------------------------------------------------===##
 # Decorators
