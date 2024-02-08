@@ -373,15 +373,41 @@ struct ElementType(MOType):
 
 @value
 struct MOTensor(MOType, CollectionElement):
+    """A symbolic tensor type.
+
+    It is _not_ an eager tensor type!! It contains no actual data, but instead
+    represents a value at some point in time during model execution.
+
+    Most internal values in a model will be tensors. This type represents
+    their element type (dtype) and dimensions (dims) at a specific point during
+    model computation. It allows us to do some optimistic optimizations and
+    shape inference during graph construction, and to provide more detailed
+    shape information to the compiler for further optimizatino passes.
+
+    It can also represent a fully dynamic rank tensor. The presence of dynamic
+    rank tensors in a graph will often degrade performance dramatically and
+    prevents many classes of optimizations.
+    """
+
     var dtype: ElementType
+    """The element type of the tensor value."""
     var dims: DynamicVector[Dim]
+    """The dimensions of the tensor value, if it is known-rank."""
     var ranked: Bool
+    """Whether the tensor has a known static rank or not."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, dtype: ElementType, *dims: Dim):
+        """Constructs a ranked tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+            dims: The shape dimensions of the tensor. The number of dims
+                  is the rank of the tensor.
+        """
         self.dtype = dtype
         self.dims = DynamicVector[Dim](len(dims))
         for d in dims:
@@ -389,18 +415,39 @@ struct MOTensor(MOType, CollectionElement):
         self.ranked = True
 
     fn __init__(inout self, dtype: ElementType, ranked: Bool):
+        """Constructs a fully dynamic tensor or 0-dimensional tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+            ranked: If False, create a fully dynamic tensor.
+                    If True, create a rank 0 tensor. This is the same as calling
+                    the constructor with just a dtype argument.
+        """
         self.dtype = dtype
         self.dims = DynamicVector[Dim](0)
         self.ranked = ranked
 
     fn __init__(inout self, dtype: ElementType, dim: Int):
-        # This special overload prevents the DynamicVector overload from
-        # stealing precedence due to unpredictable resolution order around
-        # implicit casting.
-        # The ambiguity is between *Int64 and DynamicVector.
+        """Constructs a rank-1 static tensor type.
+
+        This is a temporary overload that exists to prevent an overload
+        ambiguity via implicit conversion to a DynamicTensor. It's functionally
+        the same as the ranked tensor variadic constructor.
+
+        Args:
+            dtype: The element type of the tensor data.
+            dim: The static shape of the singular dimension.
+        """
         self.__init__(dtype, Dim(dim))
 
     fn __init__(inout self, dtype: ElementType, dims: DynamicVector[Dim]):
+        """Constructs a ranked tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+            dims: The shape dimensions of the tensor. The number of dims
+                  is the rank of the tensor.
+        """
         self.dtype = dtype
         self.dims = dims
         self.ranked = True
@@ -410,6 +457,14 @@ struct MOTensor(MOType, CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, spec: TensorSpec):
+        """Constructs a tensor type from a TensorSpec.
+
+        Since TensorSpec can only contain static shapes, this will always
+        construct a static tensor.
+
+        Args:
+            spec: The dtype and static shape of the tensor.
+        """
         var dims = DynamicVector[Dim](spec.rank())
         for i in range(spec.rank()):
             dims.append(Dim.static(spec[i]))
@@ -451,6 +506,14 @@ struct MOTensor(MOType, CollectionElement):
 
     @staticmethod
     fn from_mlir(t: mlir.Type) raises -> Self:
+        """Constructs a tensor type from an MLIR type.
+
+        Args:
+            t: The mlir Type object to parse into a tensor type.
+
+        Returns:
+            The tensor type represented by the mlir Type value.
+        """
         let dtype = capi.tensor_type_get_dtype(t)
         let ranked = capi.tensor_type_is_ranked(t)
         if ranked:
@@ -481,6 +544,15 @@ struct MOTensor(MOType, CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn is_static(self) -> Bool:
+        """Checks whether the tensor type has a fully static shape or not.
+
+        This is _not_ the same as `ranked`. A tensor must be both `ranked`
+        and have all of its dimensions be `static` (or be 0-dimensional)
+        in order to be `static`.
+
+        Returns:
+            True if the tensor has a fully static shape, False otherwise.
+        """
         if not self.ranked:
             return False
         for i in range(self.rank()):
@@ -489,14 +561,44 @@ struct MOTensor(MOType, CollectionElement):
         return True
 
     fn rank(self) -> Int:
+        """Gets the rank of the tensor type.
+
+        Returns:
+            The tensor's static rank, or 0 for a dynamic tensor.
+            A 0-dimensional static tensor also has a rank of 0, so
+            check `ranked` directly to check if a tensor is ranked or not.
+        """
         return len(self.dims)
 
     fn dim(self, pos: Int) raises -> Dim:
+        """Gets the pos'th dimension of the tensor type.
+
+        Supports negative-indexing, ie. `t.dim(-1)` will give the last
+        dimension.
+
+        Args:
+            pos: The dimension index to retrieve.
+
+        Returns:
+            The dimension value at dimension `pos`.
+
+        Raises:
+            If the dimension is out-of-bounds, or if the tensor is unranked.
+        """
         if not self.ranked:
             raise "Cannot get dim of unranked type"
         return self.dims[pos + (self.rank() if pos < 0 else 0)]
 
     fn __eq__(self, other: MOTensor) -> Bool:
+        """Checks whether the two tensors are identical (same rank, type, shape).
+
+        Args:
+            other: The other tensor to check equality against.
+
+        Returns:
+            True if the tensors have identical element type and shape,
+            False otherwise.
+        """
         if self.dtype.dtype != other.dtype.dtype:
             return False
         if self.ranked != other.ranked:
@@ -514,6 +616,20 @@ struct MOTensor(MOType, CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn num_elements(self) -> Int64:
+        """Counts the total number of elements in the tensor type.
+
+        For a static tensor, returns the product of all static dimensions.
+        This is the number of elements the tensor will hold _during execution_,
+        MOTensor doesn't actually hold any element values at all.
+
+        For any non-static tensor, ie. a tensor having dynamic rank
+        or having any symbolic or dynamic dimensions, the return value will
+        be meaningless.
+
+        Returns:
+            The number of elements the tensor contains.
+        """
+
         var n: Int64 = 1
         for i in range(self.rank()):
             if not self.dims[i].is_static():
@@ -522,6 +638,14 @@ struct MOTensor(MOType, CollectionElement):
         return n
 
     fn cast(self, dtype: ElementType) -> Self:
+        """Constructs a new tensor type of the same shape with the new dtype.
+
+        Args:
+            dtype: The new element type for the tensor.
+
+        Returns:
+            A new tensor type with the same shape, and the new element type.
+        """
         return Self(dtype, self.dims, self.ranked)
 
 
