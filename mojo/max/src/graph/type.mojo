@@ -116,36 +116,143 @@ struct StaticDim(CollectionElement):
 
 @value
 struct Dim(CollectionElement):
+    """A tensor dimension.
+
+    Tensor dimensions can be
+    - Static, aka known size
+    - Dynamic, aka unknown size
+    - Symbolic, aka unknown size but named
+
+    In most cases you don't need to work with a `Dim` directly, but can rely
+    on conversion constructors, for instance you can specify a tensor type as
+
+    ```mojo
+    from max.graph import *
+    let tensor_type = MOTensor(DType.int64, "batch", 10, Dim.dynamic())
+    ```
+    will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
+    a static dimension of size 10, and a dynamic dimension.
+    ```
+
+    You can still construct dimensions explicitly via helpers, eg.
+
+    ```mojo
+    let some_dims = [
+        Dim.dynamic(),
+        Dim.symbolic("batch"),
+        Dim.static(5),
+    ]
+    ```
+
+    Constraining tensor dimensions is one important way to improve model
+    performance. If tensors have unknown dimensions, we can't optimize them
+    as aggressively. Symoblic tensors allow the compiler to learn constraints
+    on a specific dimension (eg. if 2 inputs have the same `batch` dimension)
+    which can be an important improvement over dynamic dimensions, but static
+    dims are the easiest to optimize and therefore the easiest to create
+    and work with.
+    """
+
     var value: Variant[DynamicDim, StaticDim, SymbolicDim]
+    """The dimension data."""
 
     fn __init__(inout self, dim: Int):
+        """Int static dimension conversion constructor.
+
+        Args:
+            dim: The static size of the dimension.
+        """
         self.value = StaticDim(dim)
+
+    fn __init__(inout self, name: StringLiteral):
+        """StringLiteral symbolic dimension conversion constructor.
+
+        Args:
+            name: The name of the symbolic dimension.
+        """
+        self.value = SymbolicDim(name)
 
     @staticmethod
     fn static(dim: Int64) -> Self:
+        """Explicitly constructs a static dimension.
+
+        Args:
+            dim: The static size of the dimension.
+
+        Returns:
+            A static dimension of size `dim`.
+        """
         return Self(StaticDim(dim))
 
     @staticmethod
     fn symbolic(name: String) -> Self:
+        """Explicitly constructs a symbolic dimension.
+
+        Args:
+            name: The unique name of the dimension.
+
+        Returns:
+            A symbolic dimension with the given name.
+        """
         return Self(SymbolicDim(name))
 
     @staticmethod
     fn dynamic() -> Self:
+        """Explicitly constructs a dynamic dimension.
+
+        Returns:
+            A dynamic dimension.
+        """
         return Self(DynamicDim())
 
     fn is_dynamic(self) -> Bool:
+        """Checks whether or not the dimension is a dynamic dimension.
+
+        Returns:
+            True if the dimension is dynamic, False otherwise.
+        """
         return self.value.isa[DynamicDim]()
 
     fn is_static(self) -> Bool:
+        """Checks whether or not the dimension is a static dimension.
+
+        Returns:
+            True if the dimension is static, False otherwise.
+        """
         return self.value.isa[StaticDim]()
 
     fn is_symbolic(self) -> Bool:
+        """Whether or not the dimension is a symbolic dimension.
+
+        Returns:
+            True if the dimension is symbolic, False otherwise.
+        """
         return self.value.isa[SymbolicDim]()
 
     fn num_elements(self) -> Int64:
+        """Returns the number of elements in the dimension, if known.
+
+        Returns:
+            For a static dimension, we return the known static dimension size.
+            Otherwise, return an internal value representing an unknown
+            dimension size.
+        """
         return self.value.get[StaticDim]().dim if self.is_static() else _dyn()
 
     fn __eq__(self, other: Dim) -> Bool:
+        """Checks whether two dimensions are equal.
+
+        Dimensions are equal if they are the same dimension type
+        (dynamic, symbolic, static). Additionally, static dimensions
+        are only equal if their dimension is the same size, and symbolic
+        dimensions are only equal if they have the same name.
+
+        Args:
+            other: The other dimension to check equality against.
+
+        Returns:
+            True if the dimensions are equal, False otherwise.
+        """
         if self.value.isa[DynamicDim]():
             return other.value.isa[DynamicDim]()
         elif self.value.isa[SymbolicDim]():
@@ -162,9 +269,30 @@ struct Dim(CollectionElement):
             )
 
     fn __ne__(self, other: Dim) -> Bool:
+        """Checks whether two dimensions are not equal.
+
+        The inverse of __eq__.
+
+        Args:
+            other: The other dimension to check inequality against.
+
+        Returns:
+            False if the dimensions are equal, True otherwise.
+        """
         return not (self == other)
 
     fn to_mlir(self, m: Module) -> mlir.Attribute:
+        """Creates an mlir.Attribute representing this dimension.
+
+        This is used internally when constructing tensor MLIR types.
+
+        Args:
+            m: A Module instance holding an mlir.Context.
+
+        Returns:
+            A mlir.Attribute in the Module's context representing the dimension.
+        """
+
         let ctx = m.m.context()
         if self.value.isa[DynamicDim]():
             return capi.dim_new_dynamic(ctx)
