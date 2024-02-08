@@ -100,11 +100,11 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     if rhs_type.rank() != 2:
         raise "rhs must be a matrix"
 
-    let reshape_shape = stack((g.scalar(Int64(-1)), dim(lhs, -1)))
-
-    let final_shape = concat(
-        (shape_of(lhs)[: lhs_type.rank() - 1], dims(rhs, 1, 2))
-    )
+    let lhs_shape = shape_of(lhs)
+    let rhs_shape = shape_of(rhs)
+    last_lhs_axis = lhs_type.rank() - 1
+    let reshape_shape = stack((g.scalar(Int64(-1)), lhs_shape[last_lhs_axis]))
+    let final_shape = concat((lhs_shape[:last_lhs_axis], rhs_shape[1:2]))
 
     var final_dims = DynamicVector[Dim]()
     for i in range(lhs_type.rank() - 1):

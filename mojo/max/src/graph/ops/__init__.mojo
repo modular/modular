@@ -6,8 +6,6 @@
 """Implements various ops for the graph-building APIs."""
 
 from .casting import (
-    dim,
-    dims,
     shape_of,
     cast,
     squeeze,

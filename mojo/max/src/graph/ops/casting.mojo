@@ -18,20 +18,6 @@ from max.graph.type import Dim, ElementType
 # ===----------------------------------------------------------------------=== #
 
 
-def dim(v: Symbol, dim: Int) -> Symbol:
-    if dim < 0:
-        dim += v.tensor_type().rank()
-    return shape_of(v)[dim]
-
-
-def dims(v: Symbol, start: Int, stop: Int) -> Symbol:
-    if start < 0:
-        start += v.tensor_type().rank()
-    if stop < 0:
-        stop += v.tensor_type().rank()
-    return shape_of(v)[start:stop]
-
-
 def shape_of(v: Symbol) -> Symbol:
     var g = v.graph()
     return g.op("mo.shape_of", v, MOTensor(DType.int64, v.tensor_type().rank()))
