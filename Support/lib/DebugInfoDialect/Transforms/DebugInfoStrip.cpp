@@ -6,7 +6,8 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
-#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 
 using namespace M;
 using namespace M::DebugInfo;
@@ -39,13 +40,23 @@ void DebugInfoStrip::runOnOperation() {
         return FusedLoc::get(diLoc.getContext(), diLoc.getLocations());
       });
 
-  getOperation()->walk([&](Operation *op) {
+  getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Drop all debug info operations.
-    if (isa_and_nonnull<DebugInfoDialect>(op->getDialect()))
-      return op->erase();
+    if (isa_and_nonnull<DebugInfoDialect>(op->getDialect())) {
+      op->erase();
+      return WalkResult::skip();
+    }
+
+    // If this is a function without debug info, skip the body.
+    if (isa<mlir::FunctionOpInterface>(op) &&
+        !isa<mlir::FusedLocWith<DIAttr>>(op->getLoc()))
+      return WalkResult::skip();
 
     // For everything else, update the location.
-    replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
-                               /*replaceLocs=*/true);
+    if (!preserveLineTables) {
+      replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
+                                 /*replaceLocs=*/true);
+    }
+    return WalkResult::advance();
   });
 }

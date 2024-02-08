@@ -49,4 +49,9 @@ def DebugInfoStrip : Pass<"debuginfo-strip"> {
     leaves normal location information in place (to still allow proper
     verification and error reporting).
   }];
+  let options = [
+    Option<"preserveLineTables", "preserveLineTables", "bool",
+           /*default=*/"false",
+           "Don't strip information used for line table generation.">,
+  ];
 }
