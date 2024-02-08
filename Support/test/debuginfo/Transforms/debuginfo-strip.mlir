@@ -1,4 +1,5 @@
 // RUN: support-dialect-opt %s -debuginfo-strip -mlir-print-debuginfo -allow-unregistered-dialect | FileCheck %s
+// RUN: support-dialect-opt %s -debuginfo-strip=preserveLineTables=1 -mlir-print-debuginfo -allow-unregistered-dialect | FileCheck %s --check-prefix=CHECK-PRESERVE-LT
 
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
 #file = #debuginfo.file<"foo" in "foo">
@@ -10,6 +11,10 @@
 // CHECK-NOT: #debuginfo.
 // CHECK: "unknown_dialect.op"
 // CHECK: "test.mlir":10:10
+
+// Check that metadata is preserved, but not the rest.
+// CHECK-PRESERVE-LT-NOT: debuginfo.value
+// CHECK-PRESERVE-LT: #debuginfo.subprogram
 
 func.func @foo(%arg: index) {
   "unknown_dialect.op"() : () -> ()
