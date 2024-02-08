@@ -50,7 +50,7 @@ fn top() -> Int:
 # LAST: kgen.extern.func export package [[TARGET_FN]]
 # LAST-SAME: from [[PKG:@.*target_dep_package.*]]
 
-# GENLIB: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}}) archives()
+# GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}}) archives()
 # MATER: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}}) archives()
 
 # GENLIB: kgen.extern.generator export @exported_func()

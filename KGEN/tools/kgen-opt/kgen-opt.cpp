@@ -125,13 +125,19 @@ static OwningOpRef<ModuleOp> cloneIntoFakeModule(KGEN::LIT::FuncOp func) {
   OpBuilder b(func.getContext());
   OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
   OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
-  auto fakeCompiledBody = fakeBuilder.create<OpT>(
-      func.getLoc(), b.getStringAttr(func.getSymName()), func.getSignature());
+  OpT fakeCompiledBody;
+  if constexpr (!std::is_same_v<OpT, KGEN::LIT::FuncOp>) {
+    fakeCompiledBody = fakeBuilder.create<OpT>(
+        func.getLoc(), b.getStringAttr(func.getSymName()), func.getSignature());
+
+    // Just clone the body in.
+    mlir::IRMapping map;
+    func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
+  } else {
+    fakeCompiledBody = cast<OpT>(fakeBuilder.clone(*func));
+  }
   fakeCompiledBody.setPackageExported();
 
-  // Just clone the body in.
-  mlir::IRMapping map;
-  func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
   return fakeModule;
 }
 
@@ -169,6 +175,8 @@ struct TestGeneratePreElaboratedBody
           targets.push_back(target);
 
       OpBuilder b(func.getContext());
+      OwningOpRef<ModuleOp> fakeCopyModule =
+          cloneIntoFakeModule<KGEN::LIT::FuncOp>(func);
       OwningOpRef<ModuleOp> fakeModule =
           cloneIntoFakeModule<KGEN::GeneratorOp>(func);
       OwningOpRef<ModuleOp> fakeCompiledModule =
@@ -183,6 +191,10 @@ struct TestGeneratePreElaboratedBody
       func.setPreElaborationNameAttr(func.getSymNameAttr());
       func.setLinkageName(func.getSymNameAttr());
 
+      DenseResourceElementsAttr postParseBytecode = serializeToResource(
+          *fakeCopyModule, func.getSymName() + "_generated_post_parse_attr");
+      if (!postParseBytecode)
+        return signalPassFailure();
       DenseResourceElementsAttr preElabBytecode = serializeToResource(
           *fakeModule, func.getSymName() + "_generated_body_attr");
       if (!preElabBytecode)
@@ -200,7 +212,7 @@ struct TestGeneratePreElaboratedBody
             target, postElabBytecode, postElabBytecode));
       }
       linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, preElabBytecode,
+          func.getLoc(), linkName, postParseBytecode, preElabBytecode,
           KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
           KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
     }
@@ -271,7 +283,7 @@ struct TestMaterializePackages
             target, bytecodeBufferAttr, bytecodeBufferAttr));
       }
       linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, bytecodeBufferAttr,
+          func.getLoc(), linkName, bytecodeBufferAttr, bytecodeBufferAttr,
           KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
           KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
     }
@@ -352,7 +364,6 @@ int main(int argc, char **argv) {
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerLowerLITTypes();
-  KGEN::registerMaterializePackages();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
@@ -387,6 +398,12 @@ int main(int argc, char **argv) {
       [&] { return KGEN::createDeadArgumentElimination(*runtime); });
   mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(*runtime); });
+
+  // Register passes that require other arguments.
+  KGEN::CompilationOptions options;
+  mlir::registerPass([&] {
+    return KGEN::createMaterializePackagesWithDefaultGen(*runtime, options);
+  });
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};

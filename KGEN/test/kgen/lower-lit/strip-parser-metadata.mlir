@@ -10,7 +10,7 @@
   archive = dense_resource<archive_0> : tensor<4086xui8>
 >
 module {
-  lit.package @package [#archive] attributes {docString = #doc_string, preElaborationModule = dense_resource<bytecode_1> : tensor<7468xui8>} {
+  lit.package @package [#archive] attributes {docString = #doc_string, postParseModule = dense_resource<bytecode_1> : tensor<7468xui8>} {
     lit.file_module @module attributes {docString = #doc_string1} {
     }
   }

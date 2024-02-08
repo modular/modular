@@ -1203,9 +1203,9 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
     A `kgen.package.link` defines a link to the compiled artifacts of a package.
     It contains a reference to all precompiled archives, providing an anchor for
     functions and other operations defined within the package during the
-    lowering pipeline. It may also contain the pre-elaboration body which can be
-    used to compile the package if none of the precompiled targets are
-    compatible with the current target of compilation.
+    lowering pipeline. It may also contain the post-parse and pre-elaboration
+    bodies which can be used to compile the package if none of the precompiled
+    targets are compatible with the current target of compilation.
 
     Example:
 
@@ -1214,7 +1214,8 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
       archives([
         <target = #M.target<...>,
-         elaboratedModule = dense_resource<...> : tensor<...xi8>,
+         pre_elaboration = dense_resource<...> : tensor<...xi8>,
+         post_parse = dense_resource<...> : tensor<...xi8>,
          archive = dense_resource<...> : tensor<...xi8>>
       ])
     ```
@@ -1222,6 +1223,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
     KGEN_EnvAttr:$compiledEnv,
@@ -1231,6 +1233,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
   let assemblyFormat = [{
     $sym_name
     (`pre_elaboration` `(` $preElaborationModule^ `)`)?
+    (`post_parse` `(` $postParseModule^ `)`)?
     `archives` `(` custom<PackageArchiveArray>($archives) `)`
     attr-dict-with-keyword
   }];

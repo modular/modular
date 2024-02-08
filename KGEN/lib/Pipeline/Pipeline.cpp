@@ -79,11 +79,12 @@ void KGEN::buildElaborateModulePipeline(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
     ElaboratorCompileAsmFn compileAsmFn,
+    PackageGenLibraryFn packageGenLibraryFn,
     PackageLinkHandlerFn packageLinkHandlerFn) {
   pm.addPass(createEliminateDeadSymbols());
   // At the end of the LIT lowering pipeline, pull in the bodies of constructs
   // that were already elaborated.
-  pm.addPass(createMaterializePackages());
+  pm.addPass(createMaterializePackages(std::move(packageGenLibraryFn)));
 
   // Erase debuginfo from all sources if compiling with no debuginfo.
   if (options.debugLevel == CompilationOptions::kNoDebug)

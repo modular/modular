@@ -129,11 +129,10 @@ public:
                  RCRef<Cache::BlobCacheBackend> transformCacheBackend,
                  RCRef<Cache::BlobCacheBackend> regionCacheBackend);
 
-  /// Run pre-elaboration passes on the given module, then attach an attribute
-  /// to the package op being built. The attribute contains the serialized MLIR
-  /// bytecode of the pre-elaboration module.
-  ErrorOrSuccess buildPreElaborationModule(ModuleOp theModule,
-                                           const CompilationOptions &options);
+  /// Attach the given post-parse module as an attribute to the package op being
+  /// built. The attribute contains the serialized MLIR bytecode of the
+  /// pre-elaboration module.
+  ErrorOrSuccess buildPostParseModule(ModuleOp theModule);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -150,9 +149,6 @@ private:
   /// file.
   LIT::PackageOp thePackage;
 
-  /// The runtime used when applying pre-elaboration and elaboration transforms
-  /// to the module being packaged.
-  LLCL::Runtime &runtime;
   /// The transform cache to use when applying pre-elaboration and elaboration
   /// transforms to the module being packaged.
   RCRef<Cache::TransformCache> transformCache;
@@ -174,8 +170,8 @@ PackageBuilder::PackageBuilder(
     LIT::PackageOp parsedPackageOp, EnvAttr env, LLCL::Runtime &runtime,
     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
     RCRef<Cache::BlobCacheBackend> regionCacheBackend)
-    : runtime(runtime), transformCache(RCRef<Cache::TransformCache>::create(
-                            std::move(transformCacheBackend))),
+    : transformCache(RCRef<Cache::TransformCache>::create(
+          std::move(transformCacheBackend))),
       regionCache(
           RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend))) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
@@ -296,28 +292,7 @@ PackageBuilder::PackageBuilder(
   });
 }
 
-ErrorOrSuccess
-PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
-                                          const CompilationOptions &options) {
-  // Time the compilation.
-  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
-      {"filename", fileLine.getFilename().str()}};
-  [[maybe_unused]] auto timeScope =
-      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
-          .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
-
-  // Run all pre-elaboration passes on the module.
-  mlir::PassManager pm(theModule.getContext());
-  buildGenerateLibraryPipeline(pm, runtime, options);
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      theModule, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
-  LLCL::await(ready);
-  if (ready.isError())
-    return ready.takeDiagnostic().getMessage().copy();
-
+ErrorOrSuccess PackageBuilder::buildPostParseModule(ModuleOp theModule) {
   // Serialize the pre-elaboration module as MLIR bytecode.
   WriteableBufferRef str = WriteableBuffer::get();
   if (failed(mlir::writeBytecodeToFile(theModule, *str)))
@@ -328,7 +303,7 @@ PackageBuilder::buildPreElaborationModule(ModuleOp theModule,
   auto hash = llvm::BLAKE3::hash(
       ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
                         (const uint8_t *)str->getBufferEnd()));
-  thePackage.setPreElaborationModuleAttr(
+  thePackage.setPostParseModuleAttr(
       createResourceAttr(theModule.getContext(), str->getBuffer(),
                          "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
   return success();
@@ -446,14 +421,17 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
     return WalkResult::skip();
   });
 
-  // Lower the module to be packaged, by running all pre-elaboration passes upon
-  // it, then serialize the result to bytecode, and finally attach it as an
-  // attribute on the package op.
-  const CompilationOptions &compilationOptions = packageArgs.compileOptions;
+  // Attach the post parse module to the package.
   theModule->setAttr(EnvAttr::getEnvAttrName(), packageArgs.env);
-  if (auto err = packageBuilder.buildPreElaborationModule(theModule,
-                                                          compilationOptions))
+  if (auto err = packageBuilder.buildPostParseModule(theModule))
     return Error(llvm::formatv("compilation failed: {0}", err.getError()));
+
+  // Run various check passes now to propagate warnings and errors up to the
+  // user.
+  mlir::PassManager pm(theModule.getContext());
+  buildCheckLITPipeline(pm, runtime, packageArgs.compileOptions);
+  if (failed(pm.run(theModule)))
+    return Error("errors occurred during compilation");
 
   return packageBuilder.finalize();
 }

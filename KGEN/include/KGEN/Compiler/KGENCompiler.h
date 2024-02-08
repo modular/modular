@@ -34,11 +34,13 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
                                    TargetInfoAttr target,
                                    const CompilationOptions &options,
                                    EvaluatorExecutorFn evaluatorExecutorFn,
+                                   PackageGenLibraryFn packageGenLibraryFn,
                                    PackageLinkHandlerFn packageLinkHandlerFn);
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target,
                                    const CompilationOptions &options,
+                                   PackageGenLibraryFn packageGenLibraryFn,
                                    PackageLinkHandlerFn packageLinkHandlerFn);
 
 //===----------------------------------------------------------------------===//
@@ -78,6 +80,7 @@ public:
   /// Add a module to the JIT. This module will be modified in-place as
   /// compilation occurs, and will be forwarded to the ObjectCompilerLayer.
   ErrorOrSuccess add(StringRef libName, ModuleOp theModule,
+                     PackageGenLibraryFn packageGenLibraryFn,
                      PackageLinkHandlerFn packageLinkHandlerFn);
 
   /// Given a library name and a module, emit the code for it. This runs

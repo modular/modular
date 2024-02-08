@@ -157,6 +157,10 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
+      [this](PackageLinkOp packageLink) {
+        return specializePackageLinkForPreElaborationLinking(
+            packageLink, typeSystem->getRuntime(), compilationOptions);
+      },
 
 // FIXME(#26419): workaround for error missing symbol __dso_handle on arm64 mac
 #if __APPLE__
