@@ -362,3 +362,13 @@ fn custom_shape_func_that_raises[
     if out_shape[0] == 20:
         raise ("data.get_shape()[0] == 20")
     return out_shape
+
+
+@mogg_register_shape_func("relative_rank_deduction")
+@always_inline
+@export
+fn relative_rank_deduction[
+    type: DType,
+    rank: Int,
+](data: NDBuffer[type, rank], data2: NDBuffer[type, rank + 1]):
+    pass
