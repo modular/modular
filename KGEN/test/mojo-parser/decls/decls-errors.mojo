@@ -249,14 +249,14 @@ fn first_and_rest[T: AnyRegType, *Ts: AnyRegType](*values: *Ts):
     pass
 
 fn badPackCalls(value: Int):
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
   examplePack[Int](1, 2)
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, Float32](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
+  # expected-error @below {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 0 positional operands, but 1 was specified}}
   examplePack(packArgOverload)
   # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 parameters, but 0 were specified}}
   first_and_rest(value)
@@ -277,26 +277,26 @@ def fn_redecl2() -> Float32: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
-# expected-note @below {{candidate not viable: callee expects 1 argument}}
+# expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
-# expected-note @below {{candidate not viable: callee expects 1 argument}}
+# expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
 fn overloadIntFloat32(a: Float32): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntFloat32(a: Int, inout b: Float32): pass
 
-# expected-note @below {{callee expects at least 3 arguments, but 1 was specified}}
-# expected-note @below {{callee expects at least 3 arguments, but 2 were specified}}
+# expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
+# expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
 fn overloadIntFloat32(a: Int, inout b: Float32, c: Int, *args: Int): pass
 
@@ -326,14 +326,14 @@ struct StructWithStaticMethod:
 
 fn test_static_overload():
     var a = StructWithStaticMethod()
-    # expected-error @below {{call to 'bar': callee expects 1 argument, but 0 were specified}}
+    # expected-error @below {{invalid call to 'bar': missing 1 required positional argument: 'f'}}
     a.bar()
 
 
 # expected-note @+1 {{function declared here}}
 fn takesAtLeastOneInt(x: Int, *y: Int): pass
 fn badTakesAtLeastOneInt():
-  # expected-error @+1 {{callee expects at least 1 argument, but 0 were specified}}
+  # expected-error @+1 {{invalid call to 'takesAtLeastOneInt': missing 1 required positional argument: 'x'}}
   takesAtLeastOneInt()
 
 
@@ -342,7 +342,7 @@ fn badTakesAtLeastOneInt():
 fn too_few_pos_only(a: Int, b: Int, /, msg: Int = 2): pass
 
 fn test_too_few_pos_only(a: Int, msg: Int = 3):
-  # expected-error @+1 {{callee expects at least 2 positional arguments, but 1 was specified}}
+  # expected-error @+1 {{invalid call to 'too_few_pos_only': missing 1 required positional argument: 'b'}}
   too_few_pos_only(a, msg=msg)
 
 
@@ -385,6 +385,15 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(1, b)
   # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
   localFn(b, b)
+
+# COM: https://github.com/modularml/mojo/issues/1530
+# COM: Do not crash when explicitly unbound parameter cannot be deduced due to missing arguments.
+struct Parametric[a: Int]: pass
+
+# expected-note @+1 {{function declared here}}
+fn test_missing_args_deduction_crash[x: Int](b: Parametric[x]):
+  # expected-error @+1 {{missing 1 required positional argument: 'b'}}
+  test_missing_args_deduction_crash[_]()
 
 ##===----------------------------------------------------------------------===##
 # Decorators

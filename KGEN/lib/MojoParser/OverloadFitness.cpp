@@ -559,8 +559,9 @@ struct DiagEmitter : public SharedStateUser {
                               size_t paramIdx, ASTType expectedType) const;
   InflightDiag wrongParamCount(size_t expectedNumParams,
                                size_t actualNumParams) const;
-  InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
-                             size_t numOperands) const;
+  InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
+                                     size_t maxAllowedArgs,
+                                     size_t numOperands) const;
   InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t numOperands,
                                  const Twine &argOrParam) const;
   InflightDiag resultGenericMemType(Type outputType) const;
@@ -573,6 +574,8 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
                            const Twine &kindStr) const;
   InflightDiag posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
+  InflightDiag tooManyPosArgs(size_t maxAllowedArgs,
+                              size_t numPosOperands) const;
 
 private:
   SMLoc callLoc;
@@ -636,12 +639,13 @@ InflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongArgCount(size_t minRequiredArgs,
-                                        size_t maxAllowedArgs,
-                                        size_t numOperands) const {
-  InflightDiag diag = initDiag() << "callee";
+InflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
+                                                size_t maxAllowedArgs,
+                                                size_t numOperands) const {
+  InflightDiag diag = initDiag()
+                      << "callee with non-empty variadic pack argument";
   emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
-                           "argument");
+                           "positional operand");
   return diag;
 }
 
@@ -788,46 +792,54 @@ DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
   return diag;
 }
 
+InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
+                                         size_t numPosOperands) const {
+  return initDiag() << "expected at most " << maxAllowedArgs
+                    << " positional arguments, got " << numPosOperands;
+}
+
 //===----------------------------------------------------------------------===//
 // OverloadFitness
 //===----------------------------------------------------------------------===//
 
-std::pair<size_t, size_t>
-OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
-  size_t minRequiredArgs = 0;
-  size_t maxAllowedArgs = 0;
-  for (auto [idx, convention] :
-       llvm::enumerate(signature.getArgConventions())) {
-    // Ignore the return slot if present.
-    if (convention == ArgConvention::ByRefResult)
-      continue;
+/// Calculate the minimum required and maximum allowed number of positional
+/// operands for a signature, assuming that the signature has a variadic pack;
+/// otherwise, NOTE: this function heavily assumes that a signature has at most
+/// one pack variadic argument and that variadics are always the last positional
+/// args.
+static std::pair<size_t, size_t>
+calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
+  size_t numPosArgs = countNumPositional(signature.getArgPassingKinds());
+  bool hasByRefResult = numPosArgs && (signature.getArgConvention(0) ==
+                                       ArgConvention::ByRefResult);
 
-    // VarArgs arguments don't require a value, but allow any number of them.
-    if (signature.isVarArg(idx)) {
-      maxAllowedArgs = std::numeric_limits<size_t>::max();
-      continue;
+  size_t numUserPosArgs = numPosArgs - hasByRefResult;
+  if (numUserPosArgs) {
+    // If we have a variadic argument, it will consume all positional operands,
+    // but it does not require any.
+    size_t lastPosIdx = numPosArgs - 1;
+    if (signature.isVarArg(lastPosIdx))
+      return {0, std::numeric_limits<size_t>::max()};
+
+    // If we have a non-empty variadic pack argument, we do require a certain
+    // number of positional operands (since the value of positional packs cannot
+    // be provided by keyword operands).
+    // NOTE: in this case, it doesn't matter if there are preceding positional
+    // arguments with default values: the pack cannot have a default value and
+    // _must_ be provided positional operands explicitly, and therefore the
+    // preceding defaults won't be used anyway.
+    if (auto packType = getIfPackType(signature, lastPosIdx)) {
+      // NOTE: we adjust the number of user declared pos args since that
+      // includes the pack itself (hence the "-1").
+      if (size_t packSize = packType.getVariadicAttr().getValues().size())
+        return {numUserPosArgs - 1 + packSize, numUserPosArgs - 1 + packSize};
+      return {0, numUserPosArgs - 1};
     }
-
-    // Arguments with a pack type must have a known number of element types,
-    // and so they require exactly that many arguments.
-    if (auto packType = getIfPackType(signature, idx)) {
-      size_t numValues = packType.getVariadicAttr().getValues().size();
-      minRequiredArgs += numValues;
-      maxAllowedArgs += numValues;
-      continue;
-    }
-
-    // Otherwise, we have an ordinary argument that requires a value.
-    ++minRequiredArgs;
-    ++maxAllowedArgs;
   }
 
-  // One less required argument for each argument that has a default value we
-  // can use instead.
-  minRequiredArgs -= signature.getDefaultPosArgs().size() +
-                     signature.getDefaultKwOnlyArgs().size();
-
-  return {minRequiredArgs, maxAllowedArgs};
+  // Otherwise, we don't require any positional operands (because this function
+  // does not check for passing kinds).
+  return {0, numUserPosArgs};
 }
 
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
@@ -1019,11 +1031,6 @@ diagnoseKeywordOperands(LITSignatureType signature,
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
            signature.getArgNames(), signature.getArgPassingKinds())) {
-    if (argPassingKind == PassingKind::PosOnly) {
-      if (callOperands.findKwArg(argName))
-        posOnlyPassedByKw.emplace_back(argName);
-      continue;
-    }
     if (argPassingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) &&
         !callOperands.findKwArg(argName)) {
@@ -1032,6 +1039,11 @@ diagnoseKeywordOperands(LITSignatureType signature,
     }
     if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
       continue; // Variadic/pack args cannot be specified by keyword.
+    if (argPassingKind == PassingKind::PosOnly) {
+      if (callOperands.findKwArg(argName))
+        posOnlyPassedByKw.emplace_back(argName);
+      continue;
+    }
     auto [_, addedNew] = argNames.insert(argName);
     assert(addedNew && "duplicate argument name in signature");
   }
@@ -1056,6 +1068,70 @@ diagnoseKeywordOperands(LITSignatureType signature,
   return std::nullopt;
 }
 
+/// Helper to diagnose common cases of candidate mismatch related to positional
+/// arguments/operands (too many positionals, missing positionals, argument
+/// specified both by positional and keyword operands).
+static std::optional<InflightDiag>
+diagnosePosOperands(LITSignatureType signature,
+                    const CallOperands &callOperands,
+                    const DiagEmitter &emitDiagFor) {
+  SmallVector<StringAttr> missingPosArgs;
+
+  size_t numPosOperands = callOperands.posOperands.size();
+  size_t numPosArguments = countNumPositional(signature.getArgPassingKinds());
+  bool hasVarArg = false;
+  bool hasByRefResult = numPosArguments && (signature.getArgConvention(0) ==
+                                            ArgConvention::ByRefResult);
+
+  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  for (size_t argIdx = hasByRefResult; argIdx < numPosArguments; ++argIdx) {
+    if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
+      // If the argument is variadic, it is not required. But we remember this
+      // because it lifts the limit on the maximum number of arguments.
+      hasVarArg = true;
+      continue;
+    }
+
+    // If we found a positional operand, check if it was also provided by
+    // keyword.
+    size_t userArgIdx = argIdx - hasByRefResult;
+    if (userArgIdx < numPosOperands) {
+      StringAttr argName = signature.getArgName(argIdx);
+      if (callOperands.findKwArg(argName))
+        return emitDiagFor.redundantArg(userArgIdx, argName);
+      continue;
+    }
+
+    // If we have a positional default, we're okay.
+    if (defaultHandler.getPosDefault(argIdx))
+      continue;
+
+    // If the arg was passed by keyword, we are okay.
+    StringAttr argName = signature.getArgName(argIdx);
+    if (callOperands.findKwArg(argName))
+      continue;
+
+    // Otherwise, we have a missing positional argument.
+    if (argName.empty()) {
+      argName = StringAttr::get(argName.getContext(),
+                                "(pos-only arg #" + Twine(userArgIdx) + ")");
+    }
+    missingPosArgs.push_back(argName);
+  }
+
+  // If there are now positional variadics, we can check for too many operands.
+  if (!hasVarArg) {
+    size_t maxPosArgs = numPosArguments - hasByRefResult;
+    if (numPosOperands > maxPosArgs)
+      return emitDiagFor.tooManyPosArgs(maxPosArgs, numPosOperands);
+  }
+
+  if (!missingPosArgs.empty())
+    return emitDiagFor.missingArgs(missingPosArgs, "positional");
+
+  return std::nullopt;
+}
+
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
@@ -1069,6 +1145,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
   if (auto diag = diagnoseKeywordOperands(signature, callOperands, emitDiagFor))
+    return std::move(*diag);
+
+  if (auto diag = diagnosePosOperands(signature, callOperands, emitDiagFor))
     return std::move(*diag);
 
   // Check that the signature can be rebound with this set of bindings. We use
@@ -1180,27 +1259,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     }
   }
 
-  // Ok, the parameters all line up, check the argument list.  We generally want
-  // to diagnose problems where too few or too many arguments are passed if that
-  // is the problem, rather than complaining about a type error of some argument
-  // that doesn't work out.  Check for that first.
-  auto [minRequiredArgs, maxAllowedArgs] = calculateMinMaxArgs(signature);
-  if (numOperands < minRequiredArgs || maxAllowedArgs < numOperands) {
-    return emitDiagFor.wrongArgCount(minRequiredArgs, maxAllowedArgs,
-                                     numOperands);
-  }
-  auto isPosOnlyArg = [](auto p) {
-    auto [kind, convention] = p;
-    if (convention == ArgConvention::ByRefResult)
-      return false;
-    return kind == PassingKind::PosOnly;
-  };
-  size_t numPosOnlyArgs = llvm::count_if(
-      llvm::zip(signature.getArgPassingKinds(), signature.getArgConventions()),
-      isPosOnlyArg);
-  if (numPosOperands < numPosOnlyArgs) {
-    return emitDiagFor.wrongPosOnlyCount(numPosOnlyArgs, numPosOperands,
-                                         "argument");
+  // Binding the parameters would determine the type of pack varargs. Given
+  // this, we need to check again if we have missing or too many arguments.
+  auto [minPosOperands, maxPosOperands] =
+      calculateRequiredPosOperandsForPacks(signature);
+  if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
+    return emitDiagFor.wrongArgCountWithPack(minPosOperands, maxPosOperands,
+                                             numPosOperands);
   }
 
   SMLoc loc = callable.expr->getLoc();
@@ -1231,10 +1296,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                            allowImplicitConversions, loc,
                            callable.paramBindings.declScope, shared);
   };
-
-  // We collect missing arguments (in case the argument count check didn't catch
-  // this).
-  SmallVector<StringAttr> missingArgs;
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
@@ -1289,15 +1350,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         continue;
       }
 
-      // We don't need to provide a value for this argument if it has a default.
-      if (defaultHandler.getDefault(expectedArgIdx)) {
-        // Arguments with default values must be followed only by other
-        // arguments with default values, or by keyword arguments.
-        continue;
-      }
+      // We ensured earlier that that can be no missing positional arguments.
+      assert(defaultHandler.getDefault(expectedArgIdx) &&
+             "missing positional argument not caught by diagnostics");
 
-      // We have an argument that was not passed a value. We collect these.
-      missingArgs.push_back(argName);
       continue;
     }
 
@@ -1341,21 +1397,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     }
 
     // Otherwise, we have an ordinary positional argument that is not varargs or
-    // a pack. Ensure that it is not also passed as a keyword operand, then
-    // process it as usual.
-    if (passingKind != PassingKind::PosOnly) {
-      assert(!argName.empty());
-      if (callOperands.findKwArg(argName))
-        return emitDiagFor.redundantArg(expectedArgIdx, argName);
-    }
+    // a pack. We ensured earlier that it is not also passed as a keyword
+    // operand, so we process it as usual.
+    assert(passingKind == PassingKind::PosOnly ||
+           (!argName.empty() && !callOperands.findKwArg(argName)) &&
+               "redundant argument not caught by diagnostics");
     if (auto result =
             processPositionalOperand(expectedType, expectedConvention))
       return std::move(*result);
   }
-
-  // If any arguments were missing, we emit diagnostics.
-  if (!missingArgs.empty())
-    return emitDiagFor.missingArgs(missingArgs, "positional");
 
   assert(posOperandIdx == numPosOperands &&
          "should handle argument mismatch above");
