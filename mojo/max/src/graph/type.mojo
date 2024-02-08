@@ -87,14 +87,6 @@ struct StaticDim(CollectionElement):
     var dim: Int64
     """The size of the static dimension."""
 
-    fn __init__(inout self, dim: IntLiteral):
-        """IntLiteral conversion constructor.
-
-        Args:
-            dim: The size of the static dimension.
-        """
-        self.dim = dim
-
     fn __init__(inout self, dim: Int):
         """Int conversion constructor.
 
