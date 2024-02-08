@@ -79,10 +79,10 @@ add_subdirectory(Profiling)
 # Entitlements is a composite, it requires ASN1, Cryptography, and HTTP.
 add_subdirectory(Entitlements)
 
-# Telemetry requires Entitlements.
-add_subdirectory(Telemetry)
-
-# Settings requires Entitlements as well
+# Settings requires Entitlements.
 add_subdirectory(Settings)
+
+# Telemetry requires Settings.
+add_subdirectory(Telemetry)
 
 add_subdirectory(Frameworks)

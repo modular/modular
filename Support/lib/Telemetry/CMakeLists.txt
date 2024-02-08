@@ -16,7 +16,7 @@ if(MODULAR_ENABLE_TELEMETRY)
 
     LINK_LIBS PUBLIC
     MSupport
-    MSupportEntitlements
+    MSupportSettings
     MArchTarget
     MVersion
     opentelemetry_metrics
@@ -43,6 +43,6 @@ else()
     FileLogExporter.cpp
 
     LINK_LIBS PUBLIC
-    MSupportEntitlements
+    MSupportSettings
     )
 endif()
