@@ -29,3 +29,18 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
     # CHECK-NEXT: [[TUPLE:%.*]] = lit.call @stdlib::@builtin::@tuple::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
     let r = __mlir_op.`op_that_has_multiple_returns`[_type= (Int, Int)]()
     return r
+
+
+# COM: Check that a load from a SIMD field works.
+# CHECK-LABEL: lit.func @"testSIMDGetter
+fn testSIMDGetter[
+    type: DType
+](owned a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+    # CHECK: %a_0 = lit.varlet.decl "a"
+    # CHECK: lit.ref.store %a, %a_0
+    # CHECK: %[[AVAL:.*]] = lit.ref.load %a_0
+    # CHECK: %[[ZERO:.*]] = kgen.param.constant: {{.*}} = 0
+    # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])
+    # CHECK: %[[RES:.*]] = lit.struct.extract %[[GOT]][value]
+    # CHECK: lit.return %[[RES]]
+    return a[0].value
