@@ -25,6 +25,23 @@ from utils.list import DimList, Dim
 from utils._optional_param import OptionalParamInt, OptionalParamInts
 
 
+# ===----------------------------------------------------------------------=== #
+# Epilogue Helper                                                              #
+# ===----------------------------------------------------------------------=== #
+
+
+# Elementwise epilogue signature
+alias elementwise_epilogue_type = fn[rank: Int] (
+    coords: StaticIntTuple[rank],
+    f_size: Int,
+) capturing -> None
+
+
+# ===----------------------------------------------------------------------=== #
+# Wrapper for  Convolution Shape                                               #
+# ===----------------------------------------------------------------------=== #
+
+
 @register_passable("trivial")
 struct ConvShape[rank: Int]:
     """A shape struct describing the convolution dimensions."""

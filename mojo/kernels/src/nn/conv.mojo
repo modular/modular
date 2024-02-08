@@ -35,6 +35,7 @@ from .ConvUtils import (
     ConvInfoStatic,
     ConvShape,
     ConvPartition,
+    elementwise_epilogue_type,
     get_conv2d_shape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -282,13 +283,6 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
     let ho = (m % (HO * WO)) // WO
     let wo = m % WO
     return Index(n, ho, wo)
-
-
-# Elementwise epilogue signature
-alias elementwise_epilogue_type = fn[rank: Int] (
-    coords: StaticIntTuple[rank],
-    f_size: Int,
-) capturing -> None
 
 
 # Reduce helper when the input channel dimension is partitioned.

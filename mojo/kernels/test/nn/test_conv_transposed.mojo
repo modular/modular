@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from algorithm.functional import vectorize
 from math import abs, div_ceil, isclose, min
 from random import rand, seed
 from sys import external_call
@@ -36,51 +37,110 @@ alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32
 
 
-fn test[
-    type: DType
+@always_inline
+fn extend_shape[
+    rank: Int
+](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[
+    rank + 2
+]:
+    var out_shape = StaticIntTuple[rank + 2](0)
+    out_shape[0] = first
+    out_shape[rank + 1] = last
+
+    @unroll
+    for i in range(rank):
+        out_shape[i + 1] = in_shape[i]
+
+    return out_shape
+
+
+@always_inline
+fn append_shape[
+    rank: Int
+](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[
+    rank + 2
+]:
+    var out_shape = StaticIntTuple[rank + 2](0)
+    out_shape[rank] = last2nd
+    out_shape[rank + 1] = last
+
+    @unroll
+    for i in range(rank):
+        out_shape[i] = in_shape[i]
+
+    return out_shape
+
+
+fn test_conv_transposed[
+    type: DType, rank: Int
 ](
     N: Int,
-    H: Int,
-    W: Int,
+    input_dims: StaticIntTuple[rank],
     C: Int,
-    R: Int,
-    S: Int,
+    filter_dims: StaticIntTuple[rank],
     F: Int,
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
+    stride: StaticIntTuple[rank],
+    dilation: StaticIntTuple[rank],
+    pad: StaticIntTuple[2 * rank],
     num_groups: Int,
 ) raises:
-    print("== test_direct_conv")
+    print("test_conv_transposed")
 
-    # fmt: off
-    let HO = (H - 1) * stride[0] - pad_h[0] - pad_h[1] + (R - 1) * dilation[0] + 1
-    let WO = (W - 1) * stride[1] - pad_w[0] - pad_w[1] + (S - 1) * dilation[1] + 1
-    # fmt: on
+    var output_dims = StaticIntTuple[rank](1)
 
-    let conv_shape = ConvShape[2] {
+    @unroll
+    for i in range(rank):
+        output_dims[i] = (
+            (input_dims[i] - 1) * stride[i]
+            - pad[2 * i]
+            - pad[2 * i + 1]
+            + dilation[i] * (filter_dims[i] - 1)
+            + 1
+        )
+
+    var pad_d = StaticIntTuple[2](0)
+    var pad_h = StaticIntTuple[2](0)
+    var pad_w = StaticIntTuple[2](0)
+
+    @parameter
+    if rank == 1:
+        pad_w = Index(pad[0], pad[1])
+    elif rank == 2:
+        pad_h = Index(pad[0], pad[1])
+        pad_w = Index(pad[2], pad[3])
+    elif rank == 3:
+        pad_d = Index(pad[0], pad[1])
+        pad_h = Index(pad[2], pad[3])
+        pad_w = Index(pad[4], pad[5])
+
+    let conv_shape = ConvShape[rank] {
         n: N,
-        input_dims: Index(H, W),
-        output_dims: Index(HO, WO),
-        filter_dims: Index(R, S),
+        input_dims: input_dims,
+        output_dims: output_dims,
+        filter_dims: filter_dims,
         c: C,
         f: F,
         stride: stride,
         dilation: dilation,
-        pad_d: Index(0, 0),
+        pad_d: pad_d,
         pad_h: pad_h,
         pad_w: pad_w,
         num_groups: num_groups,
     }
 
-    let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
-    let output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
-    let output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    let C_per_group = C // num_groups
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    let input_size = N * conv_shape.input_image_flat_size() * C
+    let input_ptr = DTypePointer[type].alloc(input_size)
+    rand(input_ptr, input_size)
+
+    let filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
+    let filter_ptr = DTypePointer[type].alloc(filter_size)
+    rand(filter_ptr, filter_size)
+
+    let output_size = N * conv_shape.output_image_flat_size() * F
+    let output_ptr = DTypePointer[type].alloc(output_size)
+    let output_ref_ptr = DTypePointer[type].alloc(output_size)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -90,37 +150,51 @@ fn test[
     alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    let input = NDBuffer[type, 4](input_ptr, Index(N, H, W, C))
-    let filter = NDBuffer[type, 4](filter_ptr, Index(R, S, F, C // num_groups))
+    # Input buffer.
+    var input_shape = extend_shape(input_dims, N, C)
+    let input = NDBuffer[type, rank + 2](input_ptr, input_shape)
+
+    # Filter buffer.
+    var filter_shape = append_shape(filter_dims, F, C_per_group)
+    let filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
+
     let packed_filter_shape = pack_filter_shape(filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[type, 5](
-        packed_filter_ptr, packed_filter_shape
+    let packed_filter = NDBuffer[type, rank + 3](
+        packed_filter_ptr, rebind[StaticIntTuple[rank + 3]](packed_filter_shape)
     )
 
-    let output = NDBuffer[type, 4](output_ptr, Index(N, HO, WO, F))
-    let output_ref = NDBuffer[type, 4](output_ref_ptr, Index(N, HO, WO, F))
+    let output_shape = extend_shape(output_dims, N, F)
+    let output = NDBuffer[type, rank + 2](output_ptr, output_shape)
+    let output_ref = NDBuffer[type, rank + 2](output_ref_ptr, output_shape)
 
-    let stride_buf = NDBuffer[DType.index, 1, DimList(2)].stack_allocation()
-    stride_buf[0] = stride[0]
-    stride_buf[1] = stride[1]
+    # Bias for epilogue
+    let bias_ptr = DTypePointer[type].alloc(F)
+    rand(bias_ptr, F)
 
-    let dilation_buf = NDBuffer[DType.index, 1, DimList(2)].stack_allocation()
-    dilation_buf[0] = dilation[0]
-    dilation_buf[1] = dilation[1]
+    let stride_buf = NDBuffer[DType.index, 1, DimList(rank)].stack_allocation()
+    for i in range(rank):
+        stride_buf[i] = stride[i]
 
-    let padding_buf = NDBuffer[DType.index, 1, DimList(4)].stack_allocation()
-    padding_buf[0] = pad_h[0]
-    padding_buf[1] = pad_w[0]
-    padding_buf[2] = pad_h[1]
-    padding_buf[3] = pad_w[1]
+    let dilation_buf = NDBuffer[
+        DType.index, 1, DimList(rank)
+    ].stack_allocation()
+    for i in range(rank):
+        dilation_buf[i] = dilation[i]
+
+    let padding_buf = NDBuffer[
+        DType.index, 1, DimList(2 * rank)
+    ].stack_allocation()
+    for i in range(rank):
+        padding_buf[i] = pad[2 * i]
+        padding_buf[rank + i] = pad[2 * i + 1]
 
     pack_filter(filter, packed_filter, num_groups)
 
     # Reference.
-    conv_transpose_naive[4, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[rank + 2, type, DType.index, DType.index, DType.index](
         output_ref,
         input,
         filter,
@@ -129,46 +203,93 @@ fn test[
         padding_buf.make_dims_unknown(),
     )
 
+    # Add bias and activatiion separately.
+    let output_image_size = output_dims.flattened_length()
+    for n in range(N):
+        for i in range(output_image_size):
+            let output_ref_ptr = output_ref.data + F * (
+                i + output_image_size * n
+            )
+
+            @always_inline
+            @__copy_capture(output_ref_ptr, bias_ptr)
+            @parameter
+            fn body0[width: Int](offset: Int):
+                output_ref_ptr.simd_store(
+                    offset,
+                    10.0
+                    * (
+                        output_ref_ptr.simd_load[width](offset)
+                        + bias_ptr.simd_load[width](offset)
+                    ),
+                )
+
+            vectorize[body0, simd_size](F)
+
     # Test.
     alias conv_attr = ConvInfoStatic.create_unknown[2]()
 
+    # Test epilogue
+    @always_inline
+    @__copy_capture(output, bias_ptr)
+    @parameter
+    fn epilogue[_rank: Int](coords: StaticIntTuple[_rank], f_size: Int):
+        @always_inline
+        @parameter
+        fn body1[width: Int](idx: Int):
+            var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)
+            curr_coords[rank + 1] += idx
+
+            let vec = output.simd_load[width](curr_coords)
+
+            output.simd_store(
+                curr_coords,
+                10.0 * (vec + bias_ptr.simd_load[width](curr_coords[rank + 1])),
+            )
+
+        vectorize[body1, simd_size](f_size)
+
     ConvTransposedPacked[
-        4,
-        5,
-        4,
-        DimList.create_unknown[4](),
-        DimList.create_unknown[5](),
-        DimList.create_unknown[4](),
-        type,
-        type,
-        type,
+        rank + 2,  # input rank
+        rank + 3,  # filter rank
+        rank + 2,  # output rank
+        DimList.create_unknown[rank + 2](),  # input shape
+        DimList.create_unknown[rank + 3](),  # filter shape
+        DimList.create_unknown[rank + 2](),  # output shape
+        type,  # input
+        type,  # filter
+        type,  # output
         conv_attr,
-    ].run(output, input, packed_filter, conv_shape)
+        epilogue,
+    ].run(
+        output,
+        input,
+        packed_filter,
+        rebind[ConvShape[rank + 2 - 2]](conv_shape),
+    )
 
     input_ptr.free()
     filter_ptr.free()
     packed_filter_ptr.free()
+    bias_ptr.free()
 
     # Check results, return on the first failed comparison.
-    for n in range(N):
-        for ho in range(HO):
-            for wo in range(WO):
-                for f in range(F):
-                    if not isclose(
-                        output_ref[n, ho, wo, f],
-                        output[n, ho, wo, f],
-                        1e-4,  # absolute error tolerance
-                        1e-4,  # relative error tolerance
-                    ):
-                        print("Input shape NHWC: ", Index(N, H, W, C))
-                        print("filter shape RSCF: ", Index(R, S, C, F))
-                        print("num groups", num_groups)
-                        print("Test failed at index: ", Index(n, ho, wo, f))
-                        print("Golden value: ", output_ref[n, ho, wo, f])
-                        print("Actual value: ", output[n, ho, wo, f])
-                        output_ptr.free()
-                        output_ref_ptr.free()
-                        return
+    for i in range(output_size):
+        if not isclose(
+            output_ref.data[i],
+            output.data[i],
+            1e-4,  # absolute error tolerance
+            1e-4,  # relative error tolerance
+        ):
+            print("Input shape: ", input_shape)
+            print("filter shape: ", filter_shape)
+            print("num groups", num_groups)
+            print("flat output index:", i)
+            print("Golden value: ", output_ref.data[i])
+            print("Actual value: ", output.data[i])
+            output_ptr.free()
+            output_ref_ptr.free()
+            return
 
     output_ptr.free()
     output_ref_ptr.free()
@@ -178,95 +299,77 @@ fn test[
 
 
 fn main() raises:
-    test[DType.float32](
+    test_conv_transposed[DType.float32, 2](
         1,  # N
-        3,  # H
-        3,  # W
+        Index(3, 3),
         1,  # C
-        3,  # R
-        3,  # S
+        Index(3, 3),
         2,  # F
         Index(3, 2),  # stride
         Index(1, 1),  # dilation
-        Index(1, 1),  # pad_h
-        Index(2, 2),  # pad_w
+        Index(1, 1, 2, 2),  # pad h, w
         1,  # num_groups
     )
 
-    test[DType.float32](
+    test_conv_transposed[DType.float32, 2](
         1,  # N
-        3,  # H
-        3,  # W
+        Index(3, 3),
         1,  # C
-        3,  # R
-        3,  # S
+        Index(3, 3),
         2,  # F
         Index(1, 1),  # stride
         Index(1, 1),  # dilation
-        Index(0, 0),  # pad_h
-        Index(0, 0),  # pad_w
+        Index(0, 0, 0, 0),  # pad h, w
         1,  # num_groups
     )
 
-    test[DType.float32](
+    test_conv_transposed[DType.float32, 2](
         1,  # N
-        3,  # H
-        3,  # W
+        Index(3, 3),
         1,  # C
-        2,  # R
-        2,  # S
+        Index(3, 3),
         1,  # F
         Index(1, 1),  # stride
         Index(2, 2),  # dilation
-        Index(0, 0),  # pad_h
-        Index(0, 0),  # pad_w
+        Index(0, 0, 0, 0),  # pad_h, pad_w
         1,  # num_groups
     )
 
-    test[DType.float32](
+    test_conv_transposed[DType.float32, 2](
         1,  # N
-        3,  # H
-        3,  # W
+        Index(3, 3),
         1,  # C
-        2,  # R
-        2,  # S
+        Index(2, 2),
         2,  # F
         Index(3, 2),  # stride
         Index(1, 1),  # dilation
-        Index(0, 0),  # pad_h
-        Index(0, 0),  # pad_w
+        Index(0, 0, 0, 0),  # pad_h, pad_w
         1,  # num_groups
     )
 
     # Large shapes commented out to save CI cost.
 
     # # StarGan shape
-    # test[DType.float32](
+    # test_conv_transposed[DType.float32, 2](
     #     16,  # N
-    #     32,  # H
-    #     32,  # W
+    #     Index(32, 32),
     #     256,  # C
-    #     4,  # R
-    #     4,  # S
+    #     Index(4, 4),
     #     128,  # F
     #     Index(2, 2),  # stride
     #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
+    #     Index(1, 1, 1, 1),  # pad_h, w
     #     1,  # num_groups
     # )
 
-    # test[DType.float32](
+    # test_conv_transposed[DType.float32, 2](
     #     16,  # N
-    #     64,  # H
-    #     64,  # W
+    #     Index(64, 64),
     #     128,  # C
-    #     4,  # R
-    #     4,  # S
+    #     Index(4, 4),
     #     64,  # F
     #     Index(2, 2),  # stride
     #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
+    #     Index(1, 1, 1, 1),  # pad_h, pad_w
     #     1,  # num_groups
     # )

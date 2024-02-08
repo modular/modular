@@ -21,6 +21,7 @@ from .ConvUtils import (
     ConvInfoStatic,
     ConvShape,
     ConvPartition,
+    elementwise_epilogue_type,
     get_conv2d_shape,
     get_conv_num_tasks,
     get_conv_tile_shape,
@@ -353,6 +354,7 @@ struct ConvTransposedPacked[
     filter_type: DType,
     output_type: DType,
     conv_attr: ConvInfoStatic,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ]:
     var output: NDBuffer[output_type, output_rank, output_shape]
     var input: NDBuffer[input_type, input_rank, input_shape]
@@ -434,6 +436,7 @@ struct ConvTransposedPacked[
                 filter_type,
                 output_type,
                 conv_attr,
+                elementwise_epilogue=elementwise_epilogue,
             ](
                 output,
                 input,
@@ -446,6 +449,7 @@ struct ConvTransposedPacked[
 
         sync_parallelize[task_func](num_tasks)
 
+    @always_inline
     fn _zero_output(self, n: Int, g: Int):
         """Zero the output buffer."""
         alias simd_size = simdwidthof[output_type]()
@@ -475,9 +479,17 @@ struct ConvTransposedPacked[
         ):
             let n = ng // self.conv_shape.num_groups
             let g = ng % self.conv_shape.num_groups
+
             # Initailize the output buffer for current batch and group.
             self._zero_output(n, g)
+
+            # ConvTrasnposed computation
             self._c_tile_loop(n, g, self.cf_tile_size[0])
+
+            # Epilogue. Avoid putting it after register tiling for now because
+            # input row i may update output row i-1. It's hard to tell if a row
+            # has been updated lastly especially with stride and dilation.
+            self.apply_epilogue(n, g)
 
     fn _c_tile_loop(self, n: Int, g: Int, c_tile_size: Int):
         """Loop over C tiles."""
@@ -735,8 +747,6 @@ struct ConvTransposedPacked[
                     height * self.conv_shape.stride[1] * self.conv_shape.f
                 )
 
-                # print("output", self.output[0, 0, 0, 0], self.output[0, 0, 1, 0], self.output[0, 0, 2, 0])
-
             tile_middle_unswitch_boundaries[
                 work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
             ](
@@ -767,6 +777,29 @@ struct ConvTransposedPacked[
     ):
         pass
 
+    @always_inline
+    fn apply_epilogue(self, n: Int, g: Int):
+        alias simd_size = simdwidthof[output_type]()
+
+        let f_offset = g * self.conv_shape.f_per_group() + self.partition.f_offset
+        let num_rows = self.conv_shape.output_image_flat_size()
+        let output_base = self.output.data + n * num_rows * self.conv_shape.f + f_offset
+
+        @parameter
+        if elementwise_epilogue:
+            alias epilogue = elementwise_epilogue.value()
+
+            var output_ptr = output_base
+
+            @parameter
+            if input_rank == 4:  # 2D ConvTransposed.
+                for ho in range(self.conv_shape.ho()):
+                    for wo in range(self.conv_shape.wo()):
+                        epilogue(
+                            Index(n, ho, wo, f_offset), self.partition.f_size
+                        )
+                        output_ptr += self.conv_shape.f
+
 
 # ===----------------------------------------------------------------------=== #
 # Direct Transposed Convolution 2D Resigter Tiling
@@ -781,7 +814,6 @@ fn update_w_tile_2d[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    # elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -1080,6 +1112,10 @@ fn conv_transposed[
     filter_type: DType,
     output_type: DType,
     filter_packed: Bool,
+    lambdas_have_fusion: Bool,
+    elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
     output: NDBuffer[output_type, input_rank, output_shape],
     input: NDBuffer[input_type, input_rank, input_shape],
@@ -1132,6 +1168,26 @@ fn conv_transposed[
         1,
     )
 
+    # The closure updates a row segment of the output.
+    @always_inline
+    @parameter
+    fn elementwise_epilogue[
+        rank: Int
+    ](coords: StaticIntTuple[rank], f_size: Int,):
+        alias simd_size = simdwidthof[output_type]()
+
+        @always_inline
+        @parameter
+        fn body[width: Int](idx: Int):
+            # Cooridates of the current index.
+            var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
+            curr_coords[input_rank - 1] += idx
+
+            let vec = output.simd_load[width](curr_coords)
+            elementwise_lambda(curr_coords, vec)
+
+        vectorize[body, simd_size](f_size)
+
     ConvTransposedPacked[
         input_rank,
         packed_filter_rank,
@@ -1143,6 +1199,9 @@ fn conv_transposed[
         filter_type,
         output_type,
         conv_attr,
+        Optional[elementwise_epilogue_type](
+            elementwise_epilogue
+        ) if lambdas_have_fusion else None,
     ].run(output, input, packed_filter, conv_shape)
 
     @parameter
