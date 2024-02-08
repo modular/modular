@@ -361,8 +361,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
 
         // We tried but couldn't infer an unbound parameter, we must error.
-        if (diagEmitter.emitCtadFailure)
-          diagEmitter.emitCtadFailure(idx);
+        if (diagEmitter.emitDeductionFailure)
+          diagEmitter.emitDeductionFailure(idx);
         return {{}, fitness};
       }
     }
@@ -515,9 +515,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitCtadFailure=*/
+      /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
-        llvm_unreachable("CTAD failure in a context that doesn't allow CTAD");
+        llvm_unreachable("parameter deduction failure in a context that "
+                         "doesn't allow deduction");
       }};
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,

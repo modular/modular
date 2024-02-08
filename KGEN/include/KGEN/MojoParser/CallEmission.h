@@ -159,8 +159,8 @@ public:
     std::function<void(size_t, StringAttr)> emitRedundantKw;
     /// Emit diagnostics for positional-only parameters specified by keyword.
     std::function<void(SmallVectorImpl<StringRef> &&)> emitPosOnlyPassedByKw;
-    /// Emit diagnostics for failure to deduce a struct parameter.
-    std::function<void(size_t)> emitCtadFailure;
+    /// Emit diagnostics for failure to deduce a parameter.
+    std::function<void(size_t)> emitDeductionFailure;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature

@@ -1068,6 +1068,11 @@ diagnoseKeywordOperands(LITSignatureType signature,
   return std::nullopt;
 }
 
+/// Return a printable name for an anonymous positional-only argument/parameter.
+static Twine nameForPosOnly(size_t idx, const Twine &argOrParam) {
+  return "positional-only " + argOrParam + " #" + Twine(idx);
+}
+
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/operands (too many positionals, missing positionals, argument
 /// specified both by positional and keyword operands).
@@ -1114,7 +1119,7 @@ diagnosePosOperands(LITSignatureType signature,
     // Otherwise, we have a missing positional argument.
     if (argName.empty()) {
       argName = StringAttr::get(argName.getContext(),
-                                "(pos-only arg #" + Twine(userArgIdx) + ")");
+                                "(" + nameForPosOnly(userArgIdx, "arg") + ")");
     }
     missingPosArgs.push_back(argName);
   }
@@ -1200,14 +1205,24 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       [&](SmallVectorImpl<StringRef> &&names) {
         emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
       },
-      /*emitCtadFailure=*/
+      /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
-        ASTDecl &decl = *callable.baseType.getDecl(shared);
-        auto structOp = cast<StructDeclOp>(decl);
-        diag << "could not deduce parameter #" << paramIdx << " ("
-             << structOp.getSignature().getParamNames()[paramIdx]
-             << ") of parent struct " << *decl.getNameIfOperation();
-        diag.attachNote(decl.getLoc()) << "struct declared here";
+        auto emitMessage = [&](auto sig) {
+          diag << "could not deduce ";
+          if (StringAttr name = sig.getParamNames()[paramIdx]; !name.empty())
+            diag << "parameter " << name;
+          else
+            diag << nameForPosOnly(paramIdx, "parameter");
+        };
+        if (ASTDecl *decl = callable.baseType.getDecl(shared)) {
+          emitMessage(cast<StructDeclOp>(decl).getSignature());
+          diag << " of parent struct '" << *decl->getNameIfOperation() << "'";
+          diag.attachNote(decl->getLoc()) << " struct declared here";
+          return;
+        }
+
+        emitMessage(signature);
+        diag << " of callee '" << callable.baseName << "'";
       },
   };
 
