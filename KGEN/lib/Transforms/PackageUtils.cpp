@@ -20,59 +20,30 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// loadPreElaboratedModuleBytecode
-//===----------------------------------------------------------------------===//
-
-ErrorOr<OwningOpRef<ModuleOp>>
-KGEN::loadPreElaboratedModuleBytecode(DenseResourceElementsAttr bytecodeAttr) {
-  mlir::AsmResourceBlob *blob = bytecodeAttr.getRawHandle().getBlob();
-  if (!blob)
-    return Error("unable to find the pre-elaborated module blob");
-  ArrayRef<char> bytecode = blob->getData();
-  llvm::MemoryBufferRef bufferRef(StringRef(bytecode.begin(), bytecode.size()),
-                                  "");
-
-  // Read the entirety of the bytecode in the buffer; no lazy loading.
-  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
-  mlir::ParserConfig parserConfig(bytecodeAttr.getContext());
-  mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/false,
-                              sourceMgr);
-  Block block;
-  if (failed(reader.readTopLevel(&block)))
-    return Error("unable to read pre-elaborated module blob");
-
-  // Take ownership of the parsed module by removing it from the block so that
-  // we can return it.
-  ModuleOp module = cast<ModuleOp>(block.front());
-  module->remove();
-  return module;
-}
-
-//===----------------------------------------------------------------------===//
 // loadPreElaboratedModuleForLinking
 //===----------------------------------------------------------------------===//
 
 ErrorOr<OwningOpRef<ModuleOp>> KGEN::loadPreElaboratedModuleForLinking(
     DenseResourceElementsAttr bytecodeAttr) {
-  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
-      loadPreElaboratedModuleBytecode(bytecodeAttr);
-  if (packageModuleOr.isError())
-    return packageModuleOr.takeError();
+  OwningOpRef<ModuleOp> packageModuleOr =
+      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+  if (!packageModuleOr)
+    return Error("unable to load parsed module bytecode");
 
   // Strip the implicit package exports, we don't need these because we're going
   // to link the package into an existing module as-is.
-  for (ExportInterface op : (*packageModuleOr)->getOps<ExportInterface>())
+  for (ExportInterface op : packageModuleOr->getOps<ExportInterface>())
     if (op.isPackageExported())
       op.setNotExported();
 
   // Materialize all of the dependent packages now, making sure they also
   // get linked in properly.
-  mlir::PassManager pm((*packageModuleOr)->getContext());
+  mlir::PassManager pm(packageModuleOr->getContext());
   pm.addPass(createMaterializePackages());
-  if (failed(pm.run(**packageModuleOr)))
+  if (failed(pm.run(*packageModuleOr)))
     return Error("unable to materialize dependent packages");
 
-  return std::move(*packageModuleOr);
+  return std::move(packageModuleOr);
 }
 
 //===----------------------------------------------------------------------===//

@@ -9,6 +9,8 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Bytecode/BytecodeReader.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "llvm/Support/MemoryBufferRef.h"
 
@@ -27,6 +29,26 @@ OwningOpRef<T> readOpFromBytecodeFile(llvm::MemoryBufferRef buffer,
     return std::move(op);
   }
   return OwningOpRef<T>();
+}
+
+/// Read a single operation from the given bytecode blob. Returns nullptr in the
+/// case of failure.
+OwningOpRef<Operation *>
+readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr,
+                       const mlir::ParserConfig &config);
+template <typename T>
+OwningOpRef<T> readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr,
+                                      const mlir::ParserConfig &config) {
+  OwningOpRef<Operation *> rawOp = readOpFromBytecodeFile(bytecodeAttr, config);
+  if (OwningOpRef<T> op = dyn_cast_if_present<T>(*rawOp)) {
+    rawOp.release();
+    return std::move(op);
+  }
+  return OwningOpRef<T>();
+}
+template <typename T>
+OwningOpRef<T> readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr) {
+  return readOpFromBytecodeFile<T>(bytecodeAttr, bytecodeAttr.getContext());
 }
 
 /// Write a single attribute to a bytecode file.

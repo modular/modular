@@ -230,17 +230,18 @@ ErrorOr<PackageArchiveAttr> M::KGEN::loadAndElaborateBytecode(
           if (chain.isError())
             return std::move(output).setToError(chain.takeDiagnostic());
 
-          ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
-              loadPreElaboratedModuleBytecode(preElaborationModuleAttr);
-          if (packageModuleOr.isError()) {
+          OwningOpRef<ModuleOp> packageModuleOr =
+              readOpFromBytecodeFile<ModuleOp>(preElaborationModuleAttr);
+          if (!packageModuleOr) {
             return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-                packageModuleOr.takeError(), packageLink->getLoc()));
+                Error("failed to load pre-specialized module bytecode"),
+                packageLink->getLoc()));
           }
 
           // Elaborate the bytecode for the given target, and set the resulting
           // bytecode as an attribute on the package_link op.
           auto elaborateOr = elaborateBytecode(
-              **packageModuleOr, packageLink, targetInfo, compileOptions,
+              *packageModuleOr, packageLink, targetInfo, compileOptions,
               runtime, regionCache.copy(), transformCache.copy());
           if (elaborateOr.isError()) {
             return std::move(output).setToError(LLCL::getMLIRDiagnostic(
