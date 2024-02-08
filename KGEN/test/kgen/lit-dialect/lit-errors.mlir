@@ -176,22 +176,6 @@ lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
 
 // -----
 
-lit.func @invalid_break() {
-  // expected-error @below {{'lit.break' op must be nested within a `lit.loop` operation}}
-  lit.break
-  lit.end_func
-}
-
-// -----
-
-lit.func @invalid_continue() {
-  // expected-error @below {{'lit.continue' op must be nested within a `lit.loop` operation}}
-  lit.continue
-  lit.end_func
-}
-
-// -----
-
 lit.func @not_async() {
   // expected-error @below {{'lit.async.call' op callable must be 'async'}}
   %0 = lit.async.call[() -> (): @not_async]()

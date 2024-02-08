@@ -10,8 +10,6 @@
 //  1) It lowers statements like `lit.break` (which is not a terminator) into
 //     `hlcf.break` (which is), and deletes unreachable code after it, and
 //     diagnoses it if it is anything interesting.
-//  2) It lowers 'lit.param.return' instances into a single
-//     'kgen.param.result_bind' instance.
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,6 +24,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace KGEN;
@@ -34,6 +33,32 @@ using namespace POP;
 //===----------------------------------------------------------------------===//
 // Semantic control flow lowering.
 //===----------------------------------------------------------------------===//
+
+namespace {
+/// Each function is lowered in a depth first walk through the region tree.
+struct LowerSemanticCF {
+  LIT::FuncOp theFunc;
+
+  // This is the current loop that a break or continue should exit from.
+  HLCF::LoopOp currentLoop;
+
+  // Each lowered hlcf.loop gets its own unique ID so we can break out of it if
+  // needed.
+  unsigned loopCounter = 0;
+
+  // True if we've emitted an error.
+  bool hadError = false;
+
+  LowerSemanticCF(LIT::FuncOp theFunc) : theFunc(theFunc) {}
+  void run();
+
+private:
+  void lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
+                  bool &doesFallThrough);
+  bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
+                    bool &enclosingBlockDoesBreak);
+};
+} // end anonymous namespace
 
 /// Insert 'finally' block logic on a `lit.try` operation by finding all
 /// terminators that exit the try regions and pasting the finally clause before
@@ -132,119 +157,80 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
                               std::next(Block::iterator(&op)));
 };
 
-static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
-                                    bool &doesBreak, bool &doesFallThrough,
-                                    int64_t loopLevel);
-
-/// Get parent loop's label if there is one; otherwise, generate and set a new
-/// label.
-static StringAttr getOrSetParentLoopLabel(HLCF::LoopOp loop,
-                                          int64_t loopLevel) {
-  auto parentLoop = loop->getParentOfType<HLCF::LoopOp>();
-  StringAttr label = parentLoop.getLabelAttr();
-  if (!label) {
-    // Parent loop of loop has level = loopLevel - 2.
-    label = StringAttr::get(parentLoop->getContext(),
-                            "_loop_" + Twine(loopLevel - 2));
-    parentLoop.setLabelAttr(label);
-  }
-  return label;
-}
-
-/// Lower a LIT::LoopOp to HLCF::LoopOp.
-/// Return true if the lowering should stop traversing the rest of the
-/// operations.
-static bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
-                         int64_t loopLevel) {
+/// Lower a LIT::LoopOp to HLCF::LoopOp.  Return true if the lowering should
+/// stop traversing the rest of the operations because this is an infinite loop
+/// that doesn't fall through.
+bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
+                                   bool &enclosingBlockDoesRaise,
+                                   bool &enclosingBlockDoesBreak) {
   // Lower loop conditions.
   Block &condBlock = loopOp.getCondRegion().front();
   Block &bodyBlock = loopOp.getBodyRegion().front();
   Block &elseBlock = loopOp.getElseRegion().front();
-  Location loopLoc = loopOp->getLoc();
 
   // Create the new HLCF::LoopOp.
-  OpBuilder builder(loopOp);
+  ImplicitLocOpBuilder builder(loopOp->getLoc(), loopOp);
   builder.setInsertionPointAfter(loopOp);
-  auto newLoop =
-      builder.create<HLCF::LoopOp>(loopLoc, loopOp.getUnrollLevelAttr());
+  auto newLoop = builder.create<HLCF::LoopOp>(loopOp.getUnrollLevelAttr());
+  // Each loop gets a unique label.
+  newLoop.setLabelAttr(builder.getStringAttr("_loop_" + Twine(loopCounter++)));
+
   Block *newBody = builder.createBlock(&newLoop.getBody());
-  Block *newExitBlock = nullptr;
 
   // Move the loop condition logic to the beginning of the HLCF::LoopOp's body.
-  Operation *prevOp = nullptr;
-  for (Operation &op :
-       llvm::make_early_inc_range(condBlock.without_terminator())) {
-    if (prevOp == nullptr)
-      op.moveBefore(newBody, newBody->begin());
-    else
-      op.moveAfter(prevOp);
-    prevOp = &op;
-  }
+  newBody->getOperations().splice(newBody->begin(), condBlock.getOperations());
 
-  // Create the loop condition check.
-  auto loopCondition = cast<LIT::LoopConditionOp>(condBlock.getTerminator());
-  // Create loop condition check
+  // Create the loop condition check, replacing the LoopConditionOp.
+  auto loopCondition =
+      cast<LIT::LoopConditionOp>(newBody->getTerminator()).getOperand();
+  newBody->getTerminator()->erase();
+
+  // Create loop condition check: it continues when the condition is true and
+  // does the the exit logic when false.
   builder.setInsertionPointToEnd(newBody);
-  auto condOp = builder.create<HLCF::IfOp>(loopLoc, loopCondition.getOperand());
+  auto condOp = builder.create<HLCF::IfOp>(loopCondition);
   builder.createBlock(&condOp.getThenRegion());
-  builder.create<HLCF::YieldOp>(loopLoc);
-  newExitBlock = builder.createBlock(&condOp.getElseRegion());
-  prevOp = condOp;
+  builder.create<HLCF::YieldOp>();
 
   // Move the loop's body to the HLCF::LoopOp's body.
-  for (Operation &op : llvm::make_early_inc_range(bodyBlock.getOperations())) {
-    op.moveAfter(prevOp);
-    prevOp = &op;
-  }
+  newBody->getOperations().splice(newBody->end(), bodyBlock.getOperations());
 
-  bool createExitBlockBreakTerminator = true;
-  if (elseBlock.getOperations().size() > 1) {
-    builder.setInsertionPointToStart(newExitBlock);
+  // Move any 'else' code into the exit block.  If the 'else' code falls through
+  // then it will break out of the loop, for now we leave it ending with
+  // lit.loop.yield.
+  Block *newExitBlock = builder.createBlock(&condOp.getElseRegion());
+  newExitBlock->getOperations().splice(newExitBlock->end(),
+                                       elseBlock.getOperations());
 
-    // Move else region logic
-    prevOp = nullptr;
-    for (Operation &op :
-         llvm::make_early_inc_range(elseBlock.without_terminator())) {
-      if (prevOp == nullptr)
-        op.moveBefore(newExitBlock, newExitBlock->begin());
-      else
-        op.moveAfter(prevOp);
-      prevOp = &op;
+  // Now that the code is set up right, we can recursively lower any semantic
+  // control flow ops.  Start by lowering the 'else' block since it is logically
+  // NOT inside the loop even though it is nested under it in the AST.  The
+  // 'currentLoop' loop is set to the parent loop so any break or continue from
+  // the 'else' logic will go to the right place.
+  bool blockRaises = false, blockBreaks = false, blockFallThroughs = false;
+  lowerBlock(*newExitBlock, blockRaises, blockBreaks, blockFallThroughs);
+  enclosingBlockDoesRaise |= blockRaises;
+  enclosingBlockDoesBreak |= blockBreaks;
 
-      // Lower semantic continue and break in the else region
-      // with the right loop label.
-      if (isa<LIT::ContinueOp>(op)) {
-        StringAttr label = getOrSetParentLoopLabel(newLoop, loopLevel);
-        builder.setInsertionPointAfter(&op);
-        prevOp =
-            builder.create<HLCF::ContinueOp>(op.getLoc(), ValueRange{}, label);
-        createExitBlockBreakTerminator = false;
-        op.erase();
-      } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
-        StringAttr label = getOrSetParentLoopLabel(newLoop, loopLevel);
-        builder.setInsertionPointAfter(&op);
-        prevOp =
-            builder.create<HLCF::BreakOp>(op.getLoc(), ValueRange{}, label);
-        createExitBlockBreakTerminator = false;
-        op.erase();
-      }
-    }
-  }
-
-  if (createExitBlockBreakTerminator) {
+  // Remove the lit.loop.yield at the end of the block if present, replacing it
+  // with a break from this loop.  Other exits like return/break/continue in the
+  // else block will already be rewritten if they are present.
+  if (blockFallThroughs) {
+    assert(isa<LIT::LoopYieldOp>(newExitBlock->getTerminator()));
+    newExitBlock->getTerminator()->erase();
     builder.setInsertionPointToEnd(newExitBlock);
-    builder.create<HLCF::BreakOp>(loopLoc);
+    builder.create<HLCF::BreakOp>(ValueRange{}, newLoop.getLabelAttr());
   }
 
-  // Process the new HLCF::LoopOp specially to propagate up the break flag.
-  bool loopBodyRaises = false, loopBodyBreaks = false,
-       loopBodyFallThroughs = false;
-  lowerSemanticCFForBlock(*newBody, loopBodyRaises, loopBodyBreaks,
-                          loopBodyFallThroughs, loopLevel);
-  enclosingBlockDoesRaise |= loopBodyRaises;
+  // Now that the else logic is set, lower the entire loop body to handle the
+  // control flow in the body.  This is done with the loop set to the nested
+  // loop so that breaks and continues get wired up to it.
+  llvm::SaveAndRestore currentLoopSaver(currentLoop, newLoop);
+  lowerBlock(*newBody, blockRaises, blockBreaks, blockFallThroughs);
+  enclosingBlockDoesRaise |= blockRaises;
 
   // If the loop body never breaks, then the code after it is unreachable.
-  if (!loopBodyBreaks) {
+  if (!blockBreaks) {
     auto b = handleSemanticTerminatorOp(*newLoop, "infinite loop");
     b.create<UnreachableOp>(loopOp.getLoc());
     loopOp.erase();
@@ -261,9 +247,8 @@ static bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
 ///      hlcf.break.
 ///   2) It removes dead code after that and reports errors.
 ///   3) It computes properties about the block and enclosing context.
-static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
-                                    bool &doesBreak, bool &doesFallThrough,
-                                    int64_t loopLevel) {
+void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
+                                 bool &doesFallThrough) {
   doesRaise = doesBreak = doesFallThrough = false;
 
   for (Operation &op : llvm::make_early_inc_range(block)) {
@@ -295,16 +280,30 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     }
 
     if (isa<LIT::BreakOp>(op)) {
+      if (!currentLoop) {
+        emitError(op.getLoc(), "'break' is not inside a loop");
+        hadError = true;
+        op.erase();
+        continue;
+      }
+
       doesBreak = true;
       auto b = handleSemanticTerminatorOp(op, "break statement");
-      b.create<HLCF::BreakOp>();
+      b.create<HLCF::BreakOp>(ValueRange{}, currentLoop.getLabelAttr());
       op.erase();
       return;
     }
 
     if (isa<LIT::ContinueOp>(op)) {
+      if (!currentLoop) {
+        emitError(op.getLoc(), "'continue' is not inside a loop");
+        hadError = true;
+        op.erase();
+        continue;
+      }
+
       auto b = handleSemanticTerminatorOp(op, "continue statement");
-      b.create<HLCF::ContinueOp>();
+      b.create<HLCF::ContinueOp>(ValueRange{}, currentLoop.getLabelAttr());
       op.erase();
       return;
     }
@@ -324,8 +323,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     // Coroutine await regions are fallthrough only.
     if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
       bool awaitRaises = false, awaitBreaks = false, awaitFallsThrough = false;
-      lowerSemanticCFForBlock(await.getBody().front(), awaitRaises, awaitBreaks,
-                              awaitFallsThrough, loopLevel);
+      lowerBlock(await.getBody().front(), awaitRaises, awaitBreaks,
+                 awaitFallsThrough);
       // The verifier will catch any invalid control-flow structure.
       continue;
     }
@@ -339,8 +338,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
       bool tryBodyRaises = false, tryBodyBreaks = false,
            tryBodyFallsThrough = false;
-      lowerSemanticCFForBlock(tryOp.getTryRegion().front(), tryBodyRaises,
-                              tryBodyBreaks, tryBodyFallsThrough, loopLevel);
+      lowerBlock(tryOp.getTryRegion().front(), tryBodyRaises, tryBodyBreaks,
+                 tryBodyFallsThrough);
       doesBreak |= tryBodyBreaks;
 
       // The try falls through if the except block is reachable and falls
@@ -369,8 +368,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       } else {
         // The except and else blocks execute without protection from the try.
         bool exceptBreaks = false;
-        lowerSemanticCFForBlock(tryOp.getExceptRegion().front(), doesRaise,
-                                exceptBreaks, tryFallsThrough, loopLevel);
+        lowerBlock(tryOp.getExceptRegion().front(), doesRaise, exceptBreaks,
+                   tryFallsThrough);
         doesBreak |= exceptBreaks;
       }
 
@@ -385,8 +384,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         eraseOpToEndOfBlock(firstElseOp);
       } else {
         bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
-        lowerSemanticCFForBlock(tryOp.getElseRegion().front(), elseRaises,
-                                elseBreaks, elseFallsThrough, loopLevel);
+        lowerBlock(tryOp.getElseRegion().front(), elseRaises, elseBreaks,
+                   elseFallsThrough);
         doesRaise |= elseRaises;
         doesBreak |= elseBreaks;
         tryFallsThrough |= elseFallsThrough;
@@ -396,8 +395,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       // it is transparent to raises and breaks.
       bool finallyFallsThrough = false, finallyRaises = false,
            finallyBreaks = false;
-      lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), finallyRaises,
-                              finallyBreaks, finallyFallsThrough, loopLevel);
+      lowerBlock(tryOp.getFinallyRegion().front(), finallyRaises, finallyBreaks,
+                 finallyFallsThrough);
       doesRaise |= finallyRaises;
       doesBreak |= finallyBreaks;
       tryFallsThrough &= finallyFallsThrough;
@@ -417,7 +416,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
     // Process a LIT::LoopOp.
     if (auto loopOp = dyn_cast<LIT::LoopOp>(op)) {
-      if (lowerLITLoop(loopOp, doesRaise, loopLevel + 1))
+      if (lowerLITLoop(loopOp, doesRaise, doesBreak))
         return;
       continue;
     }
@@ -466,8 +465,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     for (auto &region : op.getRegions()) {
       bool regionRaises = false, regionBreaks = false,
            regionFallsThrough = false;
-      lowerSemanticCFForBlock(region.front(), regionRaises, regionBreaks,
-                              regionFallsThrough, loopLevel);
+      lowerBlock(region.front(), regionRaises, regionBreaks,
+                 regionFallsThrough);
       doesRaise |= regionRaises;
       doesBreak |= regionBreaks;
       ifOpFallsThrough |= regionFallsThrough;
@@ -494,26 +493,27 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp,
-              LIT::YieldOp, POP::CoroutineAwaitEndOp>(block.back())));
+              LIT::YieldOp, POP::CoroutineAwaitEndOp, LIT::LoopConditionOp,
+              LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }
 
 /// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
+void LowerSemanticCF::run() {
   bool doesRaise = false, doesBreak = false, doesFallThrough = false;
-  lowerSemanticCFForBlock(*func.getBody(), doesRaise, doesBreak,
-                          doesFallThrough, 0);
+  lowerBlock(*theFunc.getBody(), doesRaise, doesBreak, doesFallThrough);
 
   LIT::EndFuncOp endFunc =
-      dyn_cast<LIT::EndFuncOp>(func.getBody()->getTerminator());
+      dyn_cast<LIT::EndFuncOp>(theFunc.getBody()->getTerminator());
 
   // we're done if explicitly terminated with a `return` or raise.
-  if (!endFunc)
-    return success();
+  if (!endFunc || hadError)
+    return;
 
   // A return is required if the function, diagnose it if missing.
-  return emitError(endFunc->getLoc(),
-                   "return expected at end of function with results");
+  emitError(endFunc->getLoc(),
+            "return expected at end of function with results");
+  hadError = true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -544,7 +544,9 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
 
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.
-      hadError |= failed(lowerSemanticCF(func));
+      LowerSemanticCF lowerer(func);
+      lowerer.run();
+      hadError |= lowerer.hadError;
     });
     if (hadError)
       return signalPassFailure();

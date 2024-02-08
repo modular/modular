@@ -1282,7 +1282,7 @@ def LIT_BreakOp : LITOp<"break"> {
   let description = [{
     The `lit.break` operation is not a terminator, but it corresponds to a break
     statement in Lit. The operation indicates that control-flow should branch
-    to after the enclosing loop.
+    to after the enclosing loop.  This is lowered by LowerSemanticCF.
 
     Example:
 
@@ -1292,8 +1292,6 @@ def LIT_BreakOp : LITOp<"break"> {
   }];
 
   let assemblyFormat = "attr-dict";
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1305,7 +1303,7 @@ def LIT_ContinueOp : LITOp<"continue"> {
   let description = [{
     The `lit.continue` operation is not a terminator, but it corresponds to a
     continue statement in Lit. The operation indicates that control-flow should
-    branch to after the enclosing loop.
+    branch to after the enclosing loop.  This is lowered by LowerSemanticCF.
 
     Example:
 
@@ -1315,8 +1313,6 @@ def LIT_ContinueOp : LITOp<"continue"> {
   }];
 
   let assemblyFormat = "attr-dict";
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

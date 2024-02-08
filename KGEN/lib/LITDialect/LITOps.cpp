@@ -1871,28 +1871,6 @@ LogicalResult RaiseOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// BreakOp / ContinueOp
-//===----------------------------------------------------------------------===//
-
-static LogicalResult verifyBreakOrContinueOp(Operation *op) {
-  if (auto loop = op->getParentOfType<LIT::LoopOp>();
-      loop && op->getBlock() == &loop.getElseRegion().front()) {
-    if (!loop->getParentOfType<LIT::LoopOp>())
-      return op->emitOpError(
-          "A loop with continue or break in its else region should "
-          "have a parent loop.");
-  }
-
-  if (op->getParentOfType<LIT::LoopOp>())
-    return success();
-
-  return op->emitOpError("must be nested within a `lit.loop` operation");
-}
-
-LogicalResult BreakOp::verify() { return verifyBreakOrContinueOp(*this); }
-LogicalResult ContinueOp::verify() { return verifyBreakOrContinueOp(*this); }
-
-//===----------------------------------------------------------------------===//
 // UnboundRegionOp
 //===----------------------------------------------------------------------===//
 
