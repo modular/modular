@@ -643,8 +643,25 @@ struct MOTensor(MOType, CollectionElement):
 
 @value
 struct MOList(MOType, CollectionElement):
-    # TODO: This should really be AnyMOType.
+    """A type representing a flat list of tensor values.
+
+    This isn't an eager list type! It doesn't contain any data, but represents
+    a runtime list that contains tensors.
+    """
+
     var eltype: MOTensor
+    """The tensor type of elements in the list.
+
+    The list can currently only hold tensors, and it has a single known tensor
+    type. If the list can contain tensors of different shapes, they need to
+    conform to that tensor type. For instance, a list with tensors of shapes
+    `[batch, x, 2, 4]` and `[batch, 1, 2, ?]` would need to represent its type
+    as `[batch, ?, 2, ?]`, holding dynamic dimensions for those that vary among
+    its list elements.
+
+    A list that can contain tensors of different ranks must be typed as holding
+    unranked tensors.
+    """
 
     # ===------------------------------------------------------------------=== #
     # MOType trait
@@ -675,20 +692,60 @@ struct MOList(MOType, CollectionElement):
 
 @value
 struct AnyMOType(MOType, CollectionElement):
+    """Represents any possible type for Graph Symbol values.
+
+    Every Symbol has a Type, and that type is represented by an AnyMOType.
+    This type may be inspected to get finer-grained types and learn more
+    about an individual Value.
+    """
+
     var type: Variant[MOTensor, MOList]
+    """The type data."""
 
     fn __init__(inout self, t: MOTensor):
+        """Constructs a type from a tensor type.
+
+        Args:
+            t: The tensor type.
+        """
         self.type = t
 
     fn __init__(inout self, t: MOList):
+        """Constructs a type from a list type.
+
+        Args:
+            t: The list type.
+        """
         self.type = t
 
     fn list(self) raises -> MOList:
+        """Extracts the type as a list type.
+
+        This doesn't have any impact at graph execution time, it just retrieves
+        the underlying list type for a type which is a list.
+
+        Returns:
+            The underlying type specifically as a list type.
+
+        Raises:
+            If the type is some other data type besides a list.
+        """
         if not self.type.isa[MOList]():
             raise "Not a list type!"
         return self.type.get[MOList]()
 
     fn tensor(self) raises -> MOTensor:
+        """Extracts the type as a tensor type.
+
+        This doesn't have any impact at graph execution time, it just retrieves
+        the underlying tensor type for a type which is a tensor.
+
+        Returns:
+            The underlying type specifically as a tensor type.
+
+        Raises:
+            If the type is some other data type besides a tensor.
+        """
         if not self.type.isa[MOTensor]():
             raise "Not a tensor type!"
         return self.type.get[MOTensor]()
@@ -710,6 +767,14 @@ struct AnyMOType(MOType, CollectionElement):
 
     @staticmethod
     fn from_mlir(t: mlir.Type) raises -> Self:
+        """Constructs a type from an MLIR type.
+
+        Args:
+            t: The mlir Type object to parse into a type.
+
+        Returns:
+            The type represented by the mlir Type value.
+        """
         if capi.type_is_list(t):
             let element_type = MOTensor.from_mlir(
                 capi.list_type_element_type(t)
