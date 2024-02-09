@@ -6,9 +6,10 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from ._utils import *
-from ._status import *
+
 from ._compilation import CCompiledModel
+from ._status import Status
+from ._utils import call_dylib_func, exchange, CString
 
 
 @value

@@ -4,18 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
-from sys.ffi import DLHandle
-from ._utils import *
-from ._dtypes import *
-from ._tensor_spec_impl import *
-from memory.unsafe import bitcast, Pointer
-from tensor import Tensor
-from .session import InferenceSession
-from python import PythonObject
-from python import Python
 from collections.vector import DynamicVector
+from memory.unsafe import bitcast, DTypePointer, Pointer
 from utils.list import Dim
+from sys.ffi import DLHandle
+
+from tensor import Tensor
+from python import Python, PythonObject
+
+from .session import InferenceSession
+from .tensor_spec import TensorSpec
 from ._tensor_impl import _Numpy, CTensor
 
 

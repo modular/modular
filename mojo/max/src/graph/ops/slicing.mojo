@@ -8,7 +8,6 @@ from collections.optional import Optional
 from tensor import TensorShape
 
 from max.graph.symbol import SymbolTuple, SymbolicSlice
-from max.graph.type import *
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.

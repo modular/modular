@@ -6,14 +6,13 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from ._utils import *
-from ._status import *
+from ._utils import call_dylib_func
 from tensor import TensorSpec
 from ._dtypes import EngineDType
 from collections.vector import DynamicVector
 from collections.optional import Optional
 from .session import InferenceSession
-from ._tensor_spec_impl import *
+from ._tensor_spec_impl import CTensorSpec
 
 
 struct EngineTensorSpec(Stringable, Movable):

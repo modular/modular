@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from ._utils import *
-from ._status import *
-from ._context import *
-from ._model_specs import *
-from .session import InferenceSession
 from sys import external_call
+
+from .session import InferenceSession
+from ._model_specs import InputTensorNames, OutputTensorNames
+from ._status import Status
+from ._utils import call_dylib_func, exchange
 from ._tensor_spec_impl import CTensorSpec
 
 

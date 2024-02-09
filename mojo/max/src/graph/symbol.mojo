@@ -12,8 +12,7 @@ import mlir
 
 from .attr import AttrMap
 from .graph import Graph
-from .type import *
-from .ops import *
+from .ops import add, div, matmul, mul, pow, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
 # dtype, etc.

@@ -11,6 +11,7 @@ from utils.variant import Variant
 import mlir
 
 from .module import Module
+from . import capi
 
 
 fn _dyn() -> Int64:
@@ -119,7 +120,7 @@ struct Dim(CollectionElement):
     on conversion constructors, for instance you can specify a tensor type as
 
     ```mojo
-    from max.graph import *
+    from max.graph import Dim, MOTensor
     let tensor_type = MOTensor(DType.int64, "batch", 10, Dim.dynamic())
     ```
     will create a tensor type with 3 dimensions: a symbolic "batch" dimension,

@@ -5,15 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from ._utils import *
-from ._dtypes import *
-from ._tensor_spec_impl import *
 from memory.unsafe import bitcast
 from tensor import Tensor, TensorShape
-from ._tensor_impl import *
-from ._tensor_spec_impl import *
-from ._context import *
 from .session import InferenceSession
+from ._context import CRuntimeContext
+from ._utils import call_dylib_func, exchange
+from ._tensor_impl import EngineTensor
 from ._tensor_map_impl import CTensorMap
 from .value import Value
 
