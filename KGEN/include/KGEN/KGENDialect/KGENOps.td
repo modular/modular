@@ -1212,6 +1212,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
     ```mlir
     kgen.package.link @foo
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
+      post_parse = dense_resource<...> : tensor<...xi8>,
       archives([
         <target = #M.target<...>,
          pre_elaboration = dense_resource<...> : tensor<...xi8>,

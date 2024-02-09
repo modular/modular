@@ -40,13 +40,15 @@ class TargetInfoAttr;
 /// Parse the common configuration options for Mojo related to compilation,
 /// populating the provided `compilationOptions` argument. An error is returned
 /// if any of the provided option values are invalid.
-ErrorOrSuccess parseCompilationOptions(
-    const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
-    llvm::opt::OptSpecifier noOptimizationId,
-    llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
-    llvm::opt::OptSpecifier debugInfoLanguageId);
+ErrorOrSuccess
+parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
+                        KGEN::CompilationOptions &compilationOptions,
+                        llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
+                        llvm::opt::OptSpecifier includeDirsId,
+                        llvm::opt::OptSpecifier noOptimizationId = {},
+                        llvm::opt::OptSpecifier debugLevelId = {},
+                        llvm::opt::OptSpecifier sanitizeId = {},
+                        llvm::opt::OptSpecifier debugInfoLanguageId = {});
 
 /// Parse the common configuration options for Mojo related to target info,
 /// populating the provided `compilationOptions` argument. On success, `target`

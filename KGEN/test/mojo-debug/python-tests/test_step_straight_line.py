@@ -19,7 +19,7 @@ class TestStepStraightLine(LLDBTestBase):
             while line != function_header_line:
                 assert line >= prev_line
 
-                ctx = ctx.step_into()
+                ctx = ctx.step_over()
                 assert ctx is not None
                 prev_line = line
                 line = ctx.frame.GetLineEntry().GetLine()

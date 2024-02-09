@@ -32,55 +32,61 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier debugInfoLanguageId) {
   // Process the sanitizers.
-  StringRef sanitizer = args.getLastArgValue(sanitizeId);
-  if (args.hasMultipleArgs(sanitizeId))
-    return Error("too many specified sanitizers, expected exactly one");
-  if (!sanitizer.empty()) {
-    if (!llvm::is_contained({"address", "thread"}, sanitizer)) {
-      return Error("invalid sanitizer '" + sanitizer +
-                   "', expected one of: `address` or `thread`");
+  if (sanitizeId.isValid()) {
+    StringRef sanitizer = args.getLastArgValue(sanitizeId);
+    if (args.hasMultipleArgs(sanitizeId))
+      return Error("too many specified sanitizers, expected exactly one");
+    if (!sanitizer.empty()) {
+      if (!llvm::is_contained({"address", "thread"}, sanitizer)) {
+        return Error("invalid sanitizer '" + sanitizer +
+                     "', expected one of: `address` or `thread`");
+      }
+      if (sanitizer == "address")
+        compilationOptions.sanitizers.enable(Sanitizers::kAddress);
+      else if (sanitizer == "thread")
+        compilationOptions.sanitizers.enable(Sanitizers::kThread);
     }
-    if (sanitizer == "address")
-      compilationOptions.sanitizers.enable(Sanitizers::kAddress);
-    else if (sanitizer == "thread")
-      compilationOptions.sanitizers.enable(Sanitizers::kThread);
   }
 
   // Process the debug info language.
-  StringRef debugInfoLanguage = args.getLastArgValue(debugInfoLanguageId);
-  if (args.hasMultipleArgs(debugInfoLanguageId))
-    return Error(
-        "too many specified debug info languages, expected exactly one");
-  if (!debugInfoLanguage.empty()) {
-    if (!llvm::is_contained({"C", "Mojo"}, debugInfoLanguage)) {
-      return Error("invalid debug info language '" + debugInfoLanguage +
-                   "', expected one of: `C` or `Mojo`");
+  if (debugInfoLanguageId.isValid()) {
+    StringRef debugInfoLanguage = args.getLastArgValue(debugInfoLanguageId);
+    if (args.hasMultipleArgs(debugInfoLanguageId))
+      return Error(
+          "too many specified debug info languages, expected exactly one");
+    if (!debugInfoLanguage.empty()) {
+      if (!llvm::is_contained({"C", "Mojo"}, debugInfoLanguage)) {
+        return Error("invalid debug info language '" + debugInfoLanguage +
+                     "', expected one of: `C` or `Mojo`");
+      }
+      if (debugInfoLanguage == "C")
+        compilationOptions.debugInfoLanguage = CompilationOptions::kLangC;
     }
-    if (debugInfoLanguage == "C")
-      compilationOptions.debugInfoLanguage = CompilationOptions::kLangC;
   }
 
   // Disabled optimizations.
-  if (args.hasArg(noOptimizationId))
+  if (noOptimizationId.isValid() && args.hasArg(noOptimizationId))
     compilationOptions.optimizationLevel = 0;
 
   // Setup the debug level.
-  StringLiteral kDebugLevelNone = "none";
-  StringLiteral kDebugLevelLineTables = "line-tables";
-  StringLiteral kDebugLevelFull = "full";
-  StringRef level = args.getLastArgValue(debugLevelId, kDebugLevelNone);
-  if (!llvm::is_contained(
-          {kDebugLevelNone, kDebugLevelLineTables, kDebugLevelFull}, level)) {
-    return Error(llvm::formatv("invalid debug level '{0}', expected one of: "
-                               "`{1}` (the default value), `{2}`, or `{3}`",
-                               level, kDebugLevelNone, kDebugLevelLineTables,
-                               kDebugLevelFull));
+  if (debugLevelId.isValid()) {
+    StringLiteral kDebugLevelNone = "none";
+    StringLiteral kDebugLevelLineTables = "line-tables";
+    StringLiteral kDebugLevelFull = "full";
+    StringRef level = args.getLastArgValue(debugLevelId, kDebugLevelNone);
+    if (!llvm::is_contained(
+            {kDebugLevelNone, kDebugLevelLineTables, kDebugLevelFull}, level)) {
+      return Error(llvm::formatv("invalid debug level '{0}', expected one of: "
+                                 "`{1}` (the default value), `{2}`, or `{3}`",
+                                 level, kDebugLevelNone, kDebugLevelLineTables,
+                                 kDebugLevelFull));
+    }
+    compilationOptions.debugLevel =
+        llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
+            .Case(kDebugLevelNone, CompilationOptions::kNoDebug)
+            .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
+            .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
   }
-  compilationOptions.debugLevel =
-      llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
-          .Case(kDebugLevelNone, CompilationOptions::kNoDebug)
-          .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
-          .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
 
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 

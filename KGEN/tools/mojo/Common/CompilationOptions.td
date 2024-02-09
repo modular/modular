@@ -43,23 +43,6 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<2>,
            "Mojo program, would yield the compile-time value `42`.">;
 
 //===----------------------------------------------------------------------===//
-// Diagnostic Options
-//===----------------------------------------------------------------------===//
-
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<10>;
-
-def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
-  Group<DiagnosticOptionGroup>, Index<0>,
-  HelpText<"Emits warnings for missing or partial docstrings.">;
-
-defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
-  DiagnosticOptionGroup, Index<1>, MetaVarName<"INTEGER">,
-  HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "
-           "notes with additional information. This option sets an upper "
-           "threshold on the number of notes that can be printed with a "
-           "diagnostic. If not specified, the default maximum is 10.">>;
-
-//===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//
 

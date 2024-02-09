@@ -9,27 +9,18 @@
 #include "../Common/Telemetry.h"
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/Compiler/KGENCompiler.h"
-#include "KGEN/Compiler/ObjectCompiler.h"
-#include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
-#include "Support/Compiler/OperationUtils.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "Support/Filesystem/Paths.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
@@ -37,18 +28,14 @@
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "llvm/Option/Option.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Target/TargetMachine.h"
 
 #include <filesystem>
 #include <tuple>
@@ -92,89 +79,15 @@ static bool canExternalize(LIT::FuncOp func) {
   return true;
 }
 
-//===----------------------------------------------------------------------===//
-// PackageBuilder Declaration
-//===----------------------------------------------------------------------===//
-
-namespace {
-
-/// This class takes a parsed `lit.package` op in its constructor, and is
-/// responsible for creating a new `lit.package` op. This new `lit.package` op
-/// is one that can be serialized into MLIR bytecode and written to disk, as a
-/// `.mojopkg` file.
-///
-/// A parsed `lit.package` op cannot simply be serialized, because it must first
-/// undergo several transformations. These transformations prepare it to be
-/// read from disk and deserialized later. For example:
-///
-/// - A parsed `lit.package` op includes MLIR for everything in the source
-///   package, including things like function bodies. However, some MLIR ops,
-///   such those in non-parametric functions' bodies, can have pre-elaboration
-///   MLIR passes run upon them at packaging time. This allows users importing
-///   the package to save some compilation time. These ops are stripped from
-///   their original locations inside the package op, and instead their
-///   serialized pre-elaboration bytecode is attached to the package op itself.
-/// - Not all ops are necessary when materializing a package, and so are
-///   removed. For example, unresolved imports of nested package modules are
-///   resolved before the package is serialized, so the import ops are removed.
-///
-/// This class performs these transformations.
-class PackageBuilder {
-public:
-  /// Construct the builder from a parsed package op. This instantiates a new
-  /// module and clones the parsed package op into that module. Only what's
-  /// necessary for serialization is cloned.
-  PackageBuilder(LIT::PackageOp parsedPackageOp, EnvAttr env,
-                 LLCL::Runtime &runtime,
-                 RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-                 RCRef<Cache::BlobCacheBackend> regionCacheBackend);
-
-  /// Attach the given post-parse module as an attribute to the package op being
-  /// built. The attribute contains the serialized MLIR bytecode of the
-  /// pre-elaboration module.
-  ErrorOrSuccess buildPostParseModule(ModuleOp theModule);
-
-  /// Returns an owning reference to the module that contains the newly created
-  /// package, as well as the package itself. This releases the builer's owning
-  /// reference to the module, and thus invalidates the builder.
-  std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp> finalize() {
-    return {packageModule.release(), thePackage};
-  }
-
-private:
-  /// This is the module that contains the new package op that this class is
-  /// responsible for building.
-  OwningOpRef<ModuleOp> packageModule;
-  /// This is the new package op that is meant to be serialized as a `.mojopkg`
-  /// file.
-  LIT::PackageOp thePackage;
-
-  /// The transform cache to use when applying pre-elaboration and elaboration
-  /// transforms to the module being packaged.
-  RCRef<Cache::TransformCache> transformCache;
-  /// The region cache to use when applying pre-elaboration and elaboration
-  /// transforms to the module being packaged.
-  RCRef<Cache::RegionCache> regionCache;
-
-  /// This maps from a flattened name to the LIT::FuncOp in the package
-  /// module.
-  DenseMap<StringAttr, std::pair<LIT::FuncOp, StringAttr>> flattenedNameToFunc;
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
-// PackageBuilder Implementation
-//===----------------------------------------------------------------------===//
-
-PackageBuilder::PackageBuilder(
-    LIT::PackageOp parsedPackageOp, EnvAttr env, LLCL::Runtime &runtime,
-    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-    RCRef<Cache::BlobCacheBackend> regionCacheBackend)
-    : transformCache(RCRef<Cache::TransformCache>::create(
-          std::move(transformCacheBackend))),
-      regionCache(
-          RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend))) {
-  packageModule = ModuleOp::create(parsedPackageOp->getLoc());
+/// This function takes a parsed `lit.package` op and creates  a new
+/// `lit.package` op. This new `lit.package` op is one that can be serialized
+/// into MLIR bytecode and written to disk, as a `.mojopkg` file. The generated
+/// package only contains stubs of the original package's contents, and is
+/// suitable for importing into other Mojo programs.
+static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
+buildPackageModule(LIT::PackageOp parsedPackageOp, EnvAttr env) {
+  OwningOpRef<ModuleOp> packageModule =
+      ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
 
   // Clone the relevant operations into the package.
@@ -209,7 +122,7 @@ PackageBuilder::PackageBuilder(
   };
 
   // Clone the parsed package operation and push its ops onto the worklist.
-  thePackage = cloneWithoutRegions(parsedPackageOp);
+  LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);
   thePackage.setCompiledEnvAttr(
       KGEN::getModularEnvAttr(thePackage.getContext()).extend(env));
   pushOpsOntoWorklist(parsedPackageOp.getOps());
@@ -238,7 +151,6 @@ PackageBuilder::PackageBuilder(
           StringAttr preElaborationName = func.getLinkageNameAttr();
           if (!preElaborationName)
             preElaborationName = LIT::MangledSymbol::mangle(func).mangled;
-          StringAttr postElaborationName = preElaborationName;
 
           // If the function is non-parametric, drop its body.
           LIT::FuncOp clonedFunc;
@@ -264,12 +176,6 @@ PackageBuilder::PackageBuilder(
           } else {
             clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
           }
-
-          // If we are sanitizing symbols during elaboration, the
-          // post-elaboration name will be different than the pre-elaboration
-          // name.
-          flattenedNameToFunc.insert(
-              {postElaborationName, {clonedFunc, preElaborationName}});
         })
         .Case([&](LIT::UnresolvedImportOp op) {
           // Drop unresolved imports within packages that were used to lazily
@@ -290,9 +196,15 @@ PackageBuilder::PackageBuilder(
     if (docAttr && docAttr.getLocation())
       astDeclOp.setDocStringAttr(LIT::DocStringAttr::get(docAttr.getString()));
   });
+
+  return std::make_pair(std::move(packageModule), thePackage);
 }
 
-ErrorOrSuccess PackageBuilder::buildPostParseModule(ModuleOp theModule) {
+/// Attach the given post-parse module as an attribute to the package op being
+/// built. The attribute contains the serialized MLIR bytecode of the
+/// pre-elaboration module.
+static ErrorOrSuccess buildPostParseModule(ModuleOp theModule,
+                                           LIT::PackageOp thePackage) {
   // Serialize the pre-elaboration module as MLIR bytecode.
   WriteableBufferRef str = WriteableBuffer::get();
   if (failed(mlir::writeBytecodeToFile(theModule, *str)))
@@ -384,12 +296,15 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err = parseCompilationOptions(
-          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          options::OPT_I, options::OPT_no_optimization,
-          options::OPT_debug_level, options::OPT_sanitize,
-          options::OPT_debug_info_language))
+  if (auto err =
+          parseCompilationOptions(state, args, pkgArgs.compileOptions,
+                                  sourceMgr, pkgArgs.ctx, options::OPT_I))
     return err.takeError();
+
+  // Packages are built with the intention of being agnostic, so use
+  // conservative compilation settings as a default.
+  pkgArgs.compileOptions.debugLevel = CompilationOptions::kFullDebugInfo;
+  pkgArgs.compileOptions.optimizationLevel = 0;
 
   return success();
 }
@@ -406,12 +321,8 @@ static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
-  auto cacheBackends = getMojoCacheBackends(runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
-  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.env, runtime,
-                                std::move(cacheBackends->first),
-                                std::move(cacheBackends->second));
+  auto [packageModule, thePackage] =
+      buildPackageModule(parsedPackageOp, packageArgs.env);
 
   // For now we implicilty export everything in the package, so add exports to
   // the main module for the contents of the module.
@@ -421,9 +332,9 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
     return WalkResult::skip();
   });
 
-  // Attach the post parse module to the package.
+  // Attach the post-parse module to the package.
   theModule->setAttr(EnvAttr::getEnvAttrName(), packageArgs.env);
-  if (auto err = packageBuilder.buildPostParseModule(theModule))
+  if (auto err = buildPostParseModule(theModule, thePackage))
     return Error(llvm::formatv("compilation failed: {0}", err.getError()));
 
   // Run various check passes now to propagate warnings and errors up to the
@@ -433,7 +344,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   if (failed(pm.run(theModule)))
     return Error("errors occurred during compilation");
 
-  return packageBuilder.finalize();
+  return std::make_pair(std::move(packageModule), thePackage);
 }
 
 //===----------------------------------------------------------------------===//
