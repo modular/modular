@@ -23,6 +23,10 @@ class Progress {
 public:
   virtual ~Progress() = default;
 
+  /// Set the expected total bytes to be processed. This should be called once
+  /// after creation. This sets a floor for the progress meter.
+  virtual void setExpectedTotalBytes(size_t bytes) = 0;
+
   /// Add a new file to be processed. Files may be tracked independently from
   /// bytes. Each call to addFile should be followed by a corresponding call
   /// to either finishedFile or skippedFile. This should be called as early as
