@@ -216,6 +216,16 @@ struct _InferenceSessionImpl(Movable):
             self.context.borrow_ptr(), self.engine.lib, session ^, tensor
         )
 
+    fn new_bool_value(
+        self, owned session: InferenceSession, value: Bool
+    ) raises -> Value:
+        let context = self.context.borrow_ptr()
+        if not context.ptr:
+            raise "failed to create bool value"
+        return Value._new_bool(
+            self.context.borrow_ptr(), self.engine.lib, session ^, value
+        )
+
 
 @value
 struct _Specs(CollectionElement):
@@ -503,6 +513,12 @@ struct InferenceSession:
         return __get_address_as_lvalue(
             self.ptr.value
         ).new_borrowed_tensor_value(self.copy(), tensor)
+
+    fn new_bool_value(self, value: Bool) raises -> Value:
+        """Create a new Value representing a Bool."""
+        return __get_address_as_lvalue(self.ptr.value).new_bool_value(
+            self.copy(), value
+        )
 
     fn __del__(owned self):
         if __get_address_as_lvalue(self.ptr.value).ref_count.fetch_sub(1) != 1:

@@ -17,6 +17,7 @@ struct Value:
     var session: InferenceSession
 
     alias _NewBorrowedTensorFnName = "M_createBorrowedTensor"
+    alias _NewBoolFnName = "M_createBoolAsyncValue"
 
     fn __init__(
         inout self,
@@ -66,3 +67,17 @@ struct Value:
     fn as_tensor_copy[type: DType](self) raises -> Tensor[type]:
         """Return a copy of the tensor contained in this value."""
         return self._as_engine_tensor().tensor[type]()
+
+    @staticmethod
+    fn _new_bool(
+        ctx: CRuntimeContext,
+        lib: DLHandle,
+        owned session: InferenceSession,
+        value: Bool,
+    ) raises -> Self:
+        let ptr = call_dylib_func[CValue](lib, Self._NewBoolFnName, value, ctx)
+        return Self(ptr, lib, session ^)
+
+    fn as_bool(self) -> Bool:
+        """Get the boolean contained in this value."""
+        return self.ptr.get_bool(self.lib)
