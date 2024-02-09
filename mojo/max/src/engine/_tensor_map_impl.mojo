@@ -13,6 +13,7 @@ from memory.unsafe import bitcast
 from tensor import Tensor, TensorShape
 from ._tensor_impl import *
 from ._tensor_spec_impl import *
+from ._value_impl import CValue
 from ._context import *
 from .session import InferenceSession
 
@@ -26,7 +27,9 @@ struct CTensorMap:
 
     alias FreeAsyncTensorMapFnName = "M_freeAsyncTensorMap"
     alias BorrowTensorIntoFnName = "M_borrowTensorInto"
+    alias BorrowValueIntoFnName = "M_borrowValueInto"
     alias GetTensorByNameFromFnName = "M_getTensorByNameFrom"
+    alias GetValueByNameFromFnName = "M_getValueByNameFrom"
     alias GetTensorMapSizeFnName = "M_getTensorMapSize"
 
     fn get_tensor_by_name(self, name: CString, lib: DLHandle) raises -> CTensor:
@@ -37,6 +40,15 @@ struct CTensorMap:
         if status:
             raise status.__str__()
         return tensor
+
+    fn get_value_by_name(self, name: CString, lib: DLHandle) raises -> CValue:
+        let status = Status(lib)
+        let value = call_dylib_func[CValue](
+            lib, Self.GetValueByNameFromFnName, self, name, status.borrow_ptr()
+        )
+        if status:
+            raise status.__str__()
+        return value
 
     fn borrow_tensor_by_name(
         self,
@@ -56,6 +68,25 @@ struct CTensorMap:
         if status:
             raise status.__str__()
 
+    fn borrow_value_by_name(
+        self,
+        name: String,
+        ptr: DTypePointer[DType.invalid],
+        lib: DLHandle,
+    ) raises:
+        let status = Status(lib)
+        call_dylib_func(
+            lib,
+            Self.BorrowValueIntoFnName,
+            self,
+            name._as_ptr(),
+            ptr,
+            status.borrow_ptr(),
+        )
+        _ = name
+        if status:
+            raise status.__str__()
+
     fn size(self, borrowed lib: DLHandle) raises -> Int:
         let status = Status(lib)
         let size = call_dylib_func[Int](
@@ -67,6 +98,6 @@ struct CTensorMap:
 
     fn free(self, borrowed lib: DLHandle):
         """
-        Free the status ptr.
+        Free the AsyncTensorMap ptr.
         """
         call_dylib_func(lib, Self.FreeAsyncTensorMapFnName, self)

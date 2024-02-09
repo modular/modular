@@ -15,6 +15,7 @@ from ._tensor_spec_impl import *
 from ._context import *
 from .session import InferenceSession
 from ._tensor_map_impl import CTensorMap
+from .value import Value
 
 
 struct TensorMap(SizedRaising):
@@ -100,6 +101,20 @@ struct TensorMap(SizedRaising):
         self.ptr.borrow_tensor_by_name(value.data(), spec, self.lib)
         key._strref_keepalive()
 
+    fn borrow(self, key: String, value: Value) raises:
+        """Borrow the given value into the map at the key location.
+
+        User needs to make sure value is alive for the duration of the map.
+
+        Args:
+            key: Name of value in map.
+            value: Value to insert into map.
+        """
+        self.ptr.borrow_value_by_name(
+            key._strref_dangerous(), value.ptr.ptr, self.lib
+        )
+        key._strref_keepalive()
+
     fn get[type: DType](self, key: String) raises -> Tensor[type]:
         """Gets the tensor / numpy array indicated by the key.
            The value is copied and returned to the user.
@@ -131,6 +146,21 @@ struct TensorMap(SizedRaising):
         return EngineTensor(tensor_ptr, self.lib, self.session.copy()).buffer[
             type
         ]()
+
+    fn get_value(self, key: String) raises -> Value:
+        """Gets the value pointed by the key.
+
+        Args:
+            key: Name in TensorMap.
+
+        Returns:
+            Value pointed by the key.
+        """
+        let value_ptr = self.ptr.get_value_by_name(
+            key._strref_dangerous().data, self.lib
+        )
+        key._strref_keepalive()
+        return Value(value_ptr, self.lib, self.session.copy())
 
     fn __len__(self) raises -> Int:
         return self.ptr.size(self.lib)

@@ -197,6 +197,19 @@ struct _InferenceSessionImpl(Movable):
             raise "failed to create tensor map"
         return TensorMap(self.context.borrow_ptr(), self.engine.lib, session ^)
 
+    fn new_borrowed_tensor_value[
+        type: DType
+    ](
+        self, owned session: InferenceSession, tensor: Tensor[type]
+    ) raises -> Value:
+        """Create a new Value representing data borrowed from given tensor."""
+        let context = self.context.borrow_ptr()
+        if not context.ptr:
+            raise "failed to create tensor value"
+        return Value._new_borrowed_tensor[type](
+            self.context.borrow_ptr(), self.engine.lib, session ^, tensor
+        )
+
 
 @value
 struct _Specs(CollectionElement):
@@ -476,6 +489,14 @@ struct InferenceSession:
         return __get_address_as_lvalue(self.ptr.value).new_tensor_map(
             self.copy()
         )
+
+    fn new_borrowed_tensor_value[
+        type: DType
+    ](self, tensor: Tensor[type]) raises -> Value:
+        """Create a new Value representing data borrowed from given tensor."""
+        return __get_address_as_lvalue(
+            self.ptr.value
+        ).new_borrowed_tensor_value(self.copy(), tensor)
 
     fn __del__(owned self):
         if __get_address_as_lvalue(self.ptr.value).ref_count.fetch_sub(1) != 1:
