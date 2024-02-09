@@ -169,6 +169,8 @@ alias test_range = False
 fn test_matmul[bPacked: Bool, saturated: Bool]() -> Int:
     # b_packed = False is not supported with i8mm yet
     var errors: Int = 0
+
+    @parameter
     if test_range:
         for m in range(64):
             for n in range(64):
