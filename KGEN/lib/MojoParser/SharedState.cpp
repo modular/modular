@@ -817,22 +817,17 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   ModuleState *parentState = impl->moduleStates[parentDecl];
   assert(parentState && "parent decl must have a module state");
 
-  // Mangle the module name during import to avoid conflicts with symbols that
-  // are actually visible. We may import a module, but not directly expose it
-  // via its module name.
-  StringAttr moduleName = StringAttr::get(getContext(), name);
-
   // Check to see if we've already imported this module.
-  auto it = parentState->nestedModules.find(moduleName);
+  auto declName = StringAttr::get(getContext(), name);
+  auto it = parentState->nestedModules.find(declName);
   if (it != parentState->nestedModules.end())
     return *it->second;
 
   // Resolve the path and decl name for this module.
   std::optional<std::string> modulePath;
-  auto declName = StringAttr::get(getContext(), name);
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath) {
-      return createErrorModuleState(loc, moduleName, *parentState->decl,
+      return createErrorModuleState(loc, declName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
     modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
@@ -844,9 +839,9 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     if (impl->stdlibPackageState && name != "stdlib") {
       // Check for an existing module for this name. If we find one, insert it
       // into the parent state and return it.
-      auto it = impl->stdlibPackageState->nestedModules.find(moduleName);
+      auto it = impl->stdlibPackageState->nestedModules.find(declName);
       if (it != impl->stdlibPackageState->nestedModules.end()) {
-        parentState->nestedModules.insert({moduleName, it->second});
+        parentState->nestedModules.insert({declName, it->second});
         return *it->second;
       }
 
@@ -859,7 +854,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
         if (modulePath) {
           ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
                                                        impl->topLevelDecl, loc);
-          parentState->nestedModules.insert({moduleName, &moduleState});
+          parentState->nestedModules.insert({declName, &moduleState});
           return moduleState;
         }
       }
@@ -869,7 +864,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
   if (!modulePath) {
-    return createErrorModuleState(loc, moduleName, *parentState->decl,
+    return createErrorModuleState(loc, declName, *parentState->decl,
                                   "unable to locate module '" + name + "'");
   }
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
@@ -878,15 +873,13 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   if (std::filesystem::is_directory(*modulePath)) {
     auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
         *modulePath, /*line=*/0, /*column=*/0);
-    return createPackageState(declName, moduleName, *modulePath, *parentState,
-                              fileLoc);
+    return createPackageState(declName, *modulePath, *parentState, fileLoc);
   }
 
   // Check if the path is a binary package.
   StringRef pathRef(*modulePath);
   if (pathRef.ends_with(".mojopkg") || pathRef.ends_with(".📦"))
-    return createBinaryPackageState(loc, declName, moduleName, *modulePath,
-                                    *parentState);
+    return createBinaryPackageState(loc, declName, *modulePath, *parentState);
 
   // Open the module file within the source manager. Reuse an existing file if
   // we've already opened it.
@@ -909,8 +902,8 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
       moduleBuffer->getBufferIdentifier(), /*line=*/0, /*column=*/0);
-  return createModuleState(declName, moduleName, moduleBuffer, *parentState,
-                           fileLoc, enableCaching);
+  return createModuleState(declName, moduleBuffer, *parentState, fileLoc,
+                           enableCaching);
 }
 
 SharedState::ModuleState &
@@ -1258,8 +1251,7 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
   // Create a new module state. This isn't an imported module, so we can only
   // cache if we're caching everything.
   ModuleState &state =
-      createModuleState(StringAttr::get(getContext(), moduleName),
-                        StringAttr::get(getContext(), moduleName), moduleBuffer,
+      createModuleState(StringAttr::get(getContext(), moduleName), moduleBuffer,
                         *impl->topLevelModuleState, loc,
                         impl->moduleCachingLevel == ParserConfig::kCacheAll);
   return *state.decl;
@@ -1268,16 +1260,16 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc =
       FileLineColLoc::get(getContext(), path, /*line=*/0, /*column=*/0);
-  ModuleState &state = createPackageState(
-      StringAttr::get(getContext(), name), StringAttr::get(getContext(), name),
-      path, *impl->topLevelModuleState, fileLoc);
+  ModuleState &state =
+      createPackageState(StringAttr::get(getContext(), name), path,
+                         *impl->topLevelModuleState, fileLoc);
   return *state.decl;
 }
 
 ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
-  auto moduleName = StringAttr::get(getContext(), name);
-  ModuleState &state = createBinaryPackageState(
-      SMLoc(), moduleName, moduleName, path, *impl->topLevelModuleState);
+  ModuleState &state =
+      createBinaryPackageState(SMLoc(), StringAttr::get(getContext(), name),
+                               path, *impl->topLevelModuleState);
   return *state.decl;
 }
 
@@ -1296,23 +1288,21 @@ bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
   return Filesystem::isMojoSourcePackagePath(path);
 }
 
-SharedState::ModuleState &
-SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
-                               const llvm::MemoryBuffer *moduleBuffer,
-                               ModuleState &parentState, FileLineColLoc loc,
-                               bool enableCaching) {
+SharedState::ModuleState &SharedState::createModuleState(
+    StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
+    ModuleState &parentState, FileLineColLoc loc, bool enableCaching) {
   Lexer lexer(diags, moduleBuffer);
 
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   Operation *fileOp =
-      moduleBuilder.create<FileModuleOp>(loc, mangledName, declName);
+      moduleBuilder.create<FileModuleOp>(loc, declName, declName);
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
   ModuleState &moduleState = parentState.insertNestedModule(
-      mangledName,
+      declName,
       std::make_unique<ModuleState>(
           &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching));
   impl->moduleStates[&moduleDecl] = &moduleState;
@@ -1354,12 +1344,11 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
 }
 
 SharedState::ModuleState &
-SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
-                                StringRef packagePath, ModuleState &parentState,
-                                FileLineColLoc loc) {
+SharedState::createPackageState(StringAttr declName, StringRef packagePath,
+                                ModuleState &parentState, FileLineColLoc loc) {
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  auto packageOp = moduleBuilder.create<PackageOp>(loc, mangledName, declName);
+  auto packageOp = moduleBuilder.create<PackageOp>(loc, declName, declName);
   ASTDecl &decl =
       declResolver->addDecl(packageOp, SMLoc(), declName, parentState.decl,
                             parentState.decl->getCursor(),
@@ -1367,20 +1356,21 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
 
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      mangledName, std::make_unique<ModuleState>(&decl, packagePath));
+      declName, std::make_unique<ModuleState>(&decl, packagePath));
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
 
   return moduleState;
 }
 
-SharedState::ModuleState &SharedState::createBinaryPackageState(
-    SMLoc loc, StringAttr declName, StringAttr mangledName,
-    StringRef packagePath, ModuleState &parentState) {
+SharedState::ModuleState &
+SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
+                                      StringRef packagePath,
+                                      ModuleState &parentState) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(packagePath);
   if (!packageBuffer) {
-    return createErrorModuleState(loc, mangledName, *parentState.decl,
+    return createErrorModuleState(loc, declName, *parentState.decl,
                                   "unable to open package file '" +
                                       packagePath + "'");
   }
@@ -1401,7 +1391,7 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
 
     // Read in the cached bytecode.
     if (failed(bytecodeReader->readTopLevel(block))) {
-      return createErrorModuleState(loc, mangledName, *parentState.decl,
+      return createErrorModuleState(loc, declName, *parentState.decl,
                                     "unable to load package '" + packagePath +
                                         "'");
     }
@@ -1420,7 +1410,7 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
 
   // Initialize the module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      mangledName, std::make_unique<ModuleState>(&decl));
+      declName, std::make_unique<ModuleState>(&decl));
   impl->moduleStates[&decl] = &moduleState;
   moduleState.bytecodeReader = std::move(bytecodeReader);
   impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
@@ -1431,24 +1421,22 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
   return moduleState;
 }
 
-SharedState::ModuleState &
-SharedState::createErrorModuleState(SMLoc loc, StringAttr mangledName,
-                                    ASTDecl &errorContext,
-                                    const Twine &errorMsg) {
+SharedState::ModuleState &SharedState::createErrorModuleState(
+    SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
   // If the error context hasn't already had an error, emit the provided
   // message.
   if (!std::exchange(errorContext.hasReferenceError, true))
     emitError(loc, errorMsg);
 
   // Check if we already have an error decl with this name.
-  if (auto *it = impl->topLevelModuleState->nestedModules.lookup(mangledName))
+  if (auto *it = impl->topLevelModuleState->nestedModules.lookup(name))
     return *it;
 
   // Otherwise, create one.
   ASTDecl *decl =
-      &declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
+      &declResolver->addErroneousDecl(name, loc, impl->topLevelDecl);
   ModuleState &state = impl->topLevelModuleState->insertNestedModule(
-      mangledName, std::make_unique<ModuleState>(decl));
+      name, std::make_unique<ModuleState>(decl));
   impl->moduleStates[state.decl] = &state;
   return state;
 }

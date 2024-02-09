@@ -444,26 +444,23 @@ private:
                                          llvm::SMLoc loc);
 
   /// Create a new module state with the given name, location, and body.
-  ModuleState &createModuleState(StringAttr declName, StringAttr mangledName,
+  ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
                                  ModuleState &parentState, FileLineColLoc loc,
                                  bool enableCaching);
 
   /// Create a new module state for a package with the given name, location,
   /// and body.
-  ModuleState &createPackageState(StringAttr declName, StringAttr mangledName,
-                                  StringRef packagePath,
+  ModuleState &createPackageState(StringAttr declName, StringRef packagePath,
                                   ModuleState &parentState, FileLineColLoc loc);
 
   /// Create a new module state for a binary package with the given name.
   ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
-                                        StringAttr mangledName,
                                         StringRef packagePath,
                                         ModuleState &parentState);
 
-  /// Create an error module state with the given mangled name, and emit the
-  /// given error message.
-  ModuleState &createErrorModuleState(SMLoc loc, StringAttr mangledName,
+  /// Create an error module state and emit the given error message.
+  ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
                                       ASTDecl &errorContext,
                                       const Twine &errorMsg);
 

@@ -1974,14 +1974,6 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
   return failure();
 };
 
-/// Try extracting a short name from a mangled name.
-/// E.g. for the mangled name "$math::$math::log(builtin::$simd::SIMD[type,
-/// simd_width])" we want to extract "log". This is the part before the opening
-/// brace and after the last ':' before it.
-static StringRef tryGettingShortName(StringRef s) {
-  return s.split('(').first.rsplit(':').second;
-}
-
 ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                                                      ParamNode *genNode,
                                                      ParamNode *from,
@@ -2066,9 +2058,8 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setOrOverwriteParameterValue(decl, val);
 
-  CompilerTimeTraceScope traceScope(
-      "specializeGenerator:" + tryGettingShortName(gen.getName()).str(),
-      gen.getName().str());
+  CompilerTimeTraceScope traceScope("specializeGenerator: " +
+                                    gen.getSymName().str());
   auto genScope = logger.scope("Specializing Generator: @", gen.getName());
   logger.logOp("Generator", gen);
 
