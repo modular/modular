@@ -6,10 +6,12 @@
 
 from NN.Activations import relu
 from NN.GatherScatter import gather_shape, Axis, gather as _gather
-from math import sqrt
+from math import abs, erf, exp, sqrt, max, min
 from utils._annotations import *
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
+
+alias MAX_BENIFIT = 1000
 
 
 @mogg_tensor_allocator()
@@ -96,80 +98,6 @@ fn to_tensor[
     )
 
 
-@mogg_register_override("mo.add", 1000)
-@export
-fn my_add_with_fusion(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
-    var out = empty_tensor[x.type](x.shape)
-
-    x.enable_fusion()
-    y.enable_fusion()
-    out.enable_fusion()
-
-    @parameter
-    @always_inline
-    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
-        return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
-
-    out.for_each[1, func]()
-    return out
-
-
-@mogg_register_override("mo.sub", 1000)
-@export
-fn my_sub_without_fusion(
-    x: Tensor, y: Tensor
-) -> Tensor[x.type, x.static_shape]:
-    var out = empty_tensor[x.type](x.shape)
-
-    @parameter
-    @always_inline
-    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
-        return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
-
-    out.for_each[1, func]()
-    return out
-
-
-@mogg_register_override("mo.relu", 1000)
-@export
-fn my_relu(
-    x: Tensor,
-) -> Tensor[x.type, x.static_shape]:
-    var out = empty_tensor[x.type](x.shape)
-
-    x.enable_fusion()
-    out.enable_fusion()
-
-    @parameter
-    @always_inline
-    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
-
-    out.for_each[1, func]()
-    return out
-
-
-@mogg_register_override("mo.sqrt", 1000)
-@export
-fn my_sqrt(
-    x: Tensor,
-) -> Tensor[x.type, x.static_shape]:
-    var out = empty_tensor[x.type](x.shape)
-
-    x.enable_fusion()
-    out.enable_fusion()
-
-    @parameter
-    @always_inline
-    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
-
-    out.for_each[1, func]()
-    return out
-
-
 @mogg_register("unary_op_without_fusion")
 @export
 fn unary_op_without_fusion(
@@ -186,7 +114,7 @@ fn unary_op_without_fusion(
     return out
 
 
-@mogg_register_override("mo.transpose", 1000)
+@mogg_register_override("mo.transpose", MAX_BENIFIT)
 @export
 fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     # Currently we don't support alias.
@@ -210,7 +138,7 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     )
 
 
-@mogg_register_override("copy", 1000)
+@mogg_register_override("copy", MAX_BENIFIT)
 @export
 fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -225,7 +153,7 @@ fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
 
 
 # Test we support a nested lambda using values from the parent contexts.
-@mogg_register_override("add_like_custom_op_target", 1000)
+@mogg_register_override("add_like_custom_op_target", MAX_BENIFIT)
 @export
 fn add_like_custom_op_target(
     x: Tensor, y: Tensor
@@ -305,7 +233,7 @@ fn param_expression_shape_test(
     return output
 
 
-@mogg_register_override("view_like_custom_op_target", 1000)
+@mogg_register_override("view_like_custom_op_target", MAX_BENIFIT)
 @export
 fn view_like_custom_op_target(
     x: Tensor, y: Tensor
@@ -361,7 +289,7 @@ fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
     return input_rank + indices_rank - 1
 
 
-@mogg_register_override("mo.gather", priority=1000)
+@mogg_register_override("mo.gather", priority=MAX_BENIFIT)
 @always_inline
 @export
 fn gather[
@@ -448,6 +376,218 @@ fn gather[
     )
 
     return output
+
+
+# ===----------------------------------------------------------------------===#
+# Unary elementwise op
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("mo.abs", MAX_BENIFIT)
+@export
+fn mo_abs(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return abs(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.erf", MAX_BENIFIT)
+@export
+fn mo_erf(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return erf(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.exp", MAX_BENIFIT)
+@export
+fn mo_exp(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return exp(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.relu", MAX_BENIFIT)
+@export
+fn my_relu(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.sqrt", MAX_BENIFIT)
+@export
+fn my_sqrt(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+# ===----------------------------------------------------------------------===#
+# Binary elementwise op
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("mo.add", MAX_BENIFIT)
+@export
+fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.greater", MAX_BENIFIT)
+@export
+fn mo_greater(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i1 = x.simd_load[width](i)
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](i1 > i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.max", MAX_BENIFIT)
+@export
+fn mo_max(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        return max(i1, i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.min", MAX_BENIFIT)
+@export
+fn mo_min(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        return min(i1, i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.mul", MAX_BENIFIT)
+@export
+fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        return i1 * i2
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.sub", MAX_BENIFIT)
+@export
+fn my_sub_without_fusion(
+    x: Tensor, y: Tensor
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
+
+    out.for_each[1, func]()
+    return out
 
 
 @mogg_register_override("single_thread_blocking_override_test", 1000)
