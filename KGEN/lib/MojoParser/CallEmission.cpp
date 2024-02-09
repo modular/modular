@@ -1417,71 +1417,61 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).
     if (operandType) {
+      auto diag = emitError(expr->getLoc());
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
           isa<CallNode>(expr)) {
         const CallNode &callNode = *cast<CallNode>(expr);
         // This removes the constructor call, but does not remove the parens
         // because we don't want to introduce precedence problems.
-        emitError(expr->getLoc())
-            << "cannot construct " << type
-            << " with itself, you can remove the constructor call"
-            << posOperands[0].expr->getRange()
-            << FixIt::remove(callNode.callee->getRange());
+        diag << "cannot construct " << type
+             << " with itself, you can remove the constructor call"
+             << posOperands[0].expr->getRange()
+             << FixIt::remove(callNode.callee->getRange());
         return {};
       }
 
       if (syntax != CallSyntax::kImplicitConvert) {
-        emitError(expr->getLoc())
-            << "cannot construct " << type << " from " << operandType
-            << " value" << getContextMessage(dest.getContext())
-            << expr->getRange();
+        diag << "cannot construct " << type << " from " << operandType
+             << " value" << getContextMessage(dest.getContext())
+             << expr->getRange();
         return {};
       }
 
-      // Handle common type mismatches with a tailored error.
+      // Handle common type mismatches with tailored errors.
+      bool isConvertingTypeValue = type.hasMetaType(operandType);
       if (dest.getContext() == EC_CallParamValue ||
           dest.getContext() == EC_CallArgValue) {
-        auto diag = emitError(expr->getLoc())
-                    << "cannot pass " << operandType << " value, "
-                    << ((dest.getContext() == EC_CallParamValue) ? "parameter"
-                                                                 : "argument")
-                    << " expected " << type << expr->getRange();
-        return {};
+        diag << "cannot pass " << operandType
+             << (isConvertingTypeValue ? " type" : "") << " value, "
+             << ((dest.getContext() == EC_CallParamValue) ? "parameter"
+                                                          : "argument")
+             << " expected " << (isConvertingTypeValue ? "an instance of " : "")
+             << type;
+      } else {
+        diag << "cannot implicitly convert " << operandType
+             << (isConvertingTypeValue ? " type" : "") << " value to "
+             << (isConvertingTypeValue ? "an instance of " : "") << type
+             << getContextMessage(dest.getContext());
       }
 
-      if (auto metaTy = dyn_cast<MetaTypeType>(operandType)) {
-        if (type.getMetaType() == metaTy) {
-          emitError(expr->getLoc())
-              << "cannot implicitly convert " << operandType
-              << " type value to an instance of " << type
-              << getContextMessage(dest.getContext())
-              << " (hint: did you mean to instantiate " << operandType << "?)"
-              << expr->getRange();
-          return {};
-        }
-      }
-
-      emitError(expr->getLoc())
-          << "cannot implicitly convert " << operandType << " value to " << type
-          << getContextMessage(dest.getContext()) << expr->getRange();
+      if (isConvertingTypeValue)
+        diag << " (hint: did you mean to instantiate " << operandType << "?)";
+      diag << expr->getRange();
       return {};
     }
 
     // If the type has no candidates, complain about that.
     if (callee.isNull()) {
+      auto diag = emitError(expr->getLoc());
       if (!type.getDecl(shared)) {
-        emitError(expr->getLoc(), "MLIR type ")
-            << type
-            << " must be created with an MLIR operation, not constructor "
-               "syntax"
-            << getContextMessage(dest.getContext()) << expr->getRange();
-        return {};
+        diag << "MLIR type " << type
+             << " must be created with an MLIR operation, not constructor "
+                "syntax";
+      } else {
+        diag << type << " does not implement any '__init__' methods";
       }
-
-      emitError(expr->getLoc(), "")
-          << type << " does not implement any '__init__' methods"
-          << getContextMessage(dest.getContext()) << expr->getRange();
+      diag << getContextMessage(dest.getContext()) << expr->getRange();
       return {};
     }
 

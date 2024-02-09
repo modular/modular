@@ -753,14 +753,18 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from ";
     ASTType rValueType = getRValueType(operand);
+    bool isConvertingTypeValue = ty.hasMetaType(rValueType);
     if (rValueType)
-      diag << rValueType;
+      diag << (isConvertingTypeValue ? "type value " : "") << rValueType;
     else if (operand.ir.getIfInitializer())
       diag << "initializer list";
     else
       diag << "unknown overload";
     SourceRange payloadLoc = operand.expr->getRange();
-    diag << " to " << ty << payloadLoc;
+    diag << " to " << (isConvertingTypeValue ? "an instance of " : "") << ty
+         << payloadLoc;
+    if (isConvertingTypeValue)
+      diag << " (hint: did you mean to instantiate " << rValueType << "?)";
     addTypeConversionDetail(diag, payloadLoc, rValueType, ty);
     return diag;
   }
