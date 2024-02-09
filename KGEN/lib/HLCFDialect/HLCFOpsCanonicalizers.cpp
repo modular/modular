@@ -388,7 +388,17 @@ struct RemoveDeadLoop : OpRewritePattern<LoopOp> {
     if (auto br = dyn_cast<BreakOp>(body.getOperations().front())) {
       StringAttr label = br.getLabelAttr();
       if (!label || label == op.getLabelAttr()) {
-        b.replaceOp(op, br.getOperands());
+        SmallVector<Value> operandsToReplace = br.getOperands();
+        for (auto [idx, value] : llvm::enumerate(operandsToReplace)) {
+          if (auto arg = dyn_cast<BlockArgument>(value)) {
+            if (arg.getOwner() != &op.getRegion().front())
+              continue;
+            // If the break's operand is a block argument of the loop op
+            // that is about to be erased, use the loop operand instead.
+            operandsToReplace[idx] = op.getOperand(arg.getArgNumber());
+          }
+        }
+        b.replaceOp(op, operandsToReplace);
       } else {
         b.inlineBlockBefore(&body, op);
         eraseOpsAfter(b, op);
