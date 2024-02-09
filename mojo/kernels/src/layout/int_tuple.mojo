@@ -9,9 +9,31 @@ from kernel_utils.dynamic_tuple import *
 
 # IntTuple definition
 
-alias IntTupleBase = DynamicTupleBase[Int]
+
+# FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
+struct IntDelegate(ElementDelegate):
+    @always_inline
+    @staticmethod
+    fn is_equal[T: CollectionElement](a: Variant[T], b: Variant[T]) -> Bool:
+        if a.isa[Int]() and b.isa[Int]():
+            return a.get[Int]() == b.get[Int]()
+        else:
+            trap(Error("Unexpected data type."))
+            return False
+
+    @always_inline
+    @staticmethod
+    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
+        if a.isa[Int]():
+            return a.get[Int]()
+        else:
+            trap(Error("Unexpected data type."))
+            return "#"
+
+
+alias IntTupleBase = DynamicTupleBase[Int, IntDelegate]
 alias IntElement = IntTupleBase.Element
-alias IntTuple = DynamicTuple[Int]
+alias IntTuple = DynamicTuple[Int, IntDelegate]
 
 
 @always_inline

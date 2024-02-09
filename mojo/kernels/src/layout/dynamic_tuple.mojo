@@ -8,9 +8,20 @@ from utils.variant import Variant
 from collections.dict import EqualityComparable
 
 
+# FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
+trait ElementDelegate:
+    @staticmethod
+    fn is_equal[T: CollectionElement](a: Variant[T], b: Variant[T]) -> Bool:
+        pass
+
+    @staticmethod
+    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
+        pass
+
+
 @value
-struct _DynamicTupleIter[T: CollectionElement]:
-    alias BaseType = DynamicTupleBase[T]
+struct _DynamicTupleIter[T: CollectionElement, D: ElementDelegate]:
+    alias BaseType = DynamicTupleBase[T, D]
     alias ElementType = Self.BaseType.Element
 
     var index: Int
@@ -19,9 +30,10 @@ struct _DynamicTupleIter[T: CollectionElement]:
     @always_inline
     fn __next__(inout self) -> Self.ElementType:
         self.index += 1
-        return self.src.get[Int]() if self.src.isa[T]() else self.src.get[
-            Self.BaseType
-        ]()[self.index - 1]
+        if self.src.isa[T]():
+            return self.src.get[T]()
+        else:
+            return self.src.get[Self.BaseType]()[self.index - 1]
 
     @always_inline
     fn __len__(self) -> Int:
@@ -30,12 +42,11 @@ struct _DynamicTupleIter[T: CollectionElement]:
         ) - self.index
 
 
-struct DynamicTupleBase[T: CollectionElement](
-    CollectionElement, Sized, Stringable
+struct DynamicTupleBase[T: CollectionElement, D: ElementDelegate](
+    CollectionElement, Sized, Stringable, EqualityComparable
 ):
     alias Element = Variant[T, Self]
-
-    alias IterType = _DynamicTupleIter[T]
+    alias IterType = _DynamicTupleIter[T, D]
 
     var elts: DynamicVector[Self.Element]
 
@@ -46,7 +57,7 @@ struct DynamicTupleBase[T: CollectionElement](
             self.elts.append(v[])
 
     @always_inline
-    fn __init__(inout self: Self, value: DynamicTuple[T]):
+    fn __init__(inout self: Self, value: DynamicTuple[T, D]):
         self.elts = DynamicVector[Self.Element]()
         self.elts.append(value.content)
 
@@ -59,7 +70,7 @@ struct DynamicTupleBase[T: CollectionElement](
         self.elts = existing.elts
 
     @always_inline
-    fn append(inout self, owned *values: DynamicTuple[T]):
+    fn append(inout self, owned *values: DynamicTuple[T, D]):
         self.elts.reserve(len(values))
         for v in values:
             self.elts.append(v[].content)
@@ -80,10 +91,15 @@ struct DynamicTupleBase[T: CollectionElement](
     fn __iter__(self) -> Self.IterType:
         return Self.IterType(0, self)
 
+    @always_inline
+    @staticmethod
+    fn rewrap(v: Self.Element) -> Variant[T]:
+        return Variant[T](v.get[T]())
+
     @staticmethod
     fn to_string(v: Self.Element) -> String:
-        if v.isa[Int]():
-            return v.get[Int]()
+        if v.isa[T]():
+            return D.to_string[T](Self.rewrap(v))
         else:
             var result = String("(")
             if v.isa[Self]():
@@ -97,8 +113,8 @@ struct DynamicTupleBase[T: CollectionElement](
 
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:
-        if a.isa[Int]() and b.isa[Int]():
-            return is_equal(a.get[Int](), b.get[Int]())
+        if a.isa[T]() and b.isa[T]():
+            return D.is_equal[T](Self.rewrap(a), Self.rewrap(b))
         if a.isa[Self]() and b.isa[Self]():
             let ta = a.get[Self]()
             let tb = b.get[Self]()
@@ -109,9 +125,11 @@ struct DynamicTupleBase[T: CollectionElement](
                 return True
         return False
 
+    @always_inline
     fn __str__(self) -> String:
         return Self.to_string(self)
 
+    @always_inline
     fn __eq__(self, other: Self) -> Bool:
         return Self.is_equal(self, other)
 
@@ -121,13 +139,14 @@ struct DynamicTupleBase[T: CollectionElement](
 
 
 @value
-struct DynamicTuple[T: CollectionElement](CollectionElement, Sized, Stringable):
-    alias BaseType = DynamicTupleBase[T]
+struct DynamicTuple[T: CollectionElement, D: ElementDelegate](
+    CollectionElement, Sized, Stringable, EqualityComparable
+):
+    alias BaseType = DynamicTupleBase[T, D]
     alias ElementType = Self.BaseType.Element
+    alias IterType = _DynamicTupleIter[T, D]
 
     var content: Self.ElementType
-
-    alias IterType = _DynamicTupleIter[T]
 
     @always_inline
     fn __init__(inout self: Self, value: Self.ElementType):
@@ -175,6 +194,7 @@ struct DynamicTuple[T: CollectionElement](CollectionElement, Sized, Stringable):
     fn value(self) -> T:
         return self.content.get[T]()
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Self:
         if self.is_value():
             return self.value()
@@ -218,16 +238,6 @@ struct DynamicTuple[T: CollectionElement](CollectionElement, Sized, Stringable):
     fn __ne__(self, other: Self) -> Bool:
         return not self == other
 
+    @always_inline
     fn __str__(self) -> String:
         return Self.BaseType.to_string(self.content)
-
-
-# Parameter type support functions
-
-
-fn to_string[T: Stringable](v: T) -> String:
-    return str(v)
-
-
-fn is_equal[T: EqualityComparable](a: T, b: T) -> Bool:
-    return a == b
