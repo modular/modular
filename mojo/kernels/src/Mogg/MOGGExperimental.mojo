@@ -371,7 +371,7 @@ fn gather[
     input: Tensor,
     indices: Tensor,
     axis: Tensor,
-) -> Tensor[
+) raises -> Tensor[
     input.type,
     DimList.create_unknown[
         gather_rank(input.static_rank, indices.static_rank)
@@ -388,13 +388,7 @@ fn gather[
     let axis_buf = axis.to_buffer[1]().make_dims_unknown()
 
     alias out_rank = gather_rank(input.static_rank, indices.static_rank)
-    var out_shape = StaticIntTuple[out_rank](0)
-    # TODO (#30286): kernels should be able to raise
-    # and also cannot write try/except in outermost block because of another bug
-    try:
-        out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
-    except e:
-        trap(e)
+    let out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
 
     @__copy_capture(indices_buf)
     @parameter
@@ -437,24 +431,21 @@ fn gather[
     ) capturing -> None:
         output.store(rebind[StaticIntTuple[output.static_rank]](coords), val)
 
-    try:
-        _gather[
-            input.type,
-            indices.type,
-            load_input,
-            load_indices,
-            store_output,
-            # TODO (#30291): target and single_thread_blocking_override not supported yet
-            # target=target,
-            # single_thread_blocking_override=single_thread_blocking_override,
-        ](
-            Axis(axis_buf[0], input.static_rank),
-            input.shape.to_static_tuple(),
-            indices.shape.to_static_tuple(),
-            output.shape.to_static_tuple(),
-        )
-    except e:
-        trap(e)
+    _gather[
+        input.type,
+        indices.type,
+        load_input,
+        load_indices,
+        store_output,
+        # TODO (#30291): target and single_thread_blocking_override not supported yet
+        # target=target,
+        # single_thread_blocking_override=single_thread_blocking_override,
+    ](
+        Axis(axis_buf[0], input.static_rank),
+        input.shape.to_static_tuple(),
+        indices.shape.to_static_tuple(),
+        output.shape.to_static_tuple(),
+    )
 
     return output
 
