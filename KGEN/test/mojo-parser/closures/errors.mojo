@@ -40,7 +40,7 @@ struct Parametric[a: Int]:
 
 fn test_suppressed_dyn_binding_error[
     x: Int
-    # expected-error @below {{runtime function argument cannot be parametric function (hint: try passing it as a parameter)}}
+    # expected-error @below {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
 ](pval: Parametric[x], func: fn[y: Int] (p: Parametric[y]) -> None):
     fn nested():
         func(pval)

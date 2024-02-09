@@ -1238,7 +1238,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
           return {};
         }
       }
-      assert(false && "binding a dynamic callee?");
+      llvm_unreachable("binding a dynamic callee?");
     }
     llvm::append_range(bindOperands, fitness.getParamBindings());
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
@@ -1456,7 +1456,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
       }
 
       if (isConvertingTypeValue)
-        diag << " (hint: did you mean to instantiate " << operandType << "?)";
+        diag << "; did you mean to instantiate " << operandType << "?";
       diag << expr->getRange();
       return {};
     }

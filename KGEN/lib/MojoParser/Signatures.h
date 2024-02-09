@@ -193,7 +193,7 @@ public:
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   ASTType resultType;
 
-  // This is the type cheked argument types with argument conventions and
+  // This is the type checked argument types with argument conventions and
   // lifetimes applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitLifetimeDecls;
