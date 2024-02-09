@@ -45,7 +45,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
 #if MODULAR_PARANOID
-    options.paranoid = paranoid;
+    runtimeOptions.paranoid = paranoid;
 #endif
     break;
   }
