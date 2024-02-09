@@ -64,6 +64,12 @@ Type ASTType::getMetaTypeOrSelf() const {
   return {};
 }
 
+bool ASTType::hasMetaType(ASTType metaType) const {
+  if (auto metaTy = dyn_cast<MetaTypeType>(metaType))
+    return getMetaType() == metaTy;
+  return false;
+}
+
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   Type type = getMetaTypeOrSelf();
   if (auto metaType = dyn_cast_or_null<MetaTypeType>(type))
