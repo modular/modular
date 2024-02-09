@@ -97,6 +97,15 @@ public:
   /// Get direct access to the low level allocator.
   Allocator *getAllocator() { return allocator.get(); }
 
+  /// Returns the current runtime allocator. This assumes that a global
+  /// allocator is present and would assert otherwise.
+  static Allocator *getCurrentAllocator() {
+    auto rt = Runtime::getCurrentRuntimeOrNull();
+    assert(rt &&
+           "a global runtime must be set before getting the current allocator");
+    return rt->getAllocator();
+  }
+
   //===--------------------------------------------------------------------===//
   // Concurrency
   //===--------------------------------------------------------------------===//
