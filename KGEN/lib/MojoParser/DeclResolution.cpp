@@ -1021,20 +1021,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   shared.setLocationDebugScope(diScopeGuard, funcOp);
 
   // Change the location to be in the debug scope of the function.
-  // FIXME: Would be great to move this into the signature type checking, but
-  // doing so requires knowing the mangled name at that point.
   for (auto [parsedArg, bbArg] :
-       llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments())) {
-    if (auto fType = dyn_cast<LITSignatureType>(bbArg.getType())) {
-      if (fType.getNumParams() != 0) {
-        decl.hasReferenceError = true;
-        emitError(shared.diags.translateLocation(parsedArg.typeExpr->getLoc()),
-                  "runtime function argument cannot be parametric function "
-                  "(hint: try passing it as a parameter)");
-      }
-    }
+       llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
-  }
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.

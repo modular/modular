@@ -584,6 +584,16 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   assert(type && "must have an argument type");
   tcSignature.argTypes.push_back(type);
 
+  // Check if the argument is a parametric function.
+  if (auto fType = dyn_cast<LITSignatureType>(type)) {
+    if (fType.getNumParams() != 0) {
+      arg.isErroneous = true;
+      shared.emitError(shared.diags.translateLocation(arg.typeExpr->getLoc()),
+                       "parametric functions may not be used as arguments; "
+                       "consider passing as a parameter instead");
+    }
+  }
+
   // Determine the required function effects from the conventions.
   if (arg.vararg == VarArgKind::VarArg)
     tcSignature.argList.varEffects.setVarArgs();

@@ -764,7 +764,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     diag << " to " << (isConvertingTypeValue ? "an instance of " : "") << ty
          << payloadLoc;
     if (isConvertingTypeValue)
-      diag << " (hint: did you mean to instantiate " << rValueType << "?)";
+      diag << "; did you mean to instantiate " << rValueType << "?";
     addTypeConversionDetail(diag, payloadLoc, rValueType, ty);
     return diag;
   }
