@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from utils.variant import Variant
-from collections.dict import EqualityComparable
 
 
 # FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
