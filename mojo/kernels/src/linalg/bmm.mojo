@@ -174,8 +174,8 @@ fn _small_batched_matmul[
 
                     let a_val = a_buf[indices]
 
-                    @always_inline
                     @__copy_capture(a_val)
+                    @always_inline
                     @parameter
                     fn compute_fn[simd_width: Int](n: Int):
                         indices[rank - 1] = n
