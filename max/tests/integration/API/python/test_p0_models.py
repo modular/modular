@@ -106,16 +106,16 @@ top_models: Mapping[str, ModelMeta] = {
         ],
         framework=ONNX,
     ),
-    # "bert-base-uncased-torch": ModelMeta(
-    #     s3_uri="s3://modular-model-storage/TorchScript/bert-base-uncased_pytorch.torchscript",
-    #     input_names=["input_ids", "attention_mask", "input"],
-    #     input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
-    #     output_names=[
-    #         "result0",
-    #         "result1",
-    #     ],
-    #     framework=PYTORCH,
-    # ),
+    "bert-base-uncased-torch": ModelMeta(
+        s3_uri="s3://modular-model-storage/TorchScript/bert-base-uncased_pytorch.torchscript",
+        input_names=["input_ids", "attention_mask", "input"],
+        input_specs=["1x128xsi32", "1x128xsi32", "1x128xsi32"],
+        output_names=[
+            "result0",
+            "result1",
+        ],
+        framework=PYTORCH,
+    ),
 }
 
 
@@ -285,14 +285,29 @@ def generate_clipvit_inputs_python():
     }
 
 
-def load_and_execute_on_random_input(model_path: Path, framework: str):
+def load_and_execute_on_random_input(model_path: Path, meta: ModelMeta):
     from max import engine
+
+    def construct_input_specs(meta: ModelMeta) -> Sequence[engine.TensorSpec]:
+        specs = []
+        for name, spec in zip(meta.input_names, meta.input_specs):
+            split_specs = spec.split("x")
+            shape = list(map(int, split_specs[:-1]))
+            dtype = (
+                engine.DType.int32 if split_specs[-1]
+                == "si32" else engine.DType.float32
+            )
+            specs.append(engine.TensorSpec(shape=shape, dtype=dtype, name=name))
+        return specs
 
     session = engine.InferenceSession()
     print("\t Loading ...", end="")
-    model = session.load(
-        model_path, engine.TorchLoadOptions()
-    ) if framework is PYTORCH else session.load(model_path)
+    if meta.framework is PYTORCH:
+        torch_options = engine.TorchLoadOptions()
+        torch_options.input_specs = construct_input_specs(meta)
+        model = session.load(model_path, torch_options)
+    else:
+        model = session.load(model_path)
     print("✅")
     assert model is not None, "Loading failed ❌"
     if "clip_vit" in str(model_path):
@@ -321,7 +336,7 @@ def test_python_wheel():
             s3_uri, test_dir_path, value.saved_model_dir_name
         )
         print("Loading and executing downloaded model ...")
-        load_and_execute_on_random_input(model_path, value.framework)
+        load_and_execute_on_random_input(model_path, value)
         print("Model executed successfully ✅")
     test_dir.cleanup()
 
