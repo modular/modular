@@ -21,7 +21,7 @@ from utils._optional import Optional
 
 @value
 @register_passable("trivial")
-struct Dim(Intable, Stringable):
+struct Dim(Intable, Stringable, Boolable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
