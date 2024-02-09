@@ -798,13 +798,24 @@ struct AnyMOType(MOType, CollectionElement):
 
 @value
 struct TypeTuple(Sized):
+    """A sequence of 0 or more types.
+
+    This is a helper type for graph construction.
+    """
+
     var elts: DynamicVector[AnyMOType]
+    """The sequence of types."""
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *elts: AnyMOType):
+        """Constructs a TypeTuple from any number of types.
+
+        Args:
+            elts: The sequence of types.
+        """
         self.elts = DynamicVector[AnyMOType]()
         for t in elts:
             self.elts.append(t[])
@@ -816,10 +827,20 @@ struct TypeTuple(Sized):
     # TODO: Most should go away when one can express (AnyMOType, AnyMOType)
 
     fn __init__(inout self, t: MOTensor):
+        """Constructs a 1-element TypeTuple from a tensor type.
+
+        Args:
+            t: The tensor type.
+        """
         self.elts = DynamicVector[AnyMOType]()
         self.elts.append(t)
 
     fn __init__(inout self, t: MOList):
+        """Constructs a 1-element TypeTuple from a list type.
+
+        Args:
+            t: The list type.
+        """
         self.elts = DynamicVector[AnyMOType]()
         self.elts.append(t)
 
@@ -828,6 +849,11 @@ struct TypeTuple(Sized):
     # ===------------------------------------------------------------------=== #
 
     fn __len__(self) -> Int:
+        """Gets the length of the tuple.
+
+        Returns:
+            The number of elements in the tuple.
+        """
         return len(self.elts)
 
     # ===------------------------------------------------------------------=== #
@@ -835,6 +861,14 @@ struct TypeTuple(Sized):
     # ===------------------------------------------------------------------=== #
 
     fn to_mlir(self, m: Module) -> DynamicVector[mlir.Type]:
+        """Converts to a sequence of mlir.Type instances.
+
+        Args:
+            m: The Module object holding an mlir.Context to create in.
+
+        Returns:
+            A list of mlir.Types representing the tuple's types.
+        """
         var retval = DynamicVector[mlir.Type]()
         for i in range(len(self.elts)):
             retval.append(self.elts[i].to_mlir(m))
@@ -844,5 +878,10 @@ struct TypeTuple(Sized):
     # Mutators
     # ===------------------------------------------------------------------=== #
 
-    fn append(inout self, type: AnyMOType) raises:
+    fn append(inout self, type: AnyMOType):
+        """Appends a type to the back of the tuple.
+
+        Args:
+            type: The type to add to the tuple.
+        """
         self.elts.append(type)
