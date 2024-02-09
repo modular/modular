@@ -821,7 +821,7 @@ struct ConvDirectNHWC[
         ](output_micro_tile, self.output.data + output_offset)
 
         @parameter
-        if elementwise_epilogue and last_c_tile:
+        if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
             alias epilogue = elementwise_epilogue.value()
 
             # If has residual, the tile size has been extended to a simd_size.
@@ -2049,7 +2049,7 @@ struct ConvDirectNHWC[
         alias F = output_shape.get[3]()  # NHWC
 
         @parameter
-        if elementwise_epilogue and last_c_tile:
+        if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
             alias epilogue = elementwise_epilogue.value()
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
@@ -2257,7 +2257,7 @@ fn conv1d_update_wo_tile[
 
     # Apply elementwise epilogue if necessary
     @parameter
-    if elementwise_epilogue and last_c_tile:
+    if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
         alias epilogue = elementwise_epilogue.value()
         # If has residual, the tile size has been extended to a simd_size.
         # Here needs to use the real bound F.
@@ -2449,7 +2449,7 @@ fn conv2d_update_wo_tile[
     # Apply elmentwise epilogue to the
     @parameter
     # if elementwise_epilogue_enabled and last_c_tile:
-    if elementwise_epilogue and last_c_tile:
+    if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
         alias epilogue = elementwise_epilogue.value()
 
         # If has residual, the tile size has been extended to a simd_size.
@@ -2647,7 +2647,7 @@ fn conv3d_update_wo_tile[
 
     # Apply elmentwise epilogue to the
     @parameter
-    if elementwise_epilogue and last_c_tile:
+    if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
         alias epilogue = elementwise_epilogue.value()
 
         # If has residual, the tile size has been extended to a simd_size.
