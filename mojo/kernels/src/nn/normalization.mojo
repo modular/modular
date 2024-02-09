@@ -4,10 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from math import sqrt, min, div_ceil
 
 from algorithm import map_reduce, mean, variance, vectorize
-from algorithm.reduction import _simd_sum, _simd_sum_elementwise
+from algorithm.reduction import (
+    _simd_sum,
+    _simd_sum_elementwise,
+    _get_nd_indices_from_flat_index,
+)
+from NN.Reshape import reshape
+from algorithm.functional import sync_parallelize
+from runtime.tracing import Trace, TraceLevel
+from runtime.llcl import Runtime
 from memory.buffer import Buffer, NDBuffer
 
 from utils.index import StaticIntTuple
@@ -105,3 +113,78 @@ fn layer_norm[
             out_slice.simd_store(idx, norm_val)
 
         vectorize[_normalize, simd_width](n)
+
+
+fn layer_norm[
+    type: DType,
+    input_0_fn: fn[_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _width],
+    rank: Int,
+](
+    shape: StaticIntTuple[rank],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: NDBuffer[type, 1],
+    output: NDBuffer[type, rank],
+):
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            String("shape=") + String("x").join(shape),
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.layer_norm",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        let eps = epsilon[0]
+
+        alias simd_width = simdwidthof[type]()
+
+        let last_dim = shape[rank - 1]
+        let prod_all_but_last_dim = shape.flattened_length() // last_dim
+        let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
+
+        let output_buf = reshape[rank, 2, type, True](output, flat_shape)
+
+        let num_workers = min(
+            Runtime().parallelism_level(), prod_all_but_last_dim
+        )
+        let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
+
+        @__copy_capture(
+            chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps
+        )
+        @parameter
+        fn task_func(thread_id: Int):
+            let num_rows = min(
+                chunk_size, prod_all_but_last_dim - thread_id * chunk_size
+            )
+            let row_idx = thread_id * chunk_size
+            let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
+            let per_thread_dims = DimList(num_rows, last_dim)
+            let output_buf_view = NDBuffer[type, 2](
+                output_buf._offset(thread_starting_coord), per_thread_dims
+            )
+
+            @__copy_capture(row_idx, eps)
+            @parameter
+            @always_inline
+            # Translate given 2d index back to original Nd tensor
+            fn input_fn_2d[
+                return_type: DType, simd_width: Int
+            ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
+                var indices = _get_nd_indices_from_flat_index[rank](
+                    row_idx + row, shape, rank - 1
+                )
+                indices[rank - 1] = idx
+                let input_val = input_0_fn[simd_width, rank](indices)
+                return input_val.cast[return_type]()
+
+            layer_norm[simd_width, type, input_fn_2d](
+                output_buf_view, gamma, beta, eps
+            )
+
+        sync_parallelize[task_func](num_workers)
