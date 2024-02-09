@@ -141,6 +141,17 @@ class StopContext:
             )
         return None
 
+    def step_over(self) -> Optional["StopContext"]:
+        """Step over the current thread and return the StopContext once it
+        stops, unless the process finished, in which case None is returned."""
+        self.thread.StepOver()
+        if self.process.GetState() == lldb.eStateStopped:
+            thread = self.process.GetSelectedThread()
+            return StopContext(
+                self.target, self.process, thread, thread.GetFrameAtIndex(0)
+            )
+        return None
+
     def handle_command(self, command: str) -> bool:
         """Handle the given command using the current frame as context"""
         return handle_command_for_context(command, self.frame)

@@ -34,6 +34,13 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
                                         LLCL::Runtime &runtime,
                                         const CompilationOptions &options) {
+  // If the compilation options aren't for full debug, strip the extra info from
+  // the module.
+  if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
+    pm.addPass(DebugInfo::createDebugInfoStrip(
+        {/*preserveLineTables*/ options.debugLevel ==
+         CompilationOptions::kLineTablesOnly}));
+  }
   buildCheckLITPipeline(pm, runtime, options);
 
   pm.addPass(createLowerLIT(

@@ -155,8 +155,6 @@ function(add_mojo_package target visibility)
                         "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
-  _setup_debug_flags()
-  _setup_santizer_flags()
 
   if (NOT KGEN_PACKAGE_DIR)
     set(KGEN_PACKAGE_DIR ${CMAKE_CURRENT_LIST_DIR})
@@ -184,18 +182,6 @@ function(add_mojo_package target visibility)
     message(FATAL_ERROR "Must specify one or more mojo source files when calling `add_mojo_package`.")
   endif()
 
-  # `mojo` doesn't expose synthetic debug info.
-  if (${KGEN_DEBUG_LEVEL} STREQUAL "synthetic")
-    set(KGEN_DEBUG_LEVEL "none")
-  endif()
-
-  # `mojo` is O3 by default, we only need to specify the flag if we're not
-  # optimizing.
-  set(KGEN_OPTIMIZATION_FLAG, "")
-  if (${KGEN_OPTIMIZATION_LEVEL} EQUAL 0)
-    set(KGEN_OPTIMIZATION_FLAG "-no-optimization")
-  endif()
-
   # If this is not a standard library package, then the package should depend
   # on the full-stdlib.
   if (NOT KGEN_STDLIB)
@@ -210,9 +196,6 @@ function(add_mojo_package target visibility)
 
     COMMAND $<TARGET_FILE:mojo> package
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
-    ${KGEN_OPTIMIZATION_FLAG}
-    ${KGEN_SANITIZER_OPTIONS}
-    --debug-level ${KGEN_DEBUG_LEVEL}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME}

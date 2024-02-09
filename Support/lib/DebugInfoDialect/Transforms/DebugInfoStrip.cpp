@@ -35,10 +35,27 @@ struct DebugInfoStrip : public impl::DebugInfoStripBase<DebugInfoStrip> {
 
 void DebugInfoStrip::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](mlir::FusedLocWith<DIAttr> diLoc) -> mlir::LocationAttr {
-        return FusedLoc::get(diLoc.getContext(), diLoc.getLocations());
-      });
+
+  // If we're preserving line tables, we need to replace the compile unit
+  // attribute with one that only contains line tables.
+  if (preserveLineTables) {
+    replacer.addReplacement(
+        [](DebugInfo::DICompileUnitAttr CU) -> std::optional<Attribute> {
+          if (CU.getEmissionKind() == DebugInfo::EmissionKind::Full) {
+            return DebugInfo::DICompileUnitAttr::get(
+                CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
+                CU.getIsOptimized(), DebugInfo::EmissionKind::LineTablesOnly);
+          }
+          return std::nullopt;
+        });
+
+    // Otherwise, we strip debug info from locations.
+  } else {
+    replacer.addReplacement(
+        [&](mlir::FusedLocWith<DIAttr> diLoc) -> mlir::LocationAttr {
+          return FusedLoc::get(diLoc.getContext(), diLoc.getLocations());
+        });
+  }
 
   getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Drop all debug info operations.
@@ -53,10 +70,8 @@ void DebugInfoStrip::runOnOperation() {
       return WalkResult::skip();
 
     // For everything else, update the location.
-    if (!preserveLineTables) {
-      replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
-                                 /*replaceLocs=*/true);
-    }
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
+                               /*replaceLocs=*/true);
     return WalkResult::advance();
   });
 }

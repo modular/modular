@@ -1,14 +1,7 @@
 // RUN: mojo package -D fire="🔥" %S/test_package -o - | kgen-opt | FileCheck %s
 
-// Check that, with no `-o` argument, a `test_package.mojopkg` file is created
-// in the current working directory. Then verify its debug info. (Note that this
-// test doesn't then delete the package file; it'll remain in the test execution
-// root.)
-// RUN: mojo package -D fire="🔥" -debug-level full %S/test_package
-// RUN: kgen-opt test_package.mojopkg | FileCheck %s --check-prefix=DEBUGINFO
-
-// DEBUGINFO-DAG: #local_variable{{[0-9]+}} =
-// DEBUGINFO-DAG: !subroutine{{[0-9]+}} =
+// CHECK-DAG: #local_variable{{[0-9]+}} =
+// CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @test_package
 // CHECK-SAME: {compiledEnv =
@@ -18,6 +11,7 @@
 // CHECK:   lit.file_module @myfile
 // CHECK:     lit.struct.decl @Struct
 // CHECK:       lit.func @"parametric{{.*}}<{{.*}}>
+// CHECK-NEXT:    debuginfo.value
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
 // CHECK:       lit.func @"foo{{.*}}"{{.*}}preCompiledModuleRef = {{.*}}
@@ -25,6 +19,7 @@
 
 // CHECK: lit.struct.decl @ParametricStruct<{{.*}}: !Int>
 // CHECK:       lit.func @"foo(
+// CHECK-NEXT:    debuginfo.value
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
 
