@@ -17,17 +17,13 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size) {
   if (alignment <= 0)
     alignment = kPreferredMemoryAlignment;
-  auto rt = Runtime::getCurrentRuntimeOrNull();
-  assert(rt && "runtime not present");
-  return rt->getAllocator()->allocateBytes(size, alignment);
+  return Runtime::getCurrentAllocator()->allocateBytes(size, alignment);
 }
 
 /// Frees memory allocated via KGEN_CompilerRT_AlignedAlloc.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AlignedFree(void *ptr) {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
-  assert(rt && "runtime not present");
-  rt->getAllocator()->deallocateBytes(ptr);
+  Runtime::getCurrentAllocator()->deallocateBytes(ptr);
 }
 
 void M::KGEN::registerMemory(
