@@ -277,6 +277,17 @@ TelemetryContext::TelemetryContext(
   if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
+
+    // Load the client certificate, if available. In the future, this may be
+    // required but for now this is best-effort.
+    auto clientCert = findModularFile("client.pem");
+    if (clientCert)
+      otlpOptions.ssl_client_cert_path = *clientCert;
+    auto clientKey = findModularFile("client_priv.pem");
+    if (clientKey)
+      otlpOptions.ssl_client_key_path = *clientKey;
+
+    // Set the backend URL.
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
@@ -319,11 +330,21 @@ TelemetryContext::TelemetryContext(
   if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
-        oltpLogOptions;
-    oltpLogOptions.url = (httpEndpoint + "/v1/logs").str();
+        otlpLogOptions;
+
+    // See above.
+    auto clientCert = findModularFile("client.pem");
+    if (clientCert)
+      otlpLogOptions.ssl_client_cert_path = *clientCert;
+    auto clientKey = findModularFile("client_priv.pem");
+    if (clientKey)
+      otlpLogOptions.ssl_client_key_path = *clientKey;
+
+    // Set the backend URL.
+    otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
-            oltpLogOptions);
+            otlpLogOptions);
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
             std::move(logExporter)));
