@@ -417,6 +417,27 @@ kgen.func @dead_loop_label() {
   kgen.return
 }
 
+// CHECK-LABEL: @dead_loop_returns_loop_arg
+kgen.func @dead_loop_returns_loop_arg() -> index {
+  %index0 = index.constant 0
+  %0 = hlcf.loop "loop" (%arg0 = %index0 : index) -> index {
+    hlcf.break "loop" %arg0 : index
+  }
+  // CHECK: [[IDX0:%.*]] = index.constant 0
+  // CHECK-NEXT: kgen.return [[IDX0]] : index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @dead_loop_returns_not_loop_arg
+kgen.func @dead_loop_returns_not_loop_arg(%arg0: index) -> index {
+  %index0 = index.constant 0
+  %0 = hlcf.loop "loop" () -> index {
+    hlcf.break "loop" %arg0 : index
+  }
+  // CHECK: kgen.return %arg0 : index
+  kgen.return %0 : index
+}
+
 // CHECK-LABEL: @unused_loop_results
 kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
   // CHECK-NEXT: %0 = hlcf.loop "outer" () -> i32
