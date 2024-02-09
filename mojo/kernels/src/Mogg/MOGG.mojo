@@ -3383,10 +3383,11 @@ fn gather_nd[
 @always_inline
 fn pack_conv_filter[
     filter_type: DType,
+    rank: Int,
     num_groups: Int,
 ](
-    filter: NDBuffer[filter_type, 4],
-    packed_filter: NDBuffer[filter_type, 5],
+    filter: NDBuffer[filter_type, rank],
+    packed_filter: NDBuffer[filter_type, rank + 1],
     ctx: MojoCallContextPtr,
 ):
     _pack_conv_filter(filter, packed_filter, num_groups)
@@ -3394,6 +3395,7 @@ fn pack_conv_filter[
 
 @always_inline
 fn pack_conv_filter_shape[
+    rank: Int,
     filter_type: DType,
     input_shape: DimList,
     filter_shape: DimList,
@@ -3403,11 +3405,12 @@ fn pack_conv_filter_shape[
     paddings: DimList,
     num_groups: Int,
     single_thread_blocking_override: Bool,
-](filter_buf: NDBuffer[filter_type, 4],) -> StaticIntTuple[5]:
+](filter_buf: NDBuffer[filter_type, rank]) -> StaticIntTuple[rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
     Parameters:
+        rank: Rank of the un-packed filter.
         filter_type: Type of the filter.
         input_shape: NHWC layout.
         filter_shape: Filter shape.
@@ -3425,7 +3428,6 @@ fn pack_conv_filter_shape[
     Returns:
         The output shape.
     """
-
     return _pack_conv_filter_shape[single_thread_blocking_override](
         filter_buf, num_groups
     )
