@@ -346,6 +346,8 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
     "DeviceId":$id
   );
 
+  let constBuilderCall = "M::DeviceRefAttr::get($_builder.getContext(), $0)";
+
   let assemblyFormat = [{
     `<` $label `,` $id `>`
   }];
