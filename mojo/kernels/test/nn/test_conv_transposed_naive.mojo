@@ -8,6 +8,7 @@
 from NN.ConvTranspose import conv_transpose_naive
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
+from utils.index import Index
 
 
 # CHECK-LABEL: test_convtranspose_pads
@@ -27,121 +28,39 @@ from runtime.llcl import Runtime
 # CHECK: 13.0 ,7.0 ,15.0 ,
 fn test_convtranspose_pads():
     print("== test_convtranspose_pads")
-    alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
-        type,
-        rank,
-        DimList(1, 3, 3, 1),
-    ].stack_allocation()
+    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    for i in range(9):
+        input.data[i] = i
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    input[StaticIntTuple[rank](0, 0, 2, 0)] = 2
+    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    filter.fill(1.0)
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 3
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 4
-    input[StaticIntTuple[rank](0, 1, 2, 0)] = 5
+    let output = NDBuffer[type, 5, DimList(1, 1, 7, 3, 2)].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 2, 0, 0)] = 6
-    input[StaticIntTuple[rank](0, 2, 1, 0)] = 7
-    input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
+    let stride = Index(1, 3, 2)
+    let dilation = Index(1, 1, 1)
+    let pad_d = Index(0, 0)
+    let pad_h = Index(1, 1)
+    let pad_w = Index(2, 2)
 
-    let kernel = NDBuffer[
-        type,
-        rank,
-        DimList(3, 3, 2, 1),
-    ].stack_allocation()
-
-    kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
-
-    let output = NDBuffer[
-        type,
-        rank,
-        DimList(1, 7, 3, 2),
-    ].stack_allocation()
-
-    let bias = NDBuffer[
-        type,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    let strides = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    strides[0] = 3
-    strides[1] = 2
-
-    let dilations = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    dilations[0] = 1
-    dilations[1] = 1
-
-    let output_padding = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    output_padding[0] = 0
-    output_padding[1] = 0
-
-    let pads = NDBuffer[
-        DType.index,
-        1,
-        DimList(4),
-    ].stack_allocation()
-
-    pads[0] = 1
-    pads[1] = 2
-    pads[2] = 1
-    pads[3] = 2
-
-    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[type](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
+        filter.make_dims_unknown(),
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
     )
 
     print()
     for k in range(2):
         for i in range(7):
             for j in range(3):
-                print_no_newline(output[0, i, j, k], ",")
+                print_no_newline(output[0, 0, i, j, k], ",")
             print()
         print()
     print()
@@ -160,123 +79,39 @@ fn test_convtranspose_pads():
 # CHECK: 6.0 ,13.0 ,21.0 ,15.0 ,8.0 ,
 fn test_convtranspose():
     print("== test_convtranspose")
-    alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
-        type,
-        rank,
-        DimList(1, 3, 3, 1),
-    ].stack_allocation()
+    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    for i in range(9):
+        input.data[i] = i
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    input[StaticIntTuple[rank](0, 0, 2, 0)] = 2
+    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    filter.fill(1.0)
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 3
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 4
-    input[StaticIntTuple[rank](0, 1, 2, 0)] = 5
+    let output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 2)].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 2, 0, 0)] = 6
-    input[StaticIntTuple[rank](0, 2, 1, 0)] = 7
-    input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
+    let stride = Index(1, 1, 1)
+    let dilation = Index(1, 1, 1)
+    let pad_d = Index(0, 0)
+    let pad_h = Index(0, 0)
+    let pad_w = Index(0, 0)
 
-    let kernel = NDBuffer[
-        type,
-        rank,
-        DimList(3, 3, 2, 1),
-    ].stack_allocation()
-
-    kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
-
-    let output = NDBuffer[
-        type,
-        rank,
-        DimList(1, 5, 5, 2),
-    ].stack_allocation()
-
-    let bias = NDBuffer[
-        type,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    let strides = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    strides[0] = 1
-    strides[1] = 1
-
-    let dilations = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    dilations[0] = 1
-    dilations[1] = 1
-
-    let output_padding = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    output_padding[0] = 0
-    output_padding[1] = 0
-
-    let pads = NDBuffer[
-        DType.index,
-        1,
-        DimList(4),
-    ].stack_allocation()
-
-    pads[0] = 0
-    pads[1] = 0
-    pads[2] = 0
-    pads[3] = 0
-
-    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[type](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
+        filter.make_dims_unknown(),
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
     )
 
     print()
-    for i in range(1):
-        for l in range(2):
-            for j in range(5):
-                for k in range(5):
-                    print_no_newline(output[i, j, k, l], ",")
-                print()
+    for l in range(2):
+        for j in range(5):
+            for k in range(5):
+                print_no_newline(output[0, 0, j, k, l], ",")
             print()
         print()
     print()
@@ -290,105 +125,48 @@ fn test_convtranspose():
 # CHECK: 3.0 ,2.0 ,33.0 ,18.0 ,54.0 ,
 fn test_convtranspose_dilation():
     print("== test_convtranspose_dilation")
-    alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
-        type,
-        rank,
-        DimList(1, 3, 3, 1),
-    ].stack_allocation()
+    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    input.data[0] = 3
+    input.data[1] = 8
+    input.data[2] = 1
+    input.data[3] = 9
+    input.data[4] = 5
+    input.data[5] = 7
+    input.data[6] = 3
+    input.data[7] = 2
+    input.data[8] = 6
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 3
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 8
-    input[StaticIntTuple[rank](0, 0, 2, 0)] = 1
+    let filter = NDBuffer[type, 5, DimList(1, 2, 2, 1, 1)].stack_allocation()
+    filter.data[0] = 7
+    filter.data[1] = 2
+    filter.data[2] = 1
+    filter.data[3] = 9
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 9
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 5
-    input[StaticIntTuple[rank](0, 1, 2, 0)] = 7
+    let output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 1)].stack_allocation()
+    let stride = Index(1, 1, 1)
+    let dilation = Index(1, 2, 2)
+    let pad_d = Index(0, 0)
+    let pad_h = Index(0, 0)
+    let pad_w = Index(0, 0)
 
-    input[StaticIntTuple[rank](0, 2, 0, 0)] = 3
-    input[StaticIntTuple[rank](0, 2, 1, 0)] = 2
-    input[StaticIntTuple[rank](0, 2, 2, 0)] = 6
-
-    let kernel = NDBuffer[
-        type,
-        rank,
-        DimList(2, 2, 1, 1),
-    ].stack_allocation()
-
-    kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 7
-    kernel[StaticIntTuple[rank](0, 1, 0, 0)] = 2
-
-    kernel[StaticIntTuple[rank](1, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 0)] = 9
-
-    let output = NDBuffer[
-        type,
-        rank,
-        DimList(1, 5, 5, 1),
-    ].stack_allocation()
-
-    let bias = NDBuffer[
-        type,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    let strides = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    strides[0] = 1
-    strides[1] = 1
-
-    let dilations = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    dilations[0] = 2
-    dilations[1] = 2
-
-    let output_padding = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    output_padding[0] = 0
-    output_padding[1] = 0
-
-    let pads = NDBuffer[
-        DType.index,
-        1,
-        DimList(4),
-    ].stack_allocation()
-
-    pads[0] = 0
-    pads[1] = 0
-    pads[2] = 0
-    pads[3] = 0
-
-    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[type](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
+        filter.make_dims_unknown(),
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
     )
 
     print()
-    for i in range(1):
-        for l in range(1):
-            for j in range(5):
-                for k in range(5):
-                    print_no_newline(output[i, j, k, l], ",")
-                print()
+    for l in range(1):
+        for j in range(5):
+            for k in range(5):
+                print_no_newline(output[0, 0, j, k, l], ",")
             print()
         print()
     print()
@@ -417,123 +195,39 @@ fn test_convtranspose_dilation():
 # CHECK: 0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,
 fn test_convtranspose_attributes():
     print("== test_convtranspose_attributes")
-    alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
-        type,
-        rank,
-        DimList(1, 3, 3, 1),
-    ].stack_allocation()
+    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    for i in range(9):
+        input.data[i] = i
 
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    input[StaticIntTuple[rank](0, 0, 2, 0)] = 2
+    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    filter.fill(1.0)
 
-    input[StaticIntTuple[rank](0, 1, 0, 0)] = 3
-    input[StaticIntTuple[rank](0, 1, 1, 0)] = 4
-    input[StaticIntTuple[rank](0, 1, 2, 0)] = 5
+    let output = NDBuffer[type, 5, DimList(1, 1, 10, 8, 2)].stack_allocation()
 
-    input[StaticIntTuple[rank](0, 2, 0, 0)] = 6
-    input[StaticIntTuple[rank](0, 2, 1, 0)] = 7
-    input[StaticIntTuple[rank](0, 2, 2, 0)] = 8
+    let stride = Index(1, 3, 2)
+    let dilation = Index(1, 1, 1)
+    let pad_d = Index(0, 0)
+    let pad_h = Index(0, 0)
+    let pad_w = Index(0, 0)
 
-    let kernel = NDBuffer[
-        type,
-        rank,
-        DimList(3, 3, 2, 1),
-    ].stack_allocation()
-
-    kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
-
-    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
-
-    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
-
-    let output = NDBuffer[
-        type,
-        rank,
-        DimList(1, 10, 8, 2),
-    ].stack_allocation()
-
-    let bias = NDBuffer[
-        type,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    let strides = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    strides[0] = 3
-    strides[1] = 2
-
-    let dilations = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    dilations[0] = 1
-    dilations[1] = 1
-
-    let output_padding = NDBuffer[
-        DType.index,
-        1,
-        DimList(2),
-    ].stack_allocation()
-
-    output_padding[0] = 1
-    output_padding[1] = 1
-
-    let pads = NDBuffer[
-        DType.index,
-        1,
-        DimList(4),
-    ].stack_allocation()
-
-    pads[0] = 0
-    pads[1] = 0
-    pads[2] = 0
-    pads[3] = 0
-
-    conv_transpose_naive[rank, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[type](
         output.make_dims_unknown(),
         input.make_dims_unknown(),
-        kernel.make_dims_unknown(),
-        strides.make_dims_unknown(),
-        dilations.make_dims_unknown(),
-        pads.make_dims_unknown(),
+        filter.make_dims_unknown(),
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
     )
 
     print()
-    for i in range(1):
-        for l in range(2):
-            for j in range(10):
-                for k in range(8):
-                    print_no_newline(output[i, j, k, l], ",")
-                print()
+    for l in range(2):
+        for j in range(10):
+            for k in range(8):
+                print_no_newline(output[0, 0, j, k, l], ",")
             print()
         print()
     print()

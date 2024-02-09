@@ -65,14 +65,6 @@ from utils.list import Dim, DimList
 from utils._optional import Optional
 from runtime.llcl import Runtime
 
-
-# Indicate position in pads tensor for height, width.
-alias PADS_H_START = 0
-alias PADS_H_END = 2
-alias PADS_W_START = 1
-alias PADS_W_END = 3
-
-
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.
 #       - For auto_pad, need to set `AutoPadMode.NOTSET` (default).
@@ -88,87 +80,104 @@ alias PADS_W_END = 3
 #       modular/Kernels/test/test_convtranspose.mojo provides examples of calls.
 #       StarGAN, CycleGAN-and-pix2pix, Mask-RCNN are covered by this version.
 
+# Indicate position in pads tensor for height, width.
+alias PADS_H_START = 0
+alias PADS_H_END = 2
+alias PADS_W_START = 1
+alias PADS_W_END = 3
+
 
 @always_inline
 fn conv_transpose_naive[
-    rank: Int,
     type: DType,
-    strides_type: DType,
-    dilations_type: DType,
-    pads_type: DType,
 ](
-    output: NDBuffer[type, rank],
-    input: NDBuffer[type, rank],
-    kernel: NDBuffer[type, rank],
-    strides: NDBuffer[strides_type, 1],
-    dilations: NDBuffer[dilations_type, 1],
-    pads: NDBuffer[pads_type, 1],
+    output: NDBuffer[type, 5],
+    input: NDBuffer[type, 5],
+    filter: NDBuffer[type, 5],
+    stride: StaticIntTuple[3],
+    dilation: StaticIntTuple[3],
+    pad_d: StaticIntTuple[2],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
 ):
     """
     Implements the ConvTranspose operator from the MO spec.
 
     Parameters:
-        rank: Rank of the input, output, and kernel tensors.
         type: Type of the input, output, and kernel tensors.
-        strides_type: Element type of strides.
-        dilations_type: Element type of dilations.
-        pads_type: Element type of pads.
 
     Args:
         output: Output data tensor that contains the result of the convolution.
         input: Input data tensor from previous layer, with size of (N x H x W x C),
                where N is the batch size, C is the number of channels, and H and
                W are the height and width.
-        kernel: The weight (kernel) tensor, with size of (kH x kW x M/groups x C),
+        filter: The weight (kernel) tensor, with size of (kH x kW x M/groups x C),
                 where C is the number of channels, kH and kW are the height and
                 width of the kernel, and M is the number of feature maps.
-        strides: Stride along each spatial axis.
-        dilations: Dilation value along each spatial axis of the filter.
-        pads: Padding at the beginning and ending of each spatial axis. Follows
-              the format [x1_begin, x2_begin, x1_end, x2_end].
+        stride: Stride along each spatial axis.
+        dilation: Dilation value along each spatial axis of the filter.
+        pad_d: Padding in depth dimension.
+        pad_h: Padding in height dimension.
+        pad_w: Padding in width dimension.
     """
 
-    let N = Int(input.dim(0))  # Number of images (num. batches)
-    let H = Int(input.dim(1))  # Input height
-    let W = Int(input.dim(2))  # Input width
-    let C = Int(input.dim(3))  # Number of input channels
+    let N = input.dim[0]()  # Number of images (num. batches)
 
-    let R = Int(kernel.dim(0))  # Filter height
-    let S = Int(kernel.dim(1))  # Filter width
-    let C_filter = Int(kernel.dim(2))  # Number of input channels
+    let D = input.dim[1]()
+    var H = input.dim[2]()
+    var W = input.dim[3]()
 
-    let HO = Int(output.dim(1))
-    let WO = Int(output.dim(2))
+    let C = input.dim[4]()  # Number of input channels
+
+    let Q = filter.dim[0]()
+    let R = filter.dim[1]()
+    let S = filter.dim[2]()
+
+    let DO = output.dim[1]()
+    let HO = output.dim[2]()
+    let WO = output.dim[3]()
+
+    let F = output.dim[4]()
 
     # Initialize output to zero
-    memset_zero[type](output.data, N * C_filter * HO * WO)
+    output.zero()
+
+    @always_inline
+    fn accumulate_output_point(n: Int, d: Int, h: Int, w: Int, c: Int, f: Int):
+        let do = d * stride[0] - pad_d[0]
+        let ho = h * stride[1] - pad_h[0]
+        let wo = w * stride[2] - pad_w[0]
+
+        for q in range(Q):
+            let do_nbr = do + q * dilation[0]
+            if do_nbr < 0 or do_nbr >= DO:
+                continue
+
+            for r in range(R):
+                let ho_nbr = ho + r * dilation[1]
+                if ho_nbr < 0 or ho_nbr >= HO:
+                    continue
+
+                for s in range(S):
+                    let wo_nbr = wo + s * dilation[2]
+                    if wo_nbr < 0 or wo_nbr >= WO:
+                        continue
+
+                    let output_val = output[n, do_nbr, ho_nbr, wo_nbr, f]
+                    let input_val = input[n, d, h, w, c]
+                    let filter_val = filter[q, r, s, f, c]
+
+                    output[Index(n, do_nbr, ho_nbr, wo_nbr, f)] = (
+                        output_val + input_val * filter_val
+                    )
 
     for n in range(N):
         for c in range(C):
-            for f in range(C_filter):
-                for i in range(H):
-                    let indX_out = i * int(strides[0]) - int(pads[PADS_H_START])
-                    for j in range(W):
-                        let indY_out = j * int(strides[1]) - int(
-                            pads[PADS_W_START]
-                        )
-                        for r in range(R):
-                            for s in range(S):
-                                let x_out = indX_out + r * int(dilations[0])
-                                let y_out = indY_out + s * int(dilations[1])
-                                if (
-                                    x_out >= 0
-                                    and x_out < HO
-                                    and y_out >= 0
-                                    and y_out < WO
-                                ):
-                                    let tmp = output[n, x_out, y_out, f]
-                                    output[
-                                        StaticIntTuple[rank](n, x_out, y_out, f)
-                                    ] = (
-                                        tmp
-                                        + input[n, i, j, c] * kernel[r, s, f, c]
-                                    )
+            for f in range(F):
+                for d in range(D):
+                    for h in range(H):
+                        for w in range(W):
+                            accumulate_output_point(n, d, h, w, c, f)
 
 
 @always_inline
@@ -704,13 +713,13 @@ struct ConvTransposedPacked[
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         ):
+            # Compute the row index as if there is no padding. This index may be
             # < 0 while the actual output ho index is within [0, ho). In the
             # inner loops, `ho_nbr = ho + r * dilation` where r within [0, R)
             # can tell if a row is in padding i.e. ho_nbr < 0  or ho_nbr > wo-1.
             let ho = h * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
 
             var input_base = input + self.conv_shape.c * self.conv_shape.w() * h
-            # Compute the row index as if there is no padding. This index may be
 
             # Points output to the start of the row
             var output_base = output + self.conv_shape.f * (
@@ -775,7 +784,68 @@ struct ConvTransposedPacked[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        pass
+        alias simd_size = simdwidthof[output_type]()
+
+        for d in range(self.conv_shape.d()):
+            let do = d * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
+
+            for h in range(
+                self.partition.ho_or_howo_offset,
+                self.partition.ho_or_howo_offset
+                + self.partition.ho_or_howo_size,
+            ):
+                # fmt: off
+                let ho = h * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
+                # fmt: on
+
+                var input_base = input + self.conv_shape.c * self.conv_shape.w() * (
+                    h + d * self.conv_shape.h()
+                )
+
+                var output_base = output + self.conv_shape.f * (
+                    -self.conv_shape.pad_w[0]
+                    + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
+                )
+
+                @parameter
+                @always_inline
+                fn work_fn[height: Int, effected_by_padding: Bool](w: Int):
+                    update_w_tile_3d[
+                        height,
+                        micro_kernel_width,
+                        simd_size,
+                        effected_by_padding,
+                        has_residual,
+                        last_c_tile,
+                    ](
+                        output_base,
+                        input_base,
+                        filter,
+                        first_c_tile_in_group,
+                        c_tile_size,
+                        f_tile_offset,
+                        f_tile_size,
+                        rebind[ConvShape[3]](self.conv_shape),
+                        n,
+                        Index(d, h, w),
+                    )
+
+                    input_base = input_base.offset(
+                        height * self.conv_shape.c,
+                    )
+                    output_base = output_base.offset(
+                        height * self.conv_shape.stride[2] * self.conv_shape.f
+                    )
+
+                tile_middle_unswitch_boundaries[
+                    work_fn,
+                    VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+                ](
+                    0,
+                    left_pad_impact_end,
+                    right_pad_impact_start,
+                    self.conv_shape.w(),
+                )
 
     @always_inline
     fn apply_epilogue(self, n: Int, g: Int):
@@ -799,6 +869,16 @@ struct ConvTransposedPacked[
                             Index(n, ho, wo, f_offset), self.partition.f_size
                         )
                         output_ptr += self.conv_shape.f
+
+            elif input_rank == 5:  # 3D ConvTransposed.
+                for do in range(self.conv_shape.do()):
+                    for ho in range(self.conv_shape.ho()):
+                        for wo in range(self.conv_shape.wo()):
+                            epilogue(
+                                Index(n, do, ho, wo, f_offset),
+                                self.partition.f_size,
+                            )
+                            output_ptr += self.conv_shape.f
 
 
 # ===----------------------------------------------------------------------=== #
@@ -833,7 +913,6 @@ fn update_w_tile_2d[
     let output_stride_by_s = conv_shape.dilation[1] * conv_shape.f
     let output_stride_by_r = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.f
     # fmt: on
-    # print("output stride", output_stride_by_r, output_stride_by_s)
 
     # Filter stride when s increments by 1.
     let filter_stride_by_s = conv_shape.c_per_group() * micro_kernel_f_size
@@ -842,7 +921,6 @@ fn update_w_tile_2d[
 
     # Filter stride in F dimension in FRSCf or RSFC
     let filter_stride = micro_kernel_f_size
-    # print("fitler stride", filter_stride_by_r, filter_stride_by_s, filter_stride)
 
     # Output coordinates
     let howo = Index(
@@ -857,24 +935,6 @@ fn update_w_tile_2d[
         2,
         DimList(micro_kernel_height, micro_kernel_width * simd_size),
     ].stack_allocation()
-
-    @always_inline
-    fn updated[
-        rank: Int
-    ](
-        output_coord: StaticIntTuple[rank],
-        window_coord: StaticIntTuple[rank],
-        stride: StaticIntTuple[rank],
-        dilation: StaticIntTuple[rank],
-    ) -> Bool:
-        var res = True
-
-        @unroll
-        for i in range(rank):
-            let tmp = output_coord[i] - (window_coord[i] + 1) * dilation[i]
-            res = res and tmp >= 0 and tmp % stride[i] == 0
-
-        return res
 
     for r in range(conv_shape.r()):
         # Skip the row if it falls into padding.
@@ -896,47 +956,179 @@ fn update_w_tile_2d[
                 if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                     continue
 
-            # print("  (r, s)", r, s, "load")
-            load_register_tile[
+            accumulate_wo_tile[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
-                partial_load=has_residual,
-            ](
-                register_tile.data,
-                output_ptr,
-                conv_shape.f * conv_shape.stride[1],
-                conv_shape.f_per_group() % simd_size,
-            )
-
-            accumulate[
-                micro_kernel_height,
-                micro_kernel_width,
-                simd_size,
-                prefetch_offset=4,
-                partial_load_b=has_residual,
+                has_residual,
             ](
                 c_tile_size,
                 register_tile.data,
-                input,
-                conv_shape.c,  # input_stride
-                filter_ptr,
-                filter_stride,
-                conv_shape.f % simd_size,
-            )
-
-            # Store the micro tile
-            store_register_tile[
-                micro_kernel_height,
-                micro_kernel_width,
-                simd_size,
-                partial_store=has_residual,
-            ](
                 output_ptr,
                 conv_shape.f * conv_shape.stride[1],
-                register_tile.data,
+                input,
+                conv_shape.c,
+                filter_ptr,
+                filter_stride,
                 conv_shape.f_per_group() % simd_size,
             )
+
+
+@always_inline
+fn update_w_tile_3d[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    effected_by_padding: Bool,
+    has_residual: Bool,
+    last_c_tile: Bool,
+](
+    output: DTypePointer,
+    input: DTypePointer,
+    filter: DTypePointer,
+    _init_output: Bool,
+    c_tile_size: Int,
+    f_tile_offset: Int,
+    f_tile_size: Int,
+    conv_shape: ConvShape[3],
+    n: Int,
+    hw: StaticIntTuple[3],
+):
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # Output stride to neighbor point in the filter window (R, S).
+    # fmt: off
+    let output_stride_by_s = conv_shape.dilation[2] * conv_shape.f
+    let output_stride_by_r = conv_shape.dilation[1] * conv_shape.wo() * conv_shape.f
+    let output_stride_by_q = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.ho() * conv_shape.f
+    # fmt: on
+
+    # Filter stride when s increments by 1.
+    let filter_stride_by_s = conv_shape.c_per_group() * micro_kernel_f_size
+    let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
+    let filter_stride_by_q = conv_shape.r() * filter_stride_by_r
+
+    # Filter stride in F dimension in FRSCf or RSFC
+    let filter_stride = micro_kernel_f_size
+
+    # Output coordinates
+    let howo = Index(
+        hw[0] * conv_shape.stride[0] - conv_shape.pad_d[0],
+        hw[1] * conv_shape.stride[1] - conv_shape.pad_h[0],
+        hw[2] * conv_shape.stride[2] - conv_shape.pad_w[0],
+    )
+
+    # This will be all lifted to simd registers for FMA unless the micro
+    # kernel is too large that spills named registers.
+    let register_tile = NDBuffer[
+        output.type,
+        2,
+        DimList(micro_kernel_height, micro_kernel_width * simd_size),
+    ].stack_allocation()
+
+    for q in range(conv_shape.q()):
+        let do_nbr = howo[0] + q * conv_shape.dilation[0]
+        if do_nbr < 0 or do_nbr >= conv_shape.do():
+            continue
+
+        for r in range(conv_shape.r()):
+            let ho_nbr = howo[1] + r * conv_shape.dilation[1]
+            if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
+                continue
+
+            for s in range(conv_shape.s()):
+                let output_ptr = output.offset(
+                    q * output_stride_by_q
+                    + r * output_stride_by_r
+                    + s * output_stride_by_s
+                )
+                let filter_ptr = filter.offset(
+                    q * filter_stride_by_q
+                    + r * filter_stride_by_r
+                    + s * filter_stride_by_s
+                )
+
+                @parameter
+                if effected_by_padding:
+                    constrained[micro_kernel_height == 1]()
+                    let wo_nbr = howo[2] + s * conv_shape.dilation[2]
+                    if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
+                        continue
+
+                accumulate_wo_tile[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    simd_size,
+                    has_residual,
+                ](
+                    c_tile_size,
+                    register_tile.data,
+                    output_ptr,
+                    conv_shape.f * conv_shape.stride[2],
+                    input,
+                    conv_shape.c,
+                    filter_ptr,
+                    filter_stride,
+                    conv_shape.f_per_group() % simd_size,
+                )
+
+
+@always_inline
+fn accumulate_wo_tile[
+    micro_kernel_height: Int,
+    micro_kernel_width: Int,
+    simd_size: Int,
+    partial_load: Bool,
+](
+    c_tile_size: Int,
+    register_tile: DTypePointer,
+    output: DTypePointer,
+    output_stride: Int,
+    input: DTypePointer,
+    input_stride: Int,
+    filter: DTypePointer,
+    filter_stride: Int,
+    partial_load_size: Int,
+):
+    load_register_tile[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        partial_load=partial_load,
+    ](
+        register_tile,
+        output,
+        output_stride,
+        partial_load_size,
+    )
+
+    accumulate[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        prefetch_offset=4,
+        partial_load_b=partial_load,
+    ](
+        c_tile_size,
+        register_tile,
+        input,
+        input_stride,
+        filter,
+        filter_stride,
+        partial_load_size,
+    )
+
+    store_register_tile[
+        micro_kernel_height,
+        micro_kernel_width,
+        simd_size,
+        partial_store=partial_load,
+    ](
+        output,
+        output_stride,
+        register_tile,
+        partial_load_size,
+    )
 
 
 # ===----------------------------------------------------------------------=== #

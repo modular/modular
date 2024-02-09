@@ -55,6 +55,41 @@ fn extend_shape[
 
 
 @always_inline
+fn extend_shape_5d[
+    rank: Int
+](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[5]:
+    var out_shape = StaticIntTuple[5](1)
+    out_shape[0] = first
+    out_shape[4] = last
+
+    @parameter
+    if rank == 1:
+        out_shape[3] = in_shape[0]
+    elif rank == 2:
+        out_shape[2] = in_shape[0]
+        out_shape[3] = in_shape[1]
+    elif rank == 3:
+        out_shape[1] = in_shape[0]
+        out_shape[2] = in_shape[1]
+        out_shape[3] = in_shape[2]
+
+    return out_shape
+
+
+@always_inline
+fn extend_shape_3d[
+    rank: Int
+](in_shape: StaticIntTuple[rank]) -> StaticIntTuple[3]:
+    var out_shape = StaticIntTuple[3](1)
+
+    @unroll
+    for i in range(rank):
+        out_shape[2 - i] = in_shape[rank - i - 1]
+
+    return out_shape
+
+
+@always_inline
 fn append_shape[
     rank: Int
 ](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[
@@ -67,6 +102,28 @@ fn append_shape[
     @unroll
     for i in range(rank):
         out_shape[i] = in_shape[i]
+
+    return out_shape
+
+
+@always_inline
+fn append_shape_5d[
+    rank: Int
+](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[5]:
+    var out_shape = StaticIntTuple[5](1)
+    out_shape[3] = last2nd
+    out_shape[4] = last
+
+    @parameter
+    if rank == 1:
+        out_shape[2] = in_shape[0]
+    elif rank == 2:
+        out_shape[1] = in_shape[0]
+        out_shape[2] = in_shape[1]
+    elif rank == 3:
+        out_shape[0] = in_shape[0]
+        out_shape[1] = in_shape[1]
+        out_shape[2] = in_shape[2]
 
     return out_shape
 
@@ -153,10 +210,16 @@ fn test_conv_transposed[
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)
     let input = NDBuffer[type, rank + 2](input_ptr, input_shape)
+    let input_ref = NDBuffer[type, 5](
+        input_ptr, extend_shape_5d(input_dims, N, C)
+    )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, F, C_per_group)
     let filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
+    let filter_ref = NDBuffer[type, 5](
+        filter_ptr, append_shape_5d(filter_dims, F, C_per_group)
+    )
 
     let packed_filter_shape = pack_filter_shape(filter, num_groups)
     let packed_filter_ptr = DTypePointer[type].alloc(
@@ -168,39 +231,26 @@ fn test_conv_transposed[
 
     let output_shape = extend_shape(output_dims, N, F)
     let output = NDBuffer[type, rank + 2](output_ptr, output_shape)
-    let output_ref = NDBuffer[type, rank + 2](output_ref_ptr, output_shape)
+    let output_ref = NDBuffer[type, 5](
+        output_ref_ptr, extend_shape_5d(output_dims, N, F)
+    )
 
     # Bias for epilogue
     let bias_ptr = DTypePointer[type].alloc(F)
     rand(bias_ptr, F)
 
-    let stride_buf = NDBuffer[DType.index, 1, DimList(rank)].stack_allocation()
-    for i in range(rank):
-        stride_buf[i] = stride[i]
-
-    let dilation_buf = NDBuffer[
-        DType.index, 1, DimList(rank)
-    ].stack_allocation()
-    for i in range(rank):
-        dilation_buf[i] = dilation[i]
-
-    let padding_buf = NDBuffer[
-        DType.index, 1, DimList(2 * rank)
-    ].stack_allocation()
-    for i in range(rank):
-        padding_buf[i] = pad[2 * i]
-        padding_buf[rank + i] = pad[2 * i + 1]
-
     pack_filter(filter, packed_filter, num_groups)
 
     # Reference.
-    conv_transpose_naive[rank + 2, type, DType.index, DType.index, DType.index](
+    conv_transpose_naive[type](
         output_ref,
-        input,
-        filter,
-        stride_buf.make_dims_unknown(),
-        dilation_buf.make_dims_unknown(),
-        padding_buf.make_dims_unknown(),
+        input_ref,
+        filter_ref,
+        extend_shape_3d[rank](stride),
+        extend_shape_3d[rank](dilation),
+        pad_d,
+        pad_h,
+        pad_w,
     )
 
     # Add bias and activatiion separately.
@@ -347,6 +397,54 @@ fn main() raises:
         1,  # num_groups
     )
 
+    test_conv_transposed[DType.float32, 3](
+        1,  # N
+        Index(2, 3, 3),
+        1,  # C
+        Index(2, 2, 2),
+        2,  # F
+        Index(1, 3, 2),  # stride
+        Index(1, 1, 1),  # dilation
+        StaticIntTuple[6](0),  # pad
+        1,  # num_groups
+    )
+
+    test_conv_transposed[DType.float32, 3](
+        1,  # N
+        Index(3, 4, 7),
+        1,  # C
+        Index(3, 2, 2),
+        2,  # F
+        Index(2, 1, 2),  # stride
+        Index(1, 1, 2),  # dilation
+        StaticIntTuple[6](0),  # pad
+        1,  # num_groups
+    )
+
+    test_conv_transposed[DType.float32, 3](
+        1,  # N
+        Index(4, 3, 3),
+        1,  # C
+        Index(1, 4, 2),
+        2,  # F
+        Index(1, 3, 2),  # stride
+        Index(1, 1, 1),  # dilation
+        StaticIntTuple[6](1, 0, 2, 1, 0, 1),  # pad
+        1,  # num_groups
+    )
+
+    test_conv_transposed[DType.float32, 3](
+        1,  # N
+        Index(4, 5, 7),
+        1,  # C
+        Index(3, 2, 1),
+        2,  # F
+        Index(1, 3, 2),  # stride
+        Index(2, 3, 1),  # dilation
+        StaticIntTuple[6](2, 2, 1, 1, 1, 1),  # pad
+        1,  # num_groups
+    )
+
     # Large shapes commented out to save CI cost.
 
     # # StarGan shape
@@ -371,5 +469,66 @@ fn main() raises:
     #     Index(2, 2),  # stride
     #     Index(1, 1),  # dilation
     #     Index(1, 1, 1, 1),  # pad_h, pad_w
+    #     1,  # num_groups
+    # )
+
+    # # 3d Unet shapes
+    # test_conv_transposed[DType.float32, 3](
+    #     1,  # N
+    #     Index(4, 4, 4),
+    #     320,  # C
+    #     Index(2, 2, 2),
+    #     320,  # F
+    #     Index(2, 2, 2),  # stride
+    #     Index(1, 1, 1),  # dilation
+    #     StaticIntTuple[6](0),  # pad
+    #     1,  # num_groups
+    # )
+
+    # test_conv_transposed[DType.float32, 3](
+    #     1,  # N
+    #     Index(8, 8, 8),
+    #     320,  # C
+    #     Index(2, 2, 2),
+    #     256,  # F
+    #     Index(2, 2, 2),  # stride
+    #     Index(1, 1, 1),  # dilation
+    #     StaticIntTuple[6](0),  # pad
+    #     1,  # num_groups
+    # )
+
+    # test_conv_transposed[DType.float32, 3](
+    #     1,  # N
+    #     Index(16, 16, 16),
+    #     256,  # C
+    #     Index(2, 2, 2),
+    #     128,  # F
+    #     Index(2, 2, 2),  # stride
+    #     Index(1, 1, 1),  # dilation
+    #     StaticIntTuple[6](0),  # pad
+    #     1,  # num_groups
+    # )
+
+    # test_conv_transposed[DType.float32, 3](
+    #     1,  # N
+    #     Index(32, 32, 32),
+    #     128,  # C
+    #     Index(2, 2, 2),
+    #     64,  # F
+    #     Index(2, 2, 2),  # stride
+    #     Index(1, 1, 1),  # dilation
+    #     StaticIntTuple[6](0),  # pad
+    #     1,  # num_groups
+    # )
+
+    # test_conv_transposed[DType.float32, 3](
+    #     1,  # N
+    #     Index(64, 64, 64),
+    #     64,  # C
+    #     Index(2, 2, 2),
+    #     32,  # F
+    #     Index(2, 2, 2),  # stride
+    #     Index(1, 1, 1),  # dilation
+    #     StaticIntTuple[6](0),  # pad
     #     1,  # num_groups
     # )
