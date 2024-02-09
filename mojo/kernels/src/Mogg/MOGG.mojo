@@ -3132,6 +3132,7 @@ fn conv[
 @always_inline
 @export
 fn conv_transpose[
+    input_rank: Int,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3144,13 +3145,13 @@ fn conv_transpose[
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[input_type, 4],
-    filter: NDBuffer[filter_type, 4],
+    input: NDBuffer[input_type, input_rank],
+    filter: NDBuffer[filter_type, input_rank],
     strides: NDBuffer[strides_type, 1],
     dilation: NDBuffer[dilation_type, 1],
     paddings: NDBuffer[padding_type, 1],
     output_paddings: NDBuffer[output_padding_type, 1],
-    output: NDBuffer[output_type, 4],
+    output: NDBuffer[output_type, input_rank],
     ctx: MojoCallContextPtr,
 ):
     constrained[
@@ -3160,22 +3161,48 @@ fn conv_transpose[
         "stride, dilation and output_paddings must have integral type",
     ]()
 
-    if strides.size() != 2:
-        return ctx.set_to_error("2 values expected in strides input")
+    if strides.size() != input_rank - 2:
+        return ctx.set_to_error(
+            "$(input_rank-2) values expected in convTranspose stride"
+        )
 
-    if dilation.size() != 2:
-        return ctx.set_to_error("2 values expected in dilation input")
+    if dilation.size() != input_rank - 2:
+        return ctx.set_to_error(
+            "$(input_rank-2) values expected in convTranspose dilation"
+        )
 
-    if output_paddings.size() != 2:
-        return ctx.set_to_error("2 values expected in output_paddings")
+    if output_paddings.size() != input_rank - 2:
+        return ctx.set_to_error(
+            "$(input_rank-2) values expected in convTranspose output paddings"
+        )
 
-    if paddings.size() != 4:
-        return ctx.set_to_error("4 values expected in paddings input")
+    if paddings.size() != 2 * (input_rank - 2):
+        return ctx.set_to_error(
+            "$(2*(input_rank-2)) value expected in convTranspose paddings"
+        )
 
-    let stride_tuple = Index(strides[0], strides[1])
-    let dilation_tuple = Index(dilation[0], dilation[1])
-    let pad_h = Index(paddings[0], paddings[2])
-    let pad_w = Index(paddings[1], paddings[3])
+    var stride_tuple = StaticIntTuple[input_rank - 2](0)
+    var dilation_tuple = StaticIntTuple[input_rank - 2](0)
+
+    @unroll
+    for i in range(input_rank - 2):
+        stride_tuple[i] = int(strides[i])
+        dilation_tuple[i] = int(dilation[i])
+
+    var pad_d = StaticIntTuple[2](0)
+    var pad_h = StaticIntTuple[2](0)
+    var pad_w = StaticIntTuple[2](0)
+
+    @parameter
+    if input_rank == 3:
+        pad_w = Index(paddings[0], paddings[1])
+    elif input_rank == 4:
+        pad_h = Index(paddings[0], paddings[2])
+        pad_w = Index(paddings[1], paddings[3])
+    elif input_rank == 5:
+        pad_d = Index(paddings[0], paddings[3])
+        pad_h = Index(paddings[1], paddings[4])
+        pad_w = Index(paddings[2], paddings[5])
 
     @always_inline
     @__copy_capture(stride_tuple, pad_h, pad_w)
@@ -3222,11 +3249,11 @@ fn conv_transpose[
     ) as t:
         try:
             conv_transpose_impl[
-                4,
-                4,  # Filter rank w/o packing.
-                DimList.create_unknown[4](),  # Input shape.
-                DimList.create_unknown[4](),  # Filter shape.
-                DimList.create_unknown[4](),  # Output shape.
+                input_rank,
+                input_rank,  # Filter rank w/o packing, same as input.
+                DimList.create_unknown[input_rank](),  # Input shape.
+                DimList.create_unknown[input_rank](),  # Filter shape.
+                DimList.create_unknown[input_rank](),  # Output shape.
                 input_type,
                 filter_type,  # Filter type.
                 output_type,  # Output type.
@@ -3239,7 +3266,7 @@ fn conv_transpose[
                 filter,
                 stride_tuple,
                 dilation_tuple,
-                Index(0, 0),
+                pad_d,
                 pad_h,
                 pad_w,
             )
