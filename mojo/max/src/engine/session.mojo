@@ -226,6 +226,14 @@ struct _InferenceSessionImpl(Movable):
             self.context.borrow_ptr(), self.engine.lib, session ^, value
         )
 
+    fn new_list_value(self, owned session: InferenceSession) raises -> Value:
+        let context = self.context.borrow_ptr()
+        if not context.ptr:
+            raise "failed to create list value"
+        return Value._new_list(
+            self.context.borrow_ptr(), self.engine.lib, session ^
+        )
+
 
 @value
 struct _Specs(CollectionElement):
@@ -518,6 +526,12 @@ struct InferenceSession:
         """Create a new Value representing a Bool."""
         return __get_address_as_lvalue(self.ptr.value).new_bool_value(
             self.copy(), value
+        )
+
+    fn new_list_value(self) raises -> Value:
+        """Create a new Value representing an empty list."""
+        return __get_address_as_lvalue(self.ptr.value).new_list_value(
+            self.copy()
         )
 
     fn __del__(owned self):
