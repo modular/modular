@@ -66,6 +66,7 @@ add_subdirectory(tools/mojo-jupyter-executor)
 add_subdirectory(tools/mojo-repl-entry-point)
 
 add_subdirectory(tools/mojo)
+add_subdirectory(tools/mojo-prime-package-cache)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}. It also read ${KGEN_LINK_DIRS} and appends those
@@ -150,7 +151,7 @@ add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 # having too many search paths.
 function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
-                        "STDLIB"
+                        "STDLIB;DISABLE_PRIME_CODEGEN_CACHE;DISABLE_PRIME_CACHE"
                         "PACKAGE_DIR;OUTPUT_NAME;DOCS_DIR"
                         "LINK_LIBS;LINK_DIRS" ${ARGN})
 
@@ -200,7 +201,27 @@ function(add_mojo_package target visibility)
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME}
   )
-  add_custom_target(${target} DEPENDS ${package_file_name})
+
+  # Run a custom command to prime the cache with the current target. This
+  # ensures that in the common case for development we have an archive for the
+  # current target already compiled.
+  if (NOT KGEN_DISABLE_PRIME_CACHE)
+    set(KGEN_PRIME_DISABLE_FLAG "")
+    if (KGEN_DISABLE_PRIME_CODEGEN_CACHE)
+      set(KGEN_PRIME_DISABLE_FLAG "--disable-codegen-priming")
+    endif ()
+
+    add_custom_command(OUTPUT ${package_file_name}.prime
+      COMMAND $<TARGET_FILE:mojo-prime-package-cache> ${package_file_name}
+              ${KGEN_INCLUDE_FLAGS} ${KGEN_PRIME_DISABLE_FLAG}
+      COMMAND ${CMAKE_COMMAND} -E touch ${package_file_name}.prime
+      DEPENDS ${package_file_name} mojo-prime-package-cache
+    )
+    add_custom_target(${target} DEPENDS ${package_file_name}.prime)
+  else ()
+    add_custom_target(${target} DEPENDS ${package_file_name})
+  endif ()
+
   set_target_properties(${target}
     PROPERTIES
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
