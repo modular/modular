@@ -26,7 +26,6 @@ from NN.ConvUtils import (
 from NN.Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -194,56 +193,55 @@ fn test[
 
 fn main() raises:
     alias type = DType.float32
-    with Runtime() as rt:
-        # No packing or padding.
-        test[type, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)
-        test[type, False](1, 12, 12, 3, 64, 1, 1, Index(0, 0), 1)
-        test[type, False](1, 13, 16, 5, 64, 1, 1, Index(0, 0), 1)
-        test[type, False](1, 7, 32, 3, 16, 2, 1, Index(0, 0), 1)
+    # No packing or padding.
+    test[type, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)
+    test[type, False](1, 12, 12, 3, 64, 1, 1, Index(0, 0), 1)
+    test[type, False](1, 13, 16, 5, 64, 1, 1, Index(0, 0), 1)
+    test[type, False](1, 7, 32, 3, 16, 2, 1, Index(0, 0), 1)
 
-        # Pre-packed test w/o padding.
-        test[type, True](1, 17, 16, 5, 64, 3, 1, Index(0, 0), 1)
-        test[type, True](5, 12, 8, 3, 64, 2, 1, Index(0, 0), 1)
-        test[type, True](1, 7, 11, 3, 192, 3, 1, Index(0, 0), 1)
-        test[type, True](1, 7, 5, 5, 256, 2, 1, Index(0, 0), 1)
+    # Pre-packed test w/o padding.
+    test[type, True](1, 17, 16, 5, 64, 3, 1, Index(0, 0), 1)
+    test[type, True](5, 12, 8, 3, 64, 2, 1, Index(0, 0), 1)
+    test[type, True](1, 7, 11, 3, 192, 3, 1, Index(0, 0), 1)
+    test[type, True](1, 7, 5, 5, 256, 2, 1, Index(0, 0), 1)
 
-        # No packing, w/ padding, and F not multiple of simd_size.
-        test[type, False](1, 5, 3, 3, 1, 1, 1, Index(1, 1), 1)
-        test[type, False](2, 11, 5, 3, 2, 1, 1, Index(1, 1), 1)
-        test[type, False](1, 12, 6, 5, 3, 3, 1, Index(2, 2), 1)
-        test[type, False](1, 7, 1, 4, 3, 1, 1, Index(2, 1), 1)
-        test[type, False](1, 5, 2, 3, 6, 2, 1, Index(1, 1), 1)
+    # No packing, w/ padding, and F not multiple of simd_size.
+    test[type, False](1, 5, 3, 3, 1, 1, 1, Index(1, 1), 1)
+    test[type, False](2, 11, 5, 3, 2, 1, 1, Index(1, 1), 1)
+    test[type, False](1, 12, 6, 5, 3, 3, 1, Index(2, 2), 1)
+    test[type, False](1, 7, 1, 4, 3, 1, 1, Index(2, 1), 1)
+    test[type, False](1, 5, 2, 3, 6, 2, 1, Index(1, 1), 1)
 
-        # Pre-packed, F not multiple of simd_size
-        test[type, True](1, 5, 2, 3, 7, 1, 1, Index(0, 0), 1)
-        test[type, True](1, 7, 2, 3, 42, 2, 1, Index(0, 0), 1)
-        test[type, True](1, 23, 17, 3, 90, 1, 1, Index(0, 0), 1)
-        test[type, True](1, 11, 2, 5, 7, 1, 1, Index(2, 2), 1)
-        test[type, True](1, 9, 2, 3, 42, 2, 1, Index(1, 1), 1)
-        test[type, True](1, 7, 17, 5, 90, 2, 1, Index(2, 2), 1)
+    # Pre-packed, F not multiple of simd_size
+    test[type, True](1, 5, 2, 3, 7, 1, 1, Index(0, 0), 1)
+    test[type, True](1, 7, 2, 3, 42, 2, 1, Index(0, 0), 1)
+    test[type, True](1, 23, 17, 3, 90, 1, 1, Index(0, 0), 1)
+    test[type, True](1, 11, 2, 5, 7, 1, 1, Index(2, 2), 1)
+    test[type, True](1, 9, 2, 3, 42, 2, 1, Index(1, 1), 1)
+    test[type, True](1, 7, 17, 5, 90, 2, 1, Index(2, 2), 1)
 
-        # Grouped conv tests
-        test[type, True](1, 1, 2, 1, 2, 1, 1, Index(0, 0), 2)
-        test[type, True](1, 1, 25, 1, 25, 1, 1, Index(0, 0), 5)
-        test[type, True](1, 1, 16, 1, 4, 1, 1, Index(0, 0), 2)
-        test[type, True](1, 1, 32, 1, 20, 1, 1, Index(0, 0), 2)
-        test[type, True](1, 1, 34, 1, 40, 1, 1, Index(0, 0), 2)
-        test[type, True](1, 13, 16, 5, 64, 2, 1, Index(0, 0), 4)
-        test[type, True](1, 1, 2, 1, 2, 1, 1, Index(1, 1), 2)
-        test[type, True](1, 3, 18, 3, 18, 1, 1, Index(0, 0), 3)
-        test[type, True](1, 7, 33, 5, 90, 2, 1, Index(2, 2), 3)
-        test[type, True](3, 17, 36, 5, 93, 2, 1, Index(2, 2), 3)
-        test[type, True](1, 17, 36, 6, 198, 3, 1, Index(3, 2), 2)
+    # Grouped conv tests
+    test[type, True](1, 1, 2, 1, 2, 1, 1, Index(0, 0), 2)
+    test[type, True](1, 1, 25, 1, 25, 1, 1, Index(0, 0), 5)
+    test[type, True](1, 1, 16, 1, 4, 1, 1, Index(0, 0), 2)
+    test[type, True](1, 1, 32, 1, 20, 1, 1, Index(0, 0), 2)
+    test[type, True](1, 1, 34, 1, 40, 1, 1, Index(0, 0), 2)
+    test[type, True](1, 13, 16, 5, 64, 2, 1, Index(0, 0), 4)
+    test[type, True](1, 1, 2, 1, 2, 1, 1, Index(1, 1), 2)
+    test[type, True](1, 3, 18, 3, 18, 1, 1, Index(0, 0), 3)
+    test[type, True](1, 7, 33, 5, 90, 2, 1, Index(2, 2), 3)
+    test[type, True](3, 17, 36, 5, 93, 2, 1, Index(2, 2), 3)
+    test[type, True](1, 17, 36, 6, 198, 3, 1, Index(3, 2), 2)
 
-        # Depthwise conv.
-        test[type, True](1, 7, 33, 5, 66, 2, 1, Index(2, 2), 33)
+    # Depthwise conv.
+    test[type, True](1, 7, 33, 5, 66, 2, 1, Index(2, 2), 33)
 
-        # WavLM and Wav2Vec2 shapes.
-        test[type, True](2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1)
-        test[type, True](2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 799, 512, 3, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 399, 512, 3, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 199, 512, 2, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 99, 512, 2, 512, 2, 1, Index(0, 0), 1)
-        test[type, True](2, 49, 1024, 128, 1024, 1, 1, Index(64, 64), 16)
+    # WavLM and Wav2Vec2 shapes.
+    test[type, True](2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1)
+    test[type, True](2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 799, 512, 3, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 399, 512, 3, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 199, 512, 2, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 99, 512, 2, 512, 2, 1, Index(0, 0), 1)
+    test[type, True](2, 49, 1024, 128, 1024, 1, 1, Index(64, 64), 16)

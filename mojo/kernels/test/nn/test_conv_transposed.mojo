@@ -28,7 +28,6 @@ from NN.ConvUtils import (
 )
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

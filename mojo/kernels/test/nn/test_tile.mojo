@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
 from NN.Tile import tile
 
 

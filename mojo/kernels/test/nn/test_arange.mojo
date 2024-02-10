@@ -11,7 +11,6 @@ from algorithm import elementwise
 from NN.Arange import arange, arange_shape
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import Runtime
 from NN.Slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
@@ -30,10 +29,9 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
         let index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
-    with Runtime(1) as runtime:
-        elementwise[in_rank, 1, print_elements_lambda](
-            rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
-        )
+    elementwise[in_rank, 1, print_elements_lambda](
+        rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
+    )
 
 
 # slice_dim
@@ -71,22 +69,20 @@ fn test_arange[
     let memory4 = stack_allocation[max_output_size, dtype, 1]()
     let out_tensor = NDBuffer[dtype, 1](memory4, outshape)
 
-    with Runtime(1) as runtime:
-
-        @always_inline
-        @parameter
-        fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-            let index = rebind[StaticIntTuple[1]](idx)
-            let range_val = arange[dtype, simd_width](
-                start_tensor, stop_tensor, step_tensor, index
-            )
-            out_tensor.simd_store[simd_width](index, range_val)
-
-        elementwise[1, 1, arange_lambda](
-            rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
+    @always_inline
+    @parameter
+    fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let index = rebind[StaticIntTuple[1]](idx)
+        let range_val = arange[dtype, simd_width](
+            start_tensor, stop_tensor, step_tensor, index
         )
+        out_tensor.simd_store[simd_width](index, range_val)
 
-        print_elements[dtype, 1](out_tensor)
+    elementwise[1, 1, arange_lambda](
+        rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
+    )
+
+    print_elements[dtype, 1](out_tensor)
 
 
 # CHECK-LABEL: == test_arrange_basic

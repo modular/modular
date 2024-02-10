@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
 
 # TODO: This implementation supports up to 4 dimensions.
 

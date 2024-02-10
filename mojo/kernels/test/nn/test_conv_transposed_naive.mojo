@@ -7,7 +7,6 @@
 
 from NN.ConvTranspose import conv_transpose_naive
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
 from utils.index import Index
 
 

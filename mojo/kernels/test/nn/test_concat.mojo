@@ -13,7 +13,6 @@ from NN.Concat import (
 )
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
@@ -47,10 +46,9 @@ fn test_concat() raises:
 
     let input_list = VariadicList[NDBuffer[type, rank]](x1_dyn, x2_dyn, x3_dyn)
 
-    with Runtime(4) as rt:
-        let input_vec = variadic_list_to_vector(input_list)
-        concat[rank, type, False](output_dyn, concat_axis, input_vec)
-        input_vec._del_old()
+    let input_vec = variadic_list_to_vector(input_list)
+    concat[rank, type, False](output_dyn, concat_axis, input_vec)
+    input_vec._del_old()
 
     # CHECK: == test_concat
     # CHECK-COUNT-2: 0.0
@@ -94,10 +92,9 @@ fn test_concat_parallel():
 
     let input_list = VariadicList[NDBuffer[type, rank]](x1_dyn, x2_dyn, x3_dyn)
 
-    with Runtime(4) as rt:
-        let input_vec = variadic_list_to_vector(input_list)
-        _concat_parallel[rank, type](output_dyn, concat_axis, input_vec)
-        input_vec._del_old()
+    let input_vec = variadic_list_to_vector(input_list)
+    _concat_parallel[rank, type](output_dyn, concat_axis, input_vec)
+    input_vec._del_old()
 
     # CHECK: == test_concat_parallel
     # CHECK-COUNT-2: 0.0

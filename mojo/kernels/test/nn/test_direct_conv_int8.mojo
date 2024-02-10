@@ -27,7 +27,7 @@ from NN.ConvUtils import (
 from NN.Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from sys.info import num_physical_cores
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -56,7 +56,6 @@ fn test[
     dilation: StaticIntTuple[2],
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
-    rt: Runtime,
 ) raises:
     print("== test_direct_conv")
 
@@ -92,7 +91,7 @@ fn test[
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    let num_threads = rt.parallelism_level()
+    let num_threads = num_physical_cores()
     let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
     let num_partitions = get_conv_num_partitions[
         micro_kernel_height, micro_kernel_width * simd_size
@@ -216,726 +215,679 @@ fn test[
 
 fn main() raises:
     """It only includes shapes where F is multiple simd_size."""
-    with Runtime() as rt:
-        # likely partition in n_ho_wo or sequential
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            6,  # H
-            5,  # W
-            1,  # C
-            3,  # R
-            4,  # S
-            4,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            12,  # H
-            12,  # W
-            12,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # likely partition in n_ho_wo or sequential
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        6,  # H
+        5,  # W
+        1,  # C
+        3,  # R
+        4,  # S
+        4,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            13,  # H
-            13,  # W
-            16,  # C
-            5,  # R
-            5,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        12,  # H
+        12,  # W
+        12,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            7,  # H
-            7,  # W
-            32,  # C
-            3,  # R
-            3,  # S
-            16,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        13,  # H
+        13,  # W
+        16,  # C
+        5,  # R
+        5,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            17,  # H
-            17,  # W
-            16,  # C
-            5,  # R
-            5,  # S
-            32,  # F
-            Index(3, 3),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        7,  # H
+        7,  # W
+        32,  # C
+        3,  # R
+        3,  # S
+        16,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            5,  # N
-            7,  # H
-            7,  # W
-            8,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        17,  # H
+        17,  # W
+        16,  # C
+        5,  # R
+        5,  # S
+        32,  # F
+        Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # likely partition in F or both
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            7,  # H
-            7,  # W
-            7,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(3, 3),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        5,  # N
+        7,  # H
+        7,  # W
+        8,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            7,  # H
-            7,  # W
-            5,  # C
-            5,  # R
-            5,  # S
-            288,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # likely partition in F or both
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        7,  # H
+        7,  # W
+        7,  # C
+        3,  # R
+        3,  # S
+        256,  # F
+        Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # Pre-packed test
-        # Avoid using dispatch functions for now because pre-packed version
-        # has more restrictions for F.
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        7,  # H
+        7,  # W
+        5,  # C
+        5,  # R
+        5,  # S
+        288,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            12,  # H
-            12,  # W
-            12,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # Pre-packed test
+    # Avoid using dispatch functions for now because pre-packed version
+    # has more restrictions for F.
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            13,  # H
-            13,  # W
-            16,  # C
-            5,  # R
-            5,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        12,  # H
+        12,  # W
+        12,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            32,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        13,  # H
+        13,  # W
+        16,  # C
+        5,  # R
+        5,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            17,  # H
-            17,  # W
-            16,  # C
-            5,  # R
-            5,  # S
-            64,  # F
-            Index(3, 3),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        7,  # W
+        32,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            5,  # N
-            12,  # H
-            12,  # W
-            8,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        17,  # H
+        17,  # W
+        16,  # C
+        5,  # R
+        5,  # S
+        64,  # F
+        Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # likely partition in F or both
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            11,  # C
-            3,  # R
-            3,  # S
-            192,  # F
-            Index(3, 3),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        5,  # N
+        12,  # H
+        12,  # W
+        8,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            5,  # C
-            5,  # R
-            5,  # S
-            256,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # likely partition in F or both
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        7,  # W
+        11,  # C
+        3,  # R
+        3,  # S
+        192,  # F
+        Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # Top resnet shapes, all pre-packed
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        7,  # W
+        5,  # C
+        5,  # R
+        5,  # S
+        256,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # likely to partition C
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            16,  # H
-            16,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # Top resnet shapes, all pre-packed
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            58,  # H
-            58,  # W
-            64,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # likely to partition C
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        16,  # H
+        16,  # W
+        256,  # C
+        3,  # R
+        3,  # S
+        256,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            30,  # H
-            30,  # W
-            128,  # C
-            3,  # R
-            3,  # S
-            128,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        58,  # H
+        58,  # W
+        64,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            9,  # H
-            9,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        30,  # H
+        30,  # W
+        128,  # C
+        3,  # R
+        3,  # S
+        128,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            230,  # H
-            230,  # W
-            3,  # C
-            7,  # R
-            7,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        9,  # H
+        9,  # W
+        512,  # C
+        3,  # R
+        3,  # S
+        512,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            58,  # H
-            58,  # W
-            128,  # C
-            3,  # R
-            3,  # S
-            128,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        230,  # H
+        230,  # W
+        3,  # C
+        7,  # R
+        7,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            30,  # H
-            30,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        58,  # H
+        58,  # W
+        128,  # C
+        3,  # R
+        3,  # S
+        128,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            16,  # H
-            16,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        30,  # H
+        30,  # W
+        256,  # C
+        3,  # R
+        3,  # S
+        256,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            56,  # H
-            56,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        16,  # H
+        16,  # W
+        512,  # C
+        3,  # R
+        3,  # S
+        512,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            14,  # H
-            14,  # W
-            1024,  # C
-            3,  # R
-            3,  # S
-            2048,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        56,  # H
+        56,  # W
+        256,  # C
+        3,  # R
+        3,  # S
+        512,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            28,  # H
-            28,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            1024,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        14,  # H
+        14,  # W
+        1024,  # C
+        3,  # R
+        3,  # S
+        2048,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        # Test with padding
-        # This is a fallback implementation assuming all shapes are dynamic.
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        28,  # H
+        28,  # W
+        512,  # C
+        3,  # R
+        3,  # S
+        1024,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            56,  # H
-            56,  # W
-            64,  # C
-            3,  # R
-            3,  # S
-            1024,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # Test with padding
+    # This is a fallback implementation assuming all shapes are dynamic.
 
-        # Test with padding
-        # This is a fallback implementation assuming all shapes are dynamic.
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        56,  # H
+        56,  # W
+        64,  # C
+        3,  # R
+        3,  # S
+        1024,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            5,  # H
-            5,  # W
-            3,  # C
-            3,  # R
-            3,  # S
-            1,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    # Test with padding
+    # This is a fallback implementation assuming all shapes are dynamic.
 
-        test[input_type, filter_type, output_type, False](
-            2,  # N
-            12,  # H
-            11,  # W
-            5,  # C
-            4,  # R
-            3,  # S
-            2,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        5,  # H
+        5,  # W
+        3,  # C
+        3,  # R
+        3,  # S
+        1,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            8,  # H
-            12,  # W
-            6,  # C
-            2,  # R
-            5,  # S
-            3,  # F
-            Index(1, 3),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 0),  # pad_h
-            Index(2, 2),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        2,  # N
+        12,  # H
+        11,  # W
+        5,  # C
+        4,  # R
+        3,  # S
+        2,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            9,  # H
-            7,  # W
-            1,  # C
-            5,  # R
-            4,  # S
-            3,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(2, 2),  # pad_h
-            Index(2, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        8,  # H
+        12,  # W
+        6,  # C
+        2,  # R
+        5,  # S
+        3,  # F
+        Index(1, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 0),  # pad_h
+        Index(2, 2),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, False](
-            1,  # N
-            10,  # H
-            5,  # W
-            2,  # C
-            4,  # R
-            3,  # S
-            6,  # F
-            Index(3, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(2, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        9,  # H
+        7,  # W
+        1,  # C
+        5,  # R
+        4,  # S
+        3,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(2, 2),  # pad_h
+        Index(2, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            224,  # H
-            224,  # W
-            3,  # C
-            7,  # R
-            7,  # S
-            64,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(3, 3),  # pad_h
-            Index(3, 3),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, False](
+        1,  # N
+        10,  # H
+        5,  # W
+        2,  # C
+        4,  # R
+        3,  # S
+        6,  # F
+        Index(3, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(2, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            56,  # H
-            56,  # W
-            64,  # C
-            3,  # R
-            3,  # S
-            64,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        224,  # H
+        224,  # W
+        3,  # C
+        7,  # R
+        7,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(3, 3),  # pad_h
+        Index(3, 3),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            56,  # H
-            56,  # W
-            128,  # C
-            3,  # R
-            3,  # S
-            128,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        56,  # H
+        56,  # W
+        64,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            28,  # H
-            28,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        56,  # H
+        56,  # W
+        128,  # C
+        3,  # R
+        3,  # S
+        128,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            14,  # H
-            14,  # W
-            256,  # C
-            3,  # R
-            3,  # S
-            256,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        28,  # H
+        28,  # W
+        256,  # C
+        3,  # R
+        3,  # S
+        256,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            14,  # H
-            14,  # W
-            3,  # C
-            3,  # R
-            3,  # S
-            16,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        14,  # H
+        14,  # W
+        256,  # C
+        3,  # R
+        3,  # S
+        256,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            512,  # C
-            3,  # R
-            3,  # S
-            512,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        14,  # H
+        14,  # W
+        3,  # C
+        3,  # R
+        3,  # S
+        16,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            19,  # N
-            7,  # H
-            7,  # W
-            1,  # C
-            3,  # R
-            3,  # S
-            16,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        7,  # W
+        512,  # C
+        3,  # R
+        3,  # S
+        512,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            13,  # N
-            14,  # H
-            14,  # W
-            2,  # C
-            3,  # R
-            3,  # S
-            32,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        19,  # N
+        7,  # H
+        7,  # W
+        1,  # C
+        3,  # R
+        3,  # S
+        16,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        # Test with F not multiple of simd_size
+    test[input_type, filter_type, output_type, True](
+        13,  # N
+        14,  # H
+        14,  # W
+        2,  # C
+        3,  # R
+        3,  # S
+        32,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            5,  # H
-            5,  # W
-            2,  # C
-            3,  # R
-            3,  # S
-            7,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    # Test with F not multiple of simd_size
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            7,  # W
-            2,  # C
-            3,  # R
-            3,  # S
-            42,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        5,  # H
+        5,  # W
+        2,  # C
+        3,  # R
+        3,  # S
+        7,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            23,  # H
-            23,  # W
-            17,  # C
-            3,  # R
-            3,  # S
-            90,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(0, 0),  # pad_h
-            Index(0, 0),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        7,  # W
+        2,  # C
+        3,  # R
+        3,  # S
+        42,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            5,  # H
-            11,  # W
-            2,  # C
-            3,  # R
-            5,  # S
-            7,  # F
-            Index(1, 1),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(2, 2),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        23,  # H
+        23,  # W
+        17,  # C
+        3,  # R
+        3,  # S
+        90,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            7,  # H
-            9,  # W
-            2,  # C
-            3,  # R
-            3,  # S
-            42,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(1, 1),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        5,  # H
+        11,  # W
+        2,  # C
+        3,  # R
+        5,  # S
+        7,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(2, 2),  # pad_w
+    )
 
-        test[input_type, filter_type, output_type, True](
-            1,  # N
-            11,  # H
-            7,  # W
-            17,  # C
-            3,  # R
-            5,  # S
-            90,  # F
-            Index(2, 2),  # stride
-            Index(1, 1),  # dilation
-            Index(1, 1),  # pad_h
-            Index(2, 2),  # pad_w
-            rt,
-        )
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        7,  # H
+        9,  # W
+        2,  # C
+        3,  # R
+        3,  # S
+        42,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    )
+
+    test[input_type, filter_type, output_type, True](
+        1,  # N
+        11,  # H
+        7,  # W
+        17,  # C
+        3,  # R
+        5,  # S
+        90,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(2, 2),  # pad_w
+    )

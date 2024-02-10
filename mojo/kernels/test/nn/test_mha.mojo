@@ -9,7 +9,6 @@ from math import div_ceil, min, abs, rsqrt, isclose
 from memory.buffer import NDBuffer, _compute_nd_index
 from memory.unsafe import DTypePointer
 from random import rand
-from runtime.llcl import Runtime
 from utils.index import Index
 from utils.list import DimList
 from testing import assert_true

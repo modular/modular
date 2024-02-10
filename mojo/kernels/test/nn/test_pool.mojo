@@ -10,7 +10,6 @@ import builtin
 from NN.Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
 from NN.Pool import max_pool, avg_pool, PoolMethod, pool_shape
-from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

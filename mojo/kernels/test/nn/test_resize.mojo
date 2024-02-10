@@ -11,7 +11,6 @@ from NN.Resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from runtime.llcl import Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 from testing import assert_almost_equal
