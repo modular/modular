@@ -75,12 +75,6 @@ struct Axis(Intable):
 
 @always_inline
 fn gather_reduce[
-    output_rank: Int,
-    output_shape: DimList,
-    input_rank: Int,
-    input_shape: DimList,
-    indices_rank: Int,
-    indices_shape: DimList,
     type: DType,
     gather_axis: Int,
     reduce_axis: Int,
@@ -88,6 +82,12 @@ fn gather_reduce[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
+    output_rank: Int,
+    output_shape: DimList,
+    input_rank: Int,
+    input_shape: DimList,
+    indices_rank: Int,
+    indices_shape: DimList,
 ](
     output: NDBuffer[type, output_rank, output_shape],
     input: NDBuffer[type, input_rank, input_shape],
