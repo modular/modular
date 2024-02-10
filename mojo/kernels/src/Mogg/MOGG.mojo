@@ -1945,12 +1945,6 @@ fn mogg_gather_sum[
     ctx: MojoCallContextPtr,
 ):
     gather_reduce[
-        output_rank,
-        DimList.create_unknown[output_rank](),
-        input_rank,
-        DimList.create_unknown[input_rank](),
-        indices_rank,
-        DimList.create_unknown[indices_rank](),
         type,
         0,
         1,
