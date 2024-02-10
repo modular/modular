@@ -8,7 +8,8 @@ from math import max, factorial, div_ceil, min
 from time import now
 from utils.index import StaticIntTuple
 from algorithm import parallelize, sync_parallelize
-from runtime.llcl import num_cores, Runtime
+from runtime.llcl import Runtime
+from sys.info import num_physical_cores
 from collections.vector import InlinedFixedVector
 
 alias n = 12
@@ -40,7 +41,7 @@ fn perm(i0: Int) -> StaticIntTuple[n]:
 
 
 fn main():
-    let core_count = 8  # num_physical_cores()
+    let core_count = num_physical_cores()
 
     let t0 = now()
 
