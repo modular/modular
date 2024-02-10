@@ -11,9 +11,6 @@ from testing import assert_true, assert_almost_equal, assert_equal
 from max.engine import EngineTensorView, InferenceSession, TensorMap
 
 
-alias TEMP_DIR = Path(env_get_string["TEMP_DIR", ""]())
-
-
 fn assert_no_dynamic_dims(spec: TensorSpec) raises:
     for i in range(spec.rank()):
         assert_true(spec[i] >= 0)
@@ -74,18 +71,11 @@ fn execute_binary[
 fn execute_no_args(m: Module, name: StringRef) raises -> TensorMap:
     m.verify()
 
-    # TODO: Don't ask the user to provide a unique name, autogenerate it.
-    let temp_path = TEMP_DIR / name
-
-    with open(temp_path, "w") as f:
-        f.write(m.__str__())
-
     let session = InferenceSession()
-    let model = session.load_model(temp_path)
+    let model = session.load_model(m)
 
     let input_map = session.new_tensor_map()
     let result_map = model.execute(input_map)
-    temp_path.path._strref_keepalive()
 
     return result_map ^
 
@@ -103,14 +93,8 @@ fn execute_n_args[
 ) raises -> TensorMap:
     m.verify()
 
-    # TODO: Don't ask the user to provide a unique name, autogenerate it.
-    let temp_path = TEMP_DIR / name
-
-    with open(temp_path, "w") as f:
-        f.write(m.__str__())
-
     let session = InferenceSession()
-    let model = session.load_model(temp_path)
+    let model = session.load_model(m)
 
     let input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
@@ -120,7 +104,6 @@ fn execute_n_args[
     input_map.borrow("input4", t5)
 
     let result_map = model.execute(input_map)
-    temp_path.path._strref_keepalive()
 
     return result_map ^
 
@@ -130,14 +113,8 @@ fn execute_base(
 ) raises -> TensorMap:
     m.verify()
 
-    # TODO: Don't ask the user to provide a unique name, autogenerate it.
-    let temp_path = TEMP_DIR / name
-
-    with open(temp_path, "w") as f:
-        f.write(m.__str__())
-
     let session = InferenceSession()
-    let model = session.load_model(temp_path)
+    let model = session.load_model(m)
 
     let input_map = session.new_tensor_map()
     for i in range(len(tensors)):
@@ -149,6 +126,5 @@ fn execute_base(
         input_name._strref_keepalive()
 
     let result_map = model.execute(input_map)
-    temp_path.path._strref_keepalive()
 
     return result_map ^
