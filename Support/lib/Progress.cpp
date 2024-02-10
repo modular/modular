@@ -112,7 +112,7 @@ private:
   };
 
   std::deque<TimePoint> timePoints;
-  const size_t maxTimePoints = 5; // Adjust as needed for smoothing
+  const size_t maxTimePoints = 20; // Adjust as needed for smoothing
 
   void updateRate();
 };
@@ -307,9 +307,8 @@ void CLIProgress::updateRate() {
   auto now = std::chrono::system_clock::now();
 
   // Prune old time points
-  while (timePoints.size() >= maxTimePoints) {
+  while (timePoints.size() >= maxTimePoints)
     timePoints.pop_front();
-  }
 
   // Add new time point
   timePoints.push_back({now, doneBytes});
@@ -323,9 +322,8 @@ void CLIProgress::updateRate() {
   auto &last = timePoints.back();
   double elapsed =
       std::chrono::duration<double>(last.time - first.time).count();
-  if (elapsed < 0.1) { // Avoid division by very small numbers
+  if (elapsed < 0.01) // Avoid division by very small numbers
     return;
-  }
 
   double bytesDiff = static_cast<double>(last.bytes - first.bytes);
   rate = bytesDiff / elapsed;
@@ -333,9 +331,8 @@ void CLIProgress::updateRate() {
   // Use EMA for smoothing
   constexpr double alpha = 0.9;
   lastRate = ((1.0 - alpha) * rate) + (alpha * lastRate);
-  if (lastRate > maxRate) {
+  if (lastRate > maxRate)
     maxRate = lastRate;
-  }
 }
 
 void CLIProgress::update() {
@@ -387,7 +384,7 @@ void CLIProgress::update() {
   // end of each emit call, we do a carriage return in preparation for the
   // next. The final disable will be used to emit a newline character.
   os << "\r" << prefix.str();
-  if (enabled == false || rate >= 0.5 * maxRate) {
+  if (enabled == false || rate >= 0.3 * maxRate) {
     // If we're either finished or we have something within 50% of our top
     // rate, make the progress bar green if colors are available. We keep
     // the green range very wide because we expect variability naturally.
