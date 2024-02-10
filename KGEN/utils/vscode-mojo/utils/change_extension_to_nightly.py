@@ -12,12 +12,19 @@
 
 import datetime
 import json
+import shutil
 from pathlib import Path
 
 extension_dir = Path(__file__).parent.parent
 
 
 def main():
+    # Overwrite the icon with the nightly icon.
+    shutil.copy(
+        extension_dir / "nightly-icon.png",
+        extension_dir / "icon.png",
+    )
+
     # Update the package.json file to use the nightly version.
     package_json = extension_dir / "package.json"
     with open(package_json, "r") as f:

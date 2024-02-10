@@ -81,6 +81,7 @@ def install_kernel(
             raise RuntimeError("unable to resolve MODULAR_HOME path")
 
     # Generate the kernel.json file.
+    logo_name = "nightly-logo" if "nightly" in install_channel else "logo"
     kernel_json = {
         "display_name": "Mojo"
         + (f" ({install_channel})" if install_channel != "stable" else ""),
@@ -103,8 +104,8 @@ def install_kernel(
             "codemirror_mode": {"name": "mojo"},
         },
         "resources": {
-            "logo-64x64": str(kernel_install_dir / "logo-64x64.png"),
-            "logo-svg": str(kernel_install_dir / "logo.svg"),
+            "logo-64x64": str(kernel_install_dir / f"{logo_name}-64x64.png"),
+            "logo-svg": str(kernel_install_dir / f"{logo_name}.svg"),
         },
     }
     kernel_json_path = kernel_install_dir / "kernel.json"
