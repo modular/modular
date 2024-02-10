@@ -10,7 +10,6 @@ from math import div_ceil, min, abs, rsqrt
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from random import rand
-from runtime.llcl import Runtime
 from utils.index import Index
 from utils.list import DimList
 from BatchedMatmul import batched_matmul

@@ -9,7 +9,6 @@
 from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import Runtime
 from NN.Softmax import softmax_2_pass, softmax
 from random import rand
 
