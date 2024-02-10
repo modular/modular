@@ -13,7 +13,6 @@
 from Matmul import matmul, pack_b_ndbuffer_M, pack_matmul_b_shape_func_M
 from Matrix import Matrix
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime
 from sys.info import has_avx2, has_neon_int8_matmul
 from utils.index import Index, StaticIntTuple
 
