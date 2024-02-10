@@ -225,8 +225,8 @@ fn conv_transpose_shape[
         The output shape.
     """
 
-    if input_rank != 4:
-        raise Error("[conv_transpose] requires (input_rank == 4))")
+    if input_rank != 4 and input_rank != 5:
+        raise Error("[conv_transpose] requires (input_rank == 4 or 5))")
     if input_rank != kernel_rank:
         raise Error("[conv_transpose] requires (input_rank == kernel_rank))")
     if strides.dim(0) != input_rank - 2 or dilations.dim(0) != input_rank - 2:
@@ -239,42 +239,94 @@ fn conv_transpose_shape[
             "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
         )
 
-    # Assume input has layout NHWC
+    # Channel last layout, NHWC or NDHWC.
     let batch_size = input.dim(0)
-    let input_channels = input.dim(3)
 
-    # Assume kernel has layout RSCF, the output channel is C because this is a
-    # convolution transpose shape function (inverse of regular convolution).
-    let output_channels = kernel.dim(2)
+    @parameter
+    if input_rank == 4:
+        let input_channels = input.dim(3)
 
-    # compute and return the output shape
-    let output_height = (
-        int(strides[0]) * (input.dim(1) - 1)
-        + int(output_pads[0])
-        + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
-        - int(pads[PADS_H_START])
-        - int(pads[PADS_H_END])
-    )
-    let output_width = (
-        int(strides[1]) * (input.dim(2) - 1)
-        + int(output_pads[1])
-        + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
-        - int(pads[PADS_W_START])
-        - int(pads[PADS_W_END])
-    )
+        # Assume kernel has layout RSCF, the output channel is C because this is a
+        # convolution transpose shape function (inverse of regular convolution).
+        let output_channels = kernel.dim(2)
 
-    if output_height <= 0:
-        raise Error("[conv_transpose] output height must be positive")
-    if output_width <= 0:
-        raise Error("[conv_transpose] output width must be positive")
+        # compute and return the output shape
+        let output_height = (
+            int(strides[0]) * (input.dim(1) - 1)
+            + int(output_pads[0])
+            + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
+            - int(pads[PADS_H_START])
+            - int(pads[PADS_H_END])
+        )
+        let output_width = (
+            int(strides[1]) * (input.dim(2) - 1)
+            + int(output_pads[1])
+            + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
+            - int(pads[PADS_W_START])
+            - int(pads[PADS_W_END])
+        )
 
-    var output_shape = StaticIntTuple[input_rank]()
-    output_shape[0] = batch_size
-    output_shape[1] = output_height
-    output_shape[2] = output_width
-    output_shape[3] = output_channels
+        if output_height <= 0:
+            raise Error("[conv_transpose] output height must be positive")
+        if output_width <= 0:
+            raise Error("[conv_transpose] output width must be positive")
 
-    return output_shape
+        var output_shape = StaticIntTuple[input_rank]()
+        output_shape[0] = batch_size
+        output_shape[1] = output_height
+        output_shape[2] = output_width
+        output_shape[3] = output_channels
+
+        return output_shape
+
+    else:
+        # NDHWC layout.
+        let input_channels = input.dim(4)
+
+        # QRSFC layout, F is output channel.
+        let output_channels = kernel.dim(3)
+
+        # compute and return the output shape
+        # TODO: the paddings is ordered by lower side [D, H, W], then upper
+        # side [D, H, W], whereas in conv it's D_lower, D_upper, H_lower, ...
+        # It's better to unify both.
+        let output_depth = (
+            int(strides[0]) * (input.dim(1) - 1)
+            + int(output_pads[0])
+            + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
+            - int(pads[0])
+            - int(pads[3])
+        )
+        let output_height = (
+            int(strides[1]) * (input.dim(2) - 1)
+            + int(output_pads[1])
+            + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
+            - int(pads[1])
+            - int(pads[4])
+        )
+        let output_width = (
+            int(strides[2]) * (input.dim(3) - 1)
+            + int(output_pads[2])
+            + ((kernel.dim(2) - 1) * int(dilations[2]) + 1)
+            - int(pads[2])
+            - int(pads[5])
+        )
+
+        if output_depth <= 0:
+            raise Error("[conv_transpose] output depth must be positive")
+        if output_height <= 0:
+            raise Error("[conv_transpose] output height must be positive")
+        if output_width <= 0:
+            raise Error("[conv_transpose] output width must be positive")
+
+        var output_shape = StaticIntTuple[input_rank]()
+        output_shape[0] = batch_size
+        output_shape[1] = output_depth
+        output_shape[2] = output_height
+        output_shape[3] = output_width
+        output_shape[4] = output_channels
+
+        return output_shape
 
 
 # ===----------------------------------------------------------------------=== #
