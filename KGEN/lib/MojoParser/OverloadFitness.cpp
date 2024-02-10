@@ -1418,9 +1418,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // Otherwise, we have an ordinary positional argument that is not varargs or
     // a pack. We ensured earlier that it is not also passed as a keyword
     // operand, so we process it as usual.
-    assert(passingKind == PassingKind::PosOnly ||
-           (!argName.empty() && !callOperands.findKwArg(argName)) &&
-               "redundant argument not caught by diagnostics");
+    assert((passingKind == PassingKind::PosOnly ||
+            (!argName.empty() && !callOperands.findKwArg(argName))) &&
+           "redundant argument not caught by diagnostics");
     if (auto result =
             processPositionalOperand(expectedType, expectedConvention))
       return std::move(*result);
