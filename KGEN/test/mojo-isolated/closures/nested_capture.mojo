@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
-
-alias Int = __mlir_type.index
+# RUN: %translate-with-packages %s | FileCheck %s
 
 
 fn use(x: Int):

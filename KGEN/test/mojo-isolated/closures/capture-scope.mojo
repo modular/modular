@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %translate-with-packages %s | FileCheck %s
 
 
 fn use(x: Int):
@@ -11,7 +11,7 @@ fn use(x: Int):
 
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK-NEXT: lit.struct.field field0 : !Int
+# CHECK-NEXT: lit.struct.field field0 : index
 
 
 fn makes_escaping_closure(x: Int):

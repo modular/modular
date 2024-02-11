@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -debug-level full -import-mojo --mojo-disable-builtins -mlir-print-debuginfo | FileCheck %s
+# RUN: %translate-with-packages %s -debug-level full -mlir-print-debuginfo | FileCheck %s
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
