@@ -12,6 +12,7 @@
 #include "./Language/MojoLanguage.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting.h"
 #include "Support/SymbolExport.h"
@@ -44,6 +45,10 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
   LLVMLinkInMCJIT();
+
+  // We need to create a global runtime for the bits to work with. This is a
+  // bit strange, but there's no better place for it.
+  static auto runtime = LLCL::createUniqueRuntime();
 
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
