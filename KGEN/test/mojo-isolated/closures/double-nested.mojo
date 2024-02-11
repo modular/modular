@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %translate-with-packages %s | FileCheck %s
 
 # CHECK: lit.file_module @"[[F:.*]]" attributes
 

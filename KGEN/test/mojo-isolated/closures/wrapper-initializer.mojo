@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
+# RUN: %translate-with-packages %s | FileCheck %s
 
 
 # CHECK: lit.struct.decl @"fn
@@ -11,8 +11,7 @@
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self,
-# CHECK-SAME: %impl: !lit.ref<!escaping0_, {{.*}}> owned_in_mem, |)
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self, %impl: !lit.ref<!escaping0_, {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<!MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]

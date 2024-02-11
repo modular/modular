@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
+# RUN: %translate-with-packages %s | FileCheck %s
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
 # CHECK: lit.func @"__init__{{.*}}_CI_{{.*}} %fld0: !lit.ref<!Thing, mut {{.*}}> owned_in_mem
