@@ -205,6 +205,8 @@ private:
     auto bytesWrittenOr = const_cast<HTTPRequest &>(request).body(
         (char *)bodyData.data(), bodyData.size());
     EXPECT_FALSE(bytesWrittenOr.isError()) << bytesWrittenOr.getError();
+    if (bytesWrittenOr.isError())
+      return bytesWrittenOr.takeError();
     EXPECT_EQ(*bytesWrittenOr, *request.bodyLen);
 
     auto jsonOr = llvm::json::parse(bodyData);
@@ -334,7 +336,7 @@ TEST(TestEntitlement, Roundtrip) {
                                *entitlementString.begin() + 1);
 
   auto oidOr = ASN1::ObjectID::fromEncoded(oidbuf);
-  EXPECT_FALSE(oidOr.isError()) << oidOr.getError();
+  ASSERT_FALSE(oidOr.isError()) << oidOr.getError();
   ASN1::ObjectID oid = std::move(*oidOr);
 
   // Can't handle non-modular OIDs.
@@ -350,7 +352,7 @@ TEST(TestEntitlement, Roundtrip) {
                                                *entitlementString.begin() + 2,
                                            entitlementString.end()));
 
-  EXPECT_FALSE(entitlementOr.isError()) << entitlementOr.getError();
+  ASSERT_FALSE(entitlementOr.isError()) << entitlementOr.getError();
 }
 
 /// This test is a bit of a catch-all because many of the pertinent functions
@@ -365,7 +367,7 @@ TEST(TestEntitlementStore, Bootstrap) {
   client.noAuthNeeded();
 
   auto storeOr = EntitlementStore::generate(client);
-  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
+  ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
@@ -381,12 +383,12 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
 
   { // Scope to call the entitlement store's destructor so we can `open` it.
     auto storeOr = EntitlementStore::generate(client);
-    EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
+    ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
   auto storeOr = EntitlementStore::open(&client);
-  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
-  EXPECT_TRUE(storeOr->has_value()) << "we just generated this...?";
+  ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
+  ASSERT_TRUE(storeOr->has_value()) << "we just generated this...?";
 
   auto e = (*storeOr)->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
@@ -401,13 +403,13 @@ TEST(TestEntitlementStore, Refresh) {
   client.noAuthNeeded();
 
   auto storeOr = EntitlementStore::generate(client);
-  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
+  ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 
   auto err = storeOr->refresh(client);
-  EXPECT_FALSE(err.isError()) << err.getError();
+  ASSERT_FALSE(err.isError()) << err.getError();
 
   e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
