@@ -370,18 +370,137 @@ def _binary_comparison_op[
 
 
 def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise equality comparison between two symbolic tensors.
+
+    Creates a new op node to compute the equality comparison of two symbol
+    tensor values and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the equality comparison.
+        rhs: The symbol to use as left side of the equality comparison.
+
+    Returns:
+        A symbolic tensor value representing the output of the equality
+        comparison.
+        The result will have:
+            - element type `bool`, true if the left-hand-side value at a given
+                position is equal to the right-hand-side value at that same
+                position, and false otherwise.
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
     return _binary_comparison_op["mo.equal"](lhs, rhs)
 
 
 def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise greater than comparison between two symbolictensors.
+
+    Creates a new op node to compute the greater than comparison of two symbol
+    tensor values and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the greater than comparison.
+        rhs: The symbol to use as left side of the greater than comparison.
+
+    Returns:
+        A symbolic tensor value representing the output of the greater than
+        comparison.
+        The result will have:
+            - element type `bool`, true if the left-hand-side value at
+                a given position is strictly greater than (not equal to)
+                the right-hand-side at that same position, and false otherwise.
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
     return _binary_comparison_op["mo.greater"](lhs, rhs)
 
 
 def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise greater-or-equal comparison between two symbolic tensors.
+
+    Creates a new op node to compute the equality comparison of two symbol
+    tensor values and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the equality comparison.
+        rhs: The symbol to use as left side of the equality comparison.
+
+    Returns:
+        A symbolic tensor value representing the output of the equality
+        comparison.
+        The result will have:
+            - element type `bool`, true if the left-hand-side value at
+                a given position is greater than or equal to the right hand
+                side at that same position, and false otherwise.
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
     return _binary_comparison_op["mo.greater_equal"](lhs, rhs)
 
 
 def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise inequality comparison between two symbolic tensors.
+
+    Creates a new op node to compute the inequality comparison of two symbol
+    tensor values and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the inequality comparison.
+        rhs: The symbol to use as left side of the inequality comparison.
+
+    Returns:
+        A symbolic tensor value representing the output of the inequality
+        comparison.
+        The result will have:
+            - element type `bool`, true if the elements at
+                a given position are _not_ equal and false otherwise.
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
     return _binary_comparison_op["mo.not_equal"](lhs, rhs)
 
 
