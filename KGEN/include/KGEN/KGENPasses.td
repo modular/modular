@@ -995,10 +995,4 @@ def DeadArgumentElimination:
     results whose values are not being used in the program, and update function
     callsites with fewer arguments and return values.
   }];
-
-  let dependentDialects = [
-    "HLCF::HLCFDialect",
-    "KGENDialect",
-    "POP::POPDialect"
-  ];
 }

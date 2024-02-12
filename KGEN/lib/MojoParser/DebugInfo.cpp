@@ -32,15 +32,11 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
   DebugInfo::SourceNameKind kind = {};
   if (auto package = dyn_cast<PackageOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
-    name = package.getSourceNameAttr();
-    if (!name)
-      name = package.getSymNameAttr();
+    name = package.getSymNameAttr();
     kind = DebugInfo::SourceNameKind::Package;
   } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
-    name = fileModule.getSourceNameAttr();
-    if (!name)
-      name = fileModule.getSymNameAttr();
+    name = fileModule.getSymNameAttr();
     kind = DebugInfo::SourceNameKind::Module;
   } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
     // The symbol name is the source name.

@@ -122,9 +122,8 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
 //===----------------------------------------------------------------------===//
 
 void FileModuleOp::build(OpBuilder &builder, OperationState &state,
-                         StringAttr name, StringAttr sourceName) {
+                         StringAttr name) {
   state.addAttribute(getSymNameAttrName(state.name), name);
-  state.addAttribute(getSourceNameAttrName(state.name), sourceName);
   state.addRegion()->push_back(new Block());
 }
 
@@ -139,9 +138,8 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
 //===----------------------------------------------------------------------===//
 
 void PackageOp::build(OpBuilder &builder, OperationState &state,
-                      StringAttr name, StringAttr sourceName) {
+                      StringAttr name) {
   state.addAttribute(getSymNameAttrName(state.name), name);
-  state.addAttribute(getSourceNameAttrName(state.name), sourceName);
   state.addAttribute(getArchivesAttrName(state.name),
                      PackageArchiveArrayAttr::get(name.getContext(), {}));
   state.addRegion()->push_back(new Block());

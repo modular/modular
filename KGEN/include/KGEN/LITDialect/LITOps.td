@@ -279,18 +279,17 @@ def FileModuleOp : LITOp<"file_module", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     /// Return the decl name of the file.
-    StringAttr getDeclName() { return getSourceNameAttr(); }
+    StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName)>,
+    OpBuilder<(ins "StringAttr":$name)>
   ];
   let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
   let skipDefaultBuilders = 1;
@@ -326,7 +325,6 @@ def PackageOp : LITOp<"package", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // The module containing the post-parser IR of this package when it was
     // compiled.
@@ -340,11 +338,11 @@ def PackageOp : LITOp<"package", [
 
   let extraClassDeclaration = [{
     /// Return the decl name of the package.
-    StringAttr getDeclName() { return getSourceNameAttr(); }
+    StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName)>,
+    OpBuilder<(ins "StringAttr":$name)>
   ];
   let assemblyFormat = [{
     $sym_name `` custom<PackageArchiveArray>($archives) attr-dict-with-keyword

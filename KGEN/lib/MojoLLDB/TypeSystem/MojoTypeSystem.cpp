@@ -958,7 +958,7 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 
   auto name = StringAttr::get(sharedState.getContext(), moduleName);
   Operation *fileOp = parentDecl.getDeclEndBuilder().create<LIT::FileModuleOp>(
-      sharedState.translateLocation(parentDecl.getLoc()), name, name);
+      sharedState.translateLocation(parentDecl.getLoc()), name);
   return &sharedState.declResolver->addFullyResolvedDecl(
       fileOp, name, lexer.getToken().getLoc(), &parentDecl);
 }
