@@ -22,16 +22,11 @@ set(KGEN_DEPENDENCIES
   ${MODULAR_SOURCE_DIR}/Support/include/Support/Compiler
   ${MODULAR_SOURCE_DIR}/Support/include/Support/DebugInfoDialect
   ${MODULAR_SOURCE_DIR}/Support/include/KGEN/HLCFDialect
-  ${MODULAR_SOURCE_DIR}/Support/include/Support/Interpreter
   ${MODULAR_SOURCE_DIR}/Support/include/Support/MDialect
 
   ${MODULAR_SOURCE_DIR}/Support/lib/Compiler
   ${MODULAR_SOURCE_DIR}/Support/lib/DebugInfoDialect
-  ${MODULAR_SOURCE_DIR}/Support/lib/Interpreter
   ${MODULAR_SOURCE_DIR}/Support/lib/MDialect
-
-  # Changes to the builtin module will change the mojo ir being generated.
-  ${MODULAR_SOURCE_DIR}/Kernels/mojo/stdlib/builtin
 
   ${MODULAR_SOURCE_DIR}/third-party/llvm-project
 )
