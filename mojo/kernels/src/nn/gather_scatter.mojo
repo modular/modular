@@ -19,7 +19,7 @@ from algorithm.functional import (
     _async_elementwise_impl,
     tile,
 )
-from memory import memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation, parallel_memcpy
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from .Reshape import reshape
 from runtime.llcl import Runtime
@@ -1048,8 +1048,8 @@ fn scatter_elements[
 
     let axis = _axis if _axis >= 0 else _axis + rank
 
-    # TODO: multithread
-    memcpy(output.flatten(), input.flatten())
+    # Do serial or parallel memcpy depending on output size.
+    parallel_memcpy[input_type](output.data, input.data, output.size())
 
     let input_ax_dim = input.get_shape()[axis]
 
