@@ -36,10 +36,11 @@ def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
     The `#lit.arg_param_list` attribute contains metadata about an argument or
-    parameter list of a function, including names, passing kinds, and default
-    values. The positional default values correspond to the trailing positional
-    (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
-    values similarly correspond to the trailing keyword-only args/params.
+    parameter list of a function, including names, passing kinds, default
+    values, and information about variadic arguments. The positional default
+    values correspond to the trailing positional (i.e. pos-only or pos-or-kw)
+    args/params, and the keyword-only default values similarly correspond to the
+    trailing keyword-only args/params.
 
     Example:
 
@@ -47,12 +48,16 @@ def LIT_ArgParamListAttr : LITAttr<"ArgParamList", "arg_param_list"> {
     // Metadata specifying arg/param names "a", "b", "c", "d" in order; "a" is
     // positional-only, "b" is positional-or-keyword, and "c" and "d" are
     // keyword-only. The last positional arg/param ("b") has a default value of
-    // `4.2`, and the last keyword-only arg/param ("d") has a default value of 1.
+    // `4.2`, and the last keyword-only arg/param ("d") has a default value of
+    // 1. The second argument is a (positional) variadic pack, and the last
+    // argument is a variadic keyword argument
     #lit.arg_param_list<
       ["a", "b", "c", "d"],
       [pos, pos_or_kw, kw, kw],
       [4.2 : f32],
-      [1: i64]
+      [1: i64],
+      [1],
+      [3]
     >
     ```
   }];
@@ -107,16 +112,17 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     Example:
 
     ```mlir
-    // Metadata specifying argument #0 is called "someRef", argument #1 is
-    // called "v", they have positional-only and keyword-only passing kinds, and
-    // default values of `13` and `17`, respectively. Moveover, parameter #0 is
+    // Metadata specifying that: argument #0 is called "someRef" is
+    // positional-only and a default value of `13`; argument #1 and #2 are keyword-only
+    // and are called "v" and "kwargs", the former has a default value of `17`,
+    // and the latter is variadic (i.e. `**kwargs`). Moveover, parameter #0 is
     // called "someParam", parameter #1 is called "paramWithDefault", they have
     // positional-only and positional-or-keyword passing kinds respectively, and
-    // the latter has the default value `3.14`. The list keyword-only default
+    // the latter has the default value `3.14`. The list of keyword-only default
     // parameter values is empty (since there are no keyword-only parameters).
     // The signature has two implicit lifetime declarations.
     #lit.fn_metadata<
-      <["someRef", "v"], [pos, kw], [13 : index], [17 : i64]>,
+      <["someRef", "v", "kwargs"], [pos, kw], [13 : index], [17 : i64]>,
       <["someParam", "paramWithDefault"], [pos, pos_or_kw], [3.14: f32], []>,
       2
     >
