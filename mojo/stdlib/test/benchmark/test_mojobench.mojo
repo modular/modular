@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: mojo %s | FileCheck %s
 
 from mojobench import Bencher, MojoBench, BenchId, MojoBenchConfig
 
@@ -26,7 +27,7 @@ fn bench2(inout b: Bencher, mystr: String):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(out_file=Path("./tmp_bench_results")))
+    var m = MojoBench(MojoBenchConfig(num_repetitions=2))
     m.bench_function[bench1](BenchId("bench1"))
 
     var inputs = DynamicVector[String]()
@@ -35,4 +36,10 @@ def main():
     for i in range(len(inputs)):
         m.bench_with_input[String, bench2](BenchId("bench2", str(i)), inputs[i])
 
+    # CHECK: bench1
+    # CHECK-NEXT: bench1
+    # CHECK-NEXT: bench2/0
+    # CHECK-NEXT: bench2/0
+    # CHECK-NEXT: bench2/1
+    # CHECK-NEXT: bench2/1
     m.dump_report()
