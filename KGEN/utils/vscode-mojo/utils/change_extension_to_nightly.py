@@ -10,6 +10,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import argparse
 import datetime
 import json
 import shutil
@@ -19,6 +20,17 @@ extension_dir = Path(__file__).parent.parent
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--version",
+        type=str,
+        help="The version to use for the nightly build.",
+        # The nightly version uses calver. For example, a release dated
+        # Feb 3 2024 1AM would be v2024.2.301.
+        default=datetime.datetime.utcnow().strftime("%Y.%-m.%-d%H"),
+    )
+    args = parser.parse_args()
+
     # Overwrite the icon with the nightly icon.
     shutil.copy(
         extension_dir / "nightly-icon.png",
@@ -34,9 +46,7 @@ def main():
         package["name"] = "vscode-mojo-nightly"
         package["displayName"] = "Mojo 🔥 (nightly)"
         package["description"] = "Mojo language support (nightly)"
-
-        # The nightly version uses calver YYYY.MM.DDHH, update it.
-        package["version"] = datetime.datetime.now().strftime("%Y.%-m.%-d%H")
+        package["version"] = args.version
 
         # Write the updated package.json file.
         with open(package_json, "w") as f:
