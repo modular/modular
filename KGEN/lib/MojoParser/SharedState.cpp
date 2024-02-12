@@ -1295,8 +1295,7 @@ SharedState::ModuleState &SharedState::createModuleState(
 
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  Operation *fileOp =
-      moduleBuilder.create<FileModuleOp>(loc, declName, declName);
+  Operation *fileOp = moduleBuilder.create<FileModuleOp>(loc, declName);
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
@@ -1348,7 +1347,7 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
                                 ModuleState &parentState, FileLineColLoc loc) {
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  auto packageOp = moduleBuilder.create<PackageOp>(loc, declName, declName);
+  auto packageOp = moduleBuilder.create<PackageOp>(loc, declName);
   ASTDecl &decl =
       declResolver->addDecl(packageOp, SMLoc(), declName, parentState.decl,
                             parentState.decl->getCursor(),

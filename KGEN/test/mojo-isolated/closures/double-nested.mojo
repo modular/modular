@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %translate-with-packages %s | FileCheck %s
 
-# CHECK: lit.file_module @"[[F:.*]]" attributes
+# CHECK: lit.file_module @"[[F:.*]]"
 
 # CHECK-COUNT-2: lit.struct.decl @"`_CI_
 

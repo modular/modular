@@ -44,9 +44,7 @@ from test_package import *
 # CHECK:  lit.call @test_package::@__init__::@"method_defined_in_init()"()
 
 # CHECK-LABEL: lit.package @test_package
-# CHECK-SAME: sourceName = "test_package"
 # CHECK:  lit.file_module @module
-# CHECK-SAME: sourceName = "module"
 # CHECK:    lit.func @"function()"
 # CHECK:      lit.func @"call_nested_function()"
 # CHECK:        lit.call @test_package::@test_nested_package::@module::@"nested_function()"

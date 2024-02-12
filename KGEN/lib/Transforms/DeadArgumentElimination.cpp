@@ -5,11 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallGraphUtils.h"
-#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
