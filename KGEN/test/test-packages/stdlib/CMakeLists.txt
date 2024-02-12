@@ -4,6 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_mojo_package(MojoParserStdlib PRIVATE STDLIB
+add_mojo_package(MojoParserStdlib PRIVATE
         builtin/__init__
         builtin/stubs)
