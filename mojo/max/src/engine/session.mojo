@@ -36,10 +36,9 @@ struct _InferenceSessionImpl(Movable):
         inout self,
         lib_path: String,
         device: _Device,
-        num_threads: Optional[Int] = None,
     ):
         self.engine = _EngineImpl(lib_path)
-        let config = RuntimeConfig(self.engine.lib, device, num_threads)
+        let config = RuntimeConfig(self.engine.lib, device)
         self.context = RuntimeContext(config ^, self.engine.lib)
         self.ref_count = 1
 
@@ -376,19 +375,10 @@ struct LoadOptions(CollectionElement):
 
 @value
 struct SessionOptions:
-    var _num_threads: Optional[Int]
     var _device: _Device
 
     fn __init__(inout self):
-        self = Self(None, _Device.CPU)
-
-    fn set_num_threads(inout self, num_threads: Int):
-        """Configure number of threads used by engine's threadpool.
-
-        Args:
-            num_threads: Number of threads to use.
-        """
-        self._num_threads = num_threads
+        self = Self(_Device.CPU)
 
     fn _set_device(inout self, device: _Device):
         self._device = device
@@ -401,21 +391,16 @@ struct InferenceSession:
 
     fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
         let path = _get_engine_path()
-        let self = Self._allocateAndInit(
-            path, options._device, options._num_threads
-        )
+        let self = Self._allocateAndInit(path, options._device)
         return Self {ptr: self}
 
     @staticmethod
     fn _allocateAndInit(
         lib_path: String,
         device: _Device,
-        num_threads: Optional[Int],
     ) raises -> AnyPointer[_InferenceSessionImpl]:
         let ptr = AnyPointer[_InferenceSessionImpl].alloc(1)
-        __get_address_as_uninit_lvalue(ptr.value).__init__(
-            lib_path, device, num_threads
-        )
+        __get_address_as_uninit_lvalue(ptr.value).__init__(lib_path, device)
         return ptr
 
     fn copy(self) -> Self:

@@ -35,12 +35,9 @@ struct CRuntimeConfig:
     var ptr: DTypePointer[DType.invalid]
 
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
-    alias SetNumThreadsFnName = "M_setNumThreads"
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
     alias SetDeviceFnName = "M_setDevice"
-
-    fn set_num_threads(self, lib: DLHandle, num_threads: Int):
-        call_dylib_func(lib, Self.SetNumThreadsFnName, self.ptr, num_threads)
+    alias SetUseExistingRuntimeFnName = "M_setUseExistingRuntime"
 
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
@@ -54,6 +51,9 @@ struct CRuntimeConfig:
         self, borrowed lib: DLHandle, allocator_type: AllocatorType
     ):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
+
+    fn set_use_existing_runtime(self, borrowed lib: DLHandle):
+        call_dylib_func(lib, Self.SetUseExistingRuntimeFnName, self)
 
 
 @value
@@ -86,14 +86,15 @@ struct RuntimeConfig:
         inout self,
         lib: DLHandle,
         device: _Device,
-        num_threads: Optional[Int] = None,
         allocator_type: AllocatorType = AllocatorType.CACHING,
     ):
         self.ptr = call_dylib_func[CRuntimeConfig](
             lib, Self.NewRuntimeConfigFnName
         )
-        if num_threads:
-            self.ptr.set_num_threads(lib, num_threads.value())
+        # Mojo already has an existing runtime, regardless of the entrypoint.
+        # Set the runtime config to reuse this existing runtime, rather than
+        # trying to recreate a new one.
+        self.ptr.set_use_existing_runtime(lib)
         self.lib = lib
 
         if allocator_type != AllocatorType.CACHING:
