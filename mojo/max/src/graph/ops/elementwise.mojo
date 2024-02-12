@@ -3,8 +3,44 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Elementwise operations on graph tensor `Symbol`s.
 
-from math import max
+Operations in this library are split into two main kinds:
+
+*Unary operations*
+
+Elementwise-unary-operations all have the following properties:
+- They operate on a single symbolic tensor value of any shape
+- Their output is a single symbolic tensor value with the same shape as their
+    input
+- The computation they represent will be itemwise-independent, in other words
+    the output value in any position of the output tensor at computation time
+    will depend only on the input value at that same position, and no others.
+
+*Binary operations*
+
+Elementwise-binary-operations all have the following properties:
+- They operate on two symbolic tensor values, a `left` value and a `right`
+    value.
+- The input tensor types must be compatible according to the
+    elementwise_broadcast()` broadcasting rules. `broadcasting` documentation
+    for more details.
+- If the input tensor types have different element types, they will each
+    be "promoted" to some dtype according to `type_promotion.promote()`
+    _before_ executing the operation. This may involve a cast that changes
+    the representation (including precision) of the data values.
+    See the `type_promotion` documentation for more details.
+- Their output is a single symbolic tensor value with
+    - dtype depending on the op and the _promoted_ dtype, ie. `promote(lhs, rhs)`
+    - shape equal to the result of `elementwise_broadcast(lhs, rhs)`
+- The computation they represent will be itemwise-independent, in other words
+    _after broadcasting_ the input values to the same shape, the output value in
+    any position of the output tensor at computation time will depend only on
+    the input position at the two broadcast input values at that same
+    position, and no others.
+"""
+
+from math import max as math_max
 
 from max.graph.type import Dim, ElementType, MOTensor
 from max.graph.type_promotion import promote
@@ -25,7 +61,7 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 
     let lhs_rank = lhs_type.rank()
     let rhs_rank = rhs_type.rank()
-    let bcast_rank = max(lhs_rank, rhs_rank)
+    let bcast_rank = math_max(lhs_rank, rhs_rank)
 
     let lhs_shape = shape_of(lhs)
     let rhs_shape = shape_of(rhs)
@@ -77,6 +113,254 @@ def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
     return lhs.graph().op(op_name, operands, operands[0].tensor_type())
 
 
+def add(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Adds two symbolic tensors.
+
+    Creates a new op node to compute the addition of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the addition.
+        rhs: The symbol to use as left side of the addition.
+
+    Returns:
+        A symbolic tensor value representing the output of the addition.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.add"](lhs, rhs)
+
+
+def div(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Divides two symbolic tensors.
+
+    Creates a new op node to compute the division of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the division.
+        rhs: The symbol to use as left side of the division.
+
+    Returns:
+        A symbolic tensor value representing the output of the division.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.div"](lhs, rhs)
+
+
+def max(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise maximum of two symbolic tensors.
+
+    Creates a new op node to compute the maximum of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the maximum.
+        rhs: The symbol to use as left side of the maximum.
+
+    Returns:
+        A symbolic tensor value representing the output of the maximum.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.max"](lhs, rhs)
+
+
+def min(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise minimum of two symbolic tensors.
+
+    Creates a new op node to compute the minimum of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the minimum.
+        rhs: The symbol to use as left side of the minimum.
+
+    Returns:
+        A symbolic tensor value representing the output of the minimum.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.min"](lhs, rhs)
+
+
+def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise maximum of two symbolic tensors.
+
+    Creates a new op node to compute the maximum of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the maximum.
+        rhs: The symbol to use as left side of the maximum.
+
+    Returns:
+        A symbolic tensor value representing the output of the maximum.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.mod"](lhs, rhs)
+
+
+def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise multiplication of two symbolic tensors.
+
+    Creates a new op node to compute the multiplication of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the multiplication.
+        rhs: The symbol to use as left side of the multiplication.
+
+    Returns:
+        A symbolic tensor value representing the output of the multiplication.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.mul"](lhs, rhs)
+
+
+def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise exponentiation of two symbolic tensors.
+
+    Creates a new op node to compute the exponentiation of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the exponentiation.
+        rhs: The symbol to use as left side of the exponentiation.
+
+    Returns:
+        A symbolic tensor value representing the output of the exponentiation.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.pow"](lhs, rhs)
+
+
+def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the elementwise subtraction of two symbolic tensors.
+
+    Creates a new op node to compute the subtraction of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
+
+    - If `lhs` and `rhs` have different dtypes, they will be promoted
+        according to `type_promotion` before the operation.
+    - If `lhs` and `rhs` have different shapes, they will be broadcast
+        to the same shape according to `elementwise_broadcast()` before
+        the operation.
+
+    Args:
+        lhs: The symbol to use as left side of the subtraction.
+        rhs: The symbol to use as left side of the subtraction.
+
+    Returns:
+        A symbolic tensor value representing the output of the subtraction.
+        The result will have:
+            - the same dtype as the type-promotion of the two input dtypes
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        - If the input values' shapes are not compatible for broadcasting.
+            See `elementwise_broadcast()` for more.
+        - If one of the input values has an unsupported dtype.
+        - If the two symbols are parts of different graphs.
+    """
+    return _binary_op["mo.sub"](lhs, rhs)
+
+
 def _binary_comparison_op[
     op_name: StringLiteral
 ](lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -85,25 +369,20 @@ def _binary_comparison_op[
     return lhs.graph().op(op_name, operands, result_type)
 
 
-alias add = _binary_op["mo.add"]
+def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    return _binary_comparison_op["mo.equal"](lhs, rhs)
 
 
-def div(lhs: Symbol, rhs: Symbol) -> Symbol:
-    # div requires its operands to be the same dtype
-    return _binary_op["mo.div"](lhs, cast(rhs, lhs.tensor_type().dtype))
+def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
+    return _binary_comparison_op["mo.greater"](lhs, rhs)
 
 
-# alias max = _binary_op["mo.max"]  # TODO: namespace problem
-alias min = _binary_op["mo.min"]
-alias mod = _binary_op["mo.mod"]
-alias mul = _binary_op["mo.mul"]
-alias pow = _binary_op["mo.pow"]
-alias sub = _binary_op["mo.sub"]
+def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    return _binary_comparison_op["mo.greater_equal"](lhs, rhs)
 
-alias equal = _binary_comparison_op["mo.equal"]
-alias greater = _binary_comparison_op["mo.greater"]
-alias greater_equal = _binary_comparison_op["mo.greater_equal"]
-alias not_equal = _binary_comparison_op["mo.not_equal"]
+
+def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
+    return _binary_comparison_op["mo.not_equal"](lhs, rhs)
 
 
 # ===----------------------------------------------------------------------=== #
