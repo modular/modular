@@ -17,7 +17,7 @@ from algorithm import (
     unswitch,
     vectorize,
 )
-from memory import memcpy
+from memory import memcpy, parallel_memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
@@ -482,38 +482,6 @@ fn _convert_transpose_perms_to_static_int_tuple[
     for j in range(rank):
         simplified_perms[j] = perms.load(j)[0].value
     return simplified_perms
-
-
-# ===------------------------------------------------------------------=== #
-# Functional additions
-# ===------------------------------------------------------------------=== #
-# TODO: Move to Memory.mojo
-fn parallel_memcpy[
-    type: DType
-](
-    dst_ptr: DTypePointer[type],
-    src_ptr: DTypePointer[type],
-    size: Int,
-    task_size: Int,
-    num_tasks: Int,
-):
-    @parameter
-    @always_inline
-    fn _parallel_copy(thread_id: Int):
-        let begin = task_size * thread_id
-        let end = min(
-            task_size * (thread_id + 1),
-            size,
-        )
-        if begin >= size:
-            return
-        let to_copy = end - begin
-        if to_copy <= 0:
-            return
-
-        memcpy(dst_ptr.offset(begin), src_ptr.offset(begin), to_copy)
-
-    sync_parallelize[_parallel_copy](num_tasks)
 
 
 # ===------------------------------------------------------------------=== #
