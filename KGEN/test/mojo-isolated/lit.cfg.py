@@ -42,7 +42,11 @@ config.substitutions.append(
     ("%translate-with-packages", translate_with_prebuilt_packages)
 )
 
-tools = ["kgen-translate"]
+tools = [
+    "kgen-translate",
+    "kgen-opt",
+    "hash-mlir",
+]
 
 config.environment["MODULAR_HOME"] = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-isolated"

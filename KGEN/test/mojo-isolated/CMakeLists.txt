@@ -17,5 +17,6 @@ add_modular_testsuite(check-mojo-isolated
   TOP_LEVEL_CHECK check-mojo-parser
 
   TOOLS
+  kgen-opt
   kgen-translate
 )

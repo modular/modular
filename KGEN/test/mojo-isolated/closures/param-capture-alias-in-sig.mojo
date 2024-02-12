@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: DISABLED
 # RUN: %translate-with-packages %s | kgen-opt -verify-parameters | FileCheck %s
 
 
