@@ -389,7 +389,12 @@ public:
       return uriOr.takeError();
     ownedRuntime = ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
         optExistingRuntime, []() {
-          return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
+          // FIXME: This will be removed in a future commit. Currently, this
+          // may or may not create a nested runtime. Since the first pass of
+          // this change causes all tools to explicitly create a runtime, this
+          // must be changed to accept this. It will then be updated to refer
+          // to the runtime that is guaranteed to exist.
+          return LLCL::createNestedRuntime(LLCL::RuntimeOptions().forDebug())
               .release();
         });
     auto backendList =
