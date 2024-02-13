@@ -316,7 +316,9 @@ MojoTypeSystem::GetPointeeType(lldb::opaque_compiler_type_t type) {
   if (!type)
     return {};
   MojoASTTypeRef astType(type);
-  return createCompilerType(astType.getPointerElementType());
+  if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType()))
+    return createCompilerType(ptrType.getElementType());
+  return {};
 }
 
 lldb_private::CompilerType
@@ -603,8 +605,8 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   MojoASTTypeRef astType(type);
 
   // Pointer only has one child, so just return the unwrapped pointer type
-  if (isa<KGEN::PointerType>(astType)) {
-    MojoASTTypeRef eltType(astType.getPointerElementType());
+  if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType())) {
+    MojoASTTypeRef eltType(ptrType.getElementType());
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(eltType)) {
       childByteSize = layout->getByteSize();
@@ -616,7 +618,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
         childName.assign(1, '*');
         childName += parentName;
       }
-      return createCompilerType(astType.getPointerElementType());
+      return createCompilerType(eltType);
     }
     return {};
   }

@@ -238,10 +238,6 @@ std::string MojoASTTypeRef::getAsString() const {
   return type.getAsString(/*forDiag=*/true);
 }
 
-MojoASTTypeRef MojoASTTypeRef::getPointerElementType() const {
-  return type.getPointerElementType();
-}
-
 /// If the current type is a reference, return the type of the pointee. This
 /// aborts if the current type isn't a reference.
 MojoASTTypeRef MojoASTTypeRef::getReferenceElementType() const {

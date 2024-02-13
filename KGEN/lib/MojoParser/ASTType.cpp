@@ -276,12 +276,6 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   return shared.typeHasMember(*typeDecl, "__moveinit__", value.expr->getLoc());
 }
 
-/// Given a PointerType, return the element as an ASTType.  This aborts
-/// if the current type isn't a pointer.
-ASTType ASTType::getPointerElementType() const {
-  return ASTType(cast<PointerType>(mlirType).getElementType());
-}
-
 /// Given a reference, return the element as an ASTType.  This aborts
 /// if the current type isn't a reference.
 ///
