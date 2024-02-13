@@ -682,23 +682,117 @@ def log1p(value: Symbol) -> Symbol:
 
 
 def logsoftmax(value: Symbol) -> Symbol:
+    """Computes the elementwise logsoftmax of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise logsoftmax of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.logsoftmax`](https://docs.staging.modular.com/engine/reference/mlir/mo#mologsoftmax-mmologsoftmaxop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the logsoftmax
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
     return _unary_op["mo.logsoftmax"](value)
 
 
 def relu(value: Symbol) -> Symbol:
+    """Computes the elementwise relu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise relu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.relu`](https://docs.staging.modular.com/engine/reference/mlir/mo#morelu-mmoreluop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the relu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
     return _unary_op["mo.relu"](value)
 
 
 def softmax(value: Symbol) -> Symbol:
+    """Computes the elementwise softmax of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise softmax of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.softmax`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosoftmax-mmosoftmaxop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the softmax
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
     return _unary_op["mo.softmax"](value)
 
 
 def sigmoid(value: Symbol) -> Symbol:
+    """Computes the elementwise sigmoid of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise sigmoid of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.sigmoid`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosigmoid-mmosigmoidop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the sigmoid
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
     return _unary_op["mo.sigmoid"](value)
 
 
-def silu(v: Symbol) -> Symbol:
-    return mul(v, sigmoid(v))
+def silu(value: Symbol) -> Symbol:
+    """Computes the elementwise silu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise silu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    `silu` is defined as `silu(x) = x * [sigmoid](https://docs.staging.modular.com/engine/reference/mojo/graph/ops/elementwise.html#sigmoid)(x)`.
+
+    Args:
+        value: The symbolic tensor to use as the input to the silu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return mul(value, sigmoid(value))
 
 
 alias cos = _unary_float_op["mo.cos"]
