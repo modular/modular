@@ -220,3 +220,51 @@ fn call_dylib_func[
     return lib.get_function[
         FourArgCallable[ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty]
     ](name)(arg1, arg2, arg3, arg4)
+
+
+struct OwningVector[T: Movable](Sized):
+    var ptr: AnyPointer[T]
+    var size: Int
+
+    alias initial_capacity = 5
+    var capacity: Int
+
+    fn __init__(inout self):
+        let ptr = AnyPointer[T].alloc(Self.initial_capacity)
+        self.ptr = ptr
+        self.size = 0
+        self.capacity = Self.initial_capacity
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ptr = existing.ptr
+        self.size = existing.size
+        self.capacity = existing.capacity
+
+    fn emplace_back(inout self, owned value: T):
+        if self.size < self.capacity:
+            (self.ptr + self.size).emplace_value(value ^)
+            self.size += 1
+            return
+
+        self.capacity = self.capacity * 2
+        let new_ptr = AnyPointer[T].alloc(self.capacity)
+        for i in range(self.size):
+            (new_ptr + i).emplace_value((self.ptr + i).take_value())
+        self.ptr.free()
+        self.ptr = new_ptr
+        self.emplace_back(value ^)
+
+    fn get(self, idx: Int) raises -> AnyPointer[T]:
+        if idx >= self.size:
+            raise "requested index(" + String(
+                idx
+            ) + ") exceeds size of vector(" + self.size + ")"
+        return self.ptr + idx
+
+    fn __len__(self) -> Int:
+        return self.size
+
+    fn __del__(owned self):
+        for i in range(self.size):
+            _ = (self.ptr + i).take_value()
+        self.ptr.free()
