@@ -243,9 +243,6 @@ public:
   /// package.
   static bool isModuleOrPackagePath(const std::filesystem::path &path);
 
-  /// Cache the state of any modules that we parsed.
-  void cacheParsedModules();
-
   /// Resolve a declaration that originated from bytecode to the given
   /// resolvedness.
   LogicalResult resolveDeclFromBytecode(ASTDecl &decl,
@@ -446,8 +443,7 @@ private:
   /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
-                                 ModuleState &parentState, FileLineColLoc loc,
-                                 bool enableCaching);
+                                 ModuleState &parentState, FileLineColLoc loc);
 
   /// Create a new module state for a package with the given name, location,
   /// and body.
@@ -463,14 +459,6 @@ private:
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
                                       ASTDecl &errorContext,
                                       const Twine &errorMsg);
-
-  /// Resolve the dependencies of the given module.
-  void resolveModuleDependencies(ModuleState &module, ASTDecl *parentDecl,
-                                 StringRef moduleBuffer);
-
-  /// Attempt to get a cached version of the given modules. If loading from
-  /// the cache fails, the modules will be processed as normal.
-  void loadModulesFromCache(MutableArrayRef<ModuleState *> moduleStates);
 
   /// Implicitly import the builtin modules into the given module decl.
   void importBuiltinModules(ASTDecl &moduleDecl);

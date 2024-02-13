@@ -204,13 +204,6 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
   impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
 
-  // Now that resolution is finished, cache the state of modules we have
-  // parsed.
-  // TODO: We should be able to cache even in the presence of warnings and
-  // errors. We can store the diagnostics and replay on cache load.
-  if (!impl->sharedState.diags.isDiagnosticEmitted())
-    impl->sharedState.cacheParsedModules();
-
   return MojoASTDeclRef(moduleDecl);
 }
 
@@ -229,13 +222,6 @@ MojoParserContext::parseFileOrPackage(const std::filesystem::path &path) {
   if (!moduleDecl)
     return nullptr;
   impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
-
-  // Now that resolution is finished, cache the state of modules we have
-  // parsed.
-  // TODO: We should be able to cache even in the presence of warnings and
-  // errors. We can store the diagnostics and replay on cache load.
-  if (!impl->sharedState.diags.isDiagnosticEmitted())
-    impl->sharedState.cacheParsedModules();
 
   return MojoASTDeclRef(moduleDecl);
 }

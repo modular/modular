@@ -84,8 +84,8 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
 }
 
 struct SharedState::Impl {
-  Impl(SharedState &shared, ParserConfig::CachingLevel moduleCachingLevel)
-      : sourceNames(shared), moduleCachingLevel(moduleCachingLevel),
+  Impl(SharedState &shared)
+      : sourceNames(shared),
         bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false) {
   }
   virtual ~Impl() = default;
@@ -142,12 +142,6 @@ struct SharedState::Impl {
   /// importing a module whose file is already in the source manager.
   DenseMap<StringRef, int> existingSourceMgrBuffers;
 
-  /// The cache used to store cached transformations within the parser.
-  RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
-
-  /// The level of module caching enabled for the parser.
-  ParserConfig::CachingLevel moduleCachingLevel;
-
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
 
@@ -190,7 +184,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       parserListener(config.parserListener), runtime(config.runtime),
       parsingStandardLibrary(config.parsingStandardLibrary),
       useBuiltinModule(config.useBuiltinModule),
-      impl(std::make_unique<Impl>(*this, config.moduleCachingLevel)) {
+      impl(std::make_unique<Impl>(*this)) {
   if (!options.searchPaths.empty()) {
     SmallVector<StringRef> paths;
     StringRef(options.searchPaths)
@@ -227,18 +221,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
         options.debugInfoLanguage,
         diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Mojo",
         /*isOptimized=*/true, options.getDIEmissionKind());
-  }
-
-  // Create a cache for use by the parser.
-  if (config.moduleCachingLevel != ParserConfig::kCacheNone) {
-    auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
-        runtime, (std::filesystem::path(".mojo_cache") / "mojo").string(),
-        KGEN_VERSION_STRING);
-    if (failed(transformCacheBackendOr))
-      return;
-    impl->transformCache =
-        RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
-            transformCacheBackendOr.takeValue());
   }
 }
 
@@ -410,12 +392,9 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
 //===----------------------------------------------------------------------===//
 
 struct SharedState::ModuleState {
-  ModuleState(ASTDecl *decl = nullptr) : decl(decl) { contentHash.fill(0); }
-  ModuleState(ASTDecl *decl, StringRef sourcePath, bool enableCaching = false)
-      : decl(decl), sourcePath(sourcePath.str()),
-        canCacheModule(enableCaching) {
-    contentHash.fill(0);
-  }
+  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
+  ModuleState(ASTDecl *decl, StringRef sourcePath)
+      : decl(decl), sourcePath(sourcePath.str()) {}
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
     // unmaterialized operations. If these were neded, they would have been
@@ -439,41 +418,6 @@ struct SharedState::ModuleState {
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath;
-
-  //===--------------------------------------------------------------------===//
-  // File Module Specific State
-  //===--------------------------------------------------------------------===//
-
-  /// Build the cache key for this module.
-  WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
-    auto keyBuf = WriteableBuffer::get();
-
-    // Add the full module name to the cache key, this ensures proper caching
-    // when the same module is in different packages.
-    std::string moduleName = getFlattenedSymbolName(
-        getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
-    keyBuf->write(moduleName.data(), moduleName.size());
-
-    // Add the module contents to the cache key.
-    keyBuf->write((const char *)contentHash.data(), contentHash.size());
-
-    // Add the module dependencies to the cache key.
-    for (ModuleState *dep : dependencies) {
-      keyBuf->write((const char *)dep->contentHash.data(),
-                    dep->contentHash.size());
-    }
-
-    // Add the compilation options to the cache key.
-    options.print(*keyBuf);
-    return keyBuf;
-  }
-
-  /// A hash associated with the modules contents.
-  llvm::BLAKE3Result<> contentHash;
-  /// The set of other modules that this module depends on.
-  llvm::SmallSetVector<ModuleState *, 4> dependencies;
-  /// A flag indicating if this module can be cached.
-  bool canCacheModule = false;
 
   //===--------------------------------------------------------------------===//
   // Package Specific State
@@ -890,20 +834,13 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     impl->includedFiles.push_back(fullPath);
   }
 
-  // Enable caching for the module if caching is enable and it's not the main
-  // file, or if we're caching all modules.
-  bool enableCaching = impl->moduleCachingLevel != ParserConfig::kCacheNone;
-  if (impl->moduleCachingLevel == ParserConfig::kCacheImports)
-    enableCaching = fileID != getSourceMgr().getMainFileID();
-
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
   // do so.
   const llvm::MemoryBuffer *moduleBuffer =
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
       moduleBuffer->getBufferIdentifier(), /*line=*/0, /*column=*/0);
-  return createModuleState(declName, moduleBuffer, *parentState, fileLoc,
-                           enableCaching);
+  return createModuleState(declName, moduleBuffer, *parentState, fileLoc);
 }
 
 SharedState::ModuleState &
@@ -1136,84 +1073,6 @@ ASTType SharedState::getBuiltinTupleInstantiation(ASTDecl &context,
   return BindTypeAttr::get(PValue(tupleType), packAttr);
 }
 
-void SharedState::loadModulesFromCache(
-    MutableArrayRef<ModuleState *> moduleStates) {
-  // If we don't have a valid cache, we can't do anything.
-  if (!impl->transformCache || moduleStates.empty())
-    return;
-
-  // Check the cache results for the various modules.
-  for (ModuleState *moduleState : moduleStates) {
-    if (!moduleState->canCacheModule)
-      continue;
-    // If the module has already been resolved in any form, we shouldn't
-    // try reading it from the cache.
-    if (moduleState->decl->resolvedness > DeclResolvedness::unparsed)
-      continue;
-    WriteableBufferRef keyBuf = moduleState->buildCacheKey(options);
-
-    auto out = AsyncValueRef<Chain>::allocate(runtime);
-    auto f = impl->transformCache->find(
-        std::move(keyBuf), LLCL::MLIRLocationDecoder::getEncodedLocation(
-                               moduleState->decl->getIfOperation()->getLoc()));
-    std::move(f).andThenSync(
-        [this, moduleState, out = out.copy()](
-            AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
-          // If the module isn't in the cache, process it as normal. We will
-          // attempt to cache it later instead of now, given that we can't
-          // reliably resolve everything in the module right now.
-          if (f.isError())
-            return std::move(out).setToError(f.takeDiagnostic());
-          if (!f->has_value())
-            return std::move(out).emplace();
-          ASTDecl &moduleDecl = *moduleState->decl;
-          FileModuleOp moduleOp = cast<FileModuleOp>(moduleDecl);
-          CompilerTimeTraceScope fullTimeScope(
-              ("loadModuleFromCache: " + moduleOp.getName()).str());
-
-          // Read the cached IR.
-          Block b;
-          {
-            CompilerTimeTraceScope timeScope("readBytecodeFile");
-            auto sourceMgr = std::make_shared<llvm::SourceMgr>();
-            sourceMgr->AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(
-                                              (**f)->getBuffer(),
-                                              /*BufferName=*/"",
-                                              /*RequiresNullTerminator=*/false),
-                                          SMLoc());
-            const llvm::MemoryBuffer *memoryBuf =
-                sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
-            moduleState->bytecodeReader =
-                std::make_unique<mlir::BytecodeReader>(
-                    memoryBuf->getMemBufferRef(), impl->bytecodeParserContext,
-                    /*lazyLoad=*/true, sourceMgr);
-
-            // Read in the cached bytecode. If we fail, bail and try processing
-            // the IR as normal.
-            if (failed(moduleState->bytecodeReader->readTopLevel(&b))) {
-              return std::move(out).setToError(LLCL::getMLIRDiagnostic(
-                  "failed to read module bytecode", moduleOp.getLoc()));
-            }
-          }
-
-          // Replace the module with the cached IR.
-          FileModuleOp cachedModuleOp = cast<FileModuleOp>(b.front());
-          cachedModuleOp->moveAfter(moduleOp);
-          moduleDecl.setIRValue(DeclIRValue(cachedModuleOp));
-          SymbolTable &symtab =
-              impl->symbolTables.getSymbolTable(moduleOp->getParentOp());
-          symtab.erase(moduleOp);
-          symtab.insert(cachedModuleOp);
-
-          // Mark the module as imported from cache.
-          moduleState->decl->loadedFromBytecode = true;
-          moduleDecl.resolvedness = DeclResolvedness::signature;
-          std::move(out).emplace();
-        });
-    LLCL::await(out);
-  }
-}
-
 void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
@@ -1248,12 +1107,10 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
 ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
-  // Create a new module state. This isn't an imported module, so we can only
-  // cache if we're caching everything.
+  // Create a new module state.
   ModuleState &state =
       createModuleState(StringAttr::get(getContext(), moduleName), moduleBuffer,
-                        *impl->topLevelModuleState, loc,
-                        impl->moduleCachingLevel == ParserConfig::kCacheAll);
+                        *impl->topLevelModuleState, loc);
   return *state.decl;
 }
 
@@ -1288,9 +1145,10 @@ bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
   return Filesystem::isMojoSourcePackagePath(path);
 }
 
-SharedState::ModuleState &SharedState::createModuleState(
-    StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
-    ModuleState &parentState, FileLineColLoc loc, bool enableCaching) {
+SharedState::ModuleState &
+SharedState::createModuleState(StringAttr declName,
+                               const llvm::MemoryBuffer *moduleBuffer,
+                               ModuleState &parentState, FileLineColLoc loc) {
   Lexer lexer(diags, moduleBuffer);
 
   // Create a new decl for this module.
@@ -1301,42 +1159,13 @@ SharedState::ModuleState &SharedState::createModuleState(
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName,
-      std::make_unique<ModuleState>(
-          &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching));
+      declName, std::make_unique<ModuleState>(
+                    &moduleDecl, moduleBuffer->getBufferIdentifier()));
   impl->moduleStates[&moduleDecl] = &moduleState;
 
   // Auto-import the core language modules.
   if (useBuiltinModule)
     importBuiltinModules(moduleDecl);
-
-  // Build a content hash for the module from its input buffer.
-  llvm::BLAKE3 contentHash;
-  contentHash.update(moduleBuffer->getBuffer());
-  moduleState.contentHash = contentHash.final();
-
-  // Resolve the dependencies of the module.
-  size_t prevNumModules = impl->moduleStates.size() - 1;
-  resolveModuleDependencies(moduleState, parentState.decl,
-                            moduleBuffer->getBuffer());
-
-  // If we aren't currently resolving dependencies, try to load all of the newly
-  // imported modules from the cache. We delay cache loading while resolving
-  // dependencies so that we properly handle recursively dependent modules.
-  if (!impl->activelyResolvingModuleDeps) {
-    SmallVector<ModuleState *> modulesToLoad;
-    for (auto &[name, moduleState] :
-         llvm::drop_begin(impl->moduleStates, prevNumModules)) {
-      if (moduleState->decl->hasReferenceError)
-        continue;
-      if (llvm::any_of(moduleState->dependencies, [](ModuleState *dep) {
-            return dep->decl->hasReferenceError;
-          }))
-        continue;
-      modulesToLoad.push_back(moduleState);
-    }
-    loadModulesFromCache(modulesToLoad);
-  }
 
   notifyListenerOnModuleDecl(moduleDecl, moduleDecl.getLoc());
   return moduleState;
@@ -1373,7 +1202,6 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
                                   "unable to open package file '" +
                                       packagePath + "'");
   }
-  StringRef packageBufferRef = (*packageBuffer)->getBuffer();
 
   // Read the cached package.
   Block *block = parentState.decl->getDeclEndBuilder().getBlock();
@@ -1414,9 +1242,6 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   moduleState.bytecodeReader = std::move(bytecodeReader);
   impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
 
-  // Set the content hash of the package to the parsed buffer.
-  moduleState.contentHash = llvm::BLAKE3::hash(ArrayRef<uint8_t>(
-      (const uint8_t *)packageBufferRef.data(), packageBufferRef.size()));
   return moduleState;
 }
 
@@ -1438,199 +1263,6 @@ SharedState::ModuleState &SharedState::createErrorModuleState(
       name, std::make_unique<ModuleState>(decl));
   impl->moduleStates[state.decl] = &state;
   return state;
-}
-
-void SharedState::resolveModuleDependencies(ModuleState &moduleState,
-                                            ASTDecl *parentDecl,
-                                            StringRef moduleBuffer) {
-  ASTDecl &moduleDecl = *moduleState.decl;
-
-  llvm::MapVector<StringAttr, SMLoc> dependencies;
-
-  // Functor used to resolve the module and compute its dependencies via normal
-  // parser resolution.
-  auto resolveDeclAndComputeDeps = [&]() {
-    if (failed(declResolver->resolveFully(moduleDecl, moduleDecl.getLoc())))
-      return failure();
-
-    // Walk the body of the module, checking unresolved imports for module
-    // dependencies.
-    for (auto &[name, decls] : moduleDecl.declsInScope) {
-      for (ASTDecl *decl : decls)
-        if (auto importOp = dyn_cast<UnresolvedImportOp>(decl))
-          dependencies.insert({importOp.getModuleNameAttr(), decl->getLoc()});
-    }
-    for (auto it : moduleDecl.unresolvedWildcardImports)
-      dependencies.insert({it.first, it.second.first});
-    return mlir::success();
-  };
-
-  // For a given textual buffer, we can cache what the dependent module names
-  // are. Caching this prevents the need to actually parse the buffer when the
-  // content of the module hasn't changed.
-  if (impl->transformCache && moduleState.canCacheModule) {
-    auto onCacheMiss = [&](Operation *op, WriteableBufferRef buf,
-                           LLCL::AnyAsyncValueRef chain) {
-      auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-      chain.andThenSync([resolveDeclAndComputeDeps, &dependencies, &moduleDecl,
-                         moduleBuffer, output = output.copy(),
-                         buf = buf.copy()]() mutable {
-        if (failed(resolveDeclAndComputeDeps())) {
-          std::move(output).setToError(
-              LLCL::getMLIRDiagnostic("failed to resolved body",
-                                      moduleDecl.getIfOperation()->getLoc()));
-          return;
-        }
-
-        // Write the dependencies to the cache. Dependencies are written as a
-        // sequence of (name, location) pairs. The location is the offset into
-        // the module buffer where the dependency is located.
-        llvm::support::endian::Writer writer(*buf, llvm::endianness::little);
-        writer.write((uint64_t)dependencies.size());
-        for (auto &[name, loc] : dependencies) {
-          writer.write((uint64_t)name.size());
-          *buf << name.strref();
-
-          // Sanity check the location pointer, though it should generally
-          // always be within the buffer.
-          if (loc.getPointer() >= moduleBuffer.data() &&
-              loc.getPointer() < moduleBuffer.data() + moduleBuffer.size())
-            writer.write((uint64_t)(loc.getPointer() - moduleBuffer.data()));
-          else
-            writer.write((uint64_t)0);
-        }
-
-        std::move(output).emplace(buf.copy());
-      });
-      return output;
-    };
-    auto onCacheHit = [&](Operation *op, BufferRef buf) {
-      const char *data = buf->getBufferStart();
-
-      // Functor for reading a uint64_t from the cache buffer.
-      auto readInt = [&]() -> uint64_t {
-        return llvm::support::endian::readNext<
-            uint64_t, llvm::endianness::little, llvm::support::unaligned>(data);
-      };
-
-      // Read the dependencies from the cache.
-      size_t numDeps = readInt();
-      for (size_t i = 0; i < numDeps; ++i) {
-        // Read the name.
-        size_t nameSize = readInt();
-        StringRef name(data, nameSize);
-        data += nameSize;
-
-        // Read the location.
-        size_t locOffset = readInt();
-        auto loc = SMLoc::getFromPointer(moduleBuffer.data() + locOffset);
-
-        // Add the dependency.
-        dependencies.insert({StringAttr::get(getContext(), name), loc});
-      }
-      return buf.copy();
-    };
-
-    // Compute the cache key for this module, using the content hash.
-    WriteableBufferRef keyBuf = WriteableBuffer::get();
-    keyBuf->write_impl((const char *)moduleState.contentHash.data(),
-                       moduleState.contentHash.size());
-    options.print(*keyBuf << "mojoParser(");
-    *keyBuf << ", useBuiltins=" << useBuiltinModule
-            << ", experimentalLifetimes=" << useExperimentalLifetimes()
-            << ", parsingStdlib=" << parsingStandardLibrary << ")";
-    auto output = cachedTransform(
-        moduleDecl.getIfOperation(), impl->transformCache.copy(),
-        LLCL::AsyncValueRef<Chain>::createReady(runtime), std::move(keyBuf),
-        onCacheMiss, onCacheHit);
-    await(output);
-
-    // If we don't have a valid cache, just compute the deps directly.
-  } else if (failed(resolveDeclAndComputeDeps())) {
-    return;
-  }
-
-  // Remember if we were actively resolving dependencies before reaching here.
-  bool wasImportingAModule = impl->activelyResolvingModuleDeps;
-  if (!wasImportingAModule)
-    impl->activelyResolvingModuleDeps = true;
-  size_t prevNumModules = impl->moduleStates.size() - 1;
-
-  // Import all of the dependencies, so that we can resolve their dependencies.
-  for (auto [name, loc] : dependencies) {
-    moduleState.dependencies.insert(
-        &importModuleState(name.getValue(), parentDecl, loc));
-  }
-
-  // If we are actively resolving a different module, bail early. That module
-  // will handle resolving all of the dependencies of this module, and checking
-  // if it's cached. This is necessary to avoid problems with recursive modules.
-  if (wasImportingAModule)
-    return;
-
-  // At this point, all of the dependent modules are known. Update the modules
-  // dependencies to include all dependent modules. We iterate over all of the
-  // modules imported during this import, to handle cases of recursive module
-  // import.
-  bool addedNewDep = false;
-  do {
-    addedNewDep = false;
-    for (auto &it : llvm::drop_begin(impl->moduleStates, prevNumModules)) {
-      for (unsigned i = 0, e = it.second->dependencies.size(); i < e; ++i)
-        for (ModuleState *depState : it.second->dependencies[i]->dependencies)
-          addedNewDep |= it.second->dependencies.insert(depState);
-    }
-  } while (addedNewDep);
-
-  impl->activelyResolvingModuleDeps = false;
-}
-
-void SharedState::cacheParsedModules() {
-  // If we don't have a valid cache, we can't do anything.
-  if (!impl->transformCache)
-    return;
-  CompilerTimeTraceScope timeScope("cacheParsedModules");
-
-  SmallVector<LLCL::AnyAsyncValueRef> results;
-  for (auto &[decl, module] : impl->moduleStates) {
-    if (!module->canCacheModule || decl->loadedFromBytecode)
-      continue;
-    FileModuleOp moduleOp =
-        dyn_cast_if_present<FileModuleOp>(module->decl->getIfOperation());
-    if (!moduleOp)
-      continue;
-
-    // Re-check if the module is in the cache. If it isn't, we populate it
-    // now.
-    BufferRef keyBuffer = module->buildCacheKey(options);
-    auto out = AsyncValueRef<Chain>::allocate(runtime);
-    auto f = impl->transformCache->contains(
-        keyBuffer.copy(),
-        LLCL::MLIRLocationDecoder::getEncodedLocation(moduleOp->getLoc()));
-    std::move(f).andThenSync(
-        [moduleOp, transformCache = impl->transformCache.copy(),
-         out = out.copy(), keyBuffer = std::move(keyBuffer)](
-            AsyncValueRef<bool> &&alreadyInCache) mutable {
-          if (alreadyInCache.isError() || *alreadyInCache)
-            return std::move(out).emplace();
-          CompilerTimeTraceScope timeScope(
-              ("Caching: " + moduleOp.getName()).str());
-
-          // Write the module to the cache.
-          auto writeableTransformResult = WriteableBuffer::get();
-          if (failed(mlir::writeBytecodeToFile(moduleOp,
-                                               *writeableTransformResult))) {
-            return std::move(out).setToError(LLCL::getMLIRDiagnostic(
-                "failed to write bytecode file", moduleOp.getLoc()));
-          }
-          auto insertResult = transformCache->insert(
-              std::move(keyBuffer), std::move(writeableTransformResult));
-          insertResult.andThenSync(
-              [out = std::move(out)]() mutable { std::move(out).emplace(); });
-        });
-    results.push_back(std::move(out));
-  }
-  await(results);
 }
 
 /// Function used to look up and resolve a decl with the given mangled name.
@@ -1895,7 +1527,6 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             // Record a nested module state for this decl.
             ModuleState &moduleState = packageState->insertNestedModule(
                 name, std::make_unique<ModuleState>(&decl));
-            moduleState.contentHash = packageState->contentHash;
 
             impl->moduleStates[&decl] = &moduleState;
             if constexpr (std::is_same_v<decltype(op), PackageOp>)
