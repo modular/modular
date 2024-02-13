@@ -14,3 +14,7 @@ add_modular_library(MSupportCryptography
   MSupport
   MbedTLS::mbedcrypto
 )
+target_include_directories(MSupportCryptography
+  PUBLIC
+  "${MBEDTLS_INCLUDE_DIRS}"
+)
