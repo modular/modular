@@ -10,11 +10,14 @@
 
 using namespace M;
 
-/// Returns true if all values are distinct.
-static bool allDistinct(const SmallVector<Value> &values) {
+static bool allDistinct(ValueRange values) {
   DenseSet<Value> unique;
-  for (auto value : values)
-    unique.insert(value);
+  for (const auto &value : llvm::enumerate(values)) {
+    if (unique.size() != value.index()) {
+      return false; // Early termination.
+    }
+    unique.insert(value.value());
+  }
   return unique.size() == values.size();
 }
 
@@ -92,8 +95,10 @@ ParseResult M::parseParenOperandListWithShadowing(
     return failure();
 
   StringSet<> argumentNames;
-  for (auto arg : argumentInfo)
-    argumentNames.insert(arg.ssaName.name);
+  for (auto arg : argumentInfo) {
+    argumentNames.insert(
+        (Twine(arg.ssaName.name) + "#" + Twine(arg.ssaName.number)).str());
+  }
   if (argumentNames.size() != argumentInfo.size())
     return parser.emitError(
         loc, "has duplicate SSA values in its operand list which have not been "
