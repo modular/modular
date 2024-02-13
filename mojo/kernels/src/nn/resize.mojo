@@ -18,6 +18,7 @@ struct CoordinateTransformationMode:
     alias HalfPixel = CoordinateTransformationMode(0)
     alias AlignCorners = CoordinateTransformationMode(1)
     alias Asymmetric = CoordinateTransformationMode(2)
+    alias HalfPixel1D = CoordinateTransformationMode(3)
 
     @always_inline
     fn __eq__(self, other: CoordinateTransformationMode) -> Bool:
@@ -34,6 +35,12 @@ fn coord_transform[
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
+        return (out_coord + 0.5) / scale - 0.5
+    elif mode == CoordinateTransformationMode.HalfPixel1D:
+        # Same as HalfPixel except for 1D output. Described here:
+        # https://onnx.ai/onnx/operators/onnx__Resize.html
+        if out_dim == 1:
+            return 0
         return (out_coord + 0.5) / scale - 0.5
     elif mode == CoordinateTransformationMode.AlignCorners:
         # aligning "corners" when output is 1D isn't well defined

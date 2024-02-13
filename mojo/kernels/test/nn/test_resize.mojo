@@ -82,6 +82,26 @@ def main():
     # CHECK: 1.0,3.0,
     test_downsample_sizes_nearest()
 
+    fn test_downsample_sizes_nearest_half_pixel_1D() raises:
+        print("== test_downsample_sizes_nearest_half_pixel_1D")
+        alias type = DType.float32
+        var input = Tensor[type](1, 1, 4, 4)
+        linear_fill[type](
+            input,
+            VariadicList[SIMD[type, 1]](
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ),
+        )
+        let output = Tensor[type](1, 1, 1, 2)
+
+        test_case_nearest[
+            4, CoordinateTransformationMode.HalfPixel1D, RoundMode.HalfDown
+        ](input, output)
+
+    # CHECK-LABEL: test_downsample_sizes_nearest_half_pixel_1D
+    # CHECK: 0.0,2.0,
+    test_downsample_sizes_nearest_half_pixel_1D()
+
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
