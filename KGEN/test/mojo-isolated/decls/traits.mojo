@@ -9,27 +9,27 @@
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>>
 trait Trait:
-    # CHECK: lit.func @"f0(T)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f0($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f0(self: Self):
         ...
 
-    # CHECK: lit.func @"f1(T&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"f1($1&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self):
         ...
 
-    # CHECK: lit.func @"f2(T&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none attributes
+    # CHECK: lit.func @"f2($1&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3(,T)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> owned_in_mem)
+    # CHECK: lit.func @"f3(,$1)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> owned_in_mem)
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4(,T&)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref)
+    # CHECK: lit.func @"f4(,$1&)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref)
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -76,7 +76,7 @@ struct StructWithTraits(Trait1, Trait2):
 
 # CHECK-LABEL: lit.trait.decl @CFMTrait<?, MT: type, T: !kgen.paramref<MT>>
 trait CFMTrait:
-    # CHECK: lit.func @"f1(T)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn f1(self: Self):
         pass
 
@@ -520,7 +520,7 @@ trait ParentTraitSameSig:
 
 # CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
 trait ChildTraitSameSig(ParentTraitSameSig):
-    # CHECK-NEXT: lit.func @"foo(T)"
+    # CHECK-NEXT: lit.func @"foo
     # CHECK-NEXT: lit.trait_func
     fn foo(self):
         ...
@@ -531,7 +531,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
 # CHECK-SAME: (!AnyType)
 trait GreatGrandFather:
-    # CHECK: lit.func @"foo(T)"
+    # CHECK: lit.func @"foo
     fn foo(self):
         ...
 
@@ -539,22 +539,22 @@ trait GreatGrandFather:
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: (!GreatGrandFather,
 trait GrandFather(GreatGrandFather):
-    # CHECK: lit.func @"bar(T)"
+    # CHECK: lit.func @"bar
     fn bar(self):
         ...
 
-    # CHECK: lit.func @"foo(T)"
+    # CHECK: lit.func @"foo
 
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: (!GrandFather, !GreatGrandFather[!GrandFather],
 trait Father(GrandFather):
-    # CHECK: lit.func @"baz(T)"
+    # CHECK: lit.func @"baz
     fn baz(self):
         ...
 
-    # CHECK: lit.func @"bar(T)"
-    # CHECK: lit.func @"foo(T)"
+    # CHECK: lit.func @"bar
+    # CHECK: lit.func @"foo
 
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance

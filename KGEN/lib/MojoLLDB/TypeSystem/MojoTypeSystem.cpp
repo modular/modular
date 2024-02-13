@@ -1003,7 +1003,8 @@ MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
 
   // FIXME(23810): We need to support nested functions.
 
-  StringAttr nameAttr = LIT::DeclResolver::getMangledName(name, signature);
+  StringAttr nameAttr =
+      LIT::DeclResolver::getMangledName(name, *parentDecl, signature);
   auto newFunction = builder.create<LIT::FuncOp>(
       sharedState.translateLocation(parentDecl->getLoc()), nameAttr, name,
       signature);

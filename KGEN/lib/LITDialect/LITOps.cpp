@@ -117,6 +117,29 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
 
+/// If the specified operation is non-null and contains parameters, collect
+/// them into the specified array.
+static void collectContextParameters(Operation *op,
+                                     SmallVector<ParamDeclAttr> &params) {
+  auto decl = dyn_cast_or_null<DeclInterface>(op);
+  if (!decl || isa<FuncInterface>(*decl))
+    return;
+  collectContextParameters(op->getParentOp(), params);
+  llvm::append_range(params, decl.getInputParams());
+}
+
+LITSignatureType LIT::getFullSignature(Operation *container,
+                                       LITSignatureType signature) {
+  // Collect contextual params, if there are none, the full signature is the
+  // same as the local signature.
+  SmallVector<ParamDeclAttr> params;
+  collectContextParameters(container, params);
+  if (params.empty())
+    return signature;
+
+  return SignatureType::prependParams(signature, params);
+}
+
 //===----------------------------------------------------------------------===//
 // FileModuleOp
 //===----------------------------------------------------------------------===//
@@ -868,17 +891,6 @@ void LIT::FuncOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
                                        function_ref<void(Type)> scanType) {}
 
-/// If the specified operation is non-null and contains parameters, collect
-/// them into the specified array.
-static void collectContextParameters(Operation *op,
-                                     SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<DeclInterface>(op);
-  if (!decl || isa<FuncInterface>(*decl))
-    return;
-  collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParams());
-}
-
 SmallVector<ParamDeclAttr>
 LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
   SmallVector<ParamDeclAttr> result;
@@ -892,16 +904,7 @@ LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
 }
 
 LITSignatureType LIT::FuncOp::getFullSignature() {
-  LITSignatureType signature = getSignature();
-
-  // Collect contextual params, if there are none, the full signature is the
-  // same as the local signature.
-  SmallVector<ParamDeclAttr> params;
-  collectContextParameters(getOperation()->getParentOp(), params);
-  if (params.empty())
-    return signature;
-
-  return SignatureType::prependParams(signature, params);
+  return LIT::getFullSignature((*this)->getParentOp(), getSignature());
 }
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {

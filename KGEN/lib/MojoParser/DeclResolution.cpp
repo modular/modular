@@ -978,7 +978,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
-  attrs.set(funcOp.getSymNameAttrName(), getMangledName(baseName, signature));
+  attrs.set(funcOp.getSymNameAttrName(),
+            getMangledName(baseName, *decl.getParentDecl(), signature));
   attrs.set(funcOp.getSourceNameAttrName(), baseName);
 
   // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see

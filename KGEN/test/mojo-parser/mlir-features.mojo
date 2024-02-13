@@ -120,7 +120,7 @@ fn getAddressOf[T: __mlir_type.`!kgen.type`](inout arg: T) -> MyPointer[T]:
     )
     # CHECK-NEXT: lit.ownership.def_lvalue %arg
     # CHECK-NEXT: %0 = lit.ref.to_pointer %arg
-    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type T>(%0)
+    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__{{.*}}"<:type T>(%0)
     # CHECK-NEXT: lit.return %1
 
 

@@ -179,7 +179,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto argListAttrs = ArgParamListAttr::get(
       ctx, {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw});
   LIT::FuncOp func = createFunction(
-      "__init__", /*params=*/{}, /*paramListAttrs=*/ArgParamListAttr::get(ctx),
+      decl, "__init__", /*params=*/{},
+      /*paramListAttrs=*/ArgParamListAttr::get(ctx),
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
       {ArgConvention::InitSelf, ArgConvention::OwnedInReg}, argListAttrs,
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
@@ -213,7 +214,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   LIT::FuncOp callImpl = createFunction(
-      lambdaName, /*params=*/{}, callImplType.getMetadata().getParamListAttrs(),
+      decl, lambdaName, /*params=*/{},
+      callImplType.getMetadata().getParamListAttrs(),
       callImplType.getArguments(), callImplType.getArgConventions(),
       callImplType.getMetadata().getArgListAttrs(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
@@ -935,10 +937,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       ArgParamListAttr::get(ctx, otherName, PassingKind::PosOnly);
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCopyInit =
-      createFunction(generateName("_copyinit_"), topLevelParams, paramListAttrs,
-                     {opaquePtrType}, {ArgConvention::OwnedInReg}, argListAttrs,
-                     opaquePtrType, SpecialFunctionKind::kNormal, loc, builder);
+  LIT::FuncOp topLevelCopyInit = createFunction(
+      moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
+      {opaquePtrType}, {ArgConvention::OwnedInReg}, argListAttrs, opaquePtrType,
+      SpecialFunctionKind::kNormal, loc, builder);
 
   SmallVector<TypedAttr> topLevelParamRefs;
   for (auto [i, p] : llvm::enumerate(totalParams))
@@ -991,8 +993,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelDtor =
-      createFunction(generateName("_dtor_"), topLevelParams, paramListAttrs,
-                     opaquePtrType, ArgConvention::OwnedInReg,
+      createFunction(moduleDecl, generateName("_dtor_"), topLevelParams,
+                     paramListAttrs, opaquePtrType, ArgConvention::OwnedInReg,
                      ArgParamListAttr::get(ctx, selfName, PassingKind::PosOnly),
                      noneType, SpecialFunctionKind::kNormal, loc, builder);
 
@@ -1045,7 +1047,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
-      generateName("_call_"), topLevelParams, paramListAttrs,
+      moduleDecl, generateName("_call_"), topLevelParams, paramListAttrs,
       closureSignature.getArguments(), closureSignature.getArgConventions(),
       closureSignature.getMetadata().getArgListAttrs(), resultType,
       SpecialFunctionKind::kNormal, loc, builder,

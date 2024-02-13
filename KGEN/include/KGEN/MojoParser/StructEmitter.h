@@ -85,7 +85,7 @@ public:
   /// are added to the body of the function but no ops are added to the body.
   /// `prefix` is prepended to the mangled function name.
   LIT::FuncOp createFunction(
-      StringRef name, ArrayRef<ParamDeclAttr> params,
+      ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,

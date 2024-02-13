@@ -65,6 +65,10 @@ std::pair<LITSignatureType, ParameterExprArrayAttr>
 getUnboundSpecializedSignature(LITSignatureType type,
                                ParameterExprArrayAttr bindings);
 
+/// Get the full signature of a declaration in the given context.
+LITSignatureType getFullSignature(Operation *container,
+                                  LITSignatureType signature);
+
 } // namespace LIT
 } // namespace M::KGEN
 
