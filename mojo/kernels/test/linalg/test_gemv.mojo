@@ -99,6 +99,7 @@ fn test_gemv():
 
     # Serial Gemv
     @always_inline
+    @__copy_capture(out, rhs, lhs)
     @parameter
     fn bench_fn_serial():
         gemv[parallelize=False](out, lhs, rhs)
@@ -117,6 +118,7 @@ fn test_gemv():
 
     # Parallel Gemv
     @always_inline
+    @__copy_capture(out, rhs, lhs)
     @parameter
     fn bench_fn_parallel():
         gemv[parallelize=True](out, lhs, rhs)
@@ -145,6 +147,7 @@ fn test_gemv():
     print("--> Mean Runtime Speedup: ", speedup)
 
     @always_inline
+    @__copy_capture(out_mat, rhs_mat, lhs)
     @parameter
     fn bench_fn_matmul():
         matmul(out_mat, lhs, rhs_mat)

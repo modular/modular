@@ -1338,6 +1338,7 @@ struct TiledMatmulBiasGenerated[
 
             # Loop over the current tile.
             @always_inline
+            @__copy_capture(c_buffer)
             @parameter
             fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
                 let n_coord = idx_n + dynamic_state.global_offset.N
