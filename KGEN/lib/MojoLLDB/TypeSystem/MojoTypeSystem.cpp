@@ -803,12 +803,7 @@ CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
     return createCompilerType(
         IntegerType::get(getMLIRContext(), byteSize * 8, IntegerType::Signed));
 
-  // Fortunately MLIR DTypes have the same name as KGEN DTypes, so we can use
-  // the common translator.
-  if (dwarfEncoding == DW_ATE_float || dwarfEncoding == DW_ATE_boolean)
-    return createCompilerTypeFromDType(typeName);
-
-  return {};
+  return createCompilerTypeFromDType(typeName);
 }
 
 lldb_private::CompilerType
