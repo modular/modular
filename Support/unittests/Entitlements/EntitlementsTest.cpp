@@ -61,15 +61,6 @@ struct TestEntitlement : public Entitlement {
 };
 } // namespace
 
-// HACK: We can only initialize HTTPContext once per process but multiple test
-// will need HTTPContext.
-static HTTPContextRef getHTTPContextRef() {
-  static HTTPContextRef ref;
-  static llvm::once_flag flag;
-  llvm::call_once(flag, [&]() { ref = HTTPContext::init(); });
-  return ref.copy();
-}
-
 /// Provide the platform-specific csprng call.
 static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   auto *rng = (SecureRandomBytesGenerator *)ctx;
@@ -314,6 +305,20 @@ private:
   bool oauthRegisterCalled = false;
 };
 
+// HACK: We can only initialize HTTPContext once per process but multiple test
+// will need HTTPContext.
+static HTTPContextRef getHTTPContextRef() {
+  static HTTPContextRef ref;
+  static llvm::once_flag flag;
+  llvm::call_once(flag, [&]() {
+    ref = HTTPContext::init(
+        [](HTTPContextRef httpCtx) -> std::unique_ptr<HTTPClient> {
+          return std::make_unique<Firechicken>(std::move(httpCtx));
+        });
+  });
+  return ref.copy();
+}
+
 TEST(TestEntitlement, Roundtrip) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
@@ -363,11 +368,8 @@ TEST(TestEntitlementStore, Bootstrap) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
   HTTPContextRef httpCtx = getHTTPContextRef();
-  Firechicken client(std::move(httpCtx));
-  client.noAuthNeeded();
-
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, client);
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
@@ -379,17 +381,14 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
   HTTPContextRef httpCtx = getHTTPContextRef();
-  Firechicken client(std::move(httpCtx));
-  client.noAuthNeeded();
-
   { // Scope to call the entitlement store's destructor so we can `open` it.
     Config config; // Use empty config.
-    auto storeOr = EntitlementStore::generate(config, client);
+    auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
     ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::open(config, &client);
+  auto storeOr = EntitlementStore::open(config, httpCtx.copy());
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   ASSERT_TRUE(storeOr->has_value()) << "we just generated this...?";
 
@@ -402,17 +401,14 @@ TEST(TestEntitlementStore, Refresh) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
   HTTPContextRef httpCtx = getHTTPContextRef();
-  Firechicken client(std::move(httpCtx));
-  client.noAuthNeeded();
-
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, client);
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 
-  auto err = storeOr->refresh(client);
+  auto err = storeOr->refresh(httpCtx.copy());
   ASSERT_FALSE(err.isError()) << err.getError();
 
   e = storeOr->getEntitlement<TestEntitlement>();

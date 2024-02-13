@@ -19,6 +19,7 @@
 namespace M {
 /// Convenience declarations.
 class HTTPContext;
+class HTTPClient;
 using HTTPContextRef = RCRef<HTTPContext>;
 
 /// Provides a ref-counted HTTP context to create HTTPClients. Initializes and
@@ -28,9 +29,15 @@ class HTTPContext : public ReferenceCounted<HTTPContext> {
 public:
   ~HTTPContext();
 
-  /// Initialize an HTTP context.
-  static HTTPContextRef init();
+  /// HTTPContext can be initialized with a default constructor for the client.
+  /// This allows dependency injection in some tests.
+  using ClientConstructor =
+      llvm::function_ref<std::unique_ptr<HTTPClient>(HTTPContextRef)>;
 
+  /// Initialize an HTTP context.
+  static HTTPContextRef init(ClientConstructor cc = nullptr);
+
+  std::unique_ptr<HTTPClient> client();
   void setUserAgent(std::string userAgent);
   void setShouldVerifyTLSPeer(bool verifyTLSPeer);
 
@@ -42,6 +49,10 @@ protected:
 
 private:
   friend class HTTPClient;
+
+  /// Constructor for new clients, may be nullptr.
+  ClientConstructor cc;
+
   /// User agent to use for all requests.
   std::string userAgent;
 

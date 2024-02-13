@@ -24,16 +24,24 @@ using namespace M;
 // HTTPContext
 //===----------------------------------------------------------------------===//
 
-HTTPContextRef HTTPContext::init() {
+HTTPContextRef HTTPContext::init(ClientConstructor cc) {
   // Ideally this would only be called once. Failing that, multiple calls are
   // safe but only the first call will apply. See:
   // https://curl.se/libcurl/c/curl_global_init.html.
-  return HTTPContextRef::create();
+  auto httpCtx = HTTPContextRef::create();
+  httpCtx->cc = std::move(cc);
+  return httpCtx;
 }
 
-HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {
+HTTPContext::HTTPContext() : cc(nullptr), userAgent("modular-installer/0.1") {
   // Warm up cURL's SSL backend, resolver cache, logging, etc
   curl_global_init(CURL_GLOBAL_ALL);
+}
+
+std::unique_ptr<HTTPClient> HTTPContext::client() {
+  if (cc)
+    return cc(HTTPContextRef::copy(this));
+  return std::make_unique<HTTPClient>(HTTPContextRef::copy(this));
 }
 
 void HTTPContext::setShouldVerifyTLSPeer(bool verifyTLSPeer) {
