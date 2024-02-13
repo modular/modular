@@ -848,14 +848,19 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 //===----------------------------------------------------------------------===//
 // Decl Helpers
 
-StringAttr DeclResolver::getMangledName(StringAttr baseName,
+StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
                                         LITSignatureType signature) {
-  // TODO(#16040): Struct names mangled into the signature should be parameter
-  // name-erased.
+  // Compute the full signature of the decl to ensure dependent parameters from
+  // a parent decl are name-erased in the mangled name.
+  LITSignatureType fullSig =
+      LIT::getFullSignature(container.getIfOperation(), signature);
+
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
   llvm::raw_svector_ostream os(mangledName);
-  ArrayRef<Type> params = signature.getParamTypes();
+  // Don't include parent parameters in the mangling.
+  ArrayRef<Type> params =
+      fullSig.getParamTypes().take_back(signature.getNumParams());
   if (!params.empty()) {
     os << '[';
     llvm::interleave(
@@ -868,8 +873,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
   }
 
   mangledName += '(';
-  for (auto [argNo, convention, argType] : llvm::enumerate(
-           signature.getArgConventions(), signature.getArguments())) {
+  for (auto [argNo, convention, argType] :
+       llvm::enumerate(fullSig.getArgConventions(), fullSig.getArguments())) {
     // We do not mangle byref results into the signature.
     if (convention == ArgConvention::ByRefResult)
       continue;
@@ -881,7 +886,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
     ASTType type = argType;
-    if (signature.isVarArg(argNo)) {
+    if (fullSig.isVarArg(argNo)) {
       if (auto variadic = dyn_cast<VariadicType>(type.mlirType)) {
         type = variadic.getElementType();
         if (SignatureType::hasAddress(variadic.getConvention()))
@@ -911,7 +916,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
       llvm_unreachable("none convention not permitted in lit");
     }
 
-    if (signature.isVarArg(argNo))
+    if (fullSig.isVarArg(argNo))
       mangledName += '*';
   }
   mangledName += ')';

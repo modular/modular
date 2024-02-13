@@ -29,7 +29,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 LIT::FuncOp StructEmitter::createFunction(
-    StringRef name, ArrayRef<ParamDeclAttr> params,
+    ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
     ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
@@ -98,7 +98,8 @@ LIT::FuncOp StructEmitter::createFunction(
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
-      prefix + DeclResolver::getMangledName(sourceName, signature).getValue());
+      prefix +
+      DeclResolver::getMangledName(sourceName, parent, signature).getValue());
   auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
                                             specialFnID);
   funcOp.setIsSynthetic(true);
@@ -149,8 +150,9 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
   LIT::FuncOp funcOp = createFunction(
-      name, params, paramListAttrs, argTypes, argConventions, argListAttrs,
-      resultType, specialFnID, structDecl.getLoc(), builder, fnEffects,
+      structDecl, name, params, paramListAttrs, argTypes, argConventions,
+      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
+      fnEffects,
       varEffects.setParamVarArgs(varEffects.hasParamVarArgs() ||
                                  structOp.getSignature().getParamVarArg()),
       prefix);

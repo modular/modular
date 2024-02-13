@@ -207,7 +207,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Create a name from a signature by appending argument types into the name.
-  static StringAttr getMangledName(StringAttr baseName,
+  static StringAttr getMangledName(StringAttr baseName, ASTDecl &container,
                                    LITSignatureType signature);
 
   /// Given a signature type that may contain references to parameter

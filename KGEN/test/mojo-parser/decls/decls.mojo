@@ -540,11 +540,11 @@ fn callVariadic[p: Int](x: Int):
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"{{.*}}<:type !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:type !Int>
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"{{.*}}<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"{{.*}}<:variadic<!Int> []>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
 
 

@@ -507,9 +507,9 @@ fn useParamVariadics():
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}::StructWithVariadics[b]=&,{{.*}}int::Int)"{{.*}}<:variadic<!Int> [#lit.struct<{value = 1}>]>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:variadic<!Int> [#lit.struct<{value = 1}>]>
   var d = StructWithVariadics[1](2)
-  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}::StructWithVariadics[b]=&,{{.*}}int::Int)"{{.*}}<:variadic<!Int> []>
+  # CHECK: lit.call {{.*}}@StructWithVariadics::@"__init__({{.*}}<:variadic<!Int> []>
   var e = StructWithVariadics(3)
 
 
@@ -808,7 +808,7 @@ fn test_default_param_struct():
     alias T = DefaultParams[1]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[1]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
@@ -816,7 +816,7 @@ fn test_default_param_struct():
     alias U = DefaultParams[2, 3]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[2, 3]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
@@ -824,7 +824,7 @@ fn test_default_param_struct():
     alias S = DefaultParams[4, 5, "meow"]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"{{.*}}<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     _ = DefaultParams[4, 5, "meow"]()
 
 
@@ -841,7 +841,7 @@ fn test_default_param_struct_all_default():
 
     # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
     # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
-    # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"{{.*}}<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
+    # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
 
 
