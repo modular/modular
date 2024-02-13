@@ -224,6 +224,7 @@ fn main():
         let x = atol(str)
         let y = atol(argv()[2])
 
+        @__copy_capture(x)
         @parameter
         fn formatter(v: Int) -> Int:
             return x + v
@@ -232,6 +233,7 @@ fn main():
         # CHECK: 8
         takeClosure(f, y)
 
+        @__copy_capture(y)
         @parameter
         fn formatter2(v: Int) -> Int:
             return y + formatter(v)

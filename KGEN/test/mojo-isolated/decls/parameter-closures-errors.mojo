@@ -75,5 +75,5 @@ fn makeClosureWithCaptureLetWarn(x: Int):
     let z = x
     @parameter
     async fn formatter() -> Int:
-        # expected-warning @below {{cannot capture let without copy: z}}
+        # expected-error @below {{cannot capture let without copy: z}}
         return z

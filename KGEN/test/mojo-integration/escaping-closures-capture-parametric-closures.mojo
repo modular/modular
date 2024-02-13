@@ -60,11 +60,13 @@ fn main():
         let y = atol(argv()[2])
 
         @no_inline
+        @__copy_capture(x)
         @parameter
         fn formatter(v: Int) -> Int:
             return x + v
 
         @no_inline
+        @__copy_capture(y)
         @parameter
         fn formatter2[x: Int](v: Int) -> Int:
             return y + formatter(v)
