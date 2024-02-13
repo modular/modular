@@ -9,6 +9,7 @@
 #include "Config/Version.h"
 #include "Support/Base64.h"
 #include "Support/Context.h"
+#include "Support/Entitlements/Entitlement.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Random.h"
 #include "Support/Settings/Settings.h"
@@ -375,20 +376,8 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 #endif // MODULAR_ENABLE_TELEMETRY
 }
 
-ErrorOrSuccess
-TelemetryContext::emplace(Context &ctx,
-                          const llvm::StringMap<AttributeValue> &resources) {
-  auto settings = ctx.get<Settings>();
-  if (!settings)
-    return Error("could not find settings object in context");
-
-  ctx.emplace<TelemetryContext>(settings, resources);
-  return success();
-}
-
 TelemetryContext::TelemetryContext(
-    const Settings *settings,
-    const llvm::StringMap<AttributeValue> &resources) {
+    Settings &settings, const llvm::StringMap<AttributeValue> &resources) {
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
 
@@ -419,33 +408,45 @@ TelemetryContext::TelemetryContext(
   attrs.SetAttribute("modular.version.revision", version.revision);
   attrs.SetAttribute("modular.version.buildtype", version.buildType);
 
+  // Set the local machineid.
+  static std::pair<std::string, std::string> local_ids = createLocalIDs();
+  attrs.SetAttribute("machineid", local_ids.first);
+  attrs.SetAttribute("sessionid", local_ids.second);
+
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
     std::visit([&](auto v) { attrs.SetAttribute(resource.first(), v); },
                resource.second);
   }
 
-  // Check if telemetry is enabled. Note that currently users have to opt out of
-  // telemetry, so it is enabled unless the user explicitly disables.
-  bool enabled = true;
-  auto *telemetryEnabled = settings->get("telemetry.enabled");
-  auto e = llvm::dyn_cast_if_present<StringRef>(telemetryEnabled);
-  enabled = e.equals_insensitive("true");
+  // Check if telemetry is enabled. Note that currently users have to opt out
+  // of telemetry, so it is enabled unless the user explicitly disables.
+  bool enabled = settings.getBool("telemetry.enabled", true);
+
+  // Currently, all non-modular developers must enable telemetry.
+  if (!settings.getBool<ModularDeveloperEntitlement>())
+    enabled = true;
 
   // Get telemetry level.
-  auto *cfgLevel = settings->get("telemetry.level");
+  auto *cfgLevel = settings.get("telemetry.level");
   auto level = llvm::dyn_cast_if_present<StringRef>(cfgLevel);
   telemetryLevel = levelFromString(level);
+
+  // Fix the minimum telemetry level for a non-modular developer to 1. This can
+  // be changed to use a different entitlement in the future.
+  if (!settings.getBool<ModularDeveloperEntitlement>() &&
+      telemetryLevel != Level::L1 && telemetryLevel != Level::L2)
+    telemetryLevel = Level::L1;
 
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() {
-    configureInternalLogging(dyn_cast_if_present<StringRef>(
-        settings->get("telemetry.internal_log")));
+    configureInternalLogging(
+        dyn_cast_if_present<StringRef>(settings.get("telemetry.internal_log")));
   });
 
   // Get the user ID if we have one.
-  attrs.SetAttribute("enduser.id", settings->get<StringRef>("user.id"));
+  attrs.SetAttribute("enduser.id", settings.get<StringRef>("user.id"));
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
@@ -482,13 +483,13 @@ TelemetryContext::TelemetryContext(
 
   // Get metrics exporter config.
   auto httpEndpoint =
-      settings->get<StringRef>("telemetry.exporters.metrics.http_endpoint");
+      settings.get<StringRef>("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
-      settings->get<StringRef>("telemetry.exporters.metrics.file_path").str();
-  if (httpEndpoint.empty() && filePath.empty()) {
-    // If no config is provided, export to our default URL.
+      settings.get<StringRef>("telemetry.exporters.metrics.file_path").str();
+
+  // Only allow modular developers to overwrite this endpoint.
+  if (!settings.getBool<ModularDeveloperEntitlement>())
     httpEndpoint = kTelemetryUrl;
-  }
 
   // Create metric readers, one for each exporter.
 
@@ -504,6 +505,9 @@ TelemetryContext::TelemetryContext(
   if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
+    otlpOptions.ssl_client_key_path = settings.clientKeyPriv();
+    otlpOptions.ssl_client_cert_path = settings.clientCert();
+
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
@@ -525,13 +529,13 @@ TelemetryContext::TelemetryContext(
   // -------- Logs --------
   // Get logs exporter config.
   httpEndpoint =
-      settings->get<StringRef>("telemetry.exporters.logs.http_endpoint");
+      settings.get<StringRef>("telemetry.exporters.logs.http_endpoint");
   filePath =
-      settings->get<StringRef>("telemetry.exporters.logs.file_path").str();
-  if (httpEndpoint.empty() && filePath.empty()) {
-    // If no config is provided, export to our default URL.
+      settings.get<StringRef>("telemetry.exporters.logs.file_path").str();
+
+  // See above; only developers can overwrite the httpEndpoint.
+  if (!settings.getBool<ModularDeveloperEntitlement>())
     httpEndpoint = kTelemetryUrl;
-  }
 
   // Create log processors for each exporter.
   std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>
@@ -548,11 +552,14 @@ TelemetryContext::TelemetryContext(
   if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
-        oltpLogOptions;
-    oltpLogOptions.url = (httpEndpoint + "/v1/logs").str();
+        otlpLogOptions;
+    otlpLogOptions.ssl_client_key_path = settings.clientKeyPriv();
+    otlpLogOptions.ssl_client_cert_path = settings.clientCert();
+
+    otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
-            oltpLogOptions);
+            otlpLogOptions);
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
             std::move(logExporter)));

@@ -65,32 +65,33 @@ public:
   /// application should decide what to do in that state. If an actual error
   /// occurs, return the error.
   static ErrorOr<std::optional<EntitlementStore>> open(Config &config,
-                                                       HTTPClient *client);
+                                                       HTTPContextRef httpCtx);
 
   /// Remove an existing certificate from the user's system (if it exists) and
   /// fetch a new one. This always returns an EntitlementStore on success,
   /// because the only case where we cannot fetch a certificate is the one where
   /// an actual error occurred.
-  static ErrorOr<EntitlementStore> generate(Config &config, HTTPClient &client);
+  static ErrorOr<EntitlementStore> generate(Config &config,
+                                            HTTPContextRef httpCtx);
 
   /// Always open an EntitlementStore, and simply default to an empty
   /// EntitlementStore if we don't have the required infrastructure, we don't
   /// have a certificate, or the opening fails. This will print a warning to
   /// `warnStream` if there was an actual error in opening the EntitlementStore.
-  static EntitlementStore alwaysOpen(HTTPClient *client,
+  static EntitlementStore alwaysOpen(HTTPContextRef httpCtx,
                                      llvm::raw_ostream &warnStream);
 
   /// Refresh the entitlement store by refreshing the client certificate. This
   /// will also invalidate any entitlements that currently exist, even if the
   /// user's entitlements have not changed.
-  ErrorOrSuccess refresh(HTTPClient &client);
+  ErrorOrSuccess refresh(HTTPContextRef httpCtx);
 
   /// Refresh the entitlement store if it's necessary to do so. The user can
   /// configure a policy on when a refresh is 'necessary', using the validFrom
   /// and validTo values of the certificate, converted to system clock time
   /// points.
   ErrorOrSuccess refreshIfNecessary(
-      HTTPClient &client,
+      HTTPContextRef httpCtx,
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>
           shouldRefresh = defaultEntitlementRefreshPolicy);
@@ -126,7 +127,7 @@ public:
 private:
   /// This will verify the client's certificate chain and flush it to disk if
   /// and only if it's valid.
-  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient *client);
+  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient &client);
 
   /// Given a PEM buffer with one or more certificates, parse them and take any
   /// entitlements that might be encoded in the extensions and put them in the

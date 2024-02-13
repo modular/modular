@@ -9,6 +9,7 @@
 #include "Support/Context.h"
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/Entitlements/EntitlementStore.h"
+#include "Support/ErrorOr.h"
 
 //===----------------------------------------------------------------------===//
 // Settings::Impl
@@ -24,24 +25,36 @@ public:
   /// `store`.
   Impl(Config &&cfg, EntitlementStore &&store);
 
-  /// Create a new Impl object with an HTTPClient. If `createIfMissing` is
+  /// Create a new Impl object with an HTTPContextRef. If `createIfMissing` is
   /// `true`, not having a certificate on the system already means that we will
   /// simply call `generate` immediately afterwards.
-  static ErrorOr<std::unique_ptr<Impl>> create(HTTPClient *client,
+  static ErrorOr<std::unique_ptr<Impl>> create(HTTPContextRef httpCtx,
                                                bool createIfMissing);
 
   /// Get a pointer to a setting identified by `key`.
   const Setting *get(StringRef key);
 
+  /// Set the value indicated by `key`. Returns true if successful, false
+  /// if this value is controlled by an entitlement.
+  bool set(StringRef key, StringRef value);
+
+  /// Flush the full configuration.
+  ErrorOrSuccess flush();
+
   /// Refresh the settings - this may invalidate any pointers returned by the
   /// `get` API.
-  ErrorOrSuccess refresh(HTTPClient &client,
+  ErrorOrSuccess refresh(HTTPContextRef httpCtx,
                          RefreshPolicy shouldRefreshEntitlements);
 
 private:
   Config config;
   EntitlementStore entitlementStore;
   llvm::StringMap<Setting> settings;
+
+  // Allow the Settings class to reach in and access the entitlementStore
+  // directly, if only for making the various certificate paths available in
+  // other contexts.
+  friend class Settings;
 };
 } // namespace M
 
@@ -73,14 +86,14 @@ Settings::Impl::Impl(Config &&cfg, EntitlementStore &&store)
 }
 
 ErrorOr<std::unique_ptr<Settings::Impl>>
-Settings::Impl::create(HTTPClient *client, bool createIfMissing) {
+Settings::Impl::create(HTTPContextRef httpCtx, bool createIfMissing) {
   // Open the config.
   auto cfgOr = Config::open();
   if (cfgOr.isError())
     return cfgOr.takeError();
 
   // First, we attempt to open the certificate.
-  auto storeOr = EntitlementStore::open(*cfgOr, client);
+  auto storeOr = EntitlementStore::open(*cfgOr, httpCtx.copy());
   if (storeOr.isError())
     return storeOr.takeError();
 
@@ -92,19 +105,35 @@ Settings::Impl::create(HTTPClient *client, bool createIfMissing) {
   // then simply return an empty one.
   if (!createIfMissing)
     return std::make_unique<Impl>(
-        cfgOr.takeValue(), EntitlementStore::alwaysOpen(client, llvm::errs()));
-
-  if (!client)
-    return Error("must have HTTP client to generate a new certificate");
+        cfgOr.takeValue(),
+        EntitlementStore::alwaysOpen(httpCtx.copy(), llvm::errs()));
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.
-  auto genOr = EntitlementStore::generate(*cfgOr, *client);
+  auto genOr = EntitlementStore::generate(*cfgOr, std::move(httpCtx));
   if (genOr.isError())
     return genOr.takeError();
 
   return std::make_unique<Impl>(cfgOr.takeValue(), genOr.takeValue());
 }
+
+bool Settings::Impl::set(StringRef key, StringRef value) {
+  // Set the same value to appear both internally and within the configuration.
+  // First we must assert that either: a) the value doesn't exist locally, or
+  // b) is it a configuration value, not an entitlement.
+  auto found = settings.find(key);
+  if (found != settings.end()) {
+    if (!llvm::isa_and_present<StringRef>(&found->second))
+      return false; // Is not a configuration value.
+  }
+
+  // Replace or insert this false.
+  config.setValue(key, value);
+  settings.try_emplace(key, Setting{value});
+  return true;
+}
+
+ErrorOrSuccess Settings::Impl::flush() { return config.flush(); }
 
 const Setting *Settings::Impl::get(StringRef key) {
   // Try to find the setting in the config map.
@@ -124,7 +153,7 @@ const Setting *Settings::Impl::get(StringRef key) {
 }
 
 ErrorOrSuccess
-Settings::Impl::refresh(HTTPClient &client,
+Settings::Impl::refresh(HTTPContextRef httpCtx,
                         Settings::RefreshPolicy shouldRefreshEntitlements) {
   // Clear out all settings - this is crucial because any stored references to
   // entitlements or configs may be invalidated.
@@ -140,7 +169,8 @@ Settings::Impl::refresh(HTTPClient &client,
 
   // Simply refresh the entitlement store - it has all the logic necessary to
   // do that internally.
-  return entitlementStore.refreshIfNecessary(client, shouldRefreshEntitlements);
+  return entitlementStore.refreshIfNecessary(std::move(httpCtx),
+                                             shouldRefreshEntitlements);
 }
 
 //===----------------------------------------------------------------------===//
@@ -149,22 +179,45 @@ Settings::Impl::refresh(HTTPClient &client,
 
 Settings::~Settings() = default;
 
-ErrorOrSuccess Settings::emplace(Context &ctx, HTTPClient *client,
-                                 bool createIfMissing) {
-  auto s = std::make_unique<Settings>();
-  auto implOr = Impl::create(client, createIfMissing);
+ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx, bool createIfMissing,
+                                 RefreshPolicy policy) {
+  auto implOr = Impl::create(httpCtx.copy(), createIfMissing);
   if (implOr.isError())
     return implOr.takeError();
 
-  s->impl = std::move(*implOr);
+  // Create the implementation.
+  Settings s;
+  s.impl = std::move(*implOr);
 
-  ctx.set(std::move(s));
-  return success();
+  // Refresh the certificate if it is necessary to do so. We only care about an
+  // error here if createIfMissing is specified. Otherwise, we move on.
+  if (auto err = s.impl->refresh(std::move(httpCtx), policy))
+    if (createIfMissing)
+      return err.takeError();
+
+  return std::move(s);
 }
 
 const Setting *Settings::get(StringRef key) const { return impl->get(key); }
 
-ErrorOrSuccess Settings::refresh(HTTPClient &client,
-                                 RefreshPolicy shouldRefreshEntitlements) {
-  return impl->refresh(client, shouldRefreshEntitlements);
+bool Settings::set(StringRef key, StringRef value) {
+  return impl->set(key, value);
+}
+
+ErrorOrSuccess Settings::flush() { return impl->flush(); }
+
+const std::filesystem::path &Settings::clientKeyPriv() const {
+  return impl->entitlementStore.clientKeyPrivPath;
+}
+
+const std::filesystem::path &Settings::clientKeyPub() const {
+  return impl->entitlementStore.clientKeyPubPath;
+}
+
+const std::filesystem::path &Settings::clientCert() const {
+  return impl->entitlementStore.clientCertPath;
+}
+
+const std::filesystem::path &Settings::CRL() const {
+  return impl->entitlementStore.crlPath;
 }

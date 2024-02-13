@@ -34,6 +34,9 @@
 #include <wincrypt.h>
 #endif // _WIN32
 
+#include <chrono>
+#include <filesystem>
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//
@@ -688,7 +691,9 @@ static ErrorOr<EntitlementStore> newEntitlementStore(Config &config) {
 }
 
 ErrorOr<std::optional<EntitlementStore>>
-EntitlementStore::open(Config &config, HTTPClient *client) {
+EntitlementStore::open(Config &config, HTTPContextRef httpCtx) {
+  std::unique_ptr<HTTPClient> client = httpCtx->client();
+
   // Construct our store.
   auto storeOr = newEntitlementStore(config);
   if (storeOr.isError())
@@ -714,7 +719,7 @@ EntitlementStore::open(Config &config, HTTPClient *client) {
   out.clientKeys = std::move(*privKeyOr);
 
   // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(client))
+  if (auto err = out.verifyAndFlushClientCert(*client))
     return err.takeError();
 
   return out;
@@ -725,7 +730,9 @@ EntitlementStore::open(Config &config, HTTPClient *client) {
 //===----------------------------------------------------------------------===//
 
 ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
-                                                     HTTPClient &client) {
+                                                     HTTPContextRef httpCtx) {
+  std::unique_ptr<HTTPClient> client = httpCtx->client();
+
   // Construct our store.
   auto storeOr = newEntitlementStore(config);
   if (storeOr.isError())
@@ -733,11 +740,11 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
   EntitlementStore out = std::move(*storeOr);
 
   // Fetch the certificate.
-  if (auto err = out.authAndFetchCertificate(client))
+  if (auto err = out.authAndFetchCertificate(*client))
     return err.takeError();
 
   // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(&client))
+  if (auto err = out.verifyAndFlushClientCert(*client))
     return err.takeError();
 
   return out;
@@ -747,7 +754,7 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
 // EntitlementStore::alwaysOpen
 //===----------------------------------------------------------------------===//
 
-EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
+EntitlementStore EntitlementStore::alwaysOpen(HTTPContextRef httpCtx,
                                               llvm::raw_ostream &warnStream) {
 
   // Open the configuration.
@@ -757,7 +764,7 @@ EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
   // temporarily, but will be removed in the future with proper error plumbing.
   auto cfgOr = Config::open();
   assert(!cfgOr.isError());
-  auto esOr = EntitlementStore::open(*cfgOr, client);
+  auto esOr = EntitlementStore::open(*cfgOr, std::move(httpCtx));
   if (!esOr.isError() && esOr->has_value())
     return std::move(esOr->value());
   auto newOr = newEntitlementStore(*cfgOr);
@@ -769,7 +776,9 @@ EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
 // EntitlementStore::refresh
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
+ErrorOrSuccess EntitlementStore::refresh(HTTPContextRef httpCtx) {
+  std::unique_ptr<HTTPClient> client = httpCtx->client();
+
   // Parse the client certificate. It is an error to 'refresh' if we don't
   // already have one.
   if (!clientCert->isAvailable())
@@ -785,7 +794,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 
   // Set up auth - this will read the certificate from the filesystem and use
   // that. This should still use the old keys for now.
-  if (auto err = client.setupAuth())
+  if (auto err = client->setupAuth())
     return err.takeError();
 
   // Rotate the client's keys on each refresh.
@@ -813,7 +822,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 
   // Request the new certificate. This will populate the certificate in memory,
   // but won't verify the certificate.
-  if (auto err = requestCertificate(client, buf->Buffer::getBuffer(), b64Sig,
+  if (auto err = requestCertificate(*client, buf->Buffer::getBuffer(), b64Sig,
                                     /*isRefresh=*/true))
     // Include the original error and a helpful message here. It's possible
     // that they haven't actually run anything in a long time, and they are
@@ -822,7 +831,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
                  err.getError());
 
   // Validate and flush the certificate we just got.
-  if (auto err = verifyAndFlushClientCert(&client))
+  if (auto err = verifyAndFlushClientCert(*client))
     return err.takeError();
 
   return success();
@@ -833,10 +842,12 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::refreshIfNecessary(
-    HTTPClient &client,
+    HTTPContextRef httpCtx,
     llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                             std::chrono::system_clock::time_point to)>
         shouldRefresh) {
+  std::unique_ptr<HTTPClient> client = httpCtx->client();
+
   // It is an error to 'refresh' if we don't already have the client
   // certificate.
   if (!clientCert || !clientCert->isAvailable())
@@ -850,7 +861,7 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
     return shouldRefreshOr.takeError();
 
   if (*shouldRefreshOr)
-    return refresh(client);
+    return refresh(std::move(httpCtx));
 
   return success();
 }
@@ -859,29 +870,27 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 // EntitlementStore::verifyAndFlushClientCert
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
+ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
   // If we have a client, then fetch the CRL.
-  if (client) {
-    HTTPRequest certificateRequest{"https://crl.modular.com"};
-    WriteableBufferRef crlBuf = WriteableBuffer::get(
-        /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
-    // The CRL isn't behind any kind of auth - that's allowed to be public.
-    client->noAuthNeeded();
-    HTTPResponse response = client->executeRequest(certificateRequest, *crlBuf);
-    // We ignore failures here, for now at least, it isn't an error to fail to
-    // fetch the CRL.
-    if (response.isSuccess()) {
-      // Flush it to the filesystem.
-      auto err = writeFileUnderLock(crlPath, [&](llvm::raw_ostream &os) {
-        os << crlBuf->Buffer::getBuffer();
-        // Write a null-terminator explicitly -
-        // this is required by mbedTLS' PEM
-        // parsing functions.
-        os << '\0';
-      });
-      if (err.isError()) {
-        return err.takeError();
-      }
+  HTTPRequest certificateRequest{"https://crl.modular.com"};
+  WriteableBufferRef crlBuf = WriteableBuffer::get(
+      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
+  // The CRL isn't behind any kind of auth - that's allowed to be public.
+  client.noAuthNeeded();
+  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
+  // We ignore failures here, for now at least, it isn't an error to fail to
+  // fetch the CRL.
+  if (response.isSuccess()) {
+    // Flush it to the filesystem.
+    auto err = writeFileUnderLock(crlPath, [&](llvm::raw_ostream &os) {
+      os << crlBuf->Buffer::getBuffer();
+      // Write a null-terminator explicitly -
+      // this is required by mbedTLS' PEM
+      // parsing functions.
+      os << '\0';
+    });
+    if (err.isError()) {
+      return err.takeError();
     }
   }
 

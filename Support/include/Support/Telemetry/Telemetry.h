@@ -8,9 +8,9 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/Configuration.h"
-#include "Support/Context.h"
 #include "Support/Entitlements/EntitlementStore.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Logs.h"
@@ -27,10 +27,6 @@
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
-
-namespace M {
-class Settings;
-}
 
 namespace M::Telemetry {
 
@@ -91,24 +87,21 @@ public:
 
   TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
                    std::optional<Config> config = std::nullopt)
-      : TelemetryContext(EntitlementStore::alwaysOpen(nullptr, llvm::errs()),
-                         resources, std::move(config)) {}
+      : TelemetryContext(
+            EntitlementStore::alwaysOpen(HTTPContext::init(), llvm::errs()),
+            resources, std::move(config)) {}
 
   /// Construct a TelemetryContext from a config.
   TelemetryContext(Config config)
-      : TelemetryContext(EntitlementStore::alwaysOpen(nullptr, llvm::errs()),
-                         {}, std::move(config)){};
+      : TelemetryContext(
+            EntitlementStore::alwaysOpen(HTTPContext::init(), llvm::errs()), {},
+            std::move(config)){};
 
-  /// Set up a TelemetryContext from a pointer to the Settings object. Generally
-  /// users should not call this API directly, they should prefer the static
-  /// `emplace` method below.
-  TelemetryContext(const Settings *settings,
+  /// Set up a TelemetryContext from a Settings object.
+  TelemetryContext(Settings &settings,
                    const llvm::StringMap<AttributeValue> &resources = {});
 
-  /// Create a TelemetryContext from a Context object, storing it in said
-  /// context.
-  static ErrorOrSuccess
-  emplace(Context &ctx, const llvm::StringMap<AttributeValue> &resources = {});
+  TelemetryContext(TelemetryContext &&other) = default;
 
   ~TelemetryContext();
 

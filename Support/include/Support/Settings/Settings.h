@@ -7,13 +7,12 @@
 #ifndef SUPPORT_SETTINGS_SETTINGS_H
 #define SUPPORT_SETTINGS_SETTINGS_H
 
+#include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/Settings/Setting.h"
+#include <filesystem>
 
 namespace M {
-/// Forward-declare the Context object.
-class Context;
-
 /// This class provides the collection of system settings. Users should use the
 /// `open` method to get the current settings, and should use `refresh` when
 /// it's necessary to do so. Refreshing the settings means intentionally looking
@@ -34,19 +33,6 @@ public:
   Settings(const Settings &other) = delete;
   Settings(Settings &&other) = default;
 
-  /// Open the current system settings and emplace them in the context object.
-  /// If we don't have secured settings and `createIfMissing` is false, then we
-  /// will not fetch the secured settings. To be concrete, there are 4 states
-  /// that we could be in:
-  ///  (1) No secured settings, don't bother getting them (this should go away).
-  ///  (2) No secured settings, get them.
-  ///  (3) Have secured settings, use them.
-  ///  (4) Have secured settings, fetch them again (this is refresh).
-  /// `createIfMissing` selects between states (1) and (2). State (3) is always
-  /// the default.
-  static ErrorOrSuccess emplace(Context &ctx, HTTPClient *client,
-                                bool createIfMissing = false);
-
   /// Get a setting by its key. This corresponds to Config::getValue.
   const Setting *get(StringRef key) const;
 
@@ -56,6 +42,48 @@ public:
     return llvm::cast_if_present<T>(get(key));
   }
 
+  /// As a special case, support a get that cast to bool using a sensible
+  /// and standardize way of evaluation. If the entitlement exists, or if
+  /// it is a StringRef with an appropriate value then true is returned.
+  bool getBool(StringRef key, const bool defaultValue) const {
+    const Setting *s = get(key);
+    if (s == nullptr)
+      return defaultValue;
+    auto stringValue = llvm::cast<StringRef>(s);
+    int intResult = llvm::StringSwitch<int>(stringValue)
+                        .CasesLower("0", "false", "no", 0)
+                        .CasesLower("1", "true", "yes", 1)
+                        .Default(-1);
+    if (intResult == -1)
+      return false;
+    return bool(intResult);
+  }
+
+  /// Sets a value in the underlying config only. The caller should be careful
+  /// to check the return value; this will fail if the value is not settable.
+  bool set(StringRef key, StringRef value);
+
+  /// Flushes the configuration. An error will be raised here if a set failed
+  /// previously (and e.g. conflicted with an entitlement).
+  ErrorOrSuccess flush();
+
+  /// Get an entitlement of the explicit type.
+  template <class T>
+  bool getBool() const {
+    // For entitlements, this evaluates only as a simple existence test using
+    // the get method above. Note that getBool() on an entitlement name will
+    // not return true, the actual entitlement must be present.
+    auto ptr = std::make_unique<T>();
+    const Setting *s = get(ptr->getName());
+    return s != nullptr;
+  }
+
+  /// Return the path for the client keys and certificate.
+  const std::filesystem::path &clientKeyPriv() const;
+  const std::filesystem::path &clientKeyPub() const;
+  const std::filesystem::path &clientCert() const;
+  const std::filesystem::path &CRL() const;
+
   /// Refresh the settings if it's necessary to do so. This will refresh all
   /// configurations and the entitlement store. The user can configure a policy
   /// on when a refresh is 'necessary', using the validFrom and validTo values
@@ -64,8 +92,16 @@ public:
   using RefreshPolicy =
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>;
-  ErrorOrSuccess refresh(HTTPClient &client,
-                         RefreshPolicy shouldRefreshEntitlements = nullptr);
+
+  /// Open the current configuration and entitlement store, refreshing if
+  /// needed, and return a Settings object.
+  ///
+  /// This function will open and parse the local configuration, and may
+  /// refresh the local entitlement store. It should only be called once
+  /// at start-up, and then stored in a context for future reference.
+  static ErrorOr<Settings> open(HTTPContextRef httpCtx,
+                                bool createIfMissing = false,
+                                RefreshPolicy policy = nullptr);
 
 private:
   class Impl;
