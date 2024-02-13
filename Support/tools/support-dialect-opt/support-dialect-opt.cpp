@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -25,6 +26,10 @@ int main(int argc, char **argv) {
   mlir::registerCanonicalizer();
   DebugInfo::registerDebugInfoToLLVMPass();
   DebugInfo::registerTransformsPasses();
+
+  // Most *-opt tools create a runtime for use during the passes. However, due
+  // to dependency structure the Support library does not use LLCL, and does
+  // not require a runtime.
 
   return failed(
       mlir::MlirOptMain(argc, argv, "index optimizer driver", registry));
