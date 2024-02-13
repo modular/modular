@@ -265,6 +265,7 @@ fn broadcast(
     var delta = shape.size - x.rank()
 
     @always_inline
+    @__copy_capture(delta)
     @parameter
     fn body[i: Int]():
         new_shape[i] = shape[i]
