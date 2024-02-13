@@ -870,36 +870,75 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 // EntitlementStore::verifyAndFlushClientCert
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
-  // If we have a client, then fetch the CRL.
-  HTTPRequest certificateRequest{"https://crl.modular.com"};
-  WriteableBufferRef crlBuf = WriteableBuffer::get(
-      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
-  // The CRL isn't behind any kind of auth - that's allowed to be public.
-  client.noAuthNeeded();
-  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
-  // We ignore failures here, for now at least, it isn't an error to fail to
-  // fetch the CRL.
-  if (response.isSuccess()) {
-    // Flush it to the filesystem.
-    auto err = writeFileUnderLock(crlPath, [&](llvm::raw_ostream &os) {
-      os << crlBuf->Buffer::getBuffer();
-      // Write a null-terminator explicitly -
-      // this is required by mbedTLS' PEM
-      // parsing functions.
-      os << '\0';
-    });
-    if (err.isError()) {
-      return err.takeError();
+static ErrorOr<std::optional<BufferRef>>
+lazyLoadCRL(HTTPClient &client, const std::filesystem::path &path) {
+  // To avoid constantly hashing and checking this URL, we will check for the
+  // last modification and time and record an empty file.
+  std::error_code ec;
+  if (std::filesystem::exists(path, ec) && !ec) {
+    std::filesystem::file_time_type ftime =
+        std::filesystem::last_write_time(path, ec);
+    if (!ec) {
+      auto yesterday =
+          std::chrono::system_clock::now() - std::chrono::hours(24);
+      auto touchTime = std::chrono::duration_cast<std::chrono::seconds>(
+          ftime.time_since_epoch());
+      // Is it within 24hrs? If so, then we just read the file that's there.
+      if (touchTime >= std::chrono::duration_cast<std::chrono::seconds>(
+                           yesterday.time_since_epoch())) {
+        auto bufOr = Buffer::getFile(path.string());
+        if (bufOr.isError())
+          return bufOr.takeError();
+        return std::move(*bufOr);
+      }
     }
   }
 
-  // If we got a new CRL, we'll have it on the filesystem. If we didn't, but we
-  // had an old one, then we'll be able to pull it off the filesystem. If we
-  // have nothing, then we can simply parse nothing.
-  auto pemOr = Buffer::getFile(crlPath.string());
-  if (!pemOr.isError())
-    crlPEM = std::move(*pemOr);
+  // It doesn't exist / isn't fresh enough.
+  WriteableBufferRef crlBuf = WriteableBuffer::get(
+      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
+
+  // No special privileges should be required to reach this URL, so we use
+  // an independent HTTPClient object, without any authentication.
+  client.noAuthNeeded();
+  HTTPRequest certificateRequest{"https://crl.modular.com"};
+  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
+  if (response.isSuccess()) {
+    // Flush it to the filesystem.
+    auto err = writeFileUnderLock(path, [&](llvm::raw_ostream &os) {
+      os << crlBuf->Buffer::getBuffer();
+      // Write a null-terminator explicitly - this is required by mbedTLS'
+      // PEM parsing functions.
+      os << '\0';
+    });
+    // Return if there is an error writing the file.
+    if (err.isError()) {
+      return err.takeError();
+    }
+    // We open the file, and check if it is completely empty. That's written
+    // below to ensure we don't continuely try to fetch an empty list.
+    auto bufOr = Buffer::getFile(path.string());
+    if (bufOr.isError())
+      return bufOr.takeError();
+    auto buf = std::move(*bufOr);
+    if (buf->getBufferSize() == 0)
+      return std::nullopt;
+  }
+
+  // If there is an error, then we just write an empty file.
+  auto err = writeFileUnderLock(path, [&](llvm::raw_ostream &os) {});
+  if (err.isError())
+    return err.takeError();
+  return std::nullopt; // Nothing fetched.
+}
+
+ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
+  // Load the CRL (but not too often).
+  auto pemOr = lazyLoadCRL(client, crlPath);
+  if (pemOr.isError())
+    return pemOr.takeError();
+  if (pemOr->has_value())
+    crlPEM = std::move(pemOr->value());
 
   // Verify the certificate with the CRL on the system, if we have it.
   if (auto err =
