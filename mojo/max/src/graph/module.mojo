@@ -11,6 +11,7 @@ from mlir.builtin_attributes import StringAttr
 from mlir.builtin_types import FunctionType
 
 from .type import MOTensor, TypeTuple
+from . import _capi as capi
 
 
 @value

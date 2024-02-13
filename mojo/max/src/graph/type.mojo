@@ -11,7 +11,7 @@ from utils.variant import Variant
 import mlir
 
 from .module import Module
-from . import capi
+from . import _capi as capi
 
 
 fn _dyn() -> Int64:
