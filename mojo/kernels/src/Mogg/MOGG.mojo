@@ -992,9 +992,10 @@ fn concat_from_list[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    _concat[rank, type, single_thread_blocking_override](
-        output, int(normalize_neg_index(axis[0], rank)), inputs
-    )
+    with Trace[TraceLevel.OP]("mojo.concat_from_list") as t:
+        _concat[rank, type, single_thread_blocking_override](
+            output, int(normalize_neg_index(axis[0], rank)), inputs
+        )
 
 
 @mogg_register("mo.concat")
@@ -1944,13 +1945,34 @@ fn mogg_gather_sum[
     output: NDBuffer[type, output_rank],
     ctx: MojoCallContextPtr,
 ):
-    gather_reduce[
-        type,
-        0,
-        1,
-        simdwidthof[type](),
-        add,
-    ](output, input, indices, 0)
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        let output_shape_str = String("output_shape=") + String("x").join(
+            output.get_shape()
+        )
+        let input_shape_str = String("input_shape=") + String("x").join(
+            input.get_shape()
+        )
+        let indices_shape_str = String("indices_shape=") + String("x").join(
+            indices.get_shape()
+        )
+
+        return String(";").join(
+            output_shape_str, input_shape_str, indices_shape_str
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.gather_sum",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        gather_reduce[
+            type,
+            0,
+            1,
+            simdwidthof[type](),
+            add,
+        ](output, input, indices, 0)
 
 
 @mogg_register("mo.gather")
