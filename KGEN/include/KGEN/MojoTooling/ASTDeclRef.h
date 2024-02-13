@@ -150,10 +150,6 @@ public:
   /// Returns a readable string representation of this type.
   std::string getAsString() const;
 
-  /// If the current type is a pointer, return the type of the pointee. This
-  /// aborts if the current type isn't a pointer.
-  MojoASTTypeRef getPointerElementType() const;
-
   /// If the current type is a reference, return the type of the pointee. This
   /// aborts if the current type isn't a reference.
   MojoASTTypeRef getReferenceElementType() const;
