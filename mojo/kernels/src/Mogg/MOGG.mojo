@@ -2890,7 +2890,6 @@ fn split_ith_output_shape[
 
 
 @mogg_register("mo.conv")
-@always_inline
 @export
 fn conv[
     input_rank: Int,
