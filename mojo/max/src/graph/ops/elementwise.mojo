@@ -524,16 +524,177 @@ def _unary_comparison_op[op_name: StringLiteral](value: Symbol) -> Symbol:
     return value.graph().op(op_name, value, result_type)
 
 
-alias abs = _unary_op["mo.abs"]
-alias exp = _unary_op["mo.exp"]
-alias erf = _unary_op["mo.erf"]
-alias gelu = _unary_op["mo.gelu"]
-alias log = _unary_op["mo.log"]
-alias log1p = _unary_op["mo.log1p"]
-alias logsoftmax = _unary_op["mo.logsoftmax"]
-alias relu = _unary_op["mo.relu"]
-alias softmax = _unary_op["mo.softmax"]
-alias sigmoid = _unary_op["mo.sigmoid"]
+def abs(value: Symbol) -> Symbol:
+    """Computes the elementwise absolute value of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise absolute value of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    The [absolute value](https://en.wikipedia.org/wiki/Absolute_value) function
+    is the [Euclidian distance](https://en.wikipedia.org/wiki/Euclidean_space#Euclidean_norm)
+    between a value and the origin (0).
+
+    For real numbers this is the same as the number with its sign changed to
+    positive, ie. `abs(x) = x if x > 0 else -x`. Complex numbers are currently
+    unsupported.
+
+    Args:
+        value: The symbolic tensor to use as the input to the absolute value
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.abs"](value)
+
+
+def exp(value: Symbol) -> Symbol:
+    """Computes the elementwise exp function of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise exp function of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    `exp` is defined as `exp(x) = e^x`, where `e` is
+    [Euler's number](https://en.wikipedia.org/wiki/E_(mathematical_constant)).
+
+    Args:
+        value: The symbolic tensor to use as the input to the exp function
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.exp"](value)
+
+
+def erf(value: Symbol) -> Symbol:
+    """Computes the elementwise error function of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise error function of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    The error function `erf` is defined as the probability that a randomly
+    sampled normal distribution falls within a given range. See
+    [Error function](https://en.wikipedia.org/wiki/Error_function) for more
+    details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the error function
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.erf"](value)
+
+
+def gelu(value: Symbol) -> Symbol:
+    """Computes the elementwise gelu function of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise gelu function of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    `gelu` is defined as $$gelu(x) = x \\Phi(x)$$ where $$\\Phi$$ is the
+    [cumulative distribution function of the Gaussian distribution](https://en.wikipedia.org/wiki/Normal_distribution#Cumulative_distribution_function).
+    See [the paper](https://arxiv.org/pdf/1606.08415.pdf) for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the gelu function
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.gelu"](value)
+
+
+def log(value: Symbol) -> Symbol:
+    """Computes the elementwise natural logarithm of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise natural logarithm of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    The [natural logarithm](https://en.wikipedia.org/wiki/Natural_logarithm)
+    function `log` is defined as the inverse of the exponential function `exp()`,
+    ie. it computes the value `y` in the equation `x = e^y` where `e` is
+    [Euler's number](https://en.wikipedia.org/wiki/E_(mathematical_constant)).
+
+    `log(x)` is undefined for `x <= 0` for real numbers. Complex numbers
+    are currently unsupported.
+
+    Args:
+        value: The symbolic tensor to use as the input to the natural logarithm
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.log"](value)
+
+
+def log1p(value: Symbol) -> Symbol:
+    """Computes the elementwise logarithm of 1 plus a symbolic tensor.
+
+    Creates a new op node to compute the elementwise log1p of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    The `log1p` function is defined as `log1p(x) = log(1 + x)`, where `log()`
+    is the [natural logarithm](https://en.wikipedia.org/wiki/Natural_logarithm).
+
+    Using `log1p(x)` rather than computing `log(1 + x)` can give greater
+    numerical precision results.
+
+    `log(x)` is undefined for `x <= 0` for real numbers. Complex numbers
+    are currently unsupported.
+
+    Args:
+        value: The symbolic tensor to use as the input to the log1p
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.log1p"](value)
+
+
+def logsoftmax(value: Symbol) -> Symbol:
+    return _unary_op["mo.logsoftmax"](value)
+
+
+def relu(value: Symbol) -> Symbol:
+    return _unary_op["mo.relu"](value)
+
+
+def softmax(value: Symbol) -> Symbol:
+    return _unary_op["mo.softmax"](value)
+
+
+def sigmoid(value: Symbol) -> Symbol:
+    return _unary_op["mo.sigmoid"](value)
 
 
 def silu(v: Symbol) -> Symbol:
