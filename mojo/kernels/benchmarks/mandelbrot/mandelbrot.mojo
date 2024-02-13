@@ -131,7 +131,7 @@ fn mandelbrot_blog_1[
 
 fn main_blog_part1():
     constrained[width % 16 == 0, "must be a multiple of 16"]()
-    let m = Tensor[int_type](height, width)
+    var m = Tensor[int_type](height, width)
 
     @always_inline
     @parameter
@@ -235,6 +235,7 @@ fn mandelbrot[
         let scale_y = (max_y - min_y) / h
 
         @always_inline
+        @__copy_capture(scale_x, scale_y)
         @parameter
         fn compute_vector[simd_width: Int](col: Int):
             """Each time we operate on a `simd_width` vector of pixels."""
