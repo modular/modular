@@ -234,6 +234,7 @@ fn test[
             )
 
             @always_inline
+            @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
             fn body0[width: Int](offset: Int):
                 output_ref_ptr.simd_store(
@@ -252,6 +253,7 @@ fn test[
     @parameter
     fn epilogue[_rank: Int](coords: StaticIntTuple[_rank], f_size: Int):
         @always_inline
+        @__copy_capture(output, bias_ptr)
         @parameter
         fn body1[width: Int](idx: Int):
             var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)

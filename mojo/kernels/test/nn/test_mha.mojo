@@ -106,6 +106,7 @@ def test_mha():
     let output = NDBuffer[type, 4, BHSD](output_ptr)
     let mha_output = NDBuffer[type, 4, BHSD](mha_output_ptr)
 
+    @__copy_capture(mha_output, output, mask, v, q, k_ptr)
     @parameter
     @always_inline
     fn test_body[transpose_k: Bool]() raises:

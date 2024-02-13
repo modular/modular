@@ -65,6 +65,7 @@ def test_accumulate[
     alias c_size = num_rows * num_cols * simd_size
     let c = stack_allocation[c_size, type]()
 
+    @__copy_capture(c)
     @parameter
     fn fill_c[widthj: Int](offset: Int):
         (c + offset).simd_store(SIMD[type, simd_size](0.0))

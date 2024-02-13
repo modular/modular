@@ -70,6 +70,7 @@ fn test_arange[
     let out_tensor = NDBuffer[dtype, 1](memory4, outshape)
 
     @always_inline
+    @__copy_capture(out_tensor, step_tensor, start_tensor, stop_tensor)
     @parameter
     fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         let index = rebind[StaticIntTuple[1]](idx)
