@@ -140,28 +140,41 @@ void M::Frameworks::StatsReport::writeToFile() {
 }
 
 void M::Frameworks::StatsReport::emitTelemetry(
-    M::Telemetry::TelemetryContext *telemetryContext) {
-  auto logger = telemetryContext->getLogger("engine");
-  llvm::StringMap<Telemetry::Logs::AttributeValue> attributes = {};
-  attributes["lowered_op_count"] = numLoweredOps;
-  attributes["fallback_op_count"] = numFallbackOps;
-  attributes["failed_op_count"] = numFailedOps;
-  logger->emitL1Event(framework + ".stats", attributes);
+    M::Telemetry::TelemetryContext *telemetryCtx) {
+// if MODULAR_ENABLE_TELEMETRY=OFF, we do not support event attributes that are
+// vectors. ifdef on MODULAR_ENABLE_TELEMETRY to work around the problem.
+#ifdef MODULAR_ENABLE_TELEMETRY
+  auto logger = telemetryCtx->getLogger("engine");
 
-  auto logAttributes =
-      [&](llvm::StringMap<Telemetry::Logs::AttributeValue> &attributes,
-          std::string name) {
-        if (attributes.size() > 0)
-          logger->emitL1Event(framework + ".stats." + name, attributes);
-      };
+  auto fillHistogram = [&](std::vector<std::string_view> &keys,
+                           std::vector<uint32_t> &counts,
+                           const llvm::StringMap<size_t> &histogram) {
+    keys.reserve(histogram.size());
+    counts.reserve(histogram.size());
+    for (const auto &[op, count] : histogram) {
+      keys.push_back(op);
+      counts.emplace_back(count);
+    }
+  };
+  // Add fallback histogram
+  std::vector<std::string_view> fallbackOps;
+  std::vector<uint32_t> fallbackCounts;
+  fillHistogram(fallbackOps, fallbackCounts, fallbackHistogram);
 
-  llvm::StringMap<Telemetry::Logs::AttributeValue> fallbackAttributes = {};
-  for (const auto &[fallbackOp, count] : fallbackHistogram)
-    fallbackAttributes[fallbackOp] = count;
-  logAttributes(fallbackAttributes, "fallback");
+  // Add failed histogram
+  std::vector<std::string_view> failureOps;
+  std::vector<uint32_t> failureCounts;
+  fillHistogram(failureOps, failureCounts, failureHistogram);
 
-  llvm::StringMap<Telemetry::Logs::AttributeValue> failedAttributes = {};
-  for (const auto &[op, count] : failureHistogram)
-    failedAttributes[op] = count;
-  logAttributes(failedAttributes, "failed");
+  logger->emitL1Event(framework + ".stats",
+                      {
+                          {"lowered_op_count", numLoweredOps},
+                          {"fallback_op_count", numFallbackOps},
+                          {"failed_op_count", numFailedOps},
+                          {"fallback_ops.histogram.keys", fallbackOps},
+                          {"fallback_ops.histogram.values", fallbackCounts},
+                          {"failed_ops.histogram.keys", failureOps},
+                          {"failed_ops.histogram.values", failureCounts},
+                      });
+#endif
 }
