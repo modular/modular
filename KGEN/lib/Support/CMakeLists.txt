@@ -14,5 +14,5 @@ add_modular_library(KGENSupport
 )
 
 target_compile_definitions(KGENSupport
-  PRIVATE -DMOJO_CONFIG_SECTION="${MOJO_CONFIG_SECTION}"
+  PRIVATE -DMOJO_CONFIG_SECTION=${MOJO_CONFIG_SECTION}
 )
