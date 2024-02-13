@@ -42,11 +42,8 @@ public:
   /// Generate a new keypair using the system CSPRNG. This will initialize a
   /// keypair that has a private key. If a directory is provided, the keys will
   /// be written in DER form as <dir>/client_priv.der and <dir>/client_pub.der.
-  static ErrorOr<Keypair>
-  generate(std::optional<std::filesystem::path> dir = std::nullopt);
-
-  /// Open the default keypair using `findModularFile`.
-  static ErrorOr<Keypair> open();
+  static ErrorOr<Keypair> generate(const std::filesystem::path &priv,
+                                   const std::filesystem::path &pub);
 
   /// Open the private key at `absolute`. This must be a full path to the
   /// private key.

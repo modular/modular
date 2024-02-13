@@ -80,7 +80,7 @@ Settings::Impl::create(HTTPClient *client, bool createIfMissing) {
     return cfgOr.takeError();
 
   // First, we attempt to open the certificate.
-  auto storeOr = EntitlementStore::open(client);
+  auto storeOr = EntitlementStore::open(*cfgOr, client);
   if (storeOr.isError())
     return storeOr.takeError();
 
@@ -91,14 +91,15 @@ Settings::Impl::create(HTTPClient *client, bool createIfMissing) {
   // If we have decided that we should not create a new one if it's missing,
   // then simply return an empty one.
   if (!createIfMissing)
-    return std::make_unique<Impl>(cfgOr.takeValue(), EntitlementStore{});
+    return std::make_unique<Impl>(
+        cfgOr.takeValue(), EntitlementStore::alwaysOpen(client, llvm::errs()));
 
   if (!client)
     return Error("must have HTTP client to generate a new certificate");
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.
-  auto genOr = EntitlementStore::generate(*client);
+  auto genOr = EntitlementStore::generate(*cfgOr, *client);
   if (genOr.isError())
     return genOr.takeError();
 

@@ -618,8 +618,14 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 // EntitlementStore Constructor/Destructor
 //===----------------------------------------------------------------------===//
 
-EntitlementStore::EntitlementStore()
-    : clientCert(nullptr), crlPEM(Buffer::get("")) {}
+EntitlementStore::EntitlementStore(
+    const std::filesystem::path &clientKeyPrivPath,
+    const std::filesystem::path &clientKeyPubPath,
+    const std::filesystem::path &clientCertPath,
+    const std::filesystem::path &crlPath)
+    : clientCert(nullptr), crlPEM(Buffer::get("")),
+      clientKeyPrivPath(clientKeyPrivPath), clientKeyPubPath(clientKeyPubPath),
+      clientCertPath(clientCertPath), crlPath(crlPath) {}
 EntitlementStore::~EntitlementStore() {}
 EntitlementStore::EntitlementStore(M::EntitlementStore &&other) = default;
 
@@ -642,29 +648,65 @@ ErrorOr<StringRef> EntitlementStore::getUserID() const {
 // EntitlementStore::open
 //===----------------------------------------------------------------------===//
 
-ErrorOr<std::optional<EntitlementStore>>
-EntitlementStore::open(HTTPClient *client) {
+static std::filesystem::path findClientFile(std::filesystem::path dir,
+                                            StringRef cfgVal, StringRef name) {
+  // Use the configuration file.
+  if (!cfgVal.empty())
+    return std::filesystem::path(std::string(cfgVal));
+  // Try to find the file if it exists.
+  auto fileOr = findModularFile(name);
+  if (fileOr)
+    return std::filesystem::path(std::string(*fileOr));
+  // Assume it is a file in the given directory.
+  return dir / std::filesystem::path(std::string(name));
+}
+
+static ErrorOr<EntitlementStore> newEntitlementStore(Config &config) {
   // Register all the entitlements we have.
   registerAllEntitlements();
 
-  EntitlementStore out;
-  // Find the client certificate. If we don't have one already, return
-  // std::nullopt.
-  auto certOr = findModularFile("client.pem");
-  if (!certOr)
-    return std::nullopt;
+  // Create a data folder for new keys.
+  auto dataFolderOr = M::Config::getModularDataFolderPath(true);
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
 
-  // Otherwise, read the certificate.
-  auto mbufOr = Buffer::getFile(certOr->string());
-  if (mbufOr.isError())
-    return mbufOr.takeError();
+  // Key files and certificate paths.
+  auto clientKeyPrivPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_key_priv"),
+      "client_priv.pem");
+  auto clientKeyPubPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_key_pub"),
+      "client_pub.pem");
+  auto clientCertPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
+  auto crlPath = findClientFile(*dataFolderOr,
+                                config.getValue("entitlements.crl"), "crl.pem");
+
+  // Return the initialized store.
+  return EntitlementStore(clientKeyPrivPath, clientKeyPubPath, clientCertPath,
+                          crlPath);
+}
+
+ErrorOr<std::optional<EntitlementStore>>
+EntitlementStore::open(Config &config, HTTPClient *client) {
+  // Construct our store.
+  auto storeOr = newEntitlementStore(config);
+  if (storeOr.isError())
+    return storeOr.takeError();
+  EntitlementStore out = std::move(*storeOr);
+
+  // Read the certificate.
+  auto mbufOr = Buffer::getFile(out.clientCertPath.string());
+  if (mbufOr.isError()) {
+    return std::nullopt; // No certificate is available.
+  }
 
   // Parse the certificate chain. This will store the cert in this class.
   if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
     return err.takeError();
 
-  // Open the keypair, this function prefers a private key.
-  auto privKeyOr = Keypair::open();
+  // Open the private key.
+  auto privKeyOr = Keypair::openPrivate(out.clientKeyPrivPath);
   if (privKeyOr.isError())
     return privKeyOr.takeError();
   if (!privKeyOr->hasPrivateKey())
@@ -682,15 +724,15 @@ EntitlementStore::open(HTTPClient *client) {
 // EntitlementStore::generate
 //===----------------------------------------------------------------------===//
 
-ErrorOr<EntitlementStore> EntitlementStore::generate(HTTPClient &client) {
-  // Remove the client cert file (if it exists) and try again.
-  auto certFile = findModularFile("client.pem");
-  if (certFile) {
-    std::error_code ec;
-    std::filesystem::remove(*certFile, ec);
-  }
+ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
+                                                     HTTPClient &client) {
+  // Construct our store.
+  auto storeOr = newEntitlementStore(config);
+  if (storeOr.isError())
+    return storeOr.takeError();
+  EntitlementStore out = std::move(*storeOr);
 
-  EntitlementStore out;
+  // Fetch the certificate.
   if (auto err = out.authAndFetchCertificate(client))
     return err.takeError();
 
@@ -708,43 +750,19 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(HTTPClient &client) {
 EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
                                               llvm::raw_ostream &warnStream) {
 
-  // Register all the entitlements we have.
-  registerAllEntitlements();
-
-  EntitlementStore out;
-  // Find the client certificate. If we don't have one already, return
-  // std::nullopt.
-  auto certOr = findModularFile("client.pem");
-  if (!certOr)
-    return {}; // Empty entitlements store.
-
-  auto onError = [&](Error e) -> EntitlementStore {
-    warnStream << e.get();
-    return {}; // Empty entitlement store.
-  };
-
-  // Otherwise, read the certificate.
-  auto mbufOr = Buffer::getFile(certOr->string());
-  if (mbufOr.isError())
-    return onError(mbufOr.takeError());
-
-  // Parse the certificate chain. This will store the cert in this class.
-  if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
-    return onError(err.takeError());
-
-  // Open the keypair, this function prefers a private key.
-  auto privKeyOr = Keypair::open();
-  if (privKeyOr.isError())
-    return onError(privKeyOr.takeError());
-  if (!privKeyOr->hasPrivateKey())
-    return onError(Error("client keypair did not include a private key"));
-  out.clientKeys = std::move(*privKeyOr);
-
-  // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(client))
-    return onError(err.takeError());
-
-  return out;
+  // Open the configuration.
+  //
+  // N.B. This function is to be removed very shortly in the stack. We can no
+  // longer open the entitlement store in this way. The asserts are here
+  // temporarily, but will be removed in the future with proper error plumbing.
+  auto cfgOr = Config::open();
+  assert(!cfgOr.isError());
+  auto esOr = EntitlementStore::open(*cfgOr, client);
+  if (!esOr.isError() && esOr->has_value())
+    return std::move(esOr->value());
+  auto newOr = newEntitlementStore(*cfgOr);
+  assert(!newOr.isError());
+  return std::move(*newOr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -770,13 +788,8 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
   if (auto err = client.setupAuth())
     return err.takeError();
 
-  // Ensure we have a data folder.
-  auto dataFolderOr = Config::getModularDataFolderPath();
-  if (dataFolderOr.isError())
-    return dataFolderOr.takeError();
-
   // Rotate the client's keys on each refresh.
-  auto newKeysOr = Keypair::generate(*dataFolderOr);
+  auto newKeysOr = Keypair::generate(clientKeyPrivPath, clientKeyPubPath);
   if (newKeysOr.isError())
     return newKeysOr.takeError();
 
@@ -802,7 +815,11 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
   // but won't verify the certificate.
   if (auto err = requestCertificate(client, buf->Buffer::getBuffer(), b64Sig,
                                     /*isRefresh=*/true))
-    return err.takeError();
+    // Include the original error and a helpful message here. It's possible
+    // that they haven't actually run anything in a long time, and they are
+    // hitting some kind of expiration.
+    return Error(Twine("unable to refresh certificate, try `modular auth`: ") +
+                 err.getError());
 
   // Validate and flush the certificate we just got.
   if (auto err = verifyAndFlushClientCert(&client))
@@ -843,11 +860,6 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
-  // Ensure that we have a data folder.
-  auto dataFolderOr = Config::getModularDataFolderPath();
-  if (dataFolderOr.isError())
-    return dataFolderOr.takeError();
-
   // If we have a client, then fetch the CRL.
   if (client) {
     HTTPRequest certificateRequest{"https://crl.modular.com"};
@@ -860,14 +872,13 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
     // fetch the CRL.
     if (response.isSuccess()) {
       // Flush it to the filesystem.
-      auto err = writeFileUnderLock(*dataFolderOr / "crl.pem",
-                                    [&](llvm::raw_ostream &os) {
-                                      os << crlBuf->Buffer::getBuffer();
-                                      // Write a null-terminator explicitly -
-                                      // this is required by mbedTLS' PEM
-                                      // parsing functions.
-                                      os << '\0';
-                                    });
+      auto err = writeFileUnderLock(crlPath, [&](llvm::raw_ostream &os) {
+        os << crlBuf->Buffer::getBuffer();
+        // Write a null-terminator explicitly -
+        // this is required by mbedTLS' PEM
+        // parsing functions.
+        os << '\0';
+      });
       if (err.isError()) {
         return err.takeError();
       }
@@ -877,12 +888,9 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
   // If we got a new CRL, we'll have it on the filesystem. If we didn't, but we
   // had an old one, then we'll be able to pull it off the filesystem. If we
   // have nothing, then we can simply parse nothing.
-  auto crlPEMPathOr = findModularFile("crl.pem");
-  if (crlPEMPathOr) {
-    auto pemOr = Buffer::getFile(*crlPEMPathOr);
-    if (!pemOr.isError())
-      crlPEM = std::move(*pemOr);
-  }
+  auto pemOr = Buffer::getFile(crlPath.string());
+  if (!pemOr.isError())
+    crlPEM = std::move(*pemOr);
 
   // Verify the certificate with the CRL on the system, if we have it.
   if (auto err =
@@ -890,9 +898,9 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient *client) {
     return err.takeError();
 
   // Flush the certificate to a local file now we know it's valid.
-  auto err = writeFileUnderLock(
-      *dataFolderOr / "client.pem",
-      [&](llvm::raw_ostream &os) { os << clientCert->getPEM(); });
+  auto err = writeFileUnderLock(clientCertPath, [&](llvm::raw_ostream &os) {
+    os << clientCert->getPEM();
+  });
   if (err.isError())
     return err.takeError();
 
@@ -1056,16 +1064,12 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
 
   // OK, we have a token now. This means we can auth to the CSR endpoint.
   // Open or generate some keys and use them to generate our CSR.
-  auto keysOr = Keypair::open();
+  auto keysOr = Keypair::openPrivate(clientKeyPrivPath);
 
-  // Couldn't find the default keys, so create new ones and write them to the
-  // MODULAR_HOME path. This will ensure we have the keys on the filesystem at
-  // all times.
+  // Couldn't find the default keys, so create new ones. This will ensure we
+  // have the keys on the filesystem at all times.
   if (keysOr.isError()) {
-    auto configFolderOr = Config::getModularConfigFolderPath();
-    if (configFolderOr.isError())
-      return configFolderOr.takeError();
-    keysOr = Keypair::generate(*configFolderOr);
+    keysOr = Keypair::generate(clientKeyPrivPath, clientKeyPubPath);
   }
 
   // Now if it's an error, it's a real error.

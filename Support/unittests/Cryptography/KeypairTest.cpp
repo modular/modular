@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Cryptography/Keypair.h"
+#include "Support/FileSystemExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 
 #include "gtest/gtest.h"
@@ -13,12 +14,21 @@ using namespace M;
 
 TEST(TestKeypair, RoundtripSignature) {
   constexpr llvm::StringLiteral dataToSign = "hello, world";
-  auto keysOr = Keypair::generate();
-  EXPECT_FALSE(keysOr.isError()) << keysOr.getError();
+  ErrorOr<TempFile> keyFileOr = TempFile::create("clientKey.XXXXXX");
+  ErrorOr<TempFile> certFileOr = TempFile::create("clientCert.XXXXXX");
+  ASSERT_FALSE(keyFileOr.isError()) << keyFileOr.getError();
+  ASSERT_FALSE(certFileOr.isError()) << certFileOr.getError();
+  keyFileOr->close();
+  keyFileOr->remove();
+  certFileOr->close();
+  certFileOr->remove();
+
+  auto keysOr = Keypair::generate(keyFileOr->getPath(), certFileOr->getPath());
+  ASSERT_FALSE(keysOr.isError()) << keysOr.getError();
 
   auto sigOr = keysOr->sign(dataToSign);
-  EXPECT_FALSE(sigOr.isError()) << sigOr.getError();
+  ASSERT_FALSE(sigOr.isError()) << sigOr.getError();
 
   auto err = keysOr->validateSignature(dataToSign, *sigOr);
-  EXPECT_FALSE(err.isError()) << err.getError();
+  ASSERT_FALSE(err.isError()) << err.getError();
 }

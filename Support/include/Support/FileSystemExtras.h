@@ -77,6 +77,10 @@ public:
   /// Keep the tempfile after the destructor runs - useful for debugging.
   void keep() { keepFile = true; }
 
+  /// remove removes the file. The file will still be cleaned up (or at
+  /// least attempted to remove) when the class is destroyed.
+  void remove();
+
   /// close closes the file. The path will still be available.
   void close();
 

@@ -366,7 +366,8 @@ TEST(TestEntitlementStore, Bootstrap) {
   Firechicken client(std::move(httpCtx));
   client.noAuthNeeded();
 
-  auto storeOr = EntitlementStore::generate(client);
+  Config config; // Use empty config.
+  auto storeOr = EntitlementStore::generate(config, client);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
@@ -382,11 +383,13 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
   client.noAuthNeeded();
 
   { // Scope to call the entitlement store's destructor so we can `open` it.
-    auto storeOr = EntitlementStore::generate(client);
+    Config config; // Use empty config.
+    auto storeOr = EntitlementStore::generate(config, client);
     ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
-  auto storeOr = EntitlementStore::open(&client);
+  Config config; // Use empty config.
+  auto storeOr = EntitlementStore::open(config, &client);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   ASSERT_TRUE(storeOr->has_value()) << "we just generated this...?";
 
@@ -402,7 +405,8 @@ TEST(TestEntitlementStore, Refresh) {
   Firechicken client(std::move(httpCtx));
   client.noAuthNeeded();
 
-  auto storeOr = EntitlementStore::generate(client);
+  Config config; // Use empty config.
+  auto storeOr = EntitlementStore::generate(config, client);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
