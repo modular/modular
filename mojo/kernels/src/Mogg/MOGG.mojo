@@ -2688,12 +2688,14 @@ fn non_maximum_suppression_shape_func[
 fn random_normal[
     type: DType,
     shapeType: DType,
+    mean_var_type: DType,
+    seed_type: DType,
     rank: Int,
 ](
     shape: NDBuffer[shapeType, 1, DimList(rank)],
-    mean: NDBuffer[DType.float64, 1, DimList(1)],
-    variance: NDBuffer[DType.float64, 1, DimList(1)],
-    op_seed: NDBuffer[DType.int64, 1, DimList(1)],
+    mean: NDBuffer[mean_var_type, 1, DimList(1)],
+    variance: NDBuffer[mean_var_type, 1, DimList(1)],
+    op_seed: NDBuffer[seed_type, 1, DimList(1)],
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
@@ -2701,7 +2703,12 @@ fn random_normal[
     var num_elements = 1
     for i in range(len(shape)):
         num_elements *= shape[i].to_int()
-    randn[type](output.data, num_elements, mean[0], variance[0])
+    randn[type](
+        output.data,
+        num_elements,
+        mean[0].cast[DType.float64](),
+        variance[0].cast[DType.float64](),
+    )
 
 
 @export
