@@ -260,12 +260,6 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
       return {};
   }
 
-  // Now that resolution is finished, cache the state of modules we have parsed.
-  // TODO: We should be able to cache even in the presence of warnings and
-  // errors. We can store the diagnostics and replay on cache load.
-  if (!sharedState.diags.isDiagnosticEmitted())
-    sharedState.cacheParsedModules();
-
   eraseUnreachableDecls(moduleDecl.getIfOperation(), *module);
   sortValueUses(*module);
 
