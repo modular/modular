@@ -2682,6 +2682,8 @@ fn non_maximum_suppression_shape_func[
 # MOGG mo.random.normal
 # ===----------------------------------------------------------------------===#
 
+# TODO(31691): Correctly handle PRNG state with asynchronous runtime
+
 
 @mogg_register("mo.random.normal")
 @export
@@ -2704,6 +2706,30 @@ fn random_normal[
     for i in range(len(shape)):
         num_elements *= shape[i].to_int()
     randn[type](
+        output.data,
+        num_elements,
+        mean[0].cast[DType.float64](),
+        variance[0].cast[DType.float64](),
+    )
+
+
+@mogg_register("mo.static.random.normal")
+@export
+fn static_random_normal[
+    type: DType,
+    meanVarType: DType,
+    seedType: DType,
+    rank: Int,
+](
+    mean: NDBuffer[meanVarType, 1, DimList(1)],
+    variance: NDBuffer[meanVarType, 1, DimList(1)],
+    op_seed: NDBuffer[seedType, 1, DimList(1)],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+):
+    seed(int(op_seed[0]))
+    var num_elements = output.num_elements()
+    randn(
         output.data,
         num_elements,
         mean[0].cast[DType.float64](),
