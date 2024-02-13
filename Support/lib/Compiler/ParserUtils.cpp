@@ -51,7 +51,7 @@ ParseResult M::parseParenOperandListWithShadowing(
 
     // Parse the input operand.
     if (parser.parseOperand(unresolvedOperand,
-                            /*allowResultNumber=*/false))
+                            /*allowResultNumber=*/true))
       return failure();
 
     // Parse an 'as' clause to name the nested block arguments. This can be
