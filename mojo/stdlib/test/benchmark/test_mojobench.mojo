@@ -34,7 +34,11 @@ def main():
     inputs.push_back("input1")
     inputs.push_back("input2")
     for i in range(len(inputs)):
-        m.bench_with_input[String, bench2](BenchId("bench2", str(i)), inputs[i])
+        m.bench_with_input[String, bench2](
+            BenchId("bench2", str(i)),
+            inputs[i],
+            throughput_elems=len(inputs[i]),
+        )
 
     # CHECK: bench1
     # CHECK-NEXT: bench1
