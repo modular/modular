@@ -8,6 +8,7 @@
 #define SUPPORT_ENTITLEMENTS_ENTITLEMENTSTORE_H
 
 #include "Support/ASN1/ObjectID.h"
+#include "Support/Configuration.h"
 #include "Support/Cryptography/Keypair.h"
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/ErrorOr.h"
@@ -36,9 +37,10 @@ bool defaultEntitlementRefreshPolicy(std::chrono::system_clock::time_point from,
 /// current store.
 class EntitlementStore {
 public:
-  /// EntitlementStores are default-constructible. That just means they don't
-  /// contain any entitlements.
-  EntitlementStore();
+  EntitlementStore(const std::filesystem::path &clientKeyPrivPath,
+                   const std::filesystem::path &clientKeyPubPath,
+                   const std::filesystem::path &clientCertPath,
+                   const std::filesystem::path &crlPath);
   ~EntitlementStore();
 
   /// EntitlementStore objects are non-copyable, but they are move-able.
@@ -62,13 +64,14 @@ public:
   /// certificate does not exist, then return std::nullopt because the enclosing
   /// application should decide what to do in that state. If an actual error
   /// occurs, return the error.
-  static ErrorOr<std::optional<EntitlementStore>> open(HTTPClient *client);
+  static ErrorOr<std::optional<EntitlementStore>> open(Config &config,
+                                                       HTTPClient *client);
 
   /// Remove an existing certificate from the user's system (if it exists) and
   /// fetch a new one. This always returns an EntitlementStore on success,
   /// because the only case where we cannot fetch a certificate is the one where
   /// an actual error occurred.
-  static ErrorOr<EntitlementStore> generate(HTTPClient &client);
+  static ErrorOr<EntitlementStore> generate(Config &config, HTTPClient &client);
 
   /// Always open an EntitlementStore, and simply default to an empty
   /// EntitlementStore if we don't have the required infrastructure, we don't
@@ -163,6 +166,13 @@ private:
 
   /// This is a local reference to the CRL. If we have it, it'll be PEM-encoded.
   BufferRef crlPEM;
+
+public:
+  /// Paths to use for on-disk keys.
+  const std::filesystem::path clientKeyPrivPath;
+  const std::filesystem::path clientKeyPubPath;
+  const std::filesystem::path clientCertPath;
+  const std::filesystem::path crlPath;
 };
 } // namespace M
 

@@ -214,7 +214,10 @@ TempFile::TempFile(TempFile &&other)
 
 TempFile::~TempFile() {
   close();
+  remove();
+}
 
+void TempFile::remove() {
   if (!keepFile) {
     std::error_code ec;
     std::filesystem::remove(path, ec);

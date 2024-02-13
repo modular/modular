@@ -52,10 +52,8 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   return 0;
 }
 
-static constexpr llvm::StringLiteral privKeyFilename = "client_priv.pem";
-static constexpr llvm::StringLiteral pubKeyFilename = "client_pub.pem";
-
-ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
+ErrorOr<Keypair> Keypair::generate(const std::filesystem::path &priv,
+                                   const std::filesystem::path &pub) {
   // Set up the keypair for generation.
   Keypair out;
   int rc = mbedtls_pk_setup(out.getRawKey(),
@@ -69,14 +67,6 @@ ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
                            mbedtls_pk_ec(*out.getRawKey()), &csprng, &rng);
   if (rc != 0)
     return Error(mbedTLSErrorToString(rc));
-
-  // No dir specified? Just return the keypair.
-  if (!dir.has_value())
-    return out;
-
-  // Otherwise, dump them to files.
-  std::filesystem::path priv = *dir / privKeyFilename.str();
-  std::filesystem::path pub = *dir / pubKeyFilename.str();
 
   // Create an array of scratch data we can use. This size works well because we
   // are using the elliptic curve P256 key - it should always be much less than
@@ -114,19 +104,6 @@ ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
   // key, we just generated it.
   out.havePrivateKey = true;
   return out;
-}
-
-ErrorOr<Keypair> Keypair::open() {
-  Keypair out;
-
-  if (auto privOr = findModularFile(privKeyFilename))
-    return Keypair::openPrivate(*privOr);
-
-  if (auto pubOr = findModularFile(pubKeyFilename))
-    return Keypair::openPublic(*pubOr);
-
-  return Error::getStaticString(
-      "could not find any keys in the Modular search path");
 }
 
 ErrorOr<Keypair> Keypair::openPrivate(const std::filesystem::path &absolute) {
