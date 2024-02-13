@@ -515,7 +515,11 @@ def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
 
 
 def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
-    let float_v = cast(value, DType.float32)
+    let dtype = value.tensor_type().dtype.dtype
+    # This should be an arbitrary-precision float when we get around to it
+    # ie. currently `2. * sqrt(2)` will compute `sqrt(2)` as a float16
+    # and then promote it rather than computing in the right precision.
+    let float_v = cast(value, promote(dtype, DType.float16))
     return value.graph().op(op_name, float_v, float_v.tensor_type())
 
 
@@ -795,16 +799,276 @@ def silu(value: Symbol) -> Symbol:
     return mul(value, sigmoid(value))
 
 
-alias cos = _unary_float_op["mo.cos"]
-alias floor = _unary_float_op["mo.floor"]
-alias round = _unary_float_op["mo.round"]
-alias roundeven = _unary_float_op["mo.roundeven"]
-alias rsqrt = _unary_float_op["mo.rsqrt"]  # TODO: add missing rsqrt coverage.
-alias sqrt = _unary_float_op["mo.sqrt"]
-alias sin = _unary_float_op["mo.sin"]
-alias tanh = _unary_float_op["mo.tanh"]
-alias trunc = _unary_float_op["mo.trunc"]
+def cos(value: Symbol) -> Symbol:
+    """Computes the elementwise cosine of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise cosine of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.cos`](https://docs.staging.modular.com/engine/reference/mlir/mo#mocos-mmocosop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.cos"](value)
 
 
-alias is_nan = _unary_comparison_op["mo.is_nan"]
-alias is_inf = _unary_comparison_op["mo.is_inf"]
+def floor(value: Symbol) -> Symbol:
+    """Computes the elementwise floor of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise floor of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.floor`](https://docs.staging.modular.com/engine/reference/mlir/mo#mofloor-mmofloorop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.floor"](value)
+
+
+def round(value: Symbol) -> Symbol:
+    """Computes the elementwise round of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise round of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.round`](https://docs.staging.modular.com/engine/reference/mlir/mo#moround-mmoroundop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.round"](value)
+
+
+def roundeven(value: Symbol) -> Symbol:
+    """Computes the elementwise roundeven of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise roundeven of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.roundeven`](https://docs.staging.modular.com/engine/reference/mlir/mo#moroundeven-mmoroundevenop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.roundeven"](value)
+
+
+def rsqrt(value: Symbol) -> Symbol:
+    """Computes the elementwise inverse-square-root of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise rsqrt of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.rsqrt`](https://docs.staging.modular.com/engine/reference/mlir/mo#morsqrt-mmorsqrtop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.rsqrt"](value)
+
+
+def sqrt(value: Symbol) -> Symbol:
+    """Computes the elementwise sqrt of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise sqrt of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.sqrt`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosqrt-mmosqrtop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.sqrt"](value)
+
+
+def sin(value: Symbol) -> Symbol:
+    """Computes the elementwise sine of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise sine of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.sin`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosin-mmosinop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.sin"](value)
+
+
+def tanh(value: Symbol) -> Symbol:
+    """Computes the elementwise tanh of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise tanh of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.tanh`](https://docs.staging.modular.com/engine/reference/mlir/mo#motanh-mmotanhop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.tanh"](value)
+
+
+def trunc(value: Symbol) -> Symbol:
+    """Computes the elementwise truncation of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise trunc of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.trunc`](https://docs.staging.modular.com/engine/reference/mlir/mo#motrunc-mmotruncop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the trunc
+            computation. If it's not a floating-point DType, it will be promoted
+            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
+            before computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_float_op["mo.trunc"](value)
+
+
+def is_nan(value: Symbol) -> Symbol:
+    """Computes the elementwise is_nan of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise is_nan of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.is_nan`](https://docs.staging.modular.com/engine/reference/mlir/mo#mois_nan-mmois_nanop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the is_nan
+            computation.
+
+    Returns:
+        The result will have:
+            - element type `bool`, true if the element at a given position
+                is NaN, false otherwise
+            - the same shape as the input value.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_comparison_op["mo.is_nan"](value)
+
+
+def is_inf(value: Symbol) -> Symbol:
+    """Computes the elementwise is_inf of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise is_inf of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    See [`mo.is_inf`](https://docs.staging.modular.com/engine/reference/mlir/mo#mois_inf-mmois_infop)
+    for more details.
+
+    Args:
+        value: The symbolic tensor to use as the input to the is_inf
+            computation.
+
+    Returns:
+        The result will have:
+            - element type `bool`, true if the element at a given position
+                is plus or minus infinity, false otherwise
+            - the same shape as the input value.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_comparison_op["mo.is_inf"](value)
