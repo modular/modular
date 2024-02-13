@@ -1146,6 +1146,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
     let value = 0
 
+    @__copy_capture(value)
     @parameter
     fn capturingNestedFunction() -> Int:
         return value
