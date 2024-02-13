@@ -206,7 +206,8 @@ fn _divisor(unit: String) -> Int:
 # ===----------------------------------------------------------------------===#
 # Report
 # ===----------------------------------------------------------------------===#
-struct Report:
+@value
+struct Report(CollectionElement):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """

@@ -27,7 +27,7 @@ fn bench2(inout b: Bencher, mystr: String):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(num_repetitions=2))
+    var m = MojoBench(MojoBenchConfig(num_repetitions=2, max_iters=10_000))
     m.bench_function[bench1](BenchId("bench1"))
 
     var inputs = DynamicVector[String]()
