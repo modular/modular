@@ -36,32 +36,16 @@ namespace M::KGEN {
 
 namespace {
 
-// Converts scalar or vector bf16 to float32.
-static Value castBF16ToF32(Location loc, Value val,
-                           ConversionPatternRewriter &rewriter) {
-  if (auto vecType = dyn_cast<VectorType>(val.getType())) {
-    Type resType = VectorType::get(vecType.getShape(), rewriter.getF32Type());
-    return rewriter.create<LLVM::FPExtOp>(loc, resType, val);
-  }
-  return rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF32Type(), val);
-}
-
 //===----------------------------------------------------------------------===//
 // OneToOneFloatOrIntConversion
 //===----------------------------------------------------------------------===//
 
 /// This patterns converts a scalar POP dialect operation to either an integer
 /// or floating point LLVM operation one-to-one.
-/// For bfloat operations targeting AArch64 cast bfloat > float32 and back is
-/// applied.
 template <typename Op, typename FloatOp, typename SIntOp,
           typename UIntOp = SIntOp>
 struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
-  OneToOneFloatOrIntConversion(mlir::LLVMTypeConverter &typeConverter,
-                               TargetInfoAttr targetInfo)
-      : ConvertPOPToLLVMPattern<Op>(typeConverter), target(targetInfo) {}
-
-  TargetInfoAttr target;
+  using ConvertPOPToLLVMPattern<Op>::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
@@ -76,22 +60,11 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
       else
         rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
-      return success();
-    }
-
-    if (!target.getTriple().isAArch64() || dtype != DType::bf16) {
+    } else {
       rewriter.replaceOpWithNewOp<FloatOp>(
           op, type, adaptor.getLhs(), adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
-      return success();
     }
-    // AArch64 doesn't support bf16 math ops, cast operands to float32, perform
-    // the operation in f32, and then downcast back to bf16.
-    // https://github.com/modularml/modular/issues/31465
-    Value lhs = castBF16ToF32(op.getLoc(), adaptor.getLhs(), rewriter);
-    Value rhs = castBF16ToF32(op.getLoc(), adaptor.getRhs(), rewriter);
-    Value fp32Result =
-        rewriter.create<FloatOp>(op.getLoc(), lhs, rhs, LLVM_FASTMATH_FLAGS);
-    rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, type, fp32Result);
+
     return success();
   }
 };
@@ -1300,21 +1273,11 @@ using ConvertPOPPointerToIndex =
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static void populatePOPToLLVMPatterns(POPToLLVMTypeConverter &typeConverter,
+static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
       ConvertPOPAdd,
-      ConvertPOPSub,
-      ConvertPOPMul,
-      ConvertPOPDiv,
-      ConvertPOPMax,
-      ConvertPOPMin,
-      ConvertPOPRem
-      // clang-format on
-      >(typeConverter, typeConverter.getTarget());
-  patterns.insert<
-      // clang-format off
       ConvertPOPAnd,
       ConvertPOPArrayCreate,
       ConvertPOPArrayGEP,
@@ -1329,6 +1292,7 @@ static void populatePOPToLLVMPatterns(POPToLLVMTypeConverter &typeConverter,
       ConvertPOPCastFromBuiltin,
       ConvertPOPCastToBuiltin,
       ConvertPOPCmp,
+      ConvertPOPDiv,
       ConvertPOPDTypeFromUI8,
       ConvertPOPDTypeToUI8,
       ConvertPOPFence,
@@ -1336,13 +1300,17 @@ static void populatePOPToLLVMPatterns(POPToLLVMTypeConverter &typeConverter,
       ConvertPOPIndexToPointer,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
+      ConvertPOPMax,
       ConvertPOPMemcpy,
+      ConvertPOPMin,
+      ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
       ConvertPOPOr,
       ConvertPOPPointerAddrSpaceCastOp,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
+      ConvertPOPRem,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
@@ -1354,6 +1322,7 @@ static void populatePOPToLLVMPatterns(POPToLLVMTypeConverter &typeConverter,
       ConvertPOPStore,
       ConvertPOPStringAddress,
       ConvertPOPStringSize,
+      ConvertPOPSub,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
       ConvertPOPXOr
