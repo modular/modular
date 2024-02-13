@@ -326,33 +326,22 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
   SmallVector<LLVM::DINodeAttr> variantTypes;
 
   // Convert each of the members.
-  uint64_t largestVariantSize = 0;
-  uint32_t largestVariantAlign = 0;
   for (DIMemberType member : type.getVariants()) {
-    // Compute the offset/align of the element.
-    uint64_t sizeInBits = member.getSizeInBits();
-    uint32_t alignInBits = member.getAlignInBits();
-    largestVariantSize = std::max(largestVariantSize, sizeInBits);
-    largestVariantAlign = std::max(largestVariantAlign, alignInBits);
-
     // TODO(#30619): add discriminator value to the DW_TAG_variant entry once
     // upstream is ready.
     LLVM::DITypeAttr memberType = LLVM::DIDerivedTypeAttr::get(
         context, llvm::dwarf::DW_TAG_member, member.getName(),
-        convertType(member.getType()), sizeInBits, alignInBits, 0);
+        convertType(member.getType()), member.getSizeInBits(),
+        member.getAlignInBits(), 0);
     variantTypes.push_back(memberType);
   }
-
-  // Pad the variant part size to the largest element alignment.
-  if (largestVariantAlign)
-    largestVariantSize = llvm::alignTo(largestVariantSize, largestVariantAlign);
 
   // TODO(#30619): add discriminator field to the DW_TAG_variant_part entry once
   // upstream is ready.
   return LLVM::DICompositeTypeAttr::get(
       context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
-      nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, largestVariantSize,
-      largestVariantAlign, variantTypes);
+      nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
+      type.getAlignInBits(), variantTypes);
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
