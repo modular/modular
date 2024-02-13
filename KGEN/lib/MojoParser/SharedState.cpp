@@ -1265,26 +1265,38 @@ SharedState::ModuleState &SharedState::createErrorModuleState(
   return state;
 }
 
-/// Function used to look up and resolve a decl with the given mangled name.
-static ASTDecl *lookupAndResolveMangledDecl(SharedState &shared,
-                                            StringAttr leafRef, SMLoc loc,
-                                            ASTDecl &container,
-                                            DeclResolvedness howResolved) {
+ASTDecl *
+SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
+                                         ASTDecl &container,
+                                         DeclResolvedness howResolved) {
+  // When a bytecode module depends on a decl parsed from source, we have to
+  // resolve the signatures of all the children of the source decl, because
+  // otherwise they won't be registered in the symbol table.
+  if (!container.loadedFromBytecode && !container.referencedFromBytecode) {
+    container.referencedFromBytecode = true;
+    SmallVector<ASTDecl *> toResolve;
+    for (auto &[_, children] : container.getDeclsInScope())
+      llvm::append_range(toResolve, children);
+    for (ASTDecl *child : toResolve)
+      if (failed(declResolver->resolveSignature(*child, loc)))
+        return nullptr;
+  }
+
   // Find the operation in the symbol table of its container.
-  auto declOp = shared.lookupSymbolIn<ASTDeclInterface>(&container, leafRef);
+  auto declOp = lookupSymbolIn<ASTDeclInterface>(&container, leafRef);
   if (!declOp)
     return nullptr;
   // Retrieve the proper decl name.
   StringAttr name = declOp.getDeclName();
   // Perform the lookup.
-  LookupResult result = shared.lookupAndResolveDecl(
-      name, loc, container, /*searchParentScopes=*/false);
+  LookupResult result =
+      lookupAndResolveDecl(name, loc, container, /*searchParentScopes=*/false);
 
   // Find the entry that matches the full symbol name.
   for (ASTDecl *decl : result.getIfSuccess()) {
     if (decl->getIfOperation() != declOp)
       continue;
-    if (failed(shared.declResolver->resolve(*decl, howResolved, loc)))
+    if (failed(declResolver->resolve(*decl, howResolved, loc)))
       return nullptr;
     return decl;
   }
@@ -1313,8 +1325,8 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
       return {};
     ArrayRef<FlatSymbolRefAttr> nestedRefs = symbol.getNestedReferences();
     for (FlatSymbolRefAttr name : nestedRefs.drop_back()) {
-      if (!(decl = lookupAndResolveMangledDecl(shared, name.getAttr(), loc,
-                                               *decl, DeclResolvedness::fully)))
+      if (!(decl = shared.lookupAndResolveMangledDecl(
+                name.getAttr(), loc, *decl, DeclResolvedness::fully)))
         return {};
     }
     return decl;
@@ -1324,9 +1336,9 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     ASTDecl *moduleDecl = resolveParents(funcRef.getSymbol());
     if (!moduleDecl)
       return WalkResult::interrupt();
-    if (lookupAndResolveMangledDecl(shared,
-                                    funcRef.getSymbol().getLeafReference(), loc,
-                                    *moduleDecl, DeclResolvedness::fully))
+    if (shared.lookupAndResolveMangledDecl(
+            funcRef.getSymbol().getLeafReference(), loc, *moduleDecl,
+            DeclResolvedness::fully))
       return WalkResult::advance();
     return WalkResult::interrupt();
   });
@@ -1337,8 +1349,8 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
       return WalkResult::interrupt();
     // Resolve the base type.
     StringAttr leaf = typeRef.getSymbol().getLeafReference();
-    if (!lookupAndResolveMangledDecl(shared, leaf, loc, *moduleDecl,
-                                     DeclResolvedness::signature))
+    if (!shared.lookupAndResolveMangledDecl(leaf, loc, *moduleDecl,
+                                            DeclResolvedness::signature))
       return WalkResult::interrupt();
     return WalkResult::advance();
   };

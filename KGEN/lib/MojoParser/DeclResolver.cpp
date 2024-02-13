@@ -610,8 +610,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
 
       // If the decl was never touched and we pulled it in from bytecode, treat
       // it as unreachable and don't resolve it now.
-      if (decl.loadedFromBytecode &&
-          decl.resolvedness == DeclResolvedness::unparsed) {
+      if (decl.resolvedness == DeclResolvedness::unparsed) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
         if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
@@ -640,6 +639,18 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
       }
     } while (resolvedAnything);
   } while (parsedDeclIt != parsedDeclList.size());
+
+  // Erase unresolved operations from source.
+  for (ASTDecl *decl : parsedDeclList) {
+    if (decl->resolvedness == DeclResolvedness::unparsed &&
+        !decl->loadedFromBytecode)
+      if (Operation *op = decl->getIfOperation()) {
+        if (!isa<UnresolvedImportOp>(op)) {
+          op->erase();
+          decl->setIRValue(nullptr);
+        }
+      }
+  }
 }
 
 LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {

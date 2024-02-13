@@ -248,6 +248,11 @@ public:
   LogicalResult resolveDeclFromBytecode(ASTDecl &decl,
                                         DeclResolvedness resolvedness);
 
+  /// Function used to look up and resolve a decl with the given mangled name.
+  ASTDecl *lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
+                                       ASTDecl &container,
+                                       DeclResolvedness howResolved);
+
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.
