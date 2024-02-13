@@ -7,9 +7,12 @@
 #ifndef SUPPORT_SETTINGS_SETTINGS_H
 #define SUPPORT_SETTINGS_SETTINGS_H
 
+#include "Support/Configuration.h"
+#include "Support/Entitlements/EntitlementStore.h"
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/Settings/Setting.h"
+
 #include <filesystem>
 
 namespace M {
@@ -24,28 +27,25 @@ namespace M {
 /// the carrier for both signals is exactly the same.
 class Settings {
 public:
-  /// Explicit destructor so that the private impl can be handled correctly.
-  ~Settings();
-
   /// Define the various constructors - this object must be default
   /// constructible, it must be non-copyable, and it must be move-able.
-  Settings() = default;
+  ~Settings() = default;
   Settings(const Settings &other) = delete;
   Settings(Settings &&other) = default;
 
   /// Get a setting by its key. This corresponds to Config::getValue.
-  const Setting *get(StringRef key) const;
+  const Setting *get(StringRef key);
 
   /// Get a setting of type T by its key. Asserts that the setting is of type T.
   template <typename T>
-  T get(StringRef key) const {
+  T get(StringRef key) {
     return llvm::cast_if_present<T>(get(key));
   }
 
   /// As a special case, support a get that cast to bool using a sensible
   /// and standardize way of evaluation. If the entitlement exists, or if
   /// it is a StringRef with an appropriate value then true is returned.
-  bool getBool(StringRef key, const bool defaultValue) const {
+  bool getBool(StringRef key, const bool defaultValue) {
     const Setting *s = get(key);
     if (s == nullptr)
       return defaultValue;
@@ -69,7 +69,7 @@ public:
 
   /// Get an entitlement of the explicit type.
   template <class T>
-  bool getBool() const {
+  bool getBool() {
     // For entitlements, this evaluates only as a simple existence test using
     // the get method above. Note that getBool() on an entitlement name will
     // not return true, the actual entitlement must be present.
@@ -77,6 +77,9 @@ public:
     const Setting *s = get(ptr->getName());
     return s != nullptr;
   }
+
+  /// Return the current userID.
+  const ErrorOr<StringRef> userID() const;
 
   /// Return the path for the client keys and certificate.
   const std::filesystem::path &clientKeyPriv() const;
@@ -104,8 +107,15 @@ public:
                                 RefreshPolicy policy = nullptr);
 
 private:
-  class Impl;
-  std::unique_ptr<Impl> impl;
+  Settings(Config &&cfg, EntitlementStore &&store);
+
+  /// Used internally on creation.
+  ErrorOrSuccess refresh(HTTPContextRef httpCtx,
+                         RefreshPolicy shouldRefreshEntitlements);
+
+  Config config;
+  EntitlementStore entitlementStore;
+  llvm::StringMap<Setting> settings;
 };
 } // namespace M
 
