@@ -1333,7 +1333,6 @@ struct ConvDirectNHWC[
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         )
 
-    @always_inline
     fn output_space_loop[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -1458,7 +1457,6 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
             )
 
-    @always_inline
     fn output_space_loop_1d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -1526,7 +1524,6 @@ struct ConvDirectNHWC[
             self.conv_shape.wo(),
         )
 
-    @always_inline
     fn output_space_loop_2d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -1603,7 +1600,6 @@ struct ConvDirectNHWC[
                 self.conv_shape.wo(),
             )
 
-    @always_inline
     fn output_space_loop_3d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -2067,7 +2063,6 @@ struct ConvDirectNHWC[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
 fn accumulate_wo_tile_1d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2151,7 +2146,6 @@ fn accumulate_wo_tile_1d[
         )
 
 
-@always_inline
 fn conv1d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2280,7 +2274,6 @@ fn conv1d_update_wo_tile[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
 fn accumulate_wo_tile_2d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2334,7 +2327,6 @@ fn accumulate_wo_tile_2d[
         )
 
 
-@always_inline
 fn conv2d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2477,7 +2469,6 @@ fn conv2d_update_wo_tile[
 
 
 # TODO: Simplify this with a rank parameter + recursion.
-@always_inline
 fn accumulate_wo_tile_3d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2530,7 +2521,6 @@ fn accumulate_wo_tile_3d[
         )
 
 
-@always_inline
 fn conv3d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
