@@ -281,6 +281,11 @@ private:
   /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
 
+  /// When a bytecode decl depends on a source decl's children, we have to parse
+  /// the signatures of all the children to register them in the symbol table.
+  /// Cache this process using a flag on the decl.
+  bool referencedFromBytecode = false;
+
   /// These are the declarations defined within this scope.
   llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
 
