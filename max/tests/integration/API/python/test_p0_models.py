@@ -18,6 +18,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
+import pytest
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+# Set in buildAndDeployMAX.yaml
+TEST_ENV_ARCH = os.getenv("TEST_ENV_ARCH", "")
+TEST_ENV_OS = os.getenv("TEST_ENV_OS", "")
+
 MODULAR_PATH = Path.cwd()
 MODELS_DIR = MODULAR_PATH / "test-models"
 YAML_PATH = MODULAR_PATH / "Models"
@@ -148,6 +156,7 @@ def download_s3_object(
     return Path(suffix_removed)
 
 
+@pytest.fixture(autouse=True, scope="module")
 def remove_modular_env_variables():
     for key in os.environ:
         if "MODULAR" in key:
@@ -160,8 +169,6 @@ def remove_modular_env_variables():
 def setup_environment_for_c(
     package_library_path: Path, package_binary_path: Path
 ):
-    remove_modular_env_variables()
-
     if platform.system() == "Windows":
         os.environ["Path"] = f"{os.environ['Path']};{package_binary_path}"
     else:
@@ -170,7 +177,7 @@ def setup_environment_for_c(
     os.environ["MODULAR_FRAMEWORK_ROOT"] = str(package_library_path)
 
 
-def test_c_package(package_path: Path):
+def c_package_test(package_path: Path):
     package_library_path = package_path / "lib"
     package_binary_path = package_path / "bin"
     modular_api_executor_binary = package_binary_path / "modular-api-executor"
@@ -256,7 +263,7 @@ def _get_np_dtype(dtype):
         return np.float64
 
 
-def generate_test_inputs(model):
+def _generate_test_inputs(model):
     import numpy as np
 
     _batch_size = 1
@@ -275,7 +282,7 @@ def generate_test_inputs(model):
     return inputs
 
 
-def generate_clipvit_inputs_python():
+def _generate_clipvit_inputs_python():
     import numpy as np
 
     return {
@@ -285,7 +292,7 @@ def generate_clipvit_inputs_python():
     }
 
 
-def load_and_execute_on_random_input(model_path: Path, meta: ModelMeta):
+def load(model_path: Path, meta: ModelMeta):
     from max import engine
 
     def construct_input_specs(meta: ModelMeta) -> Sequence[engine.TensorSpec]:
@@ -310,35 +317,64 @@ def load_and_execute_on_random_input(model_path: Path, meta: ModelMeta):
         model = session.load(model_path)
     print("✅")
     assert model is not None, "Loading failed ❌"
-    if "clip_vit" in str(model_path):
-        inputs = generate_clipvit_inputs_python()
-    else:
-        inputs = generate_test_inputs(model)
-    print("\t Executing ...", end="")
-    output = model.execute(**inputs)
-    print("✅")
-    assert output is not None, "Execution failed ❌"
+
+    return model
 
 
-def test_python_wheel():
-    """Test the wheel which is assumed to be pip installed to the python
-    environment this script is executed in"""
-    remove_modular_env_variables()
-
+@pytest.fixture(scope="module")
+def test_dir():
     test_dir = tempfile.TemporaryDirectory()
     test_dir_path = Path(test_dir.name)
+    yield test_dir_path
 
-    for key, value in top_models.items():
-        print("Model", key)
-        s3_uri = value.s3_uri
-        print("Downloading model from", s3_uri)
-        model_path = download_s3_object(
-            s3_uri, test_dir_path, value.saved_model_dir_name
-        )
-        print("Loading and executing downloaded model ...")
-        load_and_execute_on_random_input(model_path, value)
-        print("Model executed successfully ✅")
     test_dir.cleanup()
+
+
+@pytest.fixture(params=top_models.keys(), scope="module")
+def model_name(request):
+    model_name = request.param
+    model_meta = top_models[request.param]
+
+    if (
+        model_meta.framework == PYTORCH
+        and TEST_ENV_OS == "main"  # main is 20.04
+        and TEST_ENV_ARCH == "graviton"
+    ):
+        pytest.skip(
+            "PyTorch via python API not supported on aarch64 + Ubuntu 20.04"
+        )
+
+    return model_name
+
+
+@pytest.fixture(scope="module")
+def model(model_name, test_dir):
+    model_meta = top_models[model_name]
+
+    print("Model", model_name)
+    s3_uri = model_meta.s3_uri
+    print("Downloading model from", s3_uri)
+    model_path = download_s3_object(
+        s3_uri, test_dir, model_meta.saved_model_dir_name
+    )
+    print("Loading and executing downloaded model ...")
+    return load(model_path, model_meta)
+
+
+@pytest.fixture()
+def random_inputs(model, model_name):
+    if "clip-vit" in model_name:
+        return _generate_clipvit_inputs_python()
+    else:
+        return _generate_test_inputs(model)
+
+
+def test_python_wheel(model, random_inputs):
+    """Test the wheel which is assumed to be pip installed to the python
+    environment this script is executed in"""
+
+    output = model.execute(**random_inputs)
+    assert output is not None, "Execution failed ❌"
 
 
 if __name__ == "__main__":
@@ -351,7 +387,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.package_path:
         print("Testing p0 models on C package")
-        test_c_package(Path(args.package_path))
+        c_package_test(Path(args.package_path))
     else:
-        print("Testing p0 models on Python wheel")
-        test_python_wheel()
+        pass
