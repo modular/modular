@@ -35,6 +35,8 @@ namespace {
 // TODO: raise any LoopOp with or without an unroll factor if possible.
 struct RaiseForLoops : impl::RaiseForLoopsBase<RaiseForLoops> {
   using RaiseForLoopsBase::RaiseForLoopsBase;
+  explicit RaiseForLoops(const RaiseForLoopsOptions &options = {})
+      : RaiseForLoopsBase(options) {}
 
   void runOnOperation() override;
 
@@ -542,8 +544,14 @@ void RaiseForLoops::runOnOperation() {
         mlir::emitWarning(loop->getLoc(), " loop is decorated with @unroll, "
                                           "but compiler can't fully unroll it");
 
-    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll())
+    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll()) {
+      if (!warnFailure) {
+        // Don't warn failure because it's possible the loop can be raised if we
+        // run this pass again.
+        diag.abandon();
+      }
       continue;
+    }
 
     diag.abandon();
   }
