@@ -144,10 +144,12 @@ std::optional<int64_t> TypeType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-ErrorOrSuccess TypeType::writeTo(TypedAttr value, int64_t addr,
-                                 InterpreterState &state) const {
+/// Write an opaque symbolic attribute to memory.
+static ErrorOrSuccess writeSymbolicAttribute(DataLayoutInterface type,
+                                             TypedAttr value, int64_t addr,
+                                             InterpreterState &state) {
   ErrorOr<void *> mem =
-      state.getWritableMemory(addr, *getTypeSize(state.getTarget()));
+      state.getWritableMemory(addr, *type.getTypeSize(state.getTarget()));
   if (mem)
     return mem.takeError();
 
@@ -160,10 +162,12 @@ ErrorOrSuccess TypeType::writeTo(TypedAttr value, int64_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
-                                      InterpreterState &state) const {
+/// Read an opaque symbolic attribute from memory.
+static ErrorOr<TypedAttr> readSymbolicAttribute(DataLayoutInterface type,
+                                                int64_t addr,
+                                                InterpreterState &state) {
   ErrorOr<const void *> mem =
-      state.getReadableMemory(addr, *getTypeSize(state.getTarget()));
+      state.getReadableMemory(addr, *type.getTypeSize(state.getTarget()));
   if (mem)
     return mem.takeError();
 
@@ -174,6 +178,16 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
   llvm::LoadIntFromMemory(opaque, (const uint8_t *)*mem, ptrSize);
   return ::cast<TypedAttr>(
       Attribute::getFromOpaquePointer((const void *)opaque.getLimitedValue()));
+}
+
+ErrorOrSuccess TypeType::writeTo(TypedAttr value, int64_t addr,
+                                 InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
+                                      InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -460,6 +474,16 @@ std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
 std::optional<int64_t>
 SignatureType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess SignatureType::writeTo(TypedAttr value, int64_t addr,
+                                      InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> SignatureType::readFrom(int64_t addr,
+                                           InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
 }
 
 Type SignatureType::parse(AsmParser &parser) {
