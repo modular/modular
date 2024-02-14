@@ -885,6 +885,10 @@ def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
+  let options = [
+    Option<"warnFailure", "warn-failure", "bool", "true",
+           "If true, failure to raise for loop will warn.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
