@@ -18,8 +18,20 @@ trait ElementDelegate:
         pass
 
 
+struct DefaultDelegate(ElementDelegate):
+    @staticmethod
+    fn is_equal[T: CollectionElement](a: Variant[T], b: Variant[T]) -> Bool:
+        return False
+
+    @staticmethod
+    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
+        return "#"
+
+
 @value
-struct _DynamicTupleIter[T: CollectionElement, D: ElementDelegate]:
+struct _DynamicTupleIter[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+]:
     alias BaseType = DynamicTupleBase[T, D]
     alias ElementType = Self.BaseType.Element
 
@@ -41,9 +53,9 @@ struct _DynamicTupleIter[T: CollectionElement, D: ElementDelegate]:
         ) - self.index
 
 
-struct DynamicTupleBase[T: CollectionElement, D: ElementDelegate](
-    CollectionElement, Sized, Stringable, EqualityComparable
-):
+struct DynamicTupleBase[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](CollectionElement, Sized, Stringable, EqualityComparable):
     alias Element = Variant[T, Self]
     alias IterType = _DynamicTupleIter[T, D]
 
@@ -76,10 +88,14 @@ struct DynamicTupleBase[T: CollectionElement, D: ElementDelegate](
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self.Element:
+        if index < 0 or index > len(self.elts):
+            trap("Index out of bounds.")
         return self.elts[index]
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Self.Element):
+        if index < 0 or index > len(self.elts):
+            trap("Index out of bounds.")
         self.elts[index] = val
 
     @always_inline
@@ -138,7 +154,7 @@ struct DynamicTupleBase[T: CollectionElement, D: ElementDelegate](
 
 
 @value
-struct DynamicTuple[T: CollectionElement, D: ElementDelegate](
+struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     CollectionElement, Sized, Stringable, EqualityComparable
 ):
     alias BaseType = DynamicTupleBase[T, D]
@@ -196,6 +212,8 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate](
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
         if self.is_value():
+            if index != 0:
+                trap("Index should be 0 for value items.")
             return self.value()
         else:
             var r = Self()
@@ -205,6 +223,8 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate](
     @always_inline
     fn __setitem__(inout self, index: Int, val: Self):
         if self.is_value() and val.is_value():
+            if index != 0:
+                trap("Index should be 0 for value items.")
             self.content = val.value()
         else:
             var new_content: Self.BaseType = self.tuple()

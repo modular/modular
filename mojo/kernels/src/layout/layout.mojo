@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# from .dynamic_tuple import *
+from .dynamic_tuple import *
 from .int_tuple import (
     IntTuple,
     IntTupleBase,
@@ -37,7 +37,7 @@ struct _LayoutIter:
         )
 
     fn __len__(self) -> Int:
-        return self.layout.shape.__len__() - self.index
+        return len(self.layout.shape) - self.index
 
 
 struct Layout(Sized, Stringable, CollectionElement):
@@ -69,7 +69,7 @@ struct Layout(Sized, Stringable, CollectionElement):
 
     @always_inline
     fn __len__(self) -> Int:
-        return self.shape.__len__()
+        return len(self.shape)
 
     @always_inline
     fn __iter__(self) -> _LayoutIter:
@@ -80,7 +80,7 @@ struct Layout(Sized, Stringable, CollectionElement):
         return product(self.shape)
 
     @always_inline
-    fn cosize(self) raises -> Int:
+    fn cosize(self) -> Int:
         return math.max(1, inner_product(self.shape, self.stride))
 
     @always_inline
@@ -89,10 +89,10 @@ struct Layout(Sized, Stringable, CollectionElement):
 
     @always_inline
     fn rank(self) -> Int:
-        return self.shape.content.get[IntTupleBase]().elts.size
+        return len(self.shape)
 
     @always_inline
-    fn __call__(self, idx: IntTuple) raises -> Int:
+    fn __call__(self, idx: IntTuple) -> Int:
         return crd2idx(idx, self.shape, self.stride)
 
     @always_inline
@@ -101,24 +101,27 @@ struct Layout(Sized, Stringable, CollectionElement):
         self.stride.append(item.stride)
 
 
+alias Tiler = DynamicVector[Layout]
+
+
 fn coalesce(src: Layout) -> Layout:
     let flatten_shape = flatten(src.shape)
     let flatten_stride = flatten(src.stride)
 
     debug_assert(
-        flatten_shape.__len__() == flatten_stride.__len__(),
+        len(flatten_shape) == len(flatten_stride),
         "flattened shapes and stride should be the same length",
     )
 
     var result_shape = IntTuple(1)
     var result_stride = IntTuple(0)
 
-    for i in range(flatten_shape.__len__()):
+    for i in range(len(flatten_shape)):
         let shape = flatten_shape[i]
         let stride = flatten_stride[i]
 
-        let shape_last_idx = result_shape.__len__() - 1
-        let stride_last_idx = result_stride.__len__() - 1
+        let shape_last_idx = len(result_shape) - 1
+        let stride_last_idx = len(result_stride) - 1
 
         if int(shape) == 1:
             continue
@@ -141,7 +144,7 @@ fn coalesce(src: Layout) -> Layout:
         return Layout(result_shape, result_stride)
 
 
-fn composition(layout_a: Layout, layout_b: Layout) raises -> Layout:
+fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
     # Note: len(flatten(layout_b.shape)) > 1 is needed because we cant
     # get 1:2 layout by default everything is an int!?
     if is_tuple(layout_b.shape) and len(flatten(layout_b.shape)) > 1:
@@ -181,7 +184,7 @@ fn composition(layout_a: Layout, layout_b: Layout) raises -> Layout:
         return coalesce(Layout(result_shape, result_stride))
 
 
-fn composition(layout_a: Layout, tiler: DynamicVector[Layout]) raises -> Layout:
+fn composition(layout_a: Layout, tiler: Tiler) -> Layout:
     var res_shape = IntTuple()
     var res_stride = IntTuple()
     for i in range(len(tiler)):
@@ -233,11 +236,11 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
 
 fn apply_tiler(
-    func: fn (Layout, Layout) raises -> Layout,
+    func: fn (Layout, Layout) -> Layout,
     layout_a: Layout,
-    tiler: DynamicVector[Layout],
-) raises -> Layout:
-    if tiler.size == 0:
+    tiler: Tiler,
+) -> Layout:
+    if len(tiler) == 0:
         return layout_a
     var res = Layout()
     for i in range(len(tiler)):
@@ -246,7 +249,7 @@ fn apply_tiler(
     return res
 
 
-fn logical_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
+fn logical_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     let res_comp = complement(layout_b, layout_a.size())
     var res = layout_b
     res.shape.append(res_comp.shape)
@@ -254,13 +257,11 @@ fn logical_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
     return composition(layout_a, res)
 
 
-fn logical_divide(
-    layout_a: Layout, tiler: DynamicVector[Layout]
-) raises -> Layout:
+fn logical_divide(layout_a: Layout, tiler: Tiler) -> Layout:
     return apply_tiler(logical_divide, layout_a, tiler)
 
 
-fn logical_product(layout_a: Layout, layout_b: Layout) raises -> Layout:
+fn logical_product(layout_a: Layout, layout_b: Layout) -> Layout:
     let a_comp = complement(layout_a, layout_a.size() * layout_b.cosize())
     var com_res = composition(a_comp, layout_b)
     var res = layout_a
@@ -269,19 +270,17 @@ fn logical_product(layout_a: Layout, layout_b: Layout) raises -> Layout:
     return res
 
 
-fn logical_product(
-    layout_a: Layout, tiler: DynamicVector[Layout]
-) raises -> Layout:
-    if tiler.size == 1:
+fn logical_product(layout_a: Layout, tiler: Tiler) -> Layout:
+    if len(tiler) == 1:
         return logical_product(layout_a, tiler[0])
     return apply_tiler(logical_product, layout_a, tiler)
 
 
 fn hier_unzip(
-    splitter: fn (Layout, Layout) raises -> Layout,
+    splitter: fn (Layout, Layout) -> Layout,
     layout_a: Layout,
-    tiler: DynamicVector[Layout],
-) raises -> Layout:
+    tiler: Tiler,
+) -> Layout:
     var split = Layout()
     for i in range(len(tiler)):
         split.append(hier_unzip(splitter, layout_a[i], tiler[i]))
@@ -300,26 +299,24 @@ fn hier_unzip(
 
 
 fn hier_unzip(
-    splitter: fn (Layout, Layout) raises -> Layout,
+    splitter: fn (Layout, Layout) -> Layout,
     layout_a: Layout,
     layout_b: Layout,
-) raises -> Layout:
+) -> Layout:
     return splitter(layout_a, layout_b)
 
 
-fn zipped_divide(layout_a: Layout, layout_b: Layout) raises -> Layout:
+fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     return hier_unzip(logical_divide, layout_a, layout_b)
 
 
-fn zipped_divide(
-    layout_a: Layout, tiler: DynamicVector[Layout]
-) raises -> Layout:
+fn zipped_divide(layout_a: Layout, tiler: Tiler) -> Layout:
     return hier_unzip(logical_divide, layout_a, tiler)
 
 
-fn print_layout(layout: Layout) raises:
+fn print_layout(layout: Layout):
     if layout.rank() != 2:
-        raise Error("print_layout only supports 2D layouts")
+        trap("print_layout only supports 2D layouts")
 
     let idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
     let delim = "+-----------------------"

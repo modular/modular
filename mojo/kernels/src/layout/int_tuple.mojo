@@ -18,7 +18,7 @@ struct IntDelegate(ElementDelegate):
         if a.isa[Int]() and b.isa[Int]():
             return a.get[Int]() == b.get[Int]()
         else:
-            trap(Error("Unexpected data type."))
+            trap("Unexpected data type.")
             return False
 
     @always_inline
@@ -27,7 +27,7 @@ struct IntDelegate(ElementDelegate):
         if a.isa[Int]():
             return a.get[Int]()
         else:
-            trap(Error("Unexpected data type."))
+            trap("Unexpected data type.")
             return "#"
 
 
@@ -66,8 +66,8 @@ fn is_tuple(t: IntTuple) -> Bool:
 
 
 fn reduce[
-    T: AnyRegType
-](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
+    T: AnyRegType, func: fn (owned a: T, b: IntTuple) capturing -> T
+](t: IntTuple, initializer: T) -> T:
     var result: T = initializer
     for e in t:
         result = func(result, e)
@@ -75,8 +75,8 @@ fn reduce[
 
 
 fn reduce[
-    T: CollectionElement
-](func: fn (owned a: T, b: IntTuple) -> T, t: IntTuple, initializer: T) -> T:
+    T: CollectionElement, func: fn (owned a: T, b: IntTuple) capturing -> T
+](t: IntTuple, initializer: T) -> T:
     var result: T = initializer
     for e in t:
         result = func(result, e)
@@ -87,37 +87,44 @@ fn reduce[
 
 
 fn flatten(t: IntTuple) -> IntTuple:
+    @always_inline
+    @parameter
     fn reducer(owned a: IntTuple, b: IntTuple) -> IntTuple:
         if is_int(b):
             a.append(int(b))
         else:
-            # FIXME: a.append(e) should be enough
             for e in flatten(b):
                 a.append(e)
         return a
 
-    return reduce(reducer, t, IntTuple())
+    return reduce[IntTuple, reducer](t, IntTuple())
 
 
 fn sum(t: IntTuple) -> Int:
+    @always_inline
+    @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
         return a + (int(b) if is_int(b) else sum(b))
 
-    return reduce(reducer, t, 0)
+    return reduce[Int, reducer](t, 0)
 
 
 fn product(t: IntTuple) -> Int:
+    @always_inline
+    @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
         return a * (int(b) if is_int(b) else product(b))
 
-    return reduce(reducer, t, 1)
+    return reduce[Int, reducer](t, 1)
 
 
 fn max(t: IntTuple) -> Int:
+    @always_inline
+    @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
         return math.max(a, int(b) if is_int(b) else max(b))
 
-    return reduce(reducer, t, 1)
+    return reduce[Int, reducer](t, 1)
 
 
 # IntTuple zip iterator
@@ -158,11 +165,9 @@ struct zip(Sized):
 # Layout operations
 
 
-fn elementwise_min(a: IntTuple, b: IntTuple) raises -> IntTuple:
+fn elementwise_min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
-        raise Error(
-            "Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b))
-        )
+        trap("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
         return math.min(int(a), int(b))
     var res = IntTuple()
@@ -171,11 +176,9 @@ fn elementwise_min(a: IntTuple, b: IntTuple) raises -> IntTuple:
     return res
 
 
-fn inner_product(a: IntTuple, b: IntTuple) raises -> Int:
+fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     if len(a) != len(b):
-        raise Error(
-            "Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b))
-        )
+        trap("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
         return int(a) * int(b)
     var r: Int = 0
@@ -195,11 +198,11 @@ fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     return res
 
 
-fn shape_div(a: IntTuple, b: IntTuple) raises -> IntTuple:
+fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
             if len(a) != len(b):
-                raise Error(
+                trap(
                     "Tuple sizes don't match: "
                     + str(len(a))
                     + " != "
@@ -225,17 +228,15 @@ fn shape_div(a: IntTuple, b: IntTuple) raises -> IntTuple:
             let vb = int(b)
 
             if not (va % vb == 0 or vb % va == 0):
-                raise Error(
-                    "Incompatible shape values: " + str(va) + " " + str(vb)
-                )
+                trap("Incompatible shape values: " + str(va) + " " + str(vb))
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
 
-fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) raises -> Int:
+fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) -> Int:
     if is_tuple(crd):
         if not is_tuple(shape):
-            raise Error("crd and shape should be both IntTuple!")
+            trap("crd and shape should be both IntTuple!")
         var res = 0
         for i in range(len(shape)):
             res += crd2idx(crd[i], shape[i], stride[i])
@@ -243,7 +244,7 @@ fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) raises -> Int:
 
     if is_tuple(shape):
         if len(shape) != len(stride):
-            raise Error("Can't compute idx, shape != stride")
+            trap("Can't compute idx, shape != stride")
         var result = 0
         var curd_int = int(crd)
         for i in range(len(shape) - 1):
@@ -258,10 +259,10 @@ fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) raises -> Int:
     return int(stride) * int(crd)
 
 
-fn idx2crd(idx: Int, shape: IntTuple, stride: IntTuple) raises -> IntTuple:
+fn idx2crd(idx: Int, shape: IntTuple, stride: IntTuple) -> IntTuple:
     if is_tuple(shape):
         if len(shape) != len(stride):
-            raise Error("shape and stride should be the same length")
+            trap("shape and stride should be the same length")
         var res = IntTuple()
         for i in range(len(shape)):
             res.append(idx2crd(idx, shape[i], stride[i]))

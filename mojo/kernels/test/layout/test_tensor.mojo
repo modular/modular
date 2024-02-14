@@ -10,6 +10,7 @@ from kernel_utils.layout_tensor import LayoutTensor, tile
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
+    Tiler,
     logical_divide,
     zipped_divide,
     print_layout,
@@ -17,14 +18,14 @@ from kernel_utils.layout import (
 from memory import stack_allocation
 
 
-fn print_raw_major_tensor[dtype: DType](tensor: LayoutTensor[dtype]) raises:
+fn print_raw_major_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
     for i in range(8):
         for j in range(4):
             print_no_newline(tensor[IntTuple(i, j)], "\t")
         print("")
 
 
-fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]) raises:
+fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
     for i in range(2):
         for j in range(2):
             print_no_newline(tensor[IntTuple(i, j)], "\t")
@@ -32,7 +33,7 @@ fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]) raises:
 
 
 # CHECK-LABEL: test_basic_tensor_ops
-fn test_basic_tensor_ops() raises:
+fn test_basic_tensor_ops():
     print("== test_basic_tensor_ops")
     let data_ptr = stack_allocation[32, DType.float32]()
     for i in range(32):
@@ -52,9 +53,9 @@ fn test_basic_tensor_ops() raises:
     print("----original matrix----")
     print_raw_major_tensor(row_major_tensor)
 
-    var tiler = DynamicVector[Layout]()
-    tiler.push_back(Layout(2, 1))
-    tiler.push_back(Layout(2, 1))
+    var tiler = Tiler()
+    tiler.append(Layout(2, 1))
+    tiler.append(Layout(2, 1))
 
     # CHECK: ----tile[ 0 , 0 ]----
     # CHECK: 0.0     1.0
@@ -89,5 +90,5 @@ fn test_basic_tensor_ops() raises:
             print_tile_tensor(tile_2x2)
 
 
-fn main() raises:
+fn main():
     test_basic_tensor_ops()

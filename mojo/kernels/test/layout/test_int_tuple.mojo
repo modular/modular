@@ -12,8 +12,22 @@ from testing import assert_true
 
 
 # CHECK-LABEL: test_tuple_basic
-fn test_tuple_basic() raises:
+fn test_tuple_basic():
     print("== test_tuple_basic")
+
+    # CHECK: 0
+    # CHECK: 1
+    # CHECK: 2
+    # CHECK: 2
+    print(len(IntTuple()))
+    print(len(IntTuple(1)))
+    print(len(IntTuple(1, 2)))
+    print(len(IntTuple(1, IntTuple(2, 3))))
+
+    # CHECK: 5
+    let t0: IntTuple = 5
+    print(t0)
+
     # CHECK: ((()))
     # CHECK: ((3))
     # CHECK: (7, (2, 3, 4, (5, 6)))
@@ -56,7 +70,7 @@ fn test_tuple_basic() raises:
 
 
 # CHECK-LABEL: test_tuple_basic_ops
-fn test_tuple_basic_ops() raises:
+fn test_tuple_basic_ops():
     print("== test_tuple_basic_ops")
     # CHECK: 2
     # CHECK: 6
@@ -90,7 +104,7 @@ fn test_tuple_basic_ops() raises:
 
 
 # CHECK-LABEL: test_shape_div
-fn test_shape_div() raises:
+fn test_shape_div():
     print("== test_shape_div")
     # CHECK: (1, 2)
     # CHECK: (1, 1)
@@ -105,7 +119,7 @@ fn test_shape_div() raises:
 
 
 # CHECK-LABEL: test_crd2idx
-fn test_crd2idx() raises:
+fn test_crd2idx():
     print("== test_crd2idx")
     # CHECK: 0
     # CHECK: 1
@@ -126,7 +140,7 @@ fn test_crd2idx() raises:
 
 
 # CHECK-LABEL: test_idx2crd
-fn test_idx2crd() raises:
+fn test_idx2crd():
     print("== test_idx2crd")
     # CHECK: (0, 0)
     # CHECK: (1, 0)
@@ -146,7 +160,7 @@ fn test_idx2crd() raises:
     print(idx2crd(7, IntTuple(4, 2), IntTuple(1, 4)))
 
 
-fn main() raises:
+fn main():
     test_tuple_basic()
     test_tuple_basic_ops()
     test_shape_div()
