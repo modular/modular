@@ -101,6 +101,9 @@ kgen.generator @simd_normal() {
   kgen.param.constant = <get_alignof(f32, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-f32:64:64", simd_bit_width=128>)>
   // CHECK-NEXT: <4>
   kgen.param.constant = <get_alignof(f32, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-f32:32:32", simd_bit_width=128>)>
+
+  // CHECK-NEXT: <0>
+  kgen.param.constant = <get_sizeof(scalar<invalid>, #target)>
   kgen.return
 }
 
