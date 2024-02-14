@@ -131,10 +131,6 @@ ErrorOrSuccess setThreadAffinityLinux(size_t cpuID);
 ErrorOrSuccess runWithThreadAffinityLinux(size_t cpuID,
                                           llvm::function_ref<void()> &workFn);
 #endif // defined(HAVE_LINUX_SET_AFFINITY)
-
-#if defined(_MSC_VER)
-M::ErrorOr<size_t> getNumPhysicalCoresWindows();
-#endif // defined(_MSC_VER)
 } // namespace Detail
 } // namespace M
 
