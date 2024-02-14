@@ -26,6 +26,7 @@ add_modular_library(MSupport
   PlatformLibNames.cpp
   Process.cpp
   Progress.cpp
+  ProgressBar.cpp
   Random.cpp
   ReferenceCounted.cpp
   Stats.cpp
