@@ -188,8 +188,13 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
     return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
                             CHAR_BIT);
   default:
-    return dtype->getSizeInBytes(*size);
+    break;
   }
+  ssize_t result = dtype->getSizeInBytes(*size);
+  // Return zero size for invalid/nonmaterializable dtypes.
+  if (result == -1)
+    return 0;
+  return result;
 }
 
 std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
