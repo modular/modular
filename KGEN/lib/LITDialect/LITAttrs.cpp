@@ -211,20 +211,24 @@ LogicalResult FnMetadataAttr::verifySignature(
   }
 
   // Verify input conventions.
-  size_t numArgConv = argConventions.size();
-  if (getArgNames().size() != numArgConv) {
-    return emitError() << "number of argument names does not match number of "
-                          "input conventions: "
-                       << getArgNames().size() << " != " << numArgConv;
+  size_t numInputs = values.getNumInputs();
+  if (size_t numArgConv = argConventions.size(); numInputs != numArgConv) {
+    return emitError()
+           << "number of arguments does not match number of input conventions: "
+           << numInputs << " != " << numArgConv;
+  }
+  if (size_t numArgName = getArgNames().size(); numArgName != numInputs) {
+    return emitError()
+           << "number of arguments does not match number of argument names: "
+           << numInputs << " != " << numArgName;
   }
 
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
     Type type = argType;
     // Verify variadics.
-    VariadicEffects varEffects = getVariadicEffects();
-    if (varEffects.hasVarArgs() &&
-        varEffects.isVarArg(values.getNumInputs(), i)) {
+
+    if (isVarArg(i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i
@@ -256,6 +260,44 @@ LogicalResult FnMetadataAttr::verifySignature(
     return failure();
 
   return success();
+}
+
+bool FnMetadataAttr::hasVarArgs() const {
+  return getVariadicEffects().get(VariadicEffects::Impl::VarArg);
+}
+
+bool FnMetadataAttr::hasPackVarArgs() const {
+  return getVariadicEffects().get(VariadicEffects::Impl::PackVarArg);
+}
+
+bool FnMetadataAttr::hasKwVarArgs() const {
+  return getVariadicEffects().get(VariadicEffects::Impl::KWVarArg);
+}
+
+bool FnMetadataAttr::hasParamVarArgs() const {
+  return getVariadicEffects().get(VariadicEffects::Impl::ParamVarArg);
+}
+
+bool FnMetadataAttr::isVarArg(size_t idx) const {
+  if (!hasVarArgs())
+    return false;
+
+  size_t numArgs = getArgPassingKinds().size();
+  // If the function has keyword varargs, the vararg index is the second last.
+  // Otherwise, it's the last.
+  return (idx + 1 + hasKwVarArgs()) == numArgs;
+}
+
+bool FnMetadataAttr::isKwVarArg(size_t idx) const {
+  if (!hasKwVarArgs())
+    return false;
+  return idx + 1 == getArgPassingKinds().size();
+}
+
+bool FnMetadataAttr::isPackVarArg(size_t idx) const {
+  if (!hasPackVarArgs())
+    return false;
+  return idx + 1 == getArgPassingKinds().size();
 }
 
 static ParseResult parseVariadicEffects(AsmParser &p,

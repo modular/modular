@@ -753,31 +753,23 @@ LITSignatureType LITSignatureType::dropParamValues() {
 }
 
 bool LITSignatureType::isVarArg(size_t index) {
-  VariadicEffects varEffects = getMetadata().getVariadicEffects();
-  if (!varEffects.hasVarArgs())
-    return false;
-  return varEffects.isVarArg(getNumArguments(), index);
+  return getMetadata().isVarArg(index);
 }
 
 bool LITSignatureType::isPackVarArg(size_t index) {
-  VariadicEffects varEffects = getMetadata().getVariadicEffects();
-  if (!varEffects.hasPackVarArgs())
-    return false;
-  return varEffects.isVarArg(getNumArguments(), index);
+  return getMetadata().isPackVarArg(index);
 }
 
-bool LITSignatureType::isKWVarArg(size_t index) {
-  if (!getMetadata().getVariadicEffects().hasKWVarArgs())
-    return false;
-  return index + 1 == getNumArguments();
+bool LITSignatureType::isKwVarArg(size_t index) {
+  return getMetadata().isKwVarArg(index);
 }
 
 bool LITSignatureType::hasParamVarArgs() {
-  return getMetadata().getVariadicEffects().hasParamVarArgs();
+  return getMetadata().hasParamVarArgs();
 }
 
 bool LITSignatureType::hasPackVarArgs() {
-  return getMetadata().getVariadicEffects().hasPackVarArgs();
+  return getMetadata().hasPackVarArgs();
 }
 
 /// Substitute the specified implicit lifetime references into the specified

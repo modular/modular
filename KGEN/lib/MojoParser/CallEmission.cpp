@@ -1085,7 +1085,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   ArgConvention selfConvention = calleeSignature.getArgConvention(0);
   Value firstArgValue;
 
-  assert(!calleeSignature.isVarArg(0) && !calleeSignature.isKWVarArg(0) &&
+  assert(!calleeSignature.isVarArg(0) && !calleeSignature.isKwVarArg(0) &&
          "Error: self shouldn't be varargs");
 
   switch (selfConvention) {

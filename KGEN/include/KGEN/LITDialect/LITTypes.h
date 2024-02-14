@@ -77,7 +77,7 @@ public:
   bool isPackVarArg(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.
-  bool isKWVarArg(size_t index);
+  bool isKwVarArg(size_t index);
 
   /// Returns true if the signature has variadic parameters.
   bool hasParamVarArgs();
