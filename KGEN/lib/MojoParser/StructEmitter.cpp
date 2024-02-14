@@ -474,8 +474,9 @@ struct ValueInfo {
       if (inputTypes.size() != numFields)
         continue;
       // Skip any kind of var-args.
-      VariadicEffects varEffects = signature.getMetadata().getVariadicEffects();
-      if (varEffects.hasAnyVarArgs() || varEffects.hasKWVarArgs())
+      FnMetadataAttr metadata = signature.getMetadata();
+      if (metadata.hasVarArgs() || metadata.hasPackVarArgs() ||
+          metadata.hasKwVarArgs())
         continue;
 
       bool isMatch = true;

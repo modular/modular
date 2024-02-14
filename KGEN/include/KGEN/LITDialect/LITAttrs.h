@@ -21,6 +21,7 @@ class LifetimeType;
 class MetaTypeType;
 class StructFieldOp;
 class UnpackedType;
+class FnMetadataAttr;
 } // namespace LIT
 } // namespace M::KGEN
 
@@ -43,14 +44,10 @@ public:
   VariadicEffects setPackVarArgs(bool packVarArgs = true) {
     return set(Impl::PackVarArg, packVarArgs);
   }
-  bool hasVarArgs() const { return get(Impl::VarArg); }
-  bool hasPackVarArgs() const { return get(Impl::PackVarArg); }
-  bool hasAnyVarArgs() const { return hasVarArgs() || hasPackVarArgs(); }
 
   VariadicEffects setKWVarArgs(bool kwVarArgs = true) {
     return set(Impl::KWVarArg, kwVarArgs);
   }
-  bool hasKWVarArgs() const { return get(Impl::KWVarArg); }
 
   VariadicEffects setParamVarArgs(bool paramVarArgs = true) {
     return set(Impl::ParamVarArg, paramVarArgs);
@@ -66,14 +63,6 @@ public:
 
   Impl getImpl() const { return impl; }
 
-  /// Given a function with `numInputs` inputs, return true if the argument at
-  /// `index` is the variadic argument.
-  bool isVarArg(size_t numInputs, size_t index) {
-    // If the function has keyword varargs, the vararg index is the second last.
-    // Otherwise, it's the last.
-    return (index + 1 + hasKWVarArgs()) == numInputs;
-  }
-
 private:
   VariadicEffects set(Impl bit, bool value) {
     impl = VariadicImpl::bitEnumSet(impl, bit, value);
@@ -84,6 +73,8 @@ private:
   }
 
   Impl impl;
+
+  friend FnMetadataAttr;
 };
 
 template <typename StreamT>

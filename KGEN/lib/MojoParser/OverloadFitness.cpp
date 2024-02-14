@@ -1325,7 +1325,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames(),
                        signature.getArgPassingKinds())) {
-    assert(!signature.isKWVarArg(expectedArgIdx) &&
+    assert(!signature.isKwVarArg(expectedArgIdx) &&
            "`**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
