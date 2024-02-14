@@ -100,48 +100,51 @@ LogicalResult M::loadSymbolsFromBytecode(
     function_ref<bool(StringAttr)> existsFn,
     function_ref<void(Operation *, Operation *)> insertFn,
     const SymbolTable &bytecodeSymTab) {
-  if (reader.isMaterializable(op)) {
-    if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
-      return failure();
+
+  // Process the dependencies using a worklist.
+  std::vector<Operation *> worklist;
+  worklist.push_back(op);
+  while (!worklist.empty()) {
+    Operation *op = worklist.back();
+    worklist.pop_back();
+
+    if (reader.isMaterializable(op)) {
+      if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
+        return failure();
+    }
+
+    mlir::AttrTypeWalker walker;
+    // Extract a dependency from the bytecode module and move it into the main
+    // module, if it doesn't already exist there. If a symbol was moved, return
+    // it.
+    auto extractDependency = [&](StringAttr name) -> Operation * {
+      // Don't move the symbol if it already exists in the main module.
+      if (existsFn(name))
+        return nullptr;
+      Operation *symbol = bytecodeSymTab.lookup(name);
+      assert(symbol && "expected valid symbol reference");
+
+      // Move the symbol into the main module.
+      insertFn(symbol, op);
+      return symbol;
+    };
+    walker.addWalk([&](FlatSymbolRefAttr ref) {
+      if (Operation *decl = extractDependency(ref.getAttr()))
+        worklist.push_back(decl);
+    });
+    op->walk([&](Operation *op) {
+      // Extract references to type declarations.
+      walker.walk(op->getAttrDictionary());
+      for (Type type : op->getResultTypes())
+        walker.walk(type);
+      for (Region &region : op->getRegions()) {
+        for (Type type : region.getArgumentTypes())
+          walker.walk(type);
+      }
+    });
   }
 
-  // Extract a dependency from the bytecode module and move it into the main
-  // module, if it doesn't already exist there. If a symbol was moved, return
-  // it.
-  auto extractDependency = [&](StringAttr name) -> Operation * {
-    // Don't move the symbol if it already exists in the main module.
-    if (existsFn(name))
-      return nullptr;
-    Operation *symbol = bytecodeSymTab.lookup(name);
-    assert(symbol && "expected valid symbol reference");
-
-    // Move the symbol into the main module.
-    insertFn(symbol, op);
-    return symbol;
-  };
-
-  mlir::AttrTypeWalker walker;
-  walker.addWalk([&](FlatSymbolRefAttr ref) -> WalkResult {
-    if (Operation *decl = extractDependency(ref.getAttr()))
-      return loadSymbolsFromBytecode(decl, reader, existsFn, insertFn,
-                                     bytecodeSymTab);
-    return WalkResult::advance();
-  });
-  auto result = op->walk([&](Operation *op) {
-    // Extract references to type declarations.
-    if (walker.walk(op->getAttrDictionary()).wasInterrupted())
-      return WalkResult::interrupt();
-    for (Type type : op->getResultTypes())
-      if (walker.walk(type).wasInterrupted())
-        return WalkResult::interrupt();
-    for (Region &region : op->getRegions()) {
-      for (Type type : region.getArgumentTypes())
-        if (walker.walk(type).wasInterrupted())
-          return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return failure(result.wasInterrupted());
+  return success();
 }
 
 LogicalResult M::loadSymbolsFromBytecode(Operation *op,
