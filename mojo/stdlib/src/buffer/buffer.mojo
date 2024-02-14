@@ -1688,6 +1688,9 @@ struct NDBuffer[
     ](self, rhs: NDBuffer[type, 1, rhs_shape]) -> Self:
         """Subtracts a NDBuffer.
 
+        Parameters:
+            rhs_shape: Shape of RHS.
+
         Args:
             rhs: The RHS of the sub operation.
 
