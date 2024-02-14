@@ -1054,10 +1054,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       } else {
         funcOp.setParamDeclAttr(
             ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+        funcOp.removeSymNameAttr();
       }
     } else {
       funcOp.setParamDeclAttr(
           ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+      funcOp.removeSymNameAttr();
     }
   }
 

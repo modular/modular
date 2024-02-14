@@ -128,7 +128,7 @@ static OwningOpRef<ModuleOp> cloneIntoFakeModule(KGEN::LIT::FuncOp func) {
   OpT fakeCompiledBody;
   if constexpr (!std::is_same_v<OpT, KGEN::LIT::FuncOp>) {
     fakeCompiledBody = fakeBuilder.create<OpT>(
-        func.getLoc(), b.getStringAttr(func.getSymName()), func.getSignature());
+        func.getLoc(), func.getSymNameAttr(), func.getSignature());
 
     // Just clone the body in.
     mlir::IRMapping map;
@@ -186,21 +186,22 @@ struct TestGeneratePreElaboratedBody
       func.getBody()->clear();
       OpBuilder::atBlockBegin(func.getBody())
           .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
-      StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
+      StringRef funcName = *func.getSymName();
+      StringAttr linkName = b.getStringAttr("link_" + funcName);
       func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
       func.setPreElaborationNameAttr(func.getSymNameAttr());
       func.setLinkageName(func.getSymNameAttr());
 
       DenseResourceElementsAttr postParseBytecode = serializeToResource(
-          *fakeCopyModule, func.getSymName() + "_generated_post_parse_attr");
+          *fakeCopyModule, funcName + "_generated_post_parse_attr");
       if (!postParseBytecode)
         return signalPassFailure();
-      DenseResourceElementsAttr preElabBytecode = serializeToResource(
-          *fakeModule, func.getSymName() + "_generated_body_attr");
+      DenseResourceElementsAttr preElabBytecode =
+          serializeToResource(*fakeModule, funcName + "_generated_body_attr");
       if (!preElabBytecode)
         return signalPassFailure();
       DenseResourceElementsAttr postElabBytecode = serializeToResource(
-          *fakeCompiledModule, func.getSymName() + "_generated_comp_attr");
+          *fakeCompiledModule, funcName + "_generated_comp_attr");
       if (!postElabBytecode)
         return signalPassFailure();
 
@@ -268,7 +269,8 @@ struct TestMaterializePackages
       func.getBody()->clear();
       OpBuilder::atBlockBegin(func.getBody())
           .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
-      StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
+      StringRef funcName = *func.getSymName();
+      StringAttr linkName = b.getStringAttr("link_" + funcName);
       func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
       func.setPreElaborationName(fakeCompiledBody.getSymNameAttr());
       func.setLinkageName(fakeCompiledBody.getSymNameAttr());
@@ -276,7 +278,7 @@ struct TestMaterializePackages
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
-          &getContext(), buffer, func.getSymName() + "_generated_body_attr");
+          &getContext(), buffer, funcName + "_generated_body_attr");
       SmallVector<KGEN::PackageArchiveAttr> archives;
       for (TargetInfoAttr target : targets) {
         archives.push_back(KGEN::PackageArchiveAttr::get(

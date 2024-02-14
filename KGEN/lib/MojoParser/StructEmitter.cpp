@@ -169,8 +169,8 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
 
   // Set the symbol and notice if we are redeclaring something.
   if (shared.declResolver->finalizeFuncSignature(funcOp, funcDecl)) {
-    shared.emitError(structDecl.getLoc(),
-                     "Duplicate definition of " + funcOp.getSymName().str());
+    shared.emitError(structDecl.getLoc(), "duplicate definition of '")
+        << name << "'";
   }
 
   return {funcOp, funcDecl};

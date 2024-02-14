@@ -783,7 +783,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   if (ParamDeclAttr decl = getParamDeclAttr())
     printParamName(p, decl.getName());
   else
-    p.printSymbolName(getSymName());
+    p.printSymbolName(*getSymName());
 
   // Print the function arguments. Here we need all the use defined names.
   printLITFunctionSignature(p, &getBodyRegion(), getSignature().getArgNames(),

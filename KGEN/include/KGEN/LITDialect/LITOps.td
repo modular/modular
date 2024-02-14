@@ -56,7 +56,7 @@ def LIT_FuncOp : LITOp<"func", [
   }];
 
   let arguments = (ins
-    SymbolNameAttr:$sym_name,
+    OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
@@ -88,6 +88,7 @@ def LIT_FuncOp : LITOp<"func", [
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
+    bool isOptionalSymbol() { return getParamDecl().has_value(); }
 
     /// Returns the result type of the MLIR function (not the user defined
     /// result type).  This is guaranteed to be present.
