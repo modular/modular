@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from mojobench import Bencher, MojoBench, BenchId, MojoBenchConfig
+from mojobench import Bencher, MojoBench, BenchId, MojoBenchConfig, Mode
 
 
 @parameter
@@ -46,4 +46,11 @@ def main():
     # CHECK-NEXT: bench2/0
     # CHECK-NEXT: bench2/1
     # CHECK-NEXT: bench2/1
+    m.dump_report()
+
+    # CHECK-LABEL: test_mode
+    print("== test_mode")
+    m = MojoBench(mode=Mode.Test)
+    m.bench_function[bench1](BenchId("bench1"))
+    # CHECK-COUNT-1: hello
     m.dump_report()
