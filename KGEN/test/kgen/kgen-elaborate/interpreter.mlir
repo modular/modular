@@ -260,3 +260,24 @@ kgen.generator export @interpret_create_closure() {
   kgen.param.constant: () -> () = <apply(:() -> !kgen.signature<() -> ()> @return_closure_formation)>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @a_function
+kgen.generator @a_function() {
+  kgen.return
+}
+
+kgen.generator @load_store_function(%arg0: !kgen.signature<() -> ()>) -> !kgen.signature<() -> ()> {
+  %0 = pop.stack_allocation 1 x !kgen.signature<() -> ()>
+  pop.store %arg0, %0 : !kgen.pointer<() -> ()>
+  %1 = pop.load %0 : !kgen.pointer<() -> ()>
+  kgen.return %1 : !kgen.signature<() -> ()>
+}
+
+// CHECK-LABEL: kgen.func export @call_it
+kgen.generator export @call_it() {
+  // CHECK-NEXT: constant: () -> () = <@a_function>
+  kgen.param.constant: () -> () = <apply(:(!kgen.signature<() -> ()>) -> !kgen.signature<() -> ()> @load_store_function, @a_function)>
+  kgen.return
+}
