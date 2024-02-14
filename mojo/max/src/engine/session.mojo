@@ -77,30 +77,14 @@ struct _InferenceSessionImpl(Movable):
         if model_source:
             compile_config.set_model_source(model_source.value())
 
-        let spec_count = len(config._input_names)
+        let spec_count = len(config._input_specs)
         for i in range(spec_count):
-            let name = config._input_names[i]
             let _spec = config._input_specs[i]
             if _spec.static:
-                compile_config.add_input_spec(
-                    self.get_as_engine_tensor_spec(
-                        name._strref_dangerous(),
-                        _spec.static.value(),
-                        session.copy(),
-                    )
-                )
-                name._strref_keepalive()
+                compile_config.add_input_spec(_spec.static.value())
             else:
                 let dtype = _spec.dtype
-                compile_config.add_input_spec(
-                    self.get_as_engine_tensor_spec(
-                        name._strref_dangerous(),
-                        _spec.dynamic,
-                        dtype,
-                        session.copy(),
-                    )
-                )
-                name._strref_keepalive()
+                compile_config.add_input_spec(_spec.dynamic, dtype)
 
         compile_config.set_torch_input_specs()
 
@@ -265,14 +249,12 @@ struct LoadOptions(CollectionElement):
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
     var _custom_ops_path: Optional[Path]
-    var _input_names: DynamicVector[String]
     var _input_specs: DynamicVector[_Specs]
 
     fn __init__(inout self):
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
-        self._input_names = DynamicVector[String]()
         self._input_specs = DynamicVector[_Specs]()
 
     fn _set_model_source(inout self, module: Module):
@@ -304,20 +286,17 @@ struct LoadOptions(CollectionElement):
         """
         self._custom_ops_path = path
 
-    fn add_input_spec(inout self, name: String, spec: TensorSpec):
+    fn add_input_spec(inout self, spec: TensorSpec):
         """Add valid input specs for model to be given at compile time.
            Only applicable for PyTorch.
 
         Args:
-            name: Name of the input.
             spec: Spec for the input.
         """
-        self._input_names.push_back(name)
         self._input_specs.push_back(_Specs(spec))
 
     fn add_input_spec(
         inout self,
-        name: String,
         shape: _Specs.dynamic_type,
         dtype: DType,
     ):
@@ -325,34 +304,27 @@ struct LoadOptions(CollectionElement):
            Only applicable for PyTorch.
 
         Args:
-            name: Name of the input.
             shape: Shape of the input.
             dtype: Datatype of the input.
         """
-        self._input_names.push_back(name)
         self._input_specs.push_back(_Specs(shape, dtype))
 
     fn add_input_specs(
         inout self,
-        names: DynamicVector[String],
         specs: DynamicVector[TensorSpec],
     ) raises:
         """Add valid input specs for model to be given at compile time.
            Only applicable for PyTorch.
 
         Args:
-            names: Names of the input.
             specs: Specs for the input.
         """
-        if len(names) != len(specs):
-            raise "number of input names does not equal number of specs"
+
         for i in range(len(specs)):
-            self._input_names.push_back(names[i])
             self._input_specs.push_back(_Specs(specs[i]))
 
     fn add_input_specs(
         inout self,
-        names: DynamicVector[String],
         shapes: DynamicVector[_Specs.dynamic_type],
         dtypes: InlinedFixedVector[DType],
     ) raises:
@@ -360,16 +332,10 @@ struct LoadOptions(CollectionElement):
            Only applicable for PyTorch.
 
         Args:
-            names: Names of the input.
             shapes: Shapes of the input.
             dtypes: Datatypes of the input.
         """
-
-        if len(names) != len(shapes) != len(dtypes):
-            raise "number of input names does not equal number of specs"
-
         for i in range(len(shapes)):
-            self._input_names.push_back(names[i])
             self._input_specs.push_back(_Specs(shapes[i], dtypes[i]))
 
 

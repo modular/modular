@@ -12,8 +12,11 @@ from sys import external_call
 from .session import InferenceSession
 from ._model_specs import InputTensorNames, OutputTensorNames
 from ._status import Status
-from ._utils import call_dylib_func, exchange
+from ._utils import call_dylib_func, exchange, OwningVector
 from ._tensor_spec_impl import CTensorSpec
+from tensor import TensorSpec
+from collections.vector import DynamicVector
+from ._dtypes import EngineDType
 
 
 @value
@@ -77,19 +80,117 @@ struct CCompileConfig:
     fn set_torch_input_specs(
         self,
         torch_lib: DLHandle,
-        specs_ptr: Pointer[CTensorSpec],
-        spec_count: Int,
+        specs_ptr: DynamicVector[CTorchInputSpec],
     ):
         call_dylib_func(
             torch_lib,
             Self.SetTorchInputSpecsFnName,
             self,
-            specs_ptr,
-            spec_count,
+            specs_ptr.data,
+            len(specs_ptr),
         )
 
     fn free(self, borrowed lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompileConfigFnName, self)
+
+
+@value
+@register_passable("trivial")
+struct CTorchInputSpec(CollectionElement):
+    """C API ABI compatible M_TorchInputSpec."""
+
+    alias ptr_type = Pointer[NoneType]
+    var ptr: Self.ptr_type
+
+    alias FreeTorchInputSpecFnName = "M_freeTorchInputSpec"
+
+    fn free(self, lib: DLHandle):
+        call_dylib_func(lib, Self.FreeTorchInputSpecFnName, self)
+
+
+struct TorchInputSpec(Movable):
+    alias shape_type = DynamicVector[Int64]
+    var shape: Self.shape_type
+    var dtype: DType
+    var ptr: CTorchInputSpec
+    var torch_lib: DLHandle
+
+    alias NewTorchInputSpecFnName = "M_newTorchInputSpec"
+
+    fn __init__(inout self, spec: TensorSpec, lib: DLHandle):
+        var shape = Self.shape_type()
+        shape.reserve(spec.rank())
+        for i in range(spec.rank()):
+            shape.push_back(spec[i])
+        self.shape = shape
+        self.dtype = spec.dtype()
+        var ptr = call_dylib_func[CTorchInputSpec](
+            lib,
+            Self.NewTorchInputSpecFnName,
+            self.shape.data,
+            len(self.shape),
+            EngineDType(self.dtype),
+        )
+        self.ptr = ptr
+        self.torch_lib = lib
+
+    fn __init__(
+        inout self,
+        shape: DynamicVector[Optional[Int64]],
+        dtype: DType,
+        lib: DLHandle,
+        engine_lib: DLHandle,
+    ):
+        var converted_shape = Self.shape_type()
+        converted_shape.reserve(len(shape))
+        for i in range(len(shape)):
+            let dim_or = shape[i]
+            if dim_or:
+                converted_shape.push_back(dim_or.value())
+            else:
+                converted_shape.push_back(
+                    CTensorSpec.get_dynamic_dimension_value(engine_lib)
+                )
+
+        self.shape = converted_shape ^
+        self.dtype = dtype
+        var ptr = call_dylib_func[CTorchInputSpec](
+            lib,
+            Self.NewTorchInputSpecFnName,
+            self.shape.data,
+            len(self.shape),
+            EngineDType(self.dtype),
+        )
+        self.ptr = ptr
+        self.torch_lib = lib
+
+    fn __init__(
+        inout self,
+        shape: NoneType,
+        dtype: DType,
+        lib: DLHandle,
+        engine_lib: DLHandle,
+    ):
+        self.shape = Self.shape_type()
+        self.dtype = dtype
+        var ptr = call_dylib_func[CTorchInputSpec](
+            lib,
+            Self.NewTorchInputSpecFnName,
+            CTorchInputSpec.ptr_type(),
+            CTensorSpec.get_dynamic_rank_value(engine_lib),
+            EngineDType(self.dtype),
+        )
+        self.ptr = ptr
+        self.torch_lib = lib
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.shape = existing.shape ^
+        self.dtype = existing.dtype
+        self.ptr = existing.ptr
+        self.torch_lib = existing.torch_lib
+
+    fn __del__(owned self):
+        self.ptr.free(self.torch_lib)
 
 
 struct CompileConfig:
@@ -98,12 +199,7 @@ struct CompileConfig:
     var ptr: Pointer[CCompileConfig]
     var lib: DLHandle
     var torch_lib: Optional[DLHandle]
-
-    var input_specs: AnyPointer[EngineTensorSpec]
-    var input_specs_c_ptr: Pointer[CTensorSpec]
-    var input_spec_count: Int
-    var input_spec_capacity: Int
-    alias initial_capacity = 5
+    var input_specs: OwningVector[TorchInputSpec]
 
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
@@ -113,16 +209,7 @@ struct CompileConfig:
             CCompileConfig
         ](lib, Self.NewCompileConfigFnName)
         self.lib = lib
-
-        # Pick a reasonable intitial value
-        self.input_spec_capacity = Self.initial_capacity
-        self.input_specs = AnyPointer[EngineTensorSpec].alloc(
-            self.input_spec_capacity
-        )
-        self.input_specs_c_ptr = Pointer[CTensorSpec].alloc(
-            self.input_spec_capacity
-        )
-        self.input_spec_count = 0
+        self.input_specs = OwningVector[TorchInputSpec]()
         self.torch_lib = Self._get_torch_lib()
 
     @staticmethod
@@ -151,10 +238,7 @@ struct CompileConfig:
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = existing.ptr
         self.lib = existing.lib
-        self.input_specs = existing.input_specs
-        self.input_specs_c_ptr = existing.input_specs_c_ptr
-        self.input_spec_count = existing.input_spec_count
-        self.input_spec_capacity = existing.input_spec_capacity
+        self.input_specs = existing.input_specs ^
         self.torch_lib = existing.torch_lib
 
     fn set_model_source(self, model_source: ModelSource):
@@ -171,60 +255,40 @@ struct CompileConfig:
         __get_address_as_lvalue(self.ptr.address).replace_ops(path, self.lib)
 
     fn set_torch_input_specs(self) raises:
-        if self.input_spec_count == 0:
+        if len(self.input_specs) == 0:
             return
 
         if not self.torch_lib:
             raise "cannot find torch extension libraries"
 
+        var inner_spec = DynamicVector[CTorchInputSpec]()
+        for i in range(len(self.input_specs)):
+            let spec_ptr = self.input_specs.get(i)
+            inner_spec.push_back(__get_address_as_lvalue(spec_ptr.value).ptr)
         __get_address_as_lvalue(self.ptr.address).set_torch_input_specs(
-            self.torch_lib.value(),
-            self.input_specs_c_ptr,
-            self.input_spec_count,
+            self.torch_lib.value(), inner_spec
         )
 
-    fn add_input_spec(inout self, owned spec: EngineTensorSpec):
-        # We don't have a collection type for Movable only objects
-        # So we keep track of both EngineTensorSpec to clear at the end
-        # as well as an array of CTensorSpec to pass to C API.
+    fn add_input_spec(inout self, spec: TensorSpec):
+        self.input_specs.emplace_back(
+            TorchInputSpec(spec, self.torch_lib.value())
+        )
 
-        # If we have reached capacity realloc and move existing values there.
-        if self.input_spec_count == self.input_spec_capacity:
-            # Double the capacity and allocate new ptrs.
-            self.input_spec_capacity *= 2
-            let input_specs = AnyPointer[EngineTensorSpec].alloc(
-                self.input_spec_capacity
+    fn add_input_spec(
+        inout self,
+        shape_or: Optional[DynamicVector[Optional[Int64]]],
+        dtype: DType,
+    ):
+        if not shape_or:
+            self.input_specs.emplace_back(
+                TorchInputSpec(None, dtype, self.torch_lib.value(), self.lib)
             )
-            let input_specs_c_ptr = Pointer[CTensorSpec].alloc(
-                self.input_spec_capacity
+            return
+        self.input_specs.emplace_back(
+            TorchInputSpec(
+                shape_or.value(), dtype, self.torch_lib.value(), self.lib
             )
-
-            # Move old values to new location and delete the
-            # old memory.
-            for i in range(self.input_spec_count):
-                _ = __get_address_as_owned_value(
-                    (input_specs_c_ptr + i).address
-                )
-                (input_specs + i).emplace_value(
-                    (self.input_specs + i).take_value()
-                )
-                let inner_ptr = __get_address_as_lvalue(
-                    (input_specs + i).value
-                )._borrow_ptr()
-                input_specs_c_ptr.store(i, inner_ptr)
-
-            self.input_specs_c_ptr.free()
-            self.input_specs.free()
-            self.input_specs = input_specs
-            self.input_specs_c_ptr = input_specs_c_ptr
-
-        # Keep both engine tensor spec and its inner C spec.
-        (self.input_specs + self.input_spec_count).emplace_value(spec ^)
-        let inner_ptr = __get_address_as_lvalue(
-            (self.input_specs + self.input_spec_count).value
-        )._borrow_ptr()
-        self.input_specs_c_ptr.store(self.input_spec_count, inner_ptr)
-        self.input_spec_count += 1
+        )
 
     fn borrow_ptr(self) -> Pointer[CCompileConfig]:
         return self.ptr
@@ -234,17 +298,7 @@ struct CompileConfig:
         self.ptr = Pointer[CCompileConfig]()
         return ptr
 
-    fn _del_specs(self):
-        for i in range(self.input_spec_count):
-            _ = (self.input_specs + i).take_value()
-
-        # We don't need to call destructor for inner c ptr
-        self.input_specs_c_ptr.free()
-        self.input_specs.free()
-
     fn __del__(owned self):
-        self._del_specs()
-
         if self.torch_lib:
             var torch = self.torch_lib.value()
             torch._del_old()
