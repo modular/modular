@@ -325,36 +325,6 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfo() {
 }
 #endif
 
-#if defined(_MSC_VER)
-ErrorOr<size_t> Detail::getNumPhysicalCoresWindows() {
-  std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer{};
-  DWORD bufferSize = 0;
-  DWORD result = GetLogicalProcessorInformation(buffer.data(), &bufferSize);
-  if (result == FALSE) {
-    DWORD lastError = GetLastError();
-    if (lastError == ERROR_INSUFFICIENT_BUFFER) {
-      DWORD numInfo = bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
-      buffer.resize(numInfo);
-    } else {
-      std::error_code ec = llvm::mapWindowsError(lastError);
-      return M::Error(ec.message());
-    }
-  }
-  result = GetLogicalProcessorInformation(buffer.data(), &bufferSize);
-  if (result == FALSE) {
-    std::error_code ec = llvm::mapWindowsError(GetLastError());
-    return M::Error(ec.message());
-  }
-
-  DWORD processorCoreCount = 0;
-  for (const auto &processorInfo : buffer) {
-    if (processorInfo.Relationship == RelationProcessorCore)
-      ++processorCoreCount;
-  }
-  return processorCoreCount;
-}
-#endif
-
 ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
   return Detail::getLinuxX86CPUSystemInfo();
