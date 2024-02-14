@@ -201,8 +201,26 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return getArgConventions()[inputNo];
     }
 
+    /// Returns true if the signature is a concrete callable.
+    bool isConcrete();
+
     /// Set a function convention.
     SignatureType getWithFnEffects(FnEffects effect);
+    /// Return this signature type with the value signature replaced.
+    SignatureType getWithValuesReplaced(FunctionType fnType);
+
+    /// Determine whether an argument with the given input convention expects to
+    /// have a pointer or reference type.
+    static bool hasAddress(ArgConvention conv);
+
+    /// Return the number of input parameters.
+    size_t getNumInputParams() { return getInputParamTypes().size(); }
+    /// Return the number of result parameters.
+    size_t getNumResultParams() { return getResultParamTypes().size(); }
+    /// Return the number of arguments.
+    size_t getNumArguments() { return getArguments().size(); }
+    /// Return the number of results.
+    size_t getNumResults() { return getResults().size(); }
 
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
@@ -225,25 +243,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
       FunctionType values, ArrayRef<ArgConvention> argConventions,
       FnEffects effects, FnMetadataAttrInterface metadata);
-
-    /// Return this signature type with the value signature replaced.
-    SignatureType getWithValuesReplaced(FunctionType fnType);
-
-    /// Returns true if the signature is a concrete callable.
-    bool isConcrete();
-
-    /// Return the number of input parameters.
-    size_t getNumInputParams() { return getInputParamTypes().size(); }
-    /// Return the number of result parameters.
-    size_t getNumResultParams() { return getResultParamTypes().size(); }
-    /// Return the number of arguments.
-    size_t getNumArguments() { return getArguments().size(); }
-    /// Return the number of results.
-    size_t getNumResults() { return getResults().size(); }
-
-    /// Determine whether an argument with the given input convention expects to
-    /// have a pointer or reference type.
-    static bool hasAddress(ArgConvention conv);
 
     /// Construct a signature from named parameter declarations, a function
     /// type, and metadata. This helper is used to convert between a named
