@@ -125,7 +125,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       ctx, options.targetTriple, options.targetCpu, options.targetFeatures);
   if (targetInfoOr.isError())
     return targetInfoOr.takeError();
-  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
+  std::unique_ptr<LLCL::Runtime> runtime =
+      clOptions.withMainWillNotDonate().createRuntime();
   std::vector<AnyAsyncValueRef> asyncValues;
 
   // Helper functor used to enqueue priming the cache for a specific

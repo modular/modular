@@ -220,7 +220,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Set up the runtime.
-  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
+  std::unique_ptr<LLCL::Runtime> runtime =
+      clOptions.withMainWillNotDonate().createRuntime();
 
   // The set of files included during processing, used to generate the
   // dependency file.
