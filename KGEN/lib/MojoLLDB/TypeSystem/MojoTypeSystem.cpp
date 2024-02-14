@@ -698,6 +698,18 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   return {};
 }
 
+uint32_t
+MojoTypeSystem::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
+                                        StringRef name,
+                                        bool omitEmptyBaseClasses) {
+  std::vector<uint32_t> childIndices;
+  GetIndexOfChildMemberWithName(type, name, omitEmptyBaseClasses, childIndices);
+  if (childIndices.size() != 1)
+    return UINT32_MAX; // Default value based on
+                       // CompilerType::GetIndexOfChildWithName.
+  return childIndices[0];
+}
+
 size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     lldb::opaque_compiler_type_t type, llvm::StringRef name,
     bool omitEmptyBaseClasses, std::vector<uint32_t> &childIndices) {

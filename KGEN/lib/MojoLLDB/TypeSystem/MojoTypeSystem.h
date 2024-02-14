@@ -543,11 +543,12 @@ public:
 
   uint32_t GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                    StringRef name,
-                                   bool omitEmptyBaseClasses) override {
-    // Unimplemented.
-    return 0;
-  }
+                                   bool omitEmptyBaseClasses) override;
 
+  // GetIndexOfChildMemberWithName returns a path of child indices towards
+  // a member. This makes sense in languages like C++ with inheritance, but as
+  // of now, for Mojo, this path will contain 0 or 1 elements. This makes this
+  // method equivalent to GetChildCompilerTypeAtIndex.
   size_t
   GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
                                 llvm::StringRef name, bool omitEmptyBaseClasses,

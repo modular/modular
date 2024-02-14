@@ -7063,7 +7063,7 @@ class SBValue:
     def GetName(self):
         ...
 
-    def GetTypeName(self):
+    def GetTypeName(self) -> str:
         ...
 
     def GetDisplayTypeName(self) -> str:
@@ -7174,7 +7174,7 @@ class SBValue:
     def GetIndexOfChildWithName(self, name):
         ...
 
-    def GetChildMemberWithName(self, *args):
+    def GetChildMemberWithName(self, *args: Any) -> "SBValue":
         ...
 
     def GetValueForExpressionPath(self, expr_path: str) -> "SBValue":

@@ -168,9 +168,19 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
       DataLayoutInterface::getTypeStoreSize(targetInfo, type.getMLIRType());
   std::optional<uint64_t> alignment =
       DataLayoutInterface::getTypeABIAlign(targetInfo, type.getMLIRType());
+
   if (!size || !alignment)
     return {};
 
+  // If a type has -1 size, it will crash the debugger as it'll attempt to read
+  // too much memory, so we change the size to 0, because no data should be
+  // read. We also need to report these cases at least with an error message.
+  if (size == std::numeric_limits<uint64_t>::max()) {
+    llvm::errs() << "Error: MLIR type '" << type.getAsString()
+                 << "' has an invalid size of " << size << " (-1).\n";
+    size = 0;
+    alignment = 1;
+  }
   return MojoTypeDataLayout(*size, *alignment);
 }
 
