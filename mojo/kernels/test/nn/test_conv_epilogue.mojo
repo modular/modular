@@ -197,6 +197,7 @@ fn test[
             type,
             True,
             conv_attr,
+            elementwise_epilogue_enabled=False,
         ].run(
             output_ref,
             input,
@@ -217,6 +218,7 @@ fn test[
             type,
             False,
             conv_attr,
+            elementwise_epilogue_enabled=False,
         ].run(
             output_ref,
             input,
@@ -250,13 +252,12 @@ fn test[
 
     # Test epilogue
     @always_inline
-    @parameter
-    fn epilogue[_rank: Int](coords: StaticIntTuple[_rank], f_size: Int):
+    fn epilogue(coords: StaticIntTuple[rank + 2], f_size: Int):
         @always_inline
         @__copy_capture(output, bias_ptr)
         @parameter
         fn body1[width: Int](idx: Int):
-            var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)
+            var curr_coords = coords
             curr_coords[rank + 1] += idx
 
             let vec = output.simd_load[width](curr_coords)
@@ -282,13 +283,14 @@ fn test[
             type,
             True,
             conv_attr,
-            epilogue,
+            elementwise_epilogue_enabled=True,
         ].run(
             output,
             input,
             packed_filter,
             # 30770
             rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            epilogue,
         )
     else:
         ConvDirectNHWC[
@@ -303,13 +305,14 @@ fn test[
             type,
             False,
             conv_attr,
-            epilogue,
+            elementwise_epilogue_enabled=True,
         ].run(
             output,
             input,
             filter,
             # 30770
             rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            epilogue,
         )
 
     input_ptr.free()

@@ -126,6 +126,7 @@ fn test[
         type,  # output type
         True,
         conv_attr_dynamic,
+        elementwise_epilogue_enabled=False,
     ].run(
         output_dynamic,
         rebind[NDBuffer[type, 4]](input),
@@ -178,6 +179,7 @@ fn test[
         type,  # output type
         True,
         conv_attr_static,
+        elementwise_epilogue_enabled=False,
     ].run(
         output_static,
         input,

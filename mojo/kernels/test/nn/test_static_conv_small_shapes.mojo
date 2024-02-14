@@ -108,6 +108,7 @@ fn static_conv(
             value_type,
             True,
             conv_attr,
+            elementwise_epilogue_enabled=False,
         ].run(output, input, filter, conv_shape)
     except e:
         print(e)
