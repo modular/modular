@@ -180,60 +180,24 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
 // SignatureType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult SignatureType::parseValue(AsmParser &p,
-                                              TypedAttr &value) const {
-  // Parse a keyword or string as an MLIR operation attribute.
-  std::string opName;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (succeeded(p.parseOptionalString(&opName))) {
-    NamedAttrList attrs;
-    if (failed(p.parseOptionalAttrDict(attrs)))
-      return failure();
-    value = MLIROpAttr::getChecked([&] { return p.emitError(loc); },
-                                   StringAttr::get(p.getContext(), opName),
-                                   attrs.getDictionary(p.getContext()), *this);
-    return mlir::success(!!value);
-  }
-
-  Attribute attr;
-  OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
-  if (!result.has_value())
-    return std::nullopt;
-  if (failed(*result))
-    return failure();
-
-  // Parse a symbol reference as a signature type attribute.
-  if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
-    // Parse any trailing parameter bindings.
-    ParameterExprArrayAttr paramValues;
-    if (parseParameterValues(p, paramValues))
-      return failure();
-    value = SymbolConstantAttr::get(symbol, paramValues, *this);
-  } else {
-    value = attr.cast<TypedAttr>();
-  }
-  return mlir::success();
+ArrayRef<Type> SignatureType::getArguments() const {
+  return getValues().getInputs();
+}
+ArrayRef<Type> SignatureType::getResults() const {
+  return getValues().getResults();
 }
 
-LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
-  if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
-    p << mlirOp.getName();
-    if (!mlirOp.getAttrs().empty())
-      p << mlirOp.getAttrs();
-    return success();
-  }
-
-  auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
-  if (!symbolCst)
-    return failure();
-  p << symbolCst.getSymbol();
-  printParameterValues(p, symbolCst.getParamValues());
-  return success();
+bool SignatureType::hasMemoryOnlyResult() {
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() && conventions[0] == ArgConvention::ByRefResult;
+}
+bool SignatureType::hasInitSelfResult() {
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
 }
 
-SignatureType SignatureType::get(MLIRContext *context, TypeRange inputs,
-                                 TypeRange results) {
-  return get(FunctionType::get(context, inputs, results));
+bool SignatureType::isConcrete() {
+  return getInputParamTypes().empty() && getResultParamTypes().empty();
 }
 
 SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
@@ -241,15 +205,25 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             getResultParamTypes(), getArgConventions(), effects,
                             getMetadata());
 }
-
-bool SignatureType::hasMemoryOnlyResult() {
-  ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() && conventions[0] == ArgConvention::ByRefResult;
+SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
+  return SignatureType::get(fnType, getInputParamTypes(), getResultParamTypes(),
+                            getArgConventions(), getFnEffects(), getMetadata());
 }
 
-bool SignatureType::hasInitSelfResult() {
-  ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
+bool SignatureType::hasAddress(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::None:
+  case ArgConvention::OwnedInReg:
+  case ArgConvention::BorrowedInReg:
+    return false;
+  case ArgConvention::OwnedInMem:
+  case ArgConvention::BorrowedInMem:
+  case ArgConvention::ByRef:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
+    return true;
+  }
+  llvm_unreachable("invalid argument convention");
 }
 
 /// Return a signature with the specified parameter bindings substituted
@@ -379,21 +353,113 @@ SignatureType SignatureType::getSpecializedSignature(
       metadata);
 }
 
-ArrayRef<Type> SignatureType::getArguments() const {
-  return getValues().getInputs();
-}
-ArrayRef<Type> SignatureType::getResults() const {
-  return getValues().getResults();
+SignatureType SignatureType::remapToSignature(
+    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
+    FunctionType functionType, ArrayRef<ArgConvention> argConventions,
+    FnEffects effects, Attribute metadata,
+    function_ref<InFlightDiagnostic()> emitError) {
+  IndexRefRemapper remapper(inputParams, resultParams);
+  SmallVector<Type> inputParamTypes, resultParamTypes;
+  for (ParamDeclAttr param : inputParams)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+  for (ParamDeclAttr param : resultParams)
+    resultParamTypes.push_back(remapper.replace(param.getType()));
+
+  if (!emitError) {
+    emitError = []() -> InFlightDiagnostic {
+      llvm_unreachable("invalid signature");
+    };
+  }
+
+  return SignatureType::getChecked(
+      emitError, remapper.replace(functionType), inputParamTypes,
+      resultParamTypes, argConventions, effects,
+      metadata ? remapper.replace(metadata) : nullptr);
 }
 
-/// Return this signature type with the value signature replaced.
-SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return SignatureType::get(fnType, getInputParamTypes(), getResultParamTypes(),
-                            getArgConventions(), getFnEffects(), getMetadata());
+SignatureType
+SignatureType::prependParams(SignatureType sig,
+                             ArrayRef<ParamDeclAttr> parentParams) {
+  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
+                            parentParams.size());
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : parentParams)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+  for (Type type : sig.getInputParamTypes())
+    inputParamTypes.push_back(remapper.replace(type));
+
+  FnMetadataAttrInterface metadata = sig.getMetadata();
+  if (metadata) {
+    metadata = remapper.replace(
+        sig.getMetadata().prependPosParams(parentParams.size()));
+  }
+
+  return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
+                            remapper.replace(sig.getResultParamTypes()),
+                            sig.getArgConventions(), sig.getFnEffects(),
+                            metadata);
 }
 
-bool SignatureType::isConcrete() {
-  return getInputParamTypes().empty() && getResultParamTypes().empty();
+OptionalParseResult SignatureType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
+  // Parse a keyword or string as an MLIR operation attribute.
+  std::string opName;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (succeeded(p.parseOptionalString(&opName))) {
+    NamedAttrList attrs;
+    if (failed(p.parseOptionalAttrDict(attrs)))
+      return failure();
+    value = MLIROpAttr::getChecked([&] { return p.emitError(loc); },
+                                   StringAttr::get(p.getContext(), opName),
+                                   attrs.getDictionary(p.getContext()), *this);
+    return mlir::success(!!value);
+  }
+
+  Attribute attr;
+  OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
+  if (!result.has_value())
+    return std::nullopt;
+  if (failed(*result))
+    return failure();
+
+  // Parse a symbol reference as a signature type attribute.
+  if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
+    // Parse any trailing parameter bindings.
+    ParameterExprArrayAttr paramValues;
+    if (parseParameterValues(p, paramValues))
+      return failure();
+    value = SymbolConstantAttr::get(symbol, paramValues, *this);
+  } else {
+    value = attr.cast<TypedAttr>();
+  }
+  return mlir::success();
+}
+
+LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
+    p << mlirOp.getName();
+    if (!mlirOp.getAttrs().empty())
+      p << mlirOp.getAttrs();
+    return success();
+  }
+
+  auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
+  if (!symbolCst)
+    return failure();
+  p << symbolCst.getSymbol();
+  printParameterValues(p, symbolCst.getParamValues());
+  return success();
+}
+
+std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
+  // Non-capturing closures are function pointers. Capturing closures contain
+  // a function pointer and a capture state pointer.
+  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+SignatureType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
 }
 
 Type SignatureType::parse(AsmParser &parser) {
@@ -410,20 +476,9 @@ void SignatureType::print(AsmPrinter &printer) const {
   printer << '>';
 }
 
-bool SignatureType::hasAddress(ArgConvention conv) {
-  switch (conv) {
-  case ArgConvention::None:
-  case ArgConvention::OwnedInReg:
-  case ArgConvention::BorrowedInReg:
-    return false;
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::ByRef:
-  case ArgConvention::ByRefResult:
-  case ArgConvention::InitSelf:
-    return true;
-  }
-  llvm_unreachable("invalid argument convention");
+SignatureType SignatureType::get(MLIRContext *context, TypeRange inputs,
+                                 TypeRange results) {
+  return get(FunctionType::get(context, inputs, results));
 }
 
 LogicalResult
@@ -498,67 +553,6 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   return success();
-}
-
-std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
-  // Non-capturing closures are function pointers. Capturing closures contain
-  // a function pointer and a capture state pointer.
-  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
-}
-
-std::optional<int64_t>
-SignatureType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
-}
-
-/// Construct a signature from named parameter declarations, a function
-/// type, and metadata. This helper is used to convert between a named
-/// signature structure to a nameless `SignatureType` representation.
-SignatureType SignatureType::remapToSignature(
-    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
-    FunctionType functionType, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects, Attribute metadata,
-    function_ref<InFlightDiagnostic()> emitError) {
-  IndexRefRemapper remapper(inputParams, resultParams);
-  SmallVector<Type> inputParamTypes, resultParamTypes;
-  for (ParamDeclAttr param : inputParams)
-    inputParamTypes.push_back(remapper.replace(param.getType()));
-  for (ParamDeclAttr param : resultParams)
-    resultParamTypes.push_back(remapper.replace(param.getType()));
-
-  if (!emitError) {
-    emitError = []() -> InFlightDiagnostic {
-      llvm_unreachable("invalid signature");
-    };
-  }
-
-  return SignatureType::getChecked(
-      emitError, remapper.replace(functionType), inputParamTypes,
-      resultParamTypes, argConventions, effects,
-      metadata ? remapper.replace(metadata) : nullptr);
-}
-
-SignatureType
-SignatureType::prependParams(SignatureType sig,
-                             ArrayRef<ParamDeclAttr> parentParams) {
-  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
-                            parentParams.size());
-  SmallVector<Type> inputParamTypes;
-  for (ParamDeclAttr param : parentParams)
-    inputParamTypes.push_back(remapper.replace(param.getType()));
-  for (Type type : sig.getInputParamTypes())
-    inputParamTypes.push_back(remapper.replace(type));
-
-  FnMetadataAttrInterface metadata = sig.getMetadata();
-  if (metadata) {
-    metadata = remapper.replace(
-        sig.getMetadata().prependPosParams(parentParams.size()));
-  }
-
-  return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
-                            remapper.replace(sig.getResultParamTypes()),
-                            sig.getArgConventions(), sig.getFnEffects(),
-                            metadata);
 }
 
 //===----------------------------------------------------------------------===//
