@@ -40,7 +40,8 @@ collectFunctionsAndTypes(Operation *module) {
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
-      funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
+      if (!funcOp.isOptionalSymbol())
+        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())

@@ -53,8 +53,7 @@ static bool requiresDocString(ASTDeclInterface op) {
 /// it is a "special function," also known as a "dunder method"
 /// (double-underscore method).
 static bool isSpecialFunction(StringRef name) {
-  return SpecialFunctionInfo::getKind(name.split("(").first) !=
-         SpecialFunctionKind::kNormal;
+  return SpecialFunctionInfo::getKind(name) != SpecialFunctionKind::kNormal;
 }
 
 /// If a function matches all of the following conditions, it requires a doc
@@ -64,7 +63,8 @@ static bool isSpecialFunction(StringRef name) {
 /// 2. It's defined at the top level of a module, or as a (not-synthesized)
 ///    method on a struct that itself requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
-  if (op.getName().starts_with("_") && !isSpecialFunction(op.getName()))
+  StringRef name = *op.getSourceName();
+  if (name.starts_with("_") && !isSpecialFunction(name))
     return false;
 
   Operation *parent = op->getParentOp();
@@ -102,11 +102,11 @@ static bool isOpInPrivateModule(Operation *declOp) {
     return false;
   for (Operation *op = declOp->getParentOp(); op; op = op->getParentOp()) {
     if (auto fileOp = dyn_cast<FileModuleOp>(op)) {
-      StringRef name = fileOp.getName();
+      StringRef name = fileOp.getSymName();
       if (name.starts_with("_") && name != "__init__")
         return true;
     } else if (auto packageOp = dyn_cast<PackageOp>(op)) {
-      if (packageOp.getName().starts_with("_"))
+      if (packageOp.getSymName().starts_with("_"))
         return true;
     }
   }
@@ -300,8 +300,8 @@ public:
           if (!docStr) {
             if (validation == ValidationKind::Strict && warnMissingDocStrings &&
                 !isOpInPrivateModule(op))
-              sharedState.emitWarning(op.getLoc(), "public symbol '")
-                  << op.getName() << "' is missing a doc string";
+              sharedState.emitWarning(op.getLoc(), "public symbol ")
+                  << op.getDeclName() << " is missing a doc string";
             return;
           }
 
