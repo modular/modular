@@ -304,7 +304,7 @@ def load(model_path: Path, meta: ModelMeta):
                 engine.DType.int32 if split_specs[-1]
                 == "si32" else engine.DType.float32
             )
-            specs.append(engine.TensorSpec(shape=shape, dtype=dtype, name=name))
+            specs.append(engine.TorchInputSpec(shape=shape, dtype=dtype))
         return specs
 
     session = engine.InferenceSession()

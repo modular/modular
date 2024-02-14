@@ -28,7 +28,7 @@ fn test_pytorch_model() raises:
 
     let session = InferenceSession()
     var config = LoadOptions()
-    config.add_input_spec("x", TensorSpec(DType.float32, 3, 100, 100))
+    config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
     let compiled_model = session.load_model(Path(model_path), config)
 
     # CHECK: 1
@@ -59,7 +59,7 @@ fn test_pytorch_model2() raises:
     shape.push_back(Int64(3))
     shape.push_back(Int64(100))
     shape.push_back(Int64(100))
-    config.add_input_spec("x", shape, DType.float32)
+    config.add_input_spec(shape, DType.float32)
     let compiled_model = session.load_model(Path(model_path), config)
 
     # CHECK: 1
@@ -86,7 +86,7 @@ fn test_model_execute() raises:
 
     let session = InferenceSession()
     var config = LoadOptions()
-    config.add_input_spec("x", TensorSpec(DType.float32, 3, 100, 100))
+    config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
     let model = session.load_model(Path(model_path), config)
     var input_tensor = Tensor[DType.float32](3, 100, 100)
     input_tensor._to_buffer().fill(-1)
