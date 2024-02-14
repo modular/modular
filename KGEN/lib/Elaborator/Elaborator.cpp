@@ -2427,8 +2427,8 @@ void ElaboratorImpl::completeSpecializationFromPackage(PackageState *state,
             [name](auto &symtab) { return symtab.lookup(name); });
       },
       [&](Operation *op, Operation *after) {
-        return newSymTab.modify([op, after](auto &symtab) {
-          op->moveAfter(after);
+        return newSymTab.modify([op](auto &symtab) {
+          op->remove();
           symtab.insert(op);
         });
       },
