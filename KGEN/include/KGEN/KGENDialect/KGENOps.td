@@ -1085,8 +1085,9 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
-    [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
