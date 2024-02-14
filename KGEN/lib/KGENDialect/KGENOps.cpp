@@ -1051,6 +1051,16 @@ LogicalResult CreateClosureOp::verify() {
   return success();
 }
 
+ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  // We have no representation for closing over runtime values.
+  if (!operands.empty())
+    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
+
+  state.mapResults(getCallee());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // GlobalOp
 //===----------------------------------------------------------------------===//

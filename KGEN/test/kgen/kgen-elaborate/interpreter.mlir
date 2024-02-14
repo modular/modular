@@ -241,3 +241,22 @@ kgen.generator @caller() {
   >
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @some_function
+kgen.generator @some_function() {
+  kgen.return
+}
+
+kgen.generator @return_closure_formation() -> !kgen.signature<() -> ()> {
+  %0 = kgen.create_closure[() -> (): @some_function]()
+  kgen.return %0 : !kgen.signature<() -> ()>
+}
+
+// CHECK-LABEL: kgen.func export @interpret_create_closure
+kgen.generator export @interpret_create_closure() {
+  // CHECK-NEXT: constant: () -> () = <@some_function>
+  kgen.param.constant: () -> () = <apply(:() -> !kgen.signature<() -> ()> @return_closure_formation)>
+  kgen.return
+}
