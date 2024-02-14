@@ -94,7 +94,8 @@ int main(int argc, char *argv[]) {
         context->appendDialectRegistry(registry);
 
         // Set up the runtime.
-        std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
+        std::unique_ptr<LLCL::Runtime> runtime =
+            clOptions.withMainWillNotDonate().createRuntime();
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
         options.searchPaths = parserSearchPaths.getValue();
