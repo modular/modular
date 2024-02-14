@@ -11,11 +11,12 @@ from sys import version_info
 from typing import Any, Optional, Type, Union
 
 import numpy as np
-from max.engine import core as _mecore
 from max.engine.core import DType as _DType
 from max.engine.core import InferenceSession as _InferenceSession
 from max.engine.core import Model as _Model
 from max.engine.core import TensorSpec as _TensorSpec
+from max.engine.core import TorchInputSpec as _TorchInputSpec
+from max.engine.core import __version__
 
 if version_info.minor <= 8:
     from typing import Dict, List, Tuple
@@ -24,7 +25,7 @@ else:
     List = list
     Tuple = tuple
 
-version_string = _mecore.__version__
+version_string = __version__
 
 
 @dataclass
@@ -41,7 +42,7 @@ class TensorFlowLoadOptions:
 class TorchLoadOptions:
     """Configures how to load PyTorch models."""
 
-    input_specs: List["TensorSpec"] = field(default_factory=list)
+    input_specs: List["TorchInputSpec"] = field(default_factory=list)
     """The tensor specifications (shape and data type) for each of the
     model inputs. This is required when loading serialized TorchScript models
     because they do not include type and shape annotations.
@@ -53,14 +54,14 @@ class TorchLoadOptions:
         session = engine.InferenceSession()
         torch_options = engine.TorchLoadOptions()
         torch_options.input_specs = [
-            engine.TensorSpec(
-                shape=[1, 16], dtype=engine.DType.int32, name="attention_mask"
+            engine.TorchInputSpec(
+                shape=[1, 16], dtype=engine.DType.int32
             ),
-            engine.TensorSpec(
-                shape=[1, 3, 224, 224], dtype=engine.DType.float32, name="pixel_values"
+            engine.TorchInputSpec(
+                shape=[1, 3, 224, 224], dtype=engine.DType.float32
             ),
-            engine.TensorSpec(
-                shape=[1, 16], dtype=engine.DType.int32, name="input_ids"
+            engine.TorchInputSpec(
+                shape=[1, 16], dtype=engine.DType.int32
             ),
         ]
         model = session.load("clip-vit.torchscript", torch_options)
@@ -274,8 +275,7 @@ class TensorSpec:
     """
     Defines the properties of a tensor, including its name, shape and data type.
 
-    For usage examples, see :obj:`Model.input_metadata` and
-    :obj:`TorchLoadOptions`.
+    For usage examples, see :obj:`Model.input_metadata`.
     """
 
     _impl: _TensorSpec
@@ -326,16 +326,40 @@ class TensorSpec:
         return self._impl.name
 
 
+class TorchInputSpec:
+    """
+    Specify valid input specification of a torch model.
+
+    For usage examples, see :obj:`TorchLoadOptions`.
+    """
+
+    _impl: _TorchInputSpec
+
+    def __init__(self, shape: Optional[List[Optional[int]]], dtype: DType):
+        self._impl = _TorchInputSpec(shape, dtype._to())
+
+    @classmethod
+    def _init(cls, _core_torch_load_spec):
+        torch_load_spec = cls([], DType.bool)
+        torch_load_spec._impl = _core_torch_load_spec
+        return torch_load_spec
+
+
 def _unwrap_pybind_objects_dict_factory(
     data: List[Tuple[str, Any]]
 ) -> Dict[str, Any]:
     """Unwraps pybind objects from python class wrappers."""
 
-    def convert(value: Any) -> Union[List[Any], _TensorSpec, Any]:
+    def convert(
+        value: Any,
+    ) -> Union[List[Any], _TensorSpec, _TorchInputSpec, Any]:
         if isinstance(value, list):
             return [convert(v) for v in value]
         if isinstance(value, TensorSpec):
             # Unwrap TensorSpec to _TensorSpec.
+            return value._impl
+        if isinstance(value, TorchInputSpec):
+            # Unwrap TorchInputSpec to _TorchInputSpec.
             return value._impl
         return value
 
@@ -447,3 +471,4 @@ def remove_annotations(cls: Type) -> Type:
 remove_annotations(Model)
 remove_annotations(InferenceSession)
 remove_annotations(TensorSpec)
+remove_annotations(TorchInputSpec)
