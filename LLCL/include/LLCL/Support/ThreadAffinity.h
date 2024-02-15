@@ -17,19 +17,14 @@
 
 namespace M::LLCL {
 
-/// Set to true to force worker threads to have affinity for a specific
-/// (physical) CPU on systems which support that.
-constexpr bool kUseThreadAffinity = true;
-
-/// The distinguished CPU ID denoting 'no affinity to be set'.
-constexpr size_t kNoAffinity = ~0;
-
 /// Determine the number of threads to use (based on the existing suggestion),
 /// and return a vector of CPU IDs for every such thread. The CPU ids may be
 /// kNoAffinity, indicating no affinity should be set. On error attempt to
 /// fallback to defaults, and return error to the caller if the attempt
-/// fails.
-M::ErrorOr<std::vector<size_t>> getThreadAffinityCpuIds(size_t numThreads,
+/// fails. If withAffinity is false, then expected result is a vector
+/// containing all entries with kNoAffinity.
+M::ErrorOr<std::vector<size_t>> getThreadAffinityCpuIds(bool withAffinity,
+                                                        size_t numThreads,
                                                         size_t maxWorkers);
 
 /// Execute workFn with affinity to cpuID if it is not kNoAffinity.

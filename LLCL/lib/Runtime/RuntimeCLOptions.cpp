@@ -43,6 +43,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
     break;
   case RuntimeOptions::WorkQueueType::kThreadPool:
     runtimeOptions.numThreads = numThreads;
+    runtimeOptions.withAffinity = withAffinity;
     runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
 #if MODULAR_PARANOID
     runtimeOptions.paranoid = paranoid;

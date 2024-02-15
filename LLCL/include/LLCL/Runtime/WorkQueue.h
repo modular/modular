@@ -254,7 +254,7 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 /// random delays into work items to attempt to tickle race conditions.
 std::unique_ptr<WorkQueue>
 createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
-                          bool mainWillDonate,
+                          bool mainWillDonate, bool withAffinity,
                           std::chrono::microseconds threadBusyWaitTime,
                           std::string_view poolName, bool paranoid);
 

@@ -141,6 +141,7 @@ createRuntimeImpl(const RuntimeOptions &options) {
           ? createSingleThreadWorkQueue(runtimePtr)
           : createThreadPoolWorkQueue(
                 runtimePtr, options.numThreads, options.mainWillDonate,
+                options.withAffinity,
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName, options.paranoid);
   return std::make_unique<Runtime>(runtimePtr, std::move(allocator),
