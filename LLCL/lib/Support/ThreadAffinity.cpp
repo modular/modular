@@ -38,41 +38,40 @@ void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
 } // namespace
 
 M::ErrorOr<std::vector<size_t>>
-M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
+M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
+                                 size_t maxWorkers) {
   if (numThreads == 0) {
     numThreads = M::getNumPhysicalCores();
     LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
                             << "threads to physical cores across all "
                             << "sockets " << numThreads << "\n");
   }
-  if constexpr (kUseThreadAffinity) {
-    if (haveThreadAffinity()) {
-      ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
-      if (const char *err = errOrSystemInfo.getError()) {
+  if (withAffinity && haveThreadAffinity()) {
+    ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
+    if (const char *err = errOrSystemInfo.getError()) {
+      LLVM_DEBUG(
+          llvm::dbgs()
+          << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
+          << err << "\n");
+      // Fallthrough for fallback case.
+    } else {
+      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
+                              << *errOrSystemInfo << "\n");
+      if (numThreads > maxWorkers) {
         LLVM_DEBUG(
             llvm::dbgs()
-            << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
-            << err << "\n");
-        // Fallthrough for fallback case.
-      } else {
-        LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
-                                << *errOrSystemInfo << "\n");
-        if (numThreads > maxWorkers) {
-          LLVM_DEBUG(
-              llvm::dbgs()
-              << "getThreadAffinityCpuIds: Reducing number of threads from "
-              << numThreads << " to " << maxWorkers << ".\n");
-          numThreads = maxWorkers;
-        }
-        std::vector<size_t> cpuIDs =
-            errOrSystemInfo->getPreferredCpuIDs(numThreads);
-        LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
-                                   "affinity for CPUs {";
-                   llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
-                   llvm::dbgs() << "}\n";);
-        adjustForCpuLimits(cpuIDs);
-        return cpuIDs;
+            << "getThreadAffinityCpuIds: Reducing number of threads from "
+            << numThreads << " to " << maxWorkers << ".\n");
+        numThreads = maxWorkers;
       }
+      std::vector<size_t> cpuIDs =
+          errOrSystemInfo->getPreferredCpuIDs(numThreads);
+      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
+                                 "affinity for CPUs {";
+                 llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
+                 llvm::dbgs() << "}\n";);
+      adjustForCpuLimits(cpuIDs);
+      return cpuIDs;
     }
   }
 
@@ -89,30 +88,24 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
 
 void M::LLCL::runWithThreadAffinity(size_t cpuID,
                                     llvm::function_ref<void()> workFn) {
-  if constexpr (kUseThreadAffinity) {
-    if (cpuID == kNoAffinity) {
-      workFn();
-    } else {
-      ErrorOrSuccess errOr = M::runWithThreadAffinity(cpuID, workFn);
-      if (const char *err = errOr.getError()) {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "unable to run with thread affinity: " << err << "\n");
-        workFn();
-      }
-    }
-  } else {
+  if (cpuID == kNoAffinity) {
     workFn();
+  } else {
+    ErrorOrSuccess errOr = M::runWithThreadAffinity(cpuID, workFn);
+    if (const char *err = errOr.getError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "unable to run with thread affinity: " << err << "\n");
+      workFn();
+    }
   }
 }
 
 void M::LLCL::setThreadAffinity(size_t cpuID) {
-  if constexpr (kUseThreadAffinity) {
-    if (cpuID != kNoAffinity) {
-      ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
-      if (const char *err = errOr.getError()) {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "unable to set thread affinity: " << err << "\n");
-      }
+  if (cpuID != kNoAffinity) {
+    ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
+    if (const char *err = errOr.getError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "unable to set thread affinity: " << err << "\n");
     }
   }
 }

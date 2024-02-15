@@ -1108,11 +1108,10 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
-                                   size_t numThreads, bool mainWillDonate,
-                                   std::chrono::microseconds threadBusyWaitTime,
-                                   std::string_view poolName, bool paranoid) {
+std::unique_ptr<WorkQueue> M::LLCL::createThreadPoolWorkQueue(
+    CompactRuntimePtr runtimePtr, size_t numThreads, bool mainWillDonate,
+    bool withAffinity, std::chrono::microseconds threadBusyWaitTime,
+    std::string_view poolName, bool paranoid) {
 
 #if MODULAR_PARANOID
 #ifdef NDEBUG
@@ -1133,15 +1132,15 @@ M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
                     "MODULAR_PARANOID builds\n";
 #endif // MODULAR_PARANOID
 
-  // Using numThreads as a hint, figure out a CPU for each worker thread
-  // and the main thread. The CPU ids may end up as kNoAffinity, but the
-  // vector size will still guide the construction of worker threads.
-  auto cpuIDOr = getThreadAffinityCpuIds(numThreads, kMaxWorkers);
-
+  // Using numThreads as a hint, figure out a CPU for each worker thread and
+  // the main thread. The CPU ids may end up as kNoAffinity, but the vector
+  // size will still guide the construction of worker threads.
+  //
   // TODO: This function should return the error back to caller.
+  auto cpuIDOr = getThreadAffinityCpuIds(withAffinity, numThreads, kMaxWorkers);
   if (cpuIDOr.isError())
     llvm::report_fatal_error(cpuIDOr.getError());
-  std::vector<size_t> cpuIDs = *cpuIDOr;
+  std::vector<size_t> cpuIDs = std::move(*cpuIDOr);
   assert(!cpuIDs.empty() && "no cpu ids");
 
   size_t taskListCapacity =

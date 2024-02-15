@@ -282,6 +282,8 @@ struct RuntimeOptions {
   // TODO arekay - revert to time units
   //  std::chrono::microseconds threadBusyWaitTime = 200us;
   size_t threadBusyWaitTime = 200;
+  // For legacy reasons, withAffinity is true by default.
+  bool withAffinity = true;
   std::string_view poolName = "🔥 Thread";
   bool paranoid = false;
   bool leakCheckedAllocator = false;
@@ -415,6 +417,11 @@ struct RuntimeOptions {
 
   RuntimeOptions &withMainWillNotDonate(bool mainWillNotDonate = true) {
     this->mainWillDonate = !mainWillNotDonate;
+    return *this;
+  }
+
+  RuntimeOptions &withCPUAffinity(bool cpuAffinity = true) {
+    this->withAffinity = cpuAffinity;
     return *this;
   }
 

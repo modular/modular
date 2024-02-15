@@ -25,6 +25,9 @@
 
 namespace M {
 
+/// The distinguished CPU ID denoting 'no affinity to be set'.
+constexpr size_t kNoAffinity = ~0;
+
 //===----------------------------------------------------------------------===//
 // CPUSystemInfo
 //===----------------------------------------------------------------------===//
