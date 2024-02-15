@@ -49,6 +49,10 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 
   pm.addPass(createLowerLITTypes());
   pm.addPass(createVerifyParameters());
+
+  // Slice MOGG functions out of the
+  pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
+
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
   pm.addPass(createEliminateDeadSymbols());
@@ -78,8 +82,6 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createSCCP());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
-
-  pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
 }
 
 void KGEN::buildElaborateModulePipeline(

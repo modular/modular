@@ -10,10 +10,11 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
-
 using namespace M;
 using namespace KGEN;
 using namespace MOGGPreElab;
@@ -53,7 +54,7 @@ constexpr StringLiteral tensorOutputFusionHook =
 
 // Basic struct to extract the KGEN parameters used in the tensor.
 struct KGENParamsOfTensor {
-  TypedAttr dtype, shape, stride;
+  TypedAttr dtype, shape, stride, inputLambda, outputLambda;
 };
 
 template <typename LambdaToApply>
@@ -223,8 +224,10 @@ private:
               "INTERNAL COMPILER ERROR: Parameter specialization "
               "failed");
         });
-    if (!newSig)
+    if (!newSig) {
       signalPassFailure();
+      return;
+    }
 
     // Point the call to the new rebinding.
     call.setCalleeAttr(
@@ -297,15 +300,35 @@ private:
     auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
     auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
                                         POP::SIMDType::get(1, boolType));
+
+    // As we rewrite the calls identify the non constant parameters which are
+    // being used. We will then replace these too.
+    DenseSet<KGEN::ParamDeclRefAttr> ownedMemParams;
+
     gen.walk([&](CallOp call) {
       auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
                              SmallVector<TypedAttr> &newParams) {
-        if (KGEN::ParamIndexRefAttr param = tensor.ownedMemoryAsRef())
-          newParams[param.getIndex()] = boolFalse;
+        if (std::optional<size_t> index = tensor.ownedMemory(gen)) {
+          if (auto decl = dyn_cast<KGEN::ParamDeclRefAttr>(newParams[*index]))
+            ownedMemParams.insert(decl);
+          newParams[*index] = boolFalse;
+        }
       };
 
       rewriteCallWithNewParams(call, symTab, paramUpdate);
     });
+
+    mlir::AttrTypeReplacer walker;
+    walker.addReplacement(
+        [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
+          if (ownedMemParams.contains(attr))
+            return boolFalse;
+          return std::nullopt;
+        });
+
+    walker.recursivelyReplaceElementsIn(gen, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
   }
 
   /// Instantiate all input/output lambdas which have NOT been toggled on to a
@@ -433,8 +456,7 @@ private:
   // Enabling fusion involves materializing a call to the input/output lambda
   // within the body of the function and replacing all previous parameter uses
   // with that value.
-  void enableFusion(GeneratorOp gen, Value outputTensor,
-                    SmallVector<std::string> &inputLambdaNames,
+  void enableFusion(GeneratorOp gen, SmallVector<std::string> &inputLambdaNames,
                     SmallVector<std::string> &outputLambdaNames,
                     SmallVector<KGEN::CallOp> &enableFusionFuncs,
                     SymbolTable &symTab) {
@@ -447,13 +469,20 @@ private:
       bool isInput = true;
       LambdaTemplate *lambda;
 
+      KGEN::ParamDeclRefAttr oldParam;
       if (tensorFusionEnabledOn == gen.getBody()->getArgument(0)) {
         newLambdaName = "output_0_fn";
         outputLambdaNames[0] = newLambdaName;
         lambda = &outLambdaTemplate;
         isInput = false;
+        oldParam = dyn_cast<ParamDeclRefAttr>(
+            enableFusionFunc.getCallee().getParamValues()
+                [MOGG::MOGGTensorParamAccessor::OUTPUT_LAMBDA_IDX]);
       } else {
         lambda = &inLambdaTemplate;
+        oldParam = dyn_cast<ParamDeclRefAttr>(
+            enableFusionFunc.getCallee().getParamValues()
+                [MOGG::MOGGTensorParamAccessor::INPUT_LAMBDA_IDX]);
 
         // We are dealing with an input.
         for (auto [index, value] :
@@ -534,46 +563,57 @@ private:
       // We now have the old binding to None for the output and the new
       // binding to the the input lambda we just cloned. We now need to
       // replace all uses of the old one with the new.
-      if (isInput) {
-        ParamDeclRefAttr oldLambdaBinding = cast<ParamDeclRefAttr>(
-            enableFusionFunc.getCallee().getParamValues()
-                [MOGG::MOGGTensorParamAccessor::INPUT_LAMBDA_IDX]);
-
-        paramRebinds[oldLambdaBinding] = newLambdaBinding;
-        for (Operation &topLevelOp : gen.getOps()) {
-          if (&topLevelOp != newLambda) {
-            topLevelOp.walk([&](Operation *op) {
-              walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                                  /*replaceLocs=*/false,
-                                                  /*replaceTypes=*/true);
-            });
-          }
-        }
-      } else {
-        // Update all the call sites which use the output tensor to reflect
-        // the new lambda.
-        for (Operation *user : outputTensor.getUsers()) {
-          if (auto call = dyn_cast<CallOp>(user)) {
-
-            // Don't include any within the lambda itself.
-            bool inLambda = false;
-            Operation *parent = call->getParentOp();
-            while (parent) {
-              if (parent == newLambda) {
-                inLambda = true;
-                break;
-              }
-              parent = parent->getParentOp();
+      // Update all the call sites which use the output tensor to reflect
+      // the new lambda.
+      for (Operation *user : tensorFusionEnabledOn.getUsers()) {
+        if (auto call = dyn_cast<CallOp>(user)) {
+          // Don't include any uses within the lambda itself.
+          bool inLambda = false;
+          Operation *parent = call->getParentOp();
+          while (parent) {
+            if (parent == newLambda) {
+              inLambda = true;
+              break;
             }
-            if (inLambda)
-              continue;
+            parent = parent->getParentOp();
+          }
 
-            auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
-                                   SmallVector<TypedAttr> &newParams) {
-              if (KGEN::ParamIndexRefAttr param = tensor.outputLambdaAsRef())
-                newParams[param.getIndex()] = newLambdaBinding;
-            };
-            rewriteCallWithNewParams(call, symTab, paramUpdate);
+          TypedAttr newParam;
+          if (inLambda) {
+            // If we are in the lambda then directly remap to point to null.
+            auto asVariant =
+                cast<KGEN::VariantType>(newLambdaBinding.getType());
+            auto lambdaNoneTy = KGEN::VariantAttr::get(
+                b.getIntegerAttr(b.getI1Type(), 0), 1, asVariant);
+            newParam = lambdaNoneTy;
+          } else {
+            newParam = newLambdaBinding;
+          }
+
+          auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
+                                 SmallVector<TypedAttr> &newParams) {
+            if (isInput) {
+              if (std::optional<size_t> index = tensor.inputLambda(gen))
+                newParams[*index] = newParam;
+            } else {
+              if (std::optional<size_t> index = tensor.outputLambda(gen))
+                newParams[*index] = newParam;
+            }
+          };
+          rewriteCallWithNewParams(call, symTab, paramUpdate);
+
+          // Rewrite all other uses outside calls if this is a concrete
+          // parameter reference.
+          if (oldParam) {
+            paramRebinds[oldParam] = newLambdaBinding;
+
+            gen.walk([&](Operation *op) {
+              if (op != newLambda) {
+                walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                                    /*replaceLocs=*/false,
+                                                    /*replaceTypes=*/true);
+              }
+            });
           }
         }
       }
@@ -587,6 +627,223 @@ private:
     }
   }
 
+  // Each type has a lit type and a KGEN type. We can see the lit type easily by
+  // looking at the source signature but the KGEN type is only known within the
+  // body.
+  KGENParamsOfTensor identifyKGENParamTypesForTensor(Value tensor,
+                                                     GeneratorOp kernel,
+                                                     SymbolTable &symTab) {
+    KGENParamsOfTensor params;
+    for (OpOperand &use : tensor.getUses()) {
+      if (auto call = dyn_cast<KGEN::CallOp>(use.getOwner())) {
+        KGEN::SymbolConstantAttr symbol = call.getCallee();
+        FlatSymbolRefAttr flatSym = cast<FlatSymbolRefAttr>(symbol.getSymbol());
+        auto calledFunc =
+            cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
+
+        std::optional<MOGG::MOGGTensorParamAccessor> callRep =
+            getTensorRepFromFunctionInput(calledFunc, use.getOperandNumber());
+        if (!callRep.has_value())
+          continue;
+
+        if (std::optional<size_t> index = callRep->dtype(calledFunc))
+          params.dtype = call.getCallee().getParamValues()[*index];
+
+        if (std::optional<size_t> index = callRep->shape(calledFunc))
+          params.shape = call.getCallee().getParamValues()[*index];
+
+        if (std::optional<size_t> index = callRep->strides(calledFunc))
+          params.stride = call.getCallee().getParamValues()[*index];
+
+        if (std::optional<size_t> index = callRep->inputLambda(calledFunc))
+          params.inputLambda = call.getCallee().getParamValues()[*index];
+
+        if (std::optional<size_t> index = callRep->outputLambda(calledFunc))
+          params.outputLambda = call.getCallee().getParamValues()[*index];
+
+        if (params.dtype && params.shape && params.stride &&
+            params.inputLambda && params.outputLambda) {
+          break;
+        }
+      }
+    }
+
+    // If we couldn't find the parameters on any call, try pull them from the
+    // sig.
+    if (!params.dtype || !params.shape || !params.stride) {
+      for (auto [idx, operand] : llvm::enumerate(kernel.getArguments())) {
+        // Only apply to the tensor requested.
+        if (operand != tensor)
+          continue;
+        std::optional<MOGG::MOGGTensorParamAccessor> callRep =
+            getTensorRepFromFunctionInput(kernel, idx);
+
+        if (callRep.has_value()) {
+          if (!params.dtype) {
+            if (std::optional<size_t> index = callRep->dtype(kernel)) {
+              KGEN::ParamDeclAttr decl = kernel.getInputParams()[*index];
+              params.dtype = KGEN::ParamDeclRefAttr::get(decl);
+            }
+          }
+
+          if (!params.shape) {
+            if (std::optional<size_t> index = callRep->shape(kernel)) {
+              KGEN::ParamDeclAttr decl = kernel.getInputParams()[*index];
+              params.shape = KGEN::ParamDeclRefAttr::get(decl);
+            }
+          }
+
+          if (!params.stride) {
+            if (std::optional<size_t> index = callRep->strides(kernel)) {
+              KGEN::ParamDeclAttr decl = kernel.getInputParams()[*index];
+              params.stride = KGEN::ParamDeclRefAttr::get(decl);
+            }
+          }
+        }
+      }
+    }
+    return params;
+  }
+
+  void reparameterizeImpl(GeneratorOp gen,
+                          SmallVector<KGENParamsOfTensor> &kgenParams,
+                          SymbolTable &symTab) {
+
+    OpBuilder builder{gen.getContext()};
+
+    auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
+    auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
+                                        POP::SIMDType::get(1, boolType));
+
+    SmallVector<KGEN::ParamDeclAttr> params;
+    for (KGEN::ParamDeclAttr p : gen.getInputParams())
+      params.push_back(p);
+
+    SmallVector<size_t> paramsToRemove;
+    DenseMap<KGEN::ParamDeclRefAttr, TypedAttr> paramsToRewrite;
+
+    // Add each tensor parameter as a parameter onto the function.
+    for (size_t operand = 0; operand < gen.getNumArguments(); ++operand) {
+      std::optional<MOGG::MOGGTensorParamAccessor> tensor =
+          getTensorRepFromFunctionInput(gen, operand);
+
+      if (tensor.has_value()) {
+        if (std::optional<size_t> index = tensor->ownedMemory(gen)) {
+          paramsToRemove.push_back(*index);
+          KGEN::ParamDeclRefAttr decl =
+              KGEN::ParamDeclRefAttr::get(gen.getInputParams()[*index]);
+          paramsToRewrite[decl] = boolFalse;
+        }
+
+        // Remove the lambdas from the sig. They will either be fused or none.
+        if (std::optional<size_t> index = tensor->inputLambda(gen)) {
+          paramsToRemove.push_back(*index);
+
+          KGEN::ParamDeclRefAttr decl =
+              KGEN::ParamDeclRefAttr::get(gen.getInputParams()[*index]);
+          auto asVariant = cast<KGEN::VariantType>(decl.getType());
+          auto lambdaNoneTy = KGEN::VariantAttr::get(
+              builder.getIntegerAttr(builder.getI1Type(), 0), 1, asVariant);
+          paramsToRewrite[decl] = lambdaNoneTy;
+        }
+
+        if (std::optional<size_t> index = tensor->outputLambda(gen)) {
+          paramsToRemove.push_back(*index);
+
+          KGEN::ParamDeclRefAttr decl =
+              KGEN::ParamDeclRefAttr::get(gen.getInputParams()[*index]);
+          auto asVariant = cast<KGEN::VariantType>(decl.getType());
+          auto lambdaNoneTy = KGEN::VariantAttr::get(
+              builder.getIntegerAttr(builder.getI1Type(), 0), 1, asVariant);
+          paramsToRewrite[decl] = lambdaNoneTy;
+        }
+      }
+    }
+
+    // Replace all the parameters with their `none` equivalent. At this point
+    // all enabled fusion should already have been dealt with in the enable
+    // fusion funcion.
+    mlir::AttrTypeReplacer walker;
+    walker.addReplacement(
+        [&](KGEN::ParamDeclRefAttr attr) -> std::optional<TypedAttr> {
+          auto itr = paramsToRewrite.find(attr);
+          if (itr != paramsToRewrite.end())
+            return itr->second;
+          return {};
+        });
+
+    gen.walk([&](Operation *op) {
+      walker.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/true,
+                                          /*replaceTypes=*/true);
+    });
+
+    // Update the sig to remove any reference to the index parameters as we are
+    // about to invalidate them.
+    walker.addReplacement(
+        [&](KGEN::ParamIndexRefAttr attr) -> std::optional<TypedAttr> {
+          if (attr.getDepth() == 0 || attr.getIsResult())
+            return {};
+
+          KGEN::ParamDeclAttr decl = gen.getInputParams()[attr.getIndex()];
+          auto ref = KGEN::ParamDeclRefAttr::get(decl);
+
+          auto itr = paramsToRewrite.find(ref);
+          if (itr != paramsToRewrite.end())
+            return itr->second;
+          return ref;
+        });
+
+    // Update all the metadata we have added to remove the references to the
+    // lambdas. They can't actually be using them but can easy inadvertently
+    // reference it. I.E: x.same_rank_param() includes the parameters of `x`.
+    for (KGENParamsOfTensor &paramMetadata : kgenParams) {
+      if (paramMetadata.dtype) {
+        paramMetadata.dtype =
+            cast<TypedAttr>(walker.replace(paramMetadata.dtype));
+      }
+      if (paramMetadata.shape) {
+        paramMetadata.shape =
+            cast<TypedAttr>(walker.replace(paramMetadata.shape));
+      }
+      if (paramMetadata.stride) {
+        paramMetadata.stride =
+            cast<TypedAttr>(walker.replace(paramMetadata.stride));
+      }
+    }
+
+    // Remove any parameters which we know know are unused.
+    std::sort(paramsToRemove.begin(), paramsToRemove.end(),
+              std::greater<size_t>());
+    for (size_t i : paramsToRemove)
+      params.erase(params.begin() + i);
+
+    // Specialize the generator using
+    SmallVector<TypedAttr> paramsToSpecialize;
+    for (KGEN::ParamDeclAttr decl : gen.getInputParams()) {
+      auto asRef = KGEN::ParamDeclRefAttr::get(decl);
+      auto itr = paramsToRewrite.find(asRef);
+      if (itr != paramsToRewrite.end())
+        paramsToSpecialize.push_back(itr->second);
+      else
+        paramsToSpecialize.push_back(UnboundAttr::get(asRef.getType()));
+    }
+
+    // Update the sig to partially specialize on those function types.
+    gen.setSignature(gen.getSignature().getSpecializedSignature(
+        paramsToSpecialize, gen.getLoc()));
+
+    // Remove the old params from the function.
+    gen.setInputParams(params);
+
+    // The source sig has been invalidated so remove it.
+    gen.removeSourceSignatureAttr();
+
+    // We still need to brute force any is_owned to true, looking through the
+    // params isn't enough as it may be defaulted.
+    markAllTensorsAsOwned(gen, symTab);
+  }
+
   GeneratorOp
   sliceShapeFunction(Value shape, GeneratorOp funcToSlice,
                      SmallVector<KGENParamsOfTensor> &kgenTensorParams) {
@@ -595,6 +852,16 @@ private:
     // Identify all ops used to create the shape.
     DenseSet<Operation *> opsToClone;
     DenseSet<Value> usedInputs;
+
+    // TODO: Readd the input culling to only add directly used arguments. They
+    // are needed for their shapes at the mo level so we have to keep them
+    // around until we figure that part out.
+    for (auto [idx, operand] : llvm::enumerate(funcToSlice.getArguments())) {
+      // Skip the output.
+      if (idx != 0)
+        usedInputs.insert(operand);
+    }
+
     SmallVector<Operation *> worklist;
     worklist.push_back(op);
     while (!worklist.empty()) {
@@ -607,19 +874,12 @@ private:
       for (Value operand : opToProcess->getOperands()) {
         if (operand.getDefiningOp())
           worklist.push_back(operand.getDefiningOp());
-        else
-          usedInputs.insert(operand);
       }
     }
-
-    std::optional<LIT::LITSignatureType> oldLitSig = getSourceSig(funcToSlice);
     FunctionType funcTy = funcToSlice.getFunctionType();
-    FunctionType litFuncType = oldLitSig->getValues();
-    LIT::FnMetadataAttr oldMetadata = oldLitSig->getMetadata();
 
-    // We need to build LIT/KGEN function types for the new signature.
-    SmallVector<Type> funcInputs, litFuncInputs;
-    SmallVector<StringAttr> litArgNames;
+    // We need to build KGEN function types for the new signature.
+    SmallVector<Type> funcInputs;
 
     // The shape function uses a subset of the original kernel params.
     SmallVector<KGENParamsOfTensor> shapeTensorParams;
@@ -635,8 +895,6 @@ private:
       if (usedInputs.contains(operand)) {
         inputIndices.insert(idx);
         funcInputs.push_back(funcTy.getInputs()[idx]);
-        litFuncInputs.push_back(litFuncType.getInputs()[idx]);
-        litArgNames.push_back(oldMetadata.getArgNames()[idx]);
 
         shapeTensorParams.push_back(kgenTensorParams[idx]);
 
@@ -653,39 +911,19 @@ private:
     FunctionType newFuncType =
         FunctionType::get(ctx, funcInputs, {shape.getType()});
 
-    SignatureType oldSig = slicedShapeFunction.getSignature();
-
     // Drop the input conventions.
     SignatureType newSig = SignatureType::remapToSignature(
         slicedShapeFunction.getInputParams(),
         slicedShapeFunction.getResultParams(), newFuncType,
-        /*argConventions=*/{}, oldSig.getFnEffects(),
+        /*argConventions=*/{}, /*fnEffects=*/{},
         /*metadata*/ {});
 
     // Replace the parameter refs with their actual values.
     newSig = newSig.getWithValuesReplaced(newFuncType);
-
-    // We also have to rebuild the lit metadata function so we can still infer
-    // each parameter.
-    FunctionType newLitFunctionType =
-        FunctionType::get(ctx, litFuncInputs, {shape.getType()});
-
-    SmallVector<KGEN::LIT::PassingKind> passingKinds{
-        litFuncInputs.size(), KGEN::LIT::PassingKind::PosOnly};
-
-    auto argAttrs = LIT::ArgParamListAttr::get(ctx, litArgNames, passingKinds);
-    auto metadata =
-        LIT::FnMetadataAttr::get(argAttrs, oldMetadata.getParamListAttrs());
-
-    auto newLitSig = LIT::LITSignatureType::get(
-        newLitFunctionType, oldLitSig->getParamTypes(),
-        /*argConventions=*/{}, oldSig.getFnEffects(), metadata);
+    slicedShapeFunction.removeSourceSignatureAttr();
 
     slicedShapeFunction.setSignature(newSig);
     slicedShapeFunction.setFunctionType(newSig.getValues());
-
-    slicedShapeFunction.setSourceSignatureAttr(
-        PreservedAttr::get(ctx, TypeAttr::get(newLitSig)));
 
     Block &shapeFuncBlock =
         slicedShapeFunction.getCallableRegion()->emplaceBlock();
@@ -734,7 +972,9 @@ public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
     ctx = mod.getContext();
-    SymbolTable symTab{mod};
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    SymbolTable &symTab = analysis.getTopLevelSymbolTable();
+
     // Scan the generators to find the global helper functions we will need to
     // call or inspect.
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
@@ -791,8 +1031,10 @@ public:
 
       std::optional<MOGG::MOGGTensorParamAccessor> outTensorParameters =
           getTensorRepFromFunctionInput(slicedComputeFunction, 0);
-      if (!outTensorParameters.has_value())
+      if (!outTensorParameters.has_value()) {
+        slicedComputeFunction.erase();
         continue;
+      }
 
       // Scan the kernel and identify the callsites of annotated functions that
       // we can understand.
@@ -842,50 +1084,18 @@ public:
       Value outputTensor = slicedComputeFunction.getBody()->getArgument(0);
       Value shape;
 
-      SmallVector<KGENParamsOfTensor> kgenTensorParams(
+      SmallVector<KGENParamsOfTensor> kgenTensorParams;
+      kgenTensorParams.reserve(
           slicedComputeFunction.getBody()->getNumArguments());
-
-      size_t i = 0;
 
       // Scan through all the tensors to find their calls and extract the KGEN
       // level parameter information for each from their calls.
       for (Value arg : slicedComputeFunction.getBody()->getArguments()) {
-        KGENParamsOfTensor &params = kgenTensorParams[i];
-        i++;
-        for (OpOperand &use : arg.getUses()) {
-          if (auto call = dyn_cast<KGEN::CallOp>(use.getOwner())) {
-            KGEN::SymbolConstantAttr symbol = call.getCallee();
-            FlatSymbolRefAttr flatSym =
-                cast<FlatSymbolRefAttr>(symbol.getSymbol());
-            auto calledFunc =
-                cast<KGEN::GeneratorOp>(symTab.lookup(flatSym.getValue()));
-
-            std::optional<MOGG::MOGGTensorParamAccessor> callRep =
-                getTensorRepFromFunctionInput(calledFunc,
-                                              use.getOperandNumber());
-            if (callRep.has_value()) {
-              if (KGEN::ParamIndexRefAttr ref = callRep->dtypeAsRef())
-                params.dtype =
-                    call.getCallee().getParamValues()[ref.getIndex()];
-
-              if (KGEN::ParamIndexRefAttr ref = callRep->shapeAsRef())
-                params.shape =
-                    call.getCallee().getParamValues()[ref.getIndex()];
-
-              if (KGEN::ParamIndexRefAttr ref = callRep->strideAsRef())
-                params.stride =
-                    call.getCallee().getParamValues()[ref.getIndex()];
-            }
-
-            if (params.dtype && params.shape && params.stride) {
-              break;
-            }
-          }
-        }
+        kgenTensorParams.push_back(identifyKGENParamTypesForTensor(
+            arg, slicedComputeFunction, symTab));
       }
 
       bool isView = false;
-
       // Any MOGG annotated kernel which has no allocation should be treated as
       // a view.
       if (!allocationFunc) {
@@ -921,17 +1131,14 @@ public:
         allocationFunc.erase();
 
         // Turn on fusion for any tensors which have set fusion.
-        enableFusion(slicedComputeFunction, outputTensor, inputLambdaNames,
-                     outputLambdaNames, enableFusionFuncs, symTab);
+        enableFusion(slicedComputeFunction, inputLambdaNames, outputLambdaNames,
+                     enableFusionFuncs, symTab);
       }
 
-      // Any `none` parameters need to be instantiated since MOGG can't provide
-      // them. These are the lambdas which have now been turned off.
-      instantiateNoneParamLambdas(slicedComputeFunction);
-
-      // Override the ref counting so all tensors are owned by the graph
-      // compiler.
-      markAllTensorsAsOwned(slicedComputeFunction, symTab);
+      // Remove all tensor parameters which have been instantiated explicitly by
+      // MOGG, namely the input / output lambdas and the owned memory bool
+      // attribute.
+      reparameterizeImpl(slicedComputeFunction, kgenTensorParams, symTab);
 
       // Add compute function part to the module, i.e the kernel sans
       // allocation.
@@ -966,7 +1173,8 @@ public:
       userKernel.setDecorators(
           KGEN::DecoratorsAttr::get(ctx, kernelMetadata->nonMOGGDecorators));
 
-      // Don't process the function we just added if we see it again.
+      // slicedComputeFunction.dump();
+      //  Don't process the function we just added if we see it again.
       seenFuncs.insert(slicedComputeFunction);
     }
   }
