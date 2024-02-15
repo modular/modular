@@ -214,23 +214,20 @@ ParseResult LIT::parseOptionalParameterSpec(
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
-                                     ArrayRef<ParamDeclAttr> inputParamDecls,
-                                     ArrayRef<ParamDeclAttr> resultParamDecls,
-                                     ArrayRef<PassingKind> paramPassingKinds,
-                                     ArrayRef<TypedAttr> defaultPosParams,
-                                     ArrayRef<TypedAttr> defaultKwOnlyParams,
+                                     ArrayRef<ParamDeclAttr> paramDecls,
+                                     ArgParamListAttr paramListAttr,
                                      ParameterEvaluator &evaluator) {
-  // Substitute input and result parameters when printing default parameters.
-  for (ParamDeclAttr param : inputParamDecls)
+  // Substitute input parameters when printing default parameters.
+  for (ParamDeclAttr param : paramDecls)
     evaluator.addInputValue(ParamDeclRefAttr::get(param));
-  for (ParamDeclAttr param : resultParamDecls)
-    evaluator.addResultValue(ParamDeclRefAttr::get(param));
 
-  DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
-                                     defaultKwOnlyParams);
+  DefaultValueHandler defaultHandler(paramListAttr.getPassingKinds(),
+                                     paramListAttr.getDefaultPos(),
+                                     paramListAttr.getDefaultKwOnly());
 
   size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, paramPassingKinds, '|');
+  PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
+                                        '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -244,7 +241,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
   };
-  printOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
+  printOptionalParameterSpec(p, paramDecls, /*resultParams=*/{},
                              printWithDefault);
 }
 
