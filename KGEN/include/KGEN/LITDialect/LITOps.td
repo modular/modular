@@ -516,7 +516,7 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
 
     %0 = lit.struct.create(a=%a, b=%b, c=%c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !kgen.declref<@MyStruct<T: dtype = type>>
+      -> !lit.declref<@MyStruct<T: dtype = type>>
     ```
   }];
 
@@ -551,7 +551,7 @@ def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
     }
 
     %0 = lit.struct.insert %fieldVal, %struct[a]
-      : !pop.scalar<f64> into !kgen.declref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> into !lit.declref<@MyStruct<T: dtype = f64>>
     ```
   }];
 
@@ -585,7 +585,7 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     }
 
     %0 = lit.struct.extract %struct[a]
-      : !pop.scalar<f64> from !kgen.declref<@MyStruct<T: dtype = f64>>
+      : !pop.scalar<f64> from !lit.declref<@MyStruct<T: dtype = f64>>
     ```
   }];
 
@@ -681,9 +681,9 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
 
     ```mlir
     lit.try {
-      %0 = kgen.call @maybeRaises() : () throws -> !kgen.declref<@Int>
+      %0 = kgen.call @maybeRaises() : () throws -> !lit.declref<@Int>
       lit.try.yield
-    } except (%err: !kgen.declref<@Error>) {
+    } except (%err: !lit.declref<@Error>) {
       lit.try.yield
     } else {
       lit.try.yield
@@ -888,7 +888,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
     Example:
 
     ```mlir
-    lit.globalvar.decl @global_var : !kgen.declref<@String> isVar {
+    lit.globalvar.decl @global_var : !lit.declref<@String> isVar {
       %0 = lit.globalvar.ref @global_var : @String
       kgen.call @String::@__init__(%0)
     }, {
@@ -1166,9 +1166,9 @@ def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
 
     ```mlir
     lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
-      %1 = lit.struct.create(a=%0) : (index) -> !kgen.declref<@Error>
+      %1 = lit.struct.create(a=%0) : (index) -> !lit.declref<@Error>
       %2 = kgen.variant.create %1 :
-        !kgen.declref<@Error> -> !kgen.variant<@Error, none>
+        !lit.declref<@Error> -> !kgen.variant<@Error, none>
       lit.error_return %2 : !kgen.variant<@Error, none>
     }
     ```
@@ -1194,7 +1194,7 @@ def LIT_RaiseOp : LITOp<"raise"> {
     Example:
 
     ```mlir
-    lit.raise %err : !kgen.declref<@Error>
+    lit.raise %err : !lit.declref<@Error>
     ```
   }];
 
@@ -1620,7 +1620,7 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
       lit.yield %7 : !kgen.none
     } else {
       %8 = kgen.variant.take %0, 0 : <@Error, none>
-      lit.try.raise %8 : !kgen.declref<@Error>
+      lit.try.raise %8 : !lit.declref<@Error>
     }
     ```
     This operation can always be marked pure because the control-flow edge from

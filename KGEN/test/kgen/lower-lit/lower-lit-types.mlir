@@ -9,8 +9,8 @@ lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
 
-!size2 = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
-!size4 = !kgen.declref<@SmallVector<4, :type !pop.simd<1, f64>>>
+!size2 = !lit.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
+!size4 = !lit.declref<@SmallVector<4, :type !pop.simd<1, f64>>>
 
 // CHECK-LABEL: @two_vectors
 kgen.func @two_vectors(
@@ -36,13 +36,13 @@ lit.struct.decl @Pair<T1: type, T2: type> {
 }
 
 // CHECK-LABEL: @make_box
-kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<:type f32>> {
+kgen.func @make_box(%v: f32) -> !lit.declref<@Box<:type f32>> {
   // CHECK: kgen.return %arg0 : f32
-  %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<:type f32>>
-  kgen.return %0 : !kgen.declref<@Box<:type f32>>
+  %0 = lit.struct.create(value=%v) : (f32) -> !lit.declref<@Box<:type f32>>
+  kgen.return %0 : !lit.declref<@Box<:type f32>>
 }
 
-!i8Pair = !kgen.declref<@Pair<:type i8, :type i8>>
+!i8Pair = !lit.declref<@Pair<:type i8, :type i8>>
 
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
@@ -71,19 +71,19 @@ lit.struct.decl @NestedA<T: type> register_passable {
   lit.struct.field v: !kgen.paramref<T>
 }
 lit.struct.decl @NestedB<t: dtype> register_passable {
-  lit.struct.field a: !kgen.declref<@NestedA<:type !pop.simd<1, t>>>
+  lit.struct.field a: !lit.declref<@NestedA<:type !pop.simd<1, t>>>
 }
 lit.struct.decl @NestedC register_passable {
-  lit.struct.field b: !kgen.declref<@NestedB<:dtype f32>>
+  lit.struct.field b: !lit.declref<@NestedB<:dtype f32>>
 }
 
 // CHECK-LABEL: @use_nested(%arg0: !pop.scalar<f32>)
-kgen.func @use_nested(%a: !kgen.declref<@NestedC>) {
+kgen.func @use_nested(%a: !lit.declref<@NestedC>) {
   kgen.return
 }
 
 // CHECK-LABEL: @struct_element(%arg0: !kgen.pointer<simd<2, f32>>
-kgen.func @struct_element(%a: !kgen.pointer<!kgen.declref<@NestedA<:type !pop.simd<2, f32>>>>) {
+kgen.func @struct_element(%a: !kgen.pointer<!lit.declref<@NestedA<:type !pop.simd<2, f32>>>>) {
   kgen.return
 }
 
@@ -93,7 +93,7 @@ lit.struct.decl @IndexStruct register_passable {
 }
 
 lit.struct.decl @StructInsideStruct register_passable {
-  lit.struct.field x : !kgen.declref<@IndexStruct>
+  lit.struct.field x : !lit.declref<@IndexStruct>
 }
 
 lit.struct.decl @IndexField {
@@ -102,35 +102,35 @@ lit.struct.decl @IndexField {
 }
 
 // CHECK-LABEL: @structExtract
-kgen.generator @structExtract<p: !kgen.declref<@IndexField> -> res: index>() {
+kgen.generator @structExtract<p: !lit.declref<@IndexField> -> res: index>() {
   // CHECK: kgen.param.result_bind<#kgen.struct.extract<:struct<(index, index) memoryOnly> p, 1>>
-  kgen.param.result_bind<#lit.struct.extract<:!kgen.declref<@IndexField> p, "second">>
+  kgen.param.result_bind<#lit.struct.extract<:!lit.declref<@IndexField> p, "second">>
   kgen.return
 }
 
 kgen.generator @structExtractInsideStruct<p: @IndexField>(
-    %arg0: !kgen.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>) {
+    %arg0: !lit.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>) {
   %0 = lit.struct.extract %arg0[data] : !pop.array<#lit.struct.extract<:@IndexField p, "second">, index> from
-    !kgen.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>
+    !lit.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>
   kgen.return
 }
 
 lit.struct.decl @Struct register_passable {}
 
 lit.struct.decl @StructParam<param: @Struct> register_passable {
-  lit.struct.field value : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, param), index>
+  lit.struct.field value : !pop.array<apply(:(!lit.declref<@Struct>) -> index @return_one, param), index>
 }
 
-kgen.generator @return_one(%arg0: !kgen.declref<@Struct>) -> index {
+kgen.generator @return_one(%arg0: !lit.declref<@Struct>) -> index {
   %0 = index.constant 0
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @use_struct_param
 // CHECK-SAME: !pop.array<apply(:(!kgen.struct<()>) -> index @return_one, { }), index>
-kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>) {
-  lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
-    from !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>
+kgen.generator @use_struct_param(%arg0: !lit.declref<@StructParam<:@Struct #lit.struct<{}>>>) {
+  lit.struct.extract %arg0[value] : !pop.array<apply(:(!lit.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
+    from !lit.declref<@StructParam<:@Struct #lit.struct<{}>>>
   kgen.return
 }
 
@@ -223,12 +223,12 @@ kgen.generator @takes_val_after_lifetime<life: lifetime<1>, type: type>(%a: !lit
 kgen.generator @parameterized_declref_type() {
   // CHECK-NEXT: array<2, simd<apply(:(!kgen.struct<()>) -> index @unbox, { }), f32>>
   %3 = pop.stack_allocation 1 x @StaticTuple<2,
-    :type !kgen.declref<@SIMD<:@Int #lit.struct<{}>, :dtype f32>>>
+    :type !lit.declref<@SIMD<:@Int #lit.struct<{}>, :dtype f32>>>
   kgen.return
 }
 
 lit.struct.decl @SIMD<size: @Int, type: dtype> register_passable {
-  lit.struct.field value : !pop.simd<apply(:(!kgen.declref<@Int>) -> index @unbox, size), type>
+  lit.struct.field value : !pop.simd<apply(:(!lit.declref<@Int>) -> index @unbox, size), type>
 }
 
 lit.struct.decl @Int register_passable {}
@@ -242,7 +242,7 @@ lit.struct.decl @StaticTuple<size, ty: type> register_passable {
 // CHECK-LABEL: kgen.generator @nested_declref_type
 // CHECK-SAME: !kgen.signature<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
 kgen.generator @nested_declref_type(
-    %arg1: !kgen.declref<@UnaryClosure<:type !kgen.declref<@SIMD<1>>>>) {
+    %arg1: !lit.declref<@UnaryClosure<:type !lit.declref<@SIMD<1>>>>) {
   kgen.return
 }
 
@@ -265,12 +265,12 @@ lit.struct.decl @UnaryClosure<input_type: type> register_passable {
 // -----
 
 lit.struct.decl @Bar {
-  lit.struct.field x : !kgen.declref<@Pointer<:type !kgen.declref<@Foo>>>
+  lit.struct.field x : !lit.declref<@Pointer<:type !lit.declref<@Foo>>>
   lit.struct.field y : ui32
 }
 
 lit.struct.decl @Foo {
-  lit.struct.field x : !kgen.declref<@Bar>
+  lit.struct.field x : !lit.declref<@Bar>
   lit.struct.field y : f32
 }
 
@@ -278,9 +278,9 @@ lit.struct.decl @Pointer<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
-!bar_ref = !kgen.declref<@Bar>
-!foo_ref = !kgen.declref<@Foo>
-!foo_ptr_ref = !kgen.declref<@Pointer<:type !foo_ref>>
+!bar_ref = !lit.declref<@Bar>
+!foo_ref = !lit.declref<@Foo>
+!foo_ptr_ref = !lit.declref<@Pointer<:type !foo_ref>>
 !null_ptr = !kgen.pointer<none>
 
 // CHECK-LABEL: @makeFoo
@@ -348,7 +348,7 @@ lit.struct.decl @Recursive register_passable {
 
 // CHECK-LABEL: @thing
 // CHECK: -> !kgen.pointer<none>
-kgen.generator @thing() -> !kgen.declref<@Recursive> {
+kgen.generator @thing() -> !lit.declref<@Recursive> {
   // CHECK: kgen.unreachable
   kgen.unreachable
 }
@@ -377,7 +377,7 @@ kgen.generator @trait_fn<T: trait<@Trait>>() {
 // Erase pointer types in struct
 //===----------------------------------------------------------------------===//
 
-!ptr = !kgen.declref<@Ptr, !lit.metatype<@Ptr>>
+!ptr = !lit.declref<@Ptr, !lit.metatype<@Ptr>>
 
 lit.struct.decl @Ptr register_passable {
   lit.struct.field ptr: !kgen.pointer<index>
@@ -403,8 +403,8 @@ kgen.func @pass_it(%y: !ptr) {
 //===----------------------------------------------------------------------===//
 // More Recursive Structs
 //===----------------------------------------------------------------------===//
-!bar = !kgen.declref<@Bar, !lit.metatype<@Bar>>
-!foo = !kgen.declref<@Foo, !lit.metatype<@Foo>>
+!bar = !lit.declref<@Bar, !lit.metatype<@Bar>>
+!foo = !lit.declref<@Foo, !lit.metatype<@Foo>>
 
 lit.struct.decl @Bar register_passable {
   lit.struct.field foo: !foo
@@ -429,4 +429,3 @@ kgen.func @f(%bar: !bar) {
 kgen.func @g(%arg0: !kgen.pointer<@Bar>) {
     kgen.return
 }
-

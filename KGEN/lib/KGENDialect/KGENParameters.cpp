@@ -198,7 +198,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Types that reference external symbols must be treated as implicitly
   // parametric because the external type definition could contain parametric
   // types. We don't want to assume that the type is concrete.
-  bool hasNestedConstExpr = isa<DeclRefType>(type);
+  bool hasNestedConstExpr = isa<DeclRefTypeInterface>(type);
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type, types like !pop.scalar<ty> etc.

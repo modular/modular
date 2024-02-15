@@ -536,7 +536,7 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
     Example:
 
     ```mlir
-    #lit.struct<{foo = 5, bar: dtype = dt}> : !kgen.declref<@Struct>
+    #lit.struct<{foo = 5, bar: dtype = dt}> : !lit.declref<@Struct>
     ```
   }];
 

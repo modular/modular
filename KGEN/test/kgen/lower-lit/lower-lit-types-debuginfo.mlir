@@ -7,7 +7,7 @@
 lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
-!structTest = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
+!structTest = !lit.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[MEMBER_A:.*]] = !debuginfo.member<a: !kgen.paramref<Int>>
 // CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !pop.simd<4, f32>>
@@ -17,7 +17,7 @@ lit.struct.decl @"$test::ComplexStruct"<A: type, B: type> attributes {sourceName
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
-!structTestComplex = !kgen.declref<@"$test::ComplexStruct"<Int, :type !pop.simd<4, f32>>>
+!structTestComplex = !lit.declref<@"$test::ComplexStruct"<Int, :type !pop.simd<4, f32>>>
 
 // This is only possible in mlir tests. Mojo parser will guarantee all structs have SourceNames.
 // CHECK-DAG: ![[COMPLEX_STRUCT_NOSOURCENAME:.*]] = !debuginfo.struct<"struct `$test::ComplexStructNoSourceName`<Int,`:type simd<4, f32>`>"(![[MEMBER_A]], ![[MEMBER_B]])>
@@ -25,7 +25,7 @@ lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> attributes
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
-!structTestComplexNoSourceName = !kgen.declref<@"$test::ComplexStructNoSourceName"<Int, :type !pop.simd<4, f32>>>
+!structTestComplexNoSourceName = !lit.declref<@"$test::ComplexStructNoSourceName"<Int, :type !pop.simd<4, f32>>>
 
 // CHECK-DAG: ![[COMPLEX_STRUCT_REF:.*]] = !debuginfo.ti.ptr<![[COMPLEX_STRUCT]]>
 !structTestComplexRef = !lit.ref<!structTestComplex, imm *"mystruct`">

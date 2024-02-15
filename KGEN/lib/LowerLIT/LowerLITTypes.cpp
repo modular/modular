@@ -142,7 +142,7 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 
   /// Flag to tell the replacer if it is replacing a `#lit.struct` attr where
   /// the pointer type should be erased as if they are in a
-  /// `!kgen.declref` because these are struct fields.
+  /// `!lit.declref` because these are struct fields.
   int lowerLitStructValues = 0;
 
   /// Whether replace should use the cache or not.

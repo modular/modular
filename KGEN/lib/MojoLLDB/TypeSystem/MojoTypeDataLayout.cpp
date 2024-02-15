@@ -77,7 +77,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStructLike(
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForStruct(
     MojoASTTypeRef typeRef, LIT::StructDeclOp structOp) {
-  auto refType = cast<DeclRefType>(typeRef);
+  auto refType = cast<LIT::DeclRefType>(typeRef);
   return calculateForStructLike(llvm::map_to_vector(
       structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
         MojoASTTypeRef fieldType =

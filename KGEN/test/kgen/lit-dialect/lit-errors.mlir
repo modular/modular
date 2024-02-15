@@ -37,7 +37,7 @@ lit.struct.decl @StructDuplicate {
 lit.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "c"}}
-kgen.generator @InvalidTypeParamValue<a>(%arg0: !kgen.declref<@SomeType<a, c>>) {
+kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.declref<@SomeType<a, c>>) {
   kgen.return
 }
 
@@ -49,7 +49,7 @@ lit.struct.decl @Bar<a: type> {
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<:type index>>
+  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !lit.declref<@Bar<:type index>>
   kgen.return
 }
 
@@ -61,7 +61,7 @@ lit.struct.decl @Baz {
 
 kgen.generator @invalid_field_name(%a: i32) {
   // expected-error @below {{'lit.struct.create' op the field name "y" at the position #0 did not match the name "x" in the op declaration}}
-  %0 = lit.struct.create(y=%a) : (i32) -> !kgen.declref<@Baz>
+  %0 = lit.struct.create(y=%a) : (i32) -> !lit.declref<@Baz>
   kgen.return
 }
 
@@ -72,7 +72,7 @@ lit.struct.decl @Bar {
 
 kgen.generator @invalid_num_fields(%a: index) {
   // expected-error @below {{'lit.struct.create' op expected 0 operands but got 1}}
-  %0 = lit.struct.create(a=%a) : (index) -> !kgen.declref<@Bar>
+  %0 = lit.struct.create(a=%a) : (index) -> !lit.declref<@Bar>
   kgen.return
 }
 
@@ -80,9 +80,9 @@ kgen.generator @invalid_num_fields(%a: index) {
 
 lit.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = lit.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !lit.declref<@Bar>
   kgen.return
 }
 
@@ -92,9 +92,9 @@ lit.struct.decl @Bar {
   lit.struct.field a : i32
 }
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
   // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
-  %0 = lit.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !lit.declref<@Bar>
   kgen.return
 }
 
@@ -102,9 +102,9 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
 
 lit.struct.decl @Bar {}
 
-kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
+kgen.generator @invalid_field_name(%a: index, %container: !lit.declref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = lit.struct.extract %container[a] : index from !kgen.declref<@Bar>
+  %0 = lit.struct.extract %container[a] : index from !lit.declref<@Bar>
   kgen.return
 }
 
@@ -168,7 +168,7 @@ lit.func @mismatched_return_types(%arg0: i64) -> i32 {
 
 // -----
 
-lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
+lit.func @does_not_throw(%err: !lit.declref<@Error>) {
   // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation}}
   lit.raise %err : <@Error>
   lit.end_func
@@ -261,8 +261,8 @@ lit.func @unbound_region() {
 // -----
 
 lit.func @no_struct_decl(%a: index) {
-  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<:type index>>'}}
-  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<:type index>>
+  // expected-error @below {{expected to find a struct decl for '!lit.declref<@Bar<:type index>>'}}
+  %0 = lit.struct.create(x=%a) : (index) -> !lit.declref<@Bar<:type index>>
   lit.end_func
 }
 
@@ -278,7 +278,7 @@ lit.func @caller() -> !kgen.none attributes {isParametric} {
       kgen.unreachable
     }
     lit.try.yield
-  } except (%arg0: !kgen.declref<@Error>) {
+  } except (%arg0: !lit.declref<@Error>) {
     lit.try.yield
   } else {
     lit.try.yield

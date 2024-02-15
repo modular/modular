@@ -39,12 +39,6 @@ def PointerType : DialectType<(type
   TypedAttr:$addressSpace
 )>;
 
-def DeclRefType : DialectType<(type
-  ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues,
-  Type:$metaType
-)>;
-
 def VariadicType : DialectType<(type
   Type:$elementType,
   EnumAttr<"ArgConvention">:$convention
@@ -78,7 +72,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     IntLiteralType,
     SignatureType,
     PointerType,
-    DeclRefType,
     VariadicType,
     NoneType,
     TargetType,

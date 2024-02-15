@@ -6,7 +6,7 @@
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 # CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
-# CHECK-NEXT: lit.struct.field param_capture : !kgen.declref<{{.*}}__ParameterClosureCaptureList{{.*}}__call__
+# CHECK-NEXT: lit.struct.field param_capture : !lit.declref<{{.*}}__ParameterClosureCaptureList{{.*}}__call__
 # CHECK-NEXT: lit.struct.field field0 : !Int
 
 # CHECK: lit.func @"__call__

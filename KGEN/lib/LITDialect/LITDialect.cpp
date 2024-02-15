@@ -53,13 +53,25 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
   AliasResult getAlias(Type type, raw_ostream &os) const override {
+    // Alias DeclRefType if required.
+    if (auto ref = dyn_cast<DeclRefType>(type)) {
+      if (std::optional<StringRef> aliasName = ref.getAliasName()) {
+        os << *aliasName;
+        return AliasResult::OverridableAlias;
+      }
+      return AliasResult::NoAlias;
+    }
+
     if (auto trait = dyn_cast<TraitType>(type)) {
       if (std::optional<StringRef> name =
               DeclRefType::getAliasName(trait.getSymbol())) {
         os << *name;
         return AliasResult::OverridableAlias;
       }
-    } else if (auto meta = dyn_cast<MetaTypeType>(type)) {
+      return AliasResult::NoAlias;
+    }
+
+    if (auto meta = dyn_cast<MetaTypeType>(type)) {
       if (!meta.getParamValues().empty())
         return AliasResult::NoAlias;
       if (std::optional<StringRef> name =
@@ -67,7 +79,9 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
         os << "mt_" << *name;
         return AliasResult::OverridableAlias;
       }
+      return AliasResult::NoAlias;
     }
+
     return AliasResult::NoAlias;
   }
 

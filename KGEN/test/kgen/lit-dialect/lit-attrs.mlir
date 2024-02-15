@@ -45,7 +45,7 @@ lit.struct.decl @Foo {
 }
 
 // CHECK: #lit.struct<{foo = 5, bar: dtype = f32}>
-"a"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !kgen.declref<@Foo>} : () -> ()
+"a"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.declref<@Foo>} : () -> ()
 
 // CHECK: #lit.lifetime : !lit.lifetime<1>
 "a"() {a = #lit.lifetime : !lit.lifetime<1>} : () -> ()

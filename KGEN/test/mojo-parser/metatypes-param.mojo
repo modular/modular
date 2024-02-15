@@ -31,7 +31,7 @@ struct Param[x: Int]:
 
     # COM: Test self type of parametric struct.
     # CHECK-LABEL: lit.func @"self_type
-    # CHECK-SAME: -> !kgen.declref<[[SELF:.*]], !lit.metatype<[[SELF]]>>
+    # CHECK-SAME: -> !lit.declref<[[SELF:.*]], !lit.metatype<[[SELF]]>>
     @staticmethod
     fn self_type() -> Self:
         pass
@@ -58,7 +58,7 @@ fn fully_bound_alias():
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<1>
     BoundType.foo()
-    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !kgen.declref<{{.*}}@Param<1>, !lit.metatype<{{.*}}@Param<1>>
+    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !lit.declref<{{.*}}@Param<1>, !lit.metatype<{{.*}}@Param<1>>
     _ = BoundType.self_type()
 
 
@@ -118,7 +118,7 @@ fn partially_bound_kw():
 
 
 # CHECK-LABEL: lit.func @"partial_autoparam
-# CHECK-SAME: <?, [[X:.*]]>(%value: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
+# CHECK-SAME: <?, [[X:.*]]>(%value: !lit.declref<{{.*}}@TwoParam<[[X]], 1>
 fn partial_autoparam(value: TwoParam[y=`1`]):
     alias first = value.x
     alias second = value.y

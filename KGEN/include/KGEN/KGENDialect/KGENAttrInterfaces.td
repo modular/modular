@@ -59,7 +59,7 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
 
 def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
   let description = [{
-    This interface provides a mechanism for attributes of `!kgen.declref` type
+    This interface provides a mechanism for attributes of `!lit.declref` type
     to implement a verifier hook. `DeclRefType` is a reference to an out-of-line
     type definition and values of this type require a symbol table to lookup the
     definition for verification.

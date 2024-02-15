@@ -17,7 +17,7 @@ namespace M::MOGG {
 struct MOGGTensorParamAccessor {
   MOGGTensorParamAccessor() { params.resize(NUM_PARAMS); }
 
-  explicit MOGGTensorParamAccessor(KGEN::DeclRefType decl) {
+  explicit MOGGTensorParamAccessor(KGEN::LIT::DeclRefType decl) {
     params.resize(NUM_PARAMS);
     params[DTYPE_IDX] = decl.getParamValues()[DTYPE_IDX];
     params[SHAPE_IDX] = decl.getParamValues()[SHAPE_IDX];

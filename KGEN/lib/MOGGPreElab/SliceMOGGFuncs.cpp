@@ -81,7 +81,7 @@ SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,
   return decoratorsToCopy;
 }
 
-bool isTensor(KGEN::DeclRefType maybeTensor) {
+bool isTensor(KGEN::LIT::DeclRefType maybeTensor) {
   // Look at the top level symbol name, it is structured like
   // Folder::File::ClassName.
   ArrayRef<FlatSymbolRefAttr> attr =
@@ -123,7 +123,8 @@ bool hasAtLeastOneTensor(GeneratorOp generator) {
     if (!asLitRef)
       continue;
 
-    auto asDeclRef = dyn_cast<KGEN::DeclRefType>(asLitRef.getElementType());
+    auto asDeclRef =
+        dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
     if (!asDeclRef)
       continue;
     if (isTensor(asDeclRef))
@@ -150,7 +151,7 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
   if (!asLitRef)
     return std::nullopt;
 
-  auto asDeclRef = dyn_cast<KGEN::DeclRefType>(asLitRef.getElementType());
+  auto asDeclRef = dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
   if (!asDeclRef)
     return std::nullopt;
   if (!isTensor(asDeclRef))

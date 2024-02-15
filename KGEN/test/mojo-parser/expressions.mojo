@@ -1176,7 +1176,7 @@ struct ParamType[a: Int]: pass
 
 # CHECK-LABEL: lit.func @"function_types
 fn function_types[
-  # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!kgen.declref<@{{.*}}::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
+  # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.declref<@{{.*}}::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
   p0: fn[a: Int](ParamType[a]) -> None,
 
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": @{{.*}}::@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>

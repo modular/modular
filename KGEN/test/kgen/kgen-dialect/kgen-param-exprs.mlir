@@ -611,8 +611,8 @@ lit.struct.decl @B {}
 kgen.generator @symbol_exprs() {
   // CHECK: <add(get_sizeof(@A, #kgen.target<{{.*}}>),
   // CHECK-SAME: get_sizeof(@B, #kgen.target<{{.*}}>))>
-  %0 = kgen.param.constant = <add(get_sizeof(!kgen.declref<@A>, #target),
-                                  get_sizeof(!kgen.declref<@B>, #target))>
+  %0 = kgen.param.constant = <add(get_sizeof(!lit.declref<@A>, #target),
+                                  get_sizeof(!lit.declref<@B>, #target))>
   kgen.return
 }
 
@@ -744,9 +744,9 @@ lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32, d: i8> {}
 // CHECK-SAME: @IndexParams0<*(0,0), :f32 *(0,1)>
 kgen.generator @indexParamRef<
   fn: <index, f32, <i32, i64>()
-      -> !kgen.declref<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>>
+      -> !lit.declref<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>>
       -> i8>()
-    -> !kgen.declref<@IndexParams0<*(0,0), :f32 *(0,1)>>
+    -> !lit.declref<@IndexParams0<*(0,0), :f32 *(0,1)>>
 >() {
   kgen.return
 }
@@ -806,6 +806,6 @@ kgen.generator @get_likage_name() {
 // CHECK-LABEL: @unification
 kgen.generator @unification() {
   // CHECK: T0: type = <@unification : !metatype.type>
-  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.concretetype.constant<!kgen.declref<@unification, !metatype.type>>)>
+  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.concretetype.constant<!lit.declref<@unification, !metatype.type>>)>
   kgen.return
 }

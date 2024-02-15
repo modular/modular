@@ -60,7 +60,7 @@ scanField(Type type, DenseSet<Type> &seenTypes,
           DenseMap<SymbolRefAttr, LogicalResult> &scanned,
           llvm::MapVector<SymbolRefAttr, LIT::StructDeclOp> &structMap,
           Operation *op) {
-  DeclRefType declRef = dyn_cast<DeclRefType>(type);
+  auto declRef = dyn_cast<LIT::DeclRefType>(type);
   if (!declRef)
     return success();
 

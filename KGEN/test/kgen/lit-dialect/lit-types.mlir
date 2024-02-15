@@ -5,8 +5,8 @@ lit.struct.decl @MyStruct {}
 lit.struct.decl @MyStructParams<a, b: dtype, c: type> {}
 
 // CHECK-LABEL: @UseStruct
-// CHECK-SAME: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>
-kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>) {
+// CHECK-SAME: !lit.declref<@MyStructParams<a, :dtype b, :type c>>
+kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !lit.declref<@MyStructParams<a, :dtype b, :type c>>) {
   kgen.return
 }
 
@@ -17,8 +17,8 @@ kgen.generator @metatype(%arg0: !kgen.pointer<@MyStruct : metatype<@MyStruct>>) 
 }
 
 // CHECK-LABEL: @declref_metatype
-// CHECK-SAME: !kgen.declref<@MyStruct, !lit.metatype<@MyStruct>>
-kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@MyStruct>>) {
+// CHECK-SAME: !lit.declref<@MyStruct, !lit.metatype<@MyStruct>>
+kgen.generator @declref_metatype(%arg0: !lit.declref<@MyStruct, !lit.metatype<@MyStruct>>) {
   kgen.return
 }
 
