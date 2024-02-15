@@ -152,16 +152,18 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 ///                        (`:` type (`=` expression)? )?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
-ParseResult LIT::parseOptionalParameterSpec(
-    AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
-    ParamDeclArrayAttr &resultParamDecls,
-    SmallVectorImpl<StringAttr> &paramNames,
-    SmallVectorImpl<PassingKind> &paramPassingKinds,
-    SmallVectorImpl<TypedAttr> &defaultPosParams,
-    SmallVectorImpl<TypedAttr> &defaultKwOnlyParams) {
+ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
+                                            ParamDeclArrayAttr &inputParamDecls,
+                                            ArgParamListAttr &paramListAttr) {
+  SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
+  SmallVector<TypedAttr> defaultPosParams;
+  SmallVector<TypedAttr> defaultKwOnlyParams;
+
   bool foundPosDefault = false;
   bool foundKwOnlyDefault = false;
 
+  llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
@@ -205,11 +207,18 @@ ParseResult LIT::parseOptionalParameterSpec(
     return success();
   };
 
+  ParamDeclArrayAttr resultParamDecls;
   if (failed(KGEN::parseOptionalParameterSpec(
           p, inputParamDecls, resultParamDecls, parseWithDefault)))
     return failure();
+  if (!resultParamDecls.empty())
+    return p.emitError(startLoc, "expected no result parameters");
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
+
+  paramListAttr = ArgParamListAttr::get(
+      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
+      defaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
   return success();
 }
 

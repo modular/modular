@@ -132,14 +132,13 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
       return index + 1 == getNumParams() && getParamVarArg();
     }
 
-    /// Construct a type signature from named parameter declarations. This
-    /// helper is used to convert between a named signature structure to a
-    /// nameless representation.
+    /// Construct a type signature from parameter declarations and corresponding
+    /// metadata. This helper is used to convert between a named signature
+    /// structure to a nameless representation.
     static TypeSignatureType remapToSignature(
       function_ref<InFlightDiagnostic()> emitError,
-      ParamDeclArrayAttr paramDecls, ArrayRef<StringAttr> paramNames,
-      ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPosParams,
-      ArrayRef<TypedAttr> defaultKwOnlyParams, bool paramVarArg);
+      ParamDeclArrayAttr paramDecls, ArgParamListAttr paramListAttrs,
+      bool paramVarArg);
   }];
 }
 

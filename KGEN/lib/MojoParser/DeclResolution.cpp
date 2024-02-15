@@ -1730,10 +1730,13 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   auto paramsArrayAttr =
       ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
   structOp.setParamsAttr(paramsArrayAttr);
-  auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), paramsArrayAttr, paramSignature.names,
-      paramSignature.passingKinds, paramSignature.defaultPosParams,
-      paramSignature.defaultKwOnlyParams, paramSignature.isVarArgs);
+  auto paramListAttr = ArgParamListAttr::get(
+      getContext(), paramSignature.names, paramSignature.passingKinds,
+      paramSignature.defaultPosParams, paramSignature.defaultKwOnlyParams,
+      /*variadicIndices=*/{}, /*packIndices=*/{});
+  auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
+                                                 paramsArrayAttr, paramListAttr,
+                                                 paramSignature.isVarArgs);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
@@ -2623,15 +2626,13 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                      StringAttr::get(decl.getContext(), "")};
   SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
                                              PassingKind::Implicit};
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), params, paramNames, paramPassingKinds,
-      defaultPosParams, defaultKwOnlyParams, /*paramVarArg=*/false);
+  auto paramListAttr =
+      ArgParamListAttr::get(getContext(), paramNames, paramPassingKinds);
+  auto sig =
+      TypeSignatureType::remapToSignature(silenceErrors(getContext()), params,
+                                          paramListAttr, /*paramVarArg=*/false);
   if (!sig)
     return failure();
-  assert(defaultPosParams.empty() && defaultKwOnlyParams.empty() &&
-         "trait op cannot have default parameters");
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 

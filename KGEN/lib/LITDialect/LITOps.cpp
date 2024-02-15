@@ -538,18 +538,9 @@ static ParseResult parseLITFunctionSignature(
                                 parseLifetimeDecl))
     return failure();
 
-  ParamDeclArrayAttr resultParams;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<PassingKind> paramPassingKinds;
-  if (parseOptionalParameterSpec(p, params, resultParams, paramNames,
-                                 paramPassingKinds, defaultPosParams,
-                                 defaultKwOnlyParams))
+  ArgParamListAttr paramListAttr;
+  if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
-
-  if (!resultParams.empty())
-    return p.emitError(startLoc, "expected no result parameters");
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
@@ -618,10 +609,7 @@ static ParseResult parseLITFunctionSignature(
       ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
                             defaultPosArgs, defaultKwOnlyArgs,
                             /*variadicIndices=*/{}, /*packIndices=*/{}),
-      ArgParamListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                            defaultPosParams, defaultKwOnlyParams,
-                            /*variadicIndices=*/{}, /*packIndices=*/{}),
-      lifetimeDecls.size(), varEffects);
+      paramListAttr, lifetimeDecls.size(), varEffects);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -994,18 +982,10 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &params,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  ParamDeclArrayAttr resultParams;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, params, resultParams, paramNames,
-                                 paramPassingKinds, defaultPosParams,
-                                 defaultKwOnlyParams))
+  llvm::SMLoc startLoc = p.getCurrentLocation();
+  ArgParamListAttr paramListAttr;
+  if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
-  if (!resultParams.empty())
-    return p.emitError(loc, "expected no result parameters");
   bool paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
 
   SmallVector<TypeLineageAttr> parentTypeExprs;
@@ -1025,9 +1005,9 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
     return failure();
   parentTypes = TypeLineageArrayAttr::get(p.getContext(), parentTypeExprs);
 
-  auto sig = TypeSignatureType::remapToSignature(
-      [&] { return p.emitError(loc); }, params, paramNames, paramPassingKinds,
-      defaultPosParams, defaultKwOnlyParams, paramVarArg);
+  auto sig =
+      TypeSignatureType::remapToSignature([&] { return p.emitError(startLoc); },
+                                          params, paramListAttr, paramVarArg);
   if (!sig)
     return failure();
   signature = TypeAttr::get(sig);
