@@ -7,12 +7,6 @@
 # RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias Int = __mlir_type.index
-
-# ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
@@ -25,8 +19,9 @@ alias Int = __mlir_type.index
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
 
+
 # CHECK-LABEL: lit.func @"power
-fn power(lhs: Int, rhs: Int) -> Int:
+fn power(lhs: int, rhs: int) -> int:
     # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
     # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
     return lhs

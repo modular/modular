@@ -6,18 +6,8 @@
 
 # RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias `0` = __mlir_attr.`0 : index`
-alias `1` = __mlir_attr.`1 : index`
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
-
 # CHECK: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i", {{.*}}, line = [[LN:[0-9]+]], arg = 1
+
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
