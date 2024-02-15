@@ -63,7 +63,6 @@ unset(LLVM_TARGETS_BUILT)
 add_subdirectory(Filesystem)
 add_subdirectory(ADT)
 add_subdirectory(ASN1)
-add_subdirectory(CrashReporting)
 add_subdirectory(Cryptography)
 add_subdirectory(Driver)
 add_subdirectory(HTTP)
@@ -83,7 +82,8 @@ add_subdirectory(Entitlements)
 # Settings requires Entitlements.
 add_subdirectory(Settings)
 
-# Telemetry requires Settings.
+# Telemetry & CrashReporting require Settings.
 add_subdirectory(Telemetry)
+add_subdirectory(CrashReporting)
 
 add_subdirectory(Frameworks)
