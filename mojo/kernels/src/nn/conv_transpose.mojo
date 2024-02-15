@@ -80,12 +80,6 @@ from runtime.llcl import Runtime
 #       modular/Kernels/test/test_convtranspose.mojo provides examples of calls.
 #       StarGAN, CycleGAN-and-pix2pix, Mask-RCNN are covered by this version.
 
-# Indicate position in pads tensor for height, width.
-alias PADS_H_START = 0
-alias PADS_H_END = 2
-alias PADS_W_START = 1
-alias PADS_W_END = 3
-
 
 @always_inline
 fn conv_transpose_naive[
@@ -251,19 +245,20 @@ fn conv_transpose_shape[
         let output_channels = kernel.dim(2)
 
         # compute and return the output shape
+        # The padding is in order [h_begin, h_end, w_begin, w_end]
         let output_height = (
             int(strides[0]) * (input.dim(1) - 1)
             + int(output_pads[0])
             + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
-            - int(pads[PADS_H_START])
-            - int(pads[PADS_H_END])
+            - int(pads[0])
+            - int(pads[1])
         )
         let output_width = (
             int(strides[1]) * (input.dim(2) - 1)
             + int(output_pads[1])
             + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
-            - int(pads[PADS_W_START])
-            - int(pads[PADS_W_END])
+            - int(pads[2])
+            - int(pads[3])
         )
 
         if output_height <= 0:
@@ -287,28 +282,26 @@ fn conv_transpose_shape[
         let output_channels = kernel.dim(3)
 
         # compute and return the output shape
-        # TODO: the paddings is ordered by lower side [D, H, W], then upper
-        # side [D, H, W], whereas in conv it's D_lower, D_upper, H_lower, ...
-        # It's better to unify both.
+        # A paddings in MO are orderred as D_lower, D_upper, H_lower, ...
         let output_depth = (
             int(strides[0]) * (input.dim(1) - 1)
             + int(output_pads[0])
             + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
             - int(pads[0])
-            - int(pads[3])
+            - int(pads[1])
         )
         let output_height = (
             int(strides[1]) * (input.dim(2) - 1)
             + int(output_pads[1])
             + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
-            - int(pads[1])
-            - int(pads[4])
+            - int(pads[2])
+            - int(pads[3])
         )
         let output_width = (
             int(strides[2]) * (input.dim(3) - 1)
             + int(output_pads[2])
             + ((kernel.dim(2) - 1) * int(dilations[2]) + 1)
-            - int(pads[2])
+            - int(pads[4])
             - int(pads[5])
         )
 
