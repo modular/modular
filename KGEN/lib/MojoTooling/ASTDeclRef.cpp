@@ -60,7 +60,7 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
-      .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(
+      .Case<GlobalVarDeclOp, VarLetDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FuncOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
@@ -73,8 +73,8 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     if (!op)
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
-        .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
-              VarLetDeclOp>([](auto op) { return op.getName(); })
+        .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarLetDeclOp>(
+            [](auto op) { return op.getName(); })
         .Case([&](FuncOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
@@ -118,7 +118,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
   if (isa<StructFieldOp>(*decl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(*decl))
+  if (isa<GlobalVarDeclOp, VarLetDeclOp>(*decl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
   if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
@@ -185,7 +185,7 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
     return DeclViewKind::DK_StructDeclView;
   if (isa<StructFieldOp>(*decl))
     return DeclViewKind::DK_StructFieldDeclView;
-  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(*decl))
+  if (isa<GlobalVarDeclOp, VarLetDeclOp>(*decl))
     return DeclViewKind::DK_VariableDeclView;
   if (isa<PackageOp>(*decl))
     return DeclViewKind::DK_PackageDeclView;

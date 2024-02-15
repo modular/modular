@@ -799,36 +799,6 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// LetRegDeclOp
-//===----------------------------------------------------------------------===//
-
-def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
-    ASTDeclInterface,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-    Pure, AllTypesMatch<["value", "result"]>
-  ]> {
-  let summary = "Register-primary local `let` declaration";
-  let description = [{
-    This declaration is used for register primary values assigned to a let
-    declaration which have an inline initializer.  It does not expose an address
-    for the value.
-
-    This op consumes the ownership of its input value, and takes ownership.
-  }];
-
-  let arguments = (ins StrAttr:$name, AnyType:$value, UnitAttr:$isSynthetic);
-  let results = (outs AnyType:$result);
-  let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
-
-  let hasFolder = 1;
-
-  let builders = [
-    // Create a 'let' without a value, this is malformed until specified.
-    OpBuilder<(ins "Type":$type, "StringAttr":$name)>,
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 

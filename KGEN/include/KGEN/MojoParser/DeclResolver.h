@@ -31,7 +31,6 @@ class PackageOp;
 class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
-class LetRegDeclOp;
 class GlobalVarDeclOp;
 class StructDeclOp;
 class StructFieldOp;

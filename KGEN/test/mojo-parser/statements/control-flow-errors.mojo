@@ -135,9 +135,7 @@ struct ExampleCM:
     return True # Raise
 
 def withUsingImmutableVariable(owned a: ExampleCM):
-  # expected-note @below {{'x' declared here}}
   let x = 77
-  # expected-error @below {{'x' is not a valid mutable variable for `with ... as` to target}}
   with a^ as x:
     pass
 
@@ -184,4 +182,3 @@ fn testBadCM():
   # expected-error @+1 {{context manager of type 'BadCM' defines a consuming __enter__ method as well as an __exit__ method; either remove 'owned' from its '__enter__' method or remove the '__exit__' method}}
   with BadCM():
     pass
-

@@ -29,14 +29,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   if (!v) // Null value isn't tracked.
     return;
 
-  // LetReg starts out initialized with its own value.
-  if (auto letReg = v.getDefiningOp<LetRegDeclOp>()) {
-    name = letReg.getNameAttr();
-    isIndirect = false;
-    startsUninit = true; // Initialized at its definition point.
-    endsUninit = true;
-    return;
-  }
   // VarLetDeclOp is uninit and ends that way.
   if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
     name = varLet.getNameAttr();
@@ -501,10 +493,9 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
-  // lit.letreg.decl defines its own value after using its operand.
   // kgen.variant.create/kgen.variant.take consumes and produces an owned
   // value.
-  if (isa<LetRegDeclOp, VariantCreateOp, VariantTakeOp>(op)) {
+  if (isa<VariantCreateOp, VariantTakeOp>(op)) {
     assert(op.getNumOperands() == 1);
     operands.push_back({op.getOperand(0), OperandEffect::regConsume});
     results.push_back(ResultEffect::regDefine);

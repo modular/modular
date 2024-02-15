@@ -545,11 +545,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Warn about capturing lets.
   if (needsApplyCapture(nearestCapturingFnOrNone)) {
-    if (LetRegDeclOp declaration = dyn_cast<LetRegDeclOp>(declRef)) {
-      if (!declaration.isSynthetic())
-        emitter.emitError(getLoc(), "cannot capture let without copy: ")
-            << spelling;
-    } else if (VarLetDeclOp declaration = dyn_cast<VarLetDeclOp>(declRef)) {
+    if (VarLetDeclOp declaration = dyn_cast<VarLetDeclOp>(declRef)) {
       if (declaration.getKind() == VarLetDeclKind::Let &&
           !declaration.isSynthetic()) {
         emitter.emitError(getLoc(), "cannot capture let without copy: ")

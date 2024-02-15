@@ -1846,10 +1846,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   // Narrow the decl to a CValue.
   CValue value;
-  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    // 'let' declarations of a register passable value resolve to an SBvalue.
-    value = SBValue(letDecl.getResult());
-  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+  if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
     // Treat both 'var' and 'let' decls as mutable values and defer to check
     // lifetimes to verify 'let' decls. This allows lazy 'let' initialization.
     value = MLValue(var);

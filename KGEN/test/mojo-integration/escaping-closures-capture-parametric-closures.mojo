@@ -29,8 +29,8 @@ from sys import argv
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(struct<(index)>, struct<(index)>)>>
 # CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<struct<(index)>>
 
-# CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1] : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]] : !kgen.pointer<struct<(index)>>
+# CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1]
+# CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]]
 
 # CHECK-NEXT:    [[OPAQUE_CAPTURE_LIST:%.*]] = pop.pointer.bitcast [[HEAP_CAPTURE_LISTS_PTR]]
 # CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
