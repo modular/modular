@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 fn take_func_without_arg_name[f: fn (int) -> None]():

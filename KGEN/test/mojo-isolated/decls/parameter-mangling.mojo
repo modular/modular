@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.alias.decl *"z`0x0" = <0>
 alias z = __mlir_attr.`0: index`

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
 fn takes_pos_or_kw_arg(i: int, j: int):

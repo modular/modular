@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
 fn bind_fat_to_thin_target[g: fn (y: int) -> int](x: int):

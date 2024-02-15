@@ -34,12 +34,37 @@ struct object:
     pass
 
 
+@value
+@nonmaterializable(Int)
+@register_passable("trivial")
+struct IntLiteral:
+    var value: __mlir_type.`!kgen.int_literal`
+
+
+@value
+@register_passable("trivial")
+struct Int:
+    var value: int
+
+    @always_inline("nodebug")
+    fn __init__(value: IntLiteral) -> Self:
+        return Self {
+            value: __mlir_op.`kgen.int_literal.convert`[
+                _type = __mlir_type.index
+            ](value.value)
+        }
+
+    @always_inline("nodebug")
+    fn __add__(lhs, rhs: Int) -> Int:
+        return __mlir_op.`index.add`(lhs.value, rhs.value)
+
+
 @register_passable("trivial")
 struct Bool(AnyType):
-    var x: __mlir_type.i1
+    var value: __mlir_type.i1
 
     fn __mlir_i1__(self) -> __mlir_type.i1:
-        return self.x
+        return self.value
 
 
 @register_passable("trivial")

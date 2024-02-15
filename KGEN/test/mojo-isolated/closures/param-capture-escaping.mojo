@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.struct.decl{{.*}}<{{.*}}: !lit.signature<() capturing -> !Int>
 # CHECK-NEXT: lit.struct.field param_capture : !lit.declref<{{.*}}__ParameterClosureCaptureList{{.*}}__call__
@@ -20,16 +20,10 @@
 # CHECK: lit.ref.store [[CLIST]], [[GEP]]
 
 
-fn take_escaping(ef: fn (y: Int) escaping -> Int):
-    print(ef(23))
-
-
 fn func[pf: fn () capturing -> Int](x: Int):
     fn escaping(y: Int) escaping -> Int:
         return y + x + pf()  # this use of 'pf' is a parameter capture
         # ParamDeclRefAttr
-
-    take_escaping(escaping)
 
 
 fn pass_it(x: Int):

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo -I %S | FileCheck %s
+# RUN: %parse-mojo-isolated %s -I %S | FileCheck %s
 
 from test_package.return_closure import pass_int
 

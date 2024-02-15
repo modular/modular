@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
 fn test_never_declared_fn():

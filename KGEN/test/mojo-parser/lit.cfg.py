@@ -11,6 +11,10 @@ from lit.llvm import llvm_config
 # name: The name of this test suite.
 config.name = "mojo-parser"
 
+config.parser_stubs_source = os.path.join(
+    config.modular_src_root, "KGEN", "test", "test-packages"
+)
+
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".mojo", ".🔥"]
 
@@ -43,8 +47,10 @@ tools = [
 ]
 
 parse_isolated = (
-    "kgen-translate -import-mojo -mojo-disable-builtins"
-    " -mojo-disable-parser-caching"
+    "kgen-translate -import-mojo -mojo-enable-prebuilt-packages"
+    " -mojo-disable-parser-caching -mojo-search-paths={0}".format(
+        config.parser_stubs_source
+    )
 )
 
 config.substitutions.append(("%parse-mojo-isolated", parse_isolated))

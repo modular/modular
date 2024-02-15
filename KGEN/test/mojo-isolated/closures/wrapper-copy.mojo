@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemType1, mut {{.*}}> init_self,
 # CHECK-SAME: %other: {{.*}}!MemType1{{.*}}borrow_in_mem, |)
