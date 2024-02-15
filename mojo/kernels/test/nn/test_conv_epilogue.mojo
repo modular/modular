@@ -252,9 +252,9 @@ fn test[
 
     # Test epilogue
     @always_inline
+    @__copy_capture(output, bias_ptr)
     fn epilogue(coords: StaticIntTuple[rank + 2], f_size: Int):
         @always_inline
-        @__copy_capture(output, bias_ptr)
         @parameter
         fn body1[width: Int](idx: Int):
             var curr_coords = coords
