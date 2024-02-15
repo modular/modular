@@ -41,6 +41,8 @@ using namespace LLCL;
 // Leak Checking Allocator
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "leak-check"
+
 namespace {
 class LeakCheckAllocator : public Allocator {
 public:
@@ -56,6 +58,11 @@ public:
       std::lock_guard<std::mutex> lock(mu);
       sizeMap[ptr] = size;
     }
+    LLVM_DEBUG(llvm::dbgs()
+               << llvm::Twine("allocateBytes(") + llvm::Twine(size) +
+                      "B) = 0x" +
+                      llvm::Twine::utohexstr(reinterpret_cast<intptr_t>(ptr)) +
+                      "\n");
     return ptr;
   }
 
@@ -65,32 +72,41 @@ public:
     size_t storedSize;
     {
       std::lock_guard<std::mutex> lock(mu);
-      assert(sizeMap.contains(ptr) &&
-             "deallocating ptr which is not allocated");
-      storedSize = sizeMap[ptr];
+      auto itr = sizeMap.find(ptr);
+      assert(itr != sizeMap.end() && "deallocating ptr which is not allocated");
+      storedSize = itr->second;
+      sizeMap.erase(itr);
     }
     assert((size == 0 || size == storedSize) && "size mismatch at dealloc");
     size = storedSize;
     [[maybe_unused]] ssize_t bytes = numBytesAllocated.fetch_sub(size);
-    assert(bytes > 0 &&
+    assert(bytes >= static_cast<ssize_t>(size) &&
            "deallocating more bytes than currently have outstanding");
     baseAllocator->deallocateBytes(ptr, size);
+    LLVM_DEBUG(llvm::dbgs()
+               << llvm::Twine("deallocateBytes(0x") +
+                      llvm::Twine::utohexstr(reinterpret_cast<intptr_t>(ptr)) +
+                      ", " + llvm::Twine(size) + "B)\n");
   }
 
   /// Print a message and exit(1) when memory leak is detected.
   void checkLeak() {
     if (numAllocations.load() == 0 && numBytesAllocated.load() == 0)
       return;
-    llvm::report_fatal_error(
-        "Memory leak detected: " + llvm::Twine(numAllocations.load()) +
-        " alive allocations, " + llvm::Twine(numBytesAllocated.load()) +
-        " alive bytes\n" +
-        "Run with other allocators to debug what happened.\n");
+    llvm::errs() << "Memory leak detected: " << numAllocations.load()
+                 << " alive allocations, " << numBytesAllocated.load()
+                 << " alive bytes:\n";
+    for (auto [ptr, size] : sizeMap) {
+      llvm::errs() << "  0x"
+                   << llvm::Twine::utohexstr(reinterpret_cast<intptr_t>(ptr))
+                   << " (" << size << "B)\n";
+    }
+    llvm::report_fatal_error("Memory leak detected");
   }
 
 protected:
   /// This keeps track of how many bytes/allocations are currently alive.
-  /// Uses ssize_t so we can truck double deallocation.
+  /// Uses ssize_t so we can track double deallocation.
   std::atomic<ssize_t> numBytesAllocated{0}, numAllocations{0};
   std::mutex mu;
   llvm::DenseMap<void *, size_t> sizeMap;
