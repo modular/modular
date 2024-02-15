@@ -17,7 +17,7 @@ struct MemoryOnlyInt:
   # CHECK-LABEL: lit.func @"__init__
   fn __init__(inout self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
-    # CHECK: %1 = {{.*}}constant: {{.*}}Int = {{.*}} 1
+    # CHECK: %1 = {{.*}}constant: !Int = <{1}>
     # CHECK: lit.ref.store %1, %0
     self.x = 1
   fn __del__(owned self): pass
@@ -132,7 +132,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: {{.*}}Int = {{.*}} 42
+  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
 
@@ -211,47 +211,47 @@ fn precedence_associativity(a: Int):
   # CHECK: %z = lit.varlet.decl "z" var
   var z: Int = 0
 
-  # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}#lit.struct<{value = 17}>
+  # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}{17}
   # CHECK-NEXT: lit.ref.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
 
   # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: lit.ref.store %[[POW1]], %z
   z = 2**(a**z)
   # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: lit.ref.store %[[POW1]], %z
   z = 2**a**z
   # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: !Int = <{{.*}} = -6}
+  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: !Int = <{-6}
   # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
   # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
   z = z + 3 * -2
   # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: !Int = <{{.*}} = -2}
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: !Int = <{-2}>
   # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
   z = z + 3 // -2
   # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value = 3}>
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}{3}
   # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}#lit.struct<{value = -2}>
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}{-2}
   # CHECK-NEXT:  %[[MUL:.*]] =  lit.call {{.*}}Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  lit.ref.store %[[MUL]], %z
   z = (z + 3) * -+2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT:  %[[POW:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
   # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  lit.ref.store %[[NEG]], %z
   z = -2**z
   # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}#lit.struct<{value = 1}>
+  # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}{1}
   # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__({{.*}}int::Int,{{.*}}int::Int)"(%[[Z]], %[[ONE]])
   # CHECK-NEXT: lit.ref.store %[[RES]], %z
   z = Int(1).value + z
@@ -303,9 +303,9 @@ fn reverse_operators(a: Int):
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK-NEXT:  %[[THREE:.*]] = kgen.param.constant: {{.*}}Int = {{.*}} 3
+  # CHECK-NEXT:  %[[THREE:.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[THREE]])
-  # CHECK-NEXT:  %[[TWO:.*]] = kgen.param.constant: {{.*}}Int = {{.*}} 2
+  # CHECK-NEXT:  %[[TWO:.*]] = kgen.param.constant: !Int = <{2}>
   # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[MATMUL:.*]] = lit.call {{.*}}@RegPassable::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
@@ -315,10 +315,10 @@ fn precedence_matmul(z: RegPassable) -> RegPassable:
 
 # CHECK-LABEL: lit.func @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
   # CHECK-NEXT: %[[AND:.*]] = lit.call {{.*}}Int::@"__and__{{.*}}(%[[MUL]], %b)
-  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen{{.*}}#lit.struct<{value = 4}>
+  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen{{.*}}{4}
   # CHECK-NEXT: %[[XOR:.*]] = lit.call {{.*}}Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
   # CHECK-NEXT: %[[OR:.*]] = lit.call {{.*}}Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
   # CHECK-NEXT: lit.return %[[OR]]
@@ -459,9 +459,9 @@ fn paramAndOr[a: Boolish, b: Boolish]():
 fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.varlet.decl "z" var
   var z : Int
-  # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}#lit.struct<{value = 5}>
+  # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}{5}
   # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%[[INT_5]], %a)
-  # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}#lit.struct<{value = 42}>
+  # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}{42}
   # CHECK-NEXT: %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
   # CHECK-NEXT: lit.ref.store %[[ADD]], %z
   z = 42 + 5*a
@@ -499,7 +499,7 @@ fn listValues():
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
   # CHECK-NEXT: %a = lit.varlet.decl "a"
-  # CHECK: %0 = kgen.param.constant: !Int = <#lit.struct<{value = 42}>>
+  # CHECK: %0 = kgen.param.constant: !Int = <{42}>
   # CHECK-NEXT: lit.ref.store %0, %a
   var a = Int{value: Int(42).value}
 
@@ -516,16 +516,16 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: %[[COND:.*]] = lit.ref.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
-    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
+    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}= 3}
+    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}{3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
-    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}= true}
+    # CHECK: [[TRUEB:%.+]] = kgen{{.*}} true}
     # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond_0
     cond = True
     i += i
@@ -534,10 +534,10 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:scalar<f64> "2"}, {:scalar<f64> "3"})>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
@@ -572,7 +572,7 @@ fn returnIndex2() -> Int:
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
 # CHECK-SAME: <callable: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
+  # CHECK-NEXT: %0 = lit.call @{{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}callable, {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
@@ -596,7 +596,7 @@ fn patterns():
   var z2: Int
 
   (((z2))) = 42  # Paren patterns
-  # CHECK: [[TMP:%.*]] = {{.*}}constant{{.*}} 42
+  # CHECK: [[TMP:%.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK: lit.ref.store [[TMP]], %z2
 
   var someInt : Int
@@ -644,7 +644,7 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"mvalueStructField()"
 fn mvalueStructField():
-  # CHECK: lit.alias.decl [[INT:.*]]: !Int = <#lit.struct<{value = 4}>>
+  # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   alias int = Int(4)
   # CHECK: lit.alias.decl *"value{{.*}}" = <#lit.struct.extract<:!Int [[INT]], "value">>
   alias value = int.value
@@ -702,13 +702,13 @@ def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK-NEXT: lit.call {{.*}}Int::@"__ior__{{.*}}(%a_0, %[[LOAD_B]])
   a |= b
 
-  # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: {{.*}}value = 4
+  # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: !Int = <{4}>
   # CHECK-NEXT: lit.ref.store %[[FOUR]], %b_1
   # CHECK-NEXT: lit.ref.store %[[FOUR]], %a_0
   a = b = 4
 
   # Walrus
-  # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: {{.*}}value = 7
+  # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: !Int = <{7}>
   # CHECK-NEXT: lit.ref.store %[[SEVEN]], %b_1
   # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a_0
   # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVEN]])
@@ -718,20 +718,20 @@ def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
 def walrus_implicit_decl():
   # CHECK:      %a = lit.varlet.decl "a" imp
-  # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: {{.*}}value = 3
+  # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
   # CHECK-NEXT: lit.call {{.*}}([[THREE]], [[VAR_A]])
   simpleMath(a := 3, a)
 
   # CHECK:      %b = lit.varlet.decl "b" imp
-  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
+  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:
     print(b)
 
   # CHECK:      %c = lit.varlet.decl "c" imp
-  # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}value = 5
+  # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: !Int = <{5}>
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
   # CHECK:      %d = lit.varlet.decl "d" imp
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
@@ -780,8 +780,8 @@ def literals():
     b = 12.31e+11     # CHECK: "1.231E+12"
     b = 1_2.3__1e+1_1 # CHECK: "1.231E+12"
     b = 12.31E-3      # CHECK: "0.01231"
-    c = False         # CHECK: !Bool = <#lit.struct<{value: scalar<bool> = false}>>
-    c = True          # CHECK: !Bool = <#lit.struct<{value: scalar<bool> = true}>>
+    c = False         # CHECK: !Bool = <{:scalar<bool> false}>
+    c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 
 # CHECK-LABEL: lit.func @"_strings
 fn _strings():
@@ -840,7 +840,7 @@ world"
     # Issue #201: https://github.com/modularml/mojo/issues/201
     # CHECK: lit.func *"hello{{.*}} {
     fn hello() -> StringLiteral:
-        # CHECK: string = "123"
+        # CHECK: :string "123"
         return "123"
         # lit.end_func
     """other comment"""
@@ -907,9 +907,9 @@ fn tuples_lv(i0: Int, f0: Float32):
    # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %i1
    # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[I2VAL]], [[I1VAL]])
    # CHECK-NEXT: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[PACK]])
-   # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 0{{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {0}, {{.*}}([[TUPRV]])
    # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1
-   # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 1{{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {1}, {{.*}}([[TUPRV]])
    # CHECK-NEXT: lit.ref.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
 
@@ -941,7 +941,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"__store_tmp__`
   # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
-  # CHECK: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
+  # CHECK: %[[C1:.*]] = {{.*}}constant: !Int = <{1}>
   # CHECK: lit.ref.store %[[C1:.*]], [[XP]]
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x].x = 1
@@ -1002,7 +1002,7 @@ fn dynamic_attribute():
     _ = obj.some_attr
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
-    # CHECK: %[[VALUE:.*]] = kgen.param.constant{{.*}} 42
+    # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], %[[KEY]], %[[VALUE]])
     obj.some_attr = 42
 
@@ -1157,7 +1157,7 @@ struct CallableStruct:
 
 # CHECK-LABEL: lit.func @"test_call_method()"
 fn test_call_method():
-    # CHECK: %[[C2:.*]] = kgen.param.constant{{.*}} 2
+    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"__call__{{.*}}(%{{.*}}, %[[C2]])
     let value = CallableStruct(5)
     _ = value(2)
@@ -1209,7 +1209,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow) throws|ownedresult|vararg -> !kgen.variant<!Error, none>
   float7: def(*Int) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
+  # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = {10}, !StringLiteral borrow = {:string "foo"}, |) -> !kgen.none>
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem) -> !Int>
@@ -1352,13 +1352,13 @@ fn static_type[a: Bool](x: type_function(a)):
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}": !IntLiteral = <#lit.struct<{value: !kgen.int_literal = 115792089237316195423570985008687907853269984665640564039457584007913129639936}>>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}": !IntLiteral = <{:!kgen.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936}>
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 512}>>
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
   var notSoBig = bigggNumber // (2 << 246)
   # Easy min-int
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = -9223372036854775808}>>
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-9223372036854775808}>
   var minInt = -(2<<62)
   return notSoBig
 

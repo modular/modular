@@ -50,7 +50,7 @@ fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
   # CHECK: lit.varlet.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
   let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
-  # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <#lit.struct<{value = 42}>>
+  # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <{42}>
   alias as2 : Int = 42
 
   # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>

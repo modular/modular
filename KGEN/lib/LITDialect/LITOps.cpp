@@ -1317,7 +1317,7 @@ OpFoldResult LIT::StructCreateOp::fold(FoldAdaptor adaptor) {
       return {};
     values.emplace_back(name, cast<TypedAttr>(value));
   }
-  return LITStructAttr::get(getContext(), values, getType());
+  return LITStructAttr::get(values, getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1358,7 +1358,7 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
   SmallVector<std::tuple<StringAttr, TypedAttr>> values(value.getValues());
   std::get<1>(values[std::distance(value.getValues().begin(), it)]) =
       cast<TypedAttr>(adaptor.getValue());
-  return LITStructAttr::get(getContext(), values, getType());
+  return LITStructAttr::get(values, getType());
 }
 
 //===----------------------------------------------------------------------===//

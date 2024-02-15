@@ -22,21 +22,21 @@ def `pass`():
 
 # CHECK-LABEL: lit.func @"return_impl_convert
 fn return_impl_convert() -> Int:
-    # CHECK: %0 = kgen{{.*}}= 4}
+    # CHECK: %0 = kgen{{.*}}{4}
     # CHECK: lit.return %0
     return 4  # Implicit conversion from literal to Int
 
 
 # CHECK-LABEL: lit.func @"return_new_line
 fn return_new_line() -> Int:
-    # CHECK: %0 = kgen{{.*}}= 17}
+    # CHECK: %0 = kgen{{.*}}{17}
     return
         17  # Weird indentation should be fine
 
 
 # CHECK-LABEL: lit.func @"return_impl_convert_raises
 fn return_impl_convert_raises() raises -> Int:
-    # CHECK: %0 = kgen{{.*}}= 4}
+    # CHECK: %0 = kgen{{.*}}{4}
     # CHECK: %1 = kgen.variant.create %0
     # CHECK: lit.return %1 : !kgen.variant<!Error, !Int>
     return 4  # Implicit conversion from literal to Int
@@ -207,10 +207,10 @@ fn if_try(p: Bool):
 # CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
 # CHECK:         lit.loop.condition [[V0]] : i1
 # CHECK:       } body {
-# CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value = 0}>>
+# CHECK-NEXT:    kgen.param.constant: {{.*}} = <{0}>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
-# CHECK-NEXT:      kgen.param.constant: {{.*}} = <#lit.struct<{value = 1}>>
+# CHECK-NEXT:      kgen.param.constant: {{.*}} = <{1}>
 # CHECK-NEXT:      lit.ref.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
@@ -218,7 +218,7 @@ fn if_try(p: Bool):
 # CHECK-NEXT:    }
 # CHECK-NEXT:    lit.loop.continue
 # CHECK-NEXT:  } else {
-# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value = 2}>>
+# CHECK-NEXT:     kgen.param.constant: {{.*}} = <{2}>
 # CHECK-NEXT:     lit.ref.store {{.+}}, %inside_else
 # CHECK-NEXT:    lit.loop.yield
 # CHECK-NEXT:  }

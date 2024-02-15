@@ -544,6 +544,14 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
     ArrayRefParameter<"std::tuple<StringAttr, TypedAttr>">:$values,
     AttributeSelfTypeParameter<"", "DeclRefType">:$type);
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "ArrayRef<std::tuple<StringAttr, TypedAttr>>":$values,
+        "DeclRefType":$type), [{
+      return $_get(type.getContext(), values, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

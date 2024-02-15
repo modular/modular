@@ -395,8 +395,8 @@ lit.struct.decl @GiveMeDefault {
 }
 
 // CHECK-LABEL: lit.func @default_struct
-// CHECK-SAME: !lit.declref<@GiveMeDefault> = #lit.struct<{value = 1}>
-lit.func @default_struct(%arg0: !lit.declref<@GiveMeDefault> = #lit.struct<{value = 1}>) {
+// CHECK-SAME: !lit.declref<@GiveMeDefault> = {1}
+lit.func @default_struct(%arg0: !lit.declref<@GiveMeDefault> = {1}) {
   kgen.return
 }
 
