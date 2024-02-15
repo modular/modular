@@ -5,12 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %translate-with-packages %s | kgen-opt -verify-parameters | FileCheck %s
 
-alias Int = __mlir_type.index
-
 
 @register_passable
-struct C[B: Int]:
-    fn get(self) -> Int:
+struct C[B: int]:
+    fn get(self) -> int:
         pass
 
 
@@ -18,17 +16,17 @@ struct C[B: Int]:
 # CHECK-COUNT-1: lit.struct.decl @"fn[index](
 
 
-fn use(a: Int):
+fn use(a: int):
     pass
 
 
 fn take_closure[
-    c_type: Int
+    c_type: int
 ](x: C[c_type], closure: fn (z: C[c_type]) escaping -> None):
     closure(x)
 
 
-fn make_closure[c_type: Int]() -> fn (z: C[c_type]) escaping -> None:
+fn make_closure[c_type: int]() -> fn (z: C[c_type]) escaping -> None:
     fn foo(z: C[c_type]) escaping -> None:
         use(z.get())
 

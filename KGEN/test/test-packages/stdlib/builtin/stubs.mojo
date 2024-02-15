@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias Int = __mlir_type.index
+alias int = __mlir_type.index
+alias string = __mlir_type.`!kgen.string`
+alias float = __mlir_type.`!pop.scalar<f64>`
+
 alias AnyRegType = __mlir_type.`!kgen.type`
-alias StringLiteral = __mlir_type.`!kgen.string`
-alias Float = __mlir_type.`!pop.scalar<f64>`
 
 alias `0` = __mlir_attr.`0 : index`
 alias `1` = __mlir_attr.`1 : index`
@@ -43,10 +44,10 @@ struct Bool(AnyType):
 
 @register_passable("trivial")
 struct Slice:
-    fn __init__(end: Int) -> Self:
+    fn __init__(end: int) -> Self:
         return Self {}
 
-    fn __init__(start: Int, end: Int) -> Self:
+    fn __init__(start: int, end: int) -> Self:
         return Self {}
 
     fn __init__[

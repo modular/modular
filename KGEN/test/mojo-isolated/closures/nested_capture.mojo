@@ -6,12 +6,12 @@
 # RUN: %translate-with-packages %s | FileCheck %s
 
 
-fn use(x: Int):
+fn use(x: int):
     pass
 
 
 # CHECK-LABEL: lit.func @"direct
-fn direct(output: Int):
+fn direct(output: int):
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A, %arg)
     fn closure() escaping:
         @parameter

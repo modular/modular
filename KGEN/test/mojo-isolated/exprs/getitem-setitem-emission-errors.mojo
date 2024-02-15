@@ -9,11 +9,11 @@
 
 struct WeirdArray:
     # expected-note @+1 {{function declared here}}
-    fn __getitem__(self, x: Int) -> Int:
+    fn __getitem__(self, x: int) -> int:
         return x
 
 
-fn test_getitem(owned a: WeirdArray, f: Float, x: Int):
+fn test_getitem(owned a: WeirdArray, f: float, x: int):
     # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'scalar<f64>' to 'index'}}
     _ = a[f]
 
@@ -25,25 +25,25 @@ fn test_getitem(owned a: WeirdArray, f: Float, x: Int):
 
 
 struct Settable:
-    fn __setitem__(self, x: Int, y: Int):
+    fn __setitem__(self, x: int, y: int):
         pass
 
 
-fn test_setitem_kwargs(c: Settable, x: Int):
+fn test_setitem_kwargs(c: Settable, x: int):
     # expected-error @+1 {{keyword operands for __setitem__ not supported yet}}
     c[x=x] = x
 
 
 struct MultiSetItem:
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Int, y: Int):
+    fn __setitem__(self, x: int, y: int):
         pass
 
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Int, y: Float):
+    fn __setitem__(self, x: int, y: float):
         pass
 
 
-fn test_setitem_overload(b: MultiSetItem, x: Int):
+fn test_setitem_overload(b: MultiSetItem, x: int):
     # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
     b[x] = x

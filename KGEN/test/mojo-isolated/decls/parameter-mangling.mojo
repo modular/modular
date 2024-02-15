@@ -11,7 +11,7 @@ alias z = __mlir_attr.`0: index`
 
 
 # CHECK-LABEL: lit.struct.decl @A<x, x_0>
-struct A[x: Int, x_0: Int]:
+struct A[x: int, x_0: int]:
     # CHECK: lit.alias.decl *"z`1x0" = <1>
     alias z = __mlir_attr.`1: index`
     # CHECK: lit.alias.decl *"y`1x1" = <11>
@@ -19,7 +19,7 @@ struct A[x: Int, x_0: Int]:
 
     # CHECK-LABEL: lit.func @"foo
     # CHECK-SAME: <*"x`2x0", x_1>
-    fn foo[x: Int, x_1: Int](self):
+    fn foo[x: int, x_1: int](self):
         # CHECK: lit.alias.decl *"z`2x1" = <2>
         alias z = __mlir_attr.`2: index`
         # CHECK: lit.alias.decl *"y`2x2" = <12>
@@ -29,13 +29,13 @@ struct A[x: Int, x_0: Int]:
 
         # CHECK-LABEL: lit.func *"bar
         # CHECK-SAME: <*"x`3x0", x_2>
-        fn bar[x: Int, x_2: Int]():
+        fn bar[x: int, x_2: int]():
             # CHECK: lit.alias.decl *"z`3x1" = <3>
             alias z = __mlir_attr.`3: index`
 
 
 # COM: test names of implicit parameters
-struct MyStruct[a: Int, b: Int]:
+struct MyStruct[a: int, b: int]:
     pass
 
 

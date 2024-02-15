@@ -6,17 +6,19 @@
 
 # RUN: %translate-with-packages %s | FileCheck %s
 
+
 fn return_generic_memory_only[T: AnyType]() -> T:
     pass
 
 
-fn fudge_int(x: Int) -> Int:
+fn fudge_int(x: int) -> int:
     return x
+
 
 # CHECK-LABEL: lit.func @"var_decls()
 fn var_decls():
     # CHECK: %y = lit.varlet.decl "y" var
-    var y: Int
+    var y: int
 
     # CHECK: %[[Y:.*]] = lit.ref.load %y
     # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%[[Y]])
@@ -60,6 +62,6 @@ fn test_var_let_scopes(cond: Bool):
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
 # the shadowed variable on the RHS.
 fn test_shadowing_reference_shadowed(cond: Bool):
-    let num: Int = `10`
+    let num: int = `10`
     if cond:
         let num = fudge_int(`42`)

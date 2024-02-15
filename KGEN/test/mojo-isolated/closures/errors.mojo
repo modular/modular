@@ -27,20 +27,17 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
     var y: fn () escaping -> None = myclosure
 
 
-alias Int = __mlir_type.index
-
-
 # COM: https://github.com/modularml/mojo/issues/1223
 # COM: When a runtime argument has incorrect type, nested function bodies may
 # COM: still be resolved. Ensure that we don't crash when the arg is used.
 @value
-struct Parametric[a: Int]:
+struct Parametric[a: int]:
     pass
 
 
 fn test_suppressed_dyn_binding_error[
-    x: Int
+    x: int
     # expected-error @below {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-](pval: Parametric[x], func: fn[y: Int] (p: Parametric[y]) -> None):
+](pval: Parametric[x], func: fn[y: int] (p: Parametric[y]) -> None):
     fn nested():
         func(pval)

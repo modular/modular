@@ -8,27 +8,27 @@
 
 
 struct WeirdArray:
-    fn __getitem__(self, x: Int) -> Int:
+    fn __getitem__(self, x: int) -> int:
         return x
 
-    fn __getitem__(self, x: Int, y: Int) -> Int:
+    fn __getitem__(self, x: int, y: int) -> int:
         return x
 
-    fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
+    fn __getitem__(self, x: int, y: int, z: int) -> int:
         return x
 
-    fn __getitem__(self, x: Float, *ints: Int) -> Int:
+    fn __getitem__(self, x: float, *ints: int) -> int:
         return `1`
 
-    fn __setitem__(self, x: Int, y: Int, value: Int):
+    fn __setitem__(self, x: int, y: int, value: int):
         pass
 
-    fn __getitem__(self, s: Slice) -> Int:
+    fn __getitem__(self, s: Slice) -> int:
         return `2`
 
 
 # CHECK-LABEL: lit.func @"test_getitem
-fn test_getitem(a: WeirdArray, idx: Int, f: Float):
+fn test_getitem(a: WeirdArray, idx: int, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[idx]
 
@@ -43,7 +43,7 @@ fn test_getitem(a: WeirdArray, idx: Int, f: Float):
     _ = a[f, idx, idx, idx, idx]
 
 
-fn test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
+fn test_getitem_kw(a: WeirdArray, idx: int, idx2: int, idx3: int):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[x=idx]
 
@@ -58,14 +58,14 @@ fn test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
 
 
 # CHECK-LABEL: lit.func @"test_setitem
-fn test_setitem[x: Int](a: WeirdArray, idx: Int):
+fn test_setitem[x: int](a: WeirdArray, idx: int):
     # CHECK: %[[X:.*]] = kgen.param.constant = <x>
     # CHECK: lit.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, %[[X]])
     a[idx, idx] = x
 
 
 # CHECK-LABEL: lit.func @"test_getitem_slice
-fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
+fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
     # CHECK: %[[SLICE:.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}"<:type none, :type none, :type none>
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %[[SLICE]])
     _ = a[:]
@@ -90,28 +90,28 @@ fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
 
 
 struct IndexArray:
-    fn __getitem__(inout self, x: Int) -> Int:
+    fn __getitem__(inout self, x: int) -> int:
         pass
 
-    fn __setitem__(inout self, x: Int, value: Int):
+    fn __setitem__(inout self, x: int, value: int):
         pass
 
 
 struct IndexArrayArray:
-    fn __getitem__(inout self, x: Int) -> IndexArray:
+    fn __getitem__(inout self, x: int) -> IndexArray:
         pass
 
-    fn __setitem__(inout self, x: Int, value: IndexArray):
+    fn __setitem__(inout self, x: int, value: IndexArray):
         pass
 
 
-fn takes_inout_int(inout a: Int):
+fn takes_inout_int(inout a: int):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_writebacks
 fn test_writebacks[
-    x: Int, y: Int
+    x: int, y: int
 ](inout a: IndexArray, inout b: IndexArrayArray):
     # CHECK: %[[LT:.*]] = lit.varlet.decl "anonymous*" synth
     # CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <x>
@@ -148,14 +148,14 @@ fn test_writebacks[
 
 @register_passable
 struct RegWeirdArray:
-    fn __getitem__(self, idx: Int) -> Int:
+    fn __getitem__(self, idx: int) -> int:
         return idx
 
-    fn __setitem__(self, idx: Int, value: Int):
+    fn __setitem__(self, idx: int, value: int):
         pass
 
 
 # CHECK-LABEL: lit.func @"test_dlvalue_to_pvalue
-fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
+fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: int]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}", arr, y)>
     alias x = arr[y]

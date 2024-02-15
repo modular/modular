@@ -37,14 +37,14 @@ trait Trait:
     fn overloaded(self):
         ...
 
-    fn overloaded(self, x: Int):
+    fn overloaded(self, x: int):
         ...
 
-    fn overloaded(self, x: StringLiteral):
+    fn overloaded(self, x: string):
         ...
 
     # CHECK-LABEL: lit.func @"parametric{{.*}}<x>
-    fn parametric[x: Int](self):
+    fn parametric[x: int](self):
         ...
 
 
@@ -143,26 +143,26 @@ fn existential_arg(x: Trait):
 
 
 trait SimpleTrait:
-    fn method(self, y: Int):
+    fn method(self, y: int):
         ...
 
-    fn param_method[x: Int](self):
+    fn param_method[x: int](self):
         ...
 
 
 struct TraitStruct(SimpleTrait):
-    fn method(self, y: Int):
+    fn method(self, y: int):
         pass
 
-    fn param_method[x: Int](self):
+    fn param_method[x: int](self):
         pass
 
 
-struct ParametricTraitStruct[z: Int](SimpleTrait):
-    fn method(self, y: Int):
+struct ParametricTraitStruct[z: int](SimpleTrait):
+    fn method(self, y: int):
         pass
 
-    fn param_method[x: Int](self):
+    fn param_method[x: int](self):
         pass
 
 
@@ -249,7 +249,7 @@ fn move_me[T: Movable](owned value: T) -> T:
 
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
-    fn __init__(inout self, x: Int):
+    fn __init__(inout self, x: int):
         ...
 
     fn __copyinit__(inout self, existing: Self):
@@ -265,7 +265,7 @@ trait TraitForReg:
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"`thunk___init__
     # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index borrow) -> !kgen.none
-    fn __init__(x: Int) -> Self:
+    fn __init__(x: int) -> Self:
         # CHECK: %0 = lit.call {{.*}}@RegTraitType{{.*}}__init__{{.*}}(%x)
         # CHECK: store %0, %self
         pass
@@ -292,21 +292,21 @@ struct RegTraitType(TraitForReg):
 trait CrazyTrait:
     pass
 
-    fn foo[b: Int](self, c: Int) -> Self:
+    fn foo[b: int](self, c: int) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.struct.decl @CrazyRegisterPassable<a>
 @value
 @register_passable
-struct CrazyRegisterPassable[a: Int](CrazyTrait):
+struct CrazyRegisterPassable[a: int](CrazyTrait):
     pass
 
     # CHECK-LABEL: lit.func @"`thunk_foo
     # CHECK-SAME: <b>(%__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result, |,
     # CHECK-SAME: %self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
     # CHECK-SAME: %c: index borrow) -> !kgen.none
-    fn foo[b: Int](self, c: Int) -> Self:
+    fn foo[b: int](self, c: int) -> Self:
         # CHECK: %0 = lit.ref.load %self
         # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<a, b>(%0, %c)
         # CHECK: lit.ref.store %1, %__result__
@@ -345,7 +345,7 @@ trait SimpleTraitMethod:
 
 
 @register_passable
-struct VariadicTrait[*I: Int](SimpleTraitMethod):
+struct VariadicTrait[*I: int](SimpleTraitMethod):
     fn foo(self):
         pass
 

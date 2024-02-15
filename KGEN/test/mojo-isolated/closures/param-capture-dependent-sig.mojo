@@ -7,17 +7,15 @@
 
 # CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
-alias Int = __mlir_type.index
-
 
 @value
 @register_passable
-struct Foo[B: Int]:
+struct Foo[B: int]:
     pass
 
 
 # CHECK-LABEL: lit.func @"take_closure{{.*}}<c_type>(
 # CHECK-SAME: %arg[closure]: {{.*}}<c_type>
-fn take_closure[c_type: Int](closure: fn (z: Foo[c_type]) escaping -> None):
+fn take_closure[c_type: int](closure: fn (z: Foo[c_type]) escaping -> None):
     closure(Foo[c_type]())
     pass

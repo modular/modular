@@ -7,12 +7,12 @@
 # RUN: %translate-with-packages %s | FileCheck %s
 
 
-fn has_default_args(a: Int, b: Int = `1`, c: Int = `2`):
+fn has_default_args(a: int, b: int = `1`, c: int = `2`):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_arg_passing
-fn test_kw_arg_passing(x: Int, y: Int, z: Int):
+fn test_kw_arg_passing(x: int, y: int, z: int):
     # CHECK: %[[C2:.*]] = kgen.param.constant = <2>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
     has_default_args(x, b=y)
@@ -35,7 +35,7 @@ fn test_kw_arg_passing(x: Int, y: Int, z: Int):
 
 
 # CHECK-LABEL: lit.func @"test_kw_arg_passing_indirect
-fn test_kw_arg_passing_indirect(x: Int, y: Int, z: Int):
+fn test_kw_arg_passing_indirect(x: int, y: int, z: int):
     alias callee = has_default_args
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
@@ -46,12 +46,12 @@ fn test_kw_arg_passing_indirect(x: Int, y: Int, z: Int):
     callee(c=z, b=y, a=x)
 
 
-fn has_default_params[a: Int, b: Int = `1`, c: Int = `2`]():
+fn has_default_params[a: int, b: int = `1`, c: int = `2`]():
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_param_passing
-fn test_kw_param_passing[x: Int, y: Int, z: Int]():
+fn test_kw_param_passing[x: int, y: int, z: int]():
     # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, 2>
     has_default_params[x, b=y]()
 
@@ -72,7 +72,7 @@ fn test_kw_param_passing[x: Int, y: Int, z: Int]():
 
 
 # CHECK-LABEL: lit.func @"test_kw_param_passing_indirect
-fn test_kw_param_passing_indirect[x: Int, y: Int, z: Int]():
+fn test_kw_param_passing_indirect[x: int, y: int, z: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = has_default_params
 
@@ -85,12 +85,12 @@ fn test_kw_param_passing_indirect[x: Int, y: Int, z: Int]():
 
 @value
 struct MyCallable:
-    fn __call__(self, m: Int, n: Int = `2`):
+    fn __call__(self, m: int, n: int = `2`):
         pass
 
 
 # CHECK-LABEL: lit.func @"test_callable_object
-fn test_callable_object(x: Int, y: Int):
+fn test_callable_object(x: int, y: int):
     # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl {{.*}}: !lit.ref<!MyCallable
     var callable = MyCallable()
 
@@ -104,12 +104,12 @@ fn test_callable_object(x: Int, y: Int):
     callable(n=x, m=y)
 
 
-fn takes_kw_only_args(a: Int, b: Int = `1`, *, c: Int, d: Int = `2`):
+fn takes_kw_only_args(a: int, b: int = `1`, *, c: int, d: int = `2`):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_only_args
-fn test_kw_only_args(x: Int):
+fn test_kw_only_args(x: int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
@@ -133,7 +133,7 @@ fn test_kw_only_args(x: Int):
 
 
 # CHECK-LABEL: lit.func @"test_kw_only_indirect
-fn test_kw_only_indirect(x: Int):
+fn test_kw_only_indirect(x: int):
     alias callee = takes_kw_only_args
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
@@ -146,12 +146,12 @@ fn test_kw_only_indirect(x: Int):
     callee(x, d=x, c=x)
 
 
-fn takes_kw_only_params[a: Int, b: Int = `1`, *, c: Int, d: Int = `2`]():
+fn takes_kw_only_params[a: int, b: int = `1`, *, c: int, d: int = `2`]():
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_only_params
-fn test_kw_only_params[x: Int]():
+fn test_kw_only_params[x: int]():
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, 2>()
     takes_kw_only_params[x, c=x]()
 
@@ -169,7 +169,7 @@ fn test_kw_only_params[x: Int]():
 
 
 # CHECK-LABEL: lit.func @"test_kw_only_params_indirect
-fn test_kw_only_params_indirect[x: Int]():
+fn test_kw_only_params_indirect[x: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = takes_kw_only_params
 

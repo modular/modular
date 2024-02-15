@@ -17,7 +17,7 @@ var inferred_type = `1`
 # COM: this also serves for testing how we emit memory-only globals.
 @value
 struct ConvertibleFromInt:
-    fn __init__(inout self, v: Int):
+    fn __init__(inout self, v: int):
         pass
 
     fn __del__(owned self):
@@ -64,7 +64,7 @@ let reg_global: RegType = RegType()
 var reg_global_implicit = RegType()
 
 
-fn borrowGlobalInt(x: Int):
+fn borrowGlobalInt(x: int):
     pass
 
 
