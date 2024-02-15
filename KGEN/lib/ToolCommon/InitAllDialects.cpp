@@ -80,6 +80,7 @@ public:
   void apply(MLIRContext *ctx,
              MutableArrayRef<Dialect *> dialects) const override {
     ctx->loadDialect<POP::POPDialect>();
+    ctx->loadDialect<LIT::LITDialect>();
   }
 
   /// Clone the extension.
