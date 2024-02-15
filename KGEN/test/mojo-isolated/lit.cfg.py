@@ -28,6 +28,7 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 config.excludes = [
     "test_package",
     "debuginfo_module.mojo",
+    "docs_package",
 ]
 
 tool_dirs = [
