@@ -355,7 +355,8 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
+def KGEN_DeclRefType : KGENType<"DeclRef", "declref",
+    [DeclareTypeInterfaceMethods<DeclRefTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!kgen.declref` type references a type declaration and binds parameter

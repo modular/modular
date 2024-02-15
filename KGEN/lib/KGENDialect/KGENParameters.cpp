@@ -189,7 +189,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   }
 
   // Check any DeclRefType's we encounter.
-  if (auto refType = dyn_cast<DeclRefType>(type))
+  if (auto refType = dyn_cast<DeclRefTypeInterface>(type))
     verifyRefType(refType);
 
   // Save the number of nested parameters before recursing and check whether the
@@ -237,7 +237,7 @@ public:
   /// The first time we encounter a DeclRefType, check to see if its parameter
   /// bindings agrees with the parameter declarations of the referred type
   /// declaration.
-  void verifyRefType(DeclRefType refType) override;
+  void verifyRefType(DeclRefTypeInterface refType) override;
 
   /// Invoke the verification function using the current operation's location.
   void maybeVerify(
@@ -276,7 +276,7 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
     hadError = true;
 }
 
-void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
+void VerifyingParameterCollector::verifyRefType(DeclRefTypeInterface refType) {
   CompilerTimeTraceScope traceScope("verifyRefType");
 
   // We only check this during the op verification phase.
@@ -286,34 +286,7 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
   if (!verifiedRefs.insert(refType.getAsOpaquePointer()).second)
     return;
 
-  DeclInterface decl;
-  {
-    CompilerTimeTraceScope traceScope("lookupSymbolIn");
-    decl = dyn_cast_or_null<DeclInterface>(
-        symtab->lookupSymbolIn(module, refType.getSymbol()));
-  }
-  if (!decl) {
-    hadError = true;
-    emitError(op->getLoc())
-        << refType.getSymbol() << " does not reference a KGEN type declaration";
-    return;
-  }
-
-  if (refType.getParamValues().empty() && decl.getInputParams().empty())
-    return;
-
-  // We have to specialize the type's parameter decls.
-  ParameterEvaluator evaluator(decl.getInputParams(), refType.getParamValues());
-  SmallVector<ParamDeclAttr, 8> specializedDecls;
-  for (ParamDeclAttr decl : decl.getInputParams())
-    specializedDecls.push_back(
-        cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
-
-  if (failed(verifyParamDeclsMatch("input parameter",
-                                   "!kgen.declref symbol use",
-                                   refType.getParamValues(), op->getLoc(),
-                                   refType.getSymbol().getLeafReference(),
-                                   specializedDecls, decl.getLoc())))
+  if (failed(refType.verifySymbolUses(module, *symtab, op->getLoc())))
     hadError = true;
 }
 
