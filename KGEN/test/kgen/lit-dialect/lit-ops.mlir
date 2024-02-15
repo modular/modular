@@ -1,5 +1,56 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect %s | kgen-opt -split-input-file -allow-unregistered-dialect | FileCheck %s
 
+// CHECK-LABEL: lit.struct.decl @FooStruct
+// CHECK-SAME: <size, dtype: dtype, ty: type> {
+// CHECK-NEXT: a : index
+// CHECK-NEXT: b : !pop.scalar<dtype>
+// CHECK-NEXT: c : !kgen.paramref<ty>
+lit.struct.decl @FooStruct<size, dtype: dtype, ty: type> {
+  lit.struct.field a : index
+  lit.struct.field b : !pop.scalar<dtype>
+  lit.struct.field c : !kgen.paramref<ty>
+}
+
+// CHECK-LABEL: lit.struct.decl @EmptyStruct
+// CHECK-NEXT: }
+lit.struct.decl @EmptyStruct {
+}
+
+// CHECK-LABEL: @struct_create
+// CHECK-SAME: %[[A:.*]]: index
+// CHECK-SAME: %[[B:.*]]: !pop.scalar
+// CHECK-SAME: %[[C:.*]]: !pop.simd
+kgen.generator @struct_create<u, v: dtype>(%a: index, %b: !pop.scalar<v>, %c: !pop.simd<u, v>)
+    -> !kgen.declref<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>> {
+  // CHECK: lit.struct.create(a=%[[A]], b=%[[B]], c=%[[C]]) :
+  // CHECK-SAME: (index, !pop.scalar<v>, !pop.simd<u, v>) ->
+  // CHECK-SAME: !kgen.declref<@FooStruct<u, :dtype v, :type simd<u, v>>>
+  %0 = lit.struct.create(a=%a, b=%b, c=%c) : (index, !pop.scalar<v>, !pop.simd<u, v>) ->
+    !kgen.declref<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>>
+  kgen.return %0 : !kgen.declref<@FooStruct<u, :dtype v, :type !pop.simd<u, v>>>
+}
+
+// CHECK-LABEL: @empty_struct_create
+kgen.generator @empty_struct_create() -> !kgen.declref<@EmptyStruct> {
+  // CHECK: lit.struct.create()
+  %0 = lit.struct.create() : () -> !kgen.declref<@EmptyStruct>
+  kgen.return %0 : !kgen.declref<@EmptyStruct>
+}
+
+// CHECK-LABEL: @struct_insert
+kgen.generator @struct_insert(%a: index, %struct: !kgen.declref<@FooStruct<2, :dtype f32, :type i32>>) {
+  // CHECK: lit.struct.insert %{{.*}}, %{{.*}}[a] : index into !kgen.declref<@FooStruct
+  %0 = lit.struct.insert %a, %struct[a] : index into !kgen.declref<@FooStruct<2, :dtype f32, :type i32>>
+  kgen.return
+}
+
+// CHECK-LABEL: @struct_extract
+kgen.generator @struct_extract(%struct: !kgen.declref<@FooStruct<2, :dtype f32, :type i32>>) {
+  // CHECK: lit.struct.extract %{{.*}}[a] : index from !kgen.declref<@FooStruct
+  %0 = lit.struct.extract %struct[a] : index from !kgen.declref<@FooStruct<2, :dtype f32, :type i32>>
+  kgen.return
+}
+
 // CHECK-LABEL: lit.func @calls[imm a, mut b]
 lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
   // CHECK: lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
