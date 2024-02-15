@@ -134,8 +134,8 @@ fn testSIMD(a: Float64,
 # CHECK-SAME: int::Int,
 # CHECK-SAME: parameters::StructWithIntParam[*(0,2)]
 # CHECK-SAME: ]()"<
-# CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1> :{{.*}}>,
-# CHECK-SAME: size2: !Int, b: @parameters::@StructWithIntParam<:!Int size2> :{{.*}}>>()
+# CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1>,
+# CHECK-SAME: size2: !Int, b: @parameters::@StructWithIntParam<:!Int size2>>()
 fn paramResolution[size1: Int, a: StructWithIntParam[size1],
                    size2: Int, b: StructWithIntParam[size2]]():
   pass
@@ -274,8 +274,8 @@ fn test_implicit_params_with_var_params():
 
 # CHECK-LABEL: lit.func @"explicit_autoparameterization
 # CHECK-SAME: "<?, [[V0:.*]]: !Int, [[W0:.*]]: !Int, [[W1:.*]]: !Int>(
-# CHECK-SAME: %v: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
-# CHECK-SAME: %w: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>>
+# CHECK-SAME: %v: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>
+# CHECK-SAME: %w: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 

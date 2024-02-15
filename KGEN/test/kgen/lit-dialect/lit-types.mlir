@@ -11,14 +11,14 @@ kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !lit.declref<@MyStructPar
 }
 
 // CHECK-LABEL: @metatype
-// CHECK-SAME: !kgen.pointer<@MyStruct : metatype<@MyStruct>>
-kgen.generator @metatype(%arg0: !kgen.pointer<@MyStruct : metatype<@MyStruct>>) {
+// CHECK-SAME: !kgen.pointer<@MyStruct : type>
+kgen.generator @metatype(%arg0: !kgen.pointer<@MyStruct : type>) {
   kgen.return
 }
 
 // CHECK-LABEL: @declref_metatype
-// CHECK-SAME: !lit.declref<@MyStruct, !lit.metatype<@MyStruct>>
-kgen.generator @declref_metatype(%arg0: !lit.declref<@MyStruct, !lit.metatype<@MyStruct>>) {
+// CHECK-SAME: !lit.declref<@MyStruct, type>
+kgen.generator @declref_metatype(%arg0: !lit.declref<@MyStruct, type>) {
   kgen.return
 }
 

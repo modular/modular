@@ -179,10 +179,11 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref",
   let parameters = (ins
     "SymbolRefAttr":$symbol,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    DefaultValuedParameter<"Type", "TypeType::get($_ctxt)">:$metaType
+    "Type":$metaType
   );
   let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $metaType^)? `>`
+    `<` $symbol `` custom<ParameterValues>($paramValues) ``
+        custom<OptionalMetaType>($metaType, ref($symbol), ref($paramValues)) `>`
   }];
 
   let builders = [

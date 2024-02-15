@@ -517,7 +517,7 @@ lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
 
 // Verify that the lifetimes get correctly removed and the IR is correct.
 
-!Mem = !lit.declref<@Mem, !lit.metatype<@Mem>>
+!Mem = !lit.declref<@Mem>
 lit.struct.decl @Mem   {
   lit.func @"__init__($test::Mem=&)"(%self: !kgen.pointer<!Mem> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
     %none = kgen.param.constant: none = <#kgen.none>
@@ -526,24 +526,24 @@ lit.struct.decl @Mem   {
 }
 
 // CHECK-LABEL: kgen.generator @getThing
-// CHECK-SAME:(%arg0: !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> byref_result)
+// CHECK-SAME:(%arg0: !lit.ref<@Mem, mut *[0,0]> byref_result)
 lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.param.declare *"abc`": lifetime<1> = <#lit.lifetime>
-  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> to !lit.ref<@Mem : metatype<@Mem>, mut *"abc`">
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"abc`">
 
-  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> byref_result) capturing
-  lit.func localTest[mut *"__result__`0"](%__result___0[__result__]: !lit.ref<!Mem, mut *"__result__`0"> byref_result, |) capturing -> !kgen.none attributes {sourceName = "localTest", specialFnKind = 0 : i8} {
+  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<@Mem, mut *[0,0]> byref_result) capturing
+  lit.func localTest[mut *"__result__`0"](%__result__[__result__]: !lit.ref<!Mem, mut *"__result__`0"> byref_result, |) capturing -> !kgen.none attributes {sourceName = "localTest", specialFnKind = 0 : i8} {
     // CHECK-NEXT: kgen.param.declare *"__result__`0": lifetime
-    // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> to !lit.ref<@Mem : metatype<@Mem>, mut *"__result__`0">
+    // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"__result__`0">
     // CHECK-NEXT: %4 = lit.ref.to_pointer %3
-    %1 = lit.ref.to_pointer %__result___0 : <!Mem, mut *"__result__`0">
+    %1 = lit.ref.to_pointer %__result__ : <!Mem, mut *"__result__`0">
     %2 = lit.call @"$test"::@Mem::@"__init__($test::Mem=&)"(%1) : !lit.signature<("self": !kgen.pointer<!Mem> init_self, |) -> !kgen.none>
     %none_1 = kgen.param.constant: none = <#kgen.none>
     kgen.return %none_1 : !kgen.none
   }
   // CHECK: }
   // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-  // CHECK-NEXT: %2 = kgen.call_param[(!lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> byref_result) capturing -> !kgen.none: localTest](%1)
+  // CHECK-NEXT: %2 = kgen.call_param[(!lit.ref<@Mem, mut *[0,0]> byref_result) capturing -> !kgen.none: localTest](%1)
   %0 = lit.call_param[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut *"abc`"](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
@@ -551,11 +551,11 @@ lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, 
 
 
 // CHECK-LABEL: kgen.generator @callThing
-// CHECK-SAME: (%arg0: !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> byref_result)
+// CHECK-SAME: (%arg0: !lit.ref<@Mem, mut *[0,0]> byref_result)
 lit.func @callThing[mut *"__result__`"](%__result__: !lit.ref<!Mem, mut *"__result__`"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.param.declare *"__result__`": lifetime<1> = <#lit.lifetime>
-  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]> to !lit.ref<@Mem : metatype<@Mem>, mut *"__result__`">
-  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem : metatype<@Mem>, mut *"__result__`"> to !lit.ref<@Mem : metatype<@Mem>, mut *[0,0]>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"__result__`">
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem, mut *"__result__`"> to !lit.ref<@Mem, mut *[0,0]>
   // CHECK-NEXT: kgen.call @getThing(%1)
   %0 = lit.call @getThing[mut *"__result__`"](%__result__) : !lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
@@ -566,8 +566,8 @@ lit.func @callThing[mut *"__result__`"](%__result__: !lit.ref<!Mem, mut *"__resu
 // Verify that we remap the returns as well as the operands.
 lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> borrow_in_mem) -> !lit.ref<!Mem, imm *"a`">{
   // CHECK-NEXT: kgen.param.declare *"a`"
-  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem : metatype<@Mem>, imm *[0,0]> to !lit.ref<@Mem : metatype<@Mem>, imm *"a`">
-  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem : metatype<@Mem>, imm *"a`"> to !lit.ref<@Mem : metatype<@Mem>, imm *[0,0]>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, imm *[0,0]> to !lit.ref<@Mem, imm *"a`">
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem, imm *"a`"> to !lit.ref<@Mem, imm *[0,0]>
   // CHECK-NEXT: kgen.return %1
   kgen.return %a : !lit.ref<!Mem, imm *"a`">
 }
