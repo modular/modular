@@ -612,14 +612,14 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, bool isMutable) {
 static ParseResult
 parseStructElements(AsmParser &p,
                     SmallVector<std::tuple<StringAttr, TypedAttr>> &values) {
-  StringAttr name;
+  std::string name;
   Type type;
   TypedAttr value;
   auto parseElt = [&]() -> ParseResult {
-    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
+    if (p.parseKeywordOrString(&name) || parseColonTypeOrIndex(p, type) ||
         p.parseEqual() || parseParamValue(p, value, type))
       return failure();
-    values.emplace_back(name, value);
+    values.emplace_back(StringAttr::get(p.getContext(), name), value);
     return success();
   };
   return p.parseCommaSeparatedList(AsmParser::Delimiter::Braces, parseElt);
@@ -630,7 +630,7 @@ printStructElements(AsmPrinter &p,
                     ArrayRef<std::tuple<StringAttr, TypedAttr>> values) {
   p << '{';
   llvm::interleaveComma(values, p, [&](const auto &value) {
-    printParamName(p, std::get<0>(value));
+    p.printKeywordOrString(std::get<0>(value));
     printColonTypeOrIndex(p, std::get<1>(value).getType());
     p << " = ";
     printParamValue(p, std::get<1>(value));
