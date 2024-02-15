@@ -114,7 +114,8 @@ TEST(Host, GetLinuxX86CPUSystemInfoImpl) {
   EXPECT_EQ(info.sockets[1].physicalCores[1].virtualCores.size(), 1UL);
 
   std::vector<size_t> actualCpuIDs = info.getPreferredCpuIDs(9);
-  std::vector<size_t> expectedCpuIds = {0, 1, 2, 6, 7, 4, 5, 0, 1};
+  std::vector<size_t> expectedCpuIds = {0, 1, 2,           6,          7,
+                                        4, 5, kNoAffinity, kNoAffinity};
   EXPECT_EQ(actualCpuIDs, expectedCpuIds);
 }
 

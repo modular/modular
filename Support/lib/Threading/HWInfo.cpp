@@ -394,26 +394,38 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
   std::vector<size_t> cpuIDs;
   size_t virtualCoreIndex = 0;
   while (true) {
-    size_t origNumCpuIDs = cpuIDs.size();
+    // Pull all virtual cores matching this particular index. We will make a
+    // decision whether to add this group at the group, based on whether this
+    // creates an uneven distribution.
+    std::vector<size_t> currentPass;
     for (const auto &socket : sockets) {
       for (const auto &physicalCore : socket.physicalCores) {
-        if (virtualCoreIndex < physicalCore.virtualCores.size()) {
-          cpuIDs.emplace_back(
+        if (virtualCoreIndex < physicalCore.virtualCores.size() &&
+            currentPass.size() < numThreads) {
+          currentPass.emplace_back(
               physicalCore.virtualCores[virtualCoreIndex].cpuID);
-          if (cpuIDs.size() >= numThreads) {
-            // Found enough.
-            return cpuIDs;
-          }
         }
       }
     }
-    if (cpuIDs.size() == origNumCpuIDs)
-      // No more virtual cores to add. We'll need to start re-using them.
+
+    if (currentPass.size() == 0) {
+      // If we added nothing in this pass, then start recycling.
       virtualCoreIndex = 0;
-    else
-      // Need to use additional virtual cores on the same physical core (if
-      // any).
-      ++virtualCoreIndex;
+    } else if (currentPass.size() + cpuIDs.size() <= numThreads) {
+      // If this is less than the intended size, we can add this batch.
+      cpuIDs.insert(cpuIDs.end(), currentPass.begin(), currentPass.end());
+      virtualCoreIndex++;
+    } else {
+      // Otherwise, we will add a batch of unpinned CPUs at the end. We don't
+      // generally expected this; it should happen only when the precise number
+      // of cores has been specified up front (and is greater than the number of
+      // physical cores, but does not segment them appropriately).
+      for (size_t i = cpuIDs.size(); i < numThreads; i++)
+        cpuIDs.emplace_back(kNoAffinity);
+    }
+    assert(cpuIDs.size() <= numThreads);
+    if (cpuIDs.size() == numThreads)
+      return cpuIDs;
   }
 }
 
