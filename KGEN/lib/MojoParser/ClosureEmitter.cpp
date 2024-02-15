@@ -76,6 +76,8 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                      StringAttr::get(b.getContext()));
   // TODO: The type may contain decl references that need to be remapped.
   SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
+  auto paramListAttr =
+      ArgParamListAttr::get(b.getContext(), paramNames, passingKinds);
 
   StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), nameAttr);
   declOp.setIsSynthetic(true);
@@ -83,14 +85,11 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
   // Set attributes in bulk.
   NamedAttrList attrs = declOp->getAttrDictionary();
   attrs.set(declOp.getParamsAttrName(), b.getAttr<ParamDeclArrayAttr>(params));
-  SmallVector<Type> paramTypes = llvm::map_to_vector(
-      params, [](ParamDeclAttr decl) { return decl.getType(); });
   auto sig = TypeSignatureType::remapToSignature(
       [&]() -> InFlightDiagnostic {
         llvm_unreachable("unexpected invalid signature");
       },
-      ParamDeclArrayAttr::get(b.getContext(), params), paramNames, passingKinds,
-      /*defaultPosParams=*/{}, /*defaultKwOnlyParams=*/{},
+      ParamDeclArrayAttr::get(b.getContext(), params), paramListAttr,
       /*paramVarArg=*/false);
   attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
   declOp->setAttrs(attrs.getDictionary(module.getContext()));

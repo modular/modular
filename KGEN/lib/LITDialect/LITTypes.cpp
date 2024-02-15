@@ -122,22 +122,22 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 
 TypeSignatureType TypeSignatureType::remapToSignature(
     function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
-    ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> passingKinds,
-    ArrayRef<TypedAttr> defaultPosParams,
-    ArrayRef<TypedAttr> defaultKwOnlyParams, bool paramVarArg) {
+    ArgParamListAttr paramListAttrs, bool paramVarArg) {
   IndexRefRemapper remapper(paramDecls, {});
   SmallVector<Type> inputParamTypes =
       llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
         return remapper.replace(decl.getType());
       });
 
-  auto paramListAttrs = ArgParamListAttr::getChecked(
-      emitError, paramDecls.getContext(), paramNames, passingKinds,
-      remapper.replace(defaultPosParams), remapper.replace(defaultKwOnlyParams),
+  MLIRContext *ctx = paramDecls.getContext();
+  paramListAttrs = ArgParamListAttr::getChecked(
+      emitError, ctx, paramListAttrs.getNames(),
+      paramListAttrs.getPassingKinds(),
+      remapper.replace(paramListAttrs.getDefaultPos()),
+      remapper.replace(paramListAttrs.getDefaultKwOnly()),
       /*variadicIndices=*/{}, /*packIndices=*/{});
-  return TypeSignatureType::getChecked(emitError, paramDecls.getContext(),
-                                       inputParamTypes, paramListAttrs,
-                                       paramVarArg);
+  return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
+                                       paramListAttrs, paramVarArg);
 }
 
 TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
