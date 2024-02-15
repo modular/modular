@@ -141,7 +141,6 @@ public:
   SharedState &shared;
 
   // These are the results of type checking 'params' in typeCheck.
-  bool isVarArgs = false;
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
@@ -151,6 +150,11 @@ public:
   SmallVector<TypedAttr> defaultPosParams;
   /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
+  /// Indices of variadic parameters.
+  SmallVector<size_t> variadicIndices;
+
+  /// TODO: remove this when migration to variadic indices is complete.
+  bool hasVarArgs() { return !variadicIndices.empty(); }
 };
 
 //===----------------------------------------------------------------------===//

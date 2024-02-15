@@ -883,7 +883,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     fnSignature.effects.setThrows();
 
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
-  if (paramList.isVarArgs ||
+  if (paramList.hasVarArgs() ||
       // If the parent struct has param varargs, any member functions will too.
       (structDecl && structDecl.getSignature().getParamVarArg()))
     fnSignature.varEffects.setParamVarArgs();
@@ -1731,10 +1731,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   auto paramListAttr = ArgParamListAttr::get(
       getContext(), paramSignature.names, paramSignature.passingKinds,
       paramSignature.defaultPosParams, paramSignature.defaultKwOnlyParams,
-      /*variadicIndices=*/{}, /*packIndices=*/{});
+      paramSignature.variadicIndices, /*packIndices=*/{});
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
                                                  paramsArrayAttr, paramListAttr,
-                                                 paramSignature.isVarArgs);
+                                                 paramSignature.hasVarArgs());
   if (!sig)
     return failure();
   structOp.setSignature(sig);
