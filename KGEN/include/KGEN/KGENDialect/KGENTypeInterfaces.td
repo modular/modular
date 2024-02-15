@@ -90,7 +90,10 @@ def DeclRefTypeInterface : TypeInterface<"DeclRefTypeInterface"> {
       to lookup the type definition.
     }], "LogicalResult", "verifySymbolUses",
       (ins "Operation *":$module, "mlir::LockedSymbolTableCollection &":$symtab,
-           "Location":$loc)>
+           "Location":$loc)>,
+    InterfaceMethod<[{
+      Pretty print the symbol reference as a type.
+    }], "void", "printSymbol", (ins "AsmPrinter &":$p)>
   ];
 }
 

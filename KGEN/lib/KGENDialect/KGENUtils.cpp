@@ -232,16 +232,8 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   if (auto it = dialect->typePrintFns.find(type.getTypeID());
       it != dialect->typePrintFns.end()) {
     it->second(p, type);
-  } else if (auto ref = dyn_cast<DeclRefType>(type)) {
-    // Use the alias printer if suitable.
-    if (failed(p.printAlias(ref))) {
-      p << ref.getSymbol();
-      printParameterValues(p, ref.getParamValues());
-      if (auto type = ref.getMetaType(); !isa<TypeType>(type)) {
-        p << " : ";
-        printKGENType(p, type);
-      }
-    }
+  } else if (auto ref = dyn_cast<DeclRefTypeInterface>(type)) {
+    ref.printSymbol(p);
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
     printSignature(p, signature);
