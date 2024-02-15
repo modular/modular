@@ -617,6 +617,11 @@ public:
   lldb_private::CompilerType createSIMDType(StringRef dtype,
                                             size_t numElements);
 
+  /// Create a POP::ArrayType given an element type and a number of elements.
+  lldb_private::CompilerType
+  createPOPArrayType(lldb::opaque_compiler_type_t elementType,
+                     size_t numElements);
+
   MojoASTDeclRef getOrCreatePackageDecl(StringRef name,
                                         MojoASTDeclRef parentDeclRef);
 
