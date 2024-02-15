@@ -1153,10 +1153,9 @@ bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx) {
   NamedAttrList envAttrs;
 
-#ifdef MODULAR_RELEASE_PACKAGE_BUILD
-  envAttrs.set("MODULAR_RELEASE_PACKAGE_BUILD",
-               IntegerAttr::get(IndexType::get(ctx), 1));
-#endif // MODULAR_RELEASE_PACKAGE_BUILD
+#ifdef MODULAR_PRODUCTION
+  envAttrs.set("MODULAR_PRODUCTION", IntegerAttr::get(IndexType::get(ctx), 1));
+#endif // MODULAR_PRODUCTION
 
 #ifdef MODULAR_PARANOID
   envAttrs.set("MODULAR_PARANOID", IntegerAttr::get(IndexType::get(ctx), 1));

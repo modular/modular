@@ -8,10 +8,6 @@ if (MODULAR_PARANOID)
   add_compile_definitions(MODULAR_PARANOID)
 endif()
 
-if (MODULAR_RELEASE_PACKAGE_BUILD)
-  add_compile_definitions(MODULAR_RELEASE_PACKAGE_BUILD)
-endif()
-
 string(TOLOWER ${CMAKE_BUILD_TYPE} build_type)
 string(TOLOWER ${MODULAR_KERNELS_BUILD_TYPE} kernels_build_type)
 add_compile_definitions(BUILD_TYPE=${build_type})
