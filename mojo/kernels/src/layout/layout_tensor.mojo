@@ -33,9 +33,9 @@ struct LayoutTensor[dtype: DType]:
 
 fn tile[
     dtype: DType
-](src: LayoutTensor[dtype], tiler: Tiler, coords: IntTuple) -> LayoutTensor[
-    dtype
-]:
+](
+    src: LayoutTensor[dtype], tiler: LayoutList, coords: IntTuple
+) -> LayoutTensor[dtype]:
     var tiled_layout = zipped_divide(src.layout, tiler)
     if len(coords) > 0:
         let offset = inner_product(coords, tiled_layout[1].stride)

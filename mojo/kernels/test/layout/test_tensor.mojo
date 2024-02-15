@@ -10,7 +10,7 @@ from kernel_utils.layout_tensor import LayoutTensor, tile
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
-    Tiler,
+    LayoutList,
     logical_divide,
     zipped_divide,
     print_layout,
@@ -53,9 +53,7 @@ fn test_basic_tensor_ops():
     print("----original matrix----")
     print_raw_major_tensor(row_major_tensor)
 
-    var tiler = Tiler()
-    tiler.append(Layout(2, 1))
-    tiler.append(Layout(2, 1))
+    var tiler = LayoutList(Layout(2, 1), Layout(2, 1))
 
     # CHECK: ----tile[ 0 , 0 ]----
     # CHECK: 0.0     1.0

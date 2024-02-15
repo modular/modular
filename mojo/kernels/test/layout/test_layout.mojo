@@ -9,7 +9,7 @@
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
-    Tiler,
+    LayoutList,
     coalesce,
     composition,
     complement,
@@ -81,13 +81,10 @@ fn test_logcial_divide():
             Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
         )
     )
-    var tiler = Tiler()
-    tiler.append(Layout(3, 3))
-    tiler.append(Layout(IntTuple(2, 4), IntTuple(1, 8)))
     print(
         logical_divide(
             Layout(IntTuple(9, IntTuple(4, 8)), IntTuple(59, IntTuple(13, 1))),
-            tiler,
+            LayoutList(Layout(3, 3), Layout(IntTuple(2, 4), IntTuple(1, 8))),
         )
     )
 
@@ -98,10 +95,12 @@ fn test_logcial_divide():
 fn test_logical_product():
     print("== test_logical_product")
     print(logical_product(Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)))
-    var tiler = Tiler()
-    tiler.append(Layout(3, 5))
-    tiler.append(Layout(4, 6))
-    print(logical_product(Layout(IntTuple(2, 5), IntTuple(5, 1)), tiler))
+    print(
+        logical_product(
+            Layout(IntTuple(2, 5), IntTuple(5, 1)),
+            LayoutList(Layout(3, 5), Layout(4, 6)),
+        )
+    )
 
 
 # CHECK-LABEL: test_print_layout
@@ -139,16 +138,12 @@ fn test_zipped_divide():
     print("== test_zipped_divide")
     # CHECK: Layout((2, (2, 4)):(4, (8, 1)))
     let layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
-    let tile_layout = Layout(2, 1)
-    print(zipped_divide(layout_4x4_row_major, tile_layout))
-    var tiler = Tiler()
-    tiler.append(tile_layout)
-    tiler.append(tile_layout)
+    print(zipped_divide(layout_4x4_row_major, Layout(2, 1)))
     # CHECK: Layout(((2, 2), (2, 2)):((4, 1), (8, 2)))
     print(
         zipped_divide(
             layout_4x4_row_major,
-            tiler,
+            LayoutList(Layout(2, 1), Layout(2, 1)),
         )
     )
 
