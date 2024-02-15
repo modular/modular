@@ -121,7 +121,7 @@ private:
 
   /// When we encounter a DeclRefType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
-  virtual void verifyRefType(DeclRefType refType) {}
+  virtual void verifyRefType(DeclRefTypeInterface refType) {}
 
   /// Optionally perform verification and emit an error.
   virtual void

@@ -14,6 +14,7 @@
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -754,6 +755,36 @@ std::optional<StringRef> DeclRefType::getAliasName(SymbolRefAttr symbol) {
       (!offset && symbol.getNestedReferences().empty()))
     return {};
   return leaf.substr(offset);
+}
+
+LogicalResult
+DeclRefType::verifySymbolUses(Operation *module,
+                              mlir::LockedSymbolTableCollection &symtab,
+                              Location loc) const {
+  DeclInterface decl;
+  {
+    CompilerTimeTraceScope traceScope("lookupSymbolIn");
+    decl = ::dyn_cast_or_null<DeclInterface>(
+        symtab.lookupSymbolIn(module, getSymbol()));
+  }
+  if (!decl) {
+    return mlir::emitError(loc)
+           << getSymbol() << " does not reference a KGEN type declaration";
+  }
+
+  if (getParamValues().empty() && decl.getInputParams().empty())
+    return success();
+
+  // We have to specialize the type's parameter decls.
+  ParameterEvaluator evaluator(decl.getInputParams(), getParamValues());
+  SmallVector<ParamDeclAttr, 8> specializedDecls;
+  for (ParamDeclAttr decl : decl.getInputParams())
+    specializedDecls.push_back(
+        ::cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
+
+  return verifyParamDeclsMatch(
+      "input parameter", "!kgen.declref symbol use", getParamValues(), loc,
+      getSymbol().getLeafReference(), specializedDecls, decl.getLoc());
 }
 
 //===----------------------------------------------------------------------===//
