@@ -38,7 +38,6 @@ struct MyData[A: Int, B: MyRP[3], C: AnyRegType]:
         self.c = c
 
 
-fn main():
+fn entry():
     alias rp = MyRP[3](4)
     let data = MyData[7, rp, MyRP[3]](rp)
-    print(data.a)
