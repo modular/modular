@@ -147,6 +147,10 @@ struct ParsedDWARFTypeAttributes {
       case DW_AT_type:
         type = form_value;
         break;
+
+      case DW_AT_GNU_vector:
+        isVector = true;
+        break;
       }
     }
   }
@@ -160,6 +164,7 @@ struct ParsedDWARFTypeAttributes {
   std::optional<uint64_t> byteSize;
   std::optional<uint64_t> alignment;
   uint32_t encoding = 0;
+  bool isVector = false;
 };
 
 /// Bag of data for all the attributes parsed from a struct member DWARF entry.
@@ -403,61 +408,37 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     break;
   }
   case DW_TAG_array_type: {
-    // The only array type we emit is simd, so we try to create one from the
-    // given data. A pack could also work, but its type would be extremely
-    // verbose.
-    DWARFDIE dtypeDie = attrs.type.Reference();
-    ParsedDWARFTypeAttributes dtypeAttrs(dtypeDie);
-
-    // FIXME(31838): Sometimes the dtype name is in the type name, and sometimes
-    // it is in the array name...
-    StringRef dtypeName;
-    CompilerType dtype = typeSystem.createCompilerTypeFromDType(attrs.name);
-    if (dtype.IsValid()) {
-      dtypeName = attrs.name;
-    } else {
-      dtype = typeSystem.createCompilerTypeFromDType(dtypeDie.GetName());
-      if (dtype.IsValid())
-        dtypeName = dtypeDie.GetName();
-    }
-
-    if (!dtype.IsValid()) {
-      dwarf->GetObjectFile()->GetModule()->ReportError(
-          "The array type at offset {0:x} with name '{1}' and element type "
-          "'{2}' couldn't be parsed as a SIMD type because no KGENDType name "
-          "was found.",
-          die.GetOffset(), attrs.name.AsCString(), dtypeDie.GetName());
-      break;
-    }
-
+    DWARFDIE elementTypeDie = attrs.type.Reference();
+    ParsedDWARFTypeAttributes elementTypeAttrs(elementTypeDie);
+    lldb_private::Type *elementType =
+        die.ResolveTypeUID(attrs.type.Reference());
     std::optional<SymbolFile::ArrayInfo> arrayInfo = ParseChildArrayInfo(die);
-    if (arrayInfo && !arrayInfo->element_orders.empty()) {
+
+    if (elementType && arrayInfo && !arrayInfo->element_orders.empty()) {
       size_t numElements = arrayInfo->element_orders.front();
 
-        // LLDB expects us to provide a lldb_private::Type for the element type
-        // of the SIMD.
-      TypeSP lldbDType = dwarf->MakeType(
-          dtypeDie.GetID(), ConstString(dtypeName),
-          dtypeAttrs.byteSize.value_or(0), nullptr, dtypeDie.GetID(),
-          lldb_private::Type::eEncodingIsUID, &dtypeAttrs.decl, dtype,
-          lldb_private::Type::ResolveState::Full);
-      CompilerType mojoType = typeSystem.createSIMDType(dtypeName, numElements);
+      CompilerType mojoType =
+          attrs.isVector
+              ? typeSystem.createSIMDType(elementTypeDie.GetName(), numElements)
+              : typeSystem.createPOPArrayType(
+                    elementType->GetFullCompilerType().GetOpaqueQualType(),
+                    numElements);
 
       if (mojoType.IsValid()) {
         type = dwarf->MakeType(
             die.GetID(), ConstString(),
-            attrs.byteSize.value_or(dtypeAttrs.byteSize.value_or(0) *
-                                    numElements),
+            attrs.byteSize.value_or(
+                mojoType.GetByteSize(/*exe_ctx=*/nullptr).value_or(0)),
             nullptr, die.GetID(), lldb_private::Type::eEncodingIsUID,
             &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
-        type->SetEncodingType(lldbDType.get());
+        type->SetEncodingType(elementType);
       }
     }
     if (!type) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
-          "The array type at offset {0:x} with element type '{1}' couldn't "
-          "be parsed as a SIMD type.",
-          die.GetOffset(), dtypeDie.GetName());
+          "The array type '{0}' at offset {1:x} with element type '{2}' "
+          "couldn't be parsed.",
+          attrs.name.AsCString(), die.GetOffset(), elementTypeDie.GetName());
     }
 
     break;

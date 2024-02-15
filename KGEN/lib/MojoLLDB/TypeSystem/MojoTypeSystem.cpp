@@ -342,6 +342,9 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
   if (isa<POP::SIMDType>(astType))
     return lldb::eTypeClassVector;
 
+  if (isa<POP::ArrayType>(astType))
+    return lldb::eTypeClassArray;
+
   if (impl->getIfStructDecl(astType))
     return lldb::eTypeClassStruct;
 
@@ -571,6 +574,9 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return simdTy.getResolvedSize().value_or(0);
   }
 
+  if (auto arrayType = dyn_cast<POP::ArrayType>(astType))
+    return arrayType.getResolvedSize().value_or(0);
+
   if (LIT::StructDeclOp structDecl = impl->getIfStructDecl(astType))
     return llvm::range_size(structDecl.getFieldDecls());
 
@@ -653,6 +659,17 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
         }
       }
     }
+  }
+
+  if (auto arrayType = dyn_cast<POP::ArrayType>(astType)) {
+    MojoASTTypeRef eltType(arrayType.getElementType());
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(eltType)) {
+      childName = std::string(llvm::formatv("[{0}]", idx));
+      childByteSize = layout->getByteSize();
+      childByteOffset = (int32_t)idx * (int32_t)childByteSize;
+      return createCompilerType(eltType);
+    }
     return {};
   }
 
@@ -719,7 +736,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   MojoASTTypeRef astType(type);
 
   // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
-  if (isa<PackType, POP::SIMDType>(astType)) {
+  if (isa<PackType, POP::SIMDType, POP::ArrayType>(astType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {
@@ -829,13 +846,18 @@ MojoTypeSystem::createCompilerTypeFromDType(StringRef dtype) {
 
 lldb_private::CompilerType MojoTypeSystem::createSIMDType(StringRef dtype,
                                                           size_t numElements) {
-  if (llvm::popcount(numElements) != 1)
-    return {};
   auto dTypeOr = DebugInfoEncoding::getKGENDTypeFromString(dtype);
   if (failed(dTypeOr))
     return {};
   return createCompilerType(
       KGEN::POP::SIMDType::get(getMLIRContext(), numElements, *dTypeOr));
+}
+
+lldb_private::CompilerType
+MojoTypeSystem::createPOPArrayType(lldb::opaque_compiler_type_t elementType,
+                                   size_t numElements) {
+  auto mlirEltType = mlir::Type::getFromOpaquePointer(elementType);
+  return createCompilerType(POP::ArrayType::get(numElements, mlirEltType));
 }
 
 MojoASTDeclRef

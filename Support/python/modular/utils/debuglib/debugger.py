@@ -14,7 +14,7 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from modular.utils.debuglib.lldbtypes import (
     SBDebugger,
@@ -82,16 +82,18 @@ def get_debugger() -> SBDebugger:
     return _debugger  # type: ignore
 
 
-def handle_command_for_context(command: str, context: Any) -> bool:
+def run_command_for_context(
+    command: str, context: Any
+) -> Tuple[bool, str, str]:
     """Execute the provided command using the provided context (thread, process
-    or frame) and print its output and error.
+    or frame).
+    print its output and error.
 
-    Return `True` if the command succeeded.
+    Returns a tuple [success, output, error].
 
     Note: it's better to use this instead of debugger.HandleCommand() because
     it doesn't work nicely if multiple targets exist at once, which happens
     when multiple test files are executed simultaneously."""
-
     result = lldb.SBCommandReturnObject()
     exe_ctx = lldb.SBExecutionContext(context)
     get_debugger().GetCommandInterpreter().HandleCommand(
@@ -101,12 +103,21 @@ def handle_command_for_context(command: str, context: Any) -> bool:
     output = str(result.GetOutput())
     error = str(result.GetError())
 
+    return (result.Succeeded(), output, error)
+
+
+def dump_command_for_context(command: str, context: Any) -> bool:
+    """Similar to run_command_for_context, but the output and error are printed
+    right away.
+
+    Returns True if and only if the command succeeded."""
+    [success, output, error] = run_command_for_context(command, context)
     if len(output) > 0:
         print(output)
     if len(error) > 0:
         print(error)
 
-    return result.Succeeded()
+    return success
 
 
 @dataclass
@@ -152,16 +163,22 @@ class StopContext:
             )
         return None
 
-    def handle_command(self, command: str) -> bool:
-        """Handle the given command using the current frame as context"""
-        return handle_command_for_context(command, self.frame)
+    def dump_command(self, command: str) -> bool:
+        """Run the given command using the current frame as context and print
+        its output and error."""
+        return dump_command_for_context(command, self.frame)
+
+    def run_command(self, command: str) -> Tuple[bool, str, str]:
+        """Run the given command using the current frame as context and return
+        a tuple [success, output, error]."""
+        return run_command_for_context(command, self.frame)
 
 
 def run_target(target: Any) -> StopContext:
     # We use this command because it nicely uses all the defaults from
     # the lldb init file, unlike debugger.Launch.
     with io.StringIO() as buf, redirect_stdout(buf):
-        assert handle_command_for_context("run", target)
+        assert dump_command_for_context("run", target)
 
     process = target.GetProcess()
     assert process.IsValid()
