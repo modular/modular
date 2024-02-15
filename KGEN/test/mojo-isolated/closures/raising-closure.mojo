@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: Check that a nested function with an effect can form a closure.
 

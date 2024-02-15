@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 # COM: Check that the parameter is properly added to the ClosureWrapper and ClosureImpl despite being defined two levels up.
 
 # CHECK: lit.struct.decl @"`_CI_
