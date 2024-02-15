@@ -26,7 +26,7 @@ struct CString:
         """
         Get `CString` as a owning `String`.
         """
-        return String(self.ptr)
+        return String(StringRef(self.ptr))
 
 
 @always_inline("nodebug")
