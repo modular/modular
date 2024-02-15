@@ -157,10 +157,12 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
                                               ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
-  std::unique_ptr<Runtime> runtime =
-      createNestedRuntime(RuntimeOptions()
-                              .withNumThreads(numThreads)
-                              .withProfileFilename(profileFilename));
+  // Create non global runtimes from mojo with mainWillDonate=false. Refer to
+  // Runtime.h for detailed explanation.
+  auto options = numThreads > 0 ? RuntimeOptions().withMainWillNotDonate()
+                                : RuntimeOptions();
+  std::unique_ptr<Runtime> runtime = createNestedRuntime(
+      options.withNumThreads(numThreads).withProfileFilename(profileFilename));
   return wrap(runtime.release());
 }
 
