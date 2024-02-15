@@ -2875,7 +2875,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   argList.parsedArgs = llvm::to_vector(parsedArgs);
   argList.effects = this->effects;
   argList.varEffects = this->varEffects;
-  if (paramList.isVarArgs)
+  if (paramList.hasVarArgs())
     argList.varEffects.setParamVarArgs();
 
   SpecialFunctionInfo fnInfo; // Not a named function.

@@ -322,8 +322,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     : declScope(declScope), shared(shared) {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(shared, declScope, EC_Type);
-
-  for (const ParsedArgument &arg : parsedParams) {
+  for (auto [idx, arg] : llvm::enumerate(parsedParams)) {
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
@@ -341,7 +340,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
       type = VariadicType::get(type, ArgConvention::BorrowedInReg);
-      isVarArgs = true;
+      variadicIndices.push_back(idx);
     }
 
     if (const ExprNode *initExpr = arg.initExpr) {
