@@ -24,6 +24,16 @@ lit.struct.decl @StructReturns<() -> dtype> {}
 
 // -----
 
+// expected-error @below {{custom op 'lit.func' expected no result parameters}}
+lit.func @func_param_return<() -> dtype> {}
+
+// -----
+
+// expected-error @below {{expected no result parameters}}
+!type = !lit.signature<<[] -> dtype>() -> ()>
+
+// -----
+
 lit.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
   lit.struct.field x : i32

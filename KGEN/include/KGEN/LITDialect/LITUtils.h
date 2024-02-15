@@ -98,23 +98,14 @@ void printOptionalParameterSpec(AsmPrinter &p,
 
 /// Parse a parameter signature (input/result types with optional default
 /// values) if present.
-ParseResult
-parseOptionalParamSignature(AsmParser &p,
-                            SmallVectorImpl<Type> &inputParamTypes,
-                            SmallVectorImpl<Type> &resultParamTypes,
-                            SmallVectorImpl<StringAttr> &paramNames,
-                            SmallVectorImpl<PassingKind> &paramPassingKinds,
-                            SmallVectorImpl<TypedAttr> &defaultPosParams,
-                            SmallVectorImpl<TypedAttr> &defaultKwOnlyParams);
+ParseResult parseOptionalParamSignature(AsmParser &p,
+                                        SmallVectorImpl<Type> &inputParamTypes,
+                                        ArgParamListAttr &paramListAttr);
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
 void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
-                                 ArrayRef<Type> resultParamTypes,
-                                 ArrayRef<StringAttr> paramNames,
-                                 ArrayRef<PassingKind> paramPassingKinds,
-                                 ArrayRef<TypedAttr> defaultPosParams,
-                                 ArrayRef<TypedAttr> defaultKwOnlyParams);
+                                 ArgParamListAttr paramListAttr);
 
 /// TODO: remove this (in favor of KGEN::parseSignatureValues) when function
 /// effects are moved to metadata.

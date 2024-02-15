@@ -61,34 +61,16 @@ static ParseResult parseTypeSignature(AsmParser &p,
                                       SmallVectorImpl<Type> &paramTypes,
                                       ArgParamListAttr &paramListAttrs,
                                       bool &paramVarArg) {
-  SmallVector<Type> resultParamTypes;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  if (parseOptionalParamSignature(p, paramTypes, resultParamTypes, paramNames,
-                                  paramPassingKinds, defaultPosParams,
-                                  defaultKwOnlyParams))
+  if (parseOptionalParamSignature(p, paramTypes, paramListAttrs))
     return failure();
-  if (!resultParamTypes.empty()) {
-    return p.emitError(p.getCurrentLocation(),
-                       "unexpected result parameters for type signature");
-  }
   paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
-  paramListAttrs =
-      ArgParamListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                            defaultPosParams, defaultKwOnlyParams,
-                            /*variadicIndices=*/{}, /*packIndices=*/{});
   return success();
 }
 
 static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
                                ArgParamListAttr paramListAttrs,
                                bool paramVarArg) {
-  printOptionalParamSignature(
-      p, paramTypes, /*resultParamTypes=*/{}, paramListAttrs.getNames(),
-      paramListAttrs.getPassingKinds(), paramListAttrs.getDefaultPos(),
-      paramListAttrs.getDefaultKwOnly());
+  printOptionalParamSignature(p, paramTypes, paramListAttrs);
   if (paramVarArg)
     p << " param_vararg";
 }
@@ -727,14 +709,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
       return failure();
 
-  SmallVector<Type> inputParamTypes, resultParamTypes;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<PassingKind> paramPassingKinds;
-  if (failed(parseOptionalParamSignature(
-          p, inputParamTypes, resultParamTypes, paramNames, paramPassingKinds,
-          defaultPosParams, defaultKwOnlyParams)))
+  SmallVector<Type> inputParamTypes;
+  ArgParamListAttr paramListAttr;
+  if (failed(parseOptionalParamSignature(p, inputParamTypes, paramListAttr)))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -790,13 +767,10 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                             defaultKwOnlyArgs, /*variadicIndices=*/{},
                             /*packIndices=*/{}),
-      ArgParamListAttr::get(ctx, paramNames, paramPassingKinds,
-                            defaultPosParams, defaultKwOnlyParams,
-                            /*variadicIndices=*/{}, /*packIndices=*/{}),
-      numLifetimeDecls, varEffects);
+      paramListAttr, numLifetimeDecls, varEffects);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
-      resultParamTypes, argConventions, effects, metadata);
+      /*resultParamTypes=*/{}, argConventions, effects, metadata);
   return success(!!signature);
 }
 
@@ -832,10 +806,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   if (unsigned numLifetimeDecls = getNumImplicitLifetimeDecls())
     p << '[' << numLifetimeDecls << ']';
 
-  printOptionalParamSignature(
-      p, signature.getParamTypes(), /*no result params*/ {},
-      signature.getParamNames(), signature.getParamPassingKinds(),
-      signature.getDefaultPosParams(), signature.getDefaultKwOnlyParams());
+  printOptionalParamSignature(p, signature.getParamTypes(),
+                              signature.getMetadata().getParamListAttrs());
 
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
