@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 # COM: Capture inside a nested escaping closure.
 
 

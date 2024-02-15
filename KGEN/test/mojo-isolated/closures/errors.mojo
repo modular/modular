@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %translate-with-packages -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
 # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}

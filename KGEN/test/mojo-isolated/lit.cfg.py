@@ -25,6 +25,10 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
+config.excludes = [
+    "test_package",
+]
+
 tool_dirs = [
     config.modular_tools_dir,
     config.mlir_tools_dir,
@@ -39,7 +43,7 @@ translate_with_prebuilt_packages = (
 )
 
 config.substitutions.append(
-    ("%translate-with-packages", translate_with_prebuilt_packages)
+    ("%parse-mojo-isolated", translate_with_prebuilt_packages)
 )
 
 tools = [

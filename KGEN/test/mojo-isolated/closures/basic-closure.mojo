@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %parse-mojo-isolated %s| FileCheck %s
 
 # COM: Check that a closure that captures a few things generates the right
 # COM: implementation struct.
@@ -15,7 +15,7 @@ struct MemType:
         pass
 
 
-fn use(y: MemType, z: Int, u: __mlir_type.index):
+fn use(y: MemType, z: Int, u: int):
     pass
 
 

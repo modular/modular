@@ -11,7 +11,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 # CHECK: lit.struct.decl @BoxedInt(!AnyType, !Copyable, !Movable)

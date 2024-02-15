@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: These tests are in a separate file only because mblack fails to parse them.
 # TODO(#31345): Move these back to global-var-let.mojo when mblack is fixed

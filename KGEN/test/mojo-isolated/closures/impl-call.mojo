@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 @value
@@ -23,7 +23,7 @@ struct MemType:
 # CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
-# CHECK-NEXT: %[[V4:.*]] = lit.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
+# CHECK-NEXT: %[[V4:.*]] = lit.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]])
 # CHECK-NEXT: lit.ref.store %[[V4]], %[[V0REF]]
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
 # CHECK-NEXT: lit.call @{{.*}}@"use{{.*}}"(%[[V5]])

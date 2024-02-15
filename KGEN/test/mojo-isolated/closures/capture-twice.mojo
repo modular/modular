@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %translate-with-packages %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 
 @value
@@ -16,7 +16,7 @@ struct Foo[a: Int]:
 
 
 fn bar[a: Int, b: Int]() -> Int:
-    return b * a
+    return b + a
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<[[X:\*".*"]]: !lit.signature<() -> !Int>, [[Y:\*".*"]]: {{.*}}Foo<:!Int apply(:!lit.signature<() -> !Int> [[X]])>

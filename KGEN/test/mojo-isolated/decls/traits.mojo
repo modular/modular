@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %translate-with-packages %s --kgen-print-inline-vtables | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-vtables | FileCheck %s
 
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>>

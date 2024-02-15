@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
-# RUN: kgen-translate %s -import-mojo -debug-level full
+# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s -debug-level full
 
 
 struct Mem:
