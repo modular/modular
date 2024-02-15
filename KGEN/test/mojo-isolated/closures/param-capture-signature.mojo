@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 # COM: Signature Capture
 
 
@@ -17,7 +17,7 @@ struct Foo[a: Int]:
 
 
 fn foo[Z: Int, W: Int]() -> Int:
-    return Z * W
+    return Z + W
 
 
 # COM: Closure Impl has correct parameters.

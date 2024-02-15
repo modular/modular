@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.struct.field call : !kgen.signature<!lit.signature<[1](!kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, "j": !Int borrow) -> !Int>>
 # CHECK: lit.func @"__call__{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem, %j: !Int borrow) -> !Int

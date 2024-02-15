@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: Check that just using the function type generates a closure wrapper.
 # COM: Check all the generated methods.

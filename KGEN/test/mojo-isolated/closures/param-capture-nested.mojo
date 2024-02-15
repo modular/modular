@@ -3,12 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 
 @value
 @register_passable
-struct Foo[A: Int, B: DType]:
+struct Foo[A: Int, B: Int]:
     fn get(self) -> Int:
         return A
 
@@ -18,15 +18,13 @@ fn use(a: Int):
 
 
 # COM: Ensure the captured parameter is added to the Closure Impl
-# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[C_TYPE:.*]]: !DType, |>
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[C_TYPE:.*]]: !Int, |>
 
 # COM: Ensure the captured parameter is added to the Closure Wrapper
-# CHECK: lit.struct.decl @"fn{{.*}}"<p0: !DType, |>
+# CHECK: lit.struct.decl @"fn{{.*}}"<p0: !Int, |>
 
 
-fn make_closure[
-    c_type: DType
-](w: Int) -> fn (z: Foo[2, c_type]) escaping -> None:
+fn make_closure[c_type: Int](w: Int) -> fn (z: Foo[2, c_type]) escaping -> None:
     fn foo(z: Foo[2, c_type]) escaping -> None:
         use(z.get())
 
