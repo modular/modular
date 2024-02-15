@@ -104,7 +104,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     varargOverload()
 
     # Expect packs to behave similarly to varargs.
-    # CHECK: %[[IDX3:.*]] = {{.*}}constant{{.*}} 3
+    # CHECK: %[[IDX3:.*]] = {{.*}}constant{{.*}}3
     # CHECK: lit.call @decls::@"packOverload({{.*}}int::Int)"(%[[IDX3]])
     packOverload(3)
     # CHECK:  lit.call @decls::@"packOverload()"()
@@ -219,7 +219,7 @@ fn take_variadic_struct[*Ts: AnyRegType](a: VariadicStruct[Ts]):
 
 # CHECK-LABEL: lit.func @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}int::Int]()"<:variadic<type> [!Int, {{.*}}SIMD{{.*}}f32}>, :!Int {{.*}}1
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}int::Int]()"<:variadic<type> [!Int, {{.*}}SIMD{{.*}}f32}, :!Int {1}
     VariadicStruct[Int, Float32].param_func[4]()
     # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<type> [!Int, {{.*}}SIMD{{.*}}f32
     take_variadic_struct(VariadicStruct[Int, Float32]())
@@ -354,7 +354,7 @@ fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
 
     # It is ok to mutate owned values.
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}} = 4
+    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}4
     # CHECK-NEXT: lit.ref.store [[FOUR]], [[AX]]
     a.x = 4
 
@@ -389,7 +389,7 @@ fn ownedConventionReg(
     _ = b.y
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
-    # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
+    # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <{1}>
     # CHECK: lit.ref.store [[ONE]], [[AX]]
     a.x = 1
 
@@ -419,21 +419,21 @@ fn callerFn(borrowed arg0: BorrowStruct):
 
 
 # CHECK-LABEL: lit.func @"defaultArgument
-# CHECK-SAME: %c: !Int borrow = #lit.struct<{value = 5}>)
+# CHECK-SAME: %c: !Int borrow = {5})
 fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
     return a + b
 
 
 # CHECK-LABEL: lit.func @"callDefaultArgument
 fn callDefaultArgument(x: Int) -> Int:
-    # CHECK: [[ARG1:%.*]] = kgen.param.constant{{.*}} = 3
-    # CHECK-NEXT: [[ARG2:%.*]] = kgen.param.constant{{.*}} = 5
+    # CHECK: [[ARG1:%.*]] = kgen.param.constant{{.*}}3
+    # CHECK-NEXT: [[ARG2:%.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, [[ARG1]], [[ARG2]])
     # CHECK-NEXT: lit.ref.store {{.*}}, %a
     var a = defaultArgument(x)
 
     # CHECK-NEXT: %b = lit.varlet.decl
-    # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
+    # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
     var b = defaultArgument(x, x)
     return a + b
@@ -441,7 +441,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
 # CHECK-SAME: (%a: !Int borrow = apply(:!lit.signature<("self": !Int borrow, "rhs": !Int borrow)
-# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}int::Int,{{.*}}int::Int)", {{.*}}p, #lit.struct<{value = 87}>))
+# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}int::Int,{{.*}}int::Int)", {{.*}}p, {87}))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -468,13 +468,13 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1):
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
     # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`0">
-    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
+    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}1}
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
     # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}([[IMMREF]])
     defaultArgumentNonRegisterType()
     # CHECK: lit.alias.decl *"none{{.*}}": none = <apply({{.*}}defaultArgumentNonRegisterType
-    # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}value = 1}>
+    # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}1}
     alias none = defaultArgumentNonRegisterType()
 
 
@@ -520,8 +520,8 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @decls::@"variadics({{.*}}builtin::int::Int*)"(%variadic)
     variadics()
-    # CHECK: %[[C7:.*]] = kgen.param.constant{{.*}}value = 7
-    # CHECK: %[[C11:.*]] = kgen.param.constant{{.*}}value = 11
+    # CHECK: %[[C7:.*]] = kgen.param.constant{{.*}}7
+    # CHECK: %[[C11:.*]] = kgen.param.constant{{.*}}11
     # CHECK: %[[VARIADIC:.*]] = pop.variadic.create [%[[C7]], %[[C11]]]
     # CHECK: call @decls::@"variadics({{.*}}builtin::int::Int*)"(%[[VARIADIC]])
     variadics(7, 11)
@@ -535,14 +535,14 @@ fn callVariadic[p: Int](x: Int):
 
     # CHECK: @"variadics({{.*}}builtin::int::Int*)", []
     alias EmptyVariadic = variadics()
-    # CHECK: @"variadics({{.*}}builtin::int::Int*)", [p, {{.*}} = 1{{.*}}]
+    # CHECK: @"variadics({{.*}}builtin::int::Int*)", [p, {1}]
     alias NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
     parameterizedVariadic(1, 2)
     # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:type !Int>
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> [{4}, {5}]>
     _ = VarArgsParameterizedStruct[4, 5]()
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
@@ -609,7 +609,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: %[[PACK4:.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK: lit.call @decls::@"pack{{.*}} [index, {{.*}}@builtin::@simd::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
     pack(Int(1).value, x, y)
-    # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
+    # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK: %[[PACK5:.*]] = kgen.pack.create(%[[INTCTOR]], %x, %y)
     # CHECK: lit.call @decls::@"pack{{.*}} [!Int, {{.*}}@builtin::@simd::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
     pack[Int, Float32, Int](Int(1).value, x, y)
@@ -671,7 +671,7 @@ def implicit_return_obj(p: Bool):
 
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int> attributes {isDef
 def defAlwaysRaises() -> Int:
-    # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return 0
@@ -679,7 +679,7 @@ def defAlwaysRaises() -> Int:
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int>
 fn fnThatRaises() raises -> Int:
-    # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return 0
@@ -798,7 +798,7 @@ struct StructExample:
     # CHECK: lit.func @"static({{.*}}int::Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}}isStatic
     @staticmethod
     fn static(x: Int):
-        # CHECK: %0 = {{.*}}#lit.struct<{value = 4}>
+        # CHECK: %0 = {{.*}}{4}
         # CHECK: lit.call @decls::@StructExample::@"static{{.*}}"(%0)
         StructExample.static(4)
         pass
@@ -1218,7 +1218,7 @@ fn returnTup1b() -> (Int,):
 # CHECK-LABEL: lit.func @"returnTup2
 # CHECK-SAME: -> !lit.declref<{{.*}}@tuple::@Tuple<{{.*}}:variadic<type> [!Int, !FloatLiteral]>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
-    # CHECK-NEXT: %0 = kgen.param.constant{{.*}}value = 4
+    # CHECK-NEXT: %0 = kgen.param.constant{{.*}}4
     # CHECK-NEXT: %1 = kgen.param.constant{{.*}}"2"
     # CHECK-NEXT: kgen.pack.create(%0, %1)
     return (Int(4), 2.0)
@@ -1288,7 +1288,7 @@ fn decorated_fn():
 
 
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
-# CHECK-NEXT: decorators <:none apply({{.*}}decorator_arg{{.*}}, #lit.struct<{value = 2}>
+# CHECK-NEXT: decorators <:none apply({{.*}}decorator_arg{{.*}}, {2}
 @decorator_arg(2)
 struct DecoratedStruct:
     pass

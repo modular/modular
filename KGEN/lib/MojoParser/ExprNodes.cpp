@@ -1887,7 +1887,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If all the fields are PValues, form a new PValue.
   if (allInitializersPValues) {
-    auto result = LITStructAttr::get(emitter.getContext(), fieldParamValues,
+    auto result = LITStructAttr::get(fieldParamValues,
                                      cast<DeclRefType>(initType.mlirType));
     return emitter.emitResult(result, this, dest);
   }

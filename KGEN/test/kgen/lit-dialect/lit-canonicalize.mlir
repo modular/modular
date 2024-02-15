@@ -51,8 +51,8 @@ lit.func @struct_extract_no_fold_insert(%struct0: !lit.declref<@FooStruct>) -> i
 }
 
 lit.func @struct_ops_fold() -> (!lit.declref<@FooStruct>, !lit.declref<@FooStruct>, index) {
-  // CHECK-DAG: %[[V0:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 0}>>
-  // CHECK-DAG: %[[V1:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 3}>>
+  // CHECK-DAG: %[[V0:.*]] = {{.*}} @FooStruct = <{a = 0, b = 0}>
+  // CHECK-DAG: %[[V1:.*]] = {{.*}} @FooStruct = <{a = 0, b = 3}>
   // CHECK-DAG: %[[V2:.*]] = {{.*}} = <3>
   %idx0 = index.constant 0
   %0 = lit.struct.create(a=%idx0, b=%idx0) : (index, index) -> !lit.declref<@FooStruct>

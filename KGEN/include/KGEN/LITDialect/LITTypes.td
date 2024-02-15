@@ -162,8 +162,9 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DeclRefType : LITType<"DeclRef", "declref",
-    [DeclareTypeInterfaceMethods<DeclRefTypeInterface>]> {
+def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
+    DeclareTypeInterfaceMethods<DeclRefTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!lit.declref` type references a type declaration and binds parameter

@@ -9,7 +9,7 @@
 # CHECK: #[[SOURCENAME_INT:.*]] = #debuginfo.source_name<(struct)"Int" from {{.*}}>
 # CHECK-DAG: #[[SOURCENAME_RP:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]] from <(module)"debuginfo-struct">>
 
-# CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} #lit.struct<{value = 3}>"> from <(module)"debuginfo-struct">>
+# CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} {3}"> from <(module)"debuginfo-struct">>
 # CHECK-DAG: #[[SOURCENAME_DATA:.*]] = #debuginfo.source_name<(struct)"MyData"[#[[SOURCENAME_INT]], #[[SOURCENAME_RP3]], <"type">] from <(module)"debuginfo-struct">>
 
 

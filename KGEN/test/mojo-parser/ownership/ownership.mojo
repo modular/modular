@@ -160,7 +160,7 @@ fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
-  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int #lit.struct<{value = 4}>>(%x)
+  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {4}>(%x)
 
 struct Complicated:
   var a: MemExample

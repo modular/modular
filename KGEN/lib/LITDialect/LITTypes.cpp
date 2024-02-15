@@ -172,6 +172,72 @@ ArrayRef<TypedAttr> TypeSignatureType::getDefaultKwOnlyParams() const {
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
+OptionalParseResult DeclRefType::parseValue(AsmParser &p,
+                                            TypedAttr &value) const {
+  if (failed(p.parseOptionalLBrace()))
+    return {};
+
+  // Handle `{}`.
+  if (succeeded(p.parseOptionalRBrace())) {
+    value = LITStructAttr::get({}, *this);
+    return mlir::success();
+  }
+
+  // Special-case `{<value>}`.
+  std::string name;
+  if (failed(p.parseOptionalKeywordOrString(&name))) {
+    TypedAttr element;
+    if (parseColonTypeParamValue(p, element))
+      return failure();
+    value = LITStructAttr::get(
+        {{StringAttr::get(p.getContext(), "value"), element}}, *this);
+    return p.parseRBrace();
+  }
+
+  // Parse `{(<name-type> = <value>)+}`.
+  Type type;
+  TypedAttr element;
+  SmallVector<std::tuple<StringAttr, TypedAttr>> values;
+  auto parseElement = [&]() -> ParseResult {
+    if (parseColonTypeOrIndex(p, type) || p.parseEqual() ||
+        parseParamValue(p, element, type))
+      return failure();
+    values.emplace_back(StringAttr::get(p.getContext(), name), element);
+    return success();
+  };
+  if (parseElement())
+    return failure();
+  while (succeeded(p.parseOptionalComma())) {
+    if (p.parseKeywordOrString(&name) || parseElement())
+      return failure();
+  }
+  value = LITStructAttr::get(values, *this);
+
+  return p.parseRBrace();
+}
+
+LogicalResult DeclRefType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto attr = ::dyn_cast<LITStructAttr>(value);
+  if (!attr)
+    return failure();
+  ArrayRef<std::tuple<StringAttr, TypedAttr>> values = attr.getValues();
+
+  p << '{';
+  if (values.size() == 1 && std::get<0>(values.front()) == "value") {
+    printColonTypeParamValue(p, std::get<1>(values.front()));
+  } else {
+    llvm::interleaveComma(values, p, [&](const auto &element) {
+      auto [name, value] = element;
+      p.printKeywordOrString(name);
+      printColonTypeOrIndex(p, value.getType());
+      p << " = ";
+      printParamValue(p, value);
+    });
+  }
+  p << '}';
+  return success();
+}
+
 DeclRefType DeclRefType::get(SymbolRefAttr name,
                              ArrayRef<TypedAttr> paramValues, Type metatype) {
   return get(name.getContext(), name, paramValues, metatype);

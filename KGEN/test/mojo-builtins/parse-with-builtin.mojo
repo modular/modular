@@ -39,7 +39,7 @@ fn testSIMDGetter[
     # CHECK: %a_0 = lit.varlet.decl "a"
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: %[[AVAL:.*]] = lit.ref.load %a_0
-    # CHECK: %[[ZERO:.*]] = kgen.param.constant: {{.*}} = 0
+    # CHECK: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])
     # CHECK: %[[RES:.*]] = lit.struct.extract %[[GOT]][value]
     # CHECK: lit.return %[[RES]]
