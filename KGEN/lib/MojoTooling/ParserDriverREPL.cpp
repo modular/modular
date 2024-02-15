@@ -472,7 +472,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   auto addVars = [&](ASTDecl &decl) {
     for (auto &[name, decls] : decl.getDeclsInScope())
-      if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
+      if (decls.size() == 1 && isa<VarLetDeclOp>(*decls.front()))
         variables.emplace_back(name, decls.front());
   };
   addVars(exprFnDecl);
@@ -492,17 +492,17 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
   auto anyRegTypeType = structBuilder.getType<TypeType>();
-  auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
-                                      mlir::Type elementType,
-                                      TypedAttr lifetimeAttr) -> MRValue {
+  auto checkInsertPersistentVar = [&](VarLetDeclOp varOp) -> MRValue {
+    Type elementType = varOp.getType().getElementType();
     PointerType type = PointerType::get(elementType);
 
     // Check if the variable should be persisted.
-    if (!listener.shouldPersistVariable(name, elementType))
+    if (!listener.shouldPersistVariable(varOp.getNameAttr(), elementType))
       return {};
 
     // The variable was persisted, insert a new field into the state struct.
-    std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
+    std::string newFieldName =
+        ("__new_repl_var_" + varOp.getNameAttr().strref()).str();
     auto newField = structBuilder.create<LIT::StructFieldOp>(
         varOp->getLoc(), newFieldName, PointerType::get(type));
 
@@ -538,53 +538,25 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
     // In order to use the pointer as a reference we force cast.
     // FIXME(references): switch AlignedAllocOp to use references
-    TypedAttr lifetime;
-    if (auto varLetOp = dyn_cast<LIT::VarLetDeclOp>(varOp)) {
-      // Declare the lifetime as a placeholder, we're going to replace this,
-      // so we need to define the lifetime.
-      lifetime = varLetOp.getType().getLifetime();
-      builder.create<ParamDeclareOp>(varLetOp.getParamDecl(),
-                                     LifetimeAttr::get(lifetime.getType()));
-    } else {
-      // letreg is going to be removed.  Just use a dummy lifetime.
-      lifetime = builder.getAttr<LifetimeAttr>(/*isMut=*/true);
-    }
 
+    // Declare the lifetime as a placeholder, we're going to replace this,
+    // so we need to define the lifetime.
+    TypedAttr lifetime = varOp.getType().getLifetime();
+    builder.create<ParamDeclareOp>(varOp.getParamDecl(),
+                                   LifetimeAttr::get(lifetime.getType()));
     mallocCast = builder
                      .create<mlir::UnrealizedConversionCastOp>(
                          RefType::get(elementType, lifetime), mallocCast)
                      .getResult(0);
-
     return MRValue(mallocCast);
   };
 
   for (auto &[name, decl] : variables) {
-    // Handle register based let decls. These have an initializer, and never
-    // expose the actual pointer.
-    if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
-      MRValue field =
-          checkInsertPersistentVar(letOp, letOp.getNameAttr(), letOp.getType(),
-                                   LifetimeAttr::get(letOp.getContext(), true));
-      if (!field)
-        continue;
-      decl->setIRValue(field);
-
-      // Store the value in the persistent state struct.
-      OpBuilder builder(letOp);
-      builder.create<RefStoreOp>(letOp.getLoc(), letOp.getValue(), field);
-
-      // Replace all references of the original decl with the initializer.
-      letOp.replaceAllUsesWith(letOp.getValue());
-      letOp.erase();
-      continue;
-    }
     // Handle memory based decls.
-    if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
-      if (MRValue field = checkInsertPersistentVar(
-              letOp, letOp.getNameAttr(), letOp.getType().getElementType(),
-              letOp.getType().getLifetime())) {
-        letOp.replaceAllUsesWith(field);
-        letOp.erase();
+    if (auto varOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
+      if (MRValue field = checkInsertPersistentVar(varOp)) {
+        varOp.replaceAllUsesWith(field);
+        varOp.erase();
         decl->setIRValue(field);
       }
       continue;

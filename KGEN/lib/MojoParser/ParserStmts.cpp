@@ -2110,27 +2110,6 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     return declParseError();
   }
 
-  // Now that this has been fully checked, we can promote to a LetRegDeclOp
-  // if this was a non-parameteric register-passable `let` declaration with
-  // an initializer.  We don't care about the address being available and
-  // this produces smaller IR.
-  ASTType inferredRValueType = ASTType(varOp.getType().getElementType());
-  if (varOp->hasOneUse() && varOp.getKind() == VarLetDeclKind::Let &&
-      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
-    // Check if the single use is a store. Otherwise, the register-passable
-    // `let` decl could have been assigned through a generic call.
-    if (auto store = dyn_cast<RefStoreOp>(*varOp->user_begin())) {
-      // Create new LetRegDeclOp and put it into the ASTDecl.
-      OpBuilder builder(store);
-      decl.setIRValue(&*builder.create<LetRegDeclOp>(
-          varOp.getLoc(), varOp.getNameAttr(), store.getArg()));
-
-      // Remove the store and the original VarLetDeclOp.
-      store->erase();
-      varOp->erase();
-    }
-  }
-
   // Now mark the decl as fully resolved.
   decl.resolvedness = DeclResolvedness::fully;
 

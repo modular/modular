@@ -10,7 +10,7 @@ fn get_bool() -> Bool:
 
 
 fn main():
-    let true = True
-    let false = False
-    let other = get_bool()
+    var true = True
+    var false = False
+    var other = get_bool()
     print("end")  # breakpoint

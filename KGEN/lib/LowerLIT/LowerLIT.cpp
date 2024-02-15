@@ -222,14 +222,6 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
           call, call.getResultTypes(), call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       call.setImplicitLifetimes({});
-    } else if (auto letDecl = dyn_cast<LetRegDeclOp>(op)) {
-      // Build information for this decl if necessary.
-      if (buildingDebugVars) {
-        buildDebugInfoValue(b, letDecl, letDecl.getName(), funcSpAttr.getFile(),
-                            letDecl.getOperand(), letDecl.getType());
-      }
-
-      b.replaceOp(letDecl, letDecl.getOperand());
     } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
       RefType varRegType = varDecl.getType();

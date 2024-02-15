@@ -1625,25 +1625,6 @@ LogicalResult AliasDeclOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// LetRegDeclOp
-//===----------------------------------------------------------------------===//
-
-void LetRegDeclOp::build(OpBuilder &builder, OperationState &state,
-                         Type resultType, StringAttr name) {
-  state.addAttribute(getNameAttrName(state.name), name);
-  state.addTypes(resultType);
-}
-
-void LetRegDeclOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), getName());
-}
-
-OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
-  return adaptor.getValue();
-}
-
-//===----------------------------------------------------------------------===//
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
