@@ -787,6 +787,19 @@ DeclRefType::verifySymbolUses(Operation *module,
       getSymbol().getLeafReference(), specializedDecls, decl.getLoc());
 }
 
+void DeclRefType::printSymbol(AsmPrinter &p) const {
+  // Use the alias printer if suitable.
+  if (succeeded(p.printAlias(*this)))
+    return;
+
+  p << getSymbol();
+  printParameterValues(p, getParamValues());
+  if (auto type = getMetaType(); !::isa<TypeType>(type)) {
+    p << " : ";
+    printKGENType(p, type);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // IntLiteralType
 //===----------------------------------------------------------------------===//
