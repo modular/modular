@@ -179,23 +179,18 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
   }
 
   // Parse symbol references as decl reference types.
-  SymbolRefAttr symbol;
-  OptionalParseResult result = p.parseOptionalAttribute(symbol);
-  if (result.has_value()) {
-    if (failed(*result))
-      return failure();
-    SmallVector<TypedAttr> values;
-    if (parseParameterValues(p, values))
-      return failure();
-    Type metatype;
-    if (succeeded(p.parseOptionalColon())) {
-      if (parseKGENType(p, metatype))
+  if (dialect->symbolTypeParser) {
+    SymbolRefAttr symbol;
+    OptionalParseResult result = p.parseOptionalAttribute(symbol);
+    if (result.has_value()) {
+      if (failed(*result))
         return failure();
-    } else {
-      metatype = TypeType::get(p.getContext());
+      FailureOr<Type> symbolResult = dialect->symbolTypeParser(p, symbol);
+      if (failed(symbolResult))
+        return failure();
+      type = *symbolResult;
+      return LogicalResult::success();
     }
-    type = DeclRefType::get(symbol, values, metatype);
-    return LogicalResult::success();
   }
 
   // Try to parse an optional signature. Signatures can begin with `<` or `(`.

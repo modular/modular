@@ -33,6 +33,22 @@ void LITDialect::registerTypes() {
   dialect->registerMnemonicType<MetaTypeType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<LifetimeType>();
+
+  // Register the DeclRefType parser.
+  getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
+      [&](AsmParser &p, SymbolRefAttr symbol) -> FailureOr<Type> {
+        SmallVector<TypedAttr> values;
+        if (parseParameterValues(p, values))
+          return failure();
+        Type metatype;
+        if (succeeded(p.parseOptionalColon())) {
+          if (parseKGENType(p, metatype))
+            return failure();
+        } else {
+          metatype = TypeType::get(p.getContext());
+        }
+        return DeclRefType::get(symbol, values, metatype);
+      });
 }
 
 //===----------------------------------------------------------------------===//

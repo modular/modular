@@ -60,6 +60,12 @@ def KGENDialect : Dialect {
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
 
+    /// Set the special parser for symbol references.
+    void setSymbolTypeParser(
+        std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> parser) {
+      symbolTypeParser = std::move(parser);
+    }
+
   private:
     /// The map of keyword parsers.
     llvm::StringMap<TypeParseFn> typeParseFns;
@@ -67,6 +73,9 @@ def KGENDialect : Dialect {
     DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
     /// A map containing the "names" of types.
     DenseMap<mlir::TypeID, StringRef> typeNames;
+
+    /// Function that parses symbol references as types.
+    std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> symbolTypeParser;
 
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.
