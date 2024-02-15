@@ -11,9 +11,7 @@ from ._utils import call_dylib_func, exchange
 from ._status import Status
 from sys.param_env import is_defined
 
-alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
-    "MODULAR_RELEASE_PACKAGE_BUILD"
-]()
+alias MODULAR_PRODUCTION = is_defined["MODULAR_PRODUCTION"]()
 
 
 @value
@@ -101,7 +99,7 @@ struct RuntimeConfig:
             self.ptr.set_allocator_type(self.lib, allocator_type)
 
         @parameter
-        if MODULAR_RELEASE_PACKAGE_BUILD:
+        if MODULAR_PRODUCTION:
             if device != _Device.CPU:
                 print(
                     "The device",
