@@ -236,17 +236,15 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
                 summaryFlags, /*regex=*/false);
   // For the REPL
-  AddCXXSummary(
-      mojoCategorySP, builtinStringSummaryProvider,
-      "builtin::string::String summary provider",
-      R"(!lit.declref<@stdlib::@builtin::@string::@String, !lit.metatype<@stdlib::@builtin::@string::@String>>)",
-      summaryFlags, /*regex=*/false);
+  AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
+                "builtin::string::String summary provider",
+                R"(!lit.declref<@stdlib::@builtin::@string::@String>)",
+                summaryFlags, /*regex=*/false);
   // For DWARF
-  AddCXXSummary(
-      mojoCategorySP, builtinStringSummaryProvider,
-      "builtin::string::String summary provider",
-      R"(!lit.declref<@builtin::@string::@String, !lit.metatype<@builtin::@string::@String>>)",
-      summaryFlags, /*regex=*/false);
+  AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
+                "builtin::string::String summary provider",
+                R"(!lit.declref<@builtin::@string::@String>)", summaryFlags,
+                /*regex=*/false);
   AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
                 "REPLResultRefType summary provider", kREPLResultRegex,
                 summaryFlags, /*regex=*/true);

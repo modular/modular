@@ -303,7 +303,7 @@ struct CrazyRegisterPassable[a: Int](CrazyTrait):
     pass
 
     # CHECK-LABEL: lit.func @"`thunk_foo
-    # CHECK-SAME: <b>(%__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>>{{.*}} byref_result, |,
+    # CHECK-SAME: <b>(%__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result, |,
     # CHECK-SAME: %self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
     # CHECK-SAME: %c: index borrow) -> !kgen.none
     fn foo[b: Int](self, c: Int) -> Self:

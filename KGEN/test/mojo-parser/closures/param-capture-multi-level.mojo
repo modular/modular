@@ -21,7 +21,7 @@ fn bar[a: Int, b: Int]() -> Int:
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<[[X:\*".*"]]: !lit.signature<() -> !Int>, [[Y:\*".*"]]: {{.*}}Foo<:!Int apply(:!lit.signature<() -> !Int> [[X]])>
 # CHECK: lit.func @"__call__{{.*}}(
-# CHECK: constant: !Int = <{{.*}} [[X]])> {{.*}} [[Y]], "b">
+# CHECK: constant: !Int = <{{.*}} [[X]])> [[Y]], "b">
 fn parameter_capture_multiple_levels[
     a: Int
 ](c: Int) -> fn (x: Int) escaping -> Int:

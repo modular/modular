@@ -46,7 +46,8 @@ void LITDialect::registerTypes() {
           if (parseKGENType(p, metatype))
             return failure();
         } else {
-          metatype = TypeType::get(p.getContext());
+          metatype = MetaTypeType::get(symbol, values,
+                                       TypeSignatureType::get(p.getContext()));
         }
         return DeclRefType::get(symbol, values, metatype);
       });
@@ -232,10 +233,32 @@ void DeclRefType::printSymbol(AsmPrinter &p) const {
 
   p << getSymbol();
   printParameterValues(p, getParamValues());
-  if (auto type = getMetaType(); !::isa<TypeType>(type)) {
-    p << " : ";
-    printKGENType(p, type);
-  }
+  if (auto mt = ::dyn_cast<MetaTypeType>(getMetaType()))
+    if (mt.getSignature().getInputParamTypes().empty())
+      return;
+  p << " : ";
+  printKGENType(p, getMetaType());
+}
+
+static ParseResult parseOptionalMetaType(AsmParser &p, Type &metatype,
+                                         SymbolRefAttr symbol,
+                                         ArrayRef<TypedAttr> paramValues) {
+  if (succeeded(p.parseOptionalComma()))
+    return parseKGENType(p, metatype);
+
+  metatype = MetaTypeType::get(symbol, paramValues,
+                               TypeSignatureType::get(p.getContext()));
+  return success();
+}
+
+static void printOptionalMetaType(AsmPrinter &p, Type metatype,
+                                  SymbolRefAttr symbol,
+                                  ArrayRef<TypedAttr> paramValues) {
+  if (auto mt = dyn_cast<MetaTypeType>(metatype))
+    if (mt.getSignature().getInputParamTypes().empty())
+      return;
+  p << ", ";
+  printKGENType(p, metatype);
 }
 
 //===----------------------------------------------------------------------===//

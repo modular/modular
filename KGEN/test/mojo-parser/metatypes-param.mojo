@@ -31,7 +31,7 @@ struct Param[x: Int]:
 
     # COM: Test self type of parametric struct.
     # CHECK-LABEL: lit.func @"self_type
-    # CHECK-SAME: -> !lit.declref<[[SELF:.*]], !lit.metatype<[[SELF]]>>
+    # CHECK-SAME: -> !lit.declref<[[SELF:.*]]>
     @staticmethod
     fn self_type() -> Self:
         pass
@@ -58,7 +58,7 @@ fn fully_bound_alias():
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<1>
     BoundType.foo()
-    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !lit.declref<{{.*}}@Param<1>, !lit.metatype<{{.*}}@Param<1>>
+    # CHECK: call {{.*}}@Param::@"self_type()"<1>{{.*}} -> !lit.declref<{{.*}}@Param<1>>
     _ = BoundType.self_type()
 
 
@@ -129,7 +129,7 @@ fn partial_autoparam(value: TwoParam[y=`1`]):
 @register_passable("trivial")
 struct ParamVarArg[F: Int, *I: Int]:
     # CHECK-LABEL: lit.func @"self_type
-    # CHECK-SAME: @ParamVarArg<F, :variadic<index> I>, !lit.metatype<{{.*}}@ParamVarArg<F, :variadic<index> I>>
+    # CHECK-SAME: @ParamVarArg<F, :variadic<index> I>
     @staticmethod
     fn self_type() -> Self:
         # CHECK: Unbound{{.*}}: {{.*}}@ParamVarArg<?, :variadic<index> ?>, <"F": index, "I": variadic<index>> param_vararg>
@@ -154,15 +154,15 @@ struct DependentParam[
 # CHECK-LABEL: lit.func @"direct_binding
 fn direct_binding():
     # Test direct bind of DeclRefType
-    # CHECK: alias.decl *"a{{.*}} metatype<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> : metatype<[[PT]]<?>> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>
+    # CHECK: alias.decl *"a{{.*}} metatype<[[DEP:.*]]<?, ?, :[[PT:.*]]<?> ?>, <"a": index, "b": index, "c": [[PT]]<*(0,1)>
     alias a = DependentParam
-    # CHECK: alias.decl *"b{{.*}} metatype<[[DEP]]<1, ?, :[[PT]]<?> : metatype<[[PT]]<?>> ?>, <"b": index, "c": [[PT]]<*(0,0)>
+    # CHECK: alias.decl *"b{{.*}} metatype<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>
     alias b = DependentParam[__mlir_attr.`1:index`]
-    # CHECK: alias.decl *"c{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> ?>, <"c": [[PT]]<2>
+    # CHECK: alias.decl *"c{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>
     alias c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
 
     # Test partial bind of DeclRefType
-    # CHECK: alias.decl *"d{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> ?>, <"c": [[PT]]<2>
+    # CHECK: alias.decl *"d{{.*}} metatype<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>
     alias d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
 
 
@@ -171,11 +171,11 @@ fn indirect_binding():
     # CHECK: alias.decl [[a:\*"a.*"]]: metatype
     alias a = DependentParam
     # Test indirect binds.
-    # CHECK: alias.decl [[b:\*"b.*"]]: metatype<[[DEP]]<1, ?, :[[PT]]<?> : {{.*}}, <"b": index, "c": [[PT]]<*(0,0)>{{.*}} = <#lit.bind_type<{{.*}} [[a]], [1, ?, ?]>>
+    # CHECK: alias.decl [[b:\*"b.*"]]: metatype<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>{{.*}} = <#lit.bind_type<{{.*}} [[a]], [1, ?, ?]>>
     alias b = a[__mlir_attr.`1:index`]
-    # CHECK: alias.decl [[c:\*"c.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> : {{.*}}, <"c": [[PT]]<2>{{.*}} = <#lit.bind_type<{{.*}} [[b]], [2, ?]>>
+    # CHECK: alias.decl [[c:\*"c.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>{{.*}} = <#lit.bind_type<{{.*}} [[b]], [2, ?]>>
     alias c = b[__mlir_attr.`2:index`]
-    # CHECK: alias.decl [[d:\*"d.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> : metatype<[[PT]]<2>> *?>> = <#lit.bind_type<{{.*}} [[c]], [*?]>>
+    # CHECK: alias.decl [[d:\*"d.*"]]: metatype<[[DEP]]<1, 2, :[[PT]]<2> *?>> = <#lit.bind_type<{{.*}} [[c]], [*?]>>
     alias d = c[
         __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]
     ]
