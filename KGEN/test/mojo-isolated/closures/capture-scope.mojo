@@ -6,7 +6,7 @@
 # RUN: %translate-with-packages %s | FileCheck %s
 
 
-fn use(x: Int):
+fn use(x: int):
     pass
 
 
@@ -14,7 +14,7 @@ fn use(x: Int):
 # CHECK-NEXT: lit.struct.field field0 : index
 
 
-fn makes_escaping_closure(x: Int):
+fn makes_escaping_closure(x: int):
     fn bar() escaping:
         try:
             use(x)

@@ -9,23 +9,23 @@
 
 @register_passable("trivial")
 struct MyInt:
-    var value: Int
+    var value: int
 
     @always_inline("nodebug")
-    fn __init__(v: Int) -> Self:
+    fn __init__(v: int) -> Self:
         return Self {value: v}
 
 
-fn overloaded_param[a: Int, b: MyInt]():
+fn overloaded_param[a: int, b: MyInt]():
     pass
 
 
-fn overloaded_param[a: Int, b: Int]():
+fn overloaded_param[a: int, b: int]():
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_params_overload{{.*}}"<x, y>
-fn test_kw_params_overload[x: Int, y: Int]():
+fn test_kw_params_overload[x: int, y: int]():
     # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, y>()
     overloaded_param[b=y, a=x]()
 
@@ -34,16 +34,16 @@ fn test_kw_params_overload[x: Int, y: Int]():
     overloaded_param[b = MyInt(y), a=x]()
 
 
-fn overloaded_arg(a: Int, b: MyInt):
+fn overloaded_arg(a: int, b: MyInt):
     pass
 
 
-fn overloaded_arg(a: Int, b: Int):
+fn overloaded_arg(a: int, b: int):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_kw_args_overload{{.*}}"(%x: index borrow, %y: index borrow)
-fn test_kw_args_overload(x: Int, y: Int):
+fn test_kw_args_overload(x: int, y: int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
 
@@ -62,15 +62,15 @@ fn take_kw_param_infer[B: AnyRegType](a: MyInt, b: B):
 
 
 # CHECK-LABEL: lit.func @"test_kw_args_param_infer
-fn test_kw_args_param_infer(x: Int, f: Float, s: MyInt):
+fn test_kw_args_param_infer(x: int, f: float, s: MyInt):
     # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
     take_kw_param_infer(x, b=f)
 
     # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
-    take_kw_param_infer[Int](b=f, a=x)
+    take_kw_param_infer[int](b=f, a=x)
 
     # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type index, :type scalar<f64>>(%x, %f)
-    take_kw_param_infer[Int, Float](b=f, a=x)
+    take_kw_param_infer[int, float](b=f, a=x)
 
     # CHECK: call {{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}<:type index>(%s, %x)
     take_kw_param_infer(s, b=x)
@@ -110,7 +110,7 @@ struct MyElement(Copyable):
 
 
 struct ConvertibleFromInt:
-    fn __init__(inout self, a: Int):
+    fn __init__(inout self, a: int):
         pass
 
 
@@ -120,11 +120,11 @@ struct MyContainer[T: Copyable]:
     fn foo(self, limits: ConvertibleFromInt):
         pass
 
-    fn foo(self, index: Int) -> T:
+    fn foo(self, index: int) -> T:
         return self.v
 
 
 # CHECK-LABEL: lit.func @"test_impl
-fn test_impl(a: MyContainer[MyElement], b: Int):
+fn test_impl(a: MyContainer[MyElement], b: int):
     # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index borrow) -> !kgen.none
     _ = a.foo(b)

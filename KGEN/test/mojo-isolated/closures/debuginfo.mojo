@@ -21,8 +21,6 @@
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
-alias int = __mlir_type.index
-
 
 fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
     fn myclosure(n: int) escaping -> int:

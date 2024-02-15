@@ -5,15 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %translate-with-packages %s | kgen-opt -verify-parameters | FileCheck %s
 
-alias Int = __mlir_type.index
-
 
 @value
 @register_passable
-struct Foo[x: Int]:
-    var b: Int
+struct Foo[x: int]:
+    var b: int
 
-    fn get(self) -> Int:
+    fn get(self) -> int:
         return self.b
 
 
@@ -22,8 +20,8 @@ struct Foo[x: Int]:
 # CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<[[a]]>, [[Y]])>
 
 
-fn alias_ref_apply_in_sig[a: Int]():
+fn alias_ref_apply_in_sig[a: int]():
     alias Y = Foo[a](__mlir_attr.`2 : index`)
 
-    fn p_capture(x: Int, y: Foo[Y.get()]) escaping -> Int:
+    fn p_capture(x: int, y: Foo[Y.get()]) escaping -> int:
         return Foo[a](x).get()

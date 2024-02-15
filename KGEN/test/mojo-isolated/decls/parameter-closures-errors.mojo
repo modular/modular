@@ -7,7 +7,7 @@
 # RUN: %translate-with-packages -verify-diagnostics %s
 
 
-fn bind_fat_to_thin_target[g: fn (y: Int) -> Int](x: Int):
+fn bind_fat_to_thin_target[g: fn (y: int) -> int](x: int):
     pass
 
 
@@ -16,7 +16,7 @@ fn bind_fat_to_thin_main():
 
     @__copy_capture(x)
     @parameter
-    fn g(y: Int) -> Int:
+    fn g(y: int) -> int:
         return x
 
     # expected-error @below {{cannot pass 'fn(y = index) capturing -> index' value, parameter expected 'fn(y = index) -> index'}}
@@ -24,12 +24,12 @@ fn bind_fat_to_thin_main():
     Bound(3)
 
 
-fn makeClosure(x: Int):
+fn makeClosure(x: int):
     var z = __mlir_op.`index.add`(x, x)
 
     @__copy_capture(z)
     @parameter
-    fn formatter() -> Int:
+    fn formatter() -> int:
         # expected-error @below {{expression must be mutable in assignment}}
         z = __mlir_op.`index.add`(z, z)
         return z
@@ -39,7 +39,7 @@ fn makeClosure(x: Int):
 
 @value
 struct MemType:
-    var a: Int
+    var a: int
 
     fn foo(self) -> MemType:
         return MemType(__mlir_op.`index.add`(self.a, self.a))
@@ -47,9 +47,9 @@ struct MemType:
 
 @register_passable
 struct NoCopyType:
-    var a: Int
+    var a: int
 
-    fn __init__(aa: Int) -> Self:
+    fn __init__(aa: int) -> Self:
         return NoCopyType {a: aa}
 
     fn foo(self) -> NoCopyType:
@@ -66,14 +66,16 @@ fn makeClosure(x: MemType):
     # expected-error @below {{'NoCopyType' does not implement the '__copyinit__' method}}
     @__copy_capture(z, rp)
     @parameter
-    fn formatter() -> Int:
+    fn formatter() -> int:
         return z.a
 
     let y = formatter()
 
-fn makeClosureWithCaptureLetWarn(x: Int):
+
+fn makeClosureWithCaptureLetWarn(x: int):
     let z = x
+
     @parameter
-    async fn formatter() -> Int:
+    async fn formatter() -> int:
         # expected-error @below {{cannot capture let without copy: z}}
         return z

@@ -11,16 +11,13 @@
 # CHECK-COUNT-1: lit.struct.decl @"fn(
 
 
-alias Int = __mlir_type.index
-
-
-fn use(a: Int):
+fn use(a: int):
     pass
 
 
-fn makes_escaping_closure(a: Int):
-    fn dummy(n: Int) escaping:
+fn makes_escaping_closure(a: int):
+    fn dummy(n: int) escaping:
         use(a)
 
-    fn duplicate(n: Int) escaping:
+    fn duplicate(n: int) escaping:
         use(a)

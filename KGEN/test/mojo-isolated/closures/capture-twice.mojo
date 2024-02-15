@@ -15,6 +15,6 @@
 fn foo():
     let w = `5`
 
-    fn bar() escaping -> Int:
+    fn bar() escaping -> int:
         let x = __mlir_op.`index.add`(w, w)
         return x
