@@ -3179,12 +3179,12 @@ fn conv_transpose[
     if input_rank == 3:
         pad_w = Index(paddings[0], paddings[1])
     elif input_rank == 4:
-        pad_h = Index(paddings[0], paddings[2])
-        pad_w = Index(paddings[1], paddings[3])
+        pad_h = Index(paddings[0], paddings[1])
+        pad_w = Index(paddings[2], paddings[3])
     elif input_rank == 5:
-        pad_d = Index(paddings[0], paddings[3])
-        pad_h = Index(paddings[1], paddings[4])
-        pad_w = Index(paddings[2], paddings[5])
+        pad_d = Index(paddings[0], paddings[1])
+        pad_h = Index(paddings[2], paddings[3])
+        pad_w = Index(paddings[4], paddings[5])
 
     @always_inline
     @__copy_capture(stride_tuple, pad_h, pad_w)
