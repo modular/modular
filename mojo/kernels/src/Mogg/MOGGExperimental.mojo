@@ -256,9 +256,11 @@ fn view_like_custom_op_target(
 
 @mogg_register_override("mo.static.broadcast_to", 1000)
 @export
-fn broadcast(
-    x: Tensor, shape: StaticIntTuple
-) -> Tensor[x.type, DimList.create_unknown[shape.size]()]:
+fn broadcast[
+    rank: Int
+](x: Tensor, shape: StaticIntTuple[rank]) -> Tensor[
+    x.type, DimList.create_unknown[shape.size]()
+]:
     var new_shape = IntList[DimList.create_unknown[shape.size]()]()
     var new_stride = IntList[DimList.create_unknown[shape.size]()]()
 
