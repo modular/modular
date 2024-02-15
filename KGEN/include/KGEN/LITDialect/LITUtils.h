@@ -39,6 +39,7 @@ namespace LIT {
 class VariadicEffects;
 class LITSignatureType;
 class PassingKindArrayAttr;
+class ArgParamListAttr;
 enum class PassingKind : uint32_t;
 
 /// Returns whether the given attribute is a LIT type expression.
@@ -95,11 +96,8 @@ parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
 /// Print a parameter specification in a lit op. A ParameterEvaluator is
 /// necessary to substitute parameters into parametric parameters.
 void printOptionalParameterSpec(AsmPrinter &p,
-                                ArrayRef<ParamDeclAttr> inputParamDecls,
-                                ArrayRef<ParamDeclAttr> resultParamDecls,
-                                ArrayRef<PassingKind> paramPassingKinds,
-                                ArrayRef<TypedAttr> defaultPosParams,
-                                ArrayRef<TypedAttr> defaultKwOnlyParams,
+                                ArrayRef<ParamDeclAttr> paramDecls,
+                                ArgParamListAttr paramListAttr,
                                 ParameterEvaluator &evaluator);
 
 /// Parse a parameter signature (input/result types with optional default

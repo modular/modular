@@ -656,10 +656,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
-                             /*resultParams=*/{},
-                             signature.getParamPassingKinds(),
-                             signature.getDefaultPosParams(),
-                             signature.getDefaultKwOnlyParams(), evaluator);
+                             signature.getMetadata().getParamListAttrs(),
+                             evaluator);
   auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
@@ -1042,9 +1040,7 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<TypeLineageAttr> parentTypes) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, params, {}, sig.getParamPassingKinds(),
-                             sig.getDefaultPosParams(),
-                             sig.getDefaultKwOnlyParams(), evaluator);
+  printOptionalParameterSpec(p, params, sig.getParamListAttrs(), evaluator);
   if (sig.getParamVarArg())
     p << " param_vararg";
   if (!parentTypes.empty()) {
