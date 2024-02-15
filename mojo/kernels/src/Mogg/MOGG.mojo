@@ -247,9 +247,7 @@ fn MOGGExport():
 # TODO: Replace with entitlements when available.
 # ===----------------------------------------------------------------------===#
 
-alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
-    "MODULAR_RELEASE_PACKAGE_BUILD"
-]()
+alias MODULAR_PRODUCTION = is_defined["MODULAR_PRODUCTION"]()
 
 
 @always_inline
@@ -257,7 +255,7 @@ fn _guard_against_gpu_target[
     target: StringLiteral
 ](ctx: MojoCallContextPtr) -> Bool:
     @parameter
-    if MODULAR_RELEASE_PACKAGE_BUILD and target == "cuda":
+    if MODULAR_PRODUCTION and target == "cuda":
         ctx.set_to_error("GPU Support is not available in the current release")
         return True
     else:
