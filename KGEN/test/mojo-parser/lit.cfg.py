@@ -29,8 +29,6 @@ config.excludes = [
     "test_package",
     "test_bad_package",
     "test_package_user",
-    "docs_package",
-    "debuginfo_module.mojo",
     "imported_module.mojo",
     "imported_cached_module.mojo",
 ]
