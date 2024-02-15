@@ -72,4 +72,26 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// DeclRefTypeInterface
+//===----------------------------------------------------------------------===//
+
+def DeclRefTypeInterface : TypeInterface<"DeclRefTypeInterface"> {
+  let description = [{
+    This interface provides mechanisms for types that refer to a KGEN
+    declaration to verify the referenced declaration.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Verify whether the symbol reference is valid. A symbol table is provided
+      to lookup the type definition.
+    }], "LogicalResult", "verifySymbolUses",
+      (ins "Operation *":$module, "mlir::LockedSymbolTableCollection &":$symtab,
+           "Location":$loc)>
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD

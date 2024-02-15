@@ -13,6 +13,10 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Types.h"
 
+namespace mlir {
+class LockedSymbolTableCollection;
+} // namespace mlir
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
