@@ -14,6 +14,7 @@
 #define SUPPORT_CRASHREPORTING_H
 
 #include "Support/ForwardDecls.h"
+#include "Support/Settings/Settings.h"
 #include <filesystem>
 
 namespace M {
@@ -28,6 +29,9 @@ class Config;
 ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Config &config,
                                                       const char *argv0);
 
+// FIXME: The above should be removed.
+ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Settings &settings);
+
 /// Pick a location to store crash data in.
 ///
 /// Prefers a value from the "crash_reporting.database_path" configuration
@@ -35,6 +39,10 @@ ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Config &config,
 /// home directory.
 std::filesystem::path
 getCrashDatabasePath(Config &config, const std::filesystem::path &modularHome);
+
+// FIXME: The above should be removed.
+std::filesystem::path
+getCrashDatabasePath(Settings &settings, const std::filesystem::path &dataPath);
 
 /// Initialize crash reporting for currently running executable.
 ///
@@ -51,6 +59,9 @@ getCrashDatabasePath(Config &config, const std::filesystem::path &modularHome);
 /// the crashpad API, which allows for clustering crashes server-side for
 /// analysis; this should be simple and fixed (e.g. "mojo" is a good name).
 void initCrashpadForProgram(const char *argv0, const char *program);
+
+// FIXME: The above should be removed.
+void initCrashpadForProgram(StringRef program, Settings &settings);
 
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.
