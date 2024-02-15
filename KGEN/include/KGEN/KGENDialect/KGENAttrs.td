@@ -292,7 +292,7 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     // Second input parameter of the nearest signature.
     #kgen.param.index.ref<0, false, 1> : index
     // First result parameter of next enclosing signature.
-    #kgen.param.index.ref<1, true, 0> : !kgen.declref<@Int>
+    #kgen.param.index.ref<1, true, 0> : !lit.declref<@Int>
     ```
   }];
 

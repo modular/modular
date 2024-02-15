@@ -87,7 +87,7 @@ fn crash_on_invalid():
 
 # expected-error @below {{invalid MLIR type}}
 # expected-note @below {{argument #0 with convention 'byref' in signature type should be a `!kgen.pointer`}}
-fn bad_signature_type[func: __mlir_type[`!kgen.signature<(`, Int, ` byref) -> !kgen.none>`]]():
+fn bad_signature_type[func: __mlir_type[`!kgen.signature<(index byref) -> !kgen.none>`]]():
     pass
 
 

@@ -73,7 +73,7 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !kgen.declref<{{.*}}TestParamStruct<:!Int [[A]]>{{.*}}> borrow,
+  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<{{.*}}TestParamStruct<:!Int [[A]]>{{.*}}> borrow,
   # CHECK-SAME: %other: {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}> borrow)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
@@ -956,7 +956,7 @@ fn scalar_type[dt: DType]():
 
     #FIXME(29495): reenable.
     # https://github.com/modularml/modular/issues/29495
-    # HECK: lit.varlet.decl "value" = %{{.*}} : !kgen.declref<{{.*}}@SIMD<:!DType dt,
+    # HECK: lit.varlet.decl "value" = %{{.*}} : !lit.declref<{{.*}}@SIMD<:!DType dt,
     #var value: T = 1
     # HECK: call {{.*}}<:!DType dt, {{.*}}, :!DType dt>(%value)
     #_ = value.cast[dt]()

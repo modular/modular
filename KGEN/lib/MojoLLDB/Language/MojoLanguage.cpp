@@ -182,11 +182,11 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
   constexpr const char *kDynamicVectorREPLRegex =
-      R"(^!kgen.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*$)";
+      R"(^!lit.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*$)";
   // TODO(29742): we can't parse the SourceName of DynamicVector correctly, so
   // we have to handle this ugly type name.
   constexpr const char *kDynamicVectorDWARFRegex =
-      R"(^!kgen.declref<@__lldb_anonymous__::@"pkg stdlib::pkg collections::module vector::struct DynamicVector\[.*)";
+      R"(^!lit.declref<@__lldb_anonymous__::@"pkg stdlib::pkg collections::module vector::struct DynamicVector\[.*)";
   constexpr const char *kREPLResultRegex = "^!lit.replresultref<.*>$";
 
   // Formatters are matched in reverse order, so this one that uses .* should
@@ -239,13 +239,13 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
       "builtin::string::String summary provider",
-      R"(!kgen.declref<@stdlib::@builtin::@string::@String, !lit.metatype<@stdlib::@builtin::@string::@String>>)",
+      R"(!lit.declref<@stdlib::@builtin::@string::@String, !lit.metatype<@stdlib::@builtin::@string::@String>>)",
       summaryFlags, /*regex=*/false);
   // For DWARF
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
       "builtin::string::String summary provider",
-      R"(!kgen.declref<@builtin::@string::@String, !lit.metatype<@builtin::@string::@String>>)",
+      R"(!lit.declref<@builtin::@string::@String, !lit.metatype<@builtin::@string::@String>>)",
       summaryFlags, /*regex=*/false);
   AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
                 "REPLResultRefType summary provider", kREPLResultRegex,

@@ -77,17 +77,12 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
           typeCst.getVTable().getEntries().empty())
         return AliasResult::NoAlias;
 
-      // Special case decl ref types..
-      if (auto ref = dyn_cast<DeclRefType>(typeCst.getValue())) {
+      // Special case decl ref types.
+      if (auto ref = dyn_cast<DeclRefTypeInterface>(typeCst.getValue())) {
         if (std::optional<StringRef> aliasName = ref.getAliasName()) {
           os << *aliasName;
           return AliasResult::OverridableAlias;
         }
-        StringRef name = ref.getSymbol().getLeafReference();
-        if (size_t index = name.find_last_of(":$"); index != StringRef::npos)
-          name = name.substr(index + 1);
-        os << name;
-        return AliasResult::OverridableAlias;
       }
 
       os << "type_value";
@@ -97,15 +92,6 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   }
 
   AliasResult getAlias(Type type, raw_ostream &os) const override {
-    // Alias DeclRefType if required.
-    if (auto ref = dyn_cast<DeclRefType>(type)) {
-      if (std::optional<StringRef> aliasName = ref.getAliasName()) {
-        os << *aliasName;
-        return AliasResult::OverridableAlias;
-      }
-      return AliasResult::NoAlias;
-    }
-
     return AliasResult::NoAlias;
   }
 };

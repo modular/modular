@@ -13,6 +13,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -164,6 +165,77 @@ ArrayRef<TypedAttr> TypeSignatureType::getDefaultPosParams() const {
 }
 ArrayRef<TypedAttr> TypeSignatureType::getDefaultKwOnlyParams() const {
   return getParamListAttrs().getDefaultKwOnly();
+}
+
+//===----------------------------------------------------------------------===//
+// DeclRefType
+//===----------------------------------------------------------------------===//
+
+DeclRefType DeclRefType::get(SymbolRefAttr name,
+                             ArrayRef<TypedAttr> paramValues, Type metatype) {
+  return get(name.getContext(), name, paramValues, metatype);
+}
+
+DeclRefType DeclRefType::get(SymbolRefAttr name, Type metatype) {
+  return get(name, {}, metatype);
+}
+
+std::optional<StringRef> DeclRefType::getAliasName() {
+  // Don't alias types with parameter references.
+  if (!getParamValues().empty())
+    return {};
+  return getAliasName(getSymbol());
+}
+
+std::optional<StringRef> DeclRefType::getAliasName(SymbolRefAttr symbol) {
+  // Use the leaf name as the alias name.
+  StringRef leaf = symbol.getLeafReference().getValue();
+  unsigned offset = leaf.size();
+  while (offset > 0 && std::isalnum(leaf[offset - 1]))
+    --offset;
+  if (offset == leaf.size() ||
+      (!offset && symbol.getNestedReferences().empty()))
+    return {};
+  return leaf.substr(offset);
+}
+
+LogicalResult
+DeclRefType::verifySymbolUses(Operation *module,
+                              mlir::LockedSymbolTableCollection &symtab,
+                              Location loc) const {
+  DeclInterface decl = ::dyn_cast_or_null<DeclInterface>(
+      symtab.lookupSymbolIn(module, getSymbol()));
+  if (!decl) {
+    return mlir::emitError(loc)
+           << getSymbol() << " does not reference a KGEN type declaration";
+  }
+
+  if (getParamValues().empty() && decl.getInputParams().empty())
+    return success();
+
+  // We have to specialize the type's parameter decls.
+  ParameterEvaluator evaluator(decl.getInputParams(), getParamValues());
+  SmallVector<ParamDeclAttr, 8> specializedDecls;
+  for (ParamDeclAttr decl : decl.getInputParams())
+    specializedDecls.push_back(
+        ::cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
+
+  return verifyParamDeclsMatch(
+      "input parameter", "!lit.declref symbol use", getParamValues(), loc,
+      getSymbol().getLeafReference(), specializedDecls, decl.getLoc());
+}
+
+void DeclRefType::printSymbol(AsmPrinter &p) const {
+  // Use the alias printer if suitable.
+  if (succeeded(p.printAlias(*this)))
+    return;
+
+  p << getSymbol();
+  printParameterValues(p, getParamValues());
+  if (auto type = getMetaType(); !::isa<TypeType>(type)) {
+    p << " : ";
+    printKGENType(p, type);
+  }
 }
 
 //===----------------------------------------------------------------------===//

@@ -14,9 +14,9 @@
 #include "llvm/Support/Regex.h"
 
 namespace M::KGEN {
-class DeclRefType;
 class NoneType;
 namespace LIT {
+class DeclRefType;
 class LifetimeType;
 class MetaTypeType;
 class StructFieldOp;

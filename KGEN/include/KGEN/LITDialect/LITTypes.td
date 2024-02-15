@@ -159,6 +159,51 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DeclRefType
+//===----------------------------------------------------------------------===//
+
+def KGEN_DeclRefType : LITType<"DeclRef", "declref",
+    [DeclareTypeInterfaceMethods<DeclRefTypeInterface>]> {
+  let summary = "Reference to a type declaration.";
+  let description = [{
+    A `!lit.declref` type references a type declaration and binds parameter
+    values to the type.
+
+    Example:
+
+    ```mlir
+    !lit.declref<@MyStruct<size = 1, T:dtype = fooType>>
+    ```
+  }];
+
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    DefaultValuedParameter<"Type", "TypeType::get($_ctxt)">:$metaType
+  );
+  let assemblyFormat = [{
+    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $metaType^)? `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "Type":$metatype)>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "ArrayRef<TypedAttr>":$paramValues,
+                                        "Type":$metatype)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the name of the referenced type.
+    StringAttr getName() { return getSymbol().getRootReference(); }
+
+    /// Return an alias name if the DeclRefType should be printed with an alias.
+    std::optional<StringRef> getAliasName();
+    static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 
@@ -184,7 +229,7 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
 
     ```mlir
     // Concrete type value.
-    #kgen.concretetype.constant<!kgen.declref<@SomeStruct>>
+    #kgen.concretetype.constant<!lit.declref<@SomeStruct>>
       : !lit.metatype<@SomeStruct>
 
     // Parametric type value.

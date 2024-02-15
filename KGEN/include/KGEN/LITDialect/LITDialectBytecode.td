@@ -29,6 +29,12 @@ def UnpackedType : DialectType<(type
   Type:$exprType
 )>;
 
+def DeclRefType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  TypedAttrArray:$paramValues,
+  Type:$metaType
+)>;
+
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -66,6 +72,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     DiscardType,
     TypeSignatureType,
     UnpackedType,
+    DeclRefType,
     MetaTypeType,
     TraitType,
     LifetimeType,

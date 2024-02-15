@@ -352,51 +352,6 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 }
 
 //===----------------------------------------------------------------------===//
-// DeclRefType
-//===----------------------------------------------------------------------===//
-
-def KGEN_DeclRefType : KGENType<"DeclRef", "declref",
-    [DeclareTypeInterfaceMethods<DeclRefTypeInterface>]> {
-  let summary = "Reference to a type declaration.";
-  let description = [{
-    A `!kgen.declref` type references a type declaration and binds parameter
-    values to the type.
-
-    Example:
-
-    ```mlir
-    !kgen.declref<@MyStruct<size = 1, T:dtype = fooType>>
-    ```
-  }];
-
-  let parameters = (ins
-    "SymbolRefAttr":$symbol,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    DefaultValuedParameter<"Type", "TypeType::get($_ctxt)">:$metaType
-  );
-  let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $metaType^)? `>`
-  }];
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "Type":$metatype)>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ArrayRef<TypedAttr>":$paramValues,
-                                        "Type":$metatype)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Get the name of the referenced type.
-    StringAttr getName() { return getSymbol().getRootReference(); }
-
-    /// Return an alias name if the DeclRefType should be printed with an alias.
-    std::optional<StringRef> getAliasName();
-    static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicType
 //===----------------------------------------------------------------------===//
 

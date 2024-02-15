@@ -21,10 +21,10 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
-class DeclRefType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class DeclRefType;
 class DocStringAttr;
 class DocString;
 

@@ -148,12 +148,12 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
       lit.yield %4 : !kgen.none
     } else {
       %4 = kgen.variant.take %1, 0 : <@Error, none>
-      lit.try.raise %4 : !kgen.declref<@Error>
+      lit.try.raise %4 : !lit.declref<@Error>
     }
     // CHECK: lit.call @S::@__del__[mut life](%x) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem)
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
-  } except (%arg0: !kgen.declref<@Error>) {
+  } except (%arg0: !lit.declref<@Error>) {
     lit.try.yield
   } else {
     lit.try.yield
@@ -180,7 +180,7 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
   	    // CHECK: [[VAR0:%.*]] = lit.call @S::@__del__[mut SLife](%s)
   	    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.take
         %10 = kgen.variant.take %5, 0 : <@Error, none>
-        lit.try.raise %10 : !kgen.declref<@Error>
+        lit.try.raise %10 : !lit.declref<@Error>
       }
       %7 = lit.ref.struct.ger %s[a] : <index, mut *"SLife"> from @S
       // CHECK:  = lit.ref.load
@@ -192,7 +192,7 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
   	  hlcf.yield
 	  }
     lit.try.yield
-  } except (%arg0: !kgen.declref<@Error>) {
+  } except (%arg0: !lit.declref<@Error>) {
     lit.try.yield
   } else {
     lit.try.yield
@@ -222,10 +222,10 @@ lit.struct.decl @S attributes {
 
 lit.struct.decl @DestructSome attributes {
   destructor = #kgen.symbol.constant<@DestructSome::@__del__> : !lit.signature<[1](!lit.ref<@DestructSome, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : !kgen.declref<@S>
-  lit.struct.field stole : !kgen.declref<@S>
-  lit.struct.field uninitialized : !kgen.declref<@S>
-  lit.struct.field byinit: !kgen.declref<@S>
+  lit.struct.field a : !lit.declref<@S>
+  lit.struct.field stole : !lit.declref<@S>
+  lit.struct.field uninitialized : !lit.declref<@S>
+  lit.struct.field byinit: !lit.declref<@S>
   lit.struct.field register : index
 
   lit.func @__init__(%self: !lit.ref<@DestructSome, mut #lit.lifetime> init_self, %cond: i1,
@@ -259,7 +259,7 @@ lit.struct.decl @DestructSome attributes {
     // CHECK-NEXT: hlcf.yield
     // CHECK-NEXT: }
     hlcf.if %cond {
-      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error>>
+      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !lit.declref<@Error>>
       %13 = kgen.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
@@ -276,9 +276,9 @@ lit.struct.decl @DestructSome attributes {
 // CHECK-LABEL: lit.struct.decl @DestructNone
 lit.struct.decl @DestructNone attributes {
     destructor = #kgen.symbol.constant<@DestructNone::@__del__> : !lit.signature<[1](!lit.ref<@DestructNone, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : !kgen.declref<@S>
-  lit.struct.field stole : !kgen.declref<@S>
-  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field a : !lit.declref<@S>
+  lit.struct.field stole : !lit.declref<@S>
+  lit.struct.field uninitialized : !lit.declref<@S>
   lit.struct.field register : index
 
   lit.func @__init__(%self: !lit.ref<@DestructNone, mut #lit.lifetime> init_self, %cond: i1,
@@ -296,7 +296,7 @@ lit.struct.decl @DestructNone attributes {
     // CHECK-NEXT: hlcf.yield
     // CHECK-NEXT: }
     hlcf.if %cond {
-      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error>>
+      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !lit.declref<@Error>>
       %13 = kgen.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
@@ -321,9 +321,9 @@ lit.struct.decl @DestructNone attributes {
 
 // CHECK-LABEL: lit.struct.decl @DestructFull
 lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@DestructFull::@__del__> : !lit.signature<[1](!lit.ref<@DestructFull, mut #lit.lifetime> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : !kgen.declref<@S>
-  lit.struct.field stole : !kgen.declref<@S>
-  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field a : !lit.declref<@S>
+  lit.struct.field stole : !lit.declref<@S>
+  lit.struct.field uninitialized : !lit.declref<@S>
   lit.struct.field register : index
 
   lit.func @__init__(%self: !lit.ref<@DestructFull, mut #lit.lifetime> init_self, %cond: i1,
@@ -353,7 +353,7 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
       // CHECK-NEXT: [[VAR6:%.*]] = lit.ref.struct.ger %self[uninitialized]
       // CHECK-NEXT: lit.call @S::@__del__{{.*}}([[VAR6]])
       // CHECK-NEXT: lit.call @Error::@__init__()
-      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error>>
+      %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !lit.declref<@Error>>
       // CHECK-NEXT: kgen.variant.create
       %13 = kgen.variant.create %12, 0 : <@Error, none>
       // CHECK-NEXT: lit.error_return
@@ -378,9 +378,9 @@ lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> 
 
 // CHECK-LABEL: lit.struct.decl @HasMemFields
 lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<[1](!lit.ref<@HasMemFields, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field a : !kgen.declref<@S>
-  lit.struct.field stole : !kgen.declref<@S>
-  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field a : !lit.declref<@S>
+  lit.struct.field stole : !lit.declref<@S>
+  lit.struct.field uninitialized : !lit.declref<@S>
   lit.struct.field register : index
 
   lit.func @__del__[mut dellife](%self: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) -> !kgen.none {
@@ -432,7 +432,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
   kgen.return %1 : !kgen.none
 }
 
-lit.globalvar.decl @x : !kgen.declref<@MyStruct> isVar {}, {}
+lit.globalvar.decl @x : !lit.declref<@MyStruct> isVar {}, {}
 
 // CHECK-LABEL: lit.func @byref_result_global_ref
 lit.func @byref_result_global_ref() {
@@ -453,14 +453,14 @@ lit.func @global_ref_no_use() {
 
 // -----
 
-lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !lit.signature<(!kgen.declref<@MyRegStruct>) -> !kgen.none>} {
+lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !lit.signature<(!lit.declref<@MyRegStruct>) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
-lit.globalvar.decl @y : !kgen.declref<@MyRegStruct> isVar {}, {}
+lit.globalvar.decl @y : !lit.declref<@MyRegStruct> isVar {}, {}
 
 // CHECK-LABEL: lit.func @global_ref_reg_store
-lit.func @global_ref_reg_store(%x: !kgen.declref<@MyRegStruct> owned) {
+lit.func @global_ref_reg_store(%x: !lit.declref<@MyRegStruct> owned) {
   // CHECK-NEXT: %0 = lit.globalvar.ref @y
   %0 = lit.globalvar.ref @y : <@MyRegStruct, mut #lit.lifetime>
   // CHECK-NEXT: %1 = lit.ref.load %0
@@ -501,7 +501,7 @@ lit.struct.decl @SomeData {
 }
 
 lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
-  lit.struct.field str : !kgen.declref<@SomeData>
+  lit.struct.field str : !lit.declref<@SomeData>
 }
 
 // CHECK-LABEL: lit.func @init
@@ -517,7 +517,7 @@ lit.func @init(%self: !lit.ref<@MyStruct, mut #lit.lifetime> init_self) {
 
 // COM: Test that destructors are inserted for error instances.
 
-!Error = !kgen.declref<@Error>
+!Error = !lit.declref<@Error>
 
 // CHECK-LABEL: lit.struct.decl @Error
 lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
@@ -591,7 +591,7 @@ lit.func @eatErrorRef() {
 // COM: Copy-del elision of register-passable value, where the argument is an
 // COM: owned register-passable letreg decl.
 
-!Reg = !kgen.declref<@Reg>
+!Reg = !lit.declref<@Reg>
 lit.struct.decl @Reg register_passable attributes {
     copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !lit.signature<(!Reg borrow) ownedresult -> !Reg>,
     destructor = #kgen.symbol.constant<@Reg::@__del__> : !lit.signature<(!Reg) -> !kgen.none>
@@ -624,8 +624,8 @@ lit.func @copy_del_reg_value() {
 
 // -----
 
-!MemType = !kgen.declref<@MemType, !lit.metatype<@MemType>>
-!Error = !kgen.declref<@Error, !lit.metatype<@Error>>
+!MemType = !lit.declref<@MemType, !lit.metatype<@MemType>>
+!Error = !lit.declref<@Error, !lit.metatype<@Error>>
 
 lit.struct.decl @Error register_passable attributes {
   destructor = #kgen.symbol.constant<@Error::@__del__ > : !lit.signature<(!Error) -> !kgen.none>} {
@@ -640,7 +640,7 @@ lit.struct.decl @Error register_passable attributes {
 lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType::@"__del__" > : !lit.signature<[1]("self": !lit.ref<!MemType, mut *[0,0]> owned_in_mem) -> !kgen.none>}  {
   // CHECK-NOT: kgen.call @MemType::@__del__
   lit.func @i_raise(%self: !lit.ref<!MemType, imm #lit.lifetime> borrow_in_mem) throws|ownedresult -> !kgen.variant<!Error, index> {
-    %0 = kgen.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error, !lit.metatype<@Error>>>
+    %0 = kgen.call @Error::@__init__() : !lit.signature<() ownedresult -> !lit.declref<@Error, !lit.metatype<@Error>>>
     %1 = kgen.variant.create %0, 0 : <@Error : metatype<@Error>, index>
     lit.error_return %1 : <@Error : metatype<@Error>, index>
   }
@@ -648,7 +648,7 @@ lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType
 
 lit.struct.decl @RegType register_passable {}
 
-!RegType = !kgen.declref<@RegType>
+!RegType = !lit.declref<@RegType>
 
 lit.func @use_value(%arg0: !RegType borrow) {
   kgen.return
@@ -667,26 +667,26 @@ lit.func @destroy_generic<T: trait<@AnyType>>(%x: !lit.ref<:trait<@AnyType> T, m
 // -----
 
 // https://github.com/modularml/modular/issues/25211
-lit.struct.decl @Int register_passable attributes {destructor = #kgen.symbol.constant<@Int::@__del__ > : !kgen.signature<!lit.signature<(!kgen.declref<@Int>) -> !kgen.none>>}  {
+lit.struct.decl @Int register_passable attributes {destructor = #kgen.symbol.constant<@Int::@__del__ > : !kgen.signature<!lit.signature<(!lit.declref<@Int>) -> !kgen.none>>}  {
 }
-lit.func @y(%arg1: !kgen.declref<@Int> borrow) {
+lit.func @y(%arg1: !lit.declref<@Int> borrow) {
   kgen.return
 }
 // expected-note @+1 {{'arg0' declared here}}
-lit.func @x(%arg0: !kgen.declref<@Int> owned) {
+lit.func @x(%arg0: !lit.declref<@Int> owned) {
   %x = lit.varlet.decl "x"  var : !lit.ref<@Int, mut a>
   lit.ref.store %arg0, %x : !lit.ref<@Int, mut a>
   %1 = lit.ref.load %x : <@Int, mut a>
-  %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!kgen.declref<@Int>) -> !kgen.none>
+  %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!lit.declref<@Int>) -> !kgen.none>
 
   // expected-error @+1 {{use of uninitialized value 'arg0'}}
-  kgen.call @y(%arg0) : (!kgen.declref<@Int> borrow) -> ()
+  kgen.call @y(%arg0) : (!lit.declref<@Int> borrow) -> ()
   kgen.return
 }
 
 // -----
 
-!Thing = !kgen.declref<@Thing>
+!Thing = !lit.declref<@Thing>
 lit.struct.decl @Box<T: trait<@AnyType>>  {
   lit.struct.field x : !kgen.paramref<:trait<@AnyType> T>
 }

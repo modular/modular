@@ -13,8 +13,8 @@ lit.func @struct_extract_fold_create(%a: index, %b: index) -> index {
   // CHECK-NOT: lit.struct.create
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %a
-  %struct = lit.struct.create(a=%a, b=%b) : (index, index) -> !kgen.declref<@FooStruct>
-  %field = lit.struct.extract %struct[a] : index from !kgen.declref<@FooStruct>
+  %struct = lit.struct.create(a=%a, b=%b) : (index, index) -> !lit.declref<@FooStruct>
+  %field = lit.struct.extract %struct[a] : index from !lit.declref<@FooStruct>
   kgen.return %field : index
 }
 
@@ -23,47 +23,47 @@ lit.func @struct_extract_fold_create_b(%a: index, %b: index) -> index {
   // CHECK-NOT: lit.struct.create
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %b
-  %struct = lit.struct.create(a=%a, b=%b) : (index, index) -> !kgen.declref<@FooStruct>
-  %field = lit.struct.extract %struct[b] : index from !kgen.declref<@FooStruct>
+  %struct = lit.struct.create(a=%a, b=%b) : (index, index) -> !lit.declref<@FooStruct>
+  %field = lit.struct.extract %struct[b] : index from !lit.declref<@FooStruct>
   kgen.return %field : index
 }
 
 // CHECK-LABEL: lit.func @struct_extract_fold_insert
-lit.func @struct_extract_fold_insert(%struct0: !kgen.declref<@FooStruct>) -> index {
+lit.func @struct_extract_fold_insert(%struct0: !lit.declref<@FooStruct>) -> index {
   // CHECK-NOT: lit.struct.insert
   // CHECK-NOT: lit.struct.extract
   // CHECK: kgen.return %idx10
   %x = index.constant 10
-  %struct1 = lit.struct.insert %x, %struct0[a] : index into !kgen.declref<@FooStruct>
-  %field = lit.struct.extract %struct1[a] : index from !kgen.declref<@FooStruct>
+  %struct1 = lit.struct.insert %x, %struct0[a] : index into !lit.declref<@FooStruct>
+  %field = lit.struct.extract %struct1[a] : index from !lit.declref<@FooStruct>
   kgen.return %field : index
 }
 
 // CHECK-LABEL: lit.func @struct_extract_no_fold_insert
-lit.func @struct_extract_no_fold_insert(%struct0: !kgen.declref<@FooStruct>) -> index {
+lit.func @struct_extract_no_fold_insert(%struct0: !lit.declref<@FooStruct>) -> index {
   // CHECK: lit.struct.insert
   // CHECK-NEXT: lit.struct.extract
   // CHECK-NEXT: kgen.return
   %x = index.constant 10
-  %struct1 = lit.struct.insert %x, %struct0[a] : index into !kgen.declref<@FooStruct>
-  %field = lit.struct.extract %struct1[b] : index from !kgen.declref<@FooStruct>
+  %struct1 = lit.struct.insert %x, %struct0[a] : index into !lit.declref<@FooStruct>
+  %field = lit.struct.extract %struct1[b] : index from !lit.declref<@FooStruct>
   kgen.return %field : index
 }
 
-lit.func @struct_ops_fold() -> (!kgen.declref<@FooStruct>, !kgen.declref<@FooStruct>, index) {
+lit.func @struct_ops_fold() -> (!lit.declref<@FooStruct>, !lit.declref<@FooStruct>, index) {
   // CHECK-DAG: %[[V0:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 0}>>
   // CHECK-DAG: %[[V1:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 3}>>
   // CHECK-DAG: %[[V2:.*]] = {{.*}} = <3>
   %idx0 = index.constant 0
-  %0 = lit.struct.create(a=%idx0, b=%idx0) : (index, index) -> !kgen.declref<@FooStruct>
+  %0 = lit.struct.create(a=%idx0, b=%idx0) : (index, index) -> !lit.declref<@FooStruct>
 
-  %1 = kgen.param.constant: !kgen.declref<@FooStruct> = <#lit.struct<{a = 2, b = 3}>>
-  %2 = lit.struct.insert %idx0, %1[a] : index into !kgen.declref<@FooStruct>
+  %1 = kgen.param.constant: !lit.declref<@FooStruct> = <#lit.struct<{a = 2, b = 3}>>
+  %2 = lit.struct.insert %idx0, %1[a] : index into !lit.declref<@FooStruct>
 
-  %3 = lit.struct.extract %1[b] : index from !kgen.declref<@FooStruct>
+  %3 = lit.struct.extract %1[b] : index from !lit.declref<@FooStruct>
 
   // CHECK: return %[[V0]], %[[V1]], %[[V2]]
-  kgen.return %0, %2, %3 : !kgen.declref<@FooStruct>, !kgen.declref<@FooStruct>, index
+  kgen.return %0, %2, %3 : !lit.declref<@FooStruct>, !lit.declref<@FooStruct>, index
 }
 
 // -----
