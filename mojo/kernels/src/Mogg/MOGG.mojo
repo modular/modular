@@ -78,6 +78,10 @@ from NN.Conv import pack_filter as _pack_conv_filter
 from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
 from NN.ConvTranspose import conv_transposed as conv_transpose_impl
 from NN.ConvTranspose import conv_transpose_shape
+from NN.ConvTranspose import pack_filter as _pack_conv_transpose_filter
+from NN.ConvTranspose import (
+    pack_filter_shape as _pack_conv_transpose_filter_shape,
+)
 from NN.Cumsum import cumsum as _cumsum
 from NN.GatherScatter import gather as _gather, async_gather as _async_gather
 from NN.GatherScatter import gather_nd as _gather_nd, gather_nd_shape
@@ -178,6 +182,7 @@ fn MOGGExport():
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pack_conv_filter_shape = pack_conv_filter_shape
+    alias _pack_conv_transpose_filter_shape = pack_conv_transpose_filter_shape
     alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -191,6 +196,7 @@ fn MOGGExport():
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _pack_conv_filter = pack_conv_filter
+    alias _pack_conv_transpose_filter = pack_conv_transpose_filter
     alias _max_pool_shape = pool_shape
     alias _max_pool_shape_ceil = pool_shape_ceil
     alias _matrix_solve = mogg_matrix_solve
@@ -3107,6 +3113,7 @@ fn conv[
 @export
 fn conv_transpose[
     input_rank: Int,
+    filter_rank: Int,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3115,12 +3122,13 @@ fn conv_transpose[
     padding_type: DType,
     output_padding_type: DType,
     lambdas_have_fusion: Bool,
+    filter_packed: Bool,
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
     input: NDBuffer[input_type, input_rank],
-    filter: NDBuffer[filter_type, input_rank],
+    filter: NDBuffer[filter_type, filter_rank],
     strides: NDBuffer[strides_type, 1],
     dilation: NDBuffer[dilation_type, 1],
     paddings: NDBuffer[padding_type, 1],
@@ -3224,14 +3232,14 @@ fn conv_transpose[
         try:
             conv_transpose_impl[
                 input_rank,
-                input_rank,  # Filter rank w/o packing, same as input.
+                filter_rank,
                 DimList.create_unknown[input_rank](),  # Input shape.
-                DimList.create_unknown[input_rank](),  # Filter shape.
+                DimList.create_unknown[filter_rank](),  # Filter shape.
                 DimList.create_unknown[input_rank](),  # Output shape.
                 input_type,
                 filter_type,  # Filter type.
                 output_type,  # Output type.
-                False,  # filter is not packed.
+                filter_packed,
                 lambdas_have_fusion,
                 epilogue_wrapper,
             ](
@@ -3395,6 +3403,20 @@ fn pack_conv_filter[
 
 
 @always_inline
+fn pack_conv_transpose_filter[
+    filter_type: DType,
+    rank: Int,
+](
+    filter: NDBuffer[filter_type, rank],
+    packed_filter: NDBuffer[filter_type, rank + 1],
+    ctx: MojoCallContextPtr,
+):
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_transpose_filter(filter, packed_filter, 1)
+
+
+@always_inline
 fn pack_conv_filter_shape[
     rank: Int,
     filter_type: DType,
@@ -3432,6 +3454,15 @@ fn pack_conv_filter_shape[
     return _pack_conv_filter_shape[single_thread_blocking_override](
         filter_buf, num_groups
     )
+
+
+@always_inline
+fn pack_conv_transpose_filter_shape[
+    rank: Int,
+    filter_type: DType,
+    single_thread_blocking_override: Bool,
+](filter_buf: NDBuffer[filter_type, rank]) -> StaticIntTuple[rank + 1]:
+    return _pack_conv_transpose_filter_shape(filter_buf, 1)
 
 
 # ===----------------------------------------------------------------------===#
