@@ -6,38 +6,6 @@
 
 # RUN: %parse-mojo-isolated -o /dev/null -mojo-warn-missing-doc-strings -verify-diagnostics %s
 
-alias Int = __mlir_type.index
-alias `0` = __mlir_attr.`0 : index`
-
-trait AnyType:
-    """The AnyType trait denotes a type whose value can be destroyed.
-    """
-    fn __del__(owned self, /):
-       """Del destructs.
-       """
-       ...
-
-trait Copyable:
-    """The Copyable trait denotes a type whose value can be copied.
-    """
-    fn __copyinit__(inout self, existing: Self, /):
-        """Copyinit copies.
-
-        Args:
-           existing: The value to copy.
-        """
-       ...
-
-trait Movable:
-    """The Movable trait denotes a type whose value can be moved.
-    """
-    fn __moveinit__(inout self, owned existing: Self, /):
-        """Moveinit moves.
-
-        Args:
-           existing: The value to move.
-        """
-       ...
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
@@ -49,12 +17,14 @@ struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`]:
 
     It doesn't need to include a `Parameters:` section.
     """
+
     pass
 
 
 # expected-warning @below {{struct takes parameters, but no 'Parameters' in doc string}}
 struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`]:
     """This doc string is missing a `Parameters:` section."""
+
     pass
 
 
@@ -97,7 +67,8 @@ struct ParamStruct_Order[
         param2: Summary.
         param1: Summary.
     """
-    # expected-warning @-3 {{'param2' is defined at index 1, but specified in doc string at index 0}}
+
+    # expected-warning @-4 {{'param2' is defined at index 1, but specified in doc string at index 0}}
     pass
 
 
@@ -236,12 +207,12 @@ fn fn_args_return():
 
 
 # expected-warning @below {{function has results, but no 'Returns' in doc string}}
-fn fn_args_missing_return() -> Int:
+fn fn_args_missing_return() -> int:
     """This doc string is missing a `Returns:` section."""
     return `0`
 
 
-fn fn_returns_section_empty() -> Int:
+fn fn_returns_section_empty() -> int:
     """This doc string includes a `Returns:` section, but it's empty.
 
     # expected-warning @below {{'Returns' section is empty}}
@@ -250,7 +221,7 @@ fn fn_returns_section_empty() -> Int:
     return `0`
 
 
-fn fn_returns_section_poor_style() -> Int:
+fn fn_returns_section_poor_style() -> int:
     """This doc string has a `Returns:` section with poor style.
 
     Returns:
@@ -273,12 +244,14 @@ fn fn_nested_fn():
 
     return
 
+
 struct Error:
     """Error type stub to allow decoupling from the builtins."""
+
     pass
 
 
-fn fn_raises_with_return_type(x: Int) raises -> Int:
+fn fn_raises_with_return_type(x: int) raises -> int:
     """This is a function that raises, with an explicit return type.
 
     Because it raises, it implicitly has a memory-only `__result__` argument.
@@ -292,12 +265,15 @@ fn fn_raises_with_return_type(x: Int) raises -> Int:
     """
     return `0`
 
+
 @value
 struct object:
     """Object type stub to allow decoupling from the builtins."""
+
     pass
 
-def def_implicit_object_return_type(x: Int):
+
+def def_implicit_object_return_type(x: int):
     """This is a `def` function with no explicit return type.
 
     Because it implicitly returns an object, it has a hidden `__result__`
