@@ -627,6 +627,7 @@ fn _matmul_int4_dotprod[
 fn _process_rows[
     group_size: Int,
     row_count: Int,
+    are_nibbles_reversed: Bool,
     type: DType,
 ](
     a_quant: NDBuffer[DType.int8, 2],
@@ -662,7 +663,14 @@ fn _process_rows[
             ).cast[type]()
             let b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
             let b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
-            let b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
+
+            let b_data_i8: SIMD[DType.int8, 2 * b_data_i8_hi.size]
+
+            @parameter
+            if are_nibbles_reversed:
+                b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
+            else:
+                b_data_i8 = b_data_i8_hi.join(b_data_i8_lo)
 
             @unroll
             for row in range(row_count):
@@ -693,6 +701,7 @@ fn _process_rows[
 fn matmul_int4[
     group_size: Int,
     type: DType,
+    are_nibbles_reversed: Bool = True,
 ](
     a: NDBuffer[type, 2],
     b: NDBuffer[DType.uint8, 2],
@@ -732,12 +741,14 @@ fn matmul_int4[
         let end_batch_item = align_down(end_item, row_batch_count)
 
         for m in range(start_item, end_batch_item, row_batch_count):
-            _process_rows[group_size, row_batch_count](
+            _process_rows[group_size, row_batch_count, are_nibbles_reversed](
                 a_quant, a_scale, b, c, m
             )
 
         for m in range(end_batch_item, end_item):
-            _process_rows[group_size, 1](a_quant, a_scale, b, c, m)
+            _process_rows[group_size, 1, are_nibbles_reversed](
+                a_quant, a_scale, b, c, m
+            )
 
     sync_parallelize[task_func](num_workers)
 
