@@ -205,6 +205,9 @@ LogicalResult FnMetadataAttr::verifySignature(
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ArgConvention> argConventions,
     FnEffects effects) const {
+  if (!resultParamTypes.empty())
+    return emitError() << "expected no result parameters";
+
   if (getParamNames().size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
