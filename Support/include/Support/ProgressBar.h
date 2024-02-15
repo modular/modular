@@ -15,8 +15,6 @@
 
 namespace M {
 
-constexpr std::chrono::seconds kDefaultRefreshPeriod{3};
-
 /// ProgressBar is a base class for progress in different subsystems.
 class ProgressBar {
 public:
@@ -29,8 +27,6 @@ public:
   // disable is used to flush and disable the progress meter. No output should
   // be emitted after this call.
   virtual void disable() = 0;
-
-  std::chrono::seconds refreshPeriod = kDefaultRefreshPeriod;
 };
 
 /// makeProgressBar returns an instance of the ProgressBar class which
