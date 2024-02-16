@@ -227,16 +227,16 @@ fn _accumulate_x86_simd[
             @unroll
             for j in range(num_cols):
                 # Broadcast an scalar from A to a simd vector.
-                let a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
+                var a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
 
                 # Load a simd vector from B.
-                let b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
+                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
                     b_ptr, j * simd_size, partial_load_b_size
                 )
 
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
-                let c_ptr = c + i * kernel_width + j * simd_size
+                var c_ptr = c + i * kernel_width + j * simd_size
                 c_ptr.simd_store(
                     fma(
                         a_splat_vec.cast[c.type](),
@@ -320,7 +320,7 @@ fn _accumulate_neon[
     @parameter
     @always_inline
     fn micro_kernel[num_lanes: Int](offset: Int):
-        let a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
+        var a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
 
         # Load vectors of size num_lanes from input.
         @unroll
@@ -335,7 +335,7 @@ fn _accumulate_neon[
             @unroll
             for j in range(num_cols):
                 # Load a simd vector from B.
-                let b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
+                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
                     b_ptr, j * simd_size, partial_load_b_size
                 )
 
@@ -343,7 +343,7 @@ fn _accumulate_neon[
                 for i in range(num_rows):
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
-                    let c_ptr = c + i * kernel_width + j * simd_size
+                    var c_ptr = c + i * kernel_width + j * simd_size
                     c_ptr.simd_store(
                         fma[c.type, simd_size](
                             a_vecs[i][lane].cast[c.type](),
@@ -421,8 +421,8 @@ fn load_register_tile[
     @always_inline
     @parameter
     fn body[i: Int, j: Int]():
-        let input_ptr = input + i * input_stride + j * simd_size
-        let tile_ptr = tile + i * tile_width + j * simd_size
+        var input_ptr = input + i * input_stride + j * simd_size
+        var tile_ptr = tile + i * tile_width + j * simd_size
 
         alias partial_load_last_vec = partial_load and (j == num_cols - 1)
 
