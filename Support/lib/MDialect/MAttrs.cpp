@@ -1185,6 +1185,10 @@ DeviceRefAttr M::fromRuntimeDeviceRef(MLIRContext *ctx,
   return DeviceRefAttr::get(ctx, runtimeDeviceRef.label, runtimeDeviceRef.id);
 }
 
+DeviceRefAttr DeviceRefAttr::getDefault(MLIRContext *ctx) {
+  return DeviceRefAttr::get(ctx, kCPULabel, 0);
+}
+
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//
