@@ -9,12 +9,6 @@
 
 using namespace M::LLCL;
 
-size_t RuntimeOptions::canonicalizeNumThreads(size_t numThreads) {
-  if (numThreads)
-    return numThreads;
-  return M::getNumPhysicalCores();
-}
-
 std::unique_ptr<Runtime>
 RuntimeOptions::createRuntime(StringRef profileName) const {
   RuntimeOptions runtimeOptions; //{*this};
@@ -49,6 +43,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
     break;
   case RuntimeOptions::WorkQueueType::kThreadPool:
     runtimeOptions.numThreads = numThreads;
+    runtimeOptions.maxThreads = maxThreads;
     runtimeOptions.withAffinity = withAffinity;
     runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
 #if MODULAR_PARANOID

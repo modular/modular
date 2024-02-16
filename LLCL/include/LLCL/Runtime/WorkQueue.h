@@ -227,9 +227,9 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 /// Creates a thread pool able to distribute the execution of work items
 /// across numThreads.
 ///
-/// If numThreads is zero it will default to the number of 'physical' cores in
-/// the first socket in the system. Generally this will ignore hyperthreading
-/// to minimize cache contention, and will avoid cross-NUMA memory traffic.
+/// If numThreads is zero it will default to a sensible number based on the
+/// current physical system. The maxThreads parameter is used to bound
+/// numThreads in this case. If maxThreads is zero, it is ignored.
 ///
 /// If mainWillDonate is false then numThreads worker threads will
 /// be created. Arbitrary threads may then addTasks and call await, but will not
@@ -254,7 +254,8 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 /// random delays into work items to attempt to tickle race conditions.
 std::unique_ptr<WorkQueue>
 createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
-                          bool mainWillDonate, bool withAffinity,
+                          size_t maxThreads, bool mainWillDonate,
+                          bool withAffinity,
                           std::chrono::microseconds threadBusyWaitTime,
                           std::string_view poolName, bool paranoid);
 
