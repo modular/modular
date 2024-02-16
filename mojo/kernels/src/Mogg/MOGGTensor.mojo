@@ -228,9 +228,7 @@ struct Tensor[
         fn _default_lambda[
             _w: Int, _t: DType, _v: DimList
         ](i: IntList[_v]) -> SIMD[_t, _w]:
-            return rebind[SIMD[_t, _w]](
-                self._simd_load_internal[_w, i.static_values](i)
-            )
+            return rebind[SIMD[_t, _w]](self._simd_load_internal[_w](i))
 
         # This should return a rebind but until that works we just call this nop.
         Tensor[
