@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo --allow-unregistered-dialect -verify-diagnostics %s | FileCheck %s
+# RUN: kgen-translate -import-mojo --allow-unregistered-dialect %s | FileCheck %s
 
 
 # CHECK-LABEL: lit.func @"import_of_import

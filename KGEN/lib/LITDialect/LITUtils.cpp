@@ -146,6 +146,26 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
   return success();
 }
 
+/// Helper to parse sigils that indicate that an argument/parameter is variadic
+/// or a pack. The given index is emplaced in the appropriate list of indices,
+/// if a `var` or `pack` sigil is parsed.
+static ParseResult parseVariadicness(AsmParser &p,
+                                     SmallVectorImpl<size_t> &variadicIndices,
+                                     SmallVectorImpl<size_t> &packIndices,
+                                     size_t idx) {
+  mlir::SMLoc loc = p.getCurrentLocation();
+  StringRef sigil;
+  if (succeeded(p.parseOptionalKeyword(&sigil))) {
+    if (sigil == "var")
+      variadicIndices.emplace_back(idx);
+    else if (sigil == "pack")
+      packIndices.emplace_back(idx);
+    else
+      return p.emitError(loc, "expected 'var' or 'pack', got: ") << sigil;
+  }
+  return success();
+}
+
 /// Parse a parameter spec if present, including input and result parameter
 /// declarations, and default values.
 /// parameter-decl   ::= identifier (`[` identifier `]`)?
@@ -159,12 +179,15 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
+  SmallVector<size_t> variadicIndices;
+  SmallVector<size_t> packIndices;
 
   bool foundPosDefault = false;
   bool foundKwOnlyDefault = false;
 
   llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
+  size_t idx = 0;
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
     llvm::SMLoc loc = p.getCurrentLocation();
@@ -182,6 +205,9 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
     paramNames.emplace_back(StringAttr::get(
         p.getContext(),
         isImplicit ? "" : demangleParameterName(decl.getName())));
+
+    if (failed(parseVariadicness(p, variadicIndices, packIndices, idx++)))
+      return failure();
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
@@ -218,8 +244,32 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   paramListAttr = ArgParamListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
+      defaultKwOnlyParams, variadicIndices, packIndices);
   return success();
+}
+
+enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
+
+/// Return an array of enums representing the variadicness of each
+/// argument/parameter in the given list.
+static SmallVector<Variadicness> getVariadicness(ArgParamListAttr listAttr) {
+  SmallVector<Variadicness> res(listAttr.getNames().size(),
+                                Variadicness::kNone);
+  for (size_t varIdx : listAttr.getVariadicIndices())
+    res[varIdx] = Variadicness::kVariadic;
+  for (size_t varIdx : listAttr.getPackIndices())
+    res[varIdx] = Variadicness::kPack;
+
+  return res;
+}
+
+/// Print the variadicness of an argument/parameter at the given index.
+static void printVariadicness(AsmPrinter &p,
+                              ArrayRef<Variadicness> variadicness, size_t idx) {
+  if (variadicness[idx] == Variadicness::kVariadic)
+    p << " var";
+  else if (variadicness[idx] == Variadicness::kPack)
+    p << " pack";
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
@@ -233,7 +283,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   DefaultValueHandler defaultHandler(paramListAttr.getPassingKinds(),
                                      paramListAttr.getDefaultPos(),
                                      paramListAttr.getDefaultKwOnly());
-
+  SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
                                         '|');
@@ -241,6 +291,8 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     passingKindPrinter.printOptionalStarSlash(idx);
 
     printParamDecl(p, decl);
+    printVariadicness(p, variadicness, idx);
+
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
       printParamValue(
@@ -262,10 +314,13 @@ LIT::parseOptionalParamSignature(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
+  SmallVector<size_t> variadicIndices;
+  SmallVector<size_t> packIndices;
 
   // Parse the input parameter types and optional default values.
   llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
+  size_t idx = 0;
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
@@ -278,6 +333,10 @@ LIT::parseOptionalParamSignature(AsmParser &p,
     Type &type = inputs.emplace_back();
     if (failed(parseKGENType(p, type)))
       return failure();
+
+    if (failed(parseVariadicness(p, variadicIndices, packIndices, idx++)))
+      return failure();
+
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
       return failure();
@@ -301,7 +360,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   paramListAttr = ArgParamListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
+      defaultKwOnlyParams, variadicIndices, packIndices);
   return success();
 }
 
@@ -312,7 +371,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
   DefaultValueHandler defaultHandler(passingKinds,
                                      paramListAttr.getDefaultPos(),
                                      paramListAttr.getDefaultKwOnly());
-
+  SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, passingKinds, '|');
   auto printWithDefault = [&](Type type) {
@@ -323,6 +382,8 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
+    printVariadicness(p, variadicness, idx);
+
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
       printParamValue(p, defaultOr);

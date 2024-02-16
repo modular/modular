@@ -549,7 +549,7 @@ fn callVariadic[p: Int](x: Int):
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <Ts: variadic<type>>
+# CHECK-SAME: <Ts: variadic<type> var>
 struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
     var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
 

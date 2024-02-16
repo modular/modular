@@ -885,7 +885,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (paramList.hasVarArgs() ||
       // If the parent struct has param varargs, any member functions will too.
-      (structDecl && structDecl.getSignature().getParamVarArg()))
+      (structDecl && structDecl.getSignature().hasVariadicParam()))
     fnSignature.varEffects.setParamVarArgs();
 
   // Parse the argument list next if present.
@@ -1732,9 +1732,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       getContext(), paramSignature.names, paramSignature.passingKinds,
       paramSignature.defaultPosParams, paramSignature.defaultKwOnlyParams,
       paramSignature.variadicIndices, /*packIndices=*/{});
-  auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
-                                                 paramsArrayAttr, paramListAttr,
-                                                 paramSignature.hasVarArgs());
+  auto sig = TypeSignatureType::remapToSignature(
+      silenceErrors(getContext()), paramsArrayAttr, paramListAttr);
   if (!sig)
     return failure();
   structOp.setSignature(sig);
@@ -2620,15 +2619,12 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   auto params = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
   traitOp.setParams(params);
-  SmallVector<StringAttr> paramNames{StringAttr::get(decl.getContext(), ""),
-                                     StringAttr::get(decl.getContext(), "")};
-  SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
-                                             PassingKind::Implicit};
+  SmallVector<StringAttr> paramNames(2, StringAttr::get(decl.getContext()));
+  SmallVector<PassingKind> paramPassingKinds(2, PassingKind::Implicit);
   auto paramListAttr =
       ArgParamListAttr::get(getContext(), paramNames, paramPassingKinds);
-  auto sig =
-      TypeSignatureType::remapToSignature(silenceErrors(getContext()), params,
-                                          paramListAttr, /*paramVarArg=*/false);
+  auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
+                                                 params, paramListAttr);
   if (!sig)
     return failure();
   traitOp.setSignature(sig);

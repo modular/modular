@@ -21,8 +21,7 @@ def DiscardType : DialectType<(type)>;
 
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
-  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs,
-  Bool:$paramVarArg
+  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs
 )>;
 
 def UnpackedType : DialectType<(type

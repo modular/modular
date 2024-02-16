@@ -472,7 +472,7 @@ struct UnqualAliasLookup[param: Int]:
 fn fnWithVariadics[*b: Int]():
   pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int>>
+# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> var>
 struct StructWithVariadics[*b: Int]:
     fn __init__(inout self, i: Int):
         pass

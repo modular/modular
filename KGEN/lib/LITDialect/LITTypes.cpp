@@ -57,44 +57,28 @@ void LITDialect::registerTypes() {
 // TypeSignatureType
 //===----------------------------------------------------------------------===//
 
+/// TODO: remove these?
 static ParseResult parseTypeSignature(AsmParser &p,
                                       SmallVectorImpl<Type> &paramTypes,
-                                      ArgParamListAttr &paramListAttrs,
-                                      bool &paramVarArg) {
+                                      ArgParamListAttr &paramListAttrs) {
   if (parseOptionalParamSignature(p, paramTypes, paramListAttrs))
     return failure();
-  paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
   return success();
 }
 
 static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
-                               ArgParamListAttr paramListAttrs,
-                               bool paramVarArg) {
+                               ArgParamListAttr paramListAttrs) {
   printOptionalParamSignature(p, paramTypes, paramListAttrs);
-  if (paramVarArg)
-    p << " param_vararg";
 }
 
 LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           ArrayRef<Type> paramTypes,
-                          ArgParamListAttr paramListAttrs, bool paramVarArg) {
+                          ArgParamListAttr paramListAttrs) {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
   if (paramPassingKinds.size() != paramTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
-  }
-
-  if (paramVarArg) {
-    if (paramTypes.empty()) {
-      return emitError() << "type signature with 'param_vararg' must have at "
-                            "least one parameter";
-    }
-    if (!::isa<VariadicType>(
-            paramTypes[countNumPositional(paramPassingKinds) - 1])) {
-      return emitError() << "expected last positional parameter type to be a "
-                            "variadic type for 'param_vararg'";
-    }
   }
 
   return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
@@ -102,9 +86,17 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                             paramPassingKinds, paramTypes, "parameter");
 }
 
+bool TypeSignatureType::isVarParam(size_t idx) const {
+  return llvm::is_contained(getParamListAttrs().getVariadicIndices(), idx);
+}
+
+bool TypeSignatureType::hasVariadicParam() const {
+  return !getParamListAttrs().getVariadicIndices().empty();
+}
+
 TypeSignatureType TypeSignatureType::remapToSignature(
     function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
-    ArgParamListAttr paramListAttrs, bool paramVarArg) {
+    ArgParamListAttr paramListAttrs) {
   IndexRefRemapper remapper(paramDecls, {});
   SmallVector<Type> inputParamTypes =
       llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
@@ -117,24 +109,24 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       paramListAttrs.getPassingKinds(),
       remapper.replace(paramListAttrs.getDefaultPos()),
       remapper.replace(paramListAttrs.getDefaultKwOnly()),
-      /*variadicIndices=*/{}, /*packIndices=*/{});
+      paramListAttrs.getVariadicIndices(), /*packIndices=*/{});
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
-                                       paramListAttrs, paramVarArg);
+                                       paramListAttrs);
 }
 
 TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
-  return get(context, /*paramTypes=*/{}, ArgParamListAttr::get(context), false);
+  return get(context, /*paramTypes=*/{}, ArgParamListAttr::get(context));
 }
 
 TypeSignatureType TypeSignatureType::get(
     MLIRContext *context, ArrayRef<Type> paramTypes,
     ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
     ArrayRef<TypedAttr> defaultPosParams,
-    ArrayRef<TypedAttr> defaultKwOnlyParams, bool paramVarArg) {
+    ArrayRef<TypedAttr> defaultKwOnlyParams, ArrayRef<size_t> variadicIndices) {
   auto paramListAttrs = ArgParamListAttr::get(
       context, paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
-  return get(context, paramTypes, paramListAttrs, paramVarArg);
+      defaultKwOnlyParams, variadicIndices, /*packIndices=*/{});
+  return get(context, paramTypes, paramListAttrs);
 }
 
 ArrayRef<StringAttr> TypeSignatureType::getParamNames() const {
@@ -415,7 +407,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  bool paramVarArg = false;
+  SmallVector<size_t> newVariadicIndices;
 
   auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   ParameterEvaluator evaluator;
@@ -434,8 +426,8 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
           newKwOnlyDefaults.push_back(defaultOr);
 
-        if (sig.isVarArg(i))
-          paramVarArg = true;
+        if (sig.isVarParam(i))
+          newVariadicIndices.push_back(i);
         evaluator.addInputValue(ParamIndexRefAttr::get(
             /*depth=*/0, /*isResult=*/false, newParamTypes.size() - 1,
             newParamTypes.back()));
@@ -451,9 +443,9 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 
   auto paramListAttrs = ArgParamListAttr::get(
       getContext(), newParamNames, newPassingKinds, newPosDefaults,
-      newKwOnlyDefaults, /*variadicIndices=*/{}, /*packIndices=*/{});
-  auto newSig = TypeSignatureType::get(getContext(), newParamTypes,
-                                       paramListAttrs, paramVarArg);
+      newKwOnlyDefaults, newVariadicIndices, /*packIndices=*/{});
+  auto newSig =
+      TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return MetaTypeType::get(getSymbol(), values, newSig);
 }
 

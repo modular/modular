@@ -44,8 +44,10 @@ lit.func @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.paramref<:trait<@MyTra
 "type.sig"() : () -> !lit.type_signature<index, |>
 // CHECK: !lit.type_signature<"dt": dtype = f32>
 "type.sig"() : () -> !lit.type_signature<"dt": dtype = f32>
-// CHECK: !lit<type_signature<"i": variadic<index>> param_vararg>
-"type.sig"() : () -> !lit<type_signature<"i": variadic<index>> param_vararg>
+// CHECK: !lit.type_signature<"i": variadic<index> var>
+"type.sig"() : () -> !lit<type_signature<"i": variadic<index> var>>
+// CHECK: !lit.type_signature<"j": variadic<index> pack>
+"type.sig"() : () -> !lit<type_signature<"j": variadic<index> pack>>
 
 // CHECK-LABEL: @type_sig
 // CHECK-SAME: !lit.type_signature<index, array<*(0,0), index>>
