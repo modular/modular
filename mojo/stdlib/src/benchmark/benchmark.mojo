@@ -527,27 +527,28 @@ fn _run_impl(opts: _RunOptions) -> Report:
         if total_iters > opts.max_iters and time_elapsed > min_time_ns:
             break
 
-        var n = opts.max_batch_size
+        var n = Float64(opts.max_batch_size)
         if opts.max_batch_size == 0:
-            prev_dur = max(1, prev_dur)  # avoid dividing by 0
-            # Order of operations matters.
-            # For very fast benchmarks, prev_iterations ~= prev_duration.
-            # If you divide first, you get 0 or 1,
-            # which can hide an order of magnitude in execution time.
-            # So multiply first, then divide.
-            n = min_time_ns * prev_iters // prev_dur
-            n += n // 5
-            # Don't grow too fast in case we had timing errors previously.
+            # We now count the next batchSize. A user might run the benchmark
+            # with no warmup phase, so we need to make sure the divisor is not
+            # zero.
+            prev_dur = max(1, prev_dur)
+            # Compute the next batch size.
+            n = min_time_ns * prev_iters / Float64(prev_dur)
+            n *= 1.2
+            # We should not grow too fast, so we cap it to only 10x the growth
+            # from the prior iteration. Fast growth can happen when the function
+            # is too fast.
             n = min(n, 10 * prev_iters)
-            # Be sure to run at least one more than last time.
+            # We have to increase the batchSize each time. So, we make sure we
+            # advance the number of iterations regardless of the prior logic.
             n = max(n, prev_iters + 1)
-            # Don't run more than 1e9 times.
-            # (This also keeps n in int range on 32 bit platforms.)
-            n = min(n, 1_000_000_000)
+            # The batch size should not be larger than 1.0e9.
+            n = min(n, 1.0e9)
 
-        prev_dur = opts.timing_fn(n)
-        prev_iters = n
-        report.runs.push_back(Batch(prev_dur, prev_iters, False))
+        prev_dur = opts.timing_fn(int(n))
+        prev_iters = int(n)
+        report.runs.append(Batch(prev_dur, prev_iters, False))
         total_iters += prev_iters
         time_elapsed += prev_dur
 
