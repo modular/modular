@@ -29,6 +29,27 @@ class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []
     : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
+// SymbolAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_SymbolAttr : LITAttr<"Symbol", "symbol"> {
+  let summary = "a type symbol reference";
+  let description = [{
+    This attribute wraps a `SymbolRefAttr` in another attribute type so that
+    aliases can be generated for it selectively.
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$value);
+  let assemblyFormat = "`` $value";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$value), [{
+      return $_get(value.getContext(), value);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ArgParamListAttr
 //===----------------------------------------------------------------------===//
 
