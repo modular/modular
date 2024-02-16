@@ -869,13 +869,24 @@ MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
       parentDeclRef ? *parentDeclRef
                     : impl->parserContext->getSharedState().getTopLevelDecl();
   auto &declsInScope = parentDecl.getDeclsInScope();
+
+  // We first check if the package already exists, in which case we just return
+  // its decl.
   if (auto it = declsInScope.find(StringAttr::get(getMLIRContext(), name));
       it != declsInScope.end()) {
     assert(it->second.size() == 1 &&
            "We expect one single package decl with a given name.");
     return it->second[0];
   }
-  return &sharedState.createPackage(name, name);
+
+  auto moduleBuilder = parentDecl.getDeclEndBuilder();
+  auto packageName = StringAttr::get(sharedState.getContext(), name);
+  auto packageOp = moduleBuilder.create<LIT::PackageOp>(
+      sharedState.translateLocation(parentDecl.getLoc()), packageName);
+
+  return &sharedState.declResolver->addDecl(
+      packageOp, SMLoc(), packageName, &parentDecl, parentDecl.getCursor(),
+      parentDecl.getCursor(), /*indentation=*/-1);
 }
 
 /// Generate a human readable version of the identifier of a struct along with
