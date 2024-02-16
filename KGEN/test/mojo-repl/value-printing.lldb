@@ -101,7 +101,7 @@ let another_bool = False
 # CHECK:   (Int) [2] = 3
 # CHECK: }
 from collections.vector import DynamicVector
-var z = DynamicVector[Int](2)
+var z = DynamicVector[Int](capacity=2)
 z.push_back(1)
 z.push_back(2)
 z.push_back(3)
