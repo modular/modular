@@ -223,7 +223,8 @@ ErrorOrSuccess Config::copyFrom(const Config &other) {
 StringRef Config::getValue(StringRef key) {
   std::string upper = key.upper();
   std::replace_if(
-      upper.begin(), upper.end(), [](char c) { return c == '.'; }, '_');
+      upper.begin(), upper.end(),
+      [](char c) { return (c == '.') || (c == '-'); }, '_');
 
   if (allowEnvOverride) {
     // Check for this environment variable.

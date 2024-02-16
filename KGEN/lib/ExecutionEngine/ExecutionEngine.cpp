@@ -364,10 +364,11 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
     rtFile.emplace(std::move(*rtFileOr)); // Keep alive until below.
     compilerRTPath = rtFile->getPath().string();
   } else {
-    std::error_code ec;
     compilerRTPath = cfg.getCompilerRTPath().str();
+
+    std::error_code ec;
     if (!std::filesystem::exists(compilerRTPath, ec) || ec)
-      return Error("unable to locate compiler_rt");
+      return Error("unable to locate compiler_rt at " + Twine(compilerRTPath));
   }
 
   auto generatorOr =
@@ -410,7 +411,7 @@ static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg) {
   std::error_code ec;
   std::string orcRTPath = cfg.getOrcRTPath().str();
   if (!std::filesystem::exists(orcRTPath, ec) || ec)
-    return Error("unable to locate orc_rt");
+    return Error("unable to locate orc_rt at " + Twine(orcRTPath));
   return Buffer::getFile(orcRTPath);
 }
 
