@@ -781,50 +781,6 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
     return;
   auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
 
-  // Check to see if this is a self-recursive function call.
-  if (ASTDecl *callerDecl =
-          emitter.declScope.getNearestDeclOfType<LIT::FuncOp>()) {
-    if (calleeDecl == callerDecl) {
-      auto callerFunc = cast<LIT::FuncOp>(*callerDecl);
-
-      // We only diagnose self-recursive calls with obviously identical
-      // arguments or parameters.  Note that we don't need to check argument
-      // conventions here because you don't need to pass
-      bool allIdentical = true;
-      assert(call.getNumOperands() == callerFunc.getNumArguments() &&
-             "argument mismatch");
-      for (auto [argValue, argDecl] :
-           llvm::zip(call.getOperands(), callerFunc.getArguments())) {
-        if (argValue != argDecl) {
-          allIdentical = false;
-          break;
-        }
-      }
-      // Check to see if all parameters match.
-      if (allIdentical) {
-        SmallVector<ParamDeclAttr> paramDecls =
-            callerFunc.collectAllParams(/*includeImplLifetimes=*/false);
-        assert(symbol.getParamValues().size() == paramDecls.size() &&
-               "parameter mismatch");
-        for (auto [paramValue, paramDecl] :
-             llvm::zip(symbol.getParamValues(), paramDecls)) {
-          auto valueRef = dyn_cast<ParamDeclRefAttr>(paramValue);
-          if (!valueRef || valueRef.getName() != paramDecl.getName()) {
-            allIdentical = false;
-            break;
-          }
-        }
-      }
-
-      if (allIdentical) {
-        emitter.emitWarning(loc)
-            << "self recursive call will cause an infinite loop"
-            << callExpr->getRange();
-        return;
-      }
-    }
-  }
-
   // The __del__ special function takes its operand as an owning reference,
   // and destroys it.  It is a bit silly, but you can call it directly on an
   // RValue and it will destroy the RValue explicitly.  However, some folks
