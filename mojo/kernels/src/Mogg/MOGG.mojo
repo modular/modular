@@ -427,7 +427,7 @@ fn to_buffer[
     data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
     shape: __mlir_type.`!kgen.pointer<index>`,
 ) -> NDBuffer[type, rank]:
-    let shape_ptr = Pointer(shape)
+    var shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
     var stride_tuple = StaticIntTuple[rank]()
@@ -438,7 +438,7 @@ fn to_buffer[
     @parameter
     fn body[idx: Int]():
         # Start from the back so we can accumulate the strides.
-        let i = rank - 1 - idx
+        var i = rank - 1 - idx
         shape_tuple[i] = shape_ptr.load(i)
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
@@ -454,7 +454,7 @@ fn to_buffer[
 fn to_shape[
     rank: Int
 ](shape: __mlir_type.`!kgen.pointer<index>`) -> StaticIntTuple[rank]:
-    let shape_ptr = Pointer(shape)
+    var shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
     @always_inline
@@ -505,25 +505,25 @@ fn to_buffer_list[
     raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
 ) -> InlinedFixedVector[NDBuffer[type, rank]]:
     # Cast input list pointer
-    let abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
-    let elems_ptr = Pointer(
+    var abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
+    var elems_ptr = Pointer(
         __get_address_as_lvalue(abi_list_ptr.address).elements
     )
-    let abi_tensors_ptr = bitcast[ABI_Tensor](elems_ptr)
+    var abi_tensors_ptr = bitcast[ABI_Tensor](elems_ptr)
 
     # Create output list
-    let num_elements = __get_address_as_lvalue(abi_list_ptr.address).num_elems
+    var num_elements = __get_address_as_lvalue(abi_list_ptr.address).num_elems
     var out_list = InlinedFixedVector[NDBuffer[type, rank]](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
     for i in range(num_elements):
-        let abi_tensor_ptr = abi_tensors_ptr.offset(i)
-        let dims = __get_address_as_lvalue(abi_tensor_ptr.address).dims
-        let data = __mlir_op.`pop.pointer.bitcast`[
+        var abi_tensor_ptr = abi_tensors_ptr.offset(i)
+        var dims = __get_address_as_lvalue(abi_tensor_ptr.address).dims
+        var data = __mlir_op.`pop.pointer.bitcast`[
             _type = __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`]
         ](__get_address_as_lvalue(abi_tensor_ptr.address).data)
-        let buffer = to_buffer[type, rank](data, dims)
+        var buffer = to_buffer[type, rank](data, dims)
         out_list.append(buffer)
 
     return out_list
@@ -554,12 +554,12 @@ fn elementwise_wrapper[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        let name_str = String("name=") + trace_description
-        let shape_str = String("shape=") + String("x").join(buffer.get_shape())
+        var name_str = String("name=") + trace_description
+        var shape_str = String("shape=") + String("x").join(buffer.get_shape())
 
-        let vector_width_str = String("vector_width=") + simd_width
+        var vector_width_str = String("vector_width=") + simd_width
 
-        let info = String(";").join(name_str, shape_str, vector_width_str)
+        var info = String(";").join(name_str, shape_str, vector_width_str)
 
         return (
             info
@@ -587,7 +587,7 @@ fn elementwise_wrapper[
                 buffer.dynamic_shape,
             )
         else:
-            let coro = _async_elementwise_impl[
+            var coro = _async_elementwise_impl[
                 rank,
                 simd_width,
                 func,
@@ -595,7 +595,7 @@ fn elementwise_wrapper[
             ](
                 buffer.dynamic_shape,
             )
-            let task = MojoCallTask(coro ^, ctx)
+            var task = MojoCallTask(coro ^, ctx)
             (task ^)()
 
 
@@ -630,7 +630,7 @@ fn _simd_load_internal[
 ]:
     @parameter
     if type == DType.bool:
-        let v = buffer.data.bitcast[DType.uint8]().simd_load[simd_width](index)
+        var v = buffer.data.bitcast[DType.uint8]().simd_load[simd_width](index)
         return v.cast[type]()
     else:
         return buffer.data.simd_load[simd_width](index)
@@ -645,10 +645,10 @@ fn simd_load[
     buffer: NDBuffer[type, rank, input_0_static_shape],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
-    let flat_index = _compute_flat_index[
+    var flat_index = _compute_flat_index[
         type, rank, rank, input_0_static_shape
     ](buffer, index)
-    let stride = buffer.dynamic_stride[rank - 1]
+    var stride = buffer.dynamic_stride[rank - 1]
 
     if buffer.dynamic_stride[rank - 1] == 0:
         return buffer.data.load(flat_index)
@@ -656,7 +656,7 @@ fn simd_load[
 
         @parameter
         if type == DType.bool:
-            let v = strided_load[DType.uint8, simd_width](
+            var v = strided_load[DType.uint8, simd_width](
                 buffer.data.bitcast[DType.uint8]().offset(flat_index), stride
             )
             return v.cast[type]()
@@ -679,12 +679,12 @@ fn simd_store[
     index: StaticIntTuple[rank],
     val: SIMD[type, simd_width],
 ):
-    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
 
     # We have to cast bools into their runtime storage type.
     @parameter
     if type == DType.bool:
-        let v = val.cast[DType.uint8]()
+        var v = val.cast[DType.uint8]()
         buffer.data.bitcast[DType.uint8]().simd_store[simd_width](flat_index, v)
     else:
         buffer.data.simd_store[simd_width](flat_index, val)
@@ -708,8 +708,8 @@ fn broadcast_shape[
     out_buf: NDBuffer[out_type, 1],
     ctx: MojoCallContextPtr,
 ):
-    let lhs_size = lhs_buf.size()
-    let rhs_size = rhs_buf.size()
+    var lhs_size = lhs_buf.size()
+    var rhs_size = rhs_buf.size()
     if lhs_size > rhs_size:
         return broadcast_shape_impl(rhs_buf, lhs_buf, out_buf)
     return broadcast_shape_impl(lhs_buf, rhs_buf, out_buf)
@@ -726,21 +726,21 @@ fn broadcast_shape_impl[
     out_buf: NDBuffer[out_type, 1],
 ):
     # Ensure lhs is always the smaller shape
-    let lhs_rank = lhs_buf.size()
-    let rhs_rank = rhs_buf.size()
+    var lhs_rank = lhs_buf.size()
+    var rhs_rank = rhs_buf.size()
     debug_assert(lhs_rank <= rhs_rank, "lhs shape must be the smaller one")
 
     # lhs_buf =      [l0, l1, ...]
     # rhs_buf = [..., r0, r1, ...]
     # out_buf = [..., o0, o1, ...]
-    let size_diff = rhs_rank - lhs_rank
+    var size_diff = rhs_rank - lhs_rank
     for i in range(size_diff):
         out_buf[i] = rhs_buf[i].cast[out_type]()
 
     for lhs_idx in range(lhs_rank):
-        let rhs_idx = lhs_idx + size_diff
-        let lhs_dim = int(lhs_buf[lhs_idx])
-        let rhs_dim = int(rhs_buf[rhs_idx])
+        var rhs_idx = lhs_idx + size_diff
+        var lhs_dim = int(lhs_buf[lhs_idx])
+        var rhs_dim = int(rhs_buf[rhs_idx])
         if lhs_dim == rhs_dim:
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
@@ -795,7 +795,7 @@ fn broadcast_to_tensor[
     @parameter
     fn broadcast_dim[small_index: Int]():
         # We are traversing as if they are the same size.
-        let big_index = small_index + offset
+        var big_index = small_index + offset
 
         # Switch the indexes depending on which is bigger.
         var orig_index = small_index
@@ -869,10 +869,10 @@ fn broadcast_to_shape[
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
     for i in range(input_rank):
-        let input_axis = input_rank - i - 1
-        let output_axis = output_rank - i - 1
-        let input_dim = input_buf.dim(input_axis)
-        let output_dim = output_shape[output_axis]
+        var input_axis = input_rank - i - 1
+        var output_axis = output_rank - i - 1
+        var input_dim = input_buf.dim(input_axis)
+        var output_dim = output_shape[output_axis]
         if input_dim != 1 and input_dim != output_dim:
             raise Error(
                 "[broadcast_to] input dim must be either 1 or equal to"
@@ -1021,7 +1021,7 @@ fn concat[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let ins = variadic_list_to_vector(variadic_ins)
+    var ins = variadic_list_to_vector(variadic_ins)
     _concat[rank, type, single_thread_blocking_override, target](
         output,
         int(normalize_neg_index(axis[0], rank)),
@@ -1325,7 +1325,7 @@ fn mean[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    let axis = axis_buffer[0]
+    var axis = axis_buffer[0]
 
     @always_inline
     @parameter
@@ -1397,8 +1397,8 @@ fn pad_constant[
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    let paddings_ptr = paddings_buf.data
-    let constant_simd = constant_buf[0]
+    var paddings_ptr = paddings_buf.data
+    var constant_simd = constant_buf[0]
 
     _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
 
@@ -1417,7 +1417,7 @@ fn pad_reflect[
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    let paddings_ptr = paddings_buf.data
+    var paddings_ptr = paddings_buf.data
 
     _pad_reflect(output_buf, input_buf, paddings_ptr)
 
@@ -1436,7 +1436,7 @@ fn pad_repeat[
     output_buf: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    let paddings_ptr = paddings_buf.data
+    var paddings_ptr = paddings_buf.data
 
     _pad_repeat(output_buf, input_buf, paddings_ptr)
 
@@ -1491,7 +1491,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    let axis = axis_buffer[0]
+    var axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
         _reduce_generator[
             input_0_fn_wrapper,
@@ -1547,7 +1547,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    let axis = axis_buffer[0]
+    var axis = axis_buffer[0]
     with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
         _reduce_generator[
             input_0_fn_wrapper,
@@ -1603,7 +1603,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    let axis = axis_buffer[0]
+    var axis = axis_buffer[0]
 
     with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
         _reduce_generator[
@@ -1660,7 +1660,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    let axis = axis_buffer[0]
+    var axis = axis_buffer[0]
 
     with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
         _reduce_generator[
@@ -1720,9 +1720,9 @@ fn calculate_squeeze_shape[
 ):
     # remove_indices may not be sorted so our strategy is to use -1 to
     # represent removed dimensions in a copied version of our input shape buffer
-    let num_input_dims = input_shape.dynamic_shape[0]
-    let num_remove_indices = remove_indices.dynamic_shape[0]
-    let final_rank = num_input_dims - num_remove_indices
+    var num_input_dims = input_shape.dynamic_shape[0]
+    var num_remove_indices = remove_indices.dynamic_shape[0]
+    var final_rank = num_input_dims - num_remove_indices
 
     debug_assert(
         final_rank == output_shape.dynamic_shape[0],
@@ -1740,8 +1740,8 @@ fn calculate_squeeze_shape[
 
     # Mark every squeezed dimension as -1 in our copy of the shape tensor
     for remove_index_index in range(num_remove_indices):
-        let remove_index = int(remove_indices[remove_index_index])
-        let remove_index_normalize = remove_index + num_input_dims * int(
+        var remove_index = int(remove_indices[remove_index_index])
+        var remove_index_normalize = remove_index + num_input_dims * int(
             remove_indices[remove_index_index] < 0
         )
 
@@ -1779,7 +1779,7 @@ fn squeeze_shape_shape[
     input_shape: NDBuffer[type, 1],
     remove_indices: NDBuffer[indices_type, 1],
 ) raises -> StaticIntTuple[1]:
-    let out_dim = input_shape.dim(0) - remove_indices.dim(0)
+    var out_dim = input_shape.dim(0) - remove_indices.dim(0)
 
     if out_dim < 0:
         raise Error(
@@ -1807,9 +1807,9 @@ fn calculate_unsqueeze_shape[
     # padding_indices_buf may not be sorted so our strategy is to use -1 to
     # represent uninitialized dimensions, add the padding dimensions, and copy
     # over the remaining dimensions later.
-    let num_input_dims = input_shape.dynamic_shape[0]
-    let num_padding_indices = padding_indices.dynamic_shape[0]
-    let final_rank = num_input_dims + num_padding_indices
+    var num_input_dims = input_shape.dynamic_shape[0]
+    var num_padding_indices = padding_indices.dynamic_shape[0]
+    var final_rank = num_input_dims + num_padding_indices
     debug_assert(
         final_rank == output_shape.dynamic_shape[0],
         "Incorrect output shape.",
@@ -1818,8 +1818,8 @@ fn calculate_unsqueeze_shape[
         output_shape[output_index] = -1
 
     for padding_index_index in range(num_padding_indices):
-        let padding_index = int(padding_indices[padding_index_index])
-        let padding_index_normalize = padding_index + final_rank * int(
+        var padding_index = int(padding_indices[padding_index_index])
+        var padding_index_normalize = padding_index + final_rank * int(
             padding_indices[padding_index_index] < 0
         )
 
@@ -1857,7 +1857,7 @@ fn unsqueeze_shape_shape[
     input_shape: NDBuffer[type, 1],
     padding_indices: NDBuffer[indices_type, 1],
 ) -> StaticIntTuple[1]:
-    let out_dim = input_shape.dim(0) + padding_indices.dim(0)
+    var out_dim = input_shape.dim(0) + padding_indices.dim(0)
     return StaticIntTuple[1](out_dim)
 
 
@@ -1890,7 +1890,7 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        let dim = int(perms[i])
+        var dim = int(perms[i])
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1915,14 +1915,14 @@ fn transpose_shape[
 
     @unroll
     for i in range(rank):
-        let perm = int(perms[i])
+        var perm = int(perms[i])
         if perm < 0 or rank <= perm:
             raise Error(
                 "[transpose] each permutation must be within range [0, rank)"
             )
 
     # NOTE this assumes `transpose` can handle input with null data pointer
-    let out = transpose[rank, type, int_type, single_thread_blocking_override](
+    var out = transpose[rank, type, int_type, single_thread_blocking_override](
         input, perms, MojoCallContextPtr()
     ).dynamic_shape
 
@@ -1952,13 +1952,13 @@ fn mogg_gather_sum[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        let output_shape_str = String("output_shape=") + String("x").join(
+        var output_shape_str = String("output_shape=") + String("x").join(
             output.get_shape()
         )
-        let input_shape_str = String("input_shape=") + String("x").join(
+        var input_shape_str = String("input_shape=") + String("x").join(
             input.get_shape()
         )
-        let indices_shape_str = String("indices_shape=") + String("x").join(
+        var indices_shape_str = String("indices_shape=") + String("x").join(
             indices.get_shape()
         )
 
@@ -2037,7 +2037,7 @@ fn gather[
             output_shape,
         )
     else:
-        let coro = _async_gather[
+        var coro = _async_gather[
             type,
             in_rank,
             indices_type,
@@ -2053,7 +2053,7 @@ fn gather[
             indices.dynamic_shape,
             output_shape,
         )
-        let task = MojoCallRaisingTask(coro ^, ctx)
+        var task = MojoCallRaisingTask(coro ^, ctx)
         (task ^)()
 
 
@@ -2120,7 +2120,7 @@ fn matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        let info = get_trace_information(
+        var info = get_trace_information(
             "dynamic_tile",
             GemmShape.get[
                 transpose_a,
@@ -2203,7 +2203,7 @@ fn batched_matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        let info = get_trace_information_batched_matmul[rank](
+        var info = get_trace_information_batched_matmul[rank](
             "dynamic_tile",
             a.get_shape(),
             b.get_shape(),
@@ -2668,9 +2668,9 @@ fn non_maximum_suppression[
     output: NDBuffer[DType.int64, 2],
     ctx: MojoCallContextPtr,
 ):
-    let max_output_boxes_int = int(max_output_boxes_per_class[0])
-    let iou_threshold_float = iou_threshold[0]
-    let score_threshold_float = score_threshold[0]
+    var max_output_boxes_int = int(max_output_boxes_per_class[0])
+    var iou_threshold_float = iou_threshold[0]
+    var score_threshold_float = score_threshold[0]
 
     non_max_suppression[type](
         boxes,
@@ -2691,9 +2691,9 @@ fn non_maximum_suppression_shape_func[
     iou_threshold: NDBuffer[DType.float32, 1, DimList(1)],
     score_threshold: NDBuffer[DType.float32, 1, DimList(1)],
 ) -> StaticIntTuple[2]:
-    let max_output_boxes_int = int(max_output_boxes_per_class[0])
-    let iou_threshold_float = iou_threshold[0]
-    let score_threshold_float = score_threshold[0]
+    var max_output_boxes_int = int(max_output_boxes_per_class[0])
+    var iou_threshold_float = iou_threshold[0]
+    var score_threshold_float = score_threshold[0]
 
     return non_max_suppression_shape_func[type](
         boxes,
@@ -2923,7 +2923,7 @@ fn split_ith_output_shape[
         raise Error(
             "[split] output index must be within range [0, len(split_sizes))"
         )
-    let output_split_size = int(split_sizes_buf[output_idx])
+    var output_split_size = int(split_sizes_buf[output_idx])
 
     var split_axis = int(split_axis_buf[0])
     if split_axis < 0:
@@ -3007,9 +3007,9 @@ fn conv[
             "$(2*(input_rank-2)) value expected in conv paddings"
         )
 
-    let stride_flat = strides.flatten()
-    let dilation_flat = dilation.flatten()
-    let padding_flat = paddings.flatten()
+    var stride_flat = strides.flatten()
+    var dilation_flat = dilation.flatten()
+    var padding_flat = paddings.flatten()
 
     var stride_tuple = StaticIntTuple[input_rank - 2](0)
     var dilation_tuple = StaticIntTuple[input_rank - 2](0)
@@ -3055,19 +3055,19 @@ fn conv[
     @__copy_capture(strides_tuple, pad_h_tuple, pad_w_tuple)
     @parameter
     fn description_fn() -> String:
-        let input_shape_str = String("input=") + String("x").join(
+        var input_shape_str = String("input=") + String("x").join(
             input.dynamic_shape
         )
-        let filter_shape_str = String("filter=") + String("x").join(
+        var filter_shape_str = String("filter=") + String("x").join(
             filter.dynamic_shape
         )
-        let output_shape_str = String("output=") + String("x").join(
+        var output_shape_str = String("output=") + String("x").join(
             output.dynamic_shape
         )
-        let group_str = String("group=") + int(num_groups[0])
-        let stride_str = String("stride=") + String("x").join(stride_tuple)
-        let padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
-        let padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
+        var group_str = String("group=") + int(num_groups[0])
+        var stride_str = String("stride=") + String("x").join(stride_tuple)
+        var padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
+        var padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
 
         return String(";").join(
             input_shape_str,
@@ -3190,20 +3190,20 @@ fn conv_transpose[
     @__copy_capture(stride_tuple, pad_h, pad_w)
     @parameter
     fn description_fn() -> String:
-        let input_shape_str = String("input=") + String("x").join(
+        var input_shape_str = String("input=") + String("x").join(
             input.dynamic_shape
         )
-        let filter_shape_str = String("filter=") + String("x").join(
+        var filter_shape_str = String("filter=") + String("x").join(
             filter.dynamic_shape
         )
-        let output_shape_str = String("output=") + String("x").join(
+        var output_shape_str = String("output=") + String("x").join(
             output.dynamic_shape
         )
-        let group_str = String("group=") + 1
-        let stride_str = String("stride=") + String("x").join(stride_tuple)
-        let padding_d_str = String("padding_d=") + String("x").join(Index(0, 0))
-        let padding_h_str = String("padding_h=") + String("x").join(pad_h)
-        let padding_w_str = String("padding_w=") + String("x").join(pad_w)
+        var group_str = String("group=") + 1
+        var stride_str = String("stride=") + String("x").join(stride_tuple)
+        var padding_d_str = String("padding_d=") + String("x").join(Index(0, 0))
+        var padding_h_str = String("padding_h=") + String("x").join(pad_h)
+        var padding_w_str = String("padding_w=") + String("x").join(pad_w)
 
         return String(";").join(
             input_shape_str,
@@ -3565,9 +3565,9 @@ fn no_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     alias mask_shape = DimList()
     alias mask_type = DType.float32
-    let mask = NDBuffer[mask_type, rank, mask_shape]()
-    let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
-    let causal_mask: Float32 = 0
+    var mask = NDBuffer[mask_type, rank, mask_shape]()
+    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
             rank,
@@ -3639,8 +3639,8 @@ fn with_mask_fused_attention_cpu[
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
-    let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
-    let causal_mask: Float32 = 0
+    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
             rank,

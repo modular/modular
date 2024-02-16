@@ -34,7 +34,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
     fn __init__(inout self, other: IntList):
-        let num_elements = len(other)
+        var num_elements = len(other)
         self.length = Self._length
         self.data = Pointer[Int]()
         self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
@@ -61,8 +61,8 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
     @always_inline
     fn __init__(inout self, *elems: Int):
-        let elems_list: VariadicList[Int] = elems
-        let num_elements = len(elems_list)
+        var elems_list: VariadicList[Int] = elems
+        var num_elements = len(elems_list)
 
         self.length = Self._length
         self.data = Pointer[Int]()
@@ -189,7 +189,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
         @parameter
         if Self.is_fully_static():
-            let v = StaticIntTuple[Self._length](Self.static_values)
+            var v = StaticIntTuple[Self._length](Self.static_values)
             return v[index]
         elif Self.has_static_length():
             return self.stack_alloc_data[index]

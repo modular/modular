@@ -20,8 +20,8 @@ alias MAX_BENEFIT = 1000
 fn empty_tensor[
     type: DType,
 ](shape: IntList) -> Tensor[type, shape.static_values]:
-    let ptr = DTypePointer[type].alloc(shape.nelems())
-    let ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    var ptr = DTypePointer[type].alloc(shape.nelems())
+    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values](ptr, shape, ref_cnt)
 
@@ -41,8 +41,8 @@ fn empty_strided_tensor[
 ](shape: IntList, strides: IntList) -> Tensor[
     type, shape.static_values, strides.static_values
 ]:
-    let ptr = DTypePointer[type].alloc(shape.nelems())
-    let ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    var ptr = DTypePointer[type].alloc(shape.nelems())
+    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values, strides.static_values](
         ptr, shape, ref_cnt
@@ -61,7 +61,7 @@ fn to_tensor[
     raw_shape_ptr: __mlir_type.`!kgen.pointer<index>`,
     length: Int,
 ) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
-    let shape_ptr = Pointer(raw_shape_ptr)
+    var shape_ptr = Pointer(raw_shape_ptr)
 
     var shape = IntList[static_shape].empty(length)
     var strides = IntList[static_strides].empty(length)
@@ -77,7 +77,7 @@ fn to_tensor[
         @parameter
         fn body[idx: Int]():
             # Start from the back so we can accumulate the strides.
-            let i = rank - 1 - idx
+            var i = rank - 1 - idx
             shape[i] = shape_ptr.load(i)
             strides[i] = stride
             stride *= shape[i]
@@ -126,8 +126,8 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     @always_inline
     @parameter
     fn body[i: Int]():
-        let index = IntList[DimList(i)](i)
-        let dim = int(perm.simd_load[1](index))
+        var index = IntList[DimList(i)](i)
+        var dim = int(perm.simd_load[1](index))
         new_shape[i] = x.shape[dim]
         new_stride[i] = x.strides[dim]
 
@@ -167,7 +167,7 @@ fn add_like_custom_op_target(
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
     out.for_each[1, func]()
@@ -226,7 +226,7 @@ fn param_expression_shape_test(
             multiparam_user(input1.static_rank, input2.static_rank)
         ]()
     ](3, 2, 1, 3, 2)
-    let output = empty_tensor[input1.type](shape)
+    var output = empty_tensor[input1.type](shape)
 
     # Dummy user to make sure mogg has to materialize the toKGEN.
     dummy_user(output)
@@ -312,14 +312,14 @@ fn gather[
         input.has_static_rank() and indices.has_static_rank(),
         "gather kernel does not support dynamic rank inputs",
     ]()
-    let input_buf = input.to_buffer[input.static_rank]().make_dims_unknown()
-    let indices_buf = indices.to_buffer[
+    var input_buf = input.to_buffer[input.static_rank]().make_dims_unknown()
+    var indices_buf = indices.to_buffer[
         indices.static_rank
     ]().make_dims_unknown()
-    let axis_buf = axis.to_buffer[1]().make_dims_unknown()
+    var axis_buf = axis.to_buffer[1]().make_dims_unknown()
 
     alias out_rank = gather_rank(input.static_rank, indices.static_rank)
-    let out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
+    var out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
 
     @__copy_capture(indices_buf)
     @parameter
@@ -489,7 +489,7 @@ fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
     out.for_each[1, func]()
@@ -508,8 +508,8 @@ fn mo_greater(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i1 = x.simd_load[width](i)
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        var i1 = x.simd_load[width](i)
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](i1 > i2)
 
     out.for_each[1, func]()
@@ -528,8 +528,8 @@ fn mo_max(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
-        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        var i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return max(i1, i2)
 
     out.for_each[1, func]()
@@ -548,8 +548,8 @@ fn mo_min(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
-        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        var i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return min(i1, i2)
 
     out.for_each[1, func]()
@@ -568,8 +568,8 @@ fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
-        let i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
+        var i1 = rebind[SIMD[_t, width]](x.simd_load[width](i))
+        var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return i1 * i2
 
     out.for_each[1, func]()
@@ -586,7 +586,7 @@ fn my_sub_without_fusion(
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
-        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
 
     out.for_each[1, func]()

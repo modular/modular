@@ -85,8 +85,8 @@ fn test_3D_in_out_lambda[
             @always_inline
             @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
-                let indices = StaticIntTuple[3](x, y, idx)
-                let result = input_0_fn[simd_width, 3](indices)
+                var indices = StaticIntTuple[3](x, y, idx)
+                var result = input_0_fn[simd_width, 3](indices)
                 output_0_fn[simd_width, 3](indices, result)
 
             vectorize[
@@ -257,7 +257,7 @@ fn test_custom_identity[
     @parameter
     @always_inline
     fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let x = input_0_fn[simd_width, rank](idx)
+        var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank](idx, x)
 
     _elementwise_impl[
@@ -334,7 +334,7 @@ fn custom_op_that_raises[
     @parameter
     @always_inline
     fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let x = input_0_fn[simd_width, rank](idx)
+        var x = input_0_fn[simd_width, rank](idx)
         output_0_fn[simd_width, rank](idx, x)
 
     _elementwise_impl[
@@ -358,7 +358,7 @@ fn custom_shape_func_that_raises[
     # can test its runtime execution.
     print("Hello")
 
-    let out_shape = data.get_shape()
+    var out_shape = data.get_shape()
     if out_shape[0] == 20:
         raise ("data.get_shape()[0] == 20")
     return out_shape

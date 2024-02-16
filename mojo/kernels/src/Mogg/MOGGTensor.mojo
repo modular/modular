@@ -69,7 +69,7 @@ fn _get_start_indices_of_nth_subvolume[
 
         unroll[compute_shape, rank - subvolume_rank]()
     else:
-        let rank = len(out)
+        var rank = len(out)
         for i in range(rank - subvolume_rank - 1, -1, -1):
             out[i] = curr_index % shape[i]
             curr_index //= shape[i]
@@ -202,7 +202,7 @@ struct Tensor[
     fn __del__(owned self):
         @parameter
         if Self._OWNED_MEMORY:
-            let res = self.storage_ref_count.decrement()
+            var res = self.storage_ref_count.decrement()
             if res == 1:
                 # Clean up the managed refcount itself
                 self.storage_ref_count.deallocate()
@@ -310,7 +310,7 @@ struct Tensor[
         # Nop function to preserve symbol.
         self._output_fusion_hook()
 
-        let val = rebind[SIMD[type, value.size]](value)
+        var val = rebind[SIMD[type, value.size]](value)
 
         @parameter
         if Self._internal_out_lambda:
@@ -334,8 +334,8 @@ struct Tensor[
 
     @always_inline
     fn _simd_store_internal(inout self, index: IntList, val: SIMD):
-        let flat_index = self._compute_flat_index(index)
-        let value = rebind[SIMD[type, val.size]](val)
+        var flat_index = self._compute_flat_index(index)
+        var value = rebind[SIMD[type, val.size]](val)
         self.data.simd_store[val.size](flat_index, value)
 
     @always_inline
@@ -388,8 +388,8 @@ struct Tensor[
     fn _simd_load_internal[
         simd_width: Int
     ](self, index: IntList) -> SIMD[type, simd_width]:
-        let flat_index = self._compute_flat_index(index)
-        let stride = self.strides[self.rank() - 1]
+        var flat_index = self._compute_flat_index(index)
+        var stride = self.strides[self.rank() - 1]
 
         if self.strides[self.rank() - 1] == 0:
             return self.data.load(flat_index)
@@ -397,7 +397,7 @@ struct Tensor[
 
             @parameter
             if type == DType.bool:
-                let v = strided_load[DType.uint8, simd_width](
+                var v = strided_load[DType.uint8, simd_width](
                     self.data.bitcast[DType.uint8]().offset(flat_index), stride
                 )
                 return v.cast[type]()
@@ -408,7 +408,7 @@ struct Tensor[
 
         @parameter
         if type == DType.bool:
-            let v = self.data.bitcast[DType.uint8]().simd_load[simd_width](
+            var v = self.data.bitcast[DType.uint8]().simd_load[simd_width](
                 flat_index
             )
             return v.cast[type]()
@@ -427,7 +427,7 @@ struct Tensor[
             shape[i] = self.shape[i]
             strides[i] = self.strides[i]
 
-        let buffer = NDBuffer[Self.type, rank, Self.static_shape](
+        var buffer = NDBuffer[Self.type, rank, Self.static_shape](
             self.data, shape, strides
         )
         return buffer
@@ -451,10 +451,10 @@ struct Tensor[
                 width: Int, rank: Int
             ](coords_static: StaticIntTuple[rank]) capturing:
                 alias dims = DimList.create_unknown[Self.static_rank]()
-                let coords = IntList[dims](
+                var coords = IntList[dims](
                     rebind[StaticIntTuple[Self.static_rank]](coords_static)
                 )
-                let val = func[width, Self.type, dims](coords)
+                var val = func[width, Self.type, dims](coords)
                 self.store(coords, val)
 
             elementwise[Self.static_rank, simd_width, elementwise_fn_wrapper](
@@ -469,10 +469,10 @@ struct Tensor[
             _t, _width
         ],
     ](inout self):
-        let rank = len(self.shape)
-        let total_size: Int = self.shape.nelems()
-        let inner_loop = self.shape[len(self.shape) - 1]
-        let outer_loop = total_size // inner_loop
+        var rank = len(self.shape)
+        var total_size: Int = self.shape.nelems()
+        var inner_loop = self.shape[len(self.shape) - 1]
+        var outer_loop = total_size // inner_loop
 
         for outer_i in range(outer_loop):
             var indices = _get_start_indices_of_nth_subvolume[1](
@@ -486,7 +486,7 @@ struct Tensor[
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
-                let out = func[width, Self.type, indices.static_values](indices)
+                var out = func[width, Self.type, indices.static_values](indices)
                 self.store(indices, out)
 
             # We vectorize over the innermost dimension.
