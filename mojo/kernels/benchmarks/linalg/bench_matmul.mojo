@@ -10,6 +10,39 @@ from utils.index import Index
 
 from mojobench import *
 from benchmark import keep
+from testing import assert_almost_equal
+from random import rand
+
+
+fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):
+    let m = c.get_shape()[0]
+    let n = c.get_shape()[1]
+    let k = a.get_shape()[1]
+    c.zero()
+
+    for i in range(m):
+        for p in range(k):
+            for j in range(n):
+                let a_val = a[i, p].cast[c.type]()
+                let b_val = b[p, j].cast[c.type]()
+                c[(i, j)] += a_val * b_val
+
+
+fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
+    let m = c.get_shape()[0]
+    let n = c.get_shape()[1]
+
+    let c_ref_ptr = DTypePointer[c.type].alloc(m * n)
+    let c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
+    gemm_naive(a, b, c_ref)
+
+    for i in range(m):
+        for j in range(n):
+            try:
+                assert_almost_equal(c[(i, j)], c_ref[(i, j)])
+            except e:
+                trap(e)  # this function should raise, blocked by #31795
+    c_ref_ptr.free()
 
 
 fn bench_matmul(inout m: MojoBench, spec: MatmulSpec) raises:
@@ -35,8 +68,13 @@ fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
     alias alignment = 64
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, spec.m * spec.k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, spec.k * spec.n)
-    let b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
-    b.zero()
+    let c_ptr = DTypePointer[c_type].aligned_alloc(alignment, spec.m * spec.n)
+    var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
+    var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
+    var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
+    rand[a_type](a_ptr, len(a))
+    rand[b_type](b_ptr, len(b))
+    c.zero()
 
     var padded_n_k = StaticIntTuple[2]()
     padded_n_k = pack_matmul_b_shape_func[
@@ -56,14 +94,7 @@ fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
     let bp_ptr = DTypePointer[b_type].aligned_alloc(
         alignment, padded_k * padded_n
     )
-    let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, spec.m * spec.n)
-    let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, spec.m * spec.n)
-
-    var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
-    a.zero()
-
     var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
-    var c = NDBuffer[c_type, 2](c0_ptr, Index(spec.m, spec.n))
 
     if b_packed:
         pack_b_ndbuffer[
@@ -82,16 +113,16 @@ fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
             transpose_b=False,
             b_packed=b_packed,
             saturated_vnni=False,
-        ](c, a, bp)
+        ](c, a, bp if b_packed else b)
         keep(c.data)
 
     bencher.iter[bench_fn]()
+    verify(a, b, c)
 
     a_ptr.free()
     b_ptr.free()
     bp_ptr.free()
-    c0_ptr.free()
-    c1_ptr.free()
+    c_ptr.free()
 
 
 @value
