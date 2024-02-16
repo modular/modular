@@ -94,6 +94,16 @@ size_t getNumPerformanceCores();
 /// Returns the set of local MAC addresses.
 std::vector<std::string> localMACs();
 
+/// Describes CPU limits in an OS-agnostic way.
+struct CPULimits {
+  /// Unfortunately, millicores are a canonical way of representing the limit,
+  /// even though it has far more subtlely than this.
+  std::optional<size_t> millicores;
+
+  /// Returns local limits, if available.
+  static ErrorOr<CPULimits> get();
+};
+
 //===----------------------------------------------------------------------===//
 // OS and architecture-specific utilities, visible for testing only
 //===----------------------------------------------------------------------===//
@@ -101,27 +111,24 @@ std::vector<std::string> localMACs();
 namespace Detail {
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
 /// Specifies CPU quota per period of CPU time allotted by the Linux CFS.
-struct CPULimits {
+struct linuxCPULimits {
   int quota_us = -1;
   int period_us = 100000;
-  /// Returns the effective maximum processor count or -1 if unrestricted.
-  int maxProcessors() const {
-    if (quota_us < 0 || period_us <= 0)
-      return -1;
-    return std::max(1, (quota_us - 1) / period_us + 1);
-  }
 };
+
 /// Returns the cgroup v1 CPU membership from |buf|.
 ErrorOr<std::string> parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf);
-ErrorOr<CPULimits> parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
-                                    const llvm::MemoryBuffer &periodBuf);
+ErrorOr<linuxCPULimits> parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
+                                         const llvm::MemoryBuffer &periodBuf);
+
 /// Returns the effective cgroup v2 CPU membership from |buf|. This is
 /// determined by searching /sys/fs/cgroup/ until a cpu.max file is found.
 ErrorOr<std::string>
 parseV2CPUCgroupFile(const llvm::MemoryBuffer &buf,
                      const std::function<bool(StringRef)> &exists);
-ErrorOr<CPULimits> parseV2CPULimits(const llvm::MemoryBuffer &maxBuf);
-CPULimits getLinuxCPULimits();
+ErrorOr<linuxCPULimits> parseV2CPULimits(const llvm::MemoryBuffer &maxBuf);
+
+linuxCPULimits getLinuxCPULimits();
 
 ErrorOr<CPUSystemInfo>
 getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
