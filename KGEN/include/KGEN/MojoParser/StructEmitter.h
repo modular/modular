@@ -83,14 +83,14 @@ public:
 
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
-  /// `prefix` is prepended to the mangled function name.
+  /// `suffix` is appended to the mangled function name.
   LIT::FuncOp createFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
-      VariadicEffects varEffects = VariadicEffects(), StringRef prefix = "");
+      VariadicEffects varEffects = VariadicEffects(), StringRef suffix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -104,7 +104,7 @@ public:
                                        ArgParamListAttr argListAttrs);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
-  /// populated. `prefix` is prepended to the mangled function name.
+  /// populated. `suffix` is appended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
       ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
@@ -112,14 +112,14 @@ public:
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(),
-      VariadicEffects varEffects = VariadicEffects(), StringRef prefix = "");
+      VariadicEffects varEffects = VariadicEffects(), StringRef suffix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(),
-      VariadicEffects varEffects = VariadicEffects(), StringRef prefix = "");
+      VariadicEffects varEffects = VariadicEffects(), StringRef suffix = "");
 
   /// Given a struct and a trait declaration, make the trait inherit from the
   /// struct if it does not already. This adds the trait decl to the struct's

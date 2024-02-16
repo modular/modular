@@ -2151,7 +2151,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       memSig.getArguments(), memSig.getArgConventions(),
       memSig.getMetadata().getArgListAttrs(), memSig.getResultType(),
       structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      memSig.getMetadata().getVariadicEffects(), "`thunk_");
+      memSig.getMetadata().getVariadicEffects(), "_thunk");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2285,7 +2285,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         ArgParamListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
         shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
-        "`thunk_");
+        "_thunk");
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
@@ -2311,7 +2311,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         ArgParamListAttr::get(shared.getContext(), {empty, empty},
                               {PassingKind::PosOnly, PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
-        "`thunk_");
+        "_thunk");
     func = ctor;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());

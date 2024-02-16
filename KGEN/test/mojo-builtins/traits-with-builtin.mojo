@@ -49,7 +49,7 @@ struct AsyncStruct(AsyncTrait):
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
 @register_passable
 struct AsyncStructReg(AsyncTrait):
-    # CHECK-LABEL: lit.func @"`thunk_foobar{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}>
+    # CHECK-LABEL: lit.func @"foobar{{.*}}_thunk"{{.*}}(%self: !lit.ref<!AsyncStructReg, imm {{.*}}>
     async fn foobar(self):
         # CHECK: [[POP_CORO:%.*]] = lit.async.call
         # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
