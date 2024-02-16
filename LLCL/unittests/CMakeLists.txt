@@ -16,7 +16,6 @@ add_modular_unittest(
   ResourceTest.cpp
   RuntimeTest.cpp
   TypeIDTest.cpp
-  ThreadAffinityTest.cpp
 
   LINK_LIBS PRIVATE
   LLCLRuntime

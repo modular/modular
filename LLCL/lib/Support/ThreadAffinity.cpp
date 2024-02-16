@@ -26,63 +26,78 @@
 
 #define DEBUG_TYPE "llcl"
 
-namespace {
-
-void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
-  M::LLCL::Detail::adjustForLinuxCpuLimits(M::Detail::getLinuxCPULimits(),
-                                           cpuIDs);
-#endif
-}
-
-} // namespace
-
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
                                  size_t maxWorkers) {
+  int performanceCores = M::getNumPerformanceCores();
+  int physicalCores = M::getNumPhysicalCores();
+  int logicalCores = M::getNumLogicalCores();
+  ErrorOr<CPULimits> limitsOr = CPULimits::get();
+  bool usingLimits = !limitsOr.isError() && limitsOr->millicores;
+
   if (numThreads == 0) {
-    numThreads = M::getNumPhysicalCores();
+    // There are some rules to defaulting the number of threads.
+    //
+    // First, if cores are imbalanced then allow the operating system to
+    // schedule us and don't attempt to set any kind of affinity.
+    //
+    // Second, if affinity is set then only use physical cores.
+    //
+    // Finally, if affinity is not set then use logical cores.
+    if (performanceCores != physicalCores) {
+      // If there is an imbalance in the system, we set the number of cores to
+      // be the number of performance cores and allow the operating system to
+      // schedule us.
+      withAffinity = false;
+      numThreads = performanceCores;
+    } else if (withAffinity) {
+      numThreads = physicalCores;
+    } else {
+      numThreads = logicalCores;
+    }
     LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
                             << "threads to physical cores across all "
                             << "sockets " << numThreads << "\n");
   }
-  if (withAffinity && haveThreadAffinity()) {
-    ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
-    if (const char *err = errOrSystemInfo.getError()) {
-      LLVM_DEBUG(
-          llvm::dbgs()
-          << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
-          << err << "\n");
-      // Fallthrough for fallback case.
-    } else {
-      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
-                              << *errOrSystemInfo << "\n");
-      if (numThreads > maxWorkers) {
-        LLVM_DEBUG(
-            llvm::dbgs()
-            << "getThreadAffinityCpuIds: Reducing number of threads from "
-            << numThreads << " to " << maxWorkers << ".\n");
-        numThreads = maxWorkers;
-      }
-      std::vector<size_t> cpuIDs =
-          errOrSystemInfo->getPreferredCpuIDs(numThreads);
-      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
-                                 "affinity for CPUs {";
-                 llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
-                 llvm::dbgs() << "}\n";);
-      adjustForCpuLimits(cpuIDs);
-      return cpuIDs;
-    }
+  if (usingLimits &&
+      numThreads > std::max(1UL, (*limitsOr->millicores) / 1000)) {
+    // If we are limited by the cgroup in some way, then we need to cap our
+    // untilization. Note that the computation of the affinity set is likely to
+    // be affected here, meaning that it will be unbounded, but we don't need
+    // to set that explicitly.
+    size_t limit = std::max(1UL, (*limitsOr->millicores) / 1000);
+    LLVM_DEBUG(llvm::dbgs()
+               << "getThreadAffinityCpuIds: Reducing number of threads from "
+               << numThreads << " to " << limit << ".\n");
+    numThreads = limit;
   }
-
   if (numThreads > maxWorkers) {
     LLVM_DEBUG(llvm::dbgs()
                << "getThreadAffinityCpuIds: Reducing number of threads from "
                << numThreads << " to " << maxWorkers << ".\n");
     numThreads = maxWorkers;
   }
+
   auto cpuIDs = std::vector<size_t>(numThreads, kNoAffinity);
-  adjustForCpuLimits(cpuIDs);
+  if (withAffinity && haveThreadAffinity()) {
+    ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
+    if (const char *err = errOrSystemInfo.getError()) {
+      // We will be using the defaults, already set above.
+      LLVM_DEBUG(
+          llvm::dbgs()
+          << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
+          << err << "\n");
+    } else {
+      // We will be using the preferred CPU IDs, set below.
+      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
+                              << *errOrSystemInfo << "\n");
+      cpuIDs = errOrSystemInfo->getPreferredCpuIDs(numThreads);
+      LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
+                                 "affinity for CPUs {";
+                 llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
+                 llvm::dbgs() << "}\n";);
+    }
+  }
   return cpuIDs;
 }
 
@@ -109,20 +124,3 @@ void M::LLCL::setThreadAffinity(size_t cpuID) {
     }
   }
 }
-
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
-
-void M::LLCL::Detail::adjustForLinuxCpuLimits(
-    const M::Detail::CPULimits &limits, std::vector<size_t> &cpuIDs) {
-  if (limits.quota_us != -1) {
-    // Limit thread count to the below to prevent inadvertent CFS scheduler
-    // throttling when CPU limits are in use. Also disables thread affinity.
-    const size_t maxProcessors = limits.maxProcessors();
-    if (maxProcessors < cpuIDs.size()) {
-      cpuIDs.resize(maxProcessors);
-      cpuIDs.assign(maxProcessors, kNoAffinity);
-    }
-  }
-}
-
-#endif // defined(HAVE_LINUX_X86_SYSTEM_INFO)

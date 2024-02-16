@@ -80,10 +80,10 @@ Detail::parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf) {
   return cgroup;
 }
 
-ErrorOr<Detail::CPULimits>
+ErrorOr<Detail::linuxCPULimits>
 Detail::parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
                          const llvm::MemoryBuffer &periodBuf) {
-  Detail::CPULimits limits;
+  Detail::linuxCPULimits limits;
   if (quotaBuf.getBuffer().trim().getAsInteger(10, limits.quota_us))
     return Error("can't parse CPU quota as an int");
   if (periodBuf.getBuffer().trim().getAsInteger(10, limits.period_us))
@@ -124,9 +124,9 @@ Detail::parseV2CPUCgroupFile(const llvm::MemoryBuffer &buf,
   return curr.str();
 }
 
-ErrorOr<Detail::CPULimits>
+ErrorOr<Detail::linuxCPULimits>
 Detail::parseV2CPULimits(const llvm::MemoryBuffer &maxBuf) {
-  Detail::CPULimits limits;
+  Detail::linuxCPULimits limits;
   SmallVector<StringRef> strs;
   maxBuf.getBuffer().split(strs, " ", /*MaxSplit=*/2, /*KeepEmpty=*/false);
   if (strs.empty())
@@ -139,7 +139,7 @@ Detail::parseV2CPULimits(const llvm::MemoryBuffer &maxBuf) {
 }
 
 /// Looks up various cgroup CPU limits for the current process.
-Detail::CPULimits Detail::getLinuxCPULimits() {
+Detail::linuxCPULimits Detail::getLinuxCPULimits() {
   // Detect cgroup version.
   auto errOrControllers =
       llvm::MemoryBuffer::getFileAsStream("/sys/fs/cgroup/cgroup.controllers");
@@ -163,7 +163,7 @@ Detail::CPULimits Detail::getLinuxCPULimits() {
   auto cgroupBuf = fileBuffer("/proc/self/cgroup");
   if (!cgroupBuf)
     return {};
-  Detail::CPULimits limits;
+  Detail::linuxCPULimits limits;
   if (isV1) {
     const auto errOrCgroup = parseV1CPUCgroupFile(*cgroupBuf);
     if (errOrCgroup.isError()) {
@@ -474,4 +474,16 @@ std::vector<std::string> M::localMACs() {
 #undef __AF_TYPE
 #endif
   return macs;
+}
+
+ErrorOr<CPULimits> CPULimits::get() {
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+  CPULimits limits; // Translate below.
+  Detail::linuxCPULimits linuxLimits = Detail::getLinuxCPULimits();
+  if (linuxLimits.quota_us >= 0 && linuxLimits.period_us > 0)
+    limits.millicores = static_cast<size_t>((1000 * linuxLimits.quota_us) /
+                                            linuxLimits.period_us);
+  return limits;
+#endif
+  return Error("CPULimits are not supported by this build");
 }
