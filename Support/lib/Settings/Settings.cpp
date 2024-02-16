@@ -6,7 +6,6 @@
 
 #include "Support/Settings/Settings.h"
 #include "Support/Configuration.h"
-#include "Support/Context.h"
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/Entitlements/EntitlementStore.h"
 #include "Support/ErrorOr.h"
