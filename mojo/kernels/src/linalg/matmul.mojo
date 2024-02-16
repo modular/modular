@@ -45,7 +45,6 @@ from MatmulUtils import (
     use_i8mm_fn,
     get_matmul_arch_factor,
 )
-from Matrix import Matrix
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
     Buffer,

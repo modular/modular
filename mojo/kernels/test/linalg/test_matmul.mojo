@@ -11,7 +11,6 @@
 
 
 from Matmul import matmul, pack_b_ndbuffer_M, pack_matmul_b_shape_func_M
-from Matrix import Matrix
 from memory.buffer import NDBuffer
 from sys.info import has_avx2, has_neon_int8_matmul
 from utils.index import Index, StaticIntTuple
@@ -26,9 +25,9 @@ alias c_type = DType.int32
 fn gemm_naive[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    a: Matrix[DimList.create_unknown[2](), a_type, False],
-    b: Matrix[DimList.create_unknown[2](), b_type, False],
-    c: Matrix[DimList.create_unknown[2](), c_type, False],
+    a: NDBuffer[a_type, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[c_type, 2, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
@@ -38,7 +37,7 @@ fn gemm_naive[
             for j in range(n):
                 let a_val = a[i, p].cast[c_type]()
                 let b_val = b[p, j].cast[c_type]()
-                c[i, j] += a_val * b_val
+                c[StaticIntTuple[2]((i, j))] += a_val * b_val
 
 
 fn test_matmul[
@@ -79,19 +78,19 @@ fn test_matmul[
     let bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
     let c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
 
-    let am = Matrix[DimList.create_unknown[2](), a_type, False](
+    let am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, k)
     )
-    let bm = Matrix[DimList.create_unknown[2](), b_type, False](
+    let bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         b_ptr, Index(k, n)
     )
-    let bpm = Matrix[DimList.create_unknown[2](), b_type, False](
+    let bpm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         bp_ptr, Index(k, n)
     )
-    let cm0 = Matrix[DimList.create_unknown[2](), c_type, False](
+    let cm0 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
         c0_ptr, Index(m, n)
     )
-    let cm1 = Matrix[DimList.create_unknown[2](), c_type, False](
+    let cm1 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
         c1_ptr, Index(m, n)
     )
 
@@ -101,21 +100,21 @@ fn test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            am[i, p] = cnt % vnni_range
+            am[StaticIntTuple[2]((i, p))] = cnt % vnni_range
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            bm[p, j] = cnt % 256 - 128
-            bpm[p, j] = bm[p, j]
+            bm[StaticIntTuple[2]((p, j))] = cnt % 256 - 128
+            bpm[StaticIntTuple[2]((p, j))] = bm[StaticIntTuple[2]((p, j))]
             cnt += 1
 
     for i in range(m):
         for j in range(n):
-            cm0[i, j] = 0
-            cm1[i, j] = cm0[i, j]
+            cm0[StaticIntTuple[2]((i, j))] = 0
+            cm1[StaticIntTuple[2]((i, j))] = cm0[StaticIntTuple[2]((i, j))]
 
     if b_packed:
         pack_b_ndbuffer_M[

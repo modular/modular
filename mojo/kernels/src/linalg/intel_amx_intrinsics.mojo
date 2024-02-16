@@ -11,7 +11,7 @@
 
 from sys import llvm_intrinsic
 
-from Matmul import Matrix
+from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList
@@ -128,9 +128,9 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.int8],
     bptr: DTypePointer[DType.int8],
 ):
-    let a = Matrix[DimList(16, 64), DType.int8, False](aptr)
-    let b = Matrix[DimList(16, 64), DType.int8, False](bptr)
-    let c = Matrix[DimList(16, 16), DType.int32, False](cptr)
+    let a = NDBuffer[DType.int8, DimList(16, 64)](aptr)
+    let b = NDBuffer[DType.int8, DimList(16, 64)](bptr)
+    let c = NDBuffer[DType.int32, DimList(16, 16)](cptr)
 
     for i in range(16):
         for j in range(16):
