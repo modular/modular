@@ -1177,7 +1177,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (ASTType type = callable.baseType)
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 2;
-          size_t numExpected = signature.getNumParams() - hidden;
+          size_t numExpected =
+              signature.getNumParams() - hidden -
+              countNumImplicitKinds(signature.getParamPassingKinds());
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
         // For each of the missing parameters, attach any parameter inference
@@ -1244,6 +1246,35 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       [&](const ParamBindings::Binding &binding) {
         diag << "multiple unbound pack symbols not allowed"
              << binding.expr->getRange();
+      },
+      /*emitInferOnlyFailure=*/
+      [&](size_t paramIdx) {
+        auto printNameOrIdx = [&](ArrayRef<StringAttr> names, size_t i) {
+          if (StringAttr name = names[i]; !name.empty())
+            diag << "'" << name.getValue() << "'";
+          else
+            diag << "#" << i;
+        };
+        // Find the parameter number and potentially name of the type of the
+        // argument that failed to be inferred.
+        for (auto [idx, argType] : llvm::enumerate(signature.getArguments())) {
+          if (auto type = dyn_cast<DeclRefType>(argType)) {
+            for (auto [i, value] : llvm::enumerate(type.getParamValues())) {
+              if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value);
+                  indexRef && !indexRef.getDepth() &&
+                  indexRef.getIndex() == paramIdx) {
+                diag << "failed to infer implicit parameter ";
+                auto structDecl =
+                    cast<StructDeclOp>(ASTType(type).getDecl(shared));
+                printNameOrIdx(structDecl.getSignature().getParamNames(), i);
+                diag << " of argument ";
+                printNameOrIdx(signature.getArgNames(), idx);
+                diag << " type '" << structDecl.getSymName() << "'";
+                return;
+              }
+            }
+          }
+        }
       },
   };
 
