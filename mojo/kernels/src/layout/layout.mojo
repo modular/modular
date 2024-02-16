@@ -134,8 +134,8 @@ struct LayoutList(Sized, Stringable):
 
 
 fn coalesce(src: Layout) -> Layout:
-    let flatten_shape = flatten(src.shape)
-    let flatten_stride = flatten(src.stride)
+    var flatten_shape = flatten(src.shape)
+    var flatten_stride = flatten(src.stride)
 
     debug_assert(
         len(flatten_shape) == len(flatten_stride),
@@ -146,11 +146,11 @@ fn coalesce(src: Layout) -> Layout:
     var result_stride = IntTuple(0)
 
     for i in range(len(flatten_shape)):
-        let shape = flatten_shape[i]
-        let stride = flatten_stride[i]
+        var shape = flatten_shape[i]
+        var stride = flatten_stride[i]
 
-        let shape_last_idx = len(result_shape) - 1
-        let stride_last_idx = len(result_stride) - 1
+        var shape_last_idx = len(result_shape) - 1
+        var stride_last_idx = len(result_stride) - 1
 
         if int(shape) == 1:
             continue
@@ -180,7 +180,7 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
         var res_layout_shape = IntTuple()
         var res_layout_stride = IntTuple()
         for layout_b_i in layout_b:
-            let a_b_i = composition(layout_a, layout_b_i)
+            var a_b_i = composition(layout_a, layout_b_i)
             res_layout_shape.append(a_b_i.shape)
             res_layout_stride.append(a_b_i.stride)
         return Layout(res_layout_shape, res_layout_stride)
@@ -193,13 +193,13 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
 
         var rest_shape = layout_b.shape
         var rest_stride = layout_b.stride
-        let flatten_a_shapes = flatten(layout_a.shape)
-        let flatten_a_strides = flatten(layout_a.stride)
+        var flatten_a_shapes = flatten(layout_a.shape)
+        var flatten_a_strides = flatten(layout_a.stride)
 
         for i in range(len(flatten_a_shapes) - 1):
-            let s = int(flatten_a_shapes[i])
-            let d = int(flatten_a_strides[i])
-            let s1 = shape_div(s, rest_stride)
+            var s = int(flatten_a_shapes[i])
+            var d = int(flatten_a_strides[i])
+            var s1 = shape_div(s, rest_stride)
             result_shape.append(elementwise_min(s1, rest_shape))
             result_stride.append(mul(rest_stride, d))
             rest_shape = shape_div(rest_shape, s1)
@@ -217,7 +217,7 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     var res_shape = IntTuple()
     var res_stride = IntTuple()
     for i in range(len(tiler)):
-        let res = composition(layout_a, tiler[i])
+        var res = composition(layout_a, tiler[i])
         res_shape.append(res.shape)
         res_stride.append(res.stride)
     return Layout(res_shape, res_stride)
@@ -240,16 +240,16 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
             if int(flat_stride[j]) < min_val:
                 min_val = int(flat_stride[j])
                 min_idx = j
-        let tmp_stride = flat_stride[i]
-        let tmp_shape = flat_shape[i]
+        var tmp_stride = flat_stride[i]
+        var tmp_shape = flat_shape[i]
         flat_stride[i] = flat_stride[min_idx]
         flat_shape[i] = flat_shape[min_idx]
         flat_shape[min_idx] = tmp_shape
         flat_stride[min_idx] = tmp_stride
 
     for i in range(len(flat_stride)):
-        let stride_i = int(flat_stride[i])
-        let shape_i = int(flat_shape[i])
+        var stride_i = int(flat_stride[i])
+        var shape_i = int(flat_shape[i])
 
         if stride_i == 0 or shape_i == 1:
             continue
@@ -271,13 +271,13 @@ fn apply_tiler[
         return layout_a
     var res = Layout()
     for i in range(len(tiler)):
-        let layout_b = tiler[i]
+        var layout_b = tiler[i]
         res.append(func(layout_a[i], layout_b))
     return res
 
 
 fn logical_divide(layout_a: Layout, layout_b: Layout) -> Layout:
-    let res_comp = complement(layout_b, layout_a.size())
+    var res_comp = complement(layout_b, layout_a.size())
     var res = layout_b
     res.shape.append(res_comp.shape)
     res.stride.append(res_comp.stride)
@@ -289,7 +289,7 @@ fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 
 fn logical_product(layout_a: Layout, layout_b: Layout) -> Layout:
-    let a_comp = complement(layout_a, layout_a.size() * layout_b.cosize())
+    var a_comp = complement(layout_a, layout_a.size() * layout_b.cosize())
     var com_res = composition(a_comp, layout_b)
     var res = layout_a
     res.shape.append(com_res.shape)
@@ -341,8 +341,8 @@ fn print_layout(layout: Layout):
     if layout.rank() != 2:
         trap("print_layout only supports 2D layouts")
 
-    let idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
-    let delim = "+-----------------------"
+    var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
+    var delim = "+-----------------------"
     print(layout)
     _printf("    ")
     for n in range(layout[1].size()):

@@ -224,8 +224,8 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
         if is_tuple(b):  # "int" tuple
             return shape_div(a, product(b))
         else:  # "int" "int"
-            let va = int(a)
-            let vb = int(b)
+            var va = int(a)
+            var vb = int(b)
 
             if not (va % vb == 0 or vb % va == 0):
                 trap("Incompatible shape values: " + str(va) + " " + str(vb))

@@ -120,7 +120,7 @@ struct DynamicTupleBase[
             if v.isa[Self]():
                 var elts = v.get[Self]().elts
                 for i in range(len(elts)):
-                    let e: Self.Element = elts[i]
+                    var e: Self.Element = elts[i]
                     result += Self.to_string(e)
                     if i < len(elts) - 1:
                         result += ", "
@@ -131,8 +131,8 @@ struct DynamicTupleBase[
         if a.isa[T]() and b.isa[T]():
             return D.is_equal[T](Self.rewrap(a), Self.rewrap(b))
         if a.isa[Self]() and b.isa[Self]():
-            let ta = a.get[Self]()
-            let tb = b.get[Self]()
+            var ta = a.get[Self]()
+            var tb = b.get[Self]()
             if len(ta) == len(tb):
                 for i in range(len(ta)):
                     if not Self.is_equal(ta[i], tb[i]):

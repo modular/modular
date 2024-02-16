@@ -38,8 +38,8 @@ fn tile[
 ) -> LayoutTensor[dtype]:
     var tiled_layout = zipped_divide(src.layout, tiler)
     if len(coords) > 0:
-        let offset = inner_product(coords, tiled_layout[1].stride)
-        let res_tensor = LayoutTensor[dtype](
+        var offset = inner_product(coords, tiled_layout[1].stride)
+        var res_tensor = LayoutTensor[dtype](
             tiled_layout[0], src.ptr.offset(offset)
         )
         return res_tensor
