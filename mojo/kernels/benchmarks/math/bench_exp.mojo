@@ -122,7 +122,7 @@ fn exp_libm[
 
     @unroll
     for i in range(simd_width):
-        res[i] = external_call["expf", Scalar[type]](arg)
+        res[i] = external_call["expf", Scalar[type]](arg[i])
     return res
 
 
