@@ -37,6 +37,52 @@ ModularDeveloperEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
 }
 
 //===----------------------------------------------------------------------===//
+// BetaEntitlement
+//===----------------------------------------------------------------------===//
+
+StringRef BetaEntitlement::getName() const { return "beta"; }
+
+ErrorOr<std::unique_ptr<Entitlement>>
+BetaEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
+  return std::make_unique<BetaEntitlement>();
+}
+
+//===----------------------------------------------------------------------===//
+// GPUEntitlement
+//===----------------------------------------------------------------------===//
+
+StringRef GPUEntitlement::getName() const { return "gpu"; }
+
+ErrorOr<std::unique_ptr<Entitlement>>
+GPUEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
+  return std::make_unique<GPUEntitlement>();
+}
+
+//===----------------------------------------------------------------------===//
+// MaxThreadsUnlimitedEntitlement
+//===----------------------------------------------------------------------===//
+
+StringRef MaxThreadsUnlimitedEntitlement::getName() const {
+  return "max-threads-unlimited";
+}
+
+ErrorOr<std::unique_ptr<Entitlement>>
+MaxThreadsUnlimitedEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
+  return std::make_unique<MaxThreadsUnlimitedEntitlement>();
+}
+
+//===----------------------------------------------------------------------===//
+// EnterpriseEntitlement
+//===----------------------------------------------------------------------===//
+
+StringRef EnterpriseEntitlement::getName() const { return "enterprise"; }
+
+ErrorOr<std::unique_ptr<Entitlement>>
+EnterpriseEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
+  return std::make_unique<EnterpriseEntitlement>();
+}
+
+//===----------------------------------------------------------------------===//
 // BuilderRegistry
 //===----------------------------------------------------------------------===//
 
@@ -127,4 +173,8 @@ void Entitlement::registerBuilder(Entitlement::Kind k,
 void M::registerAllEntitlements() {
   Entitlement::registerEntitlement<UnknownEntitlement>();
   Entitlement::registerEntitlement<ModularDeveloperEntitlement>();
+  Entitlement::registerEntitlement<BetaEntitlement>();
+  Entitlement::registerEntitlement<GPUEntitlement>();
+  Entitlement::registerEntitlement<MaxThreadsUnlimitedEntitlement>();
+  Entitlement::registerEntitlement<EnterpriseEntitlement>();
 }
