@@ -91,18 +91,17 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     !lit.type_signature
     !lit.type_signature<index, |>
     !lit.type_signature<"dt": dtype = f32>
-    !lit<type_signature<"i": variadic<index>> param_vararg>
+    !lit<type_signature<"i": variadic<index>>>
     ```
   }];
 
   let parameters = (ins
     ArrayRefParameter<"Type">:$paramTypes,
-    "ArgParamListAttr":$paramListAttrs,
-    "bool":$paramVarArg
+    "ArgParamListAttr":$paramListAttrs
   );
 
   let assemblyFormat = [{
-    `` custom<TypeSignature>($paramTypes, $paramListAttrs, $paramVarArg)
+    `` custom<TypeSignature>($paramTypes, $paramListAttrs)
   }];
 
   let builders = [
@@ -112,7 +111,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
                      "ArrayRef<PassingKind>":$paramPassingKinds,
                      CArg<"ArrayRef<TypedAttr>", "{}">:$defaultPosParams,
                      CArg<"ArrayRef<TypedAttr>", "{}">:$defaultKwOnlyParams,
-                     CArg<"bool", "false">:$paramVarArg)>
+                     CArg<"ArrayRef<size_t>", "{}">:$variadicIndices)>
   ];
 
   let genVerifyDecl = 1;
@@ -127,18 +126,19 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
     /// Get the number of input parameters.
     size_t getNumParams() { return getParamTypes().size(); }
-    /// Return true if the parameter at the given index is a vararg.
-    bool isVarArg(size_t index) {
-      return index + 1 == getNumParams() && getParamVarArg();
-    }
+    /// Return true if the parameter at the given index is variadic.
+    bool isVarParam(size_t idx) const;
 
     /// Construct a type signature from parameter declarations and corresponding
     /// metadata. This helper is used to convert between a named signature
     /// structure to a nameless representation.
     static TypeSignatureType remapToSignature(
       function_ref<InFlightDiagnostic()> emitError,
-      ParamDeclArrayAttr paramDecls, ArgParamListAttr paramListAttrs,
-      bool paramVarArg);
+      ParamDeclArrayAttr paramDecls, ArgParamListAttr paramListAttrs);
+
+    /// Return true if the signature has a variadic parameter.
+    /// TODO: remove this when migration to variadic indices is complete.
+    bool hasVariadicParam() const;
   }];
 }
 

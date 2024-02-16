@@ -557,7 +557,7 @@ ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
   auto [bindingValuesAttr, _] = verifyBindings(
       sig.getParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
       sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
-      sig.getParamVarArg(), structOp.getName(), structOp.getLoc(), exprLoc,
+      sig.hasVariadicParam(), structOp.getName(), structOp.getLoc(), exprLoc,
       allowPartiallyBound);
   return bindingValuesAttr;
 }

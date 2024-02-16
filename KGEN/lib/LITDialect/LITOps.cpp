@@ -986,7 +986,6 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
   ArgParamListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
-  bool paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
 
   SmallVector<TypeLineageAttr> parentTypeExprs;
   auto parseTypeAndLineage = [&]() -> ParseResult {
@@ -1005,9 +1004,8 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
     return failure();
   parentTypes = TypeLineageArrayAttr::get(p.getContext(), parentTypeExprs);
 
-  auto sig =
-      TypeSignatureType::remapToSignature([&] { return p.emitError(startLoc); },
-                                          params, paramListAttr, paramVarArg);
+  auto sig = TypeSignatureType::remapToSignature(
+      [&] { return p.emitError(startLoc); }, params, paramListAttr);
   if (!sig)
     return failure();
   signature = TypeAttr::get(sig);
@@ -1021,8 +1019,6 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params, sig.getParamListAttrs(), evaluator);
-  if (sig.getParamVarArg())
-    p << " param_vararg";
   if (!parentTypes.empty()) {
     p << '(';
     llvm::interleaveComma(parentTypes, p, [&](TypeLineageAttr type) {
@@ -1062,7 +1058,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  bool paramVarArg = false;
+  SmallVector<size_t> newVariadicIndices;
 
   auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
   for (auto [i, value, type, name, kind] :
@@ -1078,13 +1074,14 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
         newKwOnlyDefaults.push_back(defaultOr);
 
-      if (sig.isVarArg(i))
-        paramVarArg = true;
+      if (sig.isVarParam(i))
+        newVariadicIndices.push_back(i);
     }
   }
+
   auto newSig = TypeSignatureType::get(
       getContext(), newParamTypes, newParamNames, newPassingKinds,
-      newPosDefaults, newKwOnlyDefaults, paramVarArg);
+      newPosDefaults, newKwOnlyDefaults, newVariadicIndices);
   return DeclRefType::get(symbol, paramValues,
                           MetaTypeType::get(symbol, paramValues, newSig));
 }

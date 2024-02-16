@@ -154,7 +154,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
       argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
       fnEffects,
       varEffects.setParamVarArgs(varEffects.hasParamVarArgs() ||
-                                 structOp.getSignature().getParamVarArg()),
+                                 structOp.getSignature().hasVariadicParam()),
       prefix);
 
   // If the struct is register_passable("trivial"), make this

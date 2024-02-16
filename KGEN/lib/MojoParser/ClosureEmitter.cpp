@@ -89,8 +89,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
       [&]() -> InFlightDiagnostic {
         llvm_unreachable("unexpected invalid signature");
       },
-      ParamDeclArrayAttr::get(b.getContext(), params), paramListAttr,
-      /*paramVarArg=*/false);
+      ParamDeclArrayAttr::get(b.getContext(), params), paramListAttr);
   attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
   declOp->setAttrs(attrs.getDictionary(module.getContext()));
   return declOp;
