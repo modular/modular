@@ -3380,8 +3380,8 @@ fn _matmul_cpu[
         let mh = align_up(m, 2)
         var a_packed_ptr = DTypePointer[a_type]()
         if use_i8mm:
-            a_packed_ptr = DTypePointer[a_type].aligned_alloc(
-                alignment, mh * kh
+            a_packed_ptr = DTypePointer[a_type].alloc(
+                mh * kh, alignment=alignment
             )
         let a_packed_shape = Index(mh, kh)
         let a_packed = NDBuffer[a_type, 2, a_shape](

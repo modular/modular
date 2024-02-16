@@ -44,16 +44,16 @@ fn test_gemv():
     alias m = 4096
     alias k = 11008
 
-    let lhs_storage = DTypePointer[type].aligned_alloc(alignment, m * k)
+    let lhs_storage = DTypePointer[type].alloc(m * k, alignment=alignment)
     let lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
-    let rhs_storage = DTypePointer[type].aligned_alloc(alignment, k)
+    let rhs_storage = DTypePointer[type].alloc(k, alignment=alignment)
     let rhs = Buffer[type, Dim(k)](rhs_storage)
 
-    let out_storage = DTypePointer[type].aligned_alloc(alignment, m)
+    let out_storage = DTypePointer[type].alloc(m, alignment=alignment)
     let out = Buffer[type, Dim(m)](out_storage)
 
-    let ref_out_storage = DTypePointer[type].aligned_alloc(alignment, m)
+    let ref_out_storage = DTypePointer[type].alloc(m, alignment=alignment)
     let ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)

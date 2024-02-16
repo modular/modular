@@ -48,8 +48,8 @@ fn test_matmul[
     c_type: DType,
     saturated: Bool,
 ](m: Int, n: Int, k: Int) -> Int:
-    let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
-    let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
+    let a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
+    let b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
     let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
@@ -67,11 +67,11 @@ fn test_matmul[
     let padded_n = padded_n_k[1] if b_packed else n
     let padded_k = padded_n_k[0] if b_packed else k
 
-    let bp_ptr = DTypePointer[b_type].aligned_alloc(
-        alignment, padded_k * padded_n
+    let bp_ptr = DTypePointer[b_type].alloc(
+        padded_k * padded_n, alignment=alignment
     )
-    let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
-    let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
+    let c0_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
+    let c1_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
 
     let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
 
