@@ -9,10 +9,14 @@
 
 #include "Support/ADT/GenericUniquePtrSet.h"
 #include "Support/ErrorOr.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M {
-class Context {
+namespace context {
+
+class Context : public ReferenceCounted<Context> {
 public:
   /// Transfers ptr into the context object set.
   template <typename T>
@@ -54,6 +58,11 @@ public:
 private:
   GenericUniquePtrSet storage;
 };
+
+/// Convenience definitions.
+using ContextRef = RCRef<Context>;
+
+} // namespace context
 } // namespace M
 
 #endif // SUPPORT_CONTEXT_H
