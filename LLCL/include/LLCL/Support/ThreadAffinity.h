@@ -25,7 +25,7 @@ namespace M::LLCL {
 /// containing all entries with kNoAffinity.
 M::ErrorOr<std::vector<size_t>> getThreadAffinityCpuIds(bool withAffinity,
                                                         size_t numThreads,
-                                                        size_t maxWorkers);
+                                                        size_t maxThreads);
 
 /// Execute workFn with affinity to cpuID if it is not kNoAffinity.
 /// Gracefully and silently execute workFn directly if errors.

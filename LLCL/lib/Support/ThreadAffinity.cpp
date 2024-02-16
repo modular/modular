@@ -28,7 +28,7 @@
 
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
-                                 size_t maxWorkers) {
+                                 size_t maxThreads) {
   int performanceCores = M::getNumPerformanceCores();
   int physicalCores = M::getNumPhysicalCores();
   int logicalCores = M::getNumLogicalCores();
@@ -71,11 +71,11 @@ M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
                << numThreads << " to " << limit << ".\n");
     numThreads = limit;
   }
-  if (numThreads > maxWorkers) {
+  if (numThreads > maxThreads) {
     LLVM_DEBUG(llvm::dbgs()
                << "getThreadAffinityCpuIds: Reducing number of threads from "
-               << numThreads << " to " << maxWorkers << ".\n");
-    numThreads = maxWorkers;
+               << numThreads << " to " << maxThreads << ".\n");
+    numThreads = maxThreads;
   }
 
   auto cpuIDs = std::vector<size_t>(numThreads, kNoAffinity);

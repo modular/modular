@@ -86,6 +86,11 @@ private:
                      "(default), will be chosen by heuristics."),
       llvm::cl::location(options.numThreads),
       llvm::cl::cat(RuntimeOptionsCategory)};
+  M::cl::MOpt<size_t, true> maxThreads{
+      "max-threads",
+      llvm::cl::desc("Bound num-threads in the case of auto-configuration."),
+      llvm::cl::location(options.maxThreads),
+      llvm::cl::cat(RuntimeOptionsCategory)};
 
   // Specify the amount of time a worker thread should spin for before
   // sleeping. The optimal value here depends on the system latency for thread

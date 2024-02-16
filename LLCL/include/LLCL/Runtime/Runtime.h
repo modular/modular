@@ -248,9 +248,8 @@ struct RuntimeOptions {
     kThreadPool,
   };
 
-  static size_t canonicalizeNumThreads(size_t numThreads);
-
   size_t numThreads = 0;
+  size_t maxThreads = 0;
   bool singleThreaded = false;
   std::string profileFilename = {};
 
@@ -451,6 +450,11 @@ struct RuntimeOptions {
 
   RuntimeOptions &withNumThreads(size_t newNumThreads) {
     numThreads = newNumThreads;
+    return *this;
+  }
+
+  RuntimeOptions &withMaxThreads(size_t newMaxThreads) {
+    maxThreads = newMaxThreads;
     return *this;
   }
 
