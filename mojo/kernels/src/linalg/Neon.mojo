@@ -59,8 +59,8 @@ fn _neon_dotprod_lane[
     r: SIMD[DType.int32, 4], a: SIMD[DType.int8, 16], b: SIMD[DType.int8, 16]
 ) -> SIMD[DType.int32, 4]:
     # Helper to generate `sdot v0, v1, v2[lane]` instruction form.
-    let tuple = bitcast[DType.int32, 4](b)[lane]
-    let splat = bitcast[DType.int8, 16](SIMD[DType.int32, 4](tuple))
+    var tuple = bitcast[DType.int32, 4](b)[lane]
+    var splat = bitcast[DType.int8, 16](SIMD[DType.int32, 4](tuple))
     return _neon_dotprod(r, a, splat)
 
 
@@ -70,8 +70,8 @@ fn _neon_dotprod_lane[
     r: SIMD[DType.int32, 4], a: SIMD[DType.uint8, 16], b: SIMD[DType.uint8, 16]
 ) -> SIMD[DType.int32, 4]:
     # Helper to generate `udot v0, v1, v2[lane]` instruction form.
-    let tuple = bitcast[DType.int32, 4](b)[lane]
-    let splat = bitcast[DType.uint8, 16](SIMD[DType.int32, 4](tuple))
+    var tuple = bitcast[DType.int32, 4](b)[lane]
+    var splat = bitcast[DType.uint8, 16](SIMD[DType.int32, 4](tuple))
     return _neon_dotprod(r, a, splat)
 
 

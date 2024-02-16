@@ -26,36 +26,36 @@ fn matrix_solve_tiny[
     constrained[K == 3]()
 
     # A matrix
-    let A00 = A[0, 0]
-    let A01 = A[0, 1]
-    let A02 = A[0, 2]
-    let A10 = A[1, 0]
-    let A11 = A[1, 1]
-    let A12 = A[1, 2]
-    let A20 = A[2, 0]
-    let A21 = A[2, 1]
-    let A22 = A[2, 2]
+    var A00 = A[0, 0]
+    var A01 = A[0, 1]
+    var A02 = A[0, 2]
+    var A10 = A[1, 0]
+    var A11 = A[1, 1]
+    var A12 = A[1, 2]
+    var A20 = A[2, 0]
+    var A21 = A[2, 1]
+    var A22 = A[2, 2]
 
     # A inverse
     # fmt: off
-    let det_A = A02 * A11 * A20 - A01 * A12 * A20 - A02 * A10 * A21 \
+    var det_A = A02 * A11 * A20 - A01 * A12 * A20 - A02 * A10 * A21 \
               + A00 * A12 * A21 + A01 * A10 * A22 - A00 * A11 * A22
     # fmt: on
-    let rdet_A = 1.0 / det_A
-    let A_inv00 = A12 * A21 - A11 * A22
-    let A_inv01 = A01 * A22 - A02 * A21
-    let A_inv02 = A02 * A11 - A01 * A12
-    let A_inv10 = A10 * A22 - A12 * A20
-    let A_inv11 = A02 * A20 - A00 * A22
-    let A_inv12 = A00 * A12 - A02 * A10
-    let A_inv20 = A11 * A20 - A10 * A21
-    let A_inv21 = A00 * A21 - A01 * A20
-    let A_inv22 = A01 * A10 - A00 * A11
+    var rdet_A = 1.0 / det_A
+    var A_inv00 = A12 * A21 - A11 * A22
+    var A_inv01 = A01 * A22 - A02 * A21
+    var A_inv02 = A02 * A11 - A01 * A12
+    var A_inv10 = A10 * A22 - A12 * A20
+    var A_inv11 = A02 * A20 - A00 * A22
+    var A_inv12 = A00 * A12 - A02 * A10
+    var A_inv20 = A11 * A20 - A10 * A21
+    var A_inv21 = A00 * A21 - A01 * A20
+    var A_inv22 = A01 * A10 - A00 * A11
 
     # Rows in B.
-    let B0 = B.simd_load[N]((0, 0))
-    let B1 = B.simd_load[N]((1, 0))
-    let B2 = B.simd_load[N]((2, 0))
+    var B0 = B.simd_load[N]((0, 0))
+    var B1 = B.simd_load[N]((1, 0))
+    var B2 = B.simd_load[N]((2, 0))
 
     # Update solution.
     X.simd_store[N](
@@ -115,13 +115,13 @@ fn matrix_solve[
 
         for batch in range(batch_size):
             # Get a 2D view of the Tensor.
-            let x_view = NDBuffer[type, 2, DimList(3, 2)](
+            var x_view = NDBuffer[type, 2, DimList(3, 2)](
                 x.data.offset(batch * 3 * 2), (3, 2)
             )
-            let a_view = NDBuffer[type, 2, DimList(3, 3)](
+            var a_view = NDBuffer[type, 2, DimList(3, 3)](
                 a.data.offset(batch * 3 * 3), (3, 3)
             )
-            let b_view = NDBuffer[type, 2, DimList(3, 2)](
+            var b_view = NDBuffer[type, 2, DimList(3, 2)](
                 b.data.offset(batch * 3 * 2), (3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)

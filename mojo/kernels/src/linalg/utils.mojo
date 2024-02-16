@@ -283,25 +283,25 @@ fn calculate_tile_n_k[
         The calculated tile size to partition the matmul as (TileN, TileK).
     """
 
-    let least_tile_n: Int = pack_inner_size
+    var least_tile_n: Int = pack_inner_size
 
     # Max tile K size based on smallest Tile N.
-    let largest_tile_k = align_down(pack_cache_size // least_tile_n, factor)
+    var largest_tile_k = align_down(pack_cache_size // least_tile_n, factor)
 
     # Prioritize shape on K dimension, so try to fit in the whole
     #  input on the tile.
 
-    let tile_k = min(largest_tile_k, align_up(k, factor))
+    var tile_k = min(largest_tile_k, align_up(k, factor))
 
     # Calculate number of InnerSize to fit in tile_n dimension,
-    let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
-    let full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
-    let tile_n_in_inner_size = min(
+    var max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
+    var full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
+    var tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
     )
 
     # Calculate tile_n size.
-    let tile_n = tile_n_in_inner_size * pack_inner_size
+    var tile_n = tile_n_in_inner_size * pack_inner_size
 
     return Index(tile_n, tile_k)
 
@@ -432,8 +432,8 @@ fn get_matmul_num_tasks[
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
-    let max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
-    let max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
+    var max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
+    var max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks
@@ -476,9 +476,9 @@ struct PartitionHeuristic:
 fn partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
 ) -> StaticIntTuple[2]:
-    let num_work_blocks = div_ceil(work, work_block_size)
-    let blocks_per_task = num_work_blocks // num_tasks
-    let blocks_per_task_extra = num_work_blocks % num_tasks
+    var num_work_blocks = div_ceil(work, work_block_size)
+    var blocks_per_task = num_work_blocks // num_tasks
+    var blocks_per_task_extra = num_work_blocks % num_tasks
 
     var work_per_task = blocks_per_task * work_block_size
     var work_id = (
@@ -535,7 +535,7 @@ fn get_partitioned_matmul[
                 a_type, b_type, c_type, a_row_size, pack_inner_size, use_i8mm
             ](m // 2, n, k, task_id, num_tasks)
 
-            let t0 = 2 * partition.offset[0]
+            var t0 = 2 * partition.offset[0]
             var t1 = 2 * partition.shape[0]
             if t0 + t1 == m - 1:
                 t1 = m - t0
@@ -563,18 +563,18 @@ fn get_partitioned_matmul_mojo[
     # We can remove version once the new partitioning scheme is accepted.
     alias version = 0
     if version == 0:
-        let shape = get_partitioned_matmul_mojo_shape[
+        var shape = get_partitioned_matmul_mojo_shape[
             a_type, b_type, c_type, micro_kernel_m, micro_kernel_n, use_i8mm
         ](m, n, k, num_tasks)
-        let num_row_tasks = shape[0]
-        let num_col_tasks = shape[1]
-        let row_task_id = task_id // num_col_tasks
-        let col_task_id = task_id % num_col_tasks
+        var num_row_tasks = shape[0]
+        var num_col_tasks = shape[1]
+        var row_task_id = task_id // num_col_tasks
+        var col_task_id = task_id % num_col_tasks
 
-        let row_range = partition_work(
+        var row_range = partition_work(
             row_task_id, num_row_tasks, m, micro_kernel_m
         )
-        let col_range = partition_work(
+        var col_range = partition_work(
             col_task_id, num_col_tasks, n, micro_kernel_n
         )
         return SubMatmulConfig(
@@ -607,21 +607,21 @@ fn get_partitioned_matmul_mojo_shape[
 
     var min_work = m * n
 
-    let num_packs_m = div_ceil(m, micro_kernel_m)
-    let num_packs_n = div_ceil(n, micro_kernel_n)
+    var num_packs_m = div_ceil(m, micro_kernel_m)
+    var num_packs_n = div_ceil(n, micro_kernel_n)
     var max_num_packs_m = num_packs_m
     var max_num_packs_n = num_packs_n
     if (use_i8mm and 2 * m > n) or m > n:
-        let half_l2size = get_pack_data_size[b_type]()
+        var half_l2size = get_pack_data_size[b_type]()
         # Limit the partitions in N if the size is smaller than half the L2 cache size.
-        let num_packs_n2 = max(k * n // half_l2size, 1)
+        var num_packs_n2 = max(k * n // half_l2size, 1)
         if num_packs_m * num_packs_n2 >= num_tasks:
             max_num_packs_n = min(num_packs_n, num_packs_n2)
     else:
         # get the minimum work in n
-        let worki = micro_kernel_n * max((num_packs_n // num_tasks), 1)
+        var worki = micro_kernel_n * max((num_packs_n // num_tasks), 1)
         # ensure the work in m is not much smaller than in n
-        let num_packs_m2 = div_ceil(m, align_down(worki, micro_kernel_m))
+        var num_packs_m2 = div_ceil(m, align_down(worki, micro_kernel_m))
         if num_packs_n * num_packs_m2 >= num_tasks:
             max_num_packs_m = min(max_num_packs_m, num_packs_m2)
 
@@ -629,12 +629,12 @@ fn get_partitioned_matmul_mojo_shape[
     max_num_packs_n = min(max_num_packs_n, num_tasks)
     # Loop over all possible partitions and find the the partition that balances the work best.
     for j in range(max_num_packs_m, 0, -1):
-        let workj = micro_kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
+        var workj = micro_kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
         for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):
-            let worki = micro_kernel_n * div_ceil(
+            var worki = micro_kernel_n * div_ceil(
                 num_packs_n, i
             ) if i != 1 else n
-            let work = workj * worki
+            var work = workj * worki
             if work <= min_work:
                 min_work = work
                 num_row_tasks = j
@@ -652,10 +652,10 @@ fn get_partitioned_matmul_mojo_shape[
 fn get_partitioned_matmul_mojo_v2[
     micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    let h = align_up(m, micro_kernel_m) // micro_kernel_m
-    let w = align_up(n, micro_kernel_n) // micro_kernel_n
+    var h = align_up(m, micro_kernel_m) // micro_kernel_m
+    var w = align_up(n, micro_kernel_n) // micro_kernel_n
 
-    let max_threads = min(num_tasks, w * h)
+    var max_threads = min(num_tasks, w * h)
     var threadsm = 1
     var threadsn = 1
 
@@ -679,10 +679,10 @@ fn get_partitioned_matmul_mojo_v2[
         # Find the largest threadsm*threadsn value which is <= max_threads.
         # If threadsn1*threadsm1 = threadsn2*threadsm2 and threadsn2>threadsn1
         # then select threadsn2*threadsm2 e.g. 32*2 is prefered to 8*8.
-        let jmax = min(max_threads, h) + 1
-        let imax = min(max_threads, w) + 1
-        let jmin = max_threads // imax
-        let imin = max_threads // jmax
+        var jmax = min(max_threads, h) + 1
+        var imax = min(max_threads, w) + 1
+        var jmin = max_threads // imax
+        var imin = max_threads // jmax
         for j in range(jmin, jmax):
             for i in range(imin, imax):
                 if i * j <= max_threads:
@@ -693,11 +693,11 @@ fn get_partitioned_matmul_mojo_v2[
                         threadsm = j
                         threadsn = i
 
-    let row_task_id = task_id // threadsn
-    let col_task_id = task_id % threadsn
+    var row_task_id = task_id // threadsn
+    var col_task_id = task_id % threadsn
 
-    let row_range = partition_work(row_task_id, threadsm, m, micro_kernel_m)
-    let col_range = partition_work(col_task_id, threadsn, n, micro_kernel_n)
+    var row_range = partition_work(row_task_id, threadsm, m, micro_kernel_m)
+    var col_range = partition_work(col_task_id, threadsn, n, micro_kernel_n)
     return SubMatmulConfig(
         Index(row_range[0], col_range[0], 0),
         Index(row_range[1], col_range[1], k),
@@ -725,7 +725,7 @@ fn get_partitioned_matmul_mojo_v1[
             partition_m = True
 
     if partition_m:
-        let row_range = partition_work(task_id, num_tasks, m, micro_kernel_m)
+        var row_range = partition_work(task_id, num_tasks, m, micro_kernel_m)
         return SubMatmulConfig(
             StaticIntTuple[3](row_range[0], 0, 0),
             StaticIntTuple[3](row_range[1], n, k),
@@ -739,8 +739,8 @@ fn get_partitioned_matmul_mojo_v1[
     # pack size per partition.
     # We still maintain that there is more column partitions than row
     # partitions since n > m.
-    let num_packs_n = max(n // micro_kernel_n, 1)
-    let num_packs_m = max(m // micro_kernel_m, 1)
+    var num_packs_n = max(n // micro_kernel_n, 1)
+    var num_packs_m = max(m // micro_kernel_m, 1)
 
     if (
         num_packs_n < 2 * num_col_tasks
@@ -761,12 +761,12 @@ fn get_partitioned_matmul_mojo_v1[
             num_col_tasks = num_col_partitions
             num_row_tasks = num_tasks // num_col_tasks
 
-    let row_task_id = task_id // num_col_tasks
-    let col_task_id = task_id % num_col_tasks
-    let row_range1 = partition_work(
+    var row_task_id = task_id // num_col_tasks
+    var col_task_id = task_id % num_col_tasks
+    var row_range1 = partition_work(
         row_task_id, num_row_tasks, m, micro_kernel_m
     )
-    let col_range1 = partition_work(
+    var col_range1 = partition_work(
         col_task_id, num_col_tasks, n, micro_kernel_n
     )
     return SubMatmulConfig(
@@ -780,14 +780,14 @@ fn get_partitioned_matmul_im2col[
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # Accessing A is more expensive in im2col than accessing B.
-    # Time a factor to M to let the heuristic bias on partitioning M.
+    # Time a factor to M to var the heuristic bias on partitioning M.
     # TODO: make this bias factor part of function parameter/argument and
     # unifies interface with matmul partition, e.x. bias=1 for matmul.
     alias bias = 2
-    let m_biased = m * bias
+    var m_biased = m * bias
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
-    let ideal_num_col_tasks = sqrt(div_ceil(n * num_tasks, m_biased))
+    var ideal_num_col_tasks = sqrt(div_ceil(n * num_tasks, m_biased))
     var num_row_tasks = num_tasks // ideal_num_col_tasks
     var num_col_tasks = ideal_num_col_tasks
 
@@ -801,26 +801,26 @@ fn get_partitioned_matmul_im2col[
     elif num_tasks % ideal_num_col_tasks != 0:
         # Set 20% deviation.
         # TODO: Make this tuning parameter a function parameter/argument.
-        let eps = div_ceil(2 * ideal_num_col_tasks, 10)
+        var eps = div_ceil(2 * ideal_num_col_tasks, 10)
         max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
         var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
         var num_threads_used = (
             num_tasks // ideal_num_col_tasks
         ) * ideal_num_col_tasks
         while num_col_tasks_tmp <= max_num_col_tasks:
-            let num_row_tasks_tmp = num_tasks // num_col_tasks_tmp
+            var num_row_tasks_tmp = num_tasks // num_col_tasks_tmp
             if num_row_tasks_tmp * num_col_tasks_tmp > num_threads_used:
                 num_col_tasks = num_col_tasks_tmp
                 num_row_tasks = num_row_tasks_tmp
                 num_threads_used = num_row_tasks_tmp * num_col_tasks_tmp
             num_col_tasks_tmp += 1
 
-    let row_task_id = task_id // num_col_tasks
-    let col_task_id = task_id % num_col_tasks
-    let row_range = partition_work(
+    var row_task_id = task_id // num_col_tasks
+    var col_task_id = task_id % num_col_tasks
+    var row_range = partition_work(
         row_task_id, num_row_tasks, m, micro_kernel_m
     )
-    let col_range = partition_work(
+    var col_range = partition_work(
         col_task_id, num_col_tasks, n, micro_kernel_n
     )
     return SubMatmulConfig(
@@ -996,12 +996,12 @@ fn get_trace_information(
     b_transpose: Bool,
     b_packed: Bool,
 ) -> String:
-    let a_description = String("A=") + shape.M + "x" + shape.K
-    let b_description = String("B=") + shape.K + "x" + shape.N
-    let c_description = String("C=") + shape.M + "x" + shape.N
-    let a_transpose_description = String("a_transpose=") + a_transpose
-    let b_transpose_description = String("b_transpose=") + b_transpose
-    let b_packed_description = String("b_packed=") + b_packed
+    var a_description = String("A=") + shape.M + "x" + shape.K
+    var b_description = String("B=") + shape.K + "x" + shape.N
+    var c_description = String("C=") + shape.M + "x" + shape.N
+    var a_transpose_description = String("a_transpose=") + a_transpose
+    var b_transpose_description = String("b_transpose=") + b_transpose
+    var b_packed_description = String("b_packed=") + b_packed
 
     return (
         String(name)

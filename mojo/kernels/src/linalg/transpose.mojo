@@ -34,7 +34,7 @@ fn _transpose_inplace_4x4[
 ](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
     constrained[rows == 4]()
     constrained[cols == 4]()
-    let buf = rebind[
+    var buf = rebind[
         NDBuffer[
             type,
             2,
@@ -42,20 +42,20 @@ fn _transpose_inplace_4x4[
         ],
     ](bufloat0)
 
-    let row0 = buf.simd_load[4](StaticIntTuple[2](0, 0))
-    let row1 = buf.simd_load[4](StaticIntTuple[2](1, 0))
-    let row2 = buf.simd_load[4](StaticIntTuple[2](2, 0))
-    let row3 = buf.simd_load[4](StaticIntTuple[2](3, 0))
+    var row0 = buf.simd_load[4](StaticIntTuple[2](0, 0))
+    var row1 = buf.simd_load[4](StaticIntTuple[2](1, 0))
+    var row2 = buf.simd_load[4](StaticIntTuple[2](2, 0))
+    var row3 = buf.simd_load[4](StaticIntTuple[2](3, 0))
 
-    let tmp0 = row0.shuffle[0, 1, 4, 5](row1)
-    let tmp1 = row2.shuffle[0, 1, 4, 5](row3)
-    let tmp2 = row0.shuffle[2, 3, 6, 7](row1)
-    let tmp3 = row2.shuffle[2, 3, 6, 7](row3)
+    var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
+    var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
+    var tmp2 = row0.shuffle[2, 3, 6, 7](row1)
+    var tmp3 = row2.shuffle[2, 3, 6, 7](row3)
 
-    let r0 = tmp0.shuffle[0, 2, 4, 6](tmp1)
-    let r1 = tmp0.shuffle[1, 3, 5, 7](tmp1)
-    let r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
-    let r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
+    var r0 = tmp0.shuffle[0, 2, 4, 6](tmp1)
+    var r1 = tmp0.shuffle[1, 3, 5, 7](tmp1)
+    var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
+    var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
     buf.simd_store[4](StaticIntTuple[2](0, 0), r0)
     buf.simd_store[4](StaticIntTuple[2](1, 0), r1)
@@ -70,7 +70,7 @@ fn _transpose_inplace_8x8[
 ](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
     constrained[rows == 8]()
     constrained[cols == 8]()
-    let buf = rebind[
+    var buf = rebind[
         NDBuffer[
             type,
             2,
@@ -78,50 +78,50 @@ fn _transpose_inplace_8x8[
         ],
     ](bufloat0)
 
-    let row0 = buf.simd_load[8](StaticIntTuple[2](0, 0))
-    let row1 = buf.simd_load[8](StaticIntTuple[2](1, 0))
-    let row2 = buf.simd_load[8](StaticIntTuple[2](2, 0))
-    let row3 = buf.simd_load[8](StaticIntTuple[2](3, 0))
-    let row4 = buf.simd_load[8](StaticIntTuple[2](4, 0))
-    let row5 = buf.simd_load[8](StaticIntTuple[2](5, 0))
-    let row6 = buf.simd_load[8](StaticIntTuple[2](6, 0))
-    let row7 = buf.simd_load[8](StaticIntTuple[2](7, 0))
+    var row0 = buf.simd_load[8](StaticIntTuple[2](0, 0))
+    var row1 = buf.simd_load[8](StaticIntTuple[2](1, 0))
+    var row2 = buf.simd_load[8](StaticIntTuple[2](2, 0))
+    var row3 = buf.simd_load[8](StaticIntTuple[2](3, 0))
+    var row4 = buf.simd_load[8](StaticIntTuple[2](4, 0))
+    var row5 = buf.simd_load[8](StaticIntTuple[2](5, 0))
+    var row6 = buf.simd_load[8](StaticIntTuple[2](6, 0))
+    var row7 = buf.simd_load[8](StaticIntTuple[2](7, 0))
 
     alias permute_0 = VariadicList[Int](0, 8, 1, 9, 4, 12, 5, 13)
     alias permute_1 = VariadicList[Int](2, 10, 3, 11, 6, 14, 7, 15)
 
-    let k0 = row0._shuffle_list[permute_0](row1)
-    let k1 = row0._shuffle_list[permute_1](row1)
-    let k2 = row2._shuffle_list[permute_0](row3)
-    let k3 = row2._shuffle_list[permute_1](row3)
-    let k4 = row4._shuffle_list[permute_0](row5)
-    let k5 = row4._shuffle_list[permute_1](row5)
-    let k6 = row6._shuffle_list[permute_0](row7)
-    let k7 = row6._shuffle_list[permute_1](row7)
+    var k0 = row0._shuffle_list[permute_0](row1)
+    var k1 = row0._shuffle_list[permute_1](row1)
+    var k2 = row2._shuffle_list[permute_0](row3)
+    var k3 = row2._shuffle_list[permute_1](row3)
+    var k4 = row4._shuffle_list[permute_0](row5)
+    var k5 = row4._shuffle_list[permute_1](row5)
+    var k6 = row6._shuffle_list[permute_0](row7)
+    var k7 = row6._shuffle_list[permute_1](row7)
 
     alias permute_2 = VariadicList[Int](0, 1, 8, 9, 4, 5, 12, 13)
     alias permute_3 = VariadicList[Int](2, 3, 10, 11, 6, 7, 14, 15)
 
-    let k020 = k0._shuffle_list[permute_2](k2)
-    let k021 = k0._shuffle_list[permute_3](k2)
-    let k130 = k1._shuffle_list[permute_2](k3)
-    let k131 = k1._shuffle_list[permute_3](k3)
-    let k460 = k4._shuffle_list[permute_2](k6)
-    let k461 = k4._shuffle_list[permute_3](k6)
-    let k570 = k5._shuffle_list[permute_2](k7)
-    let k571 = k5._shuffle_list[permute_3](k7)
+    var k020 = k0._shuffle_list[permute_2](k2)
+    var k021 = k0._shuffle_list[permute_3](k2)
+    var k130 = k1._shuffle_list[permute_2](k3)
+    var k131 = k1._shuffle_list[permute_3](k3)
+    var k460 = k4._shuffle_list[permute_2](k6)
+    var k461 = k4._shuffle_list[permute_3](k6)
+    var k570 = k5._shuffle_list[permute_2](k7)
+    var k571 = k5._shuffle_list[permute_3](k7)
 
     alias permute_4 = VariadicList[Int](0, 1, 2, 3, 8, 9, 10, 11)
     alias permute_5 = VariadicList[Int](4, 5, 6, 7, 12, 13, 14, 15)
 
-    let r0 = k020._shuffle_list[permute_4](k460)
-    let r1 = k021._shuffle_list[permute_4](k461)
-    let r2 = k130._shuffle_list[permute_4](k570)
-    let r3 = k131._shuffle_list[permute_4](k571)
-    let r4 = k020._shuffle_list[permute_5](k460)
-    let r5 = k021._shuffle_list[permute_5](k461)
-    let r6 = k130._shuffle_list[permute_5](k570)
-    let r7 = k131._shuffle_list[permute_5](k571)
+    var r0 = k020._shuffle_list[permute_4](k460)
+    var r1 = k021._shuffle_list[permute_4](k461)
+    var r2 = k130._shuffle_list[permute_4](k570)
+    var r3 = k131._shuffle_list[permute_4](k571)
+    var r4 = k020._shuffle_list[permute_5](k460)
+    var r5 = k021._shuffle_list[permute_5](k461)
+    var r6 = k130._shuffle_list[permute_5](k570)
+    var r7 = k131._shuffle_list[permute_5](k571)
 
     buf.simd_store[8](StaticIntTuple[2](0, 0), r0)
     buf.simd_store[8](StaticIntTuple[2](1, 0), r1)
@@ -140,7 +140,7 @@ fn _transpose_inplace_16x16[
 ](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
     constrained[rows == 16]()
     constrained[cols == 16]()
-    let buf = rebind[
+    var buf = rebind[
         NDBuffer[
             type,
             2,
@@ -173,90 +173,90 @@ fn _transpose_inplace_16x16[
         4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
     )
 
-    let row00 = buf.simd_load[16](StaticIntTuple[2](0, 0))
-    let row01 = buf.simd_load[16](StaticIntTuple[2](1, 0))
-    let row02 = buf.simd_load[16](StaticIntTuple[2](2, 0))
-    let row03 = buf.simd_load[16](StaticIntTuple[2](3, 0))
-    let row04 = buf.simd_load[16](StaticIntTuple[2](4, 0))
-    let row05 = buf.simd_load[16](StaticIntTuple[2](5, 0))
-    let row06 = buf.simd_load[16](StaticIntTuple[2](6, 0))
-    let row07 = buf.simd_load[16](StaticIntTuple[2](7, 0))
-    let row08 = buf.simd_load[16](StaticIntTuple[2](8, 0))
-    let row09 = buf.simd_load[16](StaticIntTuple[2](9, 0))
-    let row10 = buf.simd_load[16](StaticIntTuple[2](10, 0))
-    let row11 = buf.simd_load[16](StaticIntTuple[2](11, 0))
-    let row12 = buf.simd_load[16](StaticIntTuple[2](12, 0))
-    let row13 = buf.simd_load[16](StaticIntTuple[2](13, 0))
-    let row14 = buf.simd_load[16](StaticIntTuple[2](14, 0))
-    let row15 = buf.simd_load[16](StaticIntTuple[2](15, 0))
+    var row00 = buf.simd_load[16](StaticIntTuple[2](0, 0))
+    var row01 = buf.simd_load[16](StaticIntTuple[2](1, 0))
+    var row02 = buf.simd_load[16](StaticIntTuple[2](2, 0))
+    var row03 = buf.simd_load[16](StaticIntTuple[2](3, 0))
+    var row04 = buf.simd_load[16](StaticIntTuple[2](4, 0))
+    var row05 = buf.simd_load[16](StaticIntTuple[2](5, 0))
+    var row06 = buf.simd_load[16](StaticIntTuple[2](6, 0))
+    var row07 = buf.simd_load[16](StaticIntTuple[2](7, 0))
+    var row08 = buf.simd_load[16](StaticIntTuple[2](8, 0))
+    var row09 = buf.simd_load[16](StaticIntTuple[2](9, 0))
+    var row10 = buf.simd_load[16](StaticIntTuple[2](10, 0))
+    var row11 = buf.simd_load[16](StaticIntTuple[2](11, 0))
+    var row12 = buf.simd_load[16](StaticIntTuple[2](12, 0))
+    var row13 = buf.simd_load[16](StaticIntTuple[2](13, 0))
+    var row14 = buf.simd_load[16](StaticIntTuple[2](14, 0))
+    var row15 = buf.simd_load[16](StaticIntTuple[2](15, 0))
 
-    let k00 = row00._shuffle_list[permute_0](row01)
-    let k01 = row00._shuffle_list[permute_1](row01)
-    let k02 = row02._shuffle_list[permute_0](row03)
-    let k03 = row02._shuffle_list[permute_1](row03)
-    let k04 = row04._shuffle_list[permute_0](row05)
-    let k05 = row04._shuffle_list[permute_1](row05)
-    let k06 = row06._shuffle_list[permute_0](row07)
-    let k07 = row06._shuffle_list[permute_1](row07)
-    let k08 = row08._shuffle_list[permute_0](row09)
-    let k09 = row08._shuffle_list[permute_1](row09)
-    let k10 = row10._shuffle_list[permute_0](row11)
-    let k11 = row10._shuffle_list[permute_1](row11)
-    let k12 = row12._shuffle_list[permute_0](row13)
-    let k13 = row12._shuffle_list[permute_1](row13)
-    let k14 = row14._shuffle_list[permute_0](row15)
-    let k15 = row14._shuffle_list[permute_1](row15)
+    var k00 = row00._shuffle_list[permute_0](row01)
+    var k01 = row00._shuffle_list[permute_1](row01)
+    var k02 = row02._shuffle_list[permute_0](row03)
+    var k03 = row02._shuffle_list[permute_1](row03)
+    var k04 = row04._shuffle_list[permute_0](row05)
+    var k05 = row04._shuffle_list[permute_1](row05)
+    var k06 = row06._shuffle_list[permute_0](row07)
+    var k07 = row06._shuffle_list[permute_1](row07)
+    var k08 = row08._shuffle_list[permute_0](row09)
+    var k09 = row08._shuffle_list[permute_1](row09)
+    var k10 = row10._shuffle_list[permute_0](row11)
+    var k11 = row10._shuffle_list[permute_1](row11)
+    var k12 = row12._shuffle_list[permute_0](row13)
+    var k13 = row12._shuffle_list[permute_1](row13)
+    var k14 = row14._shuffle_list[permute_0](row15)
+    var k15 = row14._shuffle_list[permute_1](row15)
 
-    let j00 = k00._shuffle_list[permute_2](k02)
-    let j01 = k00._shuffle_list[permute_3](k02)
-    let j02 = k01._shuffle_list[permute_2](k03)
-    let j03 = k01._shuffle_list[permute_3](k03)
-    let j04 = k04._shuffle_list[permute_2](k06)
-    let j05 = k04._shuffle_list[permute_3](k06)
-    let j06 = k05._shuffle_list[permute_2](k07)
-    let j07 = k05._shuffle_list[permute_3](k07)
-    let j08 = k08._shuffle_list[permute_2](k10)
-    let j09 = k08._shuffle_list[permute_3](k10)
-    let j10 = k09._shuffle_list[permute_2](k11)
-    let j11 = k09._shuffle_list[permute_3](k11)
-    let j12 = k12._shuffle_list[permute_2](k14)
-    let j13 = k12._shuffle_list[permute_3](k14)
-    let j14 = k13._shuffle_list[permute_2](k15)
-    let j15 = k13._shuffle_list[permute_3](k15)
+    var j00 = k00._shuffle_list[permute_2](k02)
+    var j01 = k00._shuffle_list[permute_3](k02)
+    var j02 = k01._shuffle_list[permute_2](k03)
+    var j03 = k01._shuffle_list[permute_3](k03)
+    var j04 = k04._shuffle_list[permute_2](k06)
+    var j05 = k04._shuffle_list[permute_3](k06)
+    var j06 = k05._shuffle_list[permute_2](k07)
+    var j07 = k05._shuffle_list[permute_3](k07)
+    var j08 = k08._shuffle_list[permute_2](k10)
+    var j09 = k08._shuffle_list[permute_3](k10)
+    var j10 = k09._shuffle_list[permute_2](k11)
+    var j11 = k09._shuffle_list[permute_3](k11)
+    var j12 = k12._shuffle_list[permute_2](k14)
+    var j13 = k12._shuffle_list[permute_3](k14)
+    var j14 = k13._shuffle_list[permute_2](k15)
+    var j15 = k13._shuffle_list[permute_3](k15)
 
-    let t00 = j00._shuffle_list[permute_4](j04)
-    let t01 = j01._shuffle_list[permute_4](j05)
-    let t02 = j02._shuffle_list[permute_4](j06)
-    let t03 = j03._shuffle_list[permute_4](j07)
-    let t04 = j00._shuffle_list[permute_5](j04)
-    let t05 = j01._shuffle_list[permute_5](j05)
-    let t06 = j02._shuffle_list[permute_5](j06)
-    let t07 = j03._shuffle_list[permute_5](j07)
-    let t08 = j08._shuffle_list[permute_4](j12)
-    let t09 = j09._shuffle_list[permute_4](j13)
-    let t10 = j10._shuffle_list[permute_4](j14)
-    let t11 = j11._shuffle_list[permute_4](j15)
-    let t12 = j08._shuffle_list[permute_5](j12)
-    let t13 = j09._shuffle_list[permute_5](j13)
-    let t14 = j10._shuffle_list[permute_5](j14)
-    let t15 = j11._shuffle_list[permute_5](j15)
+    var t00 = j00._shuffle_list[permute_4](j04)
+    var t01 = j01._shuffle_list[permute_4](j05)
+    var t02 = j02._shuffle_list[permute_4](j06)
+    var t03 = j03._shuffle_list[permute_4](j07)
+    var t04 = j00._shuffle_list[permute_5](j04)
+    var t05 = j01._shuffle_list[permute_5](j05)
+    var t06 = j02._shuffle_list[permute_5](j06)
+    var t07 = j03._shuffle_list[permute_5](j07)
+    var t08 = j08._shuffle_list[permute_4](j12)
+    var t09 = j09._shuffle_list[permute_4](j13)
+    var t10 = j10._shuffle_list[permute_4](j14)
+    var t11 = j11._shuffle_list[permute_4](j15)
+    var t12 = j08._shuffle_list[permute_5](j12)
+    var t13 = j09._shuffle_list[permute_5](j13)
+    var t14 = j10._shuffle_list[permute_5](j14)
+    var t15 = j11._shuffle_list[permute_5](j15)
 
-    let r00 = t00._shuffle_list[permute_6](t08)
-    let r01 = t01._shuffle_list[permute_6](t09)
-    let r02 = t02._shuffle_list[permute_6](t10)
-    let r03 = t03._shuffle_list[permute_6](t11)
-    let r04 = t04._shuffle_list[permute_6](t12)
-    let r05 = t05._shuffle_list[permute_6](t13)
-    let r06 = t06._shuffle_list[permute_6](t14)
-    let r07 = t07._shuffle_list[permute_6](t15)
-    let r08 = t00._shuffle_list[permute_7](t08)
-    let r09 = t01._shuffle_list[permute_7](t09)
-    let r10 = t02._shuffle_list[permute_7](t10)
-    let r11 = t03._shuffle_list[permute_7](t11)
-    let r12 = t04._shuffle_list[permute_7](t12)
-    let r13 = t05._shuffle_list[permute_7](t13)
-    let r14 = t06._shuffle_list[permute_7](t14)
-    let r15 = t07._shuffle_list[permute_7](t15)
+    var r00 = t00._shuffle_list[permute_6](t08)
+    var r01 = t01._shuffle_list[permute_6](t09)
+    var r02 = t02._shuffle_list[permute_6](t10)
+    var r03 = t03._shuffle_list[permute_6](t11)
+    var r04 = t04._shuffle_list[permute_6](t12)
+    var r05 = t05._shuffle_list[permute_6](t13)
+    var r06 = t06._shuffle_list[permute_6](t14)
+    var r07 = t07._shuffle_list[permute_6](t15)
+    var r08 = t00._shuffle_list[permute_7](t08)
+    var r09 = t01._shuffle_list[permute_7](t09)
+    var r10 = t02._shuffle_list[permute_7](t10)
+    var r11 = t03._shuffle_list[permute_7](t11)
+    var r12 = t04._shuffle_list[permute_7](t12)
+    var r13 = t05._shuffle_list[permute_7](t13)
+    var r14 = t06._shuffle_list[permute_7](t14)
+    var r15 = t07._shuffle_list[permute_7](t15)
 
     buf.simd_store[16](StaticIntTuple[2](0, 0), r00)
     buf.simd_store[16](StaticIntTuple[2](1, 0), r01)
@@ -283,7 +283,7 @@ fn _transpose_inplace_naive[
 ](buf: NDBuffer[type, 2, DimList(rows, cols)]):
     for i in range(rows):
         for j in range(i + 1, cols):
-            let tmp = buf[i, j]
+            var tmp = buf[i, j]
             buf[StaticIntTuple[2](i, j)] = buf[j, i]
             buf[StaticIntTuple[2](j, i)] = tmp
 
@@ -321,8 +321,8 @@ fn _permute_data[
 
     @unroll
     for idx in range(size):
-        let perm_axis = perms.load(idx)[0]
-        let perm_data = input.load(perm_axis)
+        var perm_axis = perms.load(idx)[0]
+        var perm_data = input.load(perm_axis)
         output[idx] = perm_data
 
 
@@ -356,10 +356,10 @@ fn _fill_strides[
 
     @unroll
     for idx in range(rank - 1):
-        let axis = rank - idx - 2
-        let next_axis_stride = strides[axis + 1]
-        let next_axis_dim = buf.dim(axis + 1)
-        let curr_axis_stride = next_axis_stride * next_axis_dim
+        var axis = rank - idx - 2
+        var next_axis_stride = strides[axis + 1]
+        var next_axis_dim = buf.dim(axis + 1)
+        var curr_axis_stride = next_axis_stride * next_axis_dim
         strides[axis] = curr_axis_stride
 
 
@@ -374,7 +374,7 @@ fn _collapse_unpermuted_dims[
     inout simplified_perms: StaticIntTuple[tuple_size],
     dim: Int,
 ):
-    let merged_dim = simplified_perms[dim]
+    var merged_dim = simplified_perms[dim]
     simplified_shape[merged_dim] = (
         simplified_shape[merged_dim] * simplified_shape[merged_dim + 1]
     )
@@ -392,7 +392,7 @@ fn _collapse_unpermuted_dims[
 
 
 @always_inline
-fn _delete_size_1_dim[
+fn _devare_size_1_dim[
     rank: Int, tuple_size: Int
 ](
     inout simplified_shape: StaticIntTuple[tuple_size],
@@ -402,11 +402,11 @@ fn _delete_size_1_dim[
     for i in range(dim, rank - 1):
         simplified_shape[i] = simplified_shape[i + 1]
 
-    var found_deleted: Bool = False
+    var found_devared: Bool = False
     for i in range(rank - 1):
         if simplified_perms[i] == dim:
-            found_deleted = True
-        if found_deleted:
+            found_devared = True
+        if found_devared:
             simplified_perms[i] = simplified_perms[i + 1]
         if simplified_perms[i] > dim:
             simplified_perms[i] -= 1
@@ -439,7 +439,7 @@ fn _simplify_transpose_perms_impl[
                 )
                 return
             if simplified_shape[i] == 1:
-                _delete_size_1_dim[rank](simplified_shape, simplified_perms, i)
+                _devare_size_1_dim[rank](simplified_shape, simplified_perms, i)
                 simplified_rank -= 1
                 _simplify_transpose_perms_impl[rank - 1, tuple_size](
                     simplified_rank, simplified_shape, simplified_perms
@@ -498,8 +498,8 @@ fn _process_tile[
     out_ptr: DTypePointer[type],
     in_ptr: DTypePointer[type],
 ):
-    let input_tile_offset = M * n + m
-    let output_tile_offset = N * m + n
+    var input_tile_offset = M * n + m
+    var output_tile_offset = N * m + n
 
     var input_vals = StaticTuple[tile_size_n, SIMD[type, tile_size_m]]()
     var output_vals = StaticTuple[tile_size_m, SIMD[type, tile_size_n]]()
@@ -557,8 +557,8 @@ fn _transpose_2d_serial_tiled[
     #   output[n*M + m] = input[m*N + n]
     # And we also have a global offset which needs to be added to both output
     # and input pointers.
-    let N = simplified_input_shape[simplified_rank - 2]
-    let M = simplified_input_shape[simplified_rank - 1]
+    var N = simplified_input_shape[simplified_rank - 2]
+    var M = simplified_input_shape[simplified_rank - 1]
 
     @parameter
     @__copy_capture(N, M)
@@ -587,12 +587,12 @@ fn _should_run_parallel(
     if (N % simd_width) != 0 or (M % simd_width) != 0:
         return False
 
-    let work_per_row = M * simd_width
+    var work_per_row = M * simd_width
     if min_work_per_task > work_per_row:
         # We will have to process several rows in each thread
         if (min_work_per_task % work_per_row) != 0:
             return False
-        let rows_per_worker = div_ceil(min_work_per_task, work_per_row)
+        var rows_per_worker = div_ceil(min_work_per_task, work_per_row)
         if N // rows_per_worker < 4:
             return False
 
@@ -617,17 +617,17 @@ fn _transpose_2d_parallel_tiled[
         return
 
     alias simd_width = simdwidthof[type]()
-    let N = simplified_input_shape[simplified_rank - 2]
-    let M = simplified_input_shape[simplified_rank - 1]
+    var N = simplified_input_shape[simplified_rank - 2]
+    var M = simplified_input_shape[simplified_rank - 1]
     alias min_work_per_task = 1024
     alias tile_size_m = simd_width if simd_width <= 16 else 1
     alias tile_size_n = simd_width if simd_width <= 16 else 1
 
-    let n_unit_size = simd_width
-    let m_unit_size = simd_width
+    var n_unit_size = simd_width
+    var m_unit_size = simd_width
 
-    let n_tiles = N // n_unit_size
-    let m_tiles = M // m_unit_size
+    var n_tiles = N // n_unit_size
+    var m_tiles = M // m_unit_size
 
     var rows_per_worker = 1  # Row in terms of tiles, i.e. we still take simd_width elements
     if min_work_per_task > M * simd_width:
@@ -635,23 +635,23 @@ fn _transpose_2d_parallel_tiled[
 
     var work = div_ceil(n_tiles, rows_per_worker)
 
-    let num_threads = Runtime().parallelism_level()
+    var num_threads = Runtime().parallelism_level()
 
-    let num_tasks = min(work, num_threads)
+    var num_tasks = min(work, num_threads)
 
-    let work_block_size = div_ceil(work, num_tasks)
+    var work_block_size = div_ceil(work, num_tasks)
 
     @parameter
     @__copy_capture(work_block_size, m_tiles, N, M)
     @always_inline
     fn _parallel_tile(thread_id: Int):
-        let n_tile_begin = work_block_size * thread_id
-        let n_tile_end = min(work_block_size * (thread_id + 1), work)
+        var n_tile_begin = work_block_size * thread_id
+        var n_tile_end = min(work_block_size * (thread_id + 1), work)
 
         for n_tile in range(n_tile_begin, n_tile_end):
             for m_tile in range(m_tiles):
-                let m = tile_size_m * m_tile
-                let n = tile_size_n * n_tile
+                var m = tile_size_m * m_tile
+                var n = tile_size_n * n_tile
                 _process_tile[tile_size_m, tile_size_n, type](
                     m,
                     n,
@@ -682,8 +682,8 @@ fn transpose_2d[
         return
 
     alias simd_width = simdwidthof[type]()
-    let N = simplified_input_shape[simplified_rank - 2]
-    let M = simplified_input_shape[simplified_rank - 1]
+    var N = simplified_input_shape[simplified_rank - 2]
+    var M = simplified_input_shape[simplified_rank - 1]
     alias min_work_per_task = 1024
 
     if _should_run_parallel(M, N, simd_width, min_work_per_task):
@@ -718,9 +718,9 @@ fn _transpose_4d_swap_middle_helper[
     N: Int,
     K: Int,
 ):
-    let work = L * M * N
-    let memcpy_block_size = K
-    let total_size = L * M * N * K
+    var work = L * M * N
+    var memcpy_block_size = K
+    var total_size = L * M * N * K
 
     alias KB = 1024
 
@@ -738,31 +738,31 @@ fn _transpose_4d_swap_middle_helper[
                 for n in range(N):
                     # We want to do:
                     #   output[l, n, m, k] = input[l, m, n, k]
-                    let in_off = l * M * N * K + m * N * K + n * K
-                    let out_off = l * M * N * K + n * M * K + m * K
+                    var in_off = l * M * N * K + m * N * K + n * K
+                    var out_off = l * M * N * K + n * M * K + m * K
                     memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
         return
     else:
-        let num_threads = Runtime().parallelism_level()
+        var num_threads = Runtime().parallelism_level()
 
-        let num_tasks = min(work, num_threads)
+        var num_tasks = min(work, num_threads)
 
-        let work_block_size = div_ceil(work, num_tasks)
+        var work_block_size = div_ceil(work, num_tasks)
 
         @parameter
         @__copy_capture(work, work_block_size)
         @always_inline
         fn _parallel_copy(thread_id: Int):
-            let begin = work_block_size * thread_id
-            let end = min(work_block_size * (thread_id + 1), work)
+            var begin = work_block_size * thread_id
+            var end = min(work_block_size * (thread_id + 1), work)
             for block_idx in range(begin, end):
-                let l = block_idx // (M * N)
-                let block_idx_mn = block_idx % (M * N)
-                let m = block_idx_mn // N
-                let n = block_idx_mn % N
+                var l = block_idx // (M * N)
+                var block_idx_mn = block_idx % (M * N)
+                var m = block_idx_mn // N
+                var n = block_idx_mn % N
 
-                let in_off = l * M * N * K + m * N * K + n * K
-                let out_off = l * M * N * K + n * M * K + m * K
+                var in_off = l * M * N * K + m * N * K + n * K
+                var out_off = l * M * N * K + n * M * K + m * K
                 memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
 
         sync_parallelize[_parallel_copy](num_tasks)
@@ -786,12 +786,12 @@ fn transpose_4d_swap_middle[
     # The input tile is LxMxNxK, the output tile is LxNxMxK.
     # We want to do:
     #   output[l, n, m, k] = input[l, m, n, k]
-    let L = simplified_input_shape[simplified_rank - 4]
-    let M = simplified_input_shape[simplified_rank - 3]
-    let N = simplified_input_shape[simplified_rank - 2]
-    let K = simplified_input_shape[simplified_rank - 1]
-    let src_ptr = input.data.offset(0)
-    let dst_ptr = output.data.offset(0)
+    var L = simplified_input_shape[simplified_rank - 4]
+    var M = simplified_input_shape[simplified_rank - 3]
+    var N = simplified_input_shape[simplified_rank - 2]
+    var K = simplified_input_shape[simplified_rank - 1]
+    var src_ptr = input.data.offset(0)
+    var dst_ptr = output.data.offset(0)
     _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, L, M, N, K)
 
 
@@ -815,11 +815,11 @@ fn transpose_3d_swap_outer[
     #   output[n, m, k] = input[m, n, k]
     # We use a 4d helper function for this, pretending that we have an outer
     # dimensions L=1.
-    let M = simplified_input_shape[simplified_rank - 3]
-    let N = simplified_input_shape[simplified_rank - 2]
-    let K = simplified_input_shape[simplified_rank - 1]
-    let src_ptr = input.data.offset(0)
-    let dst_ptr = output.data.offset(0)
+    var M = simplified_input_shape[simplified_rank - 3]
+    var N = simplified_input_shape[simplified_rank - 2]
+    var K = simplified_input_shape[simplified_rank - 1]
+    var src_ptr = input.data.offset(0)
+    var dst_ptr = output.data.offset(0)
     _transpose_4d_swap_middle_helper[type](dst_ptr, src_ptr, 1, M, N, K)
 
 
@@ -840,7 +840,7 @@ fn transpose_3d_swap_inner[
         return
     # simplified perms must be 0, 2, 1
     var offset = 0
-    let step = simplified_input_shape[
+    var step = simplified_input_shape[
         simplified_rank - 2
     ] * simplified_input_shape[simplified_rank - 1]
     # TODO: parallelize this loop
@@ -865,22 +865,22 @@ fn transpose_trivial_memcpy[
     output: NDBuffer[type, rank, output_shape],
     input: NDBuffer[type, rank, input_shape],
 ):
-    let src_ptr = input.data.offset(0)
-    let dst_ptr = output.data.offset(0)
+    var src_ptr = input.data.offset(0)
+    var dst_ptr = output.data.offset(0)
 
     alias KB = 1024
     alias min_work_per_task = 1 * KB
     alias min_work_for_parallel = 4 * min_work_per_task
 
-    let total_size = output.size()
+    var total_size = output.size()
 
     if total_size <= min_work_for_parallel:
         memcpy(dst_ptr, src_ptr, total_size)
 
     else:
-        let work_units = div_ceil(total_size, min_work_per_task)
-        let num_tasks = min(work_units, Runtime().parallelism_level())
-        let work_block_size = div_ceil(work_units, num_tasks)
+        var work_units = div_ceil(total_size, min_work_per_task)
+        var num_tasks = min(work_units, Runtime().parallelism_level())
+        var work_block_size = div_ceil(work_units, num_tasks)
 
         parallel_memcpy[type](
             dst_ptr,
@@ -923,9 +923,9 @@ fn _copy_with_strides[
     if axis + 1 > rank:
         raise Error("out of range")
 
-    let axis_dim = output.dim(axis)
-    let input_axis_stride: Int = input_strides.load(axis)[0].value
-    let output_axis_stride: Int = output_strides.load(axis)[0].value
+    var axis_dim = output.dim(axis)
+    var input_axis_stride: Int = input_strides.load(axis)[0].value
+    var output_axis_stride: Int = output_strides.load(axis)[0].value
 
     if axis + 1 == rank:
         var src_ptr = input.offset(input_offset)
@@ -950,7 +950,7 @@ fn _copy_with_strides[
 
         return
 
-    let next_axis = axis + 1
+    var next_axis = axis + 1
 
     alias KB = 1024
 
@@ -975,13 +975,13 @@ fn _copy_with_strides[
             next_output_offset += output_axis_stride
 
     else:
-        let num_threads = Runtime().parallelism_level()
-        let num_tasks = min(
+        var num_threads = Runtime().parallelism_level()
+        var num_tasks = min(
             div_ceil(output.bytecount(), min_work_per_task), num_threads
         )
 
-        let work = axis_dim
-        let work_block_size = div_ceil(work, num_tasks)
+        var work = axis_dim
+        var work_block_size = div_ceil(work, num_tasks)
 
         @always_inline
         @__copy_capture(
@@ -1032,19 +1032,19 @@ fn transpose_strided[
     perms: DTypePointer[DType.index],
 ) raises:
     # Compute `permuted_input_strides`
-    let input_strides = DTypePointer[DType.index].alloc(rank)
-    let permuted_input_strides = DTypePointer[DType.index].alloc(rank)
+    var input_strides = DTypePointer[DType.index].alloc(rank)
+    var permuted_input_strides = DTypePointer[DType.index].alloc(rank)
     _fill_strides(input, input_strides)
     _permute_data[rank, DType.index](
         input_strides, permuted_input_strides, perms
     )
     # Compute `output_strides`
-    let output_strides = DTypePointer[DType.index].alloc(rank)
+    var output_strides = DTypePointer[DType.index].alloc(rank)
     _fill_strides(output, output_strides)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
     # guarantees
-    #   (let isx denote input_stride_x, etc.)
+    #   (var isx denote input_stride_x, etc.)
     #   output[x, y, z] = input[z, x, y]
     # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(z*osx + x*osy + y*osz))
     # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))

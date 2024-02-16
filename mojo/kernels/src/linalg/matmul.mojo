@@ -78,11 +78,11 @@ fn elementwise_epilogue_c_tile[
     @always_inline
     @parameter
     fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
-        let n_coord = idx_n + offset.N
+        var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
-            let m_coord = idx_m + offset.M
-            let c_coord = (m_coord, n_coord)
-            let c_val = c.simd_load[col_chunk_size](c_coord)
+            var m_coord = idx_m + offset.M
+            var c_coord = (m_coord, n_coord)
+            var c_val = c.simd_load[col_chunk_size](c_coord)
             func[type, col_chunk_size](c_coord, c_val)
 
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
@@ -148,7 +148,7 @@ struct PackMatrixRows[
         """
         constrained[row_inner_size % simd_size == 0]()
 
-        let instance = Self(
+        var instance = Self(
             packed_matrix,
             original_matrix,
             global_offset,
@@ -201,12 +201,12 @@ struct PackMatrixRows[
         """
         # Calculate the remaining bound from the local offset.
         # Boundaries for readable data.
-        let read_bound = self.valid_data_dim - local_off_set
+        var read_bound = self.valid_data_dim - local_off_set
         # Boundaries for writeable space.
-        let write_bound = self.pack_tile_dim - local_off_set
+        var write_bound = self.pack_tile_dim - local_off_set
 
         # Global index the packing is starting from.
-        let start_idx_global = local_off_set + self.global_offset
+        var start_idx_global = local_off_set + self.global_offset
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
@@ -217,11 +217,11 @@ struct PackMatrixRows[
             alias inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
-                let row_global_index = (
+                var row_global_index = (
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
-                let row_data: SIMD[type, simd_size]
+                var row_data: SIMD[type, simd_size]
                 if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
@@ -259,12 +259,12 @@ struct PackMatrixRows[
         @__copy_capture(write_bound)
         @parameter
         fn transposed_inner_row_body[idx: Int]():
-            let transposed_data = transpose_buffer.simd_load[simd_size](
+            var transposed_data = transpose_buffer.simd_load[simd_size](
                 (idx, 0)
             )
             # compute the packed index
-            let _row_outer = local_off_set[0] // row_inner_size
-            let _row_inner = local_off_set[0] % row_inner_size
+            var _row_outer = local_off_set[0] // row_inner_size
+            var _row_inner = local_off_set[0] % row_inner_size
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.simd_store[simd_size](
@@ -285,13 +285,13 @@ struct PackMatrixRows[
         transpose helper function until all required data has been packed.
         """
 
-        let transpose_buffer = NDBuffer[
+        var transpose_buffer = NDBuffer[
             type,
             2,
             DimList(simd_size, simd_size),
         ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
 
-        let valid_tile_simd_dim = Index(
+        var valid_tile_simd_dim = Index(
             min(
                 self.valid_simd_dim[0],
                 self.pack_tile_dim[0],
@@ -392,7 +392,7 @@ struct PackMatrixCols[
             "Unimplemented tile pattern.",
         )
 
-        let instance = Self(
+        var instance = Self(
             packed_matrix,
             original_matrix,
             global_offset,
@@ -421,7 +421,7 @@ struct PackMatrixCols[
         @always_inline
         @parameter
         fn pack_vector(row_idx: Int, col_idx: Int):
-            let global_idx = self.global_offset + Index(row_idx, col_idx)
+            var global_idx = self.global_offset + Index(row_idx, col_idx)
             var data = SIMD[type, simd_size](0)
             if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
@@ -438,8 +438,8 @@ struct PackMatrixCols[
                 )
 
             # map to packed index
-            let col_idx_outer = col_idx // column_inner_size
-            let col_idx_inner = col_idx % column_inner_size
+            var col_idx_outer = col_idx // column_inner_size
+            var col_idx_inner = col_idx % column_inner_size
             self.packed_matrix.simd_store[simd_size](
                 (col_idx_outer, row_idx, col_idx_inner),
                 data,
@@ -453,10 +453,10 @@ struct PackMatrixCols[
         @always_inline
         @parameter
         fn prefetch_body[idx: Int]():
-            let global_row_idx = (
+            var global_row_idx = (
                 self.global_offset[0] + row_start + unroll_factor + idx
             )
-            let global_col_idx = self.global_offset[1] + col_start
+            var global_col_idx = self.global_offset[1] + col_start
             self.original_matrix.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](global_row_idx, global_col_idx)
@@ -474,17 +474,17 @@ struct PackMatrixCols[
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
         constrained[use_vnni]()
-        let kc = self.valid_data_dim[0]
-        let nc = self.valid_data_dim[1]
-        let nr = column_inner_size
+        var kc = self.valid_data_dim[0]
+        var nc = self.valid_data_dim[1]
+        var nr = column_inner_size
         for i in range(0, align_up(kc, 4), 4):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
 
                     @unroll
                     for l in range(4):
-                        let local_idx = Index(i + l, p + nr * j)
-                        let val = 0 if local_idx[0] >= kc or local_idx[
+                        var local_idx = Index(i + l, p + nr * j)
+                        var val = 0 if local_idx[0] >= kc or local_idx[
                             1
                         ] >= nc else self.original_matrix[
                             self.global_offset + local_idx
@@ -496,18 +496,18 @@ struct PackMatrixCols[
 
     fn _pack_i8mm(self):
         constrained[use_i8mm]()
-        let kc = self.valid_data_dim[0]
-        let nc = self.valid_data_dim[1]
+        var kc = self.valid_data_dim[0]
+        var nc = self.valid_data_dim[1]
         alias column_inner_size2 = column_inner_size // 2
         for i in range(0, align_up(kc, 8), 8):
             for j in range(div_ceil(nc, column_inner_size2)):
                 for p in range(0, column_inner_size2, 2):
                     for i2 in range(8):
                         for p2 in range(2):
-                            let local_idx = Index(
+                            var local_idx = Index(
                                 i + i2, column_inner_size2 * j + p + p2
                             )
-                            let val = 0 if local_idx[0] >= kc or local_idx[
+                            var val = 0 if local_idx[0] >= kc or local_idx[
                                 1
                             ] >= nc else self.original_matrix[
                                 self.global_offset + local_idx
@@ -521,7 +521,7 @@ struct PackMatrixCols[
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         constrained[not use_vnni and not use_i8mm]()
-        let valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
+        var valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
         alias unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
@@ -597,12 +597,12 @@ struct LoadStoreOutputTile[
 
                 @parameter
                 if is_load:
-                    let data = self.row_ptrs[row].offset(col).simd_load[
+                    var data = self.row_ptrs[row].offset(col).simd_load[
                         column_step
                     ]()
                     self.output_tile.simd_store(Index(row, col), data)
                 else:
-                    let data = self.output_tile.simd_load[column_step](
+                    var data = self.output_tile.simd_load[column_step](
                         Index(row, col)
                     )
                     self.row_ptrs[row].offset(col).simd_store(data)
@@ -672,13 +672,13 @@ struct LoadStoreOutputTile[
         # Note that the compiler produces better code if each pointer is calculated
         # relative to the previous pointer. Using (N * row) causes the compiler to
         # allocate locals to cache the intermediate results.
-        let row_ptrs = stack_allocation[tile_rows, DTypePointer[type]]()
+        var row_ptrs = stack_allocation[tile_rows, DTypePointer[type]]()
 
         @unroll
         for row in range(tile_rows):
             row_ptrs[row] = ptr if row == 0 else (row_ptrs[row - 1] + stride)
 
-        let instance = Self(
+        var instance = Self(
             output_tile,
             row_ptrs,
             load_store_count,
@@ -762,7 +762,7 @@ struct MatmulInnerLoopBPacked[
             tile_n_k: 2D dimension tuple describing the size of the packed tile
                 of B.
         """
-        let instance = Self(
+        var instance = Self(
             c,
             a,
             b_packed,
@@ -831,21 +831,21 @@ struct MatmulInnerLoopBPacked[
                 if skip_boundary_check or (
                     idx1 * 2 + 2 <= self.c_bound[1] - tile_n_idx
                 ):
-                    let t0 = c_ptr.simd_load[2](
+                    var t0 = c_ptr.simd_load[2](
                         self.c_stride * (2 * idx0 + 0) + 2 * idx1
                     )
-                    let t1 = c_ptr.simd_load[2](
+                    var t1 = c_ptr.simd_load[2](
                         self.c_stride * (2 * idx0 + 1) + 2 * idx1
                     ) if not single_row_i8mm else SIMD[c_type, 2](0)
                     c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
                 elif idx1 * 2 <= self.c_bound[1]:
-                    let t0 = partial_simd_load[2](
+                    var t0 = partial_simd_load[2](
                         c_ptr.offset(self.c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
                     )
-                    let t1 = partial_simd_load[2](
+                    var t1 = partial_simd_load[2](
                         c_ptr.offset(self.c_stride * (2 * idx0 + 1) + 2 * idx1),
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
@@ -930,7 +930,7 @@ struct MatmulInnerLoopBPacked[
             @always_inline
             @parameter
             fn body_i8mm[idx0: Int, idx1: Int]():
-                let c_data = c_local.simd_load[simd_size](
+                var c_data = c_local.simd_load[simd_size](
                     Index(idx0, idx1 * simd_size)
                 )
                 if skip_boundary_check or (
@@ -981,7 +981,7 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            let c_data = c_local.simd_load[simd_size](
+            var c_data = c_local.simd_load[simd_size](
                 Index(idx0, idx1 * simd_size)
             )
             if skip_boundary_check or (
@@ -1025,12 +1025,12 @@ struct MatmulInnerLoopBPacked[
         """
         constrained[a_col_size == 1]()
         # Seek outer indices in packed layout.
-        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        let global_k = self.global_offset.K + tile_n_k_idx[1]
+        var global_k = self.global_offset.K + tile_n_k_idx[1]
 
-        let b_ptr = self.b_packed._offset(
+        var b_ptr = self.b_packed._offset(
             Index(n_outer_idx, tile_n_k_idx[1], 0)
         )
 
@@ -1046,8 +1046,8 @@ struct MatmulInnerLoopBPacked[
                 ]()
 
         # This inner kernels works with non-transposed A.
-        let K = self.a.dim[1]()
-        let a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+        var K = self.a.dim[1]()
+        var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
         @unroll
@@ -1055,13 +1055,13 @@ struct MatmulInnerLoopBPacked[
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
+                var a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                let c_idx = Index(idx0, idx1 * simd_size)
+                var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
                     c_idx
                 )
-                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                var b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
                 ]().cast[c_type]()
                 c_val = fma[c_type, simd_size](a_val, b_val, c_val)
@@ -1087,12 +1087,12 @@ struct MatmulInnerLoopBPacked[
                 processing tile to index the packed B matrix.
         """
         # Seek outer indices in packed layout.
-        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
-        let kl = tile_n_k_idx[1]
+        var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        var kl = tile_n_k_idx[1]
 
         # Global K index.
-        let global_k = self.global_offset.K + kl
-        let b_ptr = self.b_packed._offset(
+        var global_k = self.global_offset.K + kl
+        var b_ptr = self.b_packed._offset(
             Index(n_outer_idx, kl // 4, 0)
         ).bitcast[c_type]()
 
@@ -1113,16 +1113,16 @@ struct MatmulInnerLoopBPacked[
                     ]()
 
         # This inner kernels works with non-transposed A.
-        let K = self.a.dim(1)
+        var K = self.a.dim(1)
 
-        let a_local = Buffer[a_type, 4 * a_row_size].stack_allocation()
-        let a_base_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
-        let a_ptr = a_local.data if (
+        var a_local = Buffer[a_type, 4 * a_row_size].stack_allocation()
+        var a_base_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+        var a_ptr = a_local.data if (
             is_tail and not has_avx512f()
         ) else a_base_ptr
-        let a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
+        var a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
 
-        let tail_length = self.tile_n_k[1] - kl
+        var tail_length = self.tile_n_k[1] - kl
 
         # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
         @parameter
@@ -1140,7 +1140,7 @@ struct MatmulInnerLoopBPacked[
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                let a_val = bitcast[c_type, 1](
+                var a_val = bitcast[c_type, 1](
                     partial_simd_load[4](
                         a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
                     )
@@ -1151,18 +1151,18 @@ struct MatmulInnerLoopBPacked[
                 ]().load()
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                let c_idx = Index(idx0, idx1 * simd_size)
+                var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
                     c_idx
                 )
 
-                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                var b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
                 ]()
 
                 @parameter
                 if has_neon_int8_dotprod():
-                    let a_val2 = SIMD[c_type, simd_size].splat(a_val)
+                    var a_val2 = SIMD[c_type, simd_size].splat(a_val)
                     c_val = _neon_dotprod[a_type, b_type, c_type, simd_size](
                         c_val,
                         bitcast[a_type, 16](a_val2),
@@ -1186,7 +1186,7 @@ struct MatmulInnerLoopBPacked[
         )
 
         # Allocate accumulation buffer.
-        let c_local = NDBuffer[
+        var c_local = NDBuffer[
             c_type,
             2,
             DimList(a_row_size, pack_inner_size),
@@ -1202,7 +1202,7 @@ struct MatmulInnerLoopBPacked[
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
-            let kl = align_down(self.tile_n_k[1], 4)
+            var kl = align_down(self.tile_n_k[1], 4)
             for idx_k in range(0, kl, 4):
                 # accumulate data for this (n, k) index
                 self._accumulate_vnni[False](c_local, Index(idx_n, idx_k))
@@ -1216,7 +1216,7 @@ struct MatmulInnerLoopBPacked[
         """
         constrained[not Self.use_vnni and not has_neon()]()
         # Allocate accumulation buffer.
-        let c_local = NDBuffer[
+        var c_local = NDBuffer[
             c_type,
             2,
             DimList(a_row_size, pack_inner_size),
@@ -1259,21 +1259,21 @@ struct MatmulInnerLoopBPacked[
                 packed B matrix.
         """
         # Seek outer indices in packed layout.
-        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        let global_k = self.global_offset.K + tile_n_k_idx[1]
+        var global_k = self.global_offset.K + tile_n_k_idx[1]
 
         var b_ptr = self.b_packed._offset(
             Index(n_outer_idx, tile_n_k_idx[1], 0)
         )
 
-        let a_vals = stack_allocation[a_row_size, SIMD[c_type, a_col_size]]()
+        var a_vals = stack_allocation[a_row_size, SIMD[c_type, a_col_size]]()
 
         @unroll
         for row in range(a_row_size):
-            let global_m = self.global_offset.M + row
-            let a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
+            var global_m = self.global_offset.M + row
+            var a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
                 c_type
             ]()
             a_vals[row] = a_val
@@ -1283,14 +1283,14 @@ struct MatmulInnerLoopBPacked[
 
             @unroll
             for col in range(pack_inner_size // simd_size):
-                let b_val = b_ptr.offset(col * simd_size).simd_load[
+                var b_val = b_ptr.offset(col * simd_size).simd_load[
                     simd_size
                 ]().cast[c_type]()
 
                 @unroll
                 for row in range(a_row_size):
-                    let a_val = a_vals[row]
-                    let c_idx = Index(row, col * simd_size)
+                    var a_val = a_vals[row]
+                    var c_idx = Index(row, col * simd_size)
                     var c_val = c_local.simd_load[simd_size](c_idx)
                     c_val = fma[c_type, simd_size](a_val[lane], b_val, c_val)
                     c_local.simd_store[simd_size](c_idx, c_val)
@@ -1303,7 +1303,7 @@ struct MatmulInnerLoopBPacked[
         """
         constrained[has_neon() and not Self.use_vnni and not Self.use_i8mm]()
         # Allocate accumulation buffer.
-        let c_local = NDBuffer[
+        var c_local = NDBuffer[
             c_type,
             2,
             DimList(a_row_size, pack_inner_size),
@@ -1317,7 +1317,7 @@ struct MatmulInnerLoopBPacked[
             else:
                 self._load_c_tile(c_local, idx_n)
 
-            let partition_end = simd_size * (self.tile_n_k[1] // simd_size)
+            var partition_end = simd_size * (self.tile_n_k[1] // simd_size)
             for idx_k0 in range(0, partition_end, simd_size):
                 self._accumulate_lane[simd_size](c_local, Index(idx_n, idx_k0))
 
@@ -1344,13 +1344,13 @@ struct MatmulInnerLoopBPacked[
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        let n_outer_idx = tile_n_k_idx[0] // (pack_inner_size // 2)
-        let kl = tile_n_k_idx[1]
-        let b_ptr = self.b_packed._offset(Index(n_outer_idx, kl // 8, 0))
+        var n_outer_idx = tile_n_k_idx[0] // (pack_inner_size // 2)
+        var kl = tile_n_k_idx[1]
+        var b_ptr = self.b_packed._offset(Index(n_outer_idx, kl // 8, 0))
 
         # This inner kernels works with non-transposed A.
-        let K = self.a.dim(1)
-        let a_ptr = self.a.data.offset(
+        var K = self.a.dim(1)
+        var a_ptr = self.a.data.offset(
             self.global_offset.M * K + self.global_offset.K + 2 * kl
         )
 
@@ -1372,11 +1372,11 @@ struct MatmulInnerLoopBPacked[
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                let a_val = a_ptr.simd_load[16](2 * idx0 * K)
-                let b_val = b_ptr.offset(16 * idx1).aligned_simd_load[
+                var a_val = a_ptr.simd_load[16](2 * idx0 * K)
+                var b_val = b_ptr.offset(16 * idx1).aligned_simd_load[
                     16, alignment
                 ]()
-                let c_idx = Index(idx0, 4 * idx1)
+                var c_idx = Index(idx0, 4 * idx1)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
                     c_idx
                 )
@@ -1390,7 +1390,7 @@ struct MatmulInnerLoopBPacked[
         constrained[Self.use_i8mm]()
 
         # Allocate accumulation buffer.
-        let c_local = NDBuffer[
+        var c_local = NDBuffer[
             c_type,
             2,
             DimList(a_row_size, pack_inner_size),
@@ -1401,7 +1401,7 @@ struct MatmulInnerLoopBPacked[
                 self._initialize_c_tile(c_local)
             else:
                 self._load_c_tile(c_local, idx_n)
-            let kl = align_up(self.tile_n_k[1], 8)
+            var kl = align_up(self.tile_n_k[1], 8)
             for idx_k in range(0, kl, 8):
                 self._accumulate_i8mm(c_local, Index(idx_n, idx_k))
             self._store_c_tile(c_local, idx_n)
@@ -1533,11 +1533,11 @@ struct TiledMatmul[
         alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
         alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
-        let tile_n_k = calculate_tile_n_k[
+        var tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size, factor
         ](global_tile_shape)
 
-        let matmul = TiledMatmul[
+        var matmul = TiledMatmul[
             config,
             a_type,
             b_type,
@@ -1584,7 +1584,7 @@ struct TiledMatmul[
             sub_tile_k: Dynamic tile size to use on K dimension.
         """
         # valid distance in each dimension from the current offset to the end of the matrix
-        let knm_bounds = (
+        var knm_bounds = (
             self.global_tile_shape + self.global_tile_offset - global_offset
         )
 
@@ -1592,7 +1592,7 @@ struct TiledMatmul[
         @parameter
         @always_inline
         fn unswitch_residual_n[skip_col_bound: Bool]():
-            let b_packed_tile = self.b_tile_generator.get_tile[
+            var b_packed_tile = self.b_tile_generator.get_tile[
                 m_loop_pack_inner_size
             ](
                 global_offset,
@@ -1603,7 +1603,7 @@ struct TiledMatmul[
             # Launch the MLoop
             # The upper bounds apply to runtime packing. For pre-packing, the
             # tile has been padded to fit (sub_tile_n, sub_tile_k).
-            let sub_tile_n_k = Index(
+            var sub_tile_n_k = Index(
                 min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
             )
 
@@ -1689,12 +1689,12 @@ struct TiledMatmul[
                 space.
             sub_tile_k: Dynamic tile size to use on K dimension.
         """
-        let valid_col_count: Int = (
+        var valid_col_count: Int = (
             self.global_tile_shape.N
             + self.global_tile_offset.N
             - global_offset.N
         )
-        let tile_n: Int = self.tile_n_k[0]
+        var tile_n: Int = self.tile_n_k[0]
 
         @parameter
         @always_inline
@@ -1722,7 +1722,7 @@ struct TiledMatmul[
             alias secondary_tiles = VariadicList[Int](
                 config.pack_inner_size, 2 * config.simd_size, config.simd_size
             )
-            let primary_tiles = VariadicList[Int](
+            var primary_tiles = VariadicList[Int](
                 tile_n, 2 * config.simd_size, config.simd_size
             )
             tile[secondary_tiles, config.simd_size, m_loop](
@@ -1732,7 +1732,7 @@ struct TiledMatmul[
             alias secondary_tiles_packed_b = VariadicList[Int](
                 config.pack_inner_size
             )
-            let primary_tiles_packed_b = VariadicList[Int](tile_n)
+            var primary_tiles_packed_b = VariadicList[Int](tile_n)
             tile[secondary_tiles_packed_b, config.pack_inner_size, m_loop](
                 0, valid_col_count, primary_tiles_packed_b, tile_n
             )
@@ -1810,9 +1810,9 @@ fn pack_matmul_b_shape_func_M[
 
     var output = StaticIntTuple[2]()
 
-    let m = a_shape.at[0]().get() if m_override == 0 else m_override
-    let n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
-    let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
+    var m = a_shape.at[0]().get() if m_override == 0 else m_override
+    var n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
+    var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
 
     if get_kernel_type(m, n, k):
@@ -1899,7 +1899,7 @@ fn pack_b[
     tile_n * tile_k bytes away from tile[i, j+1].
     """
     dst.zero()  # zero the padding to be safe, shouldn't be necessary
-    let dst_flat = dst.flatten()
+    var dst_flat = dst.flatten()
     var dst_offset: Int = 0
 
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -1909,10 +1909,10 @@ fn pack_b[
 
     @parameter
     if not transpose_b:
-        let k_in = src.dim[0]()
-        let n_in = src.dim[1]()
-        let k_out = dst.dim[0]()
-        let n_out = dst.dim[1]()
+        var k_in = src.dim[0]()
+        var n_in = src.dim[1]()
+        var k_out = dst.dim[0]()
+        var n_out = dst.dim[1]()
 
         debug_assert(
             k_out % tile_k == 0,
@@ -1924,7 +1924,7 @@ fn pack_b[
         )
         for idx_k in range(0, k_out, tile_k):
             for idx_n in range(0, n_out, tile_n):
-                let packed_dst_view = NDBuffer[b_type, 3](
+                var packed_dst_view = NDBuffer[b_type, 3](
                     dst_flat.data.offset(dst_offset),
                     DimList(
                         tile_n // inner_size2,
@@ -1932,8 +1932,8 @@ fn pack_b[
                         inner_size2 * factor,
                     ),
                 )
-                let valid_k = min(tile_k, k_in - idx_k)
-                let valid_n = min(tile_n, n_in - idx_n)
+                var valid_k = min(tile_k, k_in - idx_k)
+                var valid_n = min(tile_n, n_in - idx_n)
                 PackMatrixCols[
                     src_shape,
                     DimList.create_unknown[3](),
@@ -1955,10 +1955,10 @@ fn pack_b[
                 dst_offset += tile_n * tile_k
     else:
         # _t = transpose, annoying WAR since variables can't have same name in if/else
-        let k_in_t = src.dim[1]()
-        let n_in_t = src.dim[0]()
-        let k_out_t = dst.dim[0]()
-        let n_out_t = dst.dim[1]()
+        var k_in_t = src.dim[1]()
+        var n_in_t = src.dim[0]()
+        var k_out_t = dst.dim[0]()
+        var n_out_t = dst.dim[1]()
 
         debug_assert(
             k_out_t % tile_k == 0,
@@ -1971,12 +1971,12 @@ fn pack_b[
 
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
-                let packed_dst_view_t = NDBuffer[b_type, 3](
+                var packed_dst_view_t = NDBuffer[b_type, 3](
                     dst_flat.data.offset(dst_offset),
                     DimList(tile_n // inner_size, tile_k, inner_size),
                 )
-                let valid_k_t = min(tile_k, k_in_t - idx_k_t)
-                let valid_n_t = min(tile_n, n_in_t - idx_n_t)
+                var valid_k_t = min(tile_k, k_in_t - idx_k_t)
+                var valid_n_t = min(tile_n, n_in_t - idx_n_t)
                 PackMatrixRows[
                     src_shape,
                     DimList.create_unknown[3](),
@@ -2023,9 +2023,9 @@ fn _pack_b_ndbuffer_impl[
         memcpy(output_buffer.data, b_input.data, b_input.dim(0))
 
     else:
-        let m = a_shape.at[0]().get() if m_override == 0 else m_override
-        let n = b_input.dim(0) if transposed else b_input.dim(1)
-        let k = b_input.dim(1) if transposed else b_input.dim(0)
+        var m = a_shape.at[0]().get() if m_override == 0 else m_override
+        var n = b_input.dim(0) if transposed else b_input.dim(1)
+        var k = b_input.dim(1) if transposed else b_input.dim(0)
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
         # values used in the matmul algorithm consuming this packed b matrix
@@ -2034,7 +2034,7 @@ fn _pack_b_ndbuffer_impl[
             alias config = search_mm_config[
                 a_type, b_type, c_type, True, True
             ]()
-            let tile_n_k = _get_tile_n_k[
+            var tile_n_k = _get_tile_n_k[
                 config,
                 transposed,
                 a_type,
@@ -2058,7 +2058,7 @@ fn _pack_b_ndbuffer_impl[
             alias config2 = search_mm_config[
                 a_type, b_type, c_type, True, False
             ]()
-            let tile_n_k = _get_tile_n_k[
+            var tile_n_k = _get_tile_n_k[
                 config2,
                 transposed,
                 a_type,
@@ -2274,14 +2274,14 @@ struct BTileGenerator[
         ]()
         alias inner_size2 = inner_size // 2 if config.use_i8mm else inner_size
 
-        let k = align_up(tile_dim_nk[1], factor)
-        let tile_shape_nopack = DimList(
+        var k = align_up(tile_dim_nk[1], factor)
+        var tile_shape_nopack = DimList(
             tile_dim_nk[0] // inner_size2,
             k // factor,
             factor * inner_size2,
         )
 
-        let packed_b = NDBuffer[type, 3, config.packed_shape](
+        var packed_b = NDBuffer[type, 3, config.packed_shape](
             self.b_tile_stack_ptr, tile_shape_nopack
         )
 
@@ -2329,22 +2329,22 @@ struct BTileGenerator[
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
 
-            let factor = get_matmul_arch_factor[
+            var factor = get_matmul_arch_factor[
                 config.use_vnni, config.use_i8mm
             ]()
             alias inner_size2 = inner_size // 2 if config.use_i8mm else inner_size
 
-            let tile_k = align_up(self.tile_n_k[1], factor)
+            var tile_k = align_up(self.tile_n_k[1], factor)
 
-            let tile_shape_pack = DimList(
+            var tile_shape_pack = DimList(
                 self.tile_n_k[0] // inner_size2,
                 tile_k // factor,
                 inner_size2 * factor,
             )
-            let tile_k_idx = global_offset.K // tile_k
-            let b_flat = self.b.flatten()
-            let n_padded = self.b.dim[1]()
-            let b_tile_view = NDBuffer[type, 3, config.packed_shape](
+            var tile_k_idx = global_offset.K // tile_k
+            var b_flat = self.b.flatten()
+            var n_padded = self.b.dim[1]()
+            var b_tile_view = NDBuffer[type, 3, config.packed_shape](
                 # tiles are ordered in row-major order
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
@@ -2382,9 +2382,9 @@ fn _small_matmul[
 ):
     alias simd_width = simdwidthof[type]()
 
-    let M = a.dim[0]()
-    let N = b.dim[0]() if transpose_b else b.dim[1]()
-    let K = a.dim[1]()
+    var M = a.dim[0]()
+    var N = b.dim[0]() if transpose_b else b.dim[1]()
+    var K = a.dim[1]()
 
     @parameter
     if transpose_b:
@@ -2406,7 +2406,7 @@ fn _small_matmul[
 
                 vectorize[compute_fn, simd_width, unroll_factor=2](K)
 
-                let val = acc_vector.reduce_add() + acc_scalar
+                var val = acc_vector.reduce_add() + acc_scalar
 
                 @parameter
                 if epilogue_wrapper:
@@ -2445,7 +2445,7 @@ fn _small_matmul[
                 StaticIntTuple[2], SIMD[type, width]
             ) capturing -> None,
         ](m: Int, k: Int):
-            let a_val = a[m, k]
+            var a_val = a[m, k]
 
             @always_inline
             @__copy_capture(a_val)
@@ -2520,43 +2520,43 @@ fn sgemm_warp_tiling_kernel[
     mat_a: NDBuffer[a_type, 2, a_shape],
     mat_b: NDBuffer[b_type, 2, b_shape],
 ):
-    let M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
-    let K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
-    let N: Scalar[indexing_integral_dtype] = mat_c.dim(1)
+    var M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
+    var K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
+    var N: Scalar[indexing_integral_dtype] = mat_c.dim(1)
 
-    let c_row: Scalar[indexing_integral_dtype] = BlockIdx.y()
-    let c_col: Scalar[indexing_integral_dtype] = BlockIdx.x()
+    var c_row: Scalar[indexing_integral_dtype] = BlockIdx.y()
+    var c_col: Scalar[indexing_integral_dtype] = BlockIdx.x()
 
     # Placement of the warp in the threadblock tile.
-    let warp_idx = Scalar[indexing_integral_dtype](
+    var warp_idx = Scalar[indexing_integral_dtype](
         ThreadIdx.x()
     ) // WARP_SIZE  # the warp this thread is in
-    let warp_col = warp_idx % (BN // WN)
-    let warp_row = warp_idx // (BN // WN)
+    var warp_col = warp_idx % (BN // WN)
+    var warp_row = warp_idx // (BN // WN)
 
     # Size of the warp subtile.
     alias w_sub_m = WM // WMITER  # 64/2=32
     alias w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp subtile.
-    let thread_Idx_In_warp = Scalar[indexing_integral_dtype](
+    var thread_Idx_In_warp = Scalar[indexing_integral_dtype](
         ThreadIdx.x()
     ) % WARP_SIZE  # [0, 31]
-    let thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
-    let thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
+    var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
+    var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
 
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
     # Use 4 to comply with f4 alignment used in accumulation.
     alias sram_bank_padding_size = 4
     alias BM_padded = BM + sram_bank_padding_size
-    let a_sram = NDBuffer[
+    var a_sram = NDBuffer[
         a_type,
         1,
         DimList(int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
-    let b_sram = NDBuffer[
+    var b_sram = NDBuffer[
         b_type,
         1,
         DimList(int(BK * BN)),
@@ -2567,26 +2567,26 @@ fn sgemm_warp_tiling_kernel[
     var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
     var bb_ptr = mat_b._offset(Index(0, c_col * BN))
     # Move C_ptr to warp's output tile
-    let cc_ptr = mat_c._offset(
+    var cc_ptr = mat_c._offset(
         Index(c_row * BM + warp_row * WM, c_col * BN + warp_col * WN)
     )
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    let inner_row_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
+    var inner_row_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
         BK // 4
     )
-    let inner_col_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BK // 4)
+    var inner_col_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    let inner_row_b = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
+    var inner_row_b = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
         BN // 4
     )
-    let inner_co_ib = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BN // 4)
+    var inner_co_ib = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
-    let thread_results = NDBuffer[
+    var thread_results = NDBuffer[
         c_type,
         4,
         DimList(int(WMITER), int(WNITER), int(TM), int(TN)),
@@ -2594,12 +2594,12 @@ fn sgemm_warp_tiling_kernel[
     thread_results.zero()
 
     # We cache into registers on the warptile level.
-    let reg_m = NDBuffer[
+    var reg_m = NDBuffer[
         a_type, 2, DimList(int(WMITER), int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
-    let reg_n = NDBuffer[
+    var reg_n = NDBuffer[
         b_type, 2, DimList(int(WNITER), int(TN))
     ]().stack_allocation()
     reg_n.zero()
@@ -2608,7 +2608,7 @@ fn sgemm_warp_tiling_kernel[
     for bk_idx in range(0, int(K), int(BK)):
         for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
-            let tmp = __nvvm_ldg_f4[a_type](
+            var tmp = __nvvm_ldg_f4[a_type](
                 aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
@@ -2622,7 +2622,7 @@ fn sgemm_warp_tiling_kernel[
 
         for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
-            let tmp = __nvvm_ldg_f4[b_type](
+            var tmp = __nvvm_ldg_f4[b_type](
                 bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.aligned_simd_store[4, 16](
@@ -2639,7 +2639,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TM), 4):
-                    let vec = a_sram.aligned_simd_load[4, 16](
+                    var vec = a_sram.aligned_simd_load[4, 16](
                         int(
                             (dot_idx * BM_padded)
                             + warp_row * WM
@@ -2655,7 +2655,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TN), 4):
-                    let vec = b_sram.aligned_simd_load[4, 16](
+                    var vec = b_sram.aligned_simd_load[4, 16](
                         int(
                             (dot_idx * BN)
                             + warp_col * WN
@@ -2699,7 +2699,7 @@ fn sgemm_warp_tiling_kernel[
         @unroll
         for w_sub_col_idx in range(int(WNITER)):
             # Move C pointer to current warp subtile.
-            let C_interim = cc_ptr.offset(
+            var C_interim = cc_ptr.offset(
                 int((w_sub_row_idx * w_sub_m) * N + w_sub_col_idx * w_sub_n)
             )
 
@@ -2708,10 +2708,10 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for res_idx_n in range(0, int(TN), 4):
-                    let c_idx = (
+                    var c_idx = (
                         thread_row_in_warp * TM + res_idx_m
                     ) * N + thread_col_in_warp * TN + res_idx_n
-                    let result_vec = thread_results.simd_load[4](
+                    var result_vec = thread_results.simd_load[4](
                         Index(
                             w_sub_row_idx,
                             w_sub_col_idx,
@@ -2720,7 +2720,7 @@ fn sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    let vec = C_interim.aligned_simd_load[4, 16](
+                    var vec = C_interim.aligned_simd_load[4, 16](
                         int(c_idx)
                     ) + result_vec
 
@@ -2760,14 +2760,14 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let warpId = x // WARP_SIZE
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warpId = x // WARP_SIZE
     var accum = SIMD[c_type, 1]()
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(div_ceil(k, WARP_SIZE)):
-            let idx = i * WARP_SIZE + int(lane_id())
+            var idx = i * WARP_SIZE + int(lane_id())
             var val = SIMD[c_type, 1]()
             if idx < k:
                 val = (
@@ -2811,14 +2811,14 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    let warpsPerBlock = BlockDim.x() // WARP_SIZE
-    let warpId = ThreadIdx.x() // WARP_SIZE
+    var warpsPerBlock = BlockDim.x() // WARP_SIZE
+    var warpId = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[c_type, 1]()
-    let col = BlockIdx.x() * WARP_SIZE + int(lane_id())
-    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let globalWarpId = x // WARP_SIZE
+    var col = BlockIdx.x() * WARP_SIZE + int(lane_id())
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var globalWarpId = x // WARP_SIZE
 
-    let x_shared = stack_allocation[
+    var x_shared = stack_allocation[
         tile_size,
         c_type,
         address_space = AddressSpace.SHARED,
@@ -2827,7 +2827,7 @@ fn gevm_kernel[
     # Every block computes warp size length of output values
     for i in range(div_ceil(k, warpsPerBlock)):
         var val = SIMD[c_type, 1]()
-        let row = i * warpsPerBlock + warpId
+        var row = i * warpsPerBlock + warpId
         if lane_id() == 0:
             val = a.load(row).cast[c_type]()
         val = shuffle_idx(val, 0)
@@ -2881,17 +2881,17 @@ fn matmul_kernel[
     access.
     """
 
-    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
-    let c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
+    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
     # Allocate A, B tile in shared memory.
-    let a_shared = stack_allocation[
+    var a_shared = stack_allocation[
         tile_size * tile_size,
         a_type,
         address_space = AddressSpace.SHARED,
     ]()
-    let b_shared = stack_allocation[
+    var b_shared = stack_allocation[
         tile_size * tile_size,
         b_type,
         address_space = AddressSpace.SHARED,
@@ -2900,19 +2900,19 @@ fn matmul_kernel[
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    let col = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var col = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     # Local index in the c sub-matrix updated by current block.
-    let localCol = ThreadIdx.x()
-    let localRow = ThreadIdx.y()
+    var localCol = ThreadIdx.x()
+    var localRow = ThreadIdx.y()
 
     # Result of current thread in C.
     var result = SIMD[c_type, 1](0.0)
 
-    let K_roundbytile = align_down(k, tile_size)
+    var K_roundbytile = align_down(k, tile_size)
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
-    let K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
+    var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
     @parameter
     @__copy_capture(row, localCol, a, b, localRow, col, a_shared, b_shared)
@@ -2923,7 +2923,7 @@ fn matmul_kernel[
         # when loading elements into shared memory.
 
         # Load A tile into shared memory.
-        let a_val: SIMD[a_type, 1]
+        var a_val: SIMD[a_type, 1]
 
         @parameter
         if not full_tile:
@@ -2935,7 +2935,7 @@ fn matmul_kernel[
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
-        let b_val: SIMD[b_type, 1]
+        var b_val: SIMD[b_type, 1]
 
         @parameter
         if not full_tile:
@@ -2984,15 +2984,15 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     if x >= m or y >= n:
         return
 
-    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
-    let c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
+    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
     var accum = SIMD[c_type, 1]()
     for i in range(k):
@@ -3042,14 +3042,14 @@ fn _matmul_gpu[
     constrained[b_type == DType.float32, "only Float32 type is supported"]()
     constrained[c_type == DType.float32, "only Float32 type is supported"]()
 
-    let shape = GemmShape.get[False, False](c, a, b)
-    let m = shape.M
-    let n = shape.N
-    let k = shape.K
+    var shape = GemmShape.get[False, False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
 
     # TODO: #25898, use max_finite
     alias max_uint32 = Int(0xFFFFFFFF)
-    let use_32bit_indexing = m * n < max_uint32 and m * k < max_uint32 and n * k < max_uint32
+    var use_32bit_indexing = m * n < max_uint32 and m * k < max_uint32 and n * k < max_uint32
 
     @parameter
     if elementwise_lambda_fn:
@@ -3114,19 +3114,19 @@ fn _matmul_gpu_dispatch[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
 ):
-    let shape = GemmShape.get[False, False](c, a, b)
-    let m = shape.M
-    let n = shape.N
-    let k = shape.K
+    var shape = GemmShape.get[False, False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
     try:
-        let stream = Stream.get_current_stream()
+        var stream = Stream.get_current_stream()
 
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
-        let warp_tiled_matmul_suppoered_shape = (
+        var warp_tiled_matmul_suppoered_shape = (
             m % 128 == 0 and n % 128 == 0 and k % 128 == 0
         )
-        let warp_tiled_matmul_supported_format = (
+        var warp_tiled_matmul_supported_format = (
             a_type == DType.float32
             and b_type == DType.float32
             and c_type == DType.float32
@@ -3169,7 +3169,7 @@ fn _matmul_gpu_dispatch[
                 NUM_THREADS=NUM_THREADS,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
-            let gpu_func = Function[__type_of(mm), mm](
+            var gpu_func = Function[__type_of(mm), mm](
                 threads_per_block=NUM_THREADS
             )
             gpu_func(
@@ -3182,7 +3182,7 @@ fn _matmul_gpu_dispatch[
             )
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
-            let gpu_func = Function[
+            var gpu_func = Function[
                 fn (
                     DTypePointer[c_type],
                     DTypePointer[a_type],
@@ -3211,7 +3211,7 @@ fn _matmul_gpu_dispatch[
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
             alias WARPS_PER_BLOCK = 32
-            let gpu_func = Function[
+            var gpu_func = Function[
                 fn (
                     DTypePointer[c_type],
                     DTypePointer[a_type],
@@ -3244,7 +3244,7 @@ fn _matmul_gpu_dispatch[
             # If k < tile_size use naive version.
             alias tile_size = 16
             if k >= tile_size:
-                let gpu_func = Function[
+                var gpu_func = Function[
                     fn (
                         DTypePointer[c_type],
                         DTypePointer[a_type],
@@ -3273,7 +3273,7 @@ fn _matmul_gpu_dispatch[
                 )
             else:
                 alias BLOCK_DIM = 16
-                let gpu_func = Function[
+                var gpu_func = Function[
                     fn (
                         DTypePointer[a_type],
                         DTypePointer[b_type],
@@ -3346,16 +3346,16 @@ fn _matmul_cpu[
         )
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
-    let shape = GemmShape.get[False, transpose_b](c, a, b)
-    let m = shape.M
-    let n = shape.N
-    let k = shape.K
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
 
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        let out = Buffer[c_type](c.data, c.dim[0]())
-        let lhs = rebind[NDBuffer[a_type, 2, a_shape]](a)
-        let rhs = Buffer[b_type](b.data, b.dim[0]())
+        var out = Buffer[c_type](c.data, c.dim[0]())
+        var lhs = rebind[NDBuffer[a_type, 2, a_shape]](a)
+        var rhs = Buffer[b_type](b.data, b.dim[0]())
         gemv[
             parallelize=True,
             c_size = Dim(),
@@ -3367,8 +3367,8 @@ fn _matmul_cpu[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
-        let complexity = m * n * k
-        let num_tasks = min(
+        var complexity = m * n * k
+        var num_tasks = min(
             div_ceil(complexity, get_min_task_size()),
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
@@ -3376,15 +3376,15 @@ fn _matmul_cpu[
         alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
         alias simd_size = simdwidthof[c_type]()
         alias alignment = alignof[SIMD[c_type, simd_size]]()
-        let kh = align_up(k, 8)
-        let mh = align_up(m, 2)
+        var kh = align_up(k, 8)
+        var mh = align_up(m, 2)
         var a_packed_ptr = DTypePointer[a_type]()
         if use_i8mm:
             a_packed_ptr = DTypePointer[a_type].alloc(
                 mh * kh, alignment=alignment
             )
-        let a_packed_shape = Index(mh, kh)
-        let a_packed = NDBuffer[a_type, 2, a_shape](
+        var a_packed_shape = Index(mh, kh)
+        var a_packed = NDBuffer[a_type, 2, a_shape](
             a_packed_ptr.address, a_packed_shape
         )
 
@@ -3392,23 +3392,23 @@ fn _matmul_cpu[
         @__copy_capture(k, kh)
         @parameter
         fn packA_i8mm(t0: Int, t1: Int):
-            let kl = align_down(k, 8)
+            var kl = align_down(k, 8)
 
             @always_inline
             @__copy_capture(k, kh, kl)
             @parameter
             fn packA_helper[nrow: Int](offset: Int):
-                let j = t0 + offset
+                var j = t0 + offset
                 for l in range(0, k, 8):
 
                     @unroll
                     for idx in range(nrow):
-                        let t0 = a.data.simd_load[8]((j + idx) * k + l)
+                        var t0 = a.data.simd_load[8]((j + idx) * k + l)
                         a_packed_ptr.simd_store[8](kh * j + 2 * l + 8 * idx, t0)
 
                 @unroll
                 for idx in range(nrow):
-                    let t0 = partial_simd_load[8](
+                    var t0 = partial_simd_load[8](
                         a.data.offset((j + idx) * k + kl), 0, k - kl, 0
                     )
                     partial_simd_store(
@@ -3424,18 +3424,18 @@ fn _matmul_cpu[
         @__copy_capture(m, k, num_tasks)
         @parameter
         fn pack_task_func(task_id: Int):
-            let sub_matmul_config = get_partitioned_matmul[
+            var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, 1, k, task_id, num_tasks)
-            let t0 = sub_matmul_config.offset[0]
-            let t1 = t0 + sub_matmul_config.shape[0]
+            var t0 = sub_matmul_config.offset[0]
+            var t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm(t0, t1)
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, a_packed)
         @parameter
         fn task_func(task_id: Int):
-            let sub_matmul_config = get_partitioned_matmul[
+            var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, n, k, task_id, num_tasks)
 
@@ -3540,10 +3540,10 @@ fn _submatmul_sequential_sync[
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
-    let shape = GemmShape.get[False, transpose_b](c, a, b)
-    let m = shape.M
-    let n = shape.N
-    let k = shape.K
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
 
     @parameter
     fn dispatch_on_kernel_type[kernel_type: Bool]():

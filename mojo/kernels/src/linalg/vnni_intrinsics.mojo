@@ -138,24 +138,24 @@ fn vpdpbusds(
 fn _dot_i8_to_i32_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
-    let mask_hi = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0100))
-    let mask_lo = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0001))
-    let ah = llvm_intrinsic[
+    var mask_hi = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0100))
+    var mask_lo = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0001))
+    var ah = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](a, mask_hi)
-    let bh = llvm_intrinsic[
+    var bh = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](mask_hi, b)
-    let al = llvm_intrinsic[
+    var al = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](a, mask_lo)
-    let bl = llvm_intrinsic[
+    var bl = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](mask_lo, b)
-    let t1 = llvm_intrinsic[
+    var t1 = llvm_intrinsic[
         "llvm.x86.avx512.pmaddw.d.512", SIMD[DType.int32, 16]
     ](al, bl)
-    let t2 = llvm_intrinsic[
+    var t2 = llvm_intrinsic[
         "llvm.x86.avx512.pmaddw.d.512", SIMD[DType.int32, 16]
     ](ah, bh)
     return src + t1 + t2
@@ -164,25 +164,25 @@ fn _dot_i8_to_i32_16(
 fn _dot_i8_to_i32_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
-    let mask_hi = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0100))
-    let mask_lo = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0001))
+    var mask_hi = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0100))
+    var mask_lo = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0001))
 
-    let ah = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
+    var ah = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         a, mask_hi
     )
-    let bh = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
+    var bh = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         mask_hi, b
     )
-    let al = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
+    var al = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         a, mask_lo
     )
-    let bl = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
+    var bl = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         mask_lo, b
     )
-    let t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
+    var t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
         al, bl
     )
-    let t2 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
+    var t2 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
         ah, bh
     )
     return src + t1 + t2
@@ -191,25 +191,25 @@ fn _dot_i8_to_i32_8(
 fn _dot_i8_to_i32_4(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int8, 16], b: SIMD[DType.int8, 16]
 ) -> SIMD[DType.int32, 4]:
-    let mask_hi = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0100))
-    let mask_lo = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0001))
+    var mask_hi = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0100))
+    var mask_lo = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0001))
 
-    let ah = llvm_intrinsic[
+    var ah = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](a, mask_hi)
-    let bh = llvm_intrinsic[
+    var bh = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](mask_hi, b)
-    let al = llvm_intrinsic[
+    var al = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](a, mask_lo)
-    let bl = llvm_intrinsic[
+    var bl = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](mask_lo, b)
-    let t1 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
+    var t1 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
         al, bl
     )
-    let t2 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
+    var t2 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
         ah, bh
     )
     return src + t1 + t2
@@ -218,10 +218,10 @@ fn _dot_i8_to_i32_4(
 fn _dot_i8_to_i32_saturated_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
-    let t1 = llvm_intrinsic[
+    var t1 = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](a, b)
-    let t2 = llvm_intrinsic[
+    var t2 = llvm_intrinsic[
         "llvm.x86.avx512.pmaddw.d.512", SIMD[DType.int32, 16]
     ](t1, SIMD[DType.int16, 32](1))
     return t2 + src
@@ -230,10 +230,10 @@ fn _dot_i8_to_i32_saturated_16(
 fn _dot_i8_to_i32_saturated_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
-    let t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
+    var t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         a, b
     )
-    let t2 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
+    var t2 = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[DType.int32, 8]](
         t1, SIMD[DType.int16, 16](1)
     )
     return t2 + src
@@ -244,10 +244,10 @@ fn _dot_i8_to_i32_saturated_4(
     a: SIMD[DType.int8, 16],
     b: SIMD[DType.int8, 16],
 ) -> SIMD[DType.int32, 4]:
-    let t1 = llvm_intrinsic[
+    var t1 = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](a, b)
-    let t2 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
+    var t2 = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[DType.int32, 4]](
         t1, SIMD[DType.int16, 8](1)
     )
     return t2 + src

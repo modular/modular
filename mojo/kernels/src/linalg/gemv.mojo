@@ -33,8 +33,8 @@ fn gemv[
 ):
     alias simd_width = simdwidthof[c_type]()
 
-    let M = a_buf.dim[0]()
-    let K = a_buf.dim[1]()
+    var M = a_buf.dim[0]()
+    var K = a_buf.dim[1]()
 
     @always_inline
     @parameter
@@ -94,12 +94,12 @@ fn naive_gemv[
     a_buf: NDBuffer[type, 2, a_shape],
     b_buf: Buffer[type, b_size],
 ):
-    let M = a_buf.dim[0]()
-    let K = a_buf.dim[1]()
+    var M = a_buf.dim[0]()
+    var K = a_buf.dim[1]()
 
     c_buf.zero()
     for k in range(K):
-        let b_val = b_buf[k]
+        var b_val = b_buf[k]
         for m in range(M):
-            let a_val = a_buf[m, k]
+            var a_val = a_buf[m, k]
             c_buf[m] += a_val * b_val

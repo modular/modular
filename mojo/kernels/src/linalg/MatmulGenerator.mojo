@@ -294,7 +294,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         """
 
         # Read out the global gemm space size.
-        let global_gemm_size = GemmShape.get[
+        var global_gemm_size = GemmShape.get[
             matmul_config,
             data_layout,
             data_type,
@@ -406,7 +406,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
             tile_dimension: The size of the packed tile in [M,N] as described
                 above.
         """
-        let buffer_shape = Index(
+        var buffer_shape = Index(
             div_ceil(tile_dimension[0], inner_size),
             tile_dimension[1],
             inner_size,
@@ -619,17 +619,17 @@ struct PackInterface[
         # Parameter checks on supported configuration so far.
 
         # Construct global buffer for matrix B.
-        let b_buffer = dynamic_state.get_global_operand_buffer[
+        var b_buffer = dynamic_state.get_global_operand_buffer[
             GemmIdentifiers.OperandB,
             static_state.static_data_layout.transpose_b,
         ]()
 
         # inner dimension of packed layout.
         alias inner_size = static_state.static_data_layout.pack_b_inner_size
-        let tile_N = max(dynamic_state.valid_tile_bound.N, inner_size)
+        var tile_N = max(dynamic_state.valid_tile_bound.N, inner_size)
 
         # Construct local buffer for matrix packed B.
-        let b_packed_buffer = dynamic_state.get_packed_operand_buffer[
+        var b_packed_buffer = dynamic_state.get_packed_operand_buffer[
             GemmIdentifiers.OperandB, inner_size
         ](
             # Target amount of data to pack.
@@ -753,15 +753,15 @@ struct MicroKernelInterface[
 
         # Calculate inner size on the packed layout.
         alias inner_size = static_state.static_data_layout.pack_b_inner_size
-        let tile_N = max(dynamic_state.valid_tile_bound.N, inner_size)
+        var tile_N = max(dynamic_state.valid_tile_bound.N, inner_size)
 
         # Create buffer handles to pass to inner kernel.
-        let c_buffer = dynamic_state.get_global_result_buffer()
-        let a_buffer = dynamic_state.get_global_operand_buffer[
+        var c_buffer = dynamic_state.get_global_result_buffer()
+        var a_buffer = dynamic_state.get_global_operand_buffer[
             GemmIdentifiers.OperandA,
             static_state.static_data_layout.transpose_a,
         ]()
-        let b_packed_buffer = dynamic_state.get_packed_operand_buffer[
+        var b_packed_buffer = dynamic_state.get_packed_operand_buffer[
             GemmIdentifiers.OperandB, inner_size
         ](
             # Target amount of data to pack.
@@ -1206,7 +1206,7 @@ struct TiledMatmulGenerated[
         #  interface.
         # MatmulGenerator does not support i8mm or vnni yet so set the factor to 1
         alias factor = 1
-        let tile_n_k = calculate_tile_n_k[
+        var tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size, 1
         ](global_tile_shape)
 
@@ -1314,7 +1314,7 @@ struct TiledMatmulBiasGenerated[
         # TODO: (once we have more) wrap these generators behind a common
         #  interface.
         # MatmulGenerator does not support i8mm or vnni yet so set the factor to 1
-        let tile_n_k = calculate_tile_n_k[
+        var tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size, 1
         ](global_tile_shape)
 
@@ -1334,19 +1334,19 @@ struct TiledMatmulBiasGenerated[
             ):
                 return
             # Get global c buffer.
-            let c_buffer = dynamic_state.get_global_result_buffer()
+            var c_buffer = dynamic_state.get_global_result_buffer()
 
             # Loop over the current tile.
             @always_inline
             @__copy_capture(c_buffer)
             @parameter
             fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
-                let n_coord = idx_n + dynamic_state.global_offset.N
-                let bias_val = bias.simd_load[col_chunk_size](n_coord)
+                var n_coord = idx_n + dynamic_state.global_offset.N
+                var bias_val = bias.simd_load[col_chunk_size](n_coord)
                 for idx_m in range(dynamic_state.valid_tile_bound.M):
-                    let m_coord = idx_m + dynamic_state.global_offset.M
-                    let c_coord = Index(m_coord, n_coord)
-                    let c_val = c_buffer.simd_load[col_chunk_size](c_coord)
+                    var m_coord = idx_m + dynamic_state.global_offset.M
+                    var c_coord = Index(m_coord, n_coord)
+                    var c_val = c_buffer.simd_load[col_chunk_size](c_coord)
                     c_buffer.simd_store[col_chunk_size](
                         c_coord, c_val + bias_val
                     )

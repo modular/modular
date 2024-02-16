@@ -38,7 +38,7 @@ struct amx_detail:
 
     @staticmethod
     fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
-        let gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
+        var gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
         inlined_assembly[
             ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
             NoneType,
@@ -304,11 +304,11 @@ struct amx_detail:
         #  shift left by 6 to make this an offset in rows,
         #    in fp32 mode, there are 16 elements / 64 byte per row.
         #  The offset field has to be given in bytes.
-        let offset = ((z_col_index << 2) | z_row_suboffset) << 20 | (
+        var offset = ((z_col_index << 2) | z_row_suboffset) << 20 | (
             xy_row_index << 6
         )
 
-        let is_x_destination = __mlir_attr[
+        var is_x_destination = __mlir_attr[
             `#kgen.param.expr<eq,`,
             destination,
             `,`,
@@ -316,7 +316,7 @@ struct amx_detail:
             `> : i1`,
         ]
 
-        let operand: Int = offset | (
+        var operand: Int = offset | (
             0x8000000004004000 if is_x_destination else 0x8000000010004000
         )
 
@@ -357,7 +357,7 @@ struct amx_detail:
         # The type must be Float32.
         constrained[type == DType.float32]()
 
-        let is_row_mode = __mlir_attr[
+        var is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,
             mode,
             `,`,
@@ -365,7 +365,7 @@ struct amx_detail:
             `> : i1`,
         ]
 
-        let operand = (
+        var operand = (
             y_row_index << 6
             | x_row_index << 16
             | z_row_index << 20
@@ -402,29 +402,29 @@ struct amx_detail:
         # assumed to be transposed and all matrices are stored in row-major
         # order.
 
-        let a_pointer = a.data
-        let b_pointer = b.data
-        let c_pointer = c.data
+        var a_pointer = a.data
+        var b_pointer = b.data
+        var c_pointer = c.data
 
         # TODO: We can elide the copy if the data is already is already aligned.
 
         alias c256 = Int(256).value
         alias c128 = Int(128).value
-        let a_buffer: DTypePointer[
+        var a_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count=c256,
             alignment=c128,
             _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
-        let b_buffer: DTypePointer[
+        var b_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count=c256,
             alignment=c128,
             _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
-        let c_buffer: DTypePointer[
+        var c_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count=c256,
@@ -432,7 +432,7 @@ struct amx_detail:
             _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
 
-        let num_elements = c.num_elements()
+        var num_elements = c.num_elements()
         memcpy[DType.float32](a_buffer, a_pointer, num_elements)
         memcpy[DType.float32](b_buffer, b_pointer, num_elements)
         memset_zero[DType.float32](c_buffer, num_elements)

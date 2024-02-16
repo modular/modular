@@ -69,7 +69,7 @@ fn _reshape_nd_buffer_with_batch_to_3d[
     for i in range(0, rank - 2):
         batch_size *= buffer.dim(i)
 
-    let matrix_shape = StaticIntTuple[3](
+    var matrix_shape = StaticIntTuple[3](
         batch_size,
         buffer.dim(buffer.get_rank() - 2),
         buffer.dim(buffer.get_rank() - 1),
@@ -96,11 +96,11 @@ fn _small_batched_matmul[
     var batch_shape = c_buf.dynamic_shape
     batch_shape[rank - 2] = 1
     batch_shape[rank - 1] = 1
-    let B = batch_shape.flattened_length()
+    var B = batch_shape.flattened_length()
 
-    let M = a_buf.dim[rank - 2]()
-    let N = b_buf.dim[rank - 1]()
-    let K = a_buf.dim[rank - 1]()
+    var M = a_buf.dim[rank - 2]()
+    var N = b_buf.dim[rank - 1]()
+    var K = a_buf.dim[rank - 1]()
 
     if M == 1 and N == 1:
         for batch in range(B):
@@ -108,8 +108,8 @@ fn _small_batched_matmul[
             # each trailing batch dimension.
             var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
 
-            let a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, (K))
-            let b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, (K))
+            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, (K))
+            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, (K))
 
             @always_inline
             @__copy_capture(a_view, b_view)
@@ -172,7 +172,7 @@ fn _small_batched_matmul[
                     indices[rank - 1] = k
                     b_buf_index[rank - 2] = k
 
-                    let a_val = a_buf[indices]
+                    var a_val = a_buf[indices]
 
                     @__copy_capture(a_val)
                     @always_inline
@@ -181,7 +181,7 @@ fn _small_batched_matmul[
                         indices[rank - 1] = n
                         b_buf_index[rank - 1] = n
 
-                        let b_val = b_buf.simd_load[simd_width](b_buf_index)
+                        var b_val = b_buf.simd_load[simd_width](b_buf_index)
 
                         c_buf.simd_store[simd_width](
                             indices,
@@ -200,7 +200,7 @@ fn _small_batched_matmul[
                     @parameter
                     fn apply_epilogue[width: Int](n: Int):
                         indices[rank - 1] = n
-                        let val = c_buf.simd_load[width](indices)
+                        var val = c_buf.simd_load[width](indices)
                         alias func = elementwise_epilogue_fn.value()
                         func[c_type, width, rank](indices, val)
 
@@ -284,21 +284,21 @@ fn _batched_matmul_cpu[
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
     # Flatten to 3D Tensor.
-    let c = _reshape_nd_buffer_with_batch_to_3d(c_buf)
-    let a = _reshape_nd_buffer_with_batch_to_3d(a_buf)
-    let b = _reshape_nd_buffer_with_batch_to_3d(b_buf)
+    var c = _reshape_nd_buffer_with_batch_to_3d(c_buf)
+    var a = _reshape_nd_buffer_with_batch_to_3d(a_buf)
+    var b = _reshape_nd_buffer_with_batch_to_3d(b_buf)
     var batch_size: Int = c.dim[0]()
 
-    let m = c.dim[1]()
-    let n = c.dim[2]()
-    let k = a.dim[1]() if adj_a else a.dim[2]()
-    let num_threads = Runtime().parallelism_level()
+    var m = c.dim[1]()
+    var n = c.dim[2]()
+    var k = a.dim[1]() if adj_a else a.dim[2]()
+    var num_threads = Runtime().parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
-    let max_num_tasks_batch = min(
+    var max_num_tasks_batch = min(
         div_ceil(m * n * k * batch_size, get_min_task_size()), batch_size
     )
     # Prevent parallelizing matmul with too many threads.
-    let max_num_tasks_matmul = get_matmul_num_tasks[
+    var max_num_tasks_matmul = get_matmul_num_tasks[
         a_type, b_type, c_type, simdwidthof[c_type](), True
     ](m, n, k, num_threads) if get_kernel_type(
         m, n, k
@@ -319,7 +319,7 @@ fn _batched_matmul_cpu[
     # 20% imbalance, we partition more on the matmul.
     # Imbalance ratio is 1 / min_balance_batch_size
     alias min_balance_batch_size = 5
-    let batch_size_per_task = batch_size // num_tasks_batch_tmp
+    var batch_size_per_task = batch_size // num_tasks_batch_tmp
     if (
         batch_size % num_tasks_batch_tmp != 0
         and batch_size_per_task < min_balance_batch_size
@@ -331,43 +331,43 @@ fn _batched_matmul_cpu[
             max_num_tasks_matmul, num_threads // num_tasks_batch_tmp
         )
 
-    let num_tasks_batch = num_tasks_batch_tmp
-    let num_tasks_matmul = num_tasks_matmul_tmp
-    let num_tasks = num_tasks_batch * num_tasks_matmul
+    var num_tasks_batch = num_tasks_batch_tmp
+    var num_tasks_matmul = num_tasks_matmul_tmp
+    var num_tasks = num_tasks_batch * num_tasks_matmul
 
     @always_inline
     @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
     @parameter
     fn task_func(task_id: Int):
-        let a_stride_between_batches = a.size() // a.dim[0]()
-        let b_stride_between_batches = b.size() // b.dim[0]()
-        let c_stride_between_batches = c.size() // c.dim[0]()
+        var a_stride_between_batches = a.size() // a.dim[0]()
+        var b_stride_between_batches = b.size() // b.dim[0]()
+        var c_stride_between_batches = c.size() // c.dim[0]()
 
-        let batch_task_id = task_id // num_tasks_matmul
-        let matmul_task_id = task_id % num_tasks_matmul
+        var batch_task_id = task_id // num_tasks_matmul
+        var matmul_task_id = task_id % num_tasks_matmul
 
-        let num_batches = c.dim[0]()
+        var num_batches = c.dim[0]()
         # Set the granularity to 1 to divide the batches among tasks
         # as even as possible.
-        let batch_range = partition_work(
+        var batch_range = partition_work(
             batch_task_id, num_tasks_batch, num_batches, 1
         )
-        let batch_start = batch_range[0]
-        let batches_per_task = batch_range[1]
+        var batch_start = batch_range[0]
+        var batches_per_task = batch_range[1]
 
         # Partition the matmul
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            let c_view = NDBuffer[c_type, 2](
+            var c_view = NDBuffer[c_type, 2](
                 c.data.offset(batch * c_stride_between_batches),
                 StaticIntTuple[2](c.dim[1](), c.dim[2]()),
             )
-            let a_view = NDBuffer[a_type, 2](
+            var a_view = NDBuffer[a_type, 2](
                 a.data.offset(batch * a_stride_between_batches),
                 StaticIntTuple[2](a.dim[1](), a.dim[2]()),
             )
-            let b_view = NDBuffer[b_type, 2](
+            var b_view = NDBuffer[b_type, 2](
                 b.data.offset(batch * b_stride_between_batches),
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
             )
@@ -393,7 +393,7 @@ fn _batched_matmul_cpu[
             fn rowwise_closure(start_row: Int, num_rows: Int):
                 rowwise_epilogue(start_row, num_rows, c_view)
 
-            let sub_matmul_config = get_partitioned_matmul[
+            var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
@@ -444,14 +444,14 @@ fn batched_matmul_kernel[
     b_buff: NDBuffer[b_type, 3, b_shape],
     c_buff_nd_shape: StaticIntTuple[rank],
 ) -> None:
-    let batch_size = c_buff.dim(0)
-    let m = c_buff.dim(1)
-    let n = c_buff.dim(2)
-    let k = a_buff.dim(2)
+    var batch_size = c_buff.dim(0)
+    var m = c_buff.dim(1)
+    var n = c_buff.dim(2)
+    var k = a_buff.dim(2)
 
-    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    let z = BlockIdx.z()
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var z = BlockIdx.z()
 
     if z >= batch_size or x >= n or y >= m:
         return
@@ -493,20 +493,20 @@ fn _batched_matmul_gpu[
         not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
     ]()
 
-    let a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
-    let b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
-    let c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
+    var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
+    var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
+    var c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
 
     alias BLOCK_DIM = 16
     alias unkown_shape = DimList.create_unknown[3]()
 
-    let batch_size = a_buf_reshaped.dim(0)
-    let m = a_buf_reshaped.dim(1)
-    let k = a_buf_reshaped.dim(2)
-    let n = b_buf_reshaped.dim(2)
+    var batch_size = a_buf_reshaped.dim(0)
+    var m = a_buf_reshaped.dim(1)
+    var k = a_buf_reshaped.dim(2)
+    var n = b_buf_reshaped.dim(2)
 
     try:
-        let stream = Stream.get_current_stream()
+        var stream = Stream.get_current_stream()
         alias bmm = batched_matmul_kernel[
             rank,
             c_type,
@@ -517,7 +517,7 @@ fn _batched_matmul_gpu[
             unkown_shape,
             elementwise_epilogue_fn,
         ]
-        let gpu_func = Function[__type_of(bmm), bmm]()
+        var gpu_func = Function[__type_of(bmm), bmm]()
         gpu_func(
             stream,
             (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
@@ -627,18 +627,18 @@ fn get_trace_information[
     adj_a: Bool,
     adj_b: Bool,
 ) -> String:
-    let shape_a: String
-    let shape_b: String
-    let shape_c: String
+    var shape_a: String
+    var shape_b: String
+    var shape_c: String
     shape_a = String("x").join(a_matrix_shape)
     shape_b = String("x").join(b_matrix_shape)
     shape_c = String("x").join(c_matrix_shape)
 
-    let a_description = String("A=") + shape_a
-    let b_description = String("B=") + shape_b
-    let c_description = String("C=") + shape_c
-    let adj_a_description = String("adj_a=") + adj_a
-    let adj_b_description = String("adj_b=") + adj_b
+    var a_description = String("A=") + shape_a
+    var b_description = String("B=") + shape_b
+    var c_description = String("C=") + shape_c
+    var adj_a_description = String("adj_a=") + adj_a
+    var adj_b_description = String("adj_b=") + adj_b
 
     return String(";").join(
         String(name),

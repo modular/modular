@@ -87,7 +87,7 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
 
 fn _tile_loadconfig(mem_addr: DTypePointer[void]):
     """
-    Load tile configuration from a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If the specified pallette_id is zero, that signifies the init state for both the tile config and the tile data, and the tiles are zeroed. Any invalid configurations will result in #GP fault.
+    Load tile configuration from a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type palvarte, the number of bytes per row, and the number of rows. If the specified palvarte_id is zero, that signifies the init state for both the tile config and the tile data, and the tiles are zeroed. Any invalid configurations will result in #GP fault.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadconfig
     """
     llvm_intrinsic["llvm.x86.ldtilecfg", NoneType](mem_addr)
@@ -95,7 +95,7 @@ fn _tile_loadconfig(mem_addr: DTypePointer[void]):
 
 fn _tile_storeconfig(mem_addr: DTypePointer[void]):
     """
-    Stores the current tile configuration to a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If tiles are not configured, all zeroes will be stored to memory.
+    Stores the current tile configuration to a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type palvarte, the number of bytes per row, and the number of rows. If tiles are not configured, all zeroes will be stored to memory.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_storeconfig
     """
     llvm_intrinsic["llvm.x86.sttilecfg", NoneType](mem_addr)
@@ -109,14 +109,14 @@ fn init_intel_amx() -> Bool:
 
 
 # typedef struct tileconfig_t {
-#  uint8_t palette_id;
+#  uint8_t pavarte_id;
 #  uint8_t startRow;
 #  uint8_t reserved[14];
 #  uint16_t colb[16];
 #  uint8_t rows[16];
 # } tileconfig_t;
 struct tileconfig:
-    var palette_id: UInt8
+    var pavarte_id: UInt8
     var start_row: UInt8
     var reserved: StaticTuple[14, __mlir_type.`!pop.scalar<ui8>`]
     var colb: StaticTuple[16, __mlir_type.`!pop.scalar<ui16>`]
@@ -128,21 +128,21 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.int8],
     bptr: DTypePointer[DType.int8],
 ):
-    let a = NDBuffer[DType.int8, DimList(16, 64)](aptr)
-    let b = NDBuffer[DType.int8, DimList(16, 64)](bptr)
-    let c = NDBuffer[DType.int32, DimList(16, 16)](cptr)
+    var a = NDBuffer[DType.int8, DimList(16, 64)](aptr)
+    var b = NDBuffer[DType.int8, DimList(16, 64)](bptr)
+    var c = NDBuffer[DType.int32, DimList(16, 16)](cptr)
 
     for i in range(16):
         for j in range(16):
             for l in range(16):
-                let ai0 = a[i, 4 * l + 0].cast[DType.int32]()
-                let ai1 = a[i, 4 * l + 1].cast[DType.int32]()
-                let ai2 = a[i, 4 * l + 2].cast[DType.int32]()
-                let ai3 = a[i, 4 * l + 3].cast[DType.int32]()
-                let bi0 = b[l, 4 * j + 0].cast[DType.int32]()
-                let bi1 = b[l, 4 * j + 1].cast[DType.int32]()
-                let bi2 = b[l, 4 * j + 2].cast[DType.int32]()
-                let bi3 = b[l, 4 * j + 3].cast[DType.int32]()
+                var ai0 = a[i, 4 * l + 0].cast[DType.int32]()
+                var ai1 = a[i, 4 * l + 1].cast[DType.int32]()
+                var ai2 = a[i, 4 * l + 2].cast[DType.int32]()
+                var ai3 = a[i, 4 * l + 3].cast[DType.int32]()
+                var bi0 = b[l, 4 * j + 0].cast[DType.int32]()
+                var bi1 = b[l, 4 * j + 1].cast[DType.int32]()
+                var bi2 = b[l, 4 * j + 2].cast[DType.int32]()
+                var bi3 = b[l, 4 * j + 3].cast[DType.int32]()
                 var cv = c[i, j]
                 cv += ai0 * bi0
                 cv += ai1 * bi1

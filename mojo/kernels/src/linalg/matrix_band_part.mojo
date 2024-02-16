@@ -31,9 +31,9 @@ fn matrix_band_part[
     exclude_buf: NDBuffer[cond_type, 1],
     output: NDBuffer[type, rank],
 ):
-    let lower_diagonal_index = int(num_lower[0])
-    let upper_diagonal_index = int(num_upper[0])
-    let exclude = exclude_buf[0] != 0
+    var lower_diagonal_index = int(num_lower[0])
+    var upper_diagonal_index = int(num_upper[0])
+    var exclude = exclude_buf[0] != 0
 
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
@@ -43,10 +43,10 @@ fn matrix_band_part[
     fn func[
         simd_width: Int, inner_rank: Int
     ](index: StaticIntTuple[inner_rank]):
-        let idx = rebind[StaticIntTuple[rank]](index)
+        var idx = rebind[StaticIntTuple[rank]](index)
 
-        let row = idx[rank - 2]
-        let col = idx[rank - 1]
+        var row = idx[rank - 2]
+        var col = idx[rank - 1]
 
         var in_band = (
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
