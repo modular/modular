@@ -232,12 +232,99 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     newBindings.push_back(value);
   };
 
+  // First we identify all operands that are unpacked.
+  llvm::BitVector unpackedMask(posBindings.size());
+  for (auto [idx, binding] : llvm::enumerate(posBindings))
+    if (isa<UnpackedType>(binding.getType()))
+      unpackedMask.set(idx);
+
+  SmallVector<Binding> unpackedPosBindingsStorage;
+  ArrayRef<Binding> unpackedPosBindings(posBindings);
+  if (unpackedMask.any()) {
+    unpackedPosBindingsStorage.reserve(numParams);
+
+    int unpackedUnboundIdx = -1;
+    for (auto [idx, binding] : llvm::enumerate(posBindings)) {
+      if (!unpackedMask[idx]) {
+        unpackedPosBindingsStorage.push_back(binding);
+        continue;
+      }
+      auto unpacked = cast<UnpackedAttr>(binding.value);
+      TypedAttr packed = unpacked.getValue();
+
+      // Unbound pack is special: it fills up all available positional slots, so
+      // we must first unpack all others. Remember where it is.
+      if (isa<UnboundAttr>(packed)) {
+        assert(isa<DiscardType>(packed.getType()));
+        if (unpackedUnboundIdx != -1) {
+          if (diagEmitter.emitMultipleUnboundPack)
+            diagEmitter.emitMultipleUnboundPack(binding);
+          return {{}, fitness};
+        }
+        unpackedUnboundIdx = unpackedPosBindingsStorage.size();
+        unpackedPosBindingsStorage.push_back(binding);
+        continue;
+      }
+
+      // Unpacked variadic parameters are just flattened.
+      if (auto varPacked = dyn_cast<VariadicAttr>(packed)) {
+        for (TypedAttr val : varPacked.getValues()) {
+          unpackedPosBindingsStorage.push_back(
+              {binding.expr, val, binding.typeChecked});
+        }
+        continue;
+      }
+
+      // Otherwise we are not able to unpack.
+      if (diagEmitter.emitUnpack)
+        diagEmitter.emitUnpack(binding);
+      return {{}, fitness};
+    }
+
+    // Check if we have too many parameters after unpacking
+    size_t numPosPassable = countNumPositional(paramPassingKinds);
+    size_t numUnpackedPositionals =
+        unpackedPosBindingsStorage.size() - (unpackedUnboundIdx != -1);
+    if (!hasParamVarArgs && numUnpackedPositionals > numPosPassable) {
+      if (diagEmitter.emitParamCount)
+        diagEmitter.emitParamCount(numUnpackedPositionals, /*posOnly=*/false);
+      return {{}, fitness};
+    }
+
+    // Now we can handle the unpacked unbound attributes if needed.
+    if (unpackedUnboundIdx != -1) {
+      if (hasParamVarArgs) {
+        if (diagEmitter.emitUnboundPackInVariadic) {
+          diagEmitter.emitUnboundPackInVariadic(
+              unpackedPosBindingsStorage[unpackedUnboundIdx]);
+        }
+        return {{}, fitness};
+      }
+
+      // If missing at least one positional parameter, we inject unbounds.
+      if (numUnpackedPositionals < numPosPassable) {
+        // We need to calculate how many UnboundAttrs we need to inject.
+        auto it = unpackedPosBindingsStorage.begin() + unpackedUnboundIdx;
+        int numUnbounds = numPosPassable - numUnpackedPositionals;
+
+        auto unboundAttr =
+            UnboundAttr::get(DiscardType::get(shared.getContext()));
+        SmallVector<Binding> unbounds(numUnbounds,
+                                      {it->expr, unboundAttr, it->typeChecked});
+        llvm::replace(unpackedPosBindingsStorage, it, it + 1, unbounds);
+      }
+      assert(unpackedPosBindingsStorage.size() == numPosPassable);
+    }
+
+    unpackedPosBindings = unpackedPosBindingsStorage;
+  }
+
   // Use an expr emitter to perform implicit conversions within a parameter
   // context.
   ExprEmitter emitter(shared, declScope, EC_ParameterList);
 
   size_t posBindingIdx = 0;
-  size_t numPosBindings = posBindings.size();
+  size_t numPosBindings = unpackedPosBindings.size();
   for (auto [idx, type, paramName, passingKind] :
        llvm::enumerate(expectedParamTypes, paramNames, paramPassingKinds)) {
     // Check to see if we ran out of bindings to provide to this param decl.
@@ -328,7 +415,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // If we still have positional bindings left, first check if we are dealing
     // with an UnboundAttr we might have to deduce.
-    const Binding &binding = posBindings[posBindingIdx];
+    const Binding &binding = unpackedPosBindings[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
       if (parameterInferenceHook) {
         // Determine if we can use a default parameter for CTAD.
@@ -427,7 +514,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     auto variadicType = cast<VariadicType>(type);
     Type expectedType = variadicType.getElementType();
     do {
-      const Binding &binding = posBindings[posBindingIdx++];
+      const Binding &binding = unpackedPosBindings[posBindingIdx++];
       PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
@@ -519,6 +606,23 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](size_t paramIdx) {
         llvm_unreachable("parameter deduction failure in a context that "
                          "doesn't allow deduction");
+      },
+      /*emitUnboundPackInVariadic=*/
+      [&](const Binding &binding) {
+        InflightDiag diag = shared.emitError(binding.expr->getLoc());
+        diag << "unbound pack syntax cannot be used where variadic parameters "
+                "are expected";
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitUnpack=*/
+      [&](const Binding &binding) {
+        InflightDiag diag = shared.emitError(binding.expr->getLoc());
+        diag << "cannot unpack non-literal variadic parameters";
+      },
+      /*emitMultipleUnboundPack=*/
+      [&](const Binding &binding) {
+        InflightDiag diag = shared.emitError(binding.expr->getLoc());
+        diag << "multiple unbound pack symbols not allowed";
       }};
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
@@ -541,8 +645,8 @@ ParamBindings::verifyBindings(LITSignatureType sig,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr,
-                          nullptr, nullptr, nullptr};
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr,
+                          nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultPosParams(),
                         sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
@@ -597,8 +701,8 @@ static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
   };
   ASTType trait = getIfTrait(baseType);
   if (!trait) {
-    // If there are no parameters specified and if we allow unbound
-    // symbols, just return the unbound symbol.
+    // If there are no parameters specified and if we allow unbound symbols,
+    // just return the unbound symbol.
     if (paramBindings.empty())
       return funcOp.getBoundReference();
 

@@ -161,6 +161,13 @@ public:
     std::function<void(SmallVectorImpl<StringRef> &&)> emitPosOnlyPassedByKw;
     /// Emit diagnostics for failure to deduce a parameter.
     std::function<void(size_t)> emitDeductionFailure;
+    /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
+    /// signature.
+    std::function<void(const Binding &)> emitUnboundPackInVariadic;
+    /// Emit diagnostics for failure to unpack parameters.
+    std::function<void(const Binding &)> emitUnpack;
+    /// Emit diagnostics when multiple unbound packs appear in parameter list.
+    std::function<void(const Binding &)> emitMultipleUnboundPack;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature

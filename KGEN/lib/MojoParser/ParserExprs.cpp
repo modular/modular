@@ -40,6 +40,7 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
+  kUnpack,         // prefix: * or **
   kAssignExpr,     // infix: := (walrus)
   kIfElse,         // infix: if - else
   kBoolOr,         // infix: or
@@ -121,10 +122,11 @@ private:
 
   /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
   /// adhere to the Python grammar. Positional operands cannot appear after
-  /// keyword operands, and duplicate keyword operands are not allowed. An
-  /// optional flag can be specified to allow unpacked operands.
-  ParseResult checkOperands(ArrayRef<Operand>, StringRef argOrParam,
-                            bool allowUnpacked = true);
+  /// keyword operands, and duplicate keyword operands are not allowed. If the
+  /// `isArgument` flag is true, operands are checked as if dynamic runtime
+  /// operands (and explicitly unbound packs, i.e. `*_` are not allowed).
+  /// Otherwise, operands are considered parameters.
+  ParseResult checkOperands(ArrayRef<Operand>, bool isArgument);
 
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -153,7 +155,7 @@ ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
                                  firstCommaLoc);
 }
 
-/// Parse a started_list, forming a single TupleExpr if a comma is present.
+/// Parse a starred_list, forming a single TupleExpr if a comma is present.
 ParseResult
 ExprParser::parseStarredListAsTuple(ExprNode *&result,
                                     ArrayRef<Token::Kind> terminators) {
@@ -379,6 +381,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::plus:
   case Token::minus:
   case Token::tilde:
+  case Token::star:
   case Token::kw_await:
   case Token::kw_borrowed: // borrowed [lifetime] type
   case Token::kw_inout:    // inout [lifetime] type
@@ -434,6 +437,8 @@ getUnaryOpInfo(Token::Kind tokKind) {
     return {ExprNode::kNeg, Precedence::kFactor};
   case Token::tilde:
     return {ExprNode::kInvert, Precedence::kFactor};
+  case Token::star:
+    return {ExprNode::kUnpack, Precedence::kUnpack};
   }
 }
 
@@ -457,6 +462,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   Token startTok = getToken();
   switch (startTok.getKind()) {
   case Token::plus:
+  case Token::star:
   case Token::minus:
   case Token::tilde:
   case Token::kw_await:
@@ -764,8 +770,8 @@ FailureOr<Operand> ExprParser::parseOperand(
     function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue) {
   ExprNode *value;
   SMLoc startLoc = getToken().getLoc();
-  if (consumeIf(Token::star)) {
-    if (failed(parseExpression(value)))
+  if (getToken().is(Token::star)) {
+    if (failed(parseStarredItem(value)))
       return failure();
     return Operand(value, startLoc, Operand::kStar);
   }
@@ -833,7 +839,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     }
   }
 
-  if (checkOperands(operands, "argument"))
+  if (checkOperands(operands, /*isArgument=*/true))
     return failure();
 
   // Otherwise we're good to go.
@@ -894,14 +900,14 @@ ParseResult ExprParser::parseExprOrSlice(ExprNode *&result) {
 }
 
 ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
-                                      StringRef argOrParam,
-                                      bool allowUnpacked) {
+                                      bool isArgument) {
+  std::string argOrParam = isArgument ? "argument" : "parameter";
   // We keep a map of "name -> operand" so that we can emit better diagnostics.
   llvm::SmallDenseMap<StringAttr, const Operand *> kwOperands;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
-    if (operand.isUnpacked() && !allowUnpacked)
-      return emitError(loc, "unpacked ") << argOrParam << "s not supported yet";
+    if (operand.isUnpackedKeyword())
+      return emitError(loc, "keyword unpacking not supported yet");
     if (operand.isPositional() && !kwOperands.empty()) {
       return emitError(loc, "positional ")
              << argOrParam << " follows keyword " << argOrParam;
@@ -962,7 +968,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
       getLocation(rsquareLoc))
     return failure();
 
-  if (checkOperands(operands, "parameter", /*allowUnpacked=*/false))
+  if (checkOperands(operands, /*isArgument=*/false))
     return failure();
 
   if (parseToken(Token::r_square, "expected ']' in call argument list"))
