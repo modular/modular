@@ -93,7 +93,7 @@ struct Module:
     ) raises -> mlir.NamedAttribute:
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
-        var shape = DynamicVector[Int](rank)
+        var shape = DynamicVector[Int](capacity=rank)
         for i in range(rank):
             shape.append(1)
         return self.tensor_attr[dtype](name, Tensor(shape, value))

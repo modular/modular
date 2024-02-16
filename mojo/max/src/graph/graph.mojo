@@ -303,7 +303,7 @@ struct Graph:
             If the internal graph structure is invalid in certain ways.
             This can't happen during normal operation.
         """
-        var shape = DynamicVector[Int](rank)
+        var shape = DynamicVector[Int](capacity=rank)
         for i in range(rank):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))

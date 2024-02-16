@@ -402,7 +402,7 @@ struct MOTensor(MOType, CollectionElement):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.dims = DynamicVector[Dim](len(dims))
+        self.dims = DynamicVector[Dim](capacity=len(dims))
         for d in dims:
             self.dims.append(d[])
         self.ranked = True
@@ -417,7 +417,7 @@ struct MOTensor(MOType, CollectionElement):
                     the constructor with just a dtype argument.
         """
         self.dtype = dtype
-        self.dims = DynamicVector[Dim](0)
+        self.dims = DynamicVector[Dim]()
         self.ranked = ranked
 
     fn __init__(inout self, dtype: ElementType, dim: Int):
@@ -458,7 +458,7 @@ struct MOTensor(MOType, CollectionElement):
         Args:
             spec: The dtype and static shape of the tensor.
         """
-        var dims = DynamicVector[Dim](spec.rank())
+        var dims = DynamicVector[Dim](capacity=spec.rank())
         for i in range(spec.rank()):
             dims.append(Dim.static(spec[i]))
         self.__init__(spec.dtype(), dims)
@@ -476,7 +476,7 @@ struct MOTensor(MOType, CollectionElement):
         Returns:
             An mlir.Type in the specified Context.
         """
-        var dims = DynamicVector[mlir.Attribute](len(self.dims))
+        var dims = DynamicVector[mlir.Attribute](capacity=len(self.dims))
         for i in range(len(self.dims)):
             dims.append(self.dims[i].to_mlir(m))
         return capi.tensor_type_new(
@@ -511,7 +511,7 @@ struct MOTensor(MOType, CollectionElement):
         let ranked = capi.tensor_type_is_ranked(t)
         if ranked:
             let rank = capi.tensor_type_get_rank(t)
-            var dims = DynamicVector[Dim](rank.to_int())
+            var dims = DynamicVector[Dim](capacity=rank.to_int())
             for i in range(rank):
                 let dim_attr = capi.tensor_type_get_dim(t, i)
                 let dim: Dim

@@ -216,7 +216,7 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
     for i in range(len(values)):
         concat_args.append(values[i])
 
-    var dims = DynamicVector[Dim](rank)
+    var dims = DynamicVector[Dim](capacity=rank)
     for i in range(rank):
         dims.append(v0_type.dims[i])
     dims[norm_axis] = concat_dim
