@@ -931,14 +931,14 @@ struct ValueMemHasMove:
 # CHECK-NEXT: lit.return [[V1]] : !ValueRegTrivial
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"`thunk___copyinit__{{.*}}(%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_deb
+# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_deb
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %arg : <!ValueRegTrivial
 # CHECK-NEXT: [[V1:%.*]] = lit.call @{{.*}}::@ValueRegTrivial::@"__copyinit__(decls::ValueRegTrivial)"(%0) : !lit.signature<("other": !ValueRegTrivial borrow, |) -> !ValueRegTrivial>
 # CHECK-NEXT: lit.ref.store [[V1]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
-# CHECK: lit.func @"`thunk___moveinit__{{.*}}(%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
+# CHECK: lit.func @"__moveinit__{{.*}}_thunk"[{{.*}}](%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
 # CHECK-NEXT: [[V0:%.*]] = lit.load.consume %arg
 # CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}__moveinit__{{.*}}([[V0]]) : !lit.signature<("other": !ValueRegTrivial, |) -> !ValueRegTrivial>
 # CHECK-NEXT: lit.ref.store [[V1]], %self

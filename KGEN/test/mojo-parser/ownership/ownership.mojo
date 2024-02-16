@@ -597,7 +597,7 @@ fn destruct_generic_return():
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 @register_passable
 struct RegisterExistingDtor:
-    # CHECK: lit.func @"`thunk___del__
+    # CHECK: lit.func @"__del__{{.*}}_thunk"
     fn __del__(owned self):
         # CHECK: call {{.*}}@"__del__
         pass

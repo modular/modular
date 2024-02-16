@@ -12,12 +12,12 @@ trait Composition(Movable, Copyable):
 
 # CHECK-LABEL: lit.func @"mlir_type_trait_conformance
 fn mlir_type_trait_conformance():
-    # CHECK: !AnyType = <[index, {"__del__" : {{.*}}@__MLIRType::@"`thunk___del__
+    # CHECK: !AnyType = <[index, {"__del__" : {{.*}}@__MLIRType::@"__del__
     alias Any: AnyType = __mlir_type.index
-    # CHECK: !Copyable = <[index, {"__copyinit__" : {{.*}}@__MLIRType::@"`thunk___copyinit__
+    # CHECK: !Copyable = <[index, {"__copyinit__" : {{.*}}@__MLIRType::@"__copyinit__
     # CHECK-SAME: "__del__"
     alias Copy: Copyable = __mlir_type.index
-    # CHECK: !Movable = <[index, {"__moveinit__" : {{.*}}@__MLIRType::@"`thunk___moveinit__
+    # CHECK: !Movable = <[index, {"__moveinit__" : {{.*}}@__MLIRType::@"__moveinit__
     # CHECK-SAME: "__del__"
     alias Move: Movable = __mlir_type.index
     # CHECK: !Composition = <[index,

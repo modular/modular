@@ -25,7 +25,7 @@ struct MyType(PackageTrait):
 # CHECK: lit.struct.decl @MyRegType(!PackageTrait,
 @register_passable
 struct MyRegType(PackageTrait):
-    # CHECK: lit.func @"`thunk_method
+    # CHECK: lit.func @"method({{.*}})_thunk"
     fn method(self):
         pass
 
@@ -38,11 +38,11 @@ fn bind_trait[T: PackageTrait]():
 fn test():
     # CHECK-NEXT: [!MyType{{[0-9]*}}, {"method" {{.*}}@MyType::@"method
     bind_trait[MyType]()
-    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}@MyRegType::@"`thunk_method
+    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}@MyRegType::@"method{{.*}}_thunk"
     bind_trait[MyRegType]()
     # CHECK-NEXT: [!UseTrait{{[0-9]*}}, {"method" {{.*}}@UseTrait::@"method
     trait_method[UseTrait]()
-    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}@UseTraitReg::@"`thunk_method
+    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}@UseTraitReg::@"method{{.*}}_thunk"
     trait_method[UseTraitReg]()
 
     # COM: Anchor this decl reference to materialize it.
@@ -57,4 +57,4 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 # CHECK: lit.trait.decl @UsedInPackageTrait
 # CHECK: lit.struct.decl @UseTrait(!UsedInPackageTrait
 
-# CHECK: lit.func @"`thunk_method({{.*}}_PrivateReg)"
+# CHECK: lit.func @"method({{.*}}_PrivateReg)_thunk"
