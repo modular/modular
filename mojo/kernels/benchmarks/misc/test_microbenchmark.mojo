@@ -14,7 +14,6 @@ from sys.info import sizeof
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from Matrix import Matrix
 from time import now
 
 alias alignment = 64
@@ -23,9 +22,9 @@ alias alignment = 64
 fn gemm_naive[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    a: Matrix[DimList.create_unknown[2](), a_type, False],
-    b: Matrix[DimList.create_unknown[2](), b_type, False],
-    c: Matrix[DimList.create_unknown[2](), c_type, False],
+    a: NDBuffer[a_type, 2, DimList.create_unknown[2]()],
+    b: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[c_type, 2, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
@@ -48,9 +47,9 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     var a_ptr: DTypePointer[a_type]
     var b_ptr: DTypePointer[b_type]
     var c_ptr: DTypePointer[c_type]
-    var am: Matrix[DimList.create_unknown[2](), a_type, False]
-    var bm: Matrix[DimList.create_unknown[2](), b_type, False]
-    var cm: Matrix[DimList.create_unknown[2](), c_type, False]
+    var am: NDBuffer[a_type, 2, DimList.create_unknown[2]()]
+    var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
+    var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
 
     fn __init__(inout self, m: Int, n: Int, k: Int):
         self.m = m
@@ -59,13 +58,13 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         self.a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
         self.b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
         self.c_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
-        self.am = Matrix[DimList.create_unknown[2](), a_type, False](
+        self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
-        self.bm = Matrix[DimList.create_unknown[2](), b_type, False](
+        self.bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
             self.b_ptr, Index(self.k, self.n)
         )
-        self.cm = Matrix[DimList.create_unknown[2](), c_type, False](
+        self.cm = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
 
@@ -125,9 +124,9 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
     var a_ptr: DTypePointer[a_type]
     var b_ptr: DTypePointer[b_type]
     var c_ptr: DTypePointer[c_type]
-    var am: Matrix[DimList.create_unknown[2](), a_type, False]
-    var bm: Matrix[DimList.create_unknown[2](), b_type, False]
-    var cm: Matrix[DimList.create_unknown[2](), c_type, False]
+    var am: NDBuffer[a_type, 2, DimList.create_unknown[2]()]
+    var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
+    var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
 
     fn __init__(inout self, m: Int, n: Int, k: Int):
         self.m = m
@@ -142,13 +141,13 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
         self.c_ptr = DTypePointer[c_type].aligned_alloc(
             alignment, self.m * self.n
         )
-        self.am = Matrix[DimList.create_unknown[2](), a_type, False](
+        self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
-        self.bm = Matrix[DimList.create_unknown[2](), b_type, False](
+        self.bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
             self.b_ptr, Index(self.k, self.n)
         )
-        self.cm = Matrix[DimList.create_unknown[2](), c_type, False](
+        self.cm = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
 

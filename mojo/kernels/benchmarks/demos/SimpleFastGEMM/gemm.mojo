@@ -11,7 +11,6 @@ from memory.unsafe import DTypePointer
 from utils.list import Dim, DimList
 from memory.buffer import Buffer, NDBuffer
 from utils.index import Index
-from Matrix import Matrix
 from sys.intrinsics import PrefetchOptions
 from algorithm import unroll
 
@@ -24,7 +23,7 @@ alias accum_type = DType.float32
 
 
 fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
-    let a = Matrix[DimList.create_unknown[2](), DType.float32, False](
+    let a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, n)
     )
     for i in range(m):
@@ -35,9 +34,9 @@ fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
 
 
 fn gemm_naive(
-    a: Matrix[DimList.create_unknown[2](), DType.float32, False],
-    b: Matrix[DimList.create_unknown[2](), DType.float32, False],
-    c: Matrix[DimList.create_unknown[2](), DType.float32, False],
+    a: NDBuffer[DType.float32, DimList.create_unknown[2]()],
+    b: NDBuffer[DType.float32, DimList.create_unknown[2]()],
+    c: NDBuffer[DType.float32, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
@@ -191,13 +190,13 @@ fn main():
     let c = Buffer[Dim(), DType.float32](c_ptr, m * n)
     let c2 = Buffer[Dim(), DType.float32](c2_ptr, m * n)
 
-    let am = Matrix[DimList.create_unknown[2](), DType.float32, False](
+    let am = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, k)
     )
-    let bm = Matrix[DimList.create_unknown[2](), DType.float32, False](
+    let bm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         b_ptr, Index(k, n)
     )
-    let cm = Matrix[DimList.create_unknown[2](), DType.float32, False](
+    let cm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         c_ptr, Index(m, n)
     )
 
