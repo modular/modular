@@ -27,11 +27,20 @@ public:
   /// We're incredibly unlikely to need more than 2^32 entitlements. New
   /// entitlements must add a new EK_* entry and increment EK_UNKNOWN as
   /// appropriate.
+  ///
+  /// N.B. These entitlements should match:
+  ///   CloudInfra/services/phoenix/util/entitlement/entitlement.go
+  /// and have a canonical database at:
+  ///   https://www.notion.so/modularai/1f0c3589df8b4571853cc4c26d138037
   enum Kind : uint32_t {
     EK_RESERVED = 0, ///< This number is reserved for testing and other internal
                      ///< purposes. Users must not rely on this entitlement.
     EK_MODULAR_DEVELOPER = 1,
-    EK_UNKNOWN = 2, ///< This must be the max value of the currently known
+    EK_BETA = 2,
+    EK_GPU = 3,
+    EK_MAX_THREADS_UNLIMITED = 4,
+    EK_ENTERPRISE = 5,
+    EK_UNKNOWN = 6, ///< This must be the max value of the currently known
                     ///< entitlements.
   };
 
@@ -169,6 +178,58 @@ public:
 
   /// This is the static builder that needs to be registered so it can be called
   /// during parsing.
+  static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
+                                                      ArrayRef<uint8_t> data);
+};
+
+/// Entitles users access to generic beta software & features.
+class BetaEntitlement : public Entitlement {
+public:
+  BetaEntitlement() : Entitlement(EK_BETA) {}
+  static bool classof(const Entitlement *e) { return e->getKind() == EK_BETA; }
+  static Kind getKind() { return EK_BETA; }
+
+  StringRef getName() const override;
+  static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
+                                                      ArrayRef<uint8_t> data);
+};
+
+/// Entitles users to access GPU-related features.
+class GPUEntitlement : public Entitlement {
+public:
+  GPUEntitlement() : Entitlement(EK_GPU) {}
+  static bool classof(const Entitlement *e) { return e->getKind() == EK_GPU; }
+  static Kind getKind() { return EK_GPU; }
+
+  StringRef getName() const override;
+  static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
+                                                      ArrayRef<uint8_t> data);
+};
+
+/// Restricts users to a specific number of threads.
+class MaxThreadsUnlimitedEntitlement : public Entitlement {
+public:
+  MaxThreadsUnlimitedEntitlement() : Entitlement(EK_MAX_THREADS_UNLIMITED) {}
+  static bool classof(const Entitlement *e) {
+    return e->getKind() == EK_MAX_THREADS_UNLIMITED;
+  }
+  static Kind getKind() { return EK_MAX_THREADS_UNLIMITED; }
+
+  StringRef getName() const override;
+  static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
+                                                      ArrayRef<uint8_t> data);
+};
+
+/// Restricts users to a specific number of threads.
+class EnterpriseEntitlement : public Entitlement {
+public:
+  EnterpriseEntitlement() : Entitlement(EK_ENTERPRISE) {}
+  static bool classof(const Entitlement *e) {
+    return e->getKind() == EK_ENTERPRISE;
+  }
+  static Kind getKind() { return EK_ENTERPRISE; }
+
+  StringRef getName() const override;
   static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
                                                       ArrayRef<uint8_t> data);
 };
