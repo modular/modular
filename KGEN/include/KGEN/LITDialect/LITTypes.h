@@ -20,6 +20,7 @@
 namespace M::KGEN::LIT {
 class ArgParamListAttr;
 class FnMetadataAttr;
+class SymbolAttr;
 enum class PassingKind : uint32_t;
 
 class LITSignatureType : public SignatureType {

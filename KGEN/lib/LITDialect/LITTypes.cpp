@@ -214,12 +214,14 @@ LogicalResult DeclRefType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 DeclRefType DeclRefType::get(SymbolRefAttr name,
                              ArrayRef<TypedAttr> paramValues, Type metatype) {
-  return get(name.getContext(), name, paramValues, metatype);
+  return get(name.getContext(), SymbolAttr::get(name), paramValues, metatype);
 }
 
 DeclRefType DeclRefType::get(SymbolRefAttr name, Type metatype) {
   return get(name, {}, metatype);
 }
+
+SymbolRefAttr DeclRefType::getSymbol() const { return getValue().getValue(); }
 
 std::optional<StringRef> DeclRefType::getAliasName() {
   // Don't alias types with parameter references.
@@ -281,18 +283,18 @@ void DeclRefType::printSymbol(AsmPrinter &p) const {
 }
 
 static ParseResult parseOptionalMetaType(AsmParser &p, Type &metatype,
-                                         SymbolRefAttr symbol,
+                                         SymbolAttr symbol,
                                          ArrayRef<TypedAttr> paramValues) {
   if (succeeded(p.parseOptionalComma()))
     return parseKGENType(p, metatype);
 
-  metatype = MetaTypeType::get(symbol, paramValues,
+  metatype = MetaTypeType::get(symbol.getValue(), paramValues,
                                TypeSignatureType::get(p.getContext()));
   return success();
 }
 
 static void printOptionalMetaType(AsmPrinter &p, Type metatype,
-                                  SymbolRefAttr symbol,
+                                  SymbolAttr symbol,
                                   ArrayRef<TypedAttr> paramValues) {
   if (auto mt = dyn_cast<MetaTypeType>(metatype))
     if (mt.getSignature().getInputParamTypes().empty())
@@ -384,6 +386,13 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
   }
   return success();
 }
+
+MetaTypeType MetaTypeType::get(SymbolRefAttr symbol, ArrayRef<TypedAttr> values,
+                               TypeSignatureType signature) {
+  return get(symbol.getContext(), SymbolAttr::get(symbol), values, signature);
+}
+
+SymbolRefAttr MetaTypeType::getSymbol() const { return getValue().getValue(); }
 
 OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
                                              TypedAttr &value) const {

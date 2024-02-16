@@ -177,13 +177,13 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
   }];
 
   let parameters = (ins
-    "SymbolRefAttr":$symbol,
+    "SymbolAttr":$value,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
     "Type":$metaType
   );
   let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) ``
-        custom<OptionalMetaType>($metaType, ref($symbol), ref($paramValues)) `>`
+    `<` $value `` custom<ParameterValues>($paramValues) ``
+        custom<OptionalMetaType>($metaType, ref($value), ref($paramValues)) `>`
   }];
 
   let builders = [
@@ -195,6 +195,8 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
   ];
 
   let extraClassDeclaration = [{
+    SymbolRefAttr getSymbol() const;
+
     /// Get the name of the referenced type.
     StringAttr getName() { return getSymbol().getRootReference(); }
 
@@ -239,21 +241,19 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
   }];
 
   let parameters = (ins
-    "SymbolRefAttr":$symbol,
+    "SymbolAttr":$value,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
     DefaultValuedParameter<"TypeSignatureType",
                            "TypeSignatureType::get($_ctxt)">:$signature
   );
   let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $signature^)? `>`
+    `<` $value `` custom<ParameterValues>($paramValues) (`,` $signature^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
                                         "ArrayRef<TypedAttr>":$values,
-                                        "TypeSignatureType":$signature), [{
-      return get(symbol.getContext(), symbol, values, signature);
-    }]>,
+                                        "TypeSignatureType":$signature)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
                                         "TypeSignatureType":$signature), [{
       return get(symbol, {}, signature);
@@ -261,6 +261,8 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
   ];
 
   let extraClassDeclaration = [{
+    SymbolRefAttr getSymbol() const;
+
     /// Bind parameter values to the metatype.
     MetaTypeType bind(ArrayRef<TypedAttr> values) const;
     /// Return whether the type is a metatype.
