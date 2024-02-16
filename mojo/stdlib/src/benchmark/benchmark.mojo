@@ -140,6 +140,7 @@ Note that the min total time will take precedence over max iterations
 from math import max, min
 from time import time_function
 from math.limit import min_finite, max_finite
+from sys._assembly import inlined_assembly
 
 from memory.unsafe import DTypePointer, Pointer
 from collections.vector import DynamicVector
@@ -666,18 +667,18 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
 
     @parameter
     if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
-        __mlir_op.`pop.inline_asm`[
-            _type=None,
-            assembly = "".value,
-            constraints = "+m,r,~{memory}".value,
-            hasSideEffects = __mlir_attr.unit,
+        inlined_assembly[
+            "",
+            NoneType,
+            constraints="+m,r,~{memory}",
+            has_side_effect=True,
         ](tmp_ptr, val)
     else:
-        __mlir_op.`pop.inline_asm`[
-            _type=None,
-            assembly = "".value,
-            constraints = "+m,~{memory}".value,
-            hasSideEffects = __mlir_attr.unit,
+        inlined_assembly[
+            "",
+            NoneType,
+            constraints="+m,~{memory}",
+            has_side_effect=True,
         ](tmp_ptr, tmp_ptr)
 
 
@@ -714,11 +715,11 @@ fn keep[type: AnyRegType](val: Pointer[type]):
     """
     var tmp = val
     let tmp_ptr = Pointer.address_of(tmp)
-    __mlir_op.`pop.inline_asm`[
-        _type=None,
-        assembly = "".value,
-        constraints = "r,~{memory}".value,
-        hasSideEffects = __mlir_attr.unit,
+    inlined_assembly[
+        "",
+        NoneType,
+        constraints="r,~{memory}",
+        has_side_effect=True,
     ](tmp_ptr)
 
 
@@ -738,9 +739,9 @@ fn keep[type: AnyRegType](inout val: type):
     """
     var tmp = val
     let tmp_ptr = Pointer.address_of(tmp)
-    __mlir_op.`pop.inline_asm`[
-        _type=None,
-        assembly = "".value,
-        constraints = "r,~{memory}".value,
-        hasSideEffects = __mlir_attr.unit,
+    inlined_assembly[
+        "",
+        NoneType,
+        constraints="r,~{memory}",
+        has_side_effect=True,
     ](tmp_ptr)
