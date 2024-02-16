@@ -33,14 +33,14 @@ from .ops import add, div, matmul, mul, pow, sub, transpose
 
 @value
 struct Symbol(CollectionElement, Stringable):
-    var s: mlir.Value
+    var _value: mlir.Value
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        let parent = self.s.parent()
+        let parent = self._value.parent()
         let block: mlir.Block
         if parent.isa[mlir.Block]():
             block = parent.get[mlir.Block]()
@@ -52,13 +52,13 @@ struct Symbol(CollectionElement, Stringable):
         return Graph(graph_op)
 
     fn type(self) raises -> AnyMOType:
-        return AnyMOType.from_mlir(self.s.type())
+        return AnyMOType.from_mlir(self._value.type())
 
     fn tensor_type(self) raises -> MOTensor:
         return self.type().tensor()
 
     fn __str__(self) -> String:
-        return str(self.s)
+        return str(self._value)
 
     # ===------------------------------------------------------------------=== #
     # Overloaded operators
@@ -298,7 +298,7 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn replace_all_uses_with(self, other: Symbol):
-        self.s.replace_all_uses_with(other.s)
+        self._value.replace_all_uses_with(other._value)
 
     fn replace_all_uses_with(
         self, transform: fn (Symbol) raises -> Symbol
@@ -395,7 +395,7 @@ struct SymbolTuple(Sized):
     fn as_values(self) -> DynamicVector[mlir.Value]:
         var values = DynamicVector[mlir.Value]()
         for i in range(len(self.symbols)):
-            values.append(self.symbols[i].s)
+            values.append(self.symbols[i]._value)
         return values
 
     # ===------------------------------------------------------------------=== #

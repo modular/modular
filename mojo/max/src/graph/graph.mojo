@@ -30,7 +30,7 @@ struct Graph:
     # TODO: Refer to the concepts doc for the meaning of Symbol, etc.
     # TODO: Link to max engine page, wikipedia, etc.
 
-    var g: mlir.Operation
+    var _op: mlir.Operation
     """A handle to the `Graph`'s internal implementation."""
 
     # ===------------------------------------------------------------------=== #
@@ -38,7 +38,7 @@ struct Graph:
     # ===------------------------------------------------------------------=== #
 
     fn _body(self) raises -> mlir.Block:
-        return self.g.region(0).first_block()
+        return self._op.region(0).first_block()
 
     fn module(self) raises -> Module:
         """Returns the `Module` containing this `Graph`.
@@ -50,7 +50,7 @@ struct Graph:
             If the `Graph` is not owned by a `Module`. This can't happen
             in normal operation.
         """
-        return Module(mlir.Module.from_op(self.g.parent()))
+        return Module(mlir.Module.from_op(self._op.parent()))
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
@@ -112,7 +112,7 @@ struct Graph:
         """
         # We should also have this raise with a meaningful error message
         # based on the diagnostic run by `.verify` on the op construction.
-        let ctx = self.g.context()
+        let ctx = self._op.context()
 
         let op = mlir.Operation(
             name=name,

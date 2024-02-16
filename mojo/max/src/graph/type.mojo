@@ -286,7 +286,7 @@ struct Dim(CollectionElement):
             A mlir.Attribute in the Module's context representing the dimension.
         """
 
-        let ctx = m.m.context()
+        let ctx = m._module.context()
         if self.value.isa[DynamicDim]():
             return capi.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
@@ -350,7 +350,7 @@ struct ElementType(MOType):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return capi.dtype_new(m.m, self.dtype)
+        return capi.dtype_new(m._module, self.dtype)
 
     fn to_string(self, m: Module) -> String:
         """Converts to a maybe-human-readable string.
@@ -480,7 +480,7 @@ struct MOTensor(MOType, CollectionElement):
         for i in range(len(self.dims)):
             dims.append(self.dims[i].to_mlir(m))
         return capi.tensor_type_new(
-            m.m,
+            m._module,
             self.dtype.to_mlir(m),
             dims,
             self.ranked,
@@ -677,7 +677,7 @@ struct MOList(MOType, CollectionElement):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return capi.list_type_new(m.m, self.eltype.to_mlir(m))
+        return capi.list_type_new(m._module, self.eltype.to_mlir(m))
 
     fn to_string(self, m: Module) -> String:
         """Converts to a maybe-human-readable string.

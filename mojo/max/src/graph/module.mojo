@@ -15,8 +15,8 @@ from . import _capi as capi
 
 
 @value
-struct Module:
-    var m: mlir.Module
+struct Module(Stringable):
+    var _module: mlir.Module
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
@@ -26,29 +26,29 @@ struct Module:
         var ctx = mlir.Context()
         ctx.load_modular_dialects()
         ctx.load_all_available_dialects()
-        self.m = mlir.Module(mlir.Location.unknown(ctx))
+        self._module = mlir.Module(mlir.Location.unknown(ctx))
 
     fn __str__(self) -> String:
-        return str(self.m)
+        return str(self._module)
 
     # ===------------------------------------------------------------------=== #
     # High level utilities
     # ===------------------------------------------------------------------=== #
 
     fn verify(self) raises:
-        if not self.m.as_op().verify():
+        if not self._module.as_op().verify():
             raise "Module did not verify"
 
     fn save_to_file(self, path: Path) raises:
         with open(path, "w") as file:
-            self.m.as_op().write(file)
+            self._module.as_op().write(file)
 
     # ===------------------------------------------------------------------=== #
     # Location factories
     # ===------------------------------------------------------------------=== #
 
     fn unknown_loc(self) -> mlir.Location:
-        return mlir.Location.unknown(self.m.context())
+        return mlir.Location.unknown(self._module.context())
 
     # ===------------------------------------------------------------------=== #
     # Attribute factories
@@ -59,7 +59,7 @@ struct Module:
     ](self, name: StringRef, owned value: Tensor[dtype]) -> mlir.NamedAttribute:
         let t = MOTensor(value.spec()).to_mlir(self)
         return capi.attr_new_tensor(
-            self.m,
+            self._module,
             name,
             value._steal_ptr().bitcast[DType.invalid](),
             t,
@@ -70,7 +70,7 @@ struct Module:
         self, name: StringRef, file_name: StringRef, type: MOTensor
     ) -> mlir.NamedAttribute:
         return capi.attr_new_tensor_from_file(
-            self.m, name, file_name, type.to_mlir(self)
+            self._module, name, file_name, type.to_mlir(self)
         )
 
     fn vector_attr[
@@ -79,7 +79,7 @@ struct Module:
         self, name: StringRef, values: DynamicVector[Scalar[dtype]]
     ) -> mlir.NamedAttribute:
         return capi.attr_new_tensor(
-            self.m,
+            self._module,
             name,
             values,
             MOTensor(dtype, len(values)).to_mlir(self),
@@ -101,7 +101,7 @@ struct Module:
     fn string_attr(
         self, name: StringRef, value: StringRef
     ) -> mlir.NamedAttribute:
-        let ctx = self.m.context()
+        let ctx = self._module.context()
         return mlir.NamedAttribute(
             name=mlir.Identifier(ctx, name),
             attr=StringAttr(ctx, value),
@@ -114,12 +114,12 @@ struct Module:
     fn graph(
         self, name: StringRef, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
-        let ctx = self.m.context()
+        let ctx = self._module.context()
         let loc = mlir.Location.unknown(ctx)
 
         let function_type = FunctionType(
             ctx, in_types.to_mlir(self), out_types.to_mlir(self)
         )
-        let op = capi.graph_new(self.m, loc, name, function_type)
+        let op = capi.graph_new(self._module, loc, name, function_type)
 
         return Graph(op)

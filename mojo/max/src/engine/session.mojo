@@ -265,7 +265,8 @@ struct LoadOptions(CollectionElement):
         Args:
             module: Max Graph module.
         """
-        self._source = ModelSource(module.m.c.ptr, FrameworkFormat.MAXGraph)
+        let mlir_module = module._module
+        self._source = ModelSource(mlir_module.c.ptr, FrameworkFormat.MAXGraph)
 
     fn _set_model_path(inout self, path: Path):
         """Specifies the loaction in filesystem to load model from.
