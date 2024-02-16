@@ -50,8 +50,10 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   pm.addPass(createLowerLITTypes());
   pm.addPass(createVerifyParameters());
 
-  // Slice MOGG functions out of the
-  pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
+  // Slice MOGG compute & shape functions out of base kernels.
+  // Debug info currently crashes so we will only run it on no debug builds.
+  if (options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug)
+    pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
 
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
