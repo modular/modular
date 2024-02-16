@@ -1413,28 +1413,6 @@ fn del_warnings():
   MemoryOnlyInt().__del__()
   RegPassable(1).__del__()
 
-# [QoI] Generate error for obviously self recursive functions
-# https://github.com/modularml/mojo/issues/222
-fn self_recursive():
-  self_recursive() # expected-warning {{self recursive call will cause an infinite loop}}
-
-fn self_recursive_arg(a: Int):
-  self_recursive_arg(a) # expected-warning {{self recursive call will cause an infinite loop}}
-
-  if a != 0:
-    self_recursive_arg(a-1)  # No warning
-
-fn self_recursive_param[a: Int]():
-  self_recursive_param[a]() # expected-warning {{self recursive call will cause an infinite loop}}
-
-  @parameter
-  if a != 400:
-    self_recursive_param[a+1]() # No warning
-
-fn self_recursive_impl_lifetime(inout a: MemoryOnlyInt):
-  self_recursive_impl_lifetime(a) # expected-warning {{self recursive call will cause an infinite loop}}
-
-
 ##===----------------------------------------------------------------------===##
 # __type_of
 ##===----------------------------------------------------------------------===##

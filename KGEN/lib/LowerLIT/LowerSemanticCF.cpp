@@ -28,7 +28,6 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace POP;
 
 //===----------------------------------------------------------------------===//
 // Semantic control flow lowering.
@@ -38,6 +37,7 @@ namespace {
 /// Each function is lowered in a depth first walk through the region tree.
 struct LowerSemanticCF {
   LIT::FuncOp theFunc;
+  SymbolRefAttr theFuncSymbol;
 
   // This is the current loop that a break or continue should exit from.
   HLCF::LoopOp currentLoop;
@@ -49,7 +49,14 @@ struct LowerSemanticCF {
   // True if we've emitted an error.
   bool hadError = false;
 
-  LowerSemanticCF(LIT::FuncOp theFunc) : theFunc(theFunc) {}
+  // When lowering control flow, notice any recursive calls to diagnose infinite
+  // recursion after the IR is validated and rewritten.
+  bool hasRecursiveCalls = false;
+
+  LowerSemanticCF(LIT::FuncOp theFunc) : theFunc(theFunc) {
+    if (!theFunc.isOptionalSymbol())
+      theFuncSymbol = LIT::getFullyResolvedSymbolRef(theFunc);
+  }
   void run();
 
 private:
@@ -57,6 +64,7 @@ private:
                   bool &doesFallThrough);
   bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
                     bool &enclosingBlockDoesBreak);
+  bool checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
 
@@ -269,8 +277,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         LIT::FuncOp funcOp = raiseOp->getParentOfType<LIT::FuncOp>();
         Type failedType = funcOp.getMLIRResultType();
         assert(isa<VariantType>(failedType));
-        b.create<LIT::ErrorReturnOp>(b.create<VariantCreateOp>(
-            raiseOp->getLoc(), failedType, raiseOp.getError(), 0));
+        b.create<LIT::ErrorReturnOp>(
+            b.create<VariantCreateOp>(failedType, raiseOp.getError(), 0));
       } else {
         assert(isa<LIT::TryOp>(opForRaise));
         b.create<LIT::TryRaiseOp>(raiseOp.getError());
@@ -314,6 +322,10 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       op.erase();
       return;
     }
+
+    // Notice self-recursive calls so we can check them out later.
+    if (auto call = dyn_cast<LIT::CallOp>(op))
+      hasRecursiveCalls |= call.getCallee().getSymbol() == theFuncSymbol;
 
     // Most ops don't have regions and are just fallthrough.
     // TODO: Add support for noreturn calls.
@@ -498,22 +510,81 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
   doesFallThrough = true;
 }
 
+/// This function is called to check to see if the function has any
+/// unconditional self-recursive calls.  Such a call will cause an infinite
+/// loop, so we generate a warning.
+///
+/// This function is invoked on blocks after SemanticCF lowering is done on the
+/// function. The "isConditional" argument indicates whether this is being
+/// called in a conditional context (e.g. under an if check).  This returns
+/// `true` if the block might early return out of the enclosing function with a
+/// return or throw, `false` if it will fall through.
+bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
+  for (Operation &op : llvm::make_early_inc_range(block)) {
+    // Notice self-recursive calls so we can check them out later.  If we are
+    // invoked in an unconditional area, we can emit the warning.
+    if (auto call = dyn_cast<LIT::CallOp>(op);
+        call && !isConditional &&
+        call.getCallee().getSymbol() == theFuncSymbol) {
+      emitWarning(call.getLoc(),
+                  "self recursive call will cause an infinite loop");
+      continue;
+    }
+
+    // If this is a return out of the function, notice this and we're done.
+    // LIT::TryRaiseOp/break/continue/etc are used for transfers to an enclosing
+    // try, which doesn't completely exit the function.
+    if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+      return true;
+
+    // Most ops don't have regions and are just fallthrough.
+    if (!op.getNumRegions())
+      continue;
+
+    // Ignore nested functions, they are handled separately by the outer walker.
+    if (isa<LIT::FuncOp>(op))
+      continue;
+
+    // If we are already in conditional code, or if this is an 'if'-like
+    // operation, then the subregions are executed conditionally.
+    bool isSubregionConditional =
+        isConditional || isa<HLCF::IfOp, ParamIfOp, LIT::HandleVariantOp>(op);
+    // Handle things like if statements, HLCF::Loop, try, etc.
+    for (auto &region : op.getRegions()) {
+      if (checkSelfRecursion(region.front(), isSubregionConditional))
+        return true;
+    }
+  }
+
+  // If we made it this far then we didn't early return.
+  return false;
+}
+
 /// Lower all lexical terminators in the function and remove dead code.
 void LowerSemanticCF::run() {
   bool doesRaise = false, doesBreak = false, doesFallThrough = false;
   lowerBlock(*theFunc.getBody(), doesRaise, doesBreak, doesFallThrough);
 
-  LIT::EndFuncOp endFunc =
-      dyn_cast<LIT::EndFuncOp>(theFunc.getBody()->getTerminator());
-
-  // we're done if explicitly terminated with a `return` or raise.
-  if (!endFunc || hadError)
+  // If we had an error already, don't diagnose more semantic issues.
+  if (hadError)
     return;
 
-  // A return is required if the function, diagnose it if missing.
-  emitError(endFunc->getLoc(),
-            "return expected at end of function with results");
-  hadError = true;
+  // A return is required at the end of function, diagnose it if missing.  The
+  // parser automatically inserts a `return None` in functions that return None.
+  if (LIT::EndFuncOp endFunc =
+          dyn_cast<LIT::EndFuncOp>(theFunc.getBody()->getTerminator())) {
+    emitError(endFunc->getLoc(),
+              "return expected at end of function with results");
+    hadError = true;
+    return;
+  }
+
+  // If everything looks good, check whether any self-recursive calls are
+  // unconditionally executed.  If so, they are infinite recursion.  We need
+  // control flow information to avoid diagnosing recursive calls in if
+  // statements.
+  if (hasRecursiveCalls)
+    (void)checkSelfRecursion(*theFunc.getBody(), /*isConditional=*/false);
 }
 
 //===----------------------------------------------------------------------===//

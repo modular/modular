@@ -752,3 +752,55 @@ lit.func @loop_with_cond_raise(%cond: i1) {
   lit.return
   lit.end_func
 }
+
+
+lit.func @self_recursive() -> !kgen.none {
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  %0 = lit.call @self_recursive() : !lit.signature<() -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
+lit.func @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  %0 = lit.call @self_recursive_arg(%a, %cond) : !lit.signature<("a": index, "cond": i1) -> !kgen.none>
+  hlcf.if %cond {
+    %4 = kgen.param.constant: index = <1>
+    %5 = index.sub %a, %4
+    // No warning.
+    %6 = lit.call @self_recursive_arg(%5, %cond) : !lit.signature<("a": index, "cond": i1) -> !kgen.none>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
+
+lit.func @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  %0 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.signature<() -> !kgen.none>
+  kgen.param.if <cond> {
+    // No warning.
+    %1 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.signature<() -> !kgen.none>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
+
+// #28551: Should report infinite recursion on this testcase
+lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
+  %one = kgen.param.constant: index = <1>
+  %b = index.sub %a, %one
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  lit.call @self_recursive_arg_diff(%b) : !lit.signature<("a": index) -> !kgen.none>
+
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
