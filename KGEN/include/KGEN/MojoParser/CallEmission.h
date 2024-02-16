@@ -168,6 +168,8 @@ public:
     std::function<void(const Binding &)> emitUnpack;
     /// Emit diagnostics when multiple unbound packs appear in parameter list.
     std::function<void(const Binding &)> emitMultipleUnboundPack;
+    /// Emit diagnostics for failure to deduce an infer-only parameter.
+    std::function<void(size_t)> emitInferOnlyFailure;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature

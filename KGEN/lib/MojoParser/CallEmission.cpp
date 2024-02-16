@@ -328,7 +328,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   for (auto [idx, type, paramName, passingKind] :
        llvm::enumerate(expectedParamTypes, paramNames, paramPassingKinds)) {
     // Check to see if we ran out of bindings to provide to this param decl.
-    if (posBindingIdx == numPosBindings) {
+    // Implicit parameters are infer-only. They cannot be explicitly passed.
+    if (posBindingIdx == numPosBindings ||
+        (parameterInferenceHook && passingKind == PassingKind::Implicit)) {
       // Determine what type we expect next.
       Type requestedType = evaluator.getReboundType(type);
       ASTType expectedType = requestedType;
@@ -371,6 +373,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
           continue;
+        }
+        if (passingKind == PassingKind::Implicit) {
+          diagEmitter.emitInferOnlyFailure(idx);
+          return {{}, fitness};
         }
       }
 
@@ -546,21 +552,21 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               bool hasParamVarArgs, StringRef baseName,
                               Location opLoc, llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
+  size_t maxAllowed =
+      expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = shared.emitError(exprLoc, "'") << baseName << "'";
         if (posOnly) {
           emitWrongArgOrParamCount(
               diag, /*minRequired=*/countNumPosOnly(paramPassingKinds),
-              /*maxAllowed=*/expectedParamTypes.size(), /*numActual=*/numActual,
-              "positional parameter");
+              maxAllowed, numActual, "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
                                defaultPosParams.size() -
                                defaultKwOnlyParams.size();
-          emitWrongArgOrParamCount(diag, minRequired,
-                                   /*maxAllowed=*/expectedParamTypes.size(),
-                                   numActual, "parameter");
+          emitWrongArgOrParamCount(diag, minRequired, maxAllowed, numActual,
+                                   "parameter");
         }
 
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
@@ -623,6 +629,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](const Binding &binding) {
         InflightDiag diag = shared.emitError(binding.expr->getLoc());
         diag << "multiple unbound pack symbols not allowed";
+      },
+      /*emitInferOnlyFailure=*/
+      [&](size_t paramIdx) {
+        llvm_unreachable("parameter deduction failure in a context that "
+                         "doesn't allow deduction");
       }};
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
@@ -645,7 +656,7 @@ ParamBindings::verifyBindings(LITSignatureType sig,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr,
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultPosParams(),

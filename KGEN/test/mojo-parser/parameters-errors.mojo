@@ -283,3 +283,25 @@ fn pass_no_traits(x: NoTraitsType):
     # expected-error @below {{invalid call to 'take_some_trait'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
     take_some_trait(x)
+
+@value
+@register_passable
+struct ParamType[p: Int]:
+    pass
+
+
+# expected-note @below {{function declared here}}
+fn autoparams[a: Int](x: ParamType):
+    pass
+
+
+fn invalid_params[f: fn(ParamType) -> None]():
+  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  autoparams[](ParamType[1]())
+  # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
+  autoparams[1, 2](ParamType[2]())
+  # expected-error @below {{failed to infer implicit parameter 'p' of argument 'x' type 'ParamType'}}
+  autoparams[1](1)
+
+  # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
+  f(1)
