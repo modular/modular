@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
@@ -456,11 +457,13 @@ private:
   // Enabling fusion involves materializing a call to the input/output lambda
   // within the body of the function and replacing all previous parameter uses
   // with that value.
-  void enableFusion(GeneratorOp gen, SmallVector<std::string> &inputLambdaNames,
-                    SmallVector<std::string> &outputLambdaNames,
-                    SmallVector<KGEN::CallOp> &enableFusionFuncs,
-                    SymbolTable &symTab) {
+  SmallVector<KGEN::ParamDeclareRegionOp>
+  enableFusion(GeneratorOp gen, SmallVector<std::string> &inputLambdaNames,
+               SmallVector<std::string> &outputLambdaNames,
+               SmallVector<KGEN::CallOp> &enableFusionFuncs,
+               SymbolTable &symTab) {
     Block *computeBlock = gen.getBody();
+    SmallVector<KGEN::ParamDeclareRegionOp> newLambdas;
 
     for (KGEN::CallOp enableFusionFunc : enableFusionFuncs) {
       std::string newLambdaName;
@@ -507,6 +510,8 @@ private:
       // Copy the param region into the body.
       auto newLambda = cast<KGEN::ParamDeclareRegionOp>(
           b.clone(*lambda->canonicalLambda, mapper));
+
+      newLambdas.push_back(newLambda);
 
       // Rebind the parameters of the lambda from the `self` argument in the
       // method onto the specific parameters of the tensor being used at the
@@ -625,6 +630,7 @@ private:
       if (call.getResult(0).use_empty())
         call->erase();
     }
+    return newLambdas;
   }
 
   // Each type has a lit type and a KGEN type. We can see the lit type easily by
@@ -703,6 +709,210 @@ private:
       }
     }
     return params;
+  }
+
+  void outlineFunction(GeneratorOp gen,
+                       SmallVector<KGEN::ParamDeclareRegionOp> &lambdas,
+                       CallOp elementwiseOp, SymbolTable &symTab) {
+    // We are either outlining the full function or just the inner elementwise.
+    SmallVector<Operation *> opsToClone;
+    ArrayRef<Type> returnTypes;
+
+    // If this is elementwise outline just the elementwise.
+    if (elementwiseOp) {
+      auto elemwiseLambda =
+          elementwiseOp
+              .getParamValues()[elementwiseOp.getParamValues().size() - 1];
+      auto asParam = dyn_cast<ParamDeclRefAttr>(elemwiseLambda);
+
+      // Look for the lambda and clone the body.
+      for (auto lambda : gen.getOps<KGEN::ParamDeclareRegionOp>()) {
+        if (lambda.getParamDecl().getName() == asParam.getName()) {
+          for (Operation &op : lambda.getOps())
+            opsToClone.push_back(&op);
+          returnTypes = lambda.getFunctionType().getResults();
+        }
+      }
+    } else {
+      for (Operation &op : gen.getOps()) {
+        // Don't include the input / output lambdas in the cloning. These are
+        // the input interfaces on the kernel we will clone into MOGG.
+        if (std::any_of(lambdas.begin(), lambdas.end(),
+                        [&](KGEN::ParamDeclareRegionOp lambda) {
+                          return &op == lambda;
+                        }))
+          continue;
+        opsToClone.push_back(&op);
+      }
+      returnTypes = gen.getFunctionType().getResults();
+    }
+
+    if (opsToClone.size() == 0)
+      return;
+
+    DenseSet<StringAttr> definedParams;
+
+    // Use set vectors for deterministic traversal. Identify parameters used in
+    // the block and any uses which originate from above.
+    llvm::SetVector<KGEN::ParamDeclRefAttr> usedParams;
+    DenseSet<Value> valuesDefinedInBlock;
+    llvm::SetVector<Value> usesFromAbove;
+
+    // Add a given decl to the list of param decls we know about and are
+    // tracking. Removing from the seen parameters if needed.
+    auto trackDefinedParams = [&](KGEN::ParamDeclAttr decl) {
+      usedParams.remove(KGEN::ParamDeclRefAttr::get(decl));
+      definedParams.insert(decl.getName());
+    };
+
+    mlir::AttrTypeWalker walker;
+    walker.addWalk([&](KGEN::ParamDeclRefAttr ref) {
+      if (!definedParams.contains(ref.getName()))
+        usedParams.insert(ref);
+    });
+
+    // Walk the ops and identify all parameters or SSA value inputs to the block
+    // which will become inputs to our outlined function.
+    auto identifyInputParamsAndValues = [&](Operation *op) {
+      if (op == gen)
+        return mlir::WalkResult::advance();
+
+      for (Value v : op->getResults()) {
+        valuesDefinedInBlock.insert(v);
+        usesFromAbove.remove(v);
+      }
+
+      for (Region &region : op->getRegions()) {
+        for (Value v : region.getArguments()) {
+          valuesDefinedInBlock.insert(v);
+          usesFromAbove.remove(v);
+        }
+
+        for (Block &block : region.getBlocks()) {
+          for (Value v : block.getArguments()) {
+            valuesDefinedInBlock.insert(v);
+            usesFromAbove.remove(v);
+          }
+        }
+      }
+
+      for (Value v : op->getOperands()) {
+        if (!valuesDefinedInBlock.contains(v))
+          usesFromAbove.insert(v);
+      }
+
+      for (Type t : op->getOperandTypes())
+        walker.walk(t);
+      for (Type t : op->getResultTypes())
+        walker.walk(t);
+      walker.walk(op->getAttrDictionary());
+
+      // Track parameters within lambda blocks ect.
+      if (auto definesParam = dyn_cast<KGEN::DeclInterface>(op)) {
+        for (KGEN::ParamDeclAttr decl : definesParam.getInputParams())
+          trackDefinedParams(decl);
+        for (KGEN::ParamDeclAttr decl : definesParam.getResultParams())
+          trackDefinedParams(decl);
+      }
+
+      if (auto definesParam = dyn_cast<KGEN::ParamOpInterface>(op)) {
+        // Remove any parameters which are defined internally within our region.
+        definesParam.walkDeclarations(
+            [&](KGEN::ParamDeclAttr decl) { trackDefinedParams(decl); });
+        definesParam.walkDefinitions(
+            [&](KGEN::ParamDeclAttr decl, const KGEN::ParamDefValue &) {
+              trackDefinedParams(decl);
+            });
+      }
+
+      return mlir::WalkResult::advance();
+    };
+
+    for (Operation *op : opsToClone)
+      op->walk(identifyInputParamsAndValues);
+
+    // Translate the input params / values into types needed to build the
+    // signature.
+    SmallVector<Type> inputArgTypes;
+    SmallVector<KGEN::ParamDeclAttr> asDecls;
+    SmallVector<KGEN::ParamDeclRefAttr> paramsAsArgument;
+    SmallVector<TypedAttr> paramArgs;
+
+    for (auto p : usedParams) {
+      asDecls.push_back(KGEN::ParamDeclAttr::get(p));
+      paramArgs.push_back(p);
+    }
+
+    inputArgTypes.reserve(usesFromAbove.size());
+    for (Value v : usesFromAbove)
+      inputArgTypes.push_back(v.getType());
+
+    OpBuilder builder{ctx};
+    builder.setInsertionPoint(gen);
+
+    // Create the outlined function to call.
+    auto newFuncType = FunctionType::get(ctx, inputArgTypes, returnTypes);
+    auto sigType = SignatureType::remapToSignature(
+        asDecls, {}, newFuncType,
+        /*argConventions=*/{}, KGEN::impl::FnEffects::Capturing);
+
+    std::string name = (Twine(gen.getSymName()) + Twine("_OUTLINED")).str();
+    auto outlinedFunction = builder.create<KGEN::GeneratorOp>(
+        gen.getLoc(), builder.getStringAttr(name), sigType, newFuncType,
+        asDecls, ArrayRef<KGEN::ParamDeclAttr>{});
+
+    // We are inlining the function we just outlined because the purpose of the
+    // outlining is just to make sure the graph compiler works on a minimal set
+    // of changes
+    outlinedFunction.setInlineLevel(KGEN::InlineLevel::Always);
+
+    Block &block = outlinedFunction.getCallableRegion()->emplaceBlock();
+    builder.setInsertionPointToStart(&block);
+
+    IRMapping mapper;
+
+    // Pass all the original arguments to the kernel.
+    for (Value v : usesFromAbove) {
+      Value newArg = block.addArgument(v.getType(), v.getLoc());
+      mapper.map(v, newArg);
+    }
+
+    for (Operation *op : opsToClone)
+      builder.clone(*op, mapper);
+
+    // Get the block we're adding before we remove it.
+    Block *insertPt = opsToClone[0]->getBlock();
+
+    // Remove the now dead ops.
+    for (Operation *op : opsToClone) {
+      op->dropAllUses();
+      op->erase();
+    }
+
+    builder.setInsertionPointToEnd(insertPt);
+
+    // Update the insertion point so we add the call in the right place.
+    symTab.insert(outlinedFunction);
+
+    // Finally add the call to the inlined function.
+    auto flatSym = FlatSymbolRefAttr::get(ctx, outlinedFunction.getNameAttr());
+
+    auto specializedSig =
+        outlinedFunction.getSignature().getSpecializedSignature(
+            paramArgs, outlinedFunction.getLoc());
+    auto symbol =
+        KGEN::SymbolConstantAttr::get(flatSym, paramArgs, specializedSig);
+
+    // Create the KGEN parameter bindings. I.E the <> "template" parameters.
+    // Note this is empty as we expect all parameters to be bound in the above
+    // sig.
+    KGEN::ParamDeclArrayAttr params = KGEN::ParamDeclArrayAttr::get(ctx, {});
+
+    auto callOp = builder.create<KGEN::CallOp>(
+        outlinedFunction.getLoc(), symbol.getType().getResults(), symbol,
+        params, usesFromAbove.getArrayRef());
+
+    builder.create<KGEN::ReturnOp>(gen.getLoc(), callOp->getResults());
   }
 
   void reparameterizeImpl(GeneratorOp gen,
@@ -1016,6 +1226,11 @@ public:
       // entry point for the thing we are going to execute.
       KGEN::GeneratorOp slicedComputeFunction = userKernel.clone();
 
+      std::string name =
+          (Twine(userKernel.getSymName()) + Twine("_COMPUTE")).str();
+
+      slicedComputeFunction.setSymName(name);
+
       // Search for any function which allocates a new tensor and a move from
       // that into one of the input operands (meaning it is actually an output).
       KGEN::CallOp allocationFunc, constructor;
@@ -1095,6 +1310,8 @@ public:
             arg, slicedComputeFunction, symTab));
       }
 
+      SmallVector<KGEN::ParamDeclareRegionOp> addedLambdas;
+
       bool isView = false;
       // Any MOGG annotated kernel which has no allocation should be treated as
       // a view.
@@ -1131,18 +1348,25 @@ public:
         allocationFunc.erase();
 
         // Turn on fusion for any tensors which have set fusion.
-        enableFusion(slicedComputeFunction, inputLambdaNames, outputLambdaNames,
-                     enableFusionFuncs, symTab);
+        addedLambdas =
+            enableFusion(slicedComputeFunction, inputLambdaNames,
+                         outputLambdaNames, enableFusionFuncs, symTab);
       }
+
+      // Strip all debug info. Its too annoying to maintain and there is no way
+      // to actually debug the sliced kernel directly. Users would debug the
+      // base kernel.
+      slicedComputeFunction.walk(
+          [](DebugInfo::ValueOp debug) { debug.erase(); });
+
+      // Add compute function part to the module, i.e the kernel sans
+      // allocation.
+      symTab.insert(slicedComputeFunction);
 
       // Remove all tensor parameters which have been instantiated explicitly by
       // MOGG, namely the input / output lambdas and the owned memory bool
       // attribute.
       reparameterizeImpl(slicedComputeFunction, kgenTensorParams, symTab);
-
-      // Add compute function part to the module, i.e the kernel sans
-      // allocation.
-      symTab.insert(slicedComputeFunction);
 
       GeneratorOp slicedShapeFunction;
 
@@ -1162,6 +1386,9 @@ public:
         slicedShapeFunction.setDecorators({});
         seenFuncs.insert(slicedShapeFunction);
       }
+
+      outlineFunction(slicedComputeFunction, addedLambdas, elementwiseOp,
+                      symTab);
 
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
