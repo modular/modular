@@ -19,7 +19,9 @@ struct TestTensor[rank: Int, type: DType]:
     var shape: StaticIntTuple[rank]
 
     fn __init__(inout self, shape: StaticIntTuple[rank]):
-        self.storage = DynamicVector[SIMD[type, 1]](shape.flattened_length())
+        self.storage = DynamicVector[SIMD[type, 1]](
+            capacity=shape.flattened_length()
+        )
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
 

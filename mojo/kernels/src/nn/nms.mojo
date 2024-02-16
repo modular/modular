@@ -198,10 +198,10 @@ fn non_max_suppression[
     if max_output_boxes_per_class == 0:
         return
 
-    var box_idxs = DynamicVector[Int64](num_boxes)
+    var box_idxs = DynamicVector[Int64](capacity=num_boxes)
     box_idxs.resize(num_boxes, 0)
 
-    var per_class_scores = DynamicVector[SIMD[type, 1]](num_boxes)
+    var per_class_scores = DynamicVector[SIMD[type, 1]](capacity=num_boxes)
     per_class_scores.resize(num_boxes, 0)
 
     for b in range(batch_size):
