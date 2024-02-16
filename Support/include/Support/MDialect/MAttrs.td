@@ -355,8 +355,10 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
   let extraClassDeclaration = [{
     /// Returns device ref in compact string form.
     std::string toString() const;
-  }];
 
+    /// Returns the default M.device_ref<"cpu", 0> device ref.
+    static DeviceRefAttr getDefault(mlir::MLIRContext* ctx);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
