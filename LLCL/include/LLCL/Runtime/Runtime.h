@@ -247,6 +247,9 @@ struct RuntimeOptions {
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
   };
+
+  static size_t canonicalizeNumThreads(size_t numThreads);
+
   size_t numThreads = 0;
   bool singleThreaded = false;
   std::string profileFilename = {};

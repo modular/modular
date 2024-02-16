@@ -9,6 +9,12 @@
 
 using namespace M::LLCL;
 
+size_t RuntimeOptions::canonicalizeNumThreads(size_t numThreads) {
+  if (numThreads)
+    return numThreads;
+  return M::getNumPhysicalCores();
+}
+
 std::unique_ptr<Runtime>
 RuntimeOptions::createRuntime(StringRef profileName) const {
   RuntimeOptions runtimeOptions; //{*this};
