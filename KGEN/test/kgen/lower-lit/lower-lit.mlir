@@ -457,7 +457,7 @@ lit.file_module @module {
   }
 
   lit.struct.decl @Adder<size> {
-    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !lit.declref<@"module::Adder"<size>> owned)
+    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !lit.declref<#Adder <size>> owned)
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
     lit.func @__add__(%self: !lit.declref<@module::@Adder<size>>)  {
       kgen.call @module::@test() : () -> ()
@@ -468,7 +468,7 @@ lit.file_module @module {
   // CHECK-LABEL: lit.struct.decl @"module::Adder"<size> {
 }
 
-// CHECK-LABEL: kgen.generator @caller(%arg0: !lit.declref<@"module::Adder"<10>> owned)
+// CHECK-LABEL: kgen.generator @caller(%arg0: !lit.declref<#Adder <10>> owned)
 lit.func @caller(%ref: !lit.declref<@module::@Adder<10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
   kgen.call @module::@Adder::@__add__<10>(%ref) : (!lit.declref<@module::@Adder<10>>) -> ()

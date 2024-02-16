@@ -230,7 +230,7 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: Reference<{{.*}}, :i1 0, :lifetime<0> *"a`">
+# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`">
 fn testLifetimeOf1(a: MemExample) ->
   Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a

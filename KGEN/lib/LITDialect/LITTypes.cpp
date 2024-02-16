@@ -268,6 +268,24 @@ DeclRefType::verifySymbolUses(Operation *module,
       getSymbol().getLeafReference(), specializedDecls, decl.getLoc());
 }
 
+static ParseResult
+parseParameterizedSymbol(AsmParser &p, SymbolAttr &symbol,
+                         SmallVectorImpl<TypedAttr> &paramValues) {
+  if (p.parseCustomAttributeWithFallback(symbol) ||
+      parseParameterValues(p, paramValues))
+    return failure();
+  return success();
+}
+
+static void printParameterizedSymbol(AsmPrinter &p, SymbolAttr symbol,
+                                     ArrayRef<TypedAttr> paramValues) {
+  if (!paramValues.empty() && succeeded(p.printAlias(symbol)))
+    p << ' ';
+  else
+    p << symbol.getValue();
+  printParameterValues(p, paramValues);
+}
+
 void DeclRefType::printSymbol(AsmPrinter &p) const {
   // Use the alias printer if suitable.
   if (succeeded(p.printAlias(*this)))

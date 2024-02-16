@@ -8,7 +8,7 @@
 
 
 # CHECK-LABEL: lit.func @"import_of_import
-# CHECK-SAME: @stdlib::@builtin::@simd::@SIMD<
+# CHECK-SAME: #SIMD <:!DType {:dtype f64}, :!Int {1}>
 fn import_of_import(arg: Float64):
     pass
 

@@ -89,14 +89,23 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
     if (!attr)
       return AliasResult::NoAlias;
 
-    return TypeSwitch<Attribute, AliasResult>(attr)
-        .Case([&](DocStringAttr attr) {
-          // Doc strings are nearly always long, so make sure to print them as
-          // aliases.
-          os << "doc_string";
-          return AliasResult::OverridableAlias;
-        })
-        .Default([](Attribute) { return AliasResult::NoAlias; });
+    if (isa<DocStringAttr>(attr)) {
+      // Doc strings are nearly always long, so make sure to print them as
+      // aliases.
+      os << "doc_string";
+      return AliasResult::OverridableAlias;
+    }
+
+    if (auto symbol = dyn_cast<SymbolAttr>(attr)) {
+      if (std::optional<StringRef> alias =
+              DeclRefType::getAliasName(symbol.getValue())) {
+        os << *alias;
+        return AliasResult::OverridableAlias;
+      }
+      return AliasResult::NoAlias;
+    }
+
+    return AliasResult::NoAlias;
   }
 };
 

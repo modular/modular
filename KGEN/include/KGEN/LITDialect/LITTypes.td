@@ -182,7 +182,7 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
     "Type":$metaType
   );
   let assemblyFormat = [{
-    `<` $value `` custom<ParameterValues>($paramValues) ``
+    `<` custom<ParameterizedSymbol>($value, $paramValues) ``
         custom<OptionalMetaType>($metaType, ref($value), ref($paramValues)) `>`
   }];
 
@@ -247,7 +247,8 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
                            "TypeSignatureType::get($_ctxt)">:$signature
   );
   let assemblyFormat = [{
-    `<` $value `` custom<ParameterValues>($paramValues) (`,` $signature^)? `>`
+    `<` custom<ParameterizedSymbol>($value, $paramValues) ``
+        (`,` $signature^)? `>`
   }];
 
   let builders = [

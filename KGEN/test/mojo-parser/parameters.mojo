@@ -36,8 +36,8 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
   return a
 
 # CHECK-LABEL: lit.func @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
-# CHECK-SAME: (%x: {{.*}}@OurSIMD<:!Int size, :!DType dt>{{.*}}> borrow,
-# CHECK-SAME: %exp: {{.*}}@OurSIMD<:!Int size, :!DType dt>{{.*}}> borrow) -> !Int
+# CHECK-SAME: (%x: {{.*}}#OurSIMD <:!Int size, :!DType dt>{{.*}}> borrow,
+# CHECK-SAME: %exp: {{.*}}#OurSIMD <:!Int size, :!DType dt>{{.*}}> borrow) -> !Int
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -73,18 +73,18 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<{{.*}}TestParamStruct<:!Int [[A]]>{{.*}}> borrow,
-  # CHECK-SAME: %other: {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}> borrow)
+  # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.declref<#TestParamStruct <:!Int [[A]]>{{.*}}> borrow,
+  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int apply({{.*}}__add__{{.*}}, [[A]], B)>{{.*}}> borrow)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
-  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: {{.*}}@TestParamStruct<
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A*A+1
     # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
     alias C = B*A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}#TestParamStruct <:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
     var temp: TestParamStruct[C]
@@ -149,16 +149,16 @@ fn implConversion[a: StructWithIntParam[42]]():
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
 @register_passable
 struct Pair[dt: DType]:
- # CHECK: lit.struct.field a : {{.*}}@OurSIMD<:!Int {{.*}}42{{.*}}, :!DType dt>{{.*}}>
+ # CHECK: lit.struct.field a : {{.*}}#OurSIMD <:!Int {{.*}}42{{.*}}, :!DType dt>{{.*}}>
  # CHECK: lit.struct.field b : !Int
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}@Pair<:!DType dt>{{.*}}> attributes {{.*}}isStatic
+  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}#Pair <:!DType dt>{{.*}}> attributes {{.*}}isStatic
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: !Int = <{4}>
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}@OurSIMD<:!Int {42}, :!DType dt>{{.*}}>, !Int) -> {{.*}}@Pair<:!DType dt>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#OurSIMD <:!Int {42}, :!DType dt>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -225,7 +225,7 @@ struct TwoParams[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"signature_capture{{.*}}"<
 # CHECK-SAME: a: !Int,
-# CHECK-SAME: f: !lit.signature<<"b": !Int>() ownedresult -> {{.*}}TwoParams<:!Int a, :!Int *(0,0)>{{.*}}>
+# CHECK-SAME: f: !lit.signature<<"b": !Int>() ownedresult -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
@@ -243,14 +243,14 @@ fn pass_str_param():
 
 # CHECK-LABEL: lit.func @"implicit_params
 # CHECK-SAME: <?, [[VALUE0:.*]]: !Int, [[VALUE1:.*]]: !Int>
-# CHECK-SAME: %value: {{.*}}@TwoParams<:!Int [[VALUE0]], :!Int [[VALUE1]]>
+# CHECK-SAME: %value: {{.*}}#TwoParams <:!Int [[VALUE0]], :!Int [[VALUE1]]>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
 # CHECK-SAME: <a: !Int, ?, [[LHS0:.*]]: !Int, [[LHS1:.*]]: !Int, [[RHS0:.*]]: !Int, [[RHS1:.*]]: !Int>
-# CHECK-SAME: %lhs: {{.*}}@TwoParams<:!Int [[LHS0]], :!Int [[LHS1]]>
-# CHECK-SAME: %rhs: {{.*}}@TwoParams<:!Int [[RHS0]], :!Int [[RHS1]]>
+# CHECK-SAME: %lhs: {{.*}}#TwoParams <:!Int [[LHS0]], :!Int [[LHS1]]>
+# CHECK-SAME: %rhs: {{.*}}#TwoParams <:!Int [[RHS0]], :!Int [[RHS1]]>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
@@ -274,8 +274,8 @@ fn test_implicit_params_with_var_params():
 
 # CHECK-LABEL: lit.func @"explicit_autoparameterization
 # CHECK-SAME: "<?, [[V0:.*]]: !Int, [[W0:.*]]: !Int, [[W1:.*]]: !Int>(
-# CHECK-SAME: %v: {{.*}}::@TwoParams<:!Int {5}, :!Int [[V0]]>
-# CHECK-SAME: %w: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>
+# CHECK-SAME: %v: {{.*}}#TwoParams <:!Int {5}, :!Int [[V0]]>
+# CHECK-SAME: %w: {{.*}}#TwoParams <:!Int [[W0]], :!Int [[W1]]>
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
@@ -596,11 +596,11 @@ fn testParameterEvaluator():
   alias x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.varlet.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
-  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<:!Int {3}>
+  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}#Abstraction <:!Int {3}>
   # CHECK-NEXT: lit.ref.store %1, %y
   var y : Abstraction[3] = Abstraction[1].push[2]()
   # CHECK-NEXT: [[Y:%.*]] = lit.ref.load %y
-  # CHECK-NEXT: [[RB:%.*]] = kgen.rebind [[Y]] : {{.*}}@Abstraction<:!Int {3}
+  # CHECK-NEXT: [[RB:%.*]] = kgen.rebind [[Y]] : {{.*}}#Abstraction <:!Int {3}
   # CHECK-NEXT: lit.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>([[RB]])
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: lit.call {{.*}}@"testDependentType{{.*}}"<:!Int {1}, :array<1, index> [0]>
@@ -658,8 +658,8 @@ fn fn_with_param[x: Int](y: Abstraction[x]):
 fn indirect_call_infer_params():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = fn_with_param
-    # CHECK: call_param[!lit.signature<("y": {{.*}}Abstraction<:!Int {2}>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction<:!Int *(0,0)>
+    # CHECK: call_param[!lit.signature<("y": {{.*}}#Abstraction <:!Int {2}>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: [[CALLEE]], {2}
     callee(Abstraction[2]())
 
@@ -834,7 +834,7 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
-    # CHECK: lit.alias.decl *"T{{.*}}": metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
+    # CHECK: lit.alias.decl *"T{{.*}}": metatype<{{.*}}#AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     alias T = AllDefaultParams[]
