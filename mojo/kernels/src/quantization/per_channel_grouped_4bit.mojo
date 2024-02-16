@@ -204,26 +204,26 @@ fn calculate_symmetric_vector[
         input_dtype.is_floating_point(),
         "expect accumulating over floating point only.",
     ]()
-    let max_value = data.reduce_max()
-    let min_value = data.reduce_min()
-    let result_range = max(max_value, -min_value)
+    var max_value = data.reduce_max()
+    var min_value = data.reduce_min()
+    var result_range = max(max_value, -min_value)
 
     # quantize as if we were signed, and convert back to unsigned later
-    let positive_steps = (1 << (output_bits - 1)) - 1
-    let negative_steps = (1 << (output_bits - 1))
+    var positive_steps = (1 << (output_bits - 1)) - 1
+    var negative_steps = (1 << (output_bits - 1))
 
     # Handle the case we only have one type of value in `data`, e.g.
     # data = [12., 12., 12., 12.], then the scale is 1/12.0 and the quantized
     # data is ~[1, 1, 1, 1] + `negative_steps`
-    let f32_scale = (max_value / 1.0) if (
+    var f32_scale = (max_value / 1.0) if (
         result_range == 0
     ) else result_range / positive_steps
 
     # TODO: consider clipping values
-    let data_rounded = roundeven(data / f32_scale).cast[DType.int8]()
+    var data_rounded = roundeven(data / f32_scale).cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
-    let data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
+    var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
 
     return data_quantized, f32_scale
 
@@ -291,14 +291,14 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
         Args:
             data: The floating point data to encode and store.
         """
-        let quantization_tuple = calculate_symmetric_vector[
+        var quantization_tuple = calculate_symmetric_vector[
             float_dtype, group_size, 4
         ](data)
-        let qdata = quantization_tuple.get[0, SIMD[DType.uint8, group_size]]()
-        let f_scale = quantization_tuple.get[1, SIMD[float_dtype, 1]]()
+        var qdata = quantization_tuple.get[0, SIMD[DType.uint8, group_size]]()
+        var f_scale = quantization_tuple.get[1, SIMD[float_dtype, 1]]()
 
         # TODO: add warning if we overflow/underflow
-        let f16_scale = f_scale.cast[DType.float16]()
+        var f16_scale = f_scale.cast[DType.float16]()
         self.scale = _to_StaticTuple(bitcast[DType.uint8, 2](f16_scale))
         self.bits = _to_StaticTuple(self._encode_bits(qdata))
         self._check_constraints()
@@ -308,16 +308,16 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
     fn _encode_bits(
         qdata: SIMD[DType.uint8, group_size]
     ) -> SIMD[DType.uint8, group_size // 2]:
-        let lower_elements = qdata.slice[group_size // 2]() << 4
-        let upper_elements = qdata.slice[group_size // 2](group_size // 2)
+        var lower_elements = qdata.slice[group_size // 2]() << 4
+        var upper_elements = qdata.slice[group_size // 2](group_size // 2)
         return lower_elements | upper_elements
 
     @always_inline
     fn _decode_bits(inout self) -> SIMD[DType.uint8, group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        let bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
-        let bits_upper = (bits_simd & 0xF0) >> 4
-        let bits_lower = (bits_simd & 0x0F)
+        var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
+        var bits_upper = (bits_simd & 0xF0) >> 4
+        var bits_lower = (bits_simd & 0x0F)
         return rebind[SIMD[DType.uint8, group_size]](
             bits_upper.join(bits_lower)
         )
@@ -332,7 +332,7 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
         """
         # We avoid bit-casting directly, as the code-generation might hit a
         # path which attempts to bitcast 2xui8 --> f16 which is not typically supported
-        let scale_bytes: SIMD[DType.uint8, 2] = _to_SIMD[DType.uint8, 2](
+        var scale_bytes: SIMD[DType.uint8, 2] = _to_SIMD[DType.uint8, 2](
             self.scale
         )
 
@@ -341,8 +341,8 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        let final_result = upcast_bytes.reduce_add()
-        let scale_decoded = bitcast[DType.float16, 1](final_result)
+        var final_result = upcast_bytes.reduce_add()
+        var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
     @always_inline
@@ -369,7 +369,7 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
           The decoded stored numbers as int8 numbers. These have a zero-point of
           0.
         """
-        let decoded_result = self.decode_unsigned()
+        var decoded_result = self.decode_unsigned()
         return decoded_result.cast[DType.int8]() - 8
 
     @always_inline
@@ -381,9 +381,9 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
           The decoded numbers.
         """
         # Obtain the fully dequantized values
-        let signed_result = self.decode_signed()
-        let scale_decoded = self.decode_scale().cast[float_dtype]()
-        let answer = scale_decoded.cast[float_dtype]() * signed_result.cast[
+        var signed_result = self.decode_signed()
+        var scale_decoded = self.decode_scale().cast[float_dtype]()
+        var answer = scale_decoded.cast[float_dtype]() * signed_result.cast[
             float_dtype
         ]()
         return answer
@@ -418,36 +418,36 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        let size_of_block = sizeof[Q4sym[group_size, float_dtype]]()
+        var size_of_block = sizeof[Q4sym[group_size, float_dtype]]()
         debug_assert(
             input_shape[rank - 1] % group_size == 0,
             "Only support fully divisible dimensions right now.",
         )
 
-        let blob_output_ptr = output_tensor.data.address
-        let base_block_ptr = bitcast[Q4sym[group_size, float_dtype]](
+        var blob_output_ptr = output_tensor.data.address
+        var base_block_ptr = bitcast[Q4sym[group_size, float_dtype]](
             blob_output_ptr
         )
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        let outer_stride = prod_dims[0, rank - 1](input_tensor)
-        let input_inner_stride = input_shape[rank - 1]
-        let output_inner_stride = div_ceil(input_shape[rank - 1], group_size)
+        var outer_stride = prod_dims[0, rank - 1](input_tensor)
+        var input_inner_stride = input_shape[rank - 1]
+        var output_inner_stride = div_ceil(input_shape[rank - 1], group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_stride):
             for j in range(output_inner_stride):
-                let flat_index_input = input_inner_stride * i + j * group_size
-                let loaded_group = input_tensor.data.simd_load[group_size](
+                var flat_index_input = input_inner_stride * i + j * group_size
+                var loaded_group = input_tensor.data.simd_load[group_size](
                     flat_index_input
                 )
 
-                let flat_index_output = output_inner_stride * i + j
-                let output_ptr = base_block_ptr + flat_index_output
+                var flat_index_output = output_inner_stride * i + j
+                var output_ptr = base_block_ptr + flat_index_output
 
                 # TODO: use the memory more directly instead of memcpy
                 var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
-                let src_ptr = Pointer.address_of(
+                var src_ptr = Pointer.address_of(
                     encoded_data
                 ).address_space_cast[output_ptr.address_space]()
                 memcpy(output_ptr, src_ptr, 1)
@@ -481,22 +481,22 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
 
         # TODO: check contiguous inputs and outputs
 
-        let uint8_input_ptr = input_tensor.data.address
-        let base_block_ptr = bitcast[Q4sym[group_size, float_dtype]](
+        var uint8_input_ptr = input_tensor.data.address
+        var base_block_ptr = bitcast[Q4sym[group_size, float_dtype]](
             uint8_input_ptr
         )
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        let output_inner_dim = output_shape[rank - 1]
-        let outer_dim = prod_dims[0, rank - 1](output_tensor)
+        var output_inner_dim = output_shape[rank - 1]
+        var outer_dim = prod_dims[0, rank - 1](output_tensor)
 
         # Note: this is calculated assuming a pointer of Q5Sym's
-        let input_inner_dim = div_ceil(output_inner_dim, group_size)
+        var input_inner_dim = div_ceil(output_inner_dim, group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_dim):
             for j in range(input_inner_dim):
-                let flat_index_input = input_inner_dim * i + j
+                var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
                     Pointer.address_of(encoded),
@@ -504,7 +504,7 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
                     1,
                 )
 
-                let flat_index_output = output_inner_dim * i + j * group_size
+                var flat_index_output = output_inner_dim * i + j * group_size
                 output_tensor.data.simd_store[group_size](
                     flat_index_output, encoded.decode_fully()
                 )
@@ -527,8 +527,8 @@ fn _block_quantize_a[
     a_quant: NDBuffer[DType.int8, 2],
     a_scale: NDBuffer[scale_type, 2],
 ):
-    let M = a.dim[0]()
-    let K = a.dim[1]()
+    var M = a.dim[0]()
+    var K = a.dim[1]()
 
     var a_ptr = a.data
     var a_quant_ptr = a_quant.data
@@ -538,12 +538,12 @@ fn _block_quantize_a[
     # quantization.
     for m in range(M):
         for k in range(0, K, group_size):
-            let fp_data = a_ptr.simd_load[group_size]()
-            let max_value = abs(fp_data).reduce_max()
-            let scale = max_value / 127.0
-            let multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
+            var fp_data = a_ptr.simd_load[group_size]()
+            var max_value = abs(fp_data).reduce_max()
+            var scale = max_value / 127.0
+            var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
-            let quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
+            var quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
             a_quant_ptr.simd_store(quant_data)
             a_scale_ptr.simd_store(scale.cast[scale_type]())
 
@@ -591,7 +591,7 @@ fn _matmul_int4_dotprod[
 
         # Adjust the `b` unpacked weights from values in the unsigned range
         # [0:15] to the signed range [-8:7].
-        let b_s8 = b - 8
+        var b_s8 = b - 8
 
         @parameter
         if has_neon_int8_dotprod() and simd_width == 4:
@@ -616,8 +616,8 @@ fn _matmul_int4_dotprod[
 
     @unroll
     for idx in range(0, group_size, simd_width * 4):
-        let a_slice = a.slice[simd_width * 4](idx)
-        let b_slice = b.slice[simd_width * 4](idx)
+        var a_slice = a.slice[simd_width * 4](idx)
+        var b_slice = b.slice[simd_width * 4](idx)
         c = dotprod(a_slice, b_slice, c)
 
     return c
@@ -639,11 +639,11 @@ fn _process_rows[
     alias block_size = sizeof[Q4sym[group_size, type]]()
     alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
 
-    let N = b.dim[0]()
-    let K = a_quant.dim[1]()
-    let k_groups = K // group_size
+    var N = b.dim[0]()
+    var K = a_quant.dim[1]()
+    var k_groups = K // group_size
 
-    let accum_fp_tile = NDBuffer[
+    var accum_fp_tile = NDBuffer[
         type, 2, DimList(row_count, simd_width)
     ].stack_allocation()
 
@@ -657,14 +657,14 @@ fn _process_rows[
             accum_fp_tile.simd_store(Index(row, 0), SIMD[type, simd_width](0))
 
         for k in range(0, k_groups):
-            let b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
-            let b_scale = bitcast[DType.float16, 1](
+            var b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
+            var b_scale = bitcast[DType.float16, 1](
                 b_ptr.offset(0).simd_load[2]()
             ).cast[type]()
-            let b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
-            let b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
+            var b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
+            var b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
 
-            let b_data_i8: SIMD[DType.int8, 2 * b_data_i8_hi.size]
+            var b_data_i8: SIMD[DType.int8, 2 * b_data_i8_hi.size]
 
             @parameter
             if are_nibbles_reversed:
@@ -674,12 +674,12 @@ fn _process_rows[
 
             @unroll
             for row in range(row_count):
-                let a_data_i8 = a_quant_ptr.offset(row * K).simd_load[
+                var a_data_i8 = a_quant_ptr.offset(row * K).simd_load[
                     group_size
                 ]()
-                let a_scale = a_scale_ptr.offset(row * k_groups)[0].cast[type]()
+                var a_scale = a_scale_ptr.offset(row * k_groups)[0].cast[type]()
 
-                let c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
+                var c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
                     a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
                 )
                 var accum_fp = accum_fp_tile.simd_load[simd_width](
@@ -694,7 +694,7 @@ fn _process_rows[
 
         @unroll
         for row in range(row_count):
-            let accum_fp = accum_fp_tile.simd_load[simd_width](Index(row, 0))
+            var accum_fp = accum_fp_tile.simd_load[simd_width](Index(row, 0))
             c.simd_store(Index(row + m, n), accum_fp.reduce_add())
 
 
@@ -709,26 +709,26 @@ fn matmul_int4[
 ) raises:
     alias block_size = sizeof[Q4sym[group_size, type]]()
 
-    let M = a.dim[0]()
-    let N = b.dim[0]()
-    let K = a.dim[1]()
-    let k_groups = K // group_size
+    var M = a.dim[0]()
+    var N = b.dim[0]()
+    var K = a.dim[1]()
+    var k_groups = K // group_size
 
     if b.dim[1]() % block_size != 0:
         raise Error("unexpected b shape")
 
-    let a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
-    let a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
+    var a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
+    var a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
 
-    let a_quant = NDBuffer[DType.int8, 2](a_quant_base_ptr, Index(M, K))
-    let a_scale = NDBuffer[DType.float32, 2](
+    var a_quant = NDBuffer[DType.int8, 2](a_quant_base_ptr, Index(M, K))
+    var a_scale = NDBuffer[DType.float32, 2](
         a_scale_base_ptr, Index(M, k_groups)
     )
 
     _block_quantize_a[group_size](a, a_quant, a_scale)
 
     alias grain_size = 8
-    let num_workers = div_ceil(M, grain_size)
+    var num_workers = div_ceil(M, grain_size)
 
     @__copy_capture(M, a_quant, a_scale)
     @parameter
@@ -736,9 +736,9 @@ fn matmul_int4[
     fn task_func(task_id: Int):
         alias row_batch_count = 4
 
-        let start_item = task_id * grain_size
-        let end_item = min(M, start_item + grain_size)
-        let end_batch_item = align_down(end_item, row_batch_count)
+        var start_item = task_id * grain_size
+        var end_item = min(M, start_item + grain_size)
+        var end_batch_item = align_down(end_item, row_batch_count)
 
         for m in range(start_item, end_batch_item, row_batch_count):
             _process_rows[group_size, row_batch_count, are_nibbles_reversed](
