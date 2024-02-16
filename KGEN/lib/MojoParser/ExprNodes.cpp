@@ -1306,8 +1306,12 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
-      emitter.emitError(operand.getLoc(),
-                        "unpacked arguments are not supported yet");
+      auto diag = emitter.emitError(operand.getLoc());
+      ExprNode *packedExpr = dyn_cast<UnaryOpNode>(operand.value)->subExpr;
+      if (packedExpr && packedExpr->kind == ExprNode::kDiscardLiteral)
+        diag << "unbound packs not supported yet in runtime arguments";
+      else
+        diag << "unpacked arguments are not supported yet";
       return {};
     }
 
@@ -1405,14 +1409,14 @@ static PValue substituteParametersIntoUserDefinedType(
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter);
   for (const Operand &operand : operands) {
-    auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
-    if (!indexVal)
+    auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
+    if (!pValue)
       return {};
 
     if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.value, indexVal.get(), operand.name);
+      paramBindings.add(operand.value, pValue.get(), operand.name);
     else
-      paramBindings.add(operand.value, indexVal.get());
+      paramBindings.add(operand.value, pValue.get());
   }
 
   // Check the bindings.
@@ -2483,25 +2487,38 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   }
 
   if (kind == kUnpack) {
-    if (auto pValue = argValue.ir.getIfPValue()) {
-      // There are two distinct cases of unpacking:
-      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
-      //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This
-      //    is handled with the special function `__iter__`.
-      // 2. Unpacking in a type annotation, e.g. `*args: *Ts`, with the result
-      //    being akin to the types of `Ts` being mapped to the type
-      //    annotations for the arguments `args`: `args[0]: Ts[0], args[1]:
-      //    Ts[1], ...`. This is not handled with a special function of any
-      //    kind, and so is handled here.
-      if (!isa<VariadicType>(pValue.get().getType())) {
-        emitter.emitError(expr->getLoc(),
-                          "only variadic types may be unpacked");
-        return {};
-      }
-      auto typeExpr = TypeConstantAttr::get(
-          PackType::get(pValue.get()), TypeType::get(emitter.getContext()));
-      return emitter.emitResult(typeExpr, expr, dest);
+    auto pValue =
+        emitter.emitPValue({argValue.ir, argValue.expr}, dest.getContext());
+    if (!pValue) {
+      emitter.emitError(expr->getLoc(),
+                        "dynamic values not supported in unpacking");
+      return {};
     }
+    // There are two distinct cases of unpacking:
+    // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
+    //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This is
+    //    handled with an UnpackedAttr.
+    // 2. Unpacking in a type annotation, e.g. `*args: *Ts`, with the result
+    //    being akin to the types of `Ts` being mapped to the type annotations
+    //    for the arguments `args`: `args[0]: Ts[0], args[1]: Ts[1], ...`. This
+    //    is not handled with a special function of any kind, and so is handled
+    //    here.
+    if (auto varType = dyn_cast<VariadicType>(pValue.getType())) {
+      if (isa<TypeType, MetaTypeType, TraitType, ParamRefType>(
+              varType.getElementType())) {
+        auto packTypeExpr = TypeConstantAttr::get(
+            PackType::get(pValue.get()), TypeType::get(emitter.getContext()));
+        return emitter.emitResult(packTypeExpr, expr, dest);
+      }
+    } else if (!isa<UnboundAttr>(pValue.get())) {
+      // UnboundAttr corresponds to `*_`, but otherwise we expect a types.
+      emitter.emitError(expr->getLoc(), "only variadic types may be unpacked");
+      return {};
+    }
+
+    auto unpackedExpr =
+        UnpackedAttr::get(pValue, UnpackedType::get(pValue.getType()));
+    return emitter.emitResult(unpackedExpr, expr, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.

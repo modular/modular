@@ -291,6 +291,13 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
   let parameters = (ins "TypedAttr":$value,
                         AttributeSelfTypeParameter<"", "UnpackedType">:$type);
   let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
+                                        "UnpackedType":$type), [{
+      return get(type.getContext(), value, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

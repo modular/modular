@@ -155,6 +155,12 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
   }];
   let parameters = (ins "Type":$exprType);
   let assemblyFormat = "`<` custom<ParamType>($exprType) `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$exprType), [{
+      return get(exprType.getContext(), exprType);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
