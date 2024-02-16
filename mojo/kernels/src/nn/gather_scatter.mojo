@@ -119,8 +119,8 @@ fn gather_reduce[
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
-    let num_threads = Runtime().parallelism_level()
-    let num_tasks = min(
+    var num_threads = Runtime().parallelism_level()
+    var num_tasks = min(
         div_ceil(
             indices.dim[0]()
             * indices.dim[1]()
@@ -131,7 +131,7 @@ fn gather_reduce[
         num_threads,
     )
 
-    let out_vecs_per_thread = div_ceil(indices.dim[0](), num_tasks)
+    var out_vecs_per_thread = div_ceil(indices.dim[0](), num_tasks)
 
     var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
 
@@ -139,13 +139,13 @@ fn gather_reduce[
     if output_rank == 3:
         output_2d_dims[1] = output.dim[2]()
 
-    let output_bind = NDBuffer[type, 2](output.data, output_2d_dims)
-    let input_bind = rebind[NDBuffer[type, 2]](input)
-    let indices_bind = rebind[
+    var output_bind = NDBuffer[type, 2](output.data, output_2d_dims)
+    var input_bind = rebind[NDBuffer[type, 2]](input)
+    var indices_bind = rebind[
         NDBuffer[DType.int32, indices_rank, indices_shape]
     ](indices)
 
-    let gather_axis_size = input.get_shape()[gather_axis]
+    var gather_axis_size = input.get_shape()[gather_axis]
 
     @always_inline
     @__copy_capture(
@@ -159,14 +159,14 @@ fn gather_reduce[
     fn task_func(task_id: Int):
         alias prefetch_offset = -1
 
-        let output = output_bind
-        let input = input_bind
-        let indices = indices_bind
-        let row_size = output.dim[1]()
+        var output = output_bind
+        var input = input_bind
+        var indices = indices_bind
+        var row_size = output.dim[1]()
 
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
-        let out_vec_start = task_id * out_vecs_per_thread
-        let out_vec_end = min(
+        var out_vec_start = task_id * out_vecs_per_thread
+        var out_vec_end = min(
             (task_id + 1) * out_vecs_per_thread, indices.dim[0]()
         )
 
@@ -196,13 +196,13 @@ fn gather_reduce[
                     j: Int,
                 ) -> StaticTuple[unroll_factor, SIMD[type, simd_width]]:
                     var out = accums
-                    let idxs = normalize_neg_index(
+                    var idxs = normalize_neg_index(
                         indices.simd_load[unroll_factor](i, j), gather_axis_size
                     )
 
                     @unroll
                     for unroll_idx in range(0, unroll_factor):
-                        let gather_chunk = input.simd_load[simd_width](
+                        var gather_chunk = input.simd_load[simd_width](
                             int(idxs[unroll_idx]), k
                         )
                         out[unroll_idx] = reduce_fn[type, simd_width](
@@ -210,7 +210,7 @@ fn gather_reduce[
                         )
                     return out
 
-                let j_residual_start = align_down(indices.dim[1](), j_tile_size)
+                var j_residual_start = align_down(indices.dim[1](), j_tile_size)
                 var accums = StaticTuple[j_tile_size, SIMD[type, simd_width]](
                     reduce_init
                 )
@@ -229,7 +229,7 @@ fn gather_reduce[
                         StaticTuple[1, SIMD[type, simd_width]](accum), j
                     )[0]
 
-                let out_idx = StaticIntTuple[2](i, k)
+                var out_idx = StaticIntTuple[2](i, k)
                 output.simd_store[simd_width](out_idx, accum)
 
             tile[
@@ -261,7 +261,7 @@ fn gather[
 
     alias prefetch_offset = 12  # TODO: search
 
-    let end_indices_ptr = indices.flatten().data.offset(indices.size())
+    var end_indices_ptr = indices.flatten().data.offset(indices.size())
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -272,20 +272,20 @@ fn gather[
         _input_coords: StaticIntTuple[_input_rank],
         _indices_coords: StaticIntTuple[_indices_rank],
     ):
-        let __input_coords = _input_coords
+        var __input_coords = _input_coords
         var input_coords = rebind[StaticIntTuple[input_rank]](__input_coords)
-        let indices_coords = rebind[StaticIntTuple[indices_rank]](
+        var indices_coords = rebind[StaticIntTuple[indices_rank]](
             _indices_coords
         )
 
         @parameter
         if prefetch_offset > 0:
-            let indices_ptr = indices._offset(indices_coords)
-            let indices_remaining = (
+            var indices_ptr = indices._offset(indices_coords)
+            var indices_remaining = (
                 end_indices_ptr.__as_index() - indices_ptr.__as_index()
             ) // sizeof[indices_type]()
             # assumes that indices are layed out in row major order
-            let next_idx_ptr = indices._offset(indices_coords) + min(
+            var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
             input_coords[axis] = int(
@@ -427,12 +427,12 @@ fn gather_elementwise_fn_wrapper[
         unroll[indices_get, indices_rank]()
 
         # The index we are gathering.
-        let data_index = indices_fn[1, indices_rank](indices_index)
+        var data_index = indices_fn[1, indices_rank](indices_index)
 
         # Update the indices with the new data index.
         var data_indices = StaticIntTuple[input_rank]()
 
-        let skip_factor = indices_rank - 1
+        var skip_factor = indices_rank - 1
 
         # Build the indices for the input. We have replaced in index in 'axis'
         # with an index from the indices tensor.
@@ -457,7 +457,7 @@ fn gather_elementwise_fn_wrapper[
         if prefetch_fn:
             alias func = prefetch_fn.value()
             func[input_rank, indices_rank](data_indices, indices_index)
-        let data = input_fn[simd_width, input_rank](data_indices)
+        var data = input_fn[simd_width, input_rank](data_indices)
 
         # Store it to the original index.
         output_fn[simd_width, rank](idx, data)
@@ -694,13 +694,13 @@ fn scatter_nd_generator[
             " indices_shape[-1] - 1"
         )
 
-    let output_flat = output.flatten()
-    let data_flat = data.flatten()
-    let updates_flat = updates.flatten()
+    var output_flat = output.flatten()
+    var data_flat = data.flatten()
+    var updates_flat = updates.flatten()
 
-    let data_shape = data.get_shape()
-    let indices_shape = indices.get_shape()
-    let last_shape_of_indices = indices_shape[indices_rank - 1]
+    var data_shape = data.get_shape()
+    var indices_shape = indices.get_shape()
+    var last_shape_of_indices = indices_shape[indices_rank - 1]
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices,
     # we will be copying (gather):
@@ -708,11 +708,11 @@ fn scatter_nd_generator[
     #   row (r_minus_m = 1),
     #   sheet (r_minus_m = 2),
     #   cuboid (r_minus_m = 3), etc.
-    let r_minus_m = data_rank - last_shape_of_indices
+    var r_minus_m = data_rank - last_shape_of_indices
 
     @parameter
     if target == "cuda":
-        let stream = Stream.get_current_stream()
+        var stream = Stream.get_current_stream()
         try:
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             _copy_device_to_device_async(
@@ -740,7 +740,7 @@ fn scatter_nd_generator[
         var count_copy = 1
         for i in range(r_minus_m):
             count_copy = count_copy * data_shape[data_rank - 1 - i]
-        let indices_coords = rebind[StaticIntTuple[_rank]](_indices_coords)
+        var indices_coords = rebind[StaticIntTuple[_rank]](_indices_coords)
 
         # Stores the full index on output, where to copy updates to.
         # Zeroing here to avoid doing it selectively within the nested loop below.
@@ -763,14 +763,14 @@ fn scatter_nd_generator[
         for dim in range(last_shape_of_indices):
             # Size of current dimension on data.
             # Used to compare to index on this dimension (idx_on_axis).
-            let input_ax_dim = data_shape[dim]
+            var input_ax_dim = data_shape[dim]
 
             for i in range(_rank):
                 indices_index[i] = indices_coords[i]
             indices_index[indices_rank - 1] = dim
 
-            let idx_on_axis = indices[indices_index]
-            let pos_idx_on_axis = int(
+            var idx_on_axis = indices[indices_index]
+            var pos_idx_on_axis = int(
                 normalize_neg_index(idx_on_axis, input_ax_dim)
             )
             output_index_tensor[dim] = pos_idx_on_axis
@@ -890,7 +890,7 @@ fn scatter_nd_shape[
     if indices_rank < 1:
         raise Error("[scatter_nd] indices cannot be a scalar")
 
-    let num_sliced_dims = indices.dim(indices_rank - 1)
+    var num_sliced_dims = indices.dim(indices_rank - 1)
     if num_sliced_dims > input_rank:
         raise Error(
             "[scatter_nd] cannot slice more dimensions than what input has"
@@ -985,8 +985,8 @@ fn gather_shape[
     # compute and return the output shape
     var output_shape = StaticIntTuple[output_rank]()
 
-    let input_shape = input_buf.get_shape()
-    let indices_shape = indices_buf.get_shape()
+    var input_shape = input_buf.get_shape()
+    var indices_shape = indices_buf.get_shape()
 
     # NOTE it's written this way instead of 3 separate for-loops because
     # currently KGEN unrolling only works for strictly static bounds, but `axis`
@@ -1046,25 +1046,25 @@ fn scatter_elements[
             "axis in scatter_elements must be in the range [-rank, rank)"
         )
 
-    let axis = _axis if _axis >= 0 else _axis + rank
+    var axis = _axis if _axis >= 0 else _axis + rank
 
     # Do serial or parallel memcpy depending on output size.
     parallel_memcpy[input_type](output.data, input.data, output.size())
 
-    let input_ax_dim = input.get_shape()[axis]
+    var input_ax_dim = input.get_shape()[axis]
 
     @__copy_capture(index_ax_dim, axis, input_ax_dim)
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
     ](_indices_coords: StaticIntTuple[_rank]):
-        let indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
-        let idx_on_axis = indices[indices_coords]
+        var indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
+        var idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
         output_coords[axis] = int(
             normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        let curr = output[output_coords]
+        var curr = output[output_coords]
         output[output_coords] = reduce_fn[input_type, 1](
             curr, updates[indices_coords]
         )
@@ -1120,9 +1120,9 @@ fn scatter_elements_shape[
     # Check individual dimensions
     @unroll
     for axis in range(rank):
-        let input_dim = input.dim(axis)
-        let indices_dim = indices.dim(axis)
-        let updates_dim = updates.dim(axis)
+        var input_dim = input.dim(axis)
+        var indices_dim = indices.dim(axis)
+        var updates_dim = updates.dim(axis)
         if indices_dim != updates_dim:
             raise Error(
                 "[scatter] indices and updates must have the same shape"
@@ -1170,17 +1170,17 @@ fn gather_elements[
             "axis in gather_elements must be in the range [-rank, rank)"
         )
 
-    let axis = _axis if _axis >= 0 else _axis + rank
+    var axis = _axis if _axis >= 0 else _axis + rank
 
-    let input_ax_dim = input.get_shape()[axis]
+    var input_ax_dim = input.get_shape()[axis]
 
     @__copy_capture(input_ax_dim, axis)
     @parameter
     fn gather_func[
         simd_width: Int, _rank: Int
     ](_output_coords: StaticIntTuple[_rank]):
-        let output_coords = rebind[StaticIntTuple[rank]](_output_coords)
-        let idx_on_axis = indices[output_coords]
+        var output_coords = rebind[StaticIntTuple[rank]](_output_coords)
+        var idx_on_axis = indices[output_coords]
         var input_coords = output_coords
         input_coords[axis] = int(normalize_neg_index(idx_on_axis, input_ax_dim))
         output[output_coords] = input[input_coords]
@@ -1231,8 +1231,8 @@ fn gather_nd_shape[
     if input_rank < 1 or indices_rank < 1:
         raise Error("[gather_nd] input_rank and indices_rank must be >= 1")
 
-    let indices_shape = indices_buf.get_shape()
-    let index_size = indices_shape[indices_rank - 1]
+    var indices_shape = indices_buf.get_shape()
+    var index_size = indices_shape[indices_rank - 1]
     if index_size < 1 or input_rank - batch_dims < index_size:
         raise Error(
             "[gather_nd] index size must be within range [1, input_rank -"
@@ -1245,7 +1245,7 @@ fn gather_nd_shape[
     var output_shape = StaticIntTuple[output_rank]()
     var next_out_dim = 0
 
-    let input_shape = input_buf.get_shape()
+    var input_shape = input_buf.get_shape()
 
     @unroll
     for i in range(batch_dims):
@@ -1313,7 +1313,7 @@ fn gather_nd[
         "Constraint: data_rank >= 1 and indices_rank >= 1",
     ]()
 
-    let indices_shape = indices.get_shape()
+    var indices_shape = indices.get_shape()
     debug_assert(
         1 <= indices_shape[indices_rank - 1] <= data_rank - batch_dims,
         "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
@@ -1326,14 +1326,14 @@ fn gather_nd[
     for i in range(batch_dims):
         batch_dims_size = batch_dims_size * indices_shape[i]
 
-    let last_shape_of_indices = indices_shape[indices_rank - 1]
-    let num_elems = indices.num_elements()
+    var last_shape_of_indices = indices_shape[indices_rank - 1]
+    var num_elems = indices.num_elements()
     # Reshape indices array, as 3D array. All batch_dims_size elements go to the
     # outermost dimension, and elements of amount equal to indices.shape[-1] go
     # to the innermost.
     # Equivalent to numpy:
     # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
-    let reshaped_indices = reshape[indices_rank, 3, indices_type, True](
+    var reshaped_indices = reshape[indices_rank, 3, indices_type, True](
         indices.make_dims_unknown(),
         StaticIntTuple[3](
             batch_dims_size,
@@ -1342,8 +1342,8 @@ fn gather_nd[
         ),
     )
 
-    let reshaped_indices_shape = reshaped_indices.get_shape()
-    let data_shape = data.get_shape()
+    var reshaped_indices_shape = reshaped_indices.get_shape()
+    var data_shape = data.get_shape()
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
     alias reshaped_data_rank = data_rank + 1 - batch_dims
@@ -1355,15 +1355,15 @@ fn gather_nd[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
     # Do the actual reshaping.
-    let reshaped_data = reshape[data_rank, reshaped_data_rank, type, True](
+    var reshaped_data = reshape[data_rank, reshaped_data_rank, type, True](
         data.make_dims_unknown(), reshaped_data_tuple
     )
 
-    let reshaped_data_shape = reshaped_data.get_shape()
+    var reshaped_data_shape = reshaped_data.get_shape()
 
     # idx[] stores the index from where to gather the requested elements.
-    let idx_ptr = DTypePointer[DType.index].alloc(reshaped_indices_shape[2])
-    let idx = NDBuffer[DType.index, 1](idx_ptr, reshaped_indices_shape[2])
+    var idx_ptr = DTypePointer[DType.index].alloc(reshaped_indices_shape[2])
+    var idx = NDBuffer[DType.index, 1](idx_ptr, reshaped_indices_shape[2])
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
     # we will be copying (gather):
@@ -1371,7 +1371,7 @@ fn gather_nd[
     #   row (r_minus_m = 1),
     #   sheet (r_minus_m = 2),
     #   cuboid (r_minus_m = 3), etc.
-    let r_minus_m = data_rank - last_shape_of_indices - batch_dims
+    var r_minus_m = data_rank - last_shape_of_indices - batch_dims
     # Calculate how many elements to copy (this is from the innermost
     # dimensions, and is continuous memory locations).
     var count_copy = 1
@@ -1382,7 +1382,7 @@ fn gather_nd[
 
     # Stores the full index on reshaped_data, where to copy from.
     # It is constructed within the nested loop below.
-    let start_tensor = NDBuffer[
+    var start_tensor = NDBuffer[
         DType.index,
         1,
         DimList(reshaped_data_rank),
@@ -1397,8 +1397,8 @@ fn gather_nd[
             # the batches dimension - recall all batch dimensions are reshaped
             # into one - the outermost).
             for constr in range(reshaped_indices_shape[2]):
-                let input_ax_dim = reshaped_data.get_shape()[constr + 1]
-                let idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
+                var input_ax_dim = reshaped_data.get_shape()[constr + 1]
+                var idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
                 idx[constr] = int(
                     normalize_neg_index(idx_on_axis, input_ax_dim)
                 )
@@ -1418,7 +1418,7 @@ fn gather_nd[
                 )
 
             # Calculate the output_offset where to copy the data.
-            let output_offset = output_buffer_copy_ind * (count_copy)
+            var output_offset = output_buffer_copy_ind * (count_copy)
             output_buffer_copy_ind = output_buffer_copy_ind + 1
 
             # Perform the actual copy of element/slice/sheet/cuboid/etc.

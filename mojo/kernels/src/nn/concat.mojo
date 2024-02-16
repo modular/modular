@@ -83,10 +83,10 @@ struct _CanonicallyReshapedBuffer:
 fn _canonical_reshape[
     rank: Int, type: DType
 ](buf: NDBuffer[type, rank], axis: Int) -> _CanonicallyReshapedBuffer:
-    let shape = buf.get_shape()
-    let h = product(shape, 0, axis)
-    let w = buf.dim(axis)
-    let c = product(shape, axis + 1, rank) * sizeof[type]()
+    var shape = buf.get_shape()
+    var h = product(shape, 0, axis)
+    var w = buf.dim(axis)
+    var c = product(shape, axis + 1, rank) * sizeof[type]()
     return _CanonicallyReshapedBuffer(buf.data.bitcast[DType.uint8](), h, w, c)
 
 
@@ -97,7 +97,7 @@ fn _canonical_reshape_output[
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
 ) -> _CanonicallyReshapedBuffer:
-    let input0_canon = _canonical_reshape(inputs[0], axis)
+    var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
     for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
@@ -116,19 +116,19 @@ fn _concat_parallel[
     axis: Int,
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
 ):
-    let output_canon = _canonical_reshape_output(output, axis, inputs)
+    var output_canon = _canonical_reshape_output(output, axis, inputs)
 
-    let output_h = output_canon.h
-    let output_w = output_canon.w
-    let output_c = output_canon.c
-    let output_wc = output_w * output_c
-    let output_data = output_canon.data
+    var output_h = output_canon.h
+    var output_w = output_canon.w
+    var output_c = output_canon.c
+    var output_wc = output_w * output_c
+    var output_data = output_canon.data
 
-    let total_output_bytes = output_h * output_wc
+    var total_output_bytes = output_h * output_wc
 
     alias KB = 1024
     alias parallel_chunk_size = 64 * KB  # TODO autotune
-    let num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
+    var num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
 
     @__copy_capture(
         total_output_bytes, output_h, output_c, output_data, output_wc
@@ -137,47 +137,47 @@ fn _concat_parallel[
     fn do_chunk(chunk_index: Int):
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
-        let chunk_start_amount = chunk_index * parallel_chunk_size
-        let chunk_end_amount = min(
+        var chunk_start_amount = chunk_index * parallel_chunk_size
+        var chunk_end_amount = min(
             (chunk_index + 1) * parallel_chunk_size, total_output_bytes
         )
-        let chunk_span = _Span(chunk_start_amount, chunk_end_amount)
+        var chunk_span = _Span(chunk_start_amount, chunk_end_amount)
 
         var amount_traversed = 0
         var output_wc_offset = 0
 
         for input_index in range(len(inputs)):
-            let input = inputs[input_index]
-            let input_canon = _canonical_reshape(input, axis)
-            let input_h = input_canon.h
-            let input_w = input_canon.w
-            let input_c = input_canon.c
-            let input_wc = input_w * input_c
-            let input_data = input_canon.data
+            var input = inputs[input_index]
+            var input_canon = _canonical_reshape(input, axis)
+            var input_h = input_canon.h
+            var input_w = input_canon.w
+            var input_c = input_canon.c
+            var input_wc = input_w * input_c
+            var input_data = input_canon.data
             debug_assert(input_h == output_h, "input_h != output_h")
             debug_assert(input_c == output_c, "input_c != output_c")
-            let input_byte_size = input_h * input_wc
+            var input_byte_size = input_h * input_wc
 
-            let input_span = _Span(
+            var input_span = _Span(
                 amount_traversed, amount_traversed + input_byte_size
             )
-            let overlap_span = chunk_span.intersect(input_span)
+            var overlap_span = chunk_span.intersect(input_span)
 
             if not overlap_span.empty():
                 # These are offsets of what we're trying to compute relative to
                 # the start of the input buffer.
-                let overlap_rel_start = overlap_span.start - input_span.start
-                let overlap_rel_end = overlap_span.end - input_span.start
+                var overlap_rel_start = overlap_span.start - input_span.start
+                var overlap_rel_end = overlap_span.end - input_span.start
                 # These are offsets into the input, chopping off the ends so as
                 # to align to an integral 'h' index.
-                let overlap_full_rel_start = align_up(
+                var overlap_full_rel_start = align_up(
                     overlap_rel_start, input_wc
                 )
-                let overlap_full_rel_end = align_down(overlap_rel_end, input_wc)
+                var overlap_full_rel_end = align_down(overlap_rel_end, input_wc)
 
                 if overlap_full_rel_end < overlap_full_rel_start:
                     # If we hit here, this was probably a bad chunking choice,
-                    # but let's handle it correctly anyways.
+                    # but var's handle it correctly anyways.
                     memcpy(
                         output_data.offset(
                             output_wc_offset
@@ -189,7 +189,7 @@ fn _concat_parallel[
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
-                    # nice solid middle section -- let's handle those
+                    # nice solid middle section -- var's handle those
                     # separately.
                     # First, leading stragglers:
                     memcpy(
@@ -203,7 +203,7 @@ fn _concat_parallel[
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.offset(overlap_full_rel_start)
-                    let end_in_ptr = input_data.offset(overlap_full_rel_end)
+                    var end_in_ptr = input_data.offset(overlap_full_rel_end)
                     var out_ptr = output_data.offset(
                         output_wc_offset
                         + overlap_full_rel_start // input_wc * output_wc
@@ -250,25 +250,25 @@ fn _concat[
 
     """
 
-    let h = product(inputs[0].get_shape(), 0, axis)
-    let c = product(inputs[0].get_shape(), axis + 1, rank)
+    var h = product(inputs[0].get_shape(), 0, axis)
+    var c = product(inputs[0].get_shape(), axis + 1, rank)
 
     var w_out: Int = 0
     for i in range(len(inputs)):
         w_out += inputs[i].dim(axis)
 
-    let stride_h_out = w_out * c
-    let stride_w_out = c
+    var stride_h_out = w_out * c
+    var stride_w_out = c
 
     var w_offset: Int = 0
     for i in range(len(inputs)):
         # copy one w x c slice along h at a time
-        let w = inputs[i].dim(axis)
+        var w = inputs[i].dim(axis)
         for j in range(h):
-            let input_offset = j * w * c
-            let output_offset = j * stride_h_out + w_offset * stride_w_out
-            let in_slice = Buffer[type](inputs[i].data + input_offset, w * c)
-            let out_slice = Buffer[type](output.data + output_offset, w * c)
+            var input_offset = j * w * c
+            var output_offset = j * stride_h_out + w_offset * stride_w_out
+            var in_slice = Buffer[type](inputs[i].data + input_offset, w * c)
+            var out_slice = Buffer[type](output.data + output_offset, w * c)
             # these slices are contiguous
             memcpy(out_slice, in_slice)
         w_offset += w
@@ -284,7 +284,7 @@ fn _concat_inner[
 ):
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
-        let buffer_len = inputs[i].size()
+        var buffer_len = inputs[i].size()
         memcpy[type](
             output.data.offset(num_elems_copied), inputs[i].data, buffer_len
         )
@@ -324,15 +324,15 @@ fn _concat_serial[
 ):
     _check_input_consistency[rank, type](axis, inputs)
 
-    var all_outer_dims_singleton = True
+    var all_outer_dims_singvaron = True
     for i in range(axis):
         if inputs[0].dim(i) == 1:
             continue
 
-        all_outer_dims_singleton = False
+        all_outer_dims_singvaron = False
         break
 
-    if all_outer_dims_singleton:
+    if all_outer_dims_singvaron:
         _concat_inner[rank, type](output, inputs)
         return
 
@@ -368,13 +368,13 @@ fn _concat_small[
 
         # Iterate through the inputs to find the one we should be storing to.
         for i in range(len(inputs)):
-            let input = inputs[i]
+            var input = inputs[i]
 
             # This is the input we should be loading/storing.
             if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
                 in_index[axis] = target_dim
-                let load = rebind[NDBuffer[type, rank]](input).simd_load[
+                var load = rebind[NDBuffer[type, rank]](input).simd_load[
                     simd_width
                 ](in_index)
                 rebind[NDBuffer[type, rank]](output).simd_store[simd_width](
@@ -427,7 +427,7 @@ fn _concat_cpu[
     alias KB = 1024
     alias min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    let output_bytes = output.num_elements() * sizeof[type]()
+    var output_bytes = output.num_elements() * sizeof[type]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
@@ -513,7 +513,7 @@ fn _concat_gpu_impl[
     inputs: InlinedFixedVector[NDBuffer[type, rank]],
 ) raises:
     try:
-        let num_inputs = len(inputs)
+        var num_inputs = len(inputs)
         # TODO: The number of Variadic arguments are know at compile time,
         # we should replace InlinedFixedVector with StaticTuple for any
         # operation that accept Variadic<MO_Tensor>
@@ -1280,8 +1280,8 @@ fn _concat_inner_most_single_dim[
     output: NDBuffer[type, rank],
     inputs: StaticTuple[num_inputs, NDBuffer[type, rank]],
 ):
-    let idx = BlockIdx.x() * block_size + ThreadIdx.x()
-    let index = _get_start_indices_of_nth_subvolume[rank, 1](
+    var idx = BlockIdx.x() * block_size + ThreadIdx.x()
+    var index = _get_start_indices_of_nth_subvolume[rank, 1](
         idx, output.dynamic_shape
     )
 
@@ -1344,7 +1344,7 @@ fn _concat_gpu[
 
         # can use binary search here to reduce num iters to log2(num_inputs)
         for i in range(num_inputs):
-            let input = inputs[i]
+            var input = inputs[i]
 
             if in_index[axis] < input.get_shape()[axis]:
                 output[rebind[StaticIntTuple[rank]](out_index)] = input[
@@ -1363,7 +1363,7 @@ fn _concat_gpu[
 
         if inner_most_unit_dim:
             alias block_size = 32
-            let func = Function[
+            var func = Function[
                 fn (
                     NDBuffer[type, rank],
                     StaticTuple[

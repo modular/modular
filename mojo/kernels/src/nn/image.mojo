@@ -134,7 +134,7 @@ struct ImageData[
             data layout.
         """
 
-        let image_shape = ImageShape.__init__[shape, type, static_layout](self)
+        var image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
         @__copy_capture(image_shape)
@@ -178,7 +178,7 @@ struct ImageData[
             A StaticIntTuple containing the index in NCHW order.
         """
 
-        let image_shape = ImageShape.__init__[shape, type, static_layout](self)
+        var image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
         @__copy_capture(image_shape)
@@ -186,13 +186,13 @@ struct ImageData[
         fn _compute_index_nchw() -> StaticIntTuple[4]:
             # Index [N,C,H,W]
             var lidx = idx
-            let w_idx = lidx % image_shape.W
+            var w_idx = lidx % image_shape.W
             lidx = lidx // image_shape.W
-            let h_idx = lidx % image_shape.H
+            var h_idx = lidx % image_shape.H
             lidx = lidx // image_shape.H
-            let c_idx = lidx % image_shape.C
+            var c_idx = lidx % image_shape.C
             lidx = lidx // image_shape.C
-            let n_idx = lidx
+            var n_idx = lidx
             return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
 
         @always_inline
@@ -201,13 +201,13 @@ struct ImageData[
         fn _compute_index_nhwc() -> StaticIntTuple[4]:
             # Index [N,H,W,C]
             var lidx = idx
-            let c_idx = lidx % image_shape.C
+            var c_idx = lidx % image_shape.C
             lidx = lidx // image_shape.C
-            let w_idx = lidx % image_shape.W
+            var w_idx = lidx % image_shape.W
             lidx = lidx // image_shape.W
-            let h_idx = lidx % image_shape.H
+            var h_idx = lidx % image_shape.H
             lidx = lidx // image_shape.H
-            let n_idx = lidx
+            var n_idx = lidx
             return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
 
         @parameter

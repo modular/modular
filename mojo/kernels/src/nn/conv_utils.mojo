@@ -170,32 +170,32 @@ struct ConvShape[rank: Int]:
 
         @parameter
         if rank == 1:
-            let w = output_flat_coord * self.stride[0] - self.pad_w[0]
+            var w = output_flat_coord * self.stride[0] - self.pad_w[0]
 
             return self.c * w
 
         elif rank == 2:
             # Unpack output coordinates
-            let ho = output_flat_coord // self.wo()
-            let wo = output_flat_coord % self.wo()
+            var ho = output_flat_coord // self.wo()
+            var wo = output_flat_coord % self.wo()
 
             # Input coordinates
-            let h = ho * self.stride[0] - self.pad_h[0]
-            let w = wo * self.stride[1] - self.pad_w[0]
+            var h = ho * self.stride[0] - self.pad_h[0]
+            var w = wo * self.stride[1] - self.pad_w[0]
 
             return self.c * (w + self.w() * (h + n * self.h()))
 
         elif rank == 3:
             # Unpack output coordinates
-            let doho = output_flat_coord // self.wo()
-            let wo = output_flat_coord % self.wo()
-            let do = doho // self.ho()
-            let ho = doho % self.ho()
+            var doho = output_flat_coord // self.wo()
+            var wo = output_flat_coord % self.wo()
+            var do = doho // self.ho()
+            var ho = doho % self.ho()
 
             # Input coordinates
-            let d = do * self.stride[0] - self.pad_d[0]
-            let h = ho * self.stride[1] - self.pad_h[0]
-            let w = wo * self.stride[2] - self.pad_w[0]
+            var d = do * self.stride[0] - self.pad_d[0]
+            var h = ho * self.stride[1] - self.pad_h[0]
+            var w = wo * self.stride[2] - self.pad_w[0]
 
             return self.c * (
                 w + self.w() * (h + self.h() * (d + self.d() * self.n))
@@ -374,7 +374,7 @@ fn get_conv2d_shape[
         or (filter_rank == 5 and filter_layout == Image2DLayout.FRSCf)
     ]()
 
-    let filter_dims: StaticIntTuple[2]
+    var filter_dims: StaticIntTuple[2]
 
     @parameter
     if filter_rank == 4 and filter_layout == Image2DLayout.RSCF:
@@ -442,19 +442,19 @@ fn get_conv_tile_shape[
     alias simd_size = simdwidthof[type]()
 
     # Number of elements in tile.
-    let tile_size = get_conv_tile_size[type]()
+    var tile_size = get_conv_tile_size[type]()
     # Number of elements in micro kernel's f dimension.
-    let micro_kernel_f = micro_kernel_width * simd_size
+    var micro_kernel_f = micro_kernel_width * simd_size
     # Max C tile size, assuming R, S, and micro_kernel_f are covered.
     # Round up to multiple simd_size
-    let CF_tile_size = tile_size // filter_window_size
-    let max_c_tile_size = max(
+    var CF_tile_size = tile_size // filter_window_size
+    var max_c_tile_size = max(
         CF_tile_size // micro_kernel_f // simd_size, 1
     ) * simd_size
     # C tile size is bounded by the input channels.
-    let c_tile_size = min(max_c_tile_size, c)
+    var c_tile_size = min(max_c_tile_size, c)
     # F tile size is rounded up to multiple micro_kernel_f.
-    let f_tile_size = max(
+    var f_tile_size = max(
         CF_tile_size // c_tile_size // micro_kernel_f, 1
     ) * micro_kernel_f
 
@@ -600,7 +600,7 @@ fn get_micro_kernel_shape[
             if has_padding:
                 # Traverse the possible combinations (14, 2), (9, 3), (6, 4), and (5, 5).
                 for n in range(2, 6):
-                    let m = (num_avx512_registers - 1) // n - 1
+                    var m = (num_avx512_registers - 1) // n - 1
                     # Short circuit if the row fit in one micro kernel and F is divisible.
                     # E.x. for WO=7 and F=512, 7x2 can be a better micro kernel than 7x3
                     # for multi-threading due to partition granularity (kernel width) in F.
@@ -623,8 +623,8 @@ fn get_micro_kernel_shape[
                 var micro_kernel_height = -1
                 var micro_kernel_width = -1
                 for n in range(2, 3):
-                    let m = (num_avx2_registers - 1) // n - 1
-                    let num_residual = WO_val * (F_val % (n * simd_size)) + (
+                    var m = (num_avx2_registers - 1) // n - 1
+                    var num_residual = WO_val * (F_val % (n * simd_size)) + (
                         WO_val % m
                     ) * F_val
                     if num_residual < min_num_residual:
@@ -694,7 +694,7 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     # for direct conv may be different.
     alias min_task_size = 64 * 1024
     # fmt: off
-    let complexity = conv_shape.matmul_M() * conv_shape.matmul_N() \
+    var complexity = conv_shape.matmul_M() * conv_shape.matmul_N() \
                    * conv_shape.matmul_K()
     # fmt: on
     # Ensure at most one task per thread.
@@ -709,7 +709,7 @@ fn get_conv_num_partitions[
     The actual number of tasks are the product of return num_partitions.
     """
 
-    let max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+    var max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
 
     # Heuristic parameters for partitioning
     # AVX512, partitioning channel can be beneficial for some shapes.
@@ -724,22 +724,22 @@ fn get_conv_num_partitions[
     # alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
     # alias min_c_per_task = 64
 
-    let matmul_M = conv_shape.matmul_M()
-    let matmul_N = conv_shape.matmul_N()
-    let matmul_K = conv_shape.matmul_K()
+    var matmul_M = conv_shape.matmul_M()
+    var matmul_N = conv_shape.matmul_N()
+    var matmul_K = conv_shape.matmul_K()
 
     # Accessing A is more expensive in im2col than accessing B.
-    # Time a factor to M to let the heuristic bias on partitioning M.
+    # Time a factor to M to var the heuristic bias on partitioning M.
     # TODO: make this bias factor part of function parameter/argument and
     # unifies interface with matmul partition, e.x. bias=1 for matmul.
-    let bias = 0.25
-    let matmul_M_biased = max(
+    var bias = 0.25
+    var matmul_M_biased = max(
         (Float32(matmul_M) * bias).cast[DType.index]().value, 1
     )
 
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
-    let ideal_num_col_tasks = sqrt(
+    var ideal_num_col_tasks = sqrt(
         div_ceil(matmul_N * max_num_tasks, matmul_M_biased)
     )
     var num_row_tasks = max_num_tasks // ideal_num_col_tasks
@@ -757,33 +757,33 @@ fn get_conv_num_partitions[
     # Check for alternative factorizations use the most threads.
     elif max_num_tasks % ideal_num_col_tasks != 0:
         # Set 20% deviation.
-        let eps = div_ceil(2 * ideal_num_col_tasks, 10)
+        var eps = div_ceil(2 * ideal_num_col_tasks, 10)
         max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
         var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
         var num_threads_used = (
             max_num_tasks // ideal_num_col_tasks
         ) * ideal_num_col_tasks
         while num_col_tasks_tmp <= max_num_col_tasks:
-            let num_row_tasks_tmp = max_num_tasks // num_col_tasks_tmp
+            var num_row_tasks_tmp = max_num_tasks // num_col_tasks_tmp
             if num_row_tasks_tmp * num_col_tasks_tmp >= num_threads_used:
                 num_col_tasks = num_col_tasks_tmp
                 num_row_tasks = num_row_tasks_tmp
                 num_threads_used = num_row_tasks_tmp * num_col_tasks_tmp
             num_col_tasks_tmp += 1
 
-    let max_num_row_tasks = max(matmul_M // min_rows_per_task, 1)
+    var max_num_row_tasks = max(matmul_M // min_rows_per_task, 1)
     num_row_tasks = min(max_num_row_tasks, num_row_tasks)
 
     # Do not partition channels when num_groups > 1.
-    let max_num_channel_tasks = max(
+    var max_num_channel_tasks = max(
         conv_shape.c // min_c_per_task, 1
     ) if conv_shape.num_groups == 1 and conv_shape.rank == 2 else 1
-    let num_channel_tasks = min(
+    var num_channel_tasks = min(
         max_num_channel_tasks,
         max_num_tasks // (num_row_tasks * num_col_tasks),
     )
 
-    let num_batch_group_tasks = min(
+    var num_batch_group_tasks = min(
         conv_shape.n * conv_shape.num_groups, num_row_tasks
     )
 
@@ -802,20 +802,20 @@ fn get_partition(
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,
 ) -> ConvPartition:
-    let task_id_f = task_id % num_partitions[2]
+    var task_id_f = task_id % num_partitions[2]
     var quotient = task_id // num_partitions[2]
-    let task_id_c = quotient % num_partitions[1]
+    var task_id_c = quotient % num_partitions[1]
     quotient = quotient // num_partitions[1]
-    let task_id_howo = quotient % num_partitions[3]
-    let task_id_ng = quotient // num_partitions[3]
+    var task_id_howo = quotient % num_partitions[3]
+    var task_id_ng = quotient // num_partitions[3]
 
-    let ng_range = partition_work(
+    var ng_range = partition_work(
         task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1
     )
 
-    let c_range = partition_work(task_id_c, num_partitions[1], conv_shape.c, 1)
+    var c_range = partition_work(task_id_c, num_partitions[1], conv_shape.c, 1)
 
-    let f_range = partition_work(
+    var f_range = partition_work(
         task_id_f,
         num_partitions[2],
         conv_shape.f // conv_shape.num_groups,
@@ -825,10 +825,10 @@ fn get_partition(
     # Merge output space loops when there is no padding and 2D.
     # Otherwise the partition granularity is a row.
     # TODO: generalize to 1D and 3D.
-    let merge_loop = not conv_shape.padded() and conv_shape.rank == 2
-    let work_unit = micro_kernel_height if merge_loop else 1
-    let work_load = conv_shape.output_image_flat_size() if merge_loop else conv_shape.ho()
-    let howo_range = partition_work(
+    var merge_loop = not conv_shape.padded() and conv_shape.rank == 2
+    var work_unit = micro_kernel_height if merge_loop else 1
+    var work_load = conv_shape.output_image_flat_size() if merge_loop else conv_shape.ho()
+    var howo_range = partition_work(
         task_id_howo, num_partitions[3], work_load, work_unit
     )
 

@@ -123,27 +123,27 @@ fn pool_shape[
         )
 
     # Assume input has layout NHWC
-    let batch_size = input_buf.dim(0)
-    let input_channels = input_buf.dim(3)
-    let input_height = input_buf.dim(1)
-    let input_width = input_buf.dim(2)
+    var batch_size = input_buf.dim(0)
+    var input_channels = input_buf.dim(3)
+    var input_height = input_buf.dim(1)
+    var input_width = input_buf.dim(2)
 
-    let filter_height = int(filter_buf[0])
-    let filter_width = int(filter_buf[1])
+    var filter_height = int(filter_buf[0])
+    var filter_width = int(filter_buf[1])
 
-    let stride_height = int(strides_buf[0])
-    let stride_width = int(strides_buf[1])
+    var stride_height = int(strides_buf[0])
+    var stride_width = int(strides_buf[1])
 
-    let dilation_height = int(dilations_buf[0])
-    let dilation_width = int(dilations_buf[1])
+    var dilation_height = int(dilations_buf[0])
+    var dilation_width = int(dilations_buf[1])
 
-    let pad_height = int(paddings_buf[0] + paddings_buf[1])
-    let pad_width = int(paddings_buf[2] + paddings_buf[3])
+    var pad_height = int(paddings_buf[0] + paddings_buf[1])
+    var pad_width = int(paddings_buf[2] + paddings_buf[3])
 
-    let output_height = get_sliding_window_out_dim[ceil_mode](
+    var output_height = get_sliding_window_out_dim[ceil_mode](
         input_height, filter_height, dilation_height, stride_height, pad_height
     )
-    let output_width = get_sliding_window_out_dim[ceil_mode](
+    var output_width = get_sliding_window_out_dim[ceil_mode](
         input_width, filter_width, dilation_width, stride_width, pad_width
     )
 
@@ -193,24 +193,24 @@ fn max_pool[
             empty_padding = False
             break
 
-    let padding_h_low = 0 if empty_padding else int(paddings[0])
-    let padding_h_high = 0 if empty_padding else int(paddings[1])
-    let padding_w_low = 0 if empty_padding else int(paddings[2])
-    let padding_w_high = 0 if empty_padding else int(paddings[3])
+    var padding_h_low = 0 if empty_padding else int(paddings[0])
+    var padding_h_high = 0 if empty_padding else int(paddings[1])
+    var padding_w_low = 0 if empty_padding else int(paddings[2])
+    var padding_w_high = 0 if empty_padding else int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
 
-    let input_height = input.dim(1)
-    let input_width = input.dim(2)
+    var input_height = input.dim(1)
+    var input_width = input.dim(2)
 
-    let pool_window_h = int(filter[0])
-    let pool_window_w = int(filter[1])
+    var pool_window_h = int(filter[0])
+    var pool_window_w = int(filter[1])
 
-    let stride_h = int(strides[0])
-    let stride_w = int(strides[1])
+    var stride_h = int(strides[0])
+    var stride_w = int(strides[1])
 
-    let dilation_h = int(dilations[0])
-    let dilation_w = int(dilations[1])
+    var dilation_h = int(dilations[0])
+    var dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -233,11 +233,11 @@ fn max_pool[
         StaticIntTuple[stencil_rank],
         StaticIntTuple[stencil_rank],
     ):
-        let lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = StaticIntTuple[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
         )
-        let upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = StaticIntTuple[stencil_rank](
             lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
             lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
         )
@@ -373,9 +373,9 @@ fn avg_pool[
             empty_padding = False
             break
 
-    let padding_h_low = 0 if empty_padding else int(paddings[0])
+    var padding_h_low = 0 if empty_padding else int(paddings[0])
     var padding_h_high = 0 if empty_padding else int(paddings[1])
-    let padding_w_low = 0 if empty_padding else int(paddings[2])
+    var padding_w_low = 0 if empty_padding else int(paddings[2])
     var padding_w_high = 0 if empty_padding else int(paddings[3])
 
     # If ceil_mode = True, there can be an implicit padding to the right
@@ -384,10 +384,10 @@ fn avg_pool[
     # Implicit padding equals SAME_UPPER calculations as shown at:
     # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
     if ceil_mode and not count_boundary:
-        let implicit_pad0 = (output.dim(1) - 1) * int(strides[0]) + (
+        var implicit_pad0 = (output.dim(1) - 1) * int(strides[0]) + (
             (int(filter[0]) - 1) * int(dilations[0]) + 1
         ) - input.dim(1)
-        let implicit_pad1 = (output.dim(2) - 1) * int(strides[1]) + (
+        var implicit_pad1 = (output.dim(2) - 1) * int(strides[1]) + (
             (int(filter[1]) - 1) * int(dilations[1]) + 1
         ) - input.dim(2)
         # Add implicit padding to any specified explicit padding.
@@ -396,24 +396,24 @@ fn avg_pool[
 
     alias simd_width = simdwidthof[type]()
 
-    let input_height = input.dim(1)
-    let input_width = input.dim(2)
+    var input_height = input.dim(1)
+    var input_width = input.dim(2)
 
-    let output_height = output.dim(1)
-    let output_width = output.dim(2)
+    var output_height = output.dim(1)
+    var output_width = output.dim(2)
 
-    let pool_window_h = int(filter[0])
-    let pool_window_w = int(filter[1])
+    var pool_window_h = int(filter[0])
+    var pool_window_w = int(filter[1])
 
-    let stride_h = int(strides[0])
-    let stride_w = int(strides[1])
+    var stride_h = int(strides[0])
+    var stride_w = int(strides[1])
 
-    let dilation_h = int(dilations[0])
-    let dilation_w = int(dilations[1])
+    var dilation_h = int(dilations[0])
+    var dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    let pad_value = 0
+    var pad_value = 0
 
     @always_inline
     @__copy_capture(
@@ -434,11 +434,11 @@ fn avg_pool[
         StaticIntTuple[stencil_rank],
         StaticIntTuple[stencil_rank],
     ):
-        let lower_bound = StaticIntTuple[stencil_rank](
+        var lower_bound = StaticIntTuple[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
         )
-        let upper_bound = StaticIntTuple[stencil_rank](
+        var upper_bound = StaticIntTuple[stencil_rank](
             lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
             lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
         )
@@ -514,17 +514,17 @@ fn avg_pool[
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
-        let window_h = pool_dim_size(
+        var window_h = pool_dim_size(
             point[1],
             output_height,
             padding_h_low,
             padding_h_high,
             pool_window_h,
         )
-        let window_w = pool_dim_size(
+        var window_w = pool_dim_size(
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
-        let res = val / (window_h * window_w)
+        var res = val / (window_h * window_w)
         output.simd_store(point, res)
 
     @always_inline
@@ -533,7 +533,7 @@ fn avg_pool[
     fn avg_pool_compute_finalize[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
-        let res = val / (pool_window_h * pool_window_w)
+        var res = val / (pool_window_h * pool_window_w)
         output.simd_store(point, res)
 
     @always_inline

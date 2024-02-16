@@ -42,9 +42,9 @@ fn arange_shape[
     stop_buf: NDBuffer[type, 1],
     step_buf: NDBuffer[type, 1],
 ) raises -> StaticIntTuple[1]:
-    let start: Scalar[type] = start_buf[0]
-    let stop: Scalar[type] = stop_buf[0]
-    let step: Scalar[type] = step_buf[0]
+    var start: Scalar[type] = start_buf[0]
+    var stop: Scalar[type] = stop_buf[0]
+    var step: Scalar[type] = step_buf[0]
     if step == 0:
         raise Error("[range] step must be non-zero")
 

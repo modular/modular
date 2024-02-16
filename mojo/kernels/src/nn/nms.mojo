@@ -31,15 +31,15 @@ struct BoundingBox[type: DType]:
         self.se = SIMD[type, 2](min(y1, y2), min(x1, x2))
 
     fn iou(self, other: BoundingBox[type]) -> SIMD[type, 1]:
-        let intersection_area = self.intersection_area(other)
+        var intersection_area = self.intersection_area(other)
 
-        let union_area = self.area() + other.area() - intersection_area
-        let iou_val = abs(intersection_area) / abs(union_area)
+        var union_area = self.area() + other.area() - intersection_area
+        var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
     fn intersection_area(self, other: BoundingBox[type]) -> SIMD[type, 1]:
-        let nw = min(self.nw, other.nw)
-        let se = max(self.se, other.se)
+        var nw = min(self.nw, other.nw)
+        var se = max(self.se, other.se)
 
         if nw[1] < se[1] or nw[0] < se[0]:
             return 0
@@ -60,10 +60,10 @@ fn _get_bounding_box[
 ) -> BoundingBox[
     type
 ]:
-    let y1 = boxes[batch_size, box_idx, 0]
-    let x1 = boxes[batch_size, box_idx, 1]
-    let y2 = boxes[batch_size, box_idx, 2]
-    let x2 = boxes[batch_size, box_idx, 3]
+    var y1 = boxes[batch_size, box_idx, 0]
+    var x1 = boxes[batch_size, box_idx, 1]
+    var y2 = boxes[batch_size, box_idx, 2]
+    var x2 = boxes[batch_size, box_idx, 3]
     return BoundingBox(y1, x1, y2, x2)
 
 
@@ -97,7 +97,7 @@ fn non_max_suppression[
     # note that the output tensor takes ownership of output_predictions.data
     # output_predictions.data may be larger than the actual tensor size indicated
     # by the shape, but that is OK since the tensor.__del__() frees the pointer
-    let output_shape = TensorShape(len(output_predictions) // 3, 3)
+    var output_shape = TensorShape(len(output_predictions) // 3, 3)
     return Tensor[DType.int64](
         rebind[DTypePointer[DType.int64]](output_predictions.steal_data()),
         output_shape,
@@ -176,9 +176,9 @@ fn non_max_suppression[
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
 
-    let batch_size = boxes.dim(0)
-    let num_boxes = boxes.dim(1)
-    let num_classes = scores.dim(1)
+    var batch_size = boxes.dim(0)
+    var num_boxes = boxes.dim(1)
+    var num_classes = scores.dim(1)
 
     debug_assert(
         boxes.dim(2) == 4,
@@ -211,13 +211,13 @@ fn non_max_suppression[
             # this happens when:
             #   1. score does not meet score threshold
             #   2. iou with an existing prediction is above the IOU threshold
-            let per_class_scores_ptr = scores._offset(Index(b, c, 0))
+            var per_class_scores_ptr = scores._offset(Index(b, c, 0))
 
             # filter so that we only consider scores above the threshold
             # reduces the number of box_idxs to sort
             var num_boxes_remaining = 0
             for i in range(num_boxes):
-                let score = per_class_scores_ptr.load(i)
+                var score = per_class_scores_ptr.load(i)
                 if score > score_threshold.cast[type]():
                     per_class_scores[i] = score
                     num_boxes_remaining += 1
@@ -244,20 +244,20 @@ fn non_max_suppression[
                 pred_idx < max_output_boxes_per_class
                 and num_boxes_remaining > 0
             ):
-                let pred = _get_bounding_box(b, int(box_idxs[pred_idx]), boxes)
+                var pred = _get_bounding_box(b, int(box_idxs[pred_idx]), boxes)
                 num_boxes_remaining -= 1
                 # each output prediction contains 3 values: [batch_index, class_index, box_index]
                 func(b, c, box_idxs[pred_idx])
 
                 # at the beginning of this loop box_idxs are sorted such that scores[box_idxs] looks like this:
                 # [1st best score, 2nd best score, ..., num_boxes_remaining'th best score, -inf, ..., -inf]
-                let num_boxes_curr_pred = num_boxes_remaining
+                var num_boxes_curr_pred = num_boxes_remaining
                 # iterate over remaining boxes and set the scores of any whose
                 # iou is above the threshold to neginf
                 for i in range(
                     pred_idx + 1, pred_idx + 1 + num_boxes_curr_pred
                 ):
-                    let next_box = _get_bounding_box(b, int(box_idxs[i]), boxes)
+                    var next_box = _get_bounding_box(b, int(box_idxs[i]), boxes)
 
                     if pred.iou(next_box) > iou_threshold.cast[type]():
                         per_class_scores[int(box_idxs[i])] = min_or_neginf[

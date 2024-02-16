@@ -41,8 +41,8 @@ fn slice_as_view[
     for i in range(rank):
         var start = int(starts[i])
         var stop = int(ends[i])
-        let step = int(steps[i])
-        let dim_i = tensor.dim(i)
+        var step = int(steps[i])
+        var dim_i = tensor.dim(i)
         debug_assert(step != 0, "step must be nonzero")
 
         # Normalize the start/stop indices
@@ -52,8 +52,8 @@ fn slice_as_view[
             stop = stop + dim_i
 
         # Compute the min/max for clamping start/end
-        let idx_min = 0 if step > 0 else -1
-        let idx_max = dim_i if step > 0 else dim_i - 1
+        var idx_min = 0 if step > 0 else -1
+        var idx_max = dim_i if step > 0 else dim_i - 1
 
         # Allow start and stop to truncate like numpy and torch allow.
         if start < idx_min:
@@ -66,7 +66,7 @@ fn slice_as_view[
         elif stop > idx_max:
             stop = idx_max
 
-        let new_offset = start * tensor.stride(i)
+        var new_offset = start * tensor.stride(i)
         new_data = new_data.offset(new_offset)
 
         # Stride == number of elements to the next index in this dimension.
@@ -97,14 +97,14 @@ fn slice_as_copy[
     step: NDBuffer[index_type, 1],
 ):
     # Apply slice to the tensor
-    let sliced = slice_as_view(tensor, start, end, step)
+    var sliced = slice_as_view(tensor, start, end, step)
 
     # Copy lambda sliced view into output buffer.
     @always_inline
     @__copy_capture(sliced)
     @parameter
     fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[in_rank]](idx)
+        var index = rebind[StaticIntTuple[in_rank]](idx)
         output.simd_store[simd_width](
             index, sliced.simd_load[simd_width](index)
         )
@@ -150,8 +150,8 @@ fn slice_shape[
     for i in range(input_rank):
         var start = int(start_buf[i])
         var stop = int(stop_buf[i])
-        let step = int(step_buf[i])
-        let dim_i = input_buf.dim(i)
+        var step = int(step_buf[i])
+        var dim_i = input_buf.dim(i)
 
         # Normalize the start/stop indices
         if start < 0:
@@ -160,8 +160,8 @@ fn slice_shape[
             stop = stop + dim_i
 
         # Compute the min/max for clamping start/end
-        let idx_min = 0 if step > 0 else -1
-        let idx_max = dim_i if step > 0 else dim_i - 1
+        var idx_min = 0 if step > 0 else -1
+        var idx_max = dim_i if step > 0 else dim_i - 1
 
         # Allow start and stop to truncate like numpy and torch allow.
         if start < idx_min:

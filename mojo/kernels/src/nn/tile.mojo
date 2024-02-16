@@ -72,10 +72,10 @@ fn tile[
     @parameter
     if rank >= 2:
         num_rows_input = input.dim(rank - 2)
-    let num_cols_input = input.dim(rank - 1)
+    var num_cols_input = input.dim(rank - 1)
 
-    let num_cols_output = output.dim(rank - 1)
-    let repeats_len = repeats.dim(0)
+    var num_cols_output = output.dim(rank - 1)
+    var repeats_len = repeats.dim(0)
 
     # Initializes output by first copying in the original input to the
     # appropriate output elements, and then handles tiling across the column
@@ -94,8 +94,8 @@ fn tile[
         for d in range(num_depth_input):
             for r in range(num_rows_input):
                 # print(dp, d, r)
-                let input_src_index = dp * num_depth_input * num_rows_input * num_cols_input + d * num_rows_input * num_cols_input + r * num_cols_input
-                let output_src_index = dp * num_depth_input * int(
+                var input_src_index = dp * num_depth_input * num_rows_input * num_cols_input + d * num_rows_input * num_cols_input + r * num_cols_input
+                var output_src_index = dp * num_depth_input * int(
                     repeats[repeats_len - 3]
                 ) * num_rows_input * int(
                     repeats[repeats_len - 2]
@@ -108,11 +108,11 @@ fn tile[
                 ) + r * num_cols_input * int(
                     repeats[repeats_len - 1]
                 )
-                let output_src_stride = num_cols_input
-                let count = output_src_stride
+                var output_src_stride = num_cols_input
+                var count = output_src_stride
                 for rep in range(int(repeats[repeats_len - 1])):
-                    let src_ptr = input.data.offset(input_src_index)
-                    let dst_ptr = output.data.offset(
+                    var src_ptr = input.data.offset(input_src_index)
+                    var dst_ptr = output.data.offset(
                         output_src_index + rep * output_src_stride
                     )
                     memcpy[type](dst_ptr, src_ptr, count)
@@ -129,13 +129,13 @@ fn tile[
     # replicate contiguous memory areas (representing a dimension to be tiled).
     @parameter
     if rank >= 2:
-        let src_index_stride = num_rows_input * num_cols_input * int(
+        var src_index_stride = num_rows_input * num_cols_input * int(
             repeats[repeats_len - 1]
         )
-        let count = src_index_stride
+        var count = src_index_stride
         for dp in range(num_dp_input):
             for d in range(num_depth_input):
-                let src_index = dp * num_depth_input * int(
+                var src_index = dp * num_depth_input * int(
                     repeats[repeats_len - 3]
                 ) * num_rows_input * int(
                     repeats[repeats_len - 2]
@@ -147,8 +147,8 @@ fn tile[
                     repeats[repeats_len - 1]
                 )
                 for rep in range(int(repeats[repeats_len - 2]) - 1):
-                    let src_ptr = output.data.offset(src_index)
-                    let dst_ptr = output.data.offset(
+                    var src_ptr = output.data.offset(src_index)
+                    var dst_ptr = output.data.offset(
                         src_index + (rep + 1) * src_index_stride
                     )
                     memcpy[type](dst_ptr, src_ptr, count)
@@ -156,12 +156,12 @@ fn tile[
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
     if rank >= 3:
-        let src_index_stride = num_depth_input * int(
+        var src_index_stride = num_depth_input * int(
             repeats[repeats_len - 2]
         ) * num_rows_input * num_cols_input * int(repeats[repeats_len - 1])
-        let count = src_index_stride
+        var count = src_index_stride
         for dp in range(num_dp_input):
-            let src_index = dp * num_depth_input * int(
+            var src_index = dp * num_depth_input * int(
                 repeats[repeats_len - 3]
             ) * num_rows_input * int(
                 repeats[repeats_len - 2]
@@ -169,8 +169,8 @@ fn tile[
                 repeats[repeats_len - 1]
             )
             for rep in range(int(repeats[repeats_len - 3]) - 1):
-                let src_ptr = output.data.offset(src_index)
-                let dst_ptr = output.data.offset(
+                var src_ptr = output.data.offset(src_index)
+                var dst_ptr = output.data.offset(
                     src_index + (rep + 1) * src_index_stride
                 )
                 memcpy[type](dst_ptr, src_ptr, count)
@@ -178,18 +178,18 @@ fn tile[
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
     if rank == 4:
-        let src_index_stride = num_dp_input * int(
+        var src_index_stride = num_dp_input * int(
             repeats[repeats.dim(0) - 3]
         ) * num_depth_input * int(
             repeats[repeats.dim(0) - 2]
         ) * num_rows_input * num_cols_input * int(
             repeats[repeats.dim(0) - 1]
         )
-        let count = src_index_stride
-        let src_index = 0
+        var count = src_index_stride
+        var src_index = 0
         for rep in range(int(repeats[repeats.dim(0) - 4]) - 1):
-            let src_ptr = output.data.offset(src_index)
-            let dst_ptr = output.data.offset(
+            var src_ptr = output.data.offset(src_index)
+            var dst_ptr = output.data.offset(
                 src_index + (rep + 1) * src_index_stride
             )
             memcpy[type](dst_ptr, src_ptr, count)

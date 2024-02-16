@@ -33,7 +33,7 @@ fn reshape[
     @parameter
     fn body[idx: Int]():
         # Start from the back so we can accumulate the strides.
-        let i = output_rank - 1 - idx
+        var i = output_rank - 1 - idx
         stride_tuple[i] = stride
         stride *= new_shape[i]
 
@@ -63,7 +63,7 @@ fn reshape_shape[
     var to_be_inferred_axis = -1
     var non_negative_dim_prodcut = 1
     for axis in range(output_rank):
-        let target_dim = int(target_shape_buf[axis])
+        var target_dim = int(target_shape_buf[axis])
         target_shape[axis] = target_dim
         if target_dim < 0:
             if target_dim != -1:
@@ -77,7 +77,7 @@ fn reshape_shape[
         else:
             non_negative_dim_prodcut *= target_dim
 
-    let input_num_elems = input_buf.num_elements()
+    var input_num_elems = input_buf.num_elements()
     var output_num_elems = non_negative_dim_prodcut
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:

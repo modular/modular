@@ -200,21 +200,21 @@ fn interpolate_point_1d[
     input: NDBuffer[type, rank],
     output: NDBuffer[type, rank],
 ):
-    let center = coord_transform[coordinate_transformation_mode](
+    var center = coord_transform[coordinate_transformation_mode](
         out_coords[dim], input.dim(dim), output.dim(dim), scale
     ) + 0.5
-    let filter_scale = 1 / scale if antialias and scale < 1 else 1
-    let support = interpolator.filter_length() * filter_scale
-    let xmin = max(0, int(center - support + 0.5))
-    let xmax = min(input.dim(dim), int(center + support + 0.5))
+    var filter_scale = 1 / scale if antialias and scale < 1 else 1
+    var support = interpolator.filter_length() * filter_scale
+    var xmin = max(0, int(center - support + 0.5))
+    var xmax = min(input.dim(dim), int(center + support + 0.5))
     var in_coords = out_coords
     var sum = SIMD[type, 1](0)
     var acc = SIMD[type, 1](0)
-    let ss = 1 / filter_scale
+    var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
-        let dist_from_center = ((k + xmin + 0.5) - center) * ss
-        let filter_coeff = interpolator.filter(dist_from_center).cast[type]()
+        var dist_from_center = ((k + xmin + 0.5) - center) * ss
+        var filter_coeff = interpolator.filter(dist_from_center).cast[type]()
         acc += input[in_coords] * filter_coeff
         sum += filter_coeff
 
@@ -268,7 +268,7 @@ fn _resize[
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
         if input.dim(i) != output.dim(i):
             resize_dims.append(i)
-    let interpolator = Interpolator[interpolation_mode]()
+    var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.data
     var out_ptr = DTypePointer[type]()
@@ -295,13 +295,13 @@ fn _resize[
     for dim_idx in range(len(resize_dims)):
         if dim_idx == len(resize_dims) - 1:
             out_ptr = output.data
-        let resize_dim = resize_dims[dim_idx]
+        var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
-        let in_buf = NDBuffer[type, rank](in_ptr, in_shape)
-        let out_buf = NDBuffer[type, rank](out_ptr, out_shape)
+        var in_buf = NDBuffer[type, rank](in_ptr, in_shape)
+        var out_buf = NDBuffer[type, rank](out_ptr, out_shape)
 
-        let num_rows = out_buf.num_elements() // out_shape[resize_dim]
+        var num_rows = out_buf.num_elements() // out_shape[resize_dim]
         for row_idx in range(num_rows):
             var coords = _get_nd_indices_from_flat_index(
                 row_idx, out_shape, resize_dim

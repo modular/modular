@@ -121,7 +121,7 @@ struct Naive2dConvolution[
         num_groups: Int,
     ):
         # Create an instance of the convolution op.
-        let naive2d_convolution = Naive2dConvolution[
+        var naive2d_convolution = Naive2dConvolution[
             output_type, input_type, filter_type
         ](
             output,
@@ -196,31 +196,31 @@ struct Naive2dConvolution[
         var value: SIMD[output_type, 1] = 0
 
         # Input dims.
-        let D = self.input_shape[1]
-        let H = self.input_shape[2]
-        let W = self.input_shape[3]
-        let C = self.input_shape[4]
-        let image_bound = Index(D, H, W)
-        let C_per_group = C // self.num_groups
+        var D = self.input_shape[1]
+        var H = self.input_shape[2]
+        var W = self.input_shape[3]
+        var C = self.input_shape[4]
+        var image_bound = Index(D, H, W)
+        var C_per_group = C // self.num_groups
 
         # Filter dims.
-        let Q = self.filter_shape[0]
-        let R = self.filter_shape[1]
-        let S = self.filter_shape[2]
+        var Q = self.filter_shape[0]
+        var R = self.filter_shape[1]
+        var S = self.filter_shape[2]
 
         # Output dims.
-        let DO = self.output_shape[1]
-        let HO = self.output_shape[2]
-        let WO = self.output_shape[3]
-        let F = self.output_shape[4]
+        var DO = self.output_shape[1]
+        var HO = self.output_shape[2]
+        var WO = self.output_shape[3]
+        var F = self.output_shape[4]
 
-        let g = f // (F // self.num_groups)
+        var g = f // (F // self.num_groups)
 
         for q in range(Q):
             for r in range(R):
                 for s in range(S):
                     # Compute input access index, on the H and W dimension.
-                    let dhw = (
+                    var dhw = (
                         # Output HxW with striding.
                         Index(do, ho, wo) * self.stride
                         +
@@ -237,13 +237,13 @@ struct Naive2dConvolution[
                         # Iterate on channels dimension.
                         for c in range(C_per_group * g, C_per_group * (g + 1)):
                             # Accumulate product of input data filter data.
-                            let input_val = self.input[
+                            var input_val = self.input[
                                 c
                                 + C
                                 * (dhw[2] + W * (dhw[1] + H * (dhw[0] + D * n)))
                             ]
-                            let c_in_group = c % C_per_group
-                            let filter_val = self.filter[
+                            var c_in_group = c % C_per_group
+                            var filter_val = self.filter[
                                 f
                                 + F
                                 * (
@@ -280,9 +280,9 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
     TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
-    let n = m // (HO * WO)
-    let ho = (m % (HO * WO)) // WO
-    let wo = m % WO
+    var n = m // (HO * WO)
+    var ho = (m % (HO * WO)) // WO
+    var wo = m % WO
     return Index(n, ho, wo)
 
 
@@ -375,7 +375,7 @@ struct ConvDirectNHWC[
         alias micro_kernel_width = micro_kernel_shape[1]
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        let cf_tile_size = get_conv_tile_shape[filter_type](
+        var cf_tile_size = get_conv_tile_shape[filter_type](
             conv_shape.c,
             conv_shape.filter_window_flat_size(),
             micro_kernel_width,
@@ -399,19 +399,19 @@ struct ConvDirectNHWC[
             raise Error("filter count must be divisible by group count")
 
         # Number of partitions in n, ho_wo, c, f dimensions.
-        let num_threads = Runtime().parallelism_level()
-        let num_partitions = get_conv_num_partitions[
+        var num_threads = Runtime().parallelism_level()
+        var num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
-        let num_tasks = num_partitions.flattened_length()
+        var num_tasks = num_partitions.flattened_length()
 
         # Wrap the pointer inside NDBuffer so it can be properly captured by async closure.
         var output_ptr = output.data
-        let output_size = prod_dims[0, output_rank](output)
-        let scratch_size = num_partitions[1] * output_size
+        var output_size = prod_dims[0, output_rank](output)
+        var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
             output_ptr = DTypePointer[output_type].alloc(scratch_size)
-        let output_scratch = Buffer[output_type](output_ptr, scratch_size)
+        var output_scratch = Buffer[output_type](output_ptr, scratch_size)
 
         @__copy_capture(
             num_partitions, cf_tile_size, output_scratch, output_size
@@ -419,7 +419,7 @@ struct ConvDirectNHWC[
         @parameter
         @always_inline
         fn task_func(task_id: Int):
-            let partition = get_partition(
+            var partition = get_partition(
                 task_id,
                 num_partitions,
                 conv_shape,
@@ -430,18 +430,18 @@ struct ConvDirectNHWC[
             if partition.empty():
                 return
 
-            let task_tile_size = Index(
+            var task_tile_size = Index(
                 min(cf_tile_size[0], partition.c_size), cf_tile_size[1]
             )
 
             # TODO: Need to have a more robust way to compute task_id_c
-            let task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
-            let task_output = NDBuffer[output_type, output_rank, output_shape](
+            var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
+            var task_output = NDBuffer[output_type, output_rank, output_shape](
                 output_scratch.data.offset(task_id_c * output_size),
                 output.dynamic_shape,
             )
 
-            let instance = ConvDirectNHWC[
+            var instance = ConvDirectNHWC[
                 input_rank,
                 filter_rank,
                 output_rank,
@@ -469,9 +469,9 @@ struct ConvDirectNHWC[
         if num_partitions[1] > 1:
             sync_parallelize[task_func](num_tasks)
 
-            let num_rows = conv_shape.n * conv_shape.output_image_flat_size()
-            let ptr = output.data
-            let scratch_ptr = output_scratch.data
+            var num_rows = conv_shape.n * conv_shape.output_image_flat_size()
+            var ptr = output.data
+            var scratch_ptr = output_scratch.data
 
             # Reduce from the output scratch buffer to the actual output.
             @__copy_capture(
@@ -486,13 +486,13 @@ struct ConvDirectNHWC[
             @always_inline
             fn reduce_task(tid: Int):
                 # Use all threads in reduction.
-                let reduce_range = partition_work(tid, num_threads, num_rows, 1)
+                var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
                 @__copy_capture(reduce_range)
                 @parameter
                 @always_inline
                 fn sum[width: Int](offset: Int):
-                    let tid_output_offset = reduce_range[
+                    var tid_output_offset = reduce_range[
                         0
                     ] * conv_shape.f + offset
                     var vec = scratch_ptr.simd_load[width](tid_output_offset)
@@ -514,7 +514,7 @@ struct ConvDirectNHWC[
                     for m in range(
                         reduce_range[0], reduce_range[0] + reduce_range[1]
                     ):
-                        let nhowo = _m_to_n_ho_wo_nhwc(
+                        var nhowo = _m_to_n_ho_wo_nhwc(
                             m,
                             conv_shape.output_dims[0],
                             conv_shape.output_dims[1],
@@ -544,8 +544,8 @@ struct ConvDirectNHWC[
                 self.partition.ng_offset,
                 self.partition.ng_offset + self.partition.ng_size,
             ):
-                let n = ng // self.conv_shape.num_groups
-                let g = ng % self.conv_shape.num_groups
+                var n = ng // self.conv_shape.num_groups
+                var g = ng % self.conv_shape.num_groups
                 self._c_tile_loop[padded](n, g, self.cf_tile_size[0])
 
         unswitch[body](self.conv_shape.padded())
@@ -581,11 +581,11 @@ struct ConvDirectNHWC[
         # C is not partitioned, fuse epilogue in the last C tile.
         else:
             # for g in range(self.conv_shape.num_groups):
-            let c_start = g * self.conv_shape.c_per_group()
-            let c_round_by_tile = align_down(
+            var c_start = g * self.conv_shape.c_per_group()
+            var c_round_by_tile = align_down(
                 (self.conv_shape.c_per_group() - 1), tile_size
             )
-            let c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
+            var c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
             tile[c_tile_iteration](
                 c_start,
                 c_start + c_round_by_tile,
@@ -634,14 +634,14 @@ struct ConvDirectNHWC[
                     n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
                 )
 
-        let f_per_group = self.conv_shape.f_per_group()
+        var f_per_group = self.conv_shape.f_per_group()
 
         # The partition heuristic sees F_per_group and may partition it.
         # The partition's F_offset should be added to the group's F offset to
         # get the actually offset in output's F dim.
-        let group_f_offset = g * f_per_group + self.partition.f_offset
+        var group_f_offset = g * f_per_group + self.partition.f_offset
 
-        let group_f_end_align_simd = group_f_offset + align_down(
+        var group_f_end_align_simd = group_f_offset + align_down(
             self.partition.f_size, simd_size
         )
 
@@ -663,7 +663,7 @@ struct ConvDirectNHWC[
         # If this is the last partition in F and it's not a multiple of simd_size.
         # The partition is aligned by micro_kernel_f_size, so only the last
         # partition is possible to have residual.
-        let residual = align_down_residual(f_per_group, simd_size)
+        var residual = align_down_residual(f_per_group, simd_size)
         if (
             self.partition.f_offset + self.partition.f_size == f_per_group
             and residual > 0
@@ -720,7 +720,7 @@ struct ConvDirectNHWC[
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
-        let input_base_offsets = Buffer[
+        var input_base_offsets = Buffer[
             DType.int32, micro_kernel_height
         ].stack_allocation()
 
@@ -735,13 +735,13 @@ struct ConvDirectNHWC[
             )
 
         alias alignment = alignof[SIMD[output_type, simd_size]]()
-        let output_micro_tile = NDBuffer[
+        var output_micro_tile = NDBuffer[
             output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ].aligned_stack_allocation[alignment]()
 
-        let output_offset = self.conv_shape.f * (
+        var output_offset = self.conv_shape.f * (
             n * self.conv_shape.output_image_flat_size() + output_flat_coord
         ) + f_tile_offset
 
@@ -782,7 +782,7 @@ struct ConvDirectNHWC[
 
         for r in range(self.conv_shape.r()):
             for s in range(self.conv_shape.s()):
-                let input_offset = self.conv_shape.c * (
+                var input_offset = self.conv_shape.c * (
                     s + self.conv_shape.w() * r
                 )
 
@@ -835,7 +835,7 @@ struct ConvDirectNHWC[
 
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            let f_tile_size_bounded: Int
+            var f_tile_size_bounded: Int
 
             @parameter
             if has_residual:
@@ -926,7 +926,7 @@ struct ConvDirectNHWC[
 
                 @parameter
                 if has_residual:
-                    let residual = align_down_residual(
+                    var residual = align_down_residual(
                         self.conv_shape.f_per_group(), simd_size
                     )
                     output_micro_tile.simd_store[simd_size](
@@ -979,13 +979,13 @@ struct ConvDirectNHWC[
 
             @unroll
             for j in range(micro_kernel_width):
-                let output_vec = output_micro_tile.simd_load[simd_size](
+                var output_vec = output_micro_tile.simd_load[simd_size](
                     Index(i, j * simd_size)
                 )
 
                 @parameter
                 if has_residual:
-                    let residual = align_down_residual(
+                    var residual = align_down_residual(
                         self.conv_shape.f_per_group(), simd_size
                     )
                     partial_simd_store[simd_size](
@@ -1017,12 +1017,12 @@ struct ConvDirectNHWC[
         simd load instrinc is used if the filter is not packed.  Otherwise,
         it's safe to load a vector since the filter has been properly padded.
         """
-        let filter_vec: SIMD[filter_type, simd_size]
+        var filter_vec: SIMD[filter_type, simd_size]
 
         # Partial load if F is not multiple of simd_size.
         @parameter
         if has_residual and not filter_packed:
-            let residual = self.conv_shape.f - (
+            var residual = self.conv_shape.f - (
                 self.conv_shape.f // simd_size
             ) * simd_size
             # TODO: Follow #20211 to optimize it for NEON.
@@ -1071,7 +1071,7 @@ struct ConvDirectNHWC[
             @parameter
             if prefetch_offset > 0:
                 # fmt: off
-                let dist = prefetch_offset * micro_kernel_f_size \
+                var dist = prefetch_offset * micro_kernel_f_size \
                             if c_fully_cached or c < c_tile_size - prefetch_offset \
                             else ( \
                                 prefetch_offset + self.conv_shape.c - c_tile_size \
@@ -1089,20 +1089,20 @@ struct ConvDirectNHWC[
             # micro kernel with register blocking
             @unroll
             for i in range(micro_kernel_height):
-                let input_val = self.input.data.offset(
+                var input_val = self.input.data.offset(
                     input_base_offsets[i].value + offset
                 ).simd_load[1]()
-                let input_vec = SIMD[input_type, simd_size](input_val)
+                var input_vec = SIMD[input_type, simd_size](input_val)
 
                 @unroll
                 for j in range(micro_kernel_width):
-                    let filter_vec = self._load_filter_vec[
+                    var filter_vec = self._load_filter_vec[
                         has_residual, simd_size
                     ](filter_ptr, j * simd_size)
 
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
-                    let output_micro_idx = Index(i, j * simd_size)
+                    var output_micro_idx = Index(i, j * simd_size)
                     var output_vec = output_micro_tile.simd_load[simd_size](
                         output_micro_idx
                     )
@@ -1154,7 +1154,7 @@ struct ConvDirectNHWC[
         @parameter
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
-            let input_vecs = stack_allocation[
+            var input_vecs = stack_allocation[
                 micro_kernel_height, SIMD[input_type, num_lanes]
             ]()
 
@@ -1163,7 +1163,7 @@ struct ConvDirectNHWC[
             for i in range(micro_kernel_height):
                 # input_base_offset + input_offset is the actual offset
                 # for the accumulation.
-                let input_vec = self.input.data.offset(
+                var input_vec = self.input.data.offset(
                     input_base_offsets[i].value + input_offset + offset
                 ).simd_load[num_lanes]()
                 input_vecs[i] = input_vec
@@ -1181,14 +1181,14 @@ struct ConvDirectNHWC[
 
                 @unroll
                 for j in range(micro_kernel_width):
-                    let filter_vec = self._load_filter_vec[
+                    var filter_vec = self._load_filter_vec[
                         has_residual, simd_size
                     ](filter_ptr, j * simd_size)
 
                     @unroll
                     for i in range(micro_kernel_height):
-                        let input_vec = input_vecs[i]
-                        let output_micro_idx = Index(i, j * simd_size)
+                        var input_vec = input_vecs[i]
+                        var output_micro_idx = Index(i, j * simd_size)
                         var output_vec = output_micro_tile.simd_load[simd_size](
                             output_micro_idx
                         )
@@ -1279,8 +1279,8 @@ struct ConvDirectNHWC[
     ):
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        let F = self.output.dim[3]()
-        let filter_stride = micro_kernel_f_size if filter_packed else F
+        var F = self.output.dim[3]()
+        var filter_stride = micro_kernel_f_size if filter_packed else F
 
         accumulate[
             micro_kernel_height,
@@ -1361,7 +1361,7 @@ struct ConvDirectNHWC[
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Current group index.
-        let g = self.conv_shape.f_to_group(f_tile_offset)
+        var g = self.conv_shape.f_to_group(f_tile_offset)
 
         # Filter pointer to the current cf tile offset location.
         var filter_ptr: DTypePointer[filter_type]
@@ -1390,11 +1390,11 @@ struct ConvDirectNHWC[
 
         # Pointer to input and output of the current sample (batch dim).
         # fmt: off
-        let input_ptr  = self.input.data + c_tile_offset \
+        var input_ptr  = self.input.data + c_tile_offset \
                        + self.conv_shape.input_image_flat_size() \
                        * self.conv_shape.c * n
 
-        let output_ptr = self.output.data + f_tile_offset \
+        var output_ptr = self.output.data + f_tile_offset \
                        + self.conv_shape.output_image_flat_size() \
                        * self.conv_shape.f * n
         # fmt: on
@@ -1403,10 +1403,10 @@ struct ConvDirectNHWC[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
-        let left_pad_impact_end = div_ceil(
+        var left_pad_impact_end = div_ceil(
             self.conv_shape.pad_w[0], self.conv_shape.stride[input_rank - 3]
         )
-        let right_pad_impact_start = (
+        var right_pad_impact_start = (
             self.conv_shape.w()
             + self.conv_shape.pad_w[0]
             - self.conv_shape.s() * self.conv_shape.dilation[input_rank - 3]
@@ -1558,7 +1558,7 @@ struct ConvDirectNHWC[
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         ):
-            let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+            var h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
 
             # Points input to the start of the row.
             # Offset by -pad_w because s loop starts from the leftmost neightbor
@@ -1630,7 +1630,7 @@ struct ConvDirectNHWC[
         alias simd_size = simdwidthof[output_type]()
 
         for do in range(0, self.conv_shape.do()):
-            let d = do * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
+            var d = do * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
 
             for ho in range(
                 self.partition.ho_or_howo_offset,
@@ -1638,7 +1638,7 @@ struct ConvDirectNHWC[
                 + self.partition.ho_or_howo_size,
             ):
                 # fmt: off
-                let h = ho * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
+                var h = ho * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
                 # fmt: on
 
                 # Points input to the start of the row.
@@ -1705,7 +1705,7 @@ struct ConvDirectNHWC[
         ]()
         alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 
-        let f_round_by_simd = (
+        var f_round_by_simd = (
             (self.partition.f_offset + self.partition.f_size) // simd_size
         ) * simd_size
 
@@ -1730,7 +1730,7 @@ struct ConvDirectNHWC[
             simd_size,
         )
 
-        let residual = F - f_round_by_simd
+        var residual = F - f_round_by_simd
         if (
             self.partition.f_offset + self.partition.f_size == F
             and residual > 0
@@ -1774,7 +1774,7 @@ struct ConvDirectNHWC[
         alias WO = output_shape.get[2]()  # NHWC
         alias F = output_shape.get[3]()  # NHWC
 
-        let filter_base: DTypePointer[filter_type]
+        var filter_base: DTypePointer[filter_type]
 
         @parameter
         if filter_packed:
@@ -1786,14 +1786,14 @@ struct ConvDirectNHWC[
                 c_tile_offset * F + f_tile_offset
             )
 
-        let input_curr_image = self.input.data.offset(n * W * H * C)
-        let output_curr_image = self.output.data.offset(n * WO * HO * F)
+        var input_curr_image = self.input.data.offset(n * W * H * C)
+        var output_curr_image = self.output.data.offset(n * WO * HO * F)
 
         for ho in range(
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         ):
-            let h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+            var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
             # Point to (n, 0, ho, c_tile_offset) mapped in input
             var input_base = input_curr_image.offset(
                 c_tile_offset + C * (-conv_attr.pad_left() + W * h)
@@ -1957,7 +1957,7 @@ struct ConvDirectNHWC[
         alias filter_S_stride = C * micro_kernel_f_size
         alias filter_F_stride = R * S * filter_S_stride
 
-        let output_micro_tile = NDBuffer[
+        var output_micro_tile = NDBuffer[
             output_type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
@@ -1983,7 +1983,7 @@ struct ConvDirectNHWC[
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
         # h index in input image
-        let h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+        var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
         for r in range(R):
             # Skip if row falls in padding.
             if h + h_shift < 0 or h + h_shift >= H:
@@ -2056,7 +2056,7 @@ struct ConvDirectNHWC[
         if elementwise_epilogue_enabled.__bool__() and last_c_tile.__bool__():
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            let f_tile_size_bounded = F - f_tile_offset if has_residual else f_tile_size
+            var f_tile_size_bounded = F - f_tile_offset if has_residual else f_tile_size
             for wo_idx in range(wo, wo + micro_kernel_height):
                 self.elementwise_epilogue(
                     rebind[StaticIntTuple[input_rank]](
@@ -2091,10 +2091,10 @@ struct ConvDirectNHWC[
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Input stride when s increments by 1
-        let input_stride_by_s = conv_shape.dilation[0] * conv_shape.c
+        var input_stride_by_s = conv_shape.dilation[0] * conv_shape.c
 
         # Filter stride when s increments by 1.
-        let filter_stride_by_s: Int
+        var filter_stride_by_s: Int
 
         @parameter
         if filter_packed:  # FSCf layout
@@ -2103,14 +2103,14 @@ struct ConvDirectNHWC[
             filter_stride_by_s = conv_shape.c * conv_shape.f
 
         # Filter stride in F dimension in FRSCf
-        let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
+        var filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
 
         # Input coordinates
-        let w = wo * conv_shape.stride[0] - conv_shape.pad_w[0]
+        var w = wo * conv_shape.stride[0] - conv_shape.pad_w[0]
 
         # This will be all lifted to simd registers for FMA unless the micro
         # kernel is too large that spills named registers.
-        let register_tile = NDBuffer[
+        var register_tile = NDBuffer[
             output.type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
@@ -2175,7 +2175,7 @@ struct ConvDirectNHWC[
         if elementwise_epilogue_enabled.__bool__() and last_c_tile.__bool__():
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            let f_tile_size_bounded: Int
+            var f_tile_size_bounded: Int
 
             @parameter
             if has_residual:
@@ -2218,13 +2218,13 @@ struct ConvDirectNHWC[
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Input stride to neighbor point in the filter window (R, S).
-        let input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
-        let input_stride_by_r = conv_shape.dilation[
+        var input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
+        var input_stride_by_r = conv_shape.dilation[
             0
         ] * conv_shape.w() * conv_shape.c
 
         # Filter stride when s increments by 1.
-        let filter_stride_by_s: Int
+        var filter_stride_by_s: Int
 
         @parameter
         if filter_packed:  # FRSCf layout
@@ -2232,20 +2232,20 @@ struct ConvDirectNHWC[
         else:  # RSCF layout
             filter_stride_by_s = conv_shape.c * conv_shape.f
 
-        let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
+        var filter_stride_by_r = conv_shape.s() * filter_stride_by_s
 
         # Filter stride in F dimension in FRSCf
-        let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
+        var filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
 
         # Input coordinates
-        let hw = Index(
+        var hw = Index(
             howo[0] * conv_shape.stride[0] - conv_shape.pad_h[0],
             howo[1] * conv_shape.stride[1] - conv_shape.pad_w[0],
         )
 
         # This will be all lifted to simd registers for FMA unless the micro
         # kernel is too large that spills named registers.
-        let register_tile = NDBuffer[
+        var register_tile = NDBuffer[
             output.type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
@@ -2310,7 +2310,7 @@ struct ConvDirectNHWC[
         if elementwise_epilogue_enabled.__bool__() and last_c_tile.__bool__():
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            let f_tile_size_bounded: Int
+            var f_tile_size_bounded: Int
 
             @parameter
             if has_residual:
@@ -2354,13 +2354,13 @@ struct ConvDirectNHWC[
 
         # Input stride to neighbor point in the filter window (Q, R, S).
         # fmt: off
-        let input_stride_by_s = conv_shape.dilation[2] * conv_shape.c
-        let input_stride_by_r = conv_shape.dilation[1] * conv_shape.w() * conv_shape.c
-        let input_stride_by_q = conv_shape.dilation[0] * conv_shape.w() * conv_shape.h() * conv_shape.c
+        var input_stride_by_s = conv_shape.dilation[2] * conv_shape.c
+        var input_stride_by_r = conv_shape.dilation[1] * conv_shape.w() * conv_shape.c
+        var input_stride_by_q = conv_shape.dilation[0] * conv_shape.w() * conv_shape.h() * conv_shape.c
         # fmt: on
 
         # Filter stride when s increments by 1.
-        let filter_stride_by_s: Int
+        var filter_stride_by_s: Int
 
         @parameter
         if filter_packed:  # FRSCf layout
@@ -2368,14 +2368,14 @@ struct ConvDirectNHWC[
         else:  # RSCF layout
             filter_stride_by_s = conv_shape.c * conv_shape.f
 
-        let filter_stride_by_r = conv_shape.s() * filter_stride_by_s
-        let filter_stride_by_q = conv_shape.r() * filter_stride_by_r
+        var filter_stride_by_r = conv_shape.s() * filter_stride_by_s
+        var filter_stride_by_q = conv_shape.r() * filter_stride_by_r
 
         # Filter stride in F dimension in FRSCf
-        let filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
+        var filter_stride = micro_kernel_f_size if filter_packed else conv_shape.f
 
         # Input coordinates
-        let dhw = Index(
+        var dhw = Index(
             dohowo[0] * conv_shape.stride[0] - conv_shape.pad_d[0],
             dohowo[1] * conv_shape.stride[1] - conv_shape.pad_h[0],
             dohowo[2] * conv_shape.stride[2] - conv_shape.pad_w[0],
@@ -2383,7 +2383,7 @@ struct ConvDirectNHWC[
 
         # This will be all lifted to simd registers for FMA unless the micro
         # kernel is too large that spills named registers.
-        let register_tile = NDBuffer[
+        var register_tile = NDBuffer[
             output.type,
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
@@ -2448,7 +2448,7 @@ struct ConvDirectNHWC[
         if elementwise_epilogue_enabled.__bool__() and last_c_tile.__bool__():
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            let f_tile_size_bounded: Int
+            var f_tile_size_bounded: Int
 
             @parameter
             if has_residual:
@@ -2523,8 +2523,8 @@ fn accumulate_wo_tile_1d[
     for s in range(S):
         # Offset in the input row.
 
-        let input_ptr = input + s * input_stride_to_nbr
-        let filter_ptr = filter + s * filter_stride_to_nbr
+        var input_ptr = input + s * input_stride_to_nbr
+        var filter_ptr = filter + s * filter_stride_to_nbr
 
         # When effected by padding, we update 1 output point a time.
         # Skip this point's neighbor if it's in padding.
@@ -2534,7 +2534,7 @@ fn accumulate_wo_tile_1d[
                 micro_kernel_height == 1,
                 "The tile must only have 1 point when effected bypadding.",
             ]()
-            let w_nbr = w + s * dilation
+            var w_nbr = w + s * dilation
             if w_nbr < 0 or w_nbr >= W:
                 continue
 
@@ -2584,12 +2584,12 @@ fn accumulate_wo_tile_2d[
 ):
     for r in range(RS[0]):
         # Skip the row if it falls into padding.
-        let h_nbr = hw[0] + r * dilation[0]
+        var h_nbr = hw[0] + r * dilation[0]
         if h_nbr < 0 or h_nbr >= HW[0]:
             continue
 
-        let input_ptr = input + r * input_stride_to_nbr[0]
-        let filter_ptr = filter + r * filter_stride_to_nbr[0]
+        var input_ptr = input + r * input_stride_to_nbr[0]
+        var filter_ptr = filter + r * filter_stride_to_nbr[0]
 
         accumulate_wo_tile_1d[
             micro_kernel_height,
@@ -2642,12 +2642,12 @@ fn accumulate_wo_tile_3d[
     dilation: StaticIntTuple[3],
 ):
     for q in range(QRS[0]):
-        let d_nbr = dhw[0] + q * dilation[0]
+        var d_nbr = dhw[0] + q * dilation[0]
         if d_nbr < 0 or d_nbr >= DHW[0]:
             continue
 
-        let input_ptr = input + q * input_stride_to_nbr[0]
-        let filter_ptr = filter + q * filter_stride_to_nbr[0]
+        var input_ptr = input + q * input_stride_to_nbr[0]
+        var filter_ptr = filter + q * filter_stride_to_nbr[0]
 
         accumulate_wo_tile_2d[
             micro_kernel_height,
@@ -2704,7 +2704,7 @@ fn pack_filter_shape_impl[
         F % num_groups == 0,
         "number of filters F must be divisible by number of groups",
     )
-    let F_per_group = F // num_groups
+    var F_per_group = F // num_groups
 
     var output_shape = StaticIntTuple[6]()
     output_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
@@ -2741,13 +2741,13 @@ fn pack_conv_filter_shape[
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
-    let F = filter.dim[filter.rank - 1]()
+    var F = filter.dim[filter.rank - 1]()
 
     debug_assert(
         F % num_groups == 0,
         "number of filters F must be divisible by number of groups",
     )
-    let F_per_group = F // num_groups
+    var F_per_group = F // num_groups
 
     # FRSCf layout.
     var packed_shape = StaticIntTuple[filter.rank + 1]()
@@ -2776,7 +2776,7 @@ fn _get_group_filter_base(
     #   * micro_kernel_f_width
     # Output pointer points to the start of the current group.
 
-    let micro_kernel_f_size = packed_filter.dim[packed_filter.rank - 1]()
+    var micro_kernel_f_size = packed_filter.dim[packed_filter.rank - 1]()
     alias rank = packed_filter.rank
 
     var filter_window_size = 1
@@ -2792,7 +2792,7 @@ fn _get_group_filter_base(
 
     # Size of one group's packed filter.
     # fmt: off
-    let group_size = div_ceil(f_per_group , micro_kernel_f_size) \
+    var group_size = div_ceil(f_per_group , micro_kernel_f_size) \
                    * filter_window_size * packed_filter.dim[rank-2]() \
                    * micro_kernel_f_size
     # fmt: on
@@ -2869,8 +2869,8 @@ fn pack_filter[
 
     unroll[multiply, filter.rank - 1]()
 
-    let F = filter.dim[filter.rank - 1]()
-    let F_per_group = F // num_groups
+    var F = filter.dim[filter.rank - 1]()
+    var F_per_group = F // num_groups
 
     packed_filter.zero()
 
@@ -2887,7 +2887,7 @@ fn pack_filter[
     #                       |--------|--------|--|--|-0|00|
 
     for g in range(num_groups):
-        let group_start = _get_group_filter_base(packed_filter, g, F_per_group)
+        var group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
         @always_inline
         @__copy_capture(group_start, R, S, C, F_per_group, F)
@@ -2896,7 +2896,7 @@ fn pack_filter[
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
             for row in range(outer_dims_prod):
-                let filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
+                var filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
 
                 @unroll
                 for i in range(f_tile_size // simd_size):
@@ -2915,23 +2915,23 @@ fn pack_filter[
         )
 
     # Check the remainder if any
-    let F_round_by_simd = align_down(F_per_group, simd_size)
-    let residual = F_per_group - F_round_by_simd
+    var F_round_by_simd = align_down(F_per_group, simd_size)
+    var residual = F_per_group - F_round_by_simd
 
     # Handle the remainder if any
     if residual > 0:
         for g in range(num_groups):
-            let group_start = _get_group_filter_base(
+            var group_start = _get_group_filter_base(
                 packed_filter, g, F_per_group
             )
             var packed_filter_ptr = group_start + F_round_by_simd * outer_dims_prod
 
             for row in range(outer_dims_prod):
-                let filter_ptr = filter.data + row * F + g * F_per_group + F_round_by_simd
+                var filter_ptr = filter.data + row * F + g * F_per_group + F_round_by_simd
 
                 # Load remainder elements and pad with zero to
                 # to fill a simd vector.
-                let filter_vec = partial_simd_load[simd_size](
+                var filter_vec = partial_simd_load[simd_size](
                     filter_ptr, 0, residual, 0.0
                 ).cast[packed_filter.type]()
                 packed_filter_ptr.simd_store(filter_vec)
@@ -3007,12 +3007,12 @@ fn conv_shape[
     @parameter
     if input_rank == 4:
         # Assume input has layout NHWC
-        let batch_size = input_buf.dim(0)
-        let input_channels = input_buf.dim(3)
+        var batch_size = input_buf.dim(0)
+        var input_channels = input_buf.dim(3)
         # Assume filter has layout RSCF
-        let filter_channels = filter_buf.dim(2)
-        let num_groups = int(num_groups_buf[0])
-        let output_channels = filter_buf.dim(3)
+        var filter_channels = filter_buf.dim(2)
+        var num_groups = int(num_groups_buf[0])
+        var output_channels = filter_buf.dim(3)
 
         if input_channels != (num_groups * filter_channels):
             raise Error(
@@ -3025,14 +3025,14 @@ fn conv_shape[
             )
 
         # compute and return the output shape
-        let output_height = get_sliding_window_out_dim(
+        var output_height = get_sliding_window_out_dim(
             input_buf.dim(1),
             filter_buf.dim(0),
             int(dilations_buf[0]),
             int(strides_buf[0]),
             int(paddings_buf[0] + paddings_buf[1]),
         )
-        let output_width = get_sliding_window_out_dim(
+        var output_width = get_sliding_window_out_dim(
             input_buf.dim(2),
             filter_buf.dim(1),
             int(dilations_buf[1]),
@@ -3053,12 +3053,12 @@ fn conv_shape[
 
     else:
         # Assume input has layout NHWC
-        let batch_size = input_buf.dim(0)
-        let input_channels = input_buf.dim(4)
+        var batch_size = input_buf.dim(0)
+        var input_channels = input_buf.dim(4)
         # Assume filter has layout RSCF
-        let filter_channels = filter_buf.dim(3)
-        let num_groups = int(num_groups_buf[0])
-        let output_channels = filter_buf.dim(4)
+        var filter_channels = filter_buf.dim(3)
+        var num_groups = int(num_groups_buf[0])
+        var output_channels = filter_buf.dim(4)
 
         if input_channels != (num_groups * filter_channels):
             raise Error(
@@ -3071,14 +3071,14 @@ fn conv_shape[
             )
 
         # compute and return the output shape
-        let output_depth = get_sliding_window_out_dim(
+        var output_depth = get_sliding_window_out_dim(
             input_buf.dim(1),
             filter_buf.dim(0),
             int(dilations_buf[0]),
             int(strides_buf[0]),
             int(paddings_buf[0] + paddings_buf[1]),
         )
-        let output_height = get_sliding_window_out_dim(
+        var output_height = get_sliding_window_out_dim(
             input_buf.dim(2),
             filter_buf.dim(1),
             int(dilations_buf[1]),
@@ -3086,7 +3086,7 @@ fn conv_shape[
             int(paddings_buf[2] + paddings_buf[3]),
         )
 
-        let output_width = get_sliding_window_out_dim(
+        var output_width = get_sliding_window_out_dim(
             input_buf.dim(3),
             filter_buf.dim(2),
             int(dilations_buf[2]),
@@ -3148,7 +3148,7 @@ fn conv_nhwc_direct[
         "Filter and input ranks mismatch.",
     ]()
 
-    let conv_shape = get_conv_shape[input_rank - 2, filter_packed](
+    var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
         output,
         input,
         filter,
@@ -3175,7 +3175,7 @@ fn conv_nhwc_direct[
             var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
             curr_coords[input_rank - 1] += idx
 
-            let vec = output.simd_load[width](curr_coords)
+            var vec = output.simd_load[width](curr_coords)
             elementwise_lambda(curr_coords, vec)
 
         vectorize[body, simd_size](f_size)

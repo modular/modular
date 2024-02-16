@@ -111,12 +111,12 @@ fn _softmax_2_pass_step1[
     # scope, we therefore replicate the logic of Functional.vectorize here.
     # In the future (once we have non-isolated-from-above regions) we can
     # just reuse the Functional.vectorize code.
-    let length = len(input)
-    let vector_end = align_down(length, simd_width)
+    var length = len(input)
+    var vector_end = align_down(length, simd_width)
 
     for i in range(0, vector_end, simd_width):
-        let simd_elem = input.simd_load[simd_width](i)
-        let new_max_vec = SIMD[type, simd_width].splat(
+        var simd_elem = input.simd_load[simd_width](i)
+        var new_max_vec = SIMD[type, simd_width].splat(
             running_max_vec.max(simd_elem).reduce_max()
         )
         running_sum_vec = running_sum_vec * exp(
@@ -128,8 +128,8 @@ fn _softmax_2_pass_step1[
     var running_sum = running_sum_vec.reduce_add()
 
     for i in range(vector_end, length):
-        let elem = input[i]
-        let new_max = running_max.max(elem)
+        var elem = input[i]
+        var new_max = running_max.max(elem)
         running_sum = running_sum * exp(running_max - new_max) + exp(
             elem - new_max
         )
@@ -159,9 +159,9 @@ fn _softmax_2_pass_step2[
     @always_inline
     @parameter
     fn _step_2[simd_width: Int](idx: Int):
-        let running_max_simd = SIMD[type, simd_width].splat(running_max)
-        let running_sum_simd = SIMD[type, simd_width].splat(running_sum)
-        let input_val = input.simd_load[simd_width](idx)
+        var running_max_simd = SIMD[type, simd_width].splat(running_max)
+        var running_sum_simd = SIMD[type, simd_width].splat(running_sum)
+        var input_val = input.simd_load[simd_width](idx)
         output.simd_store[simd_width](
             idx,
             exp(input_val - running_max_simd) / running_sum_simd,
@@ -207,12 +207,12 @@ fn softmax_2_pass[
         input: The input buffer used to compute the softmax.
     """
 
-    let running_info = _softmax_2_pass_step1[simd_width, buffer_size, type](
+    var running_info = _softmax_2_pass_step1[simd_width, buffer_size, type](
         input
     )
 
-    let running_max = running_info[0]
-    let running_sum = running_info[1]
+    var running_max = running_info[0]
+    var running_sum = running_info[1]
 
     alias unroll_factor = 8  # TODO: search
     _softmax_2_pass_step2[simd_width, unroll_factor, buffer_size, type](
@@ -253,7 +253,7 @@ fn _softmax_3_pass_step_2[
     @always_inline
     @parameter
     fn step_2[simd_width: Int](idx: Int):
-        let vin = input_fn_1d[simd_width](idx)
+        var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[type, simd_width].splat(max_val)
 
         elem = pre_update_func[type, simd_width](elem)
@@ -285,13 +285,13 @@ fn _softmax_3_pass_step_3[
     # for i = 0 to N do
     #   accum_apply_func(Output[b, i], accum)
     # end for
-    let accum_proc = accum_proc_func[type, 1](accum)
+    var accum_proc = accum_proc_func[type, 1](accum)
 
     @always_inline
     @__copy_capture(accum_proc)
     @parameter
     fn step_3[simd_width: Int](idx: Int):
-        let accum_simd = SIMD[type, simd_width].splat(accum_proc)
+        var accum_simd = SIMD[type, simd_width].splat(accum_proc)
         var elem = output.simd_load[simd_width](idx)
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
@@ -383,11 +383,11 @@ fn _softmax_3_pass_base[
     except e:
         trap(e)
 
-    let max_val = max_buff[0]
+    var max_val = max_buff[0]
 
     # STEP 2
     alias unroll_factor = 8  # TODO: search
-    let accum = _softmax_3_pass_step_2[
+    var accum = _softmax_3_pass_step_2[
         simd_width,
         unroll_factor,
         buffer_size,
@@ -527,20 +527,20 @@ fn logsoftmax[
     if shape.flattened_length() == 0:
         return
 
-    let inner_dim = output.dim[rank - 1]()
-    let outer_dim = product[rank](shape, rank - 1)
-    let num_workers = min(Runtime().parallelism_level(), outer_dim)
-    let chunk_size = div_ceil(outer_dim, num_workers)
+    var inner_dim = output.dim[rank - 1]()
+    var outer_dim = product[rank](shape, rank - 1)
+    var num_workers = min(Runtime().parallelism_level(), outer_dim)
+    var chunk_size = div_ceil(outer_dim, num_workers)
 
     @parameter
     @__copy_capture(chunk_size, outer_dim, inner_dim)
     @always_inline
     fn task_func(task_id: Int):
-        let start_offset = task_id * chunk_size
-        let end_offset = min((task_id + 1) * chunk_size, outer_dim)
+        var start_offset = task_id * chunk_size
+        var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
-            let buffer_offset = i * inner_dim
-            let output_buffer_view = Buffer[type](
+            var buffer_offset = i * inner_dim
+            var output_buffer_view = Buffer[type](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index[rank](
@@ -620,20 +620,20 @@ fn _softmax_cpu[
         if shape.flattened_length() == 0:
             return
 
-        let inner_dim = output.dim[rank - 1]()
-        let outer_dim = product[rank](shape, rank - 1)
-        let num_workers = min(Runtime().parallelism_level(), outer_dim)
-        let chunk_size = div_ceil(outer_dim, num_workers)
+        var inner_dim = output.dim[rank - 1]()
+        var outer_dim = product[rank](shape, rank - 1)
+        var num_workers = min(Runtime().parallelism_level(), outer_dim)
+        var chunk_size = div_ceil(outer_dim, num_workers)
 
         @__copy_capture(chunk_size, inner_dim, outer_dim)
         @parameter
         @always_inline
         fn task_func(task_id: Int):
-            let start_offset = task_id * chunk_size
-            let end_offset = min((task_id + 1) * chunk_size, outer_dim)
+            var start_offset = task_id * chunk_size
+            var end_offset = min((task_id + 1) * chunk_size, outer_dim)
             for i in range(start_offset, end_offset):
-                let buffer_offset = i * inner_dim
-                let output_buffer_view = Buffer[type](
+                var buffer_offset = i * inner_dim
+                var output_buffer_view = Buffer[type](
                     output.data.offset(buffer_offset), inner_dim
                 )
                 var indices = _get_nd_indices_from_flat_index[rank](
@@ -689,11 +689,11 @@ fn softmax_kernel[
     type: DType,
     rank: Int,
 ](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
-    let row_size = shape[axis]
-    let num_rows = shape.flattened_length() // row_size
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
 
-    let max_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
-    let exp_sum_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
+    var max_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
+    var exp_sum_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
 
     @parameter
     @always_inline
@@ -709,7 +709,7 @@ fn softmax_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    let row_size_padded = align_up(row_size, BLOCK_SIZE)
+    var row_size_padded = align_up(row_size, BLOCK_SIZE)
 
     # grid stride loop over rows
     # each block reduces a row, which is convenient because it requires no partial
@@ -721,7 +721,7 @@ fn softmax_kernel[
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
-        let row_max = row_reduce[BLOCK_SIZE, input_fn, _max](
+        var row_max = row_reduce[BLOCK_SIZE, input_fn, _max](
             row_coords, axis, min_or_neginf[type](), row_size
         )
         if ThreadIdx.x() == 0:
@@ -731,25 +731,25 @@ fn softmax_kernel[
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
         var exp_sum = SIMD[type, 1](0)
         for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-            let idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
             row_coords[axis] = idx_in_padded_row
             # loads from input_fn twice
-            let val = exp(input_fn[type, 1, rank](row_coords) - max_buf[0])
+            var val = exp(input_fn[type, 1, rank](row_coords) - max_buf[0])
             output[row_coords] = val
             exp_sum += val
 
-        let block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
         if ThreadIdx.x() == 0:
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
         # Step 3: Normalize output
-        let block_exp_sum_recip = 1 / exp_sum_buf[0]
+        var block_exp_sum_recip = 1 / exp_sum_buf[0]
         for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-            let idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -781,8 +781,8 @@ fn _softmax_gpu[
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
-    let stream = Stream.get_current_stream()
-    let func = Function[
+    var stream = Stream.get_current_stream()
+    var func = Function[
         fn (
             StaticIntTuple[rank],
             NDBuffer[type, rank],
@@ -795,10 +795,10 @@ fn _softmax_gpu[
         ]
     ]()
 
-    let num_rows = shape.flattened_length() // shape[axis]
-    let sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var num_rows = shape.flattened_length() // shape[axis]
+    var sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
-    let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+    var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
     func(stream, (num_blocks,), (BLOCK_SIZE,), shape, output, axis)
 

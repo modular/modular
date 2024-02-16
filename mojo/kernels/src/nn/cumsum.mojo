@@ -38,9 +38,9 @@ fn cumsum[
         "Axis value must be in range [-rank, rank)",
     )
 
-    let axis_pos = axis if axis >= 0 else axis + rank
+    var axis_pos = axis if axis >= 0 else axis + rank
 
-    let shape = input.get_shape()
+    var shape = input.get_shape()
 
     var inner = 1
     var outer = 1
@@ -53,11 +53,11 @@ fn cumsum[
         else:
             depth = shape[i]
 
-    let output_data = output.flatten()
-    let input_data = input.flatten()
+    var output_data = output.flatten()
+    var input_data = input.flatten()
 
     for outer_index in range(outer):
-        let outer_index_adj: Int
+        var outer_index_adj: Int
 
         @parameter
         if reverse:
@@ -67,7 +67,7 @@ fn cumsum[
 
         for inner_index in range(inner):
             var accumulator: SIMD[type, 1] = 0
-            let inner_index_adj: Int
+            var inner_index_adj: Int
 
             @parameter
             if reverse:
@@ -76,7 +76,7 @@ fn cumsum[
                 inner_index_adj = inner_index
 
             for depth_index in range(depth):
-                let depth_index_adj: Int
+                var depth_index_adj: Int
 
                 @parameter
                 if reverse:
@@ -84,7 +84,7 @@ fn cumsum[
                 else:
                     depth_index_adj = depth_index
 
-                let index = outer_index_adj + inner_index_adj * depth * outer + depth_index_adj * outer
+                var index = outer_index_adj + inner_index_adj * depth * outer + depth_index_adj * outer
 
                 @parameter
                 if exclusive:

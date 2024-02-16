@@ -99,8 +99,8 @@ fn sign[
     Returns:
         SIMD[type, simd_width]: The result of the sign operation.
     """
-    let is_neg_mask = _is_neg(x)
-    let is_zero_mask = x == 0
+    var is_neg_mask = _is_neg(x)
+    var is_zero_mask = x == 0
     return is_neg_mask.select[type](-1, is_zero_mask.select[type](0, 1))
 
 
@@ -208,8 +208,8 @@ fn gelu[
     ]()
     # 0.5 * x * (1 + erf(x / SQRT_2))
     # x_half + x_half * erf_res
-    let x_half = 0.5 * x
-    let erf_res = erf(x * inv_SQRT_2)
+    var x_half = 0.5 * x
+    var erf_res = erf(x * inv_SQRT_2)
     return x_half.fma(erf_res, x_half)
 
 
@@ -243,7 +243,7 @@ fn gelu_approximate[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
-    let x3 = x * x * x
+    var x3 = x * x * x
     return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
 
 
@@ -320,5 +320,5 @@ fn sigmoid_grad[
         The result of the sigmoid grad operation.
     """
 
-    let s = sigmoid(x)
+    var s = sigmoid(x)
     return (1 - s) * s

@@ -37,8 +37,8 @@ fn _get_rightmost_broadcast_axis[
     """
     # TODO: consider manually unrolling this loop
     for axis in range(rank - 1, -1, -1):
-        let in_dim = input.dim(axis)
-        let out_dim = output.dim(axis)
+        var in_dim = input.dim(axis)
+        var out_dim = output.dim(axis)
         if in_dim != out_dim:
             return axis
     return -1
@@ -72,21 +72,21 @@ fn broadcast[
     if output.num_elements() == 0:
         return
 
-    let rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
+    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
         rank, output_shape, input_shape, type
     ](output, input)
 
-    let input_output_have_same_shape = rightmost_broadcast_axis == -1
+    var input_output_have_same_shape = rightmost_broadcast_axis == -1
     if input_output_have_same_shape:
-        let src_ptr = input.data
-        let dst_ptr = output.data
+        var src_ptr = input.data
+        var dst_ptr = output.data
         memcpy(dst_ptr, src_ptr, input.size())
         return
 
     alias init_axis = 0
     # imaginary axis before 0
-    let init_input_prev_axis_stride = input.size()
-    let init_output_prev_axis_stride = output.size()
+    var init_input_prev_axis_stride = input.size()
+    var init_output_prev_axis_stride = output.size()
     broadcast_impl[rank, output_shape, input_shape, type](
         init_axis,
         output,
@@ -133,10 +133,10 @@ fn broadcast_impl[
     """
     if axis >= rank:
         return
-    let input_axis_stride = input_prev_axis_stride // input.dim(axis)
+    var input_axis_stride = input_prev_axis_stride // input.dim(axis)
 
     if axis == rightmost_broadcast_axis:
-        let elems_to_copy = input_axis_stride
+        var elems_to_copy = input_axis_stride
         _tile_1d(
             output.data.offset(output_offset),
             input.data.offset(input_offset),
@@ -145,7 +145,7 @@ fn broadcast_impl[
         )
         return
 
-    let output_axis_stride = output_prev_axis_stride // output.dim(axis)
+    var output_axis_stride = output_prev_axis_stride // output.dim(axis)
 
     var next_input_offset = input_offset
     var next_output_offset = output_offset
@@ -168,7 +168,7 @@ fn broadcast_impl[
     # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
     # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
     if input.dim(axis) != output.dim(axis):
-        let output_tile_start = output.data.offset(output_offset)
+        var output_tile_start = output.data.offset(output_offset)
         _tile_1d(
             output_tile_start.offset(
                 output_axis_stride

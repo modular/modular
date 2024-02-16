@@ -37,13 +37,13 @@ fn arg_nonzero[
     """
 
     with Trace[TraceLevel.OP]("mojo.arg_nonzero") as t:
-        let numel = input_buffer.dynamic_shape.flattened_length()
+        var numel = input_buffer.dynamic_shape.flattened_length()
         if numel == 0:
             return
 
         var j: Int = 0
         for i in range(numel):
-            let indices = _get_start_indices_of_nth_subvolume[rank, 0](
+            var indices = _get_start_indices_of_nth_subvolume[rank, 0](
                 i, input_buffer.dynamic_shape
             )
             if input_buffer[indices] != 0:
@@ -83,11 +83,11 @@ fn arg_nonzero_shape[
     var shape = StaticIntTuple[2]()
     shape[1] = rank
 
-    let numel = input_buffer.dynamic_shape.flattened_length()
+    var numel = input_buffer.dynamic_shape.flattened_length()
 
     var j: Int = 0
     for i in range(numel):
-        let indices = _get_start_indices_of_nth_subvolume[rank, 0](
+        var indices = _get_start_indices_of_nth_subvolume[rank, 0](
             i, input_buffer.dynamic_shape
         )
         if input_buffer[indices] != 0:

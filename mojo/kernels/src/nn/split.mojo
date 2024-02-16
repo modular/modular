@@ -87,27 +87,27 @@ fn _split[
 
     """
 
-    let shape = outputs[0].get_shape()
-    let h = product(shape, 0, axis)
-    let c = product(shape, axis + 1, rank)
+    var shape = outputs[0].get_shape()
+    var h = product(shape, 0, axis)
+    var c = product(shape, axis + 1, rank)
 
     var w_in: Int = 0
     for i in range(len(outputs)):
         w_in += outputs[i].dim(axis)
 
-    let stride_h_in = w_in * c
-    let stride_w_in = c
+    var stride_h_in = w_in * c
+    var stride_w_in = c
 
     var w_offset: Int = 0
     for i in range(len(outputs)):
         # copy one w x c slice along h at a time
-        let w = outputs[i].dim(axis)
-        let out_buf = outputs[i].flatten()
+        var w = outputs[i].dim(axis)
+        var out_buf = outputs[i].flatten()
         for j in range(h):
-            let output_offset = j * w * c
-            let input_offset = j * stride_h_in + w_offset * stride_w_in
-            let out_slice = Buffer[type](out_buf.data + output_offset, w * c)
-            let in_slice = Buffer[type](input.data + input_offset, w * c)
+            var output_offset = j * w * c
+            var input_offset = j * stride_h_in + w_offset * stride_w_in
+            var out_slice = Buffer[type](out_buf.data + output_offset, w * c)
+            var in_slice = Buffer[type](input.data + input_offset, w * c)
             # these slices are contiguous
             memcpy(out_slice, in_slice)
         w_offset += w
@@ -119,9 +119,9 @@ fn _split_inner[
     constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(len(outputs)):
-        let output_buf = outputs[i].flatten()
-        let buffer_len = len(output_buf)
-        let input_buffer_offset = Buffer[type](
+        var output_buf = outputs[i].flatten()
+        var buffer_len = len(output_buf)
+        var input_buffer_offset = Buffer[type](
             input.data.offset(num_elems_copied), buffer_len
         )
         memcpy[type](output_buf, input_buffer_offset)

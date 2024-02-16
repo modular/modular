@@ -64,12 +64,12 @@ struct _NestedLoopIter[n_loops: Int]:
         self.early_stop = False
 
         for i in range(n_loops):
-            let lb = self._lb_loop(i)
-            let ub = self._ub_loop(i)
+            var lb = self._lb_loop(i)
+            var ub = self._ub_loop(i)
 
             self.cur[i] = lb
 
-            let invalid_bound = lb >= ub
+            var invalid_bound = lb >= ub
             self.early_stop = self.early_stop or invalid_bound
 
     fn _lb_loop(borrowed self, axis: Int) -> Int:
@@ -87,7 +87,7 @@ struct _NestedLoopIter[n_loops: Int]:
         return self
 
     fn __next__(inout self) -> StaticIntTuple[n_loops]:
-        let cur = self.cur
+        var cur = self.cur
 
         self.cur[len(self.cur) - 1] += 1
 
@@ -129,8 +129,8 @@ fn pad_constant[
         constant: The constant to pad output with.
 
     Example:
-        let input_shape = (X, Y, Z)
-        let paddings = [x0, x1, y0, y1, z0, z1]
+        var input_shape = (X, Y, Z)
+        var paddings = [x0, x1, y0, y1, z0, z1]
 
         out[x, y, z] =
           input[x - x0, y - y0, z - z0] if x ∈ [x0, x0 + X] &&
@@ -140,7 +140,7 @@ fn pad_constant[
     """
 
     alias init_axis = 0
-    let constant_cast = rebind[SIMD[type, 1]](constant[0])
+    var constant_cast = rebind[SIMD[type, 1]](constant[0])
 
     @__copy_capture(constant_cast)
     @parameter
@@ -197,9 +197,9 @@ fn pad_reflect[
         paddings: Ordered (before, after) padding sizes for each axis.
 
     Example:
-        let input = [[1, 2],
+        var input = [[1, 2],
                      [3, 4]]
-        let paddings = [2, 2, 1, 0]
+        var paddings = [2, 2, 1, 0]
 
         Yields:
         output = [[2, 1, 2],
@@ -281,8 +281,8 @@ fn pad_shape[
 
     @unroll
     for axis in range(input_rank):
-        let pre_pad = int(paddings_buf[axis, 0])
-        let post_pad = int(paddings_buf[axis, 1])
+        var pre_pad = int(paddings_buf[axis, 0])
+        var post_pad = int(paddings_buf[axis, 1])
         output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
 
     return output_shape
@@ -307,8 +307,8 @@ fn _do_pad[
     input: NDBuffer[type, rank, input_shape],
     paddings: DTypePointer[paddings_type],
 ):
-    let input_strides_buf = Buffer[DType.index, rank].stack_allocation()
-    let output_strides_buf = Buffer[DType.index, rank].stack_allocation()
+    var input_strides_buf = Buffer[DType.index, rank].stack_allocation()
+    var output_strides_buf = Buffer[DType.index, rank].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
@@ -359,17 +359,17 @@ fn _pad_constant_impl[
 
     # TODO this recursion can add up for larger tensors, optimize in #24565
 
-    let axis_dim = output_shape[axis]
-    let pre_pad = int(paddings[2 * axis])
-    let post_pad = int(paddings[2 * axis + 1])
-    let non_pad = axis_dim - pre_pad - post_pad
+    var axis_dim = output_shape[axis]
+    var pre_pad = int(paddings[2 * axis])
+    var post_pad = int(paddings[2 * axis + 1])
+    var non_pad = axis_dim - pre_pad - post_pad
 
     if axis + 1 == rank:
         # pointers
-        let pre_pad_start_ptr = output.offset(output_offset)
-        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-        let post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
-        let input_start_ptr = input.offset(input_offset)
+        var pre_pad_start_ptr = output.offset(output_offset)
+        var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        var post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
+        var input_start_ptr = input.offset(input_offset)
 
         # setting values
         if pad_with_constant:
@@ -383,14 +383,14 @@ fn _pad_constant_impl[
 
     debug_assert(axis + 1 < rank, "axis is not within range")
 
-    let input_axis_stride = input_strides.load(axis)[0].value
-    let output_axis_stride = output_strides.load(axis)[0].value
+    var input_axis_stride = input_strides.load(axis)[0].value
+    var output_axis_stride = output_strides.load(axis)[0].value
 
     var next_input_offset: Int = input_offset.value
     var next_output_offset: Int = output_offset.value
     for i in range(axis_dim):
-        let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
-        let next_pad_with_constant = pad_with_constant or is_within_padding
+        var is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
+        var next_pad_with_constant = pad_with_constant or is_within_padding
         _pad_constant_impl(
             axis + 1,
             output,
@@ -442,18 +442,18 @@ fn _pad_reflect_impl[
 
     # TODO this recursion can add up for larger tensors, optimize in #24565
 
-    let axis_dim = output_shape[axis]
-    let pre_pad = int(paddings[2 * axis])
-    let post_pad = int(paddings[2 * axis + 1])
-    let non_pad = axis_dim - pre_pad - post_pad
-    let pre_pad_start_ptr = output.offset(output_offset)
-    let input_start_ptr = input.offset(input_offset)
+    var axis_dim = output_shape[axis]
+    var pre_pad = int(paddings[2 * axis])
+    var post_pad = int(paddings[2 * axis + 1])
+    var non_pad = axis_dim - pre_pad - post_pad
+    var pre_pad_start_ptr = output.offset(output_offset)
+    var input_start_ptr = input.offset(input_offset)
 
-    let input_axis_stride = input_strides.load(axis)[0].value
-    let output_axis_stride = output_strides.load(axis)[0].value
+    var input_axis_stride = input_strides.load(axis)[0].value
+    var output_axis_stride = output_strides.load(axis)[0].value
 
-    let input_offsets = StaticIntTuple[2](input_offset, input_offset)
-    let output_offsets = StaticIntTuple[2](output_offset, output_offset)
+    var input_offsets = StaticIntTuple[2](input_offset, input_offset)
+    var output_offsets = StaticIntTuple[2](output_offset, output_offset)
 
     # first fill the unpadded regions
     if axis + 1 != rank:
@@ -480,7 +480,7 @@ fn _pad_reflect_impl[
             next_output_offset += output_axis_stride
     else:
         # no more dimensions to recurse, copy from input to unpadded region
-        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
         memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
 
     # now memcpy the fully padded axes from the regions we just filled
@@ -488,38 +488,38 @@ fn _pad_reflect_impl[
     var curr_post_pad = 0
     while curr_pre_pad < pre_pad or curr_post_pad < post_pad:
         if curr_pre_pad < pre_pad:
-            let copy_to = pre_pad - curr_pre_pad - 1
-            let copy_to_ptr = pre_pad_start_ptr.offset(
+            var copy_to = pre_pad - curr_pre_pad - 1
+            var copy_to_ptr = pre_pad_start_ptr.offset(
                 (copy_to * output_axis_stride)
             )
 
-            let copy_from: Int
+            var copy_from: Int
             if non_pad == 1:
-                # handle singleton case
+                # handle singvaron case
                 copy_from = pre_pad
             else:
                 copy_from = copy_to + ((curr_pre_pad % (non_pad - 1)) + 1) * 2
 
-            let copy_from_ptr = pre_pad_start_ptr.offset(
+            var copy_from_ptr = pre_pad_start_ptr.offset(
                 (copy_from * output_axis_stride)
             )
             memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
             curr_pre_pad += 1
 
         if curr_post_pad < post_pad:
-            let copy_to = pre_pad + non_pad + curr_post_pad
-            let copy_to_ptr = pre_pad_start_ptr.offset(
+            var copy_to = pre_pad + non_pad + curr_post_pad
+            var copy_to_ptr = pre_pad_start_ptr.offset(
                 copy_to * output_axis_stride
             )
 
-            let copy_from: Int
+            var copy_from: Int
             if non_pad == 1:
-                # handle singleton case
+                # handle singvaron case
                 copy_from = pre_pad
             else:
                 copy_from = copy_to - ((curr_post_pad % (non_pad - 1)) + 1) * 2
 
-            let copy_from_ptr = pre_pad_start_ptr.offset(
+            var copy_from_ptr = pre_pad_start_ptr.offset(
                 copy_from * output_axis_stride
             )
 
@@ -556,9 +556,9 @@ fn pad_repeat[
         paddings: Ordered (before, after) padding sizes for each axis.
 
     Example:
-        let input = [[1, 2],
+        var input = [[1, 2],
                      [3, 4]]
-        let paddings = [2, 2, 1, 0]
+        var paddings = [2, 2, 1, 0]
 
         Yields:
         output = [[1, 1, 2],
@@ -568,7 +568,7 @@ fn pad_repeat[
                   [3, 3, 4],
                   [3, 3, 4]]
     """
-    let padding_ndbuf = NDBuffer[paddings_type, 2, DimList(rank, 2)](paddings)
+    var padding_ndbuf = NDBuffer[paddings_type, 2, DimList(rank, 2)](paddings)
 
     var pre_pads = StaticIntTuple[rank]()
     var post_pads = StaticIntTuple[rank]()
@@ -585,14 +585,14 @@ fn pad_repeat[
     var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
     for input_idx in non_pad_iter:
-        let output_idx = input_idx + pre_pads
+        var output_idx = input_idx + pre_pads
         output[output_idx] = input[input_idx]
 
     for axis in range(rank - 1, -1, -1):
         alias sit = StaticIntTuple[2]
 
-        let pre_pad = pre_pads[axis]
-        let post_pad = post_pads[axis]
+        var pre_pad = pre_pads[axis]
+        var post_pad = post_pads[axis]
 
         for i in range(axis):
             loop_bounds[i] = (pre_pads[i], pre_pads[i] + input.dim(i))
@@ -601,8 +601,8 @@ fn pad_repeat[
             loop_bounds[i] = (0, output.dim(i))
 
         # handle pre-padding of the axis
-        let pre_lower = 0
-        let pre_upper = pre_pads[axis]
+        var pre_lower = 0
+        var pre_upper = pre_pads[axis]
 
         loop_bounds[axis] = (pre_lower, pre_upper)
 
@@ -616,8 +616,8 @@ fn pad_repeat[
             output[write_idx] = output[read_idx]
 
         # and now post-padding
-        let post_lower = pre_pads[axis] + input.dim(axis)
-        let post_upper = output.dim(axis)
+        var post_lower = pre_pads[axis] + input.dim(axis)
+        var post_upper = output.dim(axis)
 
         loop_bounds[axis] = (post_lower, post_upper)
 

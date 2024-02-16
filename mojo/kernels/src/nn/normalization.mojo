@@ -57,12 +57,12 @@ fn layer_norm[
         eps: The eps value to use in the layernorm calculation.
     """
 
-    let m = out_buf.dim[0]()
-    let n = out_buf.dim[1]()  # contiguous
+    var m = out_buf.dim[0]()
+    var n = out_buf.dim[1]()  # contiguous
 
     for i in range(m):
-        let start_coord = StaticIntTuple[2](i, 0)
-        let out_slice = Buffer[type, shape.at[1]()](
+        var start_coord = StaticIntTuple[2](i, 0)
+        var out_slice = Buffer[type, shape.at[1]()](
             out_buf._offset(start_coord), n
         )
 
@@ -73,7 +73,7 @@ fn layer_norm[
         ](idx: Int) -> SIMD[return_type, simd_width]:
             return input_fn[return_type, simd_width](idx, i)
 
-        let sum_val = map_reduce[
+        var sum_val = map_reduce[
             simd_width,
             shape.at[1](),
             type,
@@ -91,17 +91,17 @@ fn layer_norm[
                 return sum_val // n
             return sum_val / n
 
-        let mean_val = _sum_to_mean()
+        var mean_val = _sum_to_mean()
 
-        let var_val = variance(out_slice, mean_val, 0)  # use biased estimator
+        var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
 
-        let norm_factor = 1 / sqrt(var_val + eps)
+        var norm_factor = 1 / sqrt(var_val + eps)
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
         fn _normalize[simd_width: Int](idx: Int):
-            let out_val = out_slice.simd_load[simd_width](idx)
-            let norm_val = (
+            var out_val = out_slice.simd_load[simd_width](idx)
+            var norm_val = (
                 out_val - mean_val
             ) * norm_factor * gamma_buf.simd_load[simd_width](
                 idx
@@ -139,33 +139,33 @@ fn layer_norm[
         "mojo.layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-        let eps = epsilon[0]
+        var eps = epsilon[0]
 
         alias simd_width = simdwidthof[type]()
 
-        let last_dim = shape[rank - 1]
-        let prod_all_but_last_dim = shape.flattened_length() // last_dim
-        let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
+        var last_dim = shape[rank - 1]
+        var prod_all_but_last_dim = shape.flattened_length() // last_dim
+        var flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
 
-        let output_buf = reshape[rank, 2, type, True](output, flat_shape)
+        var output_buf = reshape[rank, 2, type, True](output, flat_shape)
 
-        let num_workers = min(
+        var num_workers = min(
             Runtime().parallelism_level(), prod_all_but_last_dim
         )
-        let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
+        var chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
 
         @__copy_capture(
             chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps
         )
         @parameter
         fn task_func(thread_id: Int):
-            let num_rows = min(
+            var num_rows = min(
                 chunk_size, prod_all_but_last_dim - thread_id * chunk_size
             )
-            let row_idx = thread_id * chunk_size
-            let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
-            let per_thread_dims = DimList(num_rows, last_dim)
-            let output_buf_view = NDBuffer[type, 2](
+            var row_idx = thread_id * chunk_size
+            var thread_starting_coord = StaticIntTuple[2](row_idx, 0)
+            var per_thread_dims = DimList(num_rows, last_dim)
+            var output_buf_view = NDBuffer[type, 2](
                 output_buf._offset(thread_starting_coord), per_thread_dims
             )
 
@@ -180,7 +180,7 @@ fn layer_norm[
                     row_idx + row, shape, rank - 1
                 )
                 indices[rank - 1] = idx
-                let input_val = input_0_fn[simd_width, rank](indices)
+                var input_val = input_0_fn[simd_width, rank](indices)
                 return input_val.cast[return_type]()
 
             layer_norm[simd_width, type, input_fn_2d](

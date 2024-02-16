@@ -48,21 +48,21 @@ fn _bilinear_interpolate[
 ]:
     # Compute centeral point (y, x) by mapping (py, ph) into a  grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
-    let y = math.max(
+    var y = math.max(
         roi_start_h
         + ph * bin_size_h
         + (iy + 0.5) * bin_size_h / roi_bin_grid_h,
         0,
     )
-    let x = math.max(
+    var x = math.max(
         roi_start_w
         + pw * bin_size_w
         + (ix + 0.5) * bin_size_w / roi_bin_grid_w,
         0,
     )
-    let topLeft = y == 0 and x == 0
+    var topLeft = y == 0 and x == 0
     if topLeft or y > height or x > width:
-        let zeroPoint = Weighted2DPoint[type](0, 0, 0)
+        var zeroPoint = Weighted2DPoint[type](0, 0, 0)
         return (zeroPoint, zeroPoint, zeroPoint, zeroPoint)
 
     # Compute box coordinates:
@@ -72,25 +72,25 @@ fn _bilinear_interpolate[
     #
     #   (y_high, x_low)      (y_high, x_high)
     # and bilinar weights (w1, w2, w3, w4)
-    let y_low = math.min(int(y), height - 1)
-    let x_low = math.min(int(x), width - 1)
-    let y_high = math.min(y_low + 1, height - 1)
-    let x_high = math.min(x_low + 1, width - 1)
+    var y_low = math.min(int(y), height - 1)
+    var x_low = math.min(int(x), width - 1)
+    var y_high = math.min(y_low + 1, height - 1)
+    var x_high = math.min(x_low + 1, width - 1)
 
-    let ly = y - y_low
-    let lx = x - x_low
-    let hy = 1.0 - ly
-    let hx = 1.0 - lx
+    var ly = y - y_low
+    var lx = x - x_low
+    var hy = 1.0 - ly
+    var hx = 1.0 - lx
 
-    let w1 = hy * hx
-    let w2 = hy * lx
-    let w3 = ly * hx
-    let w4 = ly * lx
+    var w1 = hy * hx
+    var w2 = hy * lx
+    var w3 = ly * hx
+    var w4 = ly * lx
 
-    let p1 = Weighted2DPoint[type](y_low, x_low, w1.cast[type]())
-    let p2 = Weighted2DPoint[type](y_low, x_high, w2.cast[type]())
-    let p3 = Weighted2DPoint[type](y_high, x_low, w3.cast[type]())
-    let p4 = Weighted2DPoint[type](y_high, x_high, w4.cast[type]())
+    var p1 = Weighted2DPoint[type](y_low, x_low, w1.cast[type]())
+    var p2 = Weighted2DPoint[type](y_low, x_high, w2.cast[type]())
+    var p3 = Weighted2DPoint[type](y_high, x_low, w3.cast[type]())
+    var p4 = Weighted2DPoint[type](y_high, x_high, w4.cast[type]())
 
     return (p1, p2, p3, p4)
 
@@ -141,54 +141,54 @@ fn roi_align_nhwc[
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 
-    let n_regions = rois.dim(0)
-    let height = input.dim(1)
-    let width = input.dim(2)
-    let channles = input.dim(3)
+    var n_regions = rois.dim(0)
+    var height = input.dim(1)
+    var width = input.dim(2)
+    var channles = input.dim(3)
 
-    let pooled_height = output_height
-    let pooled_width = output_width
-    let offset = 0.5 if aligned else 0.0
+    var pooled_height = output_height
+    var pooled_width = output_width
+    var offset = 0.5 if aligned else 0.0
 
     for ri in range(n_regions):
         # Region coordinates and batch indix
-        let roi_batch_idx = int(rois[ri, 0])
-        let roi_start_w = rois[ri, 1].cast[
+        var roi_batch_idx = int(rois[ri, 0])
+        var roi_start_w = rois[ri, 1].cast[
             DType.float32
         ]() * spatial_scale - offset
-        let roi_start_h = rois[ri, 2].cast[
+        var roi_start_h = rois[ri, 2].cast[
             DType.float32
         ]() * spatial_scale - offset
-        let roi_end_w = rois[ri, 3].cast[
+        var roi_end_w = rois[ri, 3].cast[
             DType.float32
         ]() * spatial_scale - offset
-        let roi_end_h = rois[ri, 4].cast[
+        var roi_end_h = rois[ri, 4].cast[
             DType.float32
         ]() * spatial_scale - offset
 
         # Region size (roi_h, roi_w) with 1x1 lower bound
-        let roi_height = roi_end_h - roi_start_h if aligned else math.max(
+        var roi_height = roi_end_h - roi_start_h if aligned else math.max(
             roi_end_h - roi_start_h, 1.0
         )
-        let roi_width = roi_end_w - roi_start_w if aligned else math.max(
+        var roi_width = roi_end_w - roi_start_w if aligned else math.max(
             roi_end_w - roi_start_w, 1.0
         )
 
         # Bin size for region.
-        let bin_size_h = roi_height / pooled_height
-        let bin_size_w = roi_width / pooled_width
+        var bin_size_h = roi_height / pooled_height
+        var bin_size_w = roi_width / pooled_width
 
         # Use pooling window size as either sampling_ratio x sampling_ratio or
         # ⌈bin_size_h x bin_size_w⌉.
-        let roi_bin_grid_h = int(
+        var roi_bin_grid_h = int(
             sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_h)
         )
-        let roi_bin_grid_w = int(
+        var roi_bin_grid_w = int(
             sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_w)
         )
 
         # Number of points in the pooling window.
-        let pool_elemn_num = math.max(roi_bin_grid_h * roi_bin_grid_w, 1)
+        var pool_elemn_num = math.max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
         # Associatve pooling init/update/finalize functions parameterized by
         # mode
@@ -228,7 +228,7 @@ fn roi_align_nhwc[
                         for ix in range(roi_bin_grid_w):
                             # Sample bilinearly mapped points coordinates
                             # and weights.
-                            let p = _bilinear_interpolate[type](
+                            var p = _bilinear_interpolate[type](
                                 ph,
                                 pw,
                                 iy,
@@ -242,10 +242,10 @@ fn roi_align_nhwc[
                                 roi_bin_grid_h,
                                 roi_bin_grid_w,
                             )
-                            let p1 = p.get[0, Weighted2DPoint[type]]()
-                            let p2 = p.get[1, Weighted2DPoint[type]]()
-                            let p3 = p.get[2, Weighted2DPoint[type]]()
-                            let p4 = p.get[3, Weighted2DPoint[type]]()
+                            var p1 = p.get[0, Weighted2DPoint[type]]()
+                            var p2 = p.get[1, Weighted2DPoint[type]]()
+                            var p3 = p.get[2, Weighted2DPoint[type]]()
+                            var p4 = p.get[3, Weighted2DPoint[type]]()
                             pool_val = update_fn(
                                 pool_val,
                                 p1.w * input[roi_batch_idx, p1.y, p1.x, c],

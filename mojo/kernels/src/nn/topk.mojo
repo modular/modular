@@ -42,8 +42,8 @@ fn top_k_shape[
     Returns:
         The output shape.
     """
-    let axis = int(axis_buf[0])
-    let k = int(k_buf[0])
+    var axis = int(axis_buf[0])
+    var k = int(k_buf[0])
 
     if axis < 0 or axis >= rank:
         raise Error("[top/bottom-k] axis must be within [0, rank]")
@@ -109,7 +109,7 @@ fn _top_k[
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):
-    let shape = input.get_shape()
+    var shape = input.get_shape()
 
     @__copy_capture(shape)
     @parameter
@@ -174,11 +174,11 @@ fn _top_k[
                 var i = 0
                 while i < shape[axis] - 1:
                     indices[axis] = int(idxs[i])
-                    let curr = input[indices]
+                    var curr = input[indices]
                     var num_equal = 1
                     for j in range(i + 1, shape[axis]):
                         indices[axis] = int(idxs[j])
-                        let next = input[indices]
+                        var next = input[indices]
                         if curr != next:
                             break
                         num_equal += 1
@@ -189,7 +189,7 @@ fn _top_k[
 
             for i in range(k):
                 indices[axis] = int(idxs[i])
-                let val = input[indices]
+                var val = input[indices]
                 indices[axis] = i
                 out_vals[indices] = val
                 out_idxs[indices] = idxs[i]
