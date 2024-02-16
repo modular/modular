@@ -23,6 +23,10 @@ namespace M {
 /// equality when they have different bit widths (it instead raises an assertion
 /// error).  But additionally this defines standard arithmetic operations on
 /// infinite precision integers.
+///
+/// The underlying APInt can be extracted from an IPInt, and IPInt ensures that
+/// the APInt always contains exactly the minimum bit width to represent the
+/// number as a signed 2's compliment integer.
 class IPInt {
 public:
   /// The wrapped APInt is normalized to use the minimum number of bits so that
@@ -50,6 +54,7 @@ public:
   bool operator>=(const IPInt &rhs) const;
   IPInt operator+(const IPInt &rhs) const;
   IPInt operator-(const IPInt &rhs) const;
+  IPInt operator-() const;
   IPInt operator*(const IPInt &rhs) const;
   IPInt operator/(const IPInt &rhs) const;
   IPInt operator%(const IPInt &rhs) const;
@@ -59,6 +64,8 @@ public:
   IPInt operator|(const IPInt &rhs) const;
   IPInt operator^(const IPInt &rhs) const;
   IPInt abs() const;
+  IPInt exponentiate(const IPInt &rhs) const;
+  IPInt gcd(const IPInt &rhs) const;
 
   friend llvm::hash_code hash_value(const IPInt &arg) {
     return llvm::hash_value(arg.val);

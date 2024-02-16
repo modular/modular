@@ -121,6 +121,7 @@ IPInt IPInt::operator+(const IPInt &rhs) const {
 IPInt IPInt::operator-(const IPInt &rhs) const {
   return binop(rhs, IPInt::BinOp::kSub);
 }
+IPInt IPInt::operator-() const { return IPInt(0) - (*this); }
 IPInt IPInt::operator*(const IPInt &rhs) const {
   return binop(rhs, IPInt::BinOp::kMul);
 }
@@ -150,6 +151,35 @@ IPInt IPInt::abs() const {
     return IPInt(0) - *this;
   else
     return IPInt(*this);
+}
+IPInt IPInt::gcd(const IPInt &rhs) const {
+  // Euclid's algorithm for GCD:
+  // https://en.wikipedia.org/wiki/Euclidean_algorithm
+  IPInt l(*this);
+  IPInt r(rhs);
+  while (r != 0) {
+    IPInt tmp(r);
+    r = l % r;
+    l = tmp;
+  }
+  return l;
+}
+
+/// This is limited to exponentiating with non-negative RHS.
+IPInt IPInt::exponentiate(const IPInt &rhs) const {
+  assert(rhs >= 0 && "this exponentiate function doesn't support negative RHS");
+  // I looked up and found this fast exponentiation algorithm here:
+  // https://mathstats.uncg.edu/sites/pauli/112/HTML/secfastexp.html#algfastexp
+  IPInt base(*this);
+  IPInt result = 1;
+  IPInt exp = rhs;
+  while (exp != 0) {
+    if (exp % 2 == 1)
+      result = result * base;
+    exp = exp / 2;
+    base = base * base;
+  }
+  return result;
 }
 
 // namespace M
