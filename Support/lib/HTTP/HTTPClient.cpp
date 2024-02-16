@@ -64,10 +64,15 @@ ErrorOrSuccess HTTPResponse::asError(StringRef extraContext) {
   case TransportError:
   case TimeoutError:
     assert(transportErrorMessage && "current error is not set");
+    if (extraContext.empty())
+      return Error("http error: " + *transportErrorMessage);
     return Error("http error: " + *transportErrorMessage + " - " +
                  extraContext);
   case HTTPResponseError:
     assert(responseCode && "responseCode is not set");
+    if (extraContext.empty())
+      return Error(
+          llvm::formatv("http error: response code {0}", responseCode).str());
     return Error(llvm::formatv("http error: response code {0} - {1}",
                                responseCode, extraContext)
                      .str());
