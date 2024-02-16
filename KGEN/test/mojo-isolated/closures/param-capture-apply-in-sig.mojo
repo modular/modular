@@ -17,7 +17,7 @@ struct Foo[x: int]:
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[a:.*]], [[Y:\*".*"]]: {{.*}}Foo<[[a]]>
 # CHECK: lit.func @"__call__
-# CHECK-SAME: @Foo<apply(:{{.*}}@Foo::@"get{{.*}}"<[[a]]>, [[Y]])>
+# CHECK-SAME: #Foo <apply(:{{.*}}@Foo::@"get{{.*}}"<[[a]]>, [[Y]])>
 
 
 fn alias_ref_apply_in_sig[a: int]():

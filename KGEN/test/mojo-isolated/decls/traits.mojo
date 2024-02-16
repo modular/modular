@@ -665,7 +665,7 @@ struct MyPointer[T: AnyType]:
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
 struct HasMyPointerSelf(AnyType):
-    # CHECK: lit.struct.field x : !lit.declref<{{.*}}@MyPointer<:!AnyType
+    # CHECK: lit.struct.field x : !lit.declref<#MyPointer <:!AnyType
     var x: MyPointer[Self]
     # CHECK: lit.func @"__del__
 
