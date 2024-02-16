@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .layout import *
+from .int_tuple import int, flatten
 from memory.unsafe import DTypePointer
 
 
@@ -29,6 +30,10 @@ struct LayoutTensor[dtype: DType]:
     @always_inline
     fn __setitem__(self, idx: IntTuple, val: SIMD[dtype, 1]):
         self.ptr.simd_store[1](self.layout(idx), val)
+
+    @always_inline
+    fn dim(self, idx: Int) -> Int:
+        return int(flatten(self.layout.shape)[idx])
 
 
 fn tile[
