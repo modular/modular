@@ -11,7 +11,7 @@ from utils._annotations import *
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 
-alias MAX_BENIFIT = 1000
+alias MAX_BENEFIT = 1000
 
 
 @mogg_tensor_allocator()
@@ -114,7 +114,7 @@ fn unary_op_without_fusion(
     return out
 
 
-@mogg_register_override("mo.transpose", MAX_BENIFIT)
+@mogg_register_override("mo.transpose", MAX_BENEFIT)
 @export
 fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     # Currently we don't support alias.
@@ -138,7 +138,7 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
     )
 
 
-@mogg_register_override("copy", MAX_BENIFIT)
+@mogg_register_override("copy", MAX_BENEFIT)
 @export
 fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -153,7 +153,7 @@ fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
 
 
 # Test we support a nested lambda using values from the parent contexts.
-@mogg_register_override("add_like_custom_op_target", MAX_BENIFIT)
+@mogg_register_override("add_like_custom_op_target", MAX_BENEFIT)
 @export
 fn add_like_custom_op_target(
     x: Tensor, y: Tensor
@@ -233,7 +233,7 @@ fn param_expression_shape_test(
     return output
 
 
-@mogg_register_override("view_like_custom_op_target", MAX_BENIFIT)
+@mogg_register_override("view_like_custom_op_target", MAX_BENEFIT)
 @export
 fn view_like_custom_op_target(
     x: Tensor, y: Tensor
@@ -254,7 +254,7 @@ fn view_like_custom_op_target(
     )
 
 
-@mogg_register_override("mo.static.broadcast_to", 1000)
+@mogg_register_override("mo.static.broadcast_to", MAX_BENEFIT)
 @export
 fn broadcast[
     rank: Int
@@ -292,7 +292,7 @@ fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
     return input_rank + indices_rank - 1
 
 
-@mogg_register_override("mo.gather", priority=MAX_BENIFIT)
+@mogg_register_override("mo.gather", priority=MAX_BENEFIT)
 @always_inline
 @export
 fn gather[
@@ -386,7 +386,7 @@ fn gather[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("mo.abs", MAX_BENIFIT)
+@mogg_register_override("mo.abs", MAX_BENEFIT)
 @export
 fn mo_abs(
     x: Tensor,
@@ -402,7 +402,7 @@ fn mo_abs(
     return out
 
 
-@mogg_register_override("mo.erf", MAX_BENIFIT)
+@mogg_register_override("mo.erf", MAX_BENEFIT)
 @export
 fn mo_erf(
     x: Tensor,
@@ -418,7 +418,7 @@ fn mo_erf(
     return out
 
 
-@mogg_register_override("mo.exp", MAX_BENIFIT)
+@mogg_register_override("mo.exp", MAX_BENEFIT)
 @export
 fn mo_exp(
     x: Tensor,
@@ -434,7 +434,7 @@ fn mo_exp(
     return out
 
 
-@mogg_register_override("mo.relu", MAX_BENIFIT)
+@mogg_register_override("mo.relu", MAX_BENEFIT)
 @export
 fn my_relu(
     x: Tensor,
@@ -453,7 +453,7 @@ fn my_relu(
     return out
 
 
-@mogg_register_override("mo.sqrt", MAX_BENIFIT)
+@mogg_register_override("mo.sqrt", MAX_BENEFIT)
 @export
 fn my_sqrt(
     x: Tensor,
@@ -477,7 +477,7 @@ fn my_sqrt(
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("mo.add", MAX_BENIFIT)
+@mogg_register_override("mo.add", MAX_BENEFIT)
 @export
 fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -496,7 +496,7 @@ fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
-@mogg_register_override("mo.greater", MAX_BENIFIT)
+@mogg_register_override("mo.greater", MAX_BENEFIT)
 @export
 fn mo_greater(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
     var out = empty_tensor[DType.bool](x.shape)
@@ -516,7 +516,7 @@ fn mo_greater(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
     return out
 
 
-@mogg_register_override("mo.max", MAX_BENIFIT)
+@mogg_register_override("mo.max", MAX_BENEFIT)
 @export
 fn mo_max(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -536,7 +536,7 @@ fn mo_max(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
-@mogg_register_override("mo.min", MAX_BENIFIT)
+@mogg_register_override("mo.min", MAX_BENEFIT)
 @export
 fn mo_min(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -556,7 +556,7 @@ fn mo_min(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
-@mogg_register_override("mo.mul", MAX_BENIFIT)
+@mogg_register_override("mo.mul", MAX_BENEFIT)
 @export
 fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -576,7 +576,7 @@ fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
-@mogg_register_override("mo.sub", MAX_BENIFIT)
+@mogg_register_override("mo.sub", MAX_BENEFIT)
 @export
 fn my_sub_without_fusion(
     x: Tensor, y: Tensor
@@ -593,7 +593,7 @@ fn my_sub_without_fusion(
     return out
 
 
-@mogg_register_override("single_thread_blocking_override_test", 1000)
+@mogg_register_override("single_thread_blocking_override_test", MAX_BENEFIT)
 @export
 fn single_thread_blocking_override_test[
     single_thread_blocking_override: Bool
@@ -607,3 +607,23 @@ fn single_thread_blocking_override_test[
     return Tensor[x.type, x.static_shape, x.static_strides](
         x.data, x.shape, x.strides, x.refcount()
     )
+
+
+@mogg_register_override("test_static_shape", MAX_BENEFIT)
+@export
+fn test_static_shape(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    let out = empty_tensor[x.type](x.shape)
+    var out_shape = IntList[x.static_shape](x.shape)
+
+    @always_inline
+    @parameter
+    fn print_if_static[idx: Int]():
+        @parameter
+        if out_shape.shape_idx_statically_known[idx]():
+            print(idx)
+
+    unroll[print_if_static, x.static_rank]()
+
+    return out
