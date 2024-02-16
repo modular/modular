@@ -11,6 +11,7 @@
 # ===----------------------------------------------------------------------===#
 
 from sys.info import sizeof
+from sys._assembly import inlined_assembly
 
 from memory import memcpy, memset_zero
 from memory.buffer import NDBuffer
@@ -28,25 +29,21 @@ struct amx_detail:
     fn _no_op_imms[op: __mlir_type.si32, imm: __mlir_type.si32]():
         # In Apple's Accelerate, instruction 17 is apparently always prefixed by
         # three nops.
-        __mlir_op.`pop.inline_asm`[
-            _type=None,
-            assembly = (
-                "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)"
-            ).value,
-            constraints = ("i,i,~{memory}").value,
-            hasSideEffects = __mlir_attr.unit,
+        inlined_assembly[
+            "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)",
+            NoneType,
+            constraints="i,i,~{memory}",
+            has_side_effect=True,
         ](op, imm)
 
     @staticmethod
     fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
         let gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
-        __mlir_op.`pop.inline_asm`[
-            _type=None,
-            assembly = (
-                ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))"
-            ).value,
-            constraints = ("i,r,~{memory}").value,
-            hasSideEffects = __mlir_attr.unit,
+        inlined_assembly[
+            ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
+            NoneType,
+            constraints="i,r,~{memory}",
+            has_side_effect=True,
         ](op, gpr)
 
     # The `set` and `clr` take no non-constant operands, and so we pass them as
