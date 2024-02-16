@@ -27,8 +27,8 @@ def bench_unary[
     type: DType,
 ](inout m: MojoBench, size: Int, op_name: String):
     alias alignment = 64
-    var input_ptr = DTypePointer[type].aligned_alloc(alignment, size)
-    var output_ptr = DTypePointer[type].aligned_alloc(alignment, size)
+    var input_ptr = DTypePointer[type].alloc(size, alignment=alignment)
+    var output_ptr = DTypePointer[type].alloc(size, alignment=alignment)
 
     @parameter
     fn bench(inout b: Bencher, size: Int):

@@ -55,9 +55,9 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         self.m = m
         self.n = n
         self.k = k
-        self.a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
-        self.b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
-        self.c_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
+        self.a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
+        self.b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
+        self.c_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
         self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
@@ -132,14 +132,14 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
         self.m = m
         self.n = n
         self.k = k
-        self.a_ptr = DTypePointer[a_type].aligned_alloc(
-            alignment, self.m * self.k
+        self.a_ptr = DTypePointer[a_type].alloc(
+            self.m * self.k, alignment=alignment
         )
-        self.b_ptr = DTypePointer[b_type].aligned_alloc(
-            alignment, self.k * self.n
+        self.b_ptr = DTypePointer[b_type].alloc(
+            self.k * self.n, alignment=alignment
         )
-        self.c_ptr = DTypePointer[c_type].aligned_alloc(
-            alignment, self.m * self.n
+        self.c_ptr = DTypePointer[c_type].alloc(
+            self.m * self.n, alignment=alignment
         )
         self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
