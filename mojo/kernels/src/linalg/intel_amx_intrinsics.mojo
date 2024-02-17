@@ -128,9 +128,9 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.int8],
     bptr: DTypePointer[DType.int8],
 ):
-    var a = NDBuffer[DType.int8, DimList(16, 64)](aptr)
-    var b = NDBuffer[DType.int8, DimList(16, 64)](bptr)
-    var c = NDBuffer[DType.int32, DimList(16, 16)](cptr)
+    var a = NDBuffer[DType.int8, 2, DimList(16, 64)](aptr)
+    var b = NDBuffer[DType.int8, 2, DimList(16, 64)](bptr)
+    var c = NDBuffer[DType.int32, 2, DimList(16, 16)](cptr)
 
     for i in range(16):
         for j in range(16):
