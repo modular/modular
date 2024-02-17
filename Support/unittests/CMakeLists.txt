@@ -38,6 +38,7 @@ add_modular_unittest(
   HMACTest.cpp
   HostTest.cpp
   IPIntTest.cpp
+  IPRationalTest.cpp
   JSONTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp

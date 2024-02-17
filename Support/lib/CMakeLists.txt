@@ -21,6 +21,7 @@ add_modular_library(MSupport
   FileSystemExtras.cpp
   HMAC.cpp
   IPInt.cpp
+  IPRational.cpp
   JSON.cpp
   MicroBenchmark.cpp
   PlatformLibNames.cpp
