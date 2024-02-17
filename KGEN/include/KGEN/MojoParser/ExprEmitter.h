@@ -37,7 +37,6 @@ class VarLetDeclOp;
 enum ExprContext {
   EC_Unknown,               // No context known.
   EC_VarInit,               // var thing = x
-  EC_LetInit,               // let thing = x
   EC_Assignment,            // y = x
   EC_Type,                  // var v : x         (and many other places)
   EC_AttributeRefBase,      // x.field
