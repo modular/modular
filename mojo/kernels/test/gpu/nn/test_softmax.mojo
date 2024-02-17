@@ -6,15 +6,10 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
+from math import iota, isclose
+from random import rand
 from sys.info import simdwidthof
 
-from memory.buffer import Buffer, NDBuffer
-from NN.Softmax import softmax_2_pass, softmax
-from random import rand
-
-from utils.list import Dim, DimList
-
-from math import iota, isclose
 from gpu.host import Context, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -23,6 +18,10 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
+from memory.buffer import Buffer, NDBuffer
+from NN.Softmax import softmax, softmax_2_pass
+
+from utils.list import Dim, DimList
 
 
 # CHECK-LABEL: test_gpu_softmax
