@@ -212,10 +212,9 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   LIT::FuncOp callImpl = createFunction(
-      decl, lambdaName, /*params=*/{},
-      callImplType.getMetadata().getParamListAttrs(),
+      decl, lambdaName, /*params=*/{}, callImplType.getParamListAttrs(),
       callImplType.getArguments(), callImplType.getArgConventions(),
-      callImplType.getMetadata().getArgListAttrs(), fnPtrType.getResultType(),
+      callImplType.getArgListAttrs(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
   auto paramDecl = ParamDeclAttr::get(lambdaName, callImpl.getSignature());
   callImpl.setParamDeclAttr(paramDecl);
@@ -406,9 +405,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
-      closureMethodSignatureType.getMetadata().getArgListAttrs(), resultType,
-      astDecl, SpecialFunctionKind::kNormal,
-      closureMethodSignatureType.getFnEffects());
+      closureMethodSignatureType.getArgListAttrs(), resultType, astDecl,
+      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
 
   // Populate the body of ClosureWrapper::__call__.
   {
@@ -1047,7 +1045,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   LIT::FuncOp topLevelCall = createFunction(
       moduleDecl, generateName("_call_"), topLevelParams, paramListAttrs,
       closureSignature.getArguments(), closureSignature.getArgConventions(),
-      closureSignature.getMetadata().getArgListAttrs(), resultType,
+      closureSignature.getArgListAttrs(), resultType,
       SpecialFunctionKind::kNormal, loc, builder,
       closureSignature.getFnEffects());
 

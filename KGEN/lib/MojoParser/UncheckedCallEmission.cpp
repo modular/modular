@@ -365,7 +365,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(calleeSig.getNumArguments());
 
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(calleeSig);
+  DefaultValueHandler defaultHandler(calleeSig.getArgListAttrs());
   for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getArguments(),
                        calleeSig.getArgConventions(),

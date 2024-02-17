@@ -2113,13 +2113,13 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     conventions.push_back(conv);
   }
 
-  ArgParamListAttr oldArgListAttrs = traitSig.getMetadata().getArgListAttrs();
+  ArgParamListAttr oldArgListAttrs = traitSig.getArgListAttrs();
   ArgParamListAttr newArgListAttrs = oldArgListAttrs.cloneWith(
       oldArgListAttrs.getNames().drop_front(replacedResult),
       oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
   auto metadata = FnMetadataAttr::get(
-      newArgListAttrs, traitSig.getMetadata().getParamListAttrs(),
-      numImplicitLifetimeDecls, traitSig.getMetadata().getVariadicEffects());
+      newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls,
+      traitSig.getMetadata().getVariadicEffects());
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
@@ -2147,11 +2147,11 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Synthesize the method inside the struct.
   auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
-      name, paramDecls, memSig.getMetadata().getParamListAttrs(),
-      memSig.getArguments(), memSig.getArgConventions(),
-      memSig.getMetadata().getArgListAttrs(), memSig.getResultType(),
-      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
-      memSig.getMetadata().getVariadicEffects(), "_thunk");
+      name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
+      memSig.getArgConventions(), memSig.getArgListAttrs(),
+      memSig.getResultType(), structDecl, SpecialFunctionInfo::getKind(name),
+      memSig.getFnEffects(), memSig.getMetadata().getVariadicEffects(),
+      "_thunk");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);

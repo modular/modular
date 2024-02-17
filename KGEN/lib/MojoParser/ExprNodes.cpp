@@ -1518,7 +1518,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
   };
 
   ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
-  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
+  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
   size_t posIdx = 0;
   size_t numParams = sig.getNumParams();
   for (auto [idx, paramType, paramName, paramPassingKind] : llvm::enumerate(

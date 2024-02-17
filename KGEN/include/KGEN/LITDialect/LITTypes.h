@@ -31,6 +31,12 @@ public:
   /// Get the signature metadata.
   FnMetadataAttr getMetadata();
 
+  /// Get the argument list metadata.
+  ArgParamListAttr getArgListAttrs();
+
+  /// Get the parameter list metadata.
+  ArgParamListAttr getParamListAttrs();
+
   /// Get the function input argument names.
   ArrayRef<StringAttr> getArgNames();
 
