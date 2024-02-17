@@ -481,7 +481,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     FnMetadataAttrInterface metadata = baseSig.getMetadata();
     if (metadata) {
       metadata = remapper.replace(
-          baseSig.getMetadata().prependPosParams(paramDecls.size()));
+          metadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
     }
 
     declSignature = SignatureType::getSpecializedSignature(

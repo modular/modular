@@ -394,7 +394,8 @@ SignatureType SignatureType::remapToSignature(
 
 SignatureType
 SignatureType::prependParams(SignatureType sig,
-                             ArrayRef<ParamDeclAttr> parentParams) {
+                             ArrayRef<ParamDeclAttr> parentParams,
+                             ArrayRef<size_t> parentVariadicIndices) {
   IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
                             parentParams.size());
   SmallVector<Type> inputParamTypes;
@@ -406,7 +407,7 @@ SignatureType::prependParams(SignatureType sig,
   FnMetadataAttrInterface metadata = sig.getMetadata();
   if (metadata) {
     metadata = remapper.replace(
-        sig.getMetadata().prependPosParams(parentParams.size()));
+        metadata.prependPosParams(parentParams.size(), parentVariadicIndices));
   }
 
   return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,

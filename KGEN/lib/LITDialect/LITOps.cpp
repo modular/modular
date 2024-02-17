@@ -117,27 +117,35 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
 
-/// If the specified operation is non-null and contains parameters, collect
-/// them into the specified array.
-static void collectContextParameters(Operation *op,
-                                     SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<DeclInterface>(op);
-  if (!decl || isa<FuncInterface>(*decl))
-    return;
-  collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParams());
+/// Collect ancestor ops whose parameters are relevant, and create a
+/// concatenated list of their parameters.
+static std::pair<SmallVector<Operation *>, SmallVector<ParamDeclAttr>>
+collectParametricAncestors(Operation *op) {
+  std::pair<SmallVector<Operation *>, SmallVector<ParamDeclAttr>> res;
+  auto &[ancestors, params] = res;
+
+  auto isRelevantAncestor = [](Operation *op) {
+    auto decl = dyn_cast_or_null<DeclInterface>(op);
+    return decl && !isa<FuncInterface>(*decl);
+  };
+  while (isRelevantAncestor(op)) {
+    ancestors.push_back(op);
+    op = op->getParentOp();
+  }
+  for (Operation *op : ancestors)
+    llvm::append_range(params, cast<DeclInterface>(op).getInputParams());
+  return res;
 }
 
 LITSignatureType LIT::getFullSignature(Operation *container,
                                        LITSignatureType signature) {
   // Collect contextual params, if there are none, the full signature is the
   // same as the local signature.
-  SmallVector<ParamDeclAttr> params;
-  collectContextParameters(container, params);
+  auto [ancestors, params] = collectParametricAncestors(container);
   if (params.empty())
     return signature;
-
-  return SignatureType::prependParams(signature, params);
+  auto [variadicIndices, _] = getContextualVariadicIndices(ancestors);
+  return LITSignatureType::prependParams(signature, params, variadicIndices);
 }
 
 //===----------------------------------------------------------------------===//
@@ -878,8 +886,7 @@ void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
 
 SmallVector<ParamDeclAttr>
 LIT::FuncOp::collectAllParams(bool includeImplLifetimes) {
-  SmallVector<ParamDeclAttr> result;
-  collectContextParameters(getOperation()->getParentOp(), result);
+  auto [_, result] = collectParametricAncestors(getOperation()->getParentOp());
 
   auto params = getParams();
   if (!includeImplLifetimes)

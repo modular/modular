@@ -89,6 +89,13 @@ inline VariadicEffects operator|=(VariadicEffects &lhs, VariadicEffects rhs) {
 }
 } // namespace VariadicImpl
 
+/// Given a list of operations, create an array of indices indicating variadic
+/// parameters in their concatenated list of parameter declarations, and also
+/// count the number of parameters they declare. The given operations must all
+/// implement DeclInterface.
+std::pair<SmallVector<size_t>, size_t>
+getContextualVariadicIndices(ArrayRef<Operation *> ops);
+
 } // namespace M::KGEN::LIT
 
 #define GET_ATTRDEF_CLASSES

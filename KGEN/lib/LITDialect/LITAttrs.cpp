@@ -78,18 +78,6 @@ LogicalResult ArgParamListAttr::verify(
     if (defaultHandler.getDefault(idx))
       return emitError() << "variadic " << (isPack ? "pack " : "")
                          << "cannot have a default value";
-    if (passingKinds[idx] != PassingKind::PosOrKw) {
-      if (isPack) {
-        return emitError()
-               << "passing kind of variadic pack must be pos_or_kw, got "
-               << stringifyPassingKind(passingKinds[idx]);
-      }
-      if (passingKinds[idx] != PassingKind::KwOnly) {
-        return emitError()
-               << "passing kind of variadic must be pos_or_kw or kw, got "
-               << stringifyPassingKind(passingKinds[idx]);
-      }
-    }
     return success();
   };
   if (size_t numPacks = packIndices.size(); packIndices.size() > 1) {
@@ -188,16 +176,61 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
 }
 
 FnMetadataAttrInterface
-FnMetadataAttr::prependPosParams(size_t numNewParams) const {
+FnMetadataAttr::prependPosParams(size_t numNewParams,
+                                 ArrayRef<size_t> variadicIndices) const {
+  if (numNewParams == 0)
+    return *this;
+
   auto emptyStr = StringAttr::get(getContext());
   SmallVector<StringAttr> newParamNames(numNewParams, emptyStr);
   llvm::append_range(newParamNames, getParamNames());
   SmallVector<PassingKind> newPassingKinds(numNewParams, PassingKind::PosOnly);
   llvm::append_range(newPassingKinds, getParamPassingKinds());
 
-  return get(getArgListAttrs(),
-             getParamListAttrs().cloneWith(newParamNames, newPassingKinds),
-             getNumImplicitLifetimeDecls(), getVariadicEffects());
+  // We need to prepend the new variadic indices, and offset the existing ones.
+  ArgParamListAttr oldParamListAttr = getParamListAttrs();
+  SmallVector<size_t> newVariadicIndices(variadicIndices);
+  for (size_t idx : oldParamListAttr.getVariadicIndices())
+    newVariadicIndices.push_back(idx + numNewParams);
+
+  auto newParamListAttr = ArgParamListAttr::get(
+      getContext(), newParamNames, newPassingKinds, getDefaultPosParams(),
+      getDefaultKwOnlyParams(), newVariadicIndices,
+      oldParamListAttr.getPackIndices());
+  return get(getArgListAttrs(), newParamListAttr, getNumImplicitLifetimeDecls(),
+             getVariadicEffects());
+}
+
+std::pair<SmallVector<size_t>, size_t>
+LIT::getContextualVariadicIndices(ArrayRef<Operation *> ops) {
+  std::pair<SmallVector<size_t>, size_t> res;
+  auto &[variadicIndices, numNewParams] = res;
+  for (Operation *op : ops) {
+    // Count the number of new parameters.
+    size_t idxOffset = numNewParams;
+    numNewParams += ::cast<DeclInterface>(op).getInputParams().size();
+
+    // If we are dealing with a struct or trait, we collect the variadics.
+    ArgParamListAttr paramListAttr;
+    if (auto structDecl = ::dyn_cast<StructDeclOp>(op))
+      paramListAttr = structDecl.getSignature().getParamListAttrs();
+    else if (auto traitDecl = ::dyn_cast<TraitDeclOp>(op))
+      paramListAttr = traitDecl.getSignature().getParamListAttrs();
+    else
+      continue;
+
+    // The variadic indices need to be offset to correspond to the location in
+    // the collected array.
+    for (size_t idx : paramListAttr.getVariadicIndices())
+      variadicIndices.push_back(idxOffset + idx);
+  }
+  return res;
+}
+
+FnMetadataAttrInterface
+FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
+  auto [variadicIndices, numNewParams] = getContextualVariadicIndices(ops);
+  return prependPosParams(numNewParams, variadicIndices);
 }
 
 LogicalResult FnMetadataAttr::verifySignature(

@@ -110,8 +110,11 @@ struct LITLowerer {
   void lowerLITOps(LIT::FuncOp func);
   /// Lower a lit.func to kgen.generator.
   LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
+                             const Twine &parentPrefix);
+  LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
                              const Twine &parentPrefix,
-                             ArrayRef<ParamDeclAttr> parentInputParams = {});
+                             ArrayRef<ParamDeclAttr> parentInputParams,
+                             ArrayRef<size_t> parentVariadicIndices);
   /// Lower nested structures in lit.struct.decl away.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator symTableIt);
@@ -353,10 +356,18 @@ static void rewriteImplicitLifetimeDeclsAndArgs(
   }
 }
 
+LogicalResult LITLowerer::lowerLITFunc(LIT::FuncOp func,
+                                       Block::iterator symTableIt,
+                                       const Twine &parentPrefix) {
+  return lowerLITFunc(func, symTableIt, parentPrefix, /*parentInputParams=*/{},
+                      /*parentVariadicIndices=*/{});
+}
+
 LogicalResult
 LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
                          const Twine &parentPrefix,
-                         ArrayRef<ParamDeclAttr> parentInputParams) {
+                         ArrayRef<ParamDeclAttr> parentInputParams,
+                         ArrayRef<size_t> parentVariadicIndices) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
     StringAttr newName = flattenAndRenameSymbol(gen, symbolTable, symTableIt);
@@ -383,7 +394,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     llvm::append_range(inputParams, parentInputParams);
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = LITSignatureType::prependParams(signature, parentInputParams);
+    signature = LITSignatureType::prependParams(signature, parentInputParams,
+                                                parentVariadicIndices);
   }
   llvm::append_range(inputParams, genParams);
 
@@ -473,9 +485,11 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    if (failed(lowerLITFunc(
-            func, structDecl->getIterator(),
-            structName.getValue() + "::", structDecl.getInputParams())))
+    ArrayRef<size_t> variadicIndices =
+        structDecl.getSignature().getParamListAttrs().getVariadicIndices();
+    if (failed(lowerLITFunc(func, structDecl->getIterator(),
+                            structName.getValue() + "::",
+                            structDecl.getInputParams(), variadicIndices)))
       return failure();
   }
   return success();
