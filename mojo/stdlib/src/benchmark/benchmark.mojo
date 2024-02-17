@@ -19,7 +19,7 @@ a `Report` where you can get the mean, duration, max, and more:
 fn sleeper():
     sleep(.01)
 
-var report = benchmark.run[sleeper]()
+let report = benchmark.run[sleeper]()
 print(report.mean())
 ```
 
@@ -328,7 +328,7 @@ struct Report(CollectionElement):
         Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
-        var divisor = _divisor(unit)
+        let divisor = _divisor(unit)
         print("---------------------")
         print_no_newline("Benchmark Report (")
         print_no_newline(unit)
@@ -356,7 +356,7 @@ struct Report(CollectionElement):
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
 
-        var divisor = _divisor(unit)
+        let divisor = _divisor(unit)
         self.print(unit)
 
         for i in range(len(self.runs)):
@@ -521,8 +521,8 @@ fn _run_impl(opts: _RunOptions) -> Report:
     report.warmup_duration = prev_dur
     var total_iters: Int = 0
     var time_elapsed: Int = 0
-    var min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
-    var max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
+    let min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
+    let max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
 
     while time_elapsed < max_time_ns:
         if total_iters > opts.max_iters and time_elapsed > min_time_ns:
@@ -600,7 +600,7 @@ fn clobber_memory():
     # in C++.
     __mlir_op.`pop.fence`[
         _type=None,
-        syncscope = "singvarhread".value,
+        syncscope = "singlethread".value,
         ordering = __mlir_attr.`#pop<atomic_ordering acq_rel>`,
     ]()
 
@@ -614,7 +614,7 @@ fn clobber_memory():
 fn keep(val: Bool):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -628,7 +628,7 @@ fn keep(val: Bool):
 fn keep(val: Int):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -642,7 +642,7 @@ fn keep(val: Int):
 fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -663,7 +663,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
         return
 
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    let tmp_ptr = Pointer.address_of(tmp)
 
     @parameter
     if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
@@ -686,7 +686,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
 fn keep[type: DType](val: DTypePointer[type]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -703,7 +703,7 @@ fn keep[type: DType](val: DTypePointer[type]):
 fn keep[type: AnyRegType](val: Pointer[type]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -714,7 +714,7 @@ fn keep[type: AnyRegType](val: Pointer[type]):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    let tmp_ptr = Pointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,
@@ -727,7 +727,7 @@ fn keep[type: AnyRegType](val: Pointer[type]):
 fn keep[type: AnyRegType](inout val: type):
     """Provides a hint to the compiler to not optimize the variable use away.
 
-    This is useful in benchmarking to avoid the compiler not devaring the
+    This is useful in benchmarking to avoid the compiler not deleting the
     code to be benchmarked because the variable is not used in a side-effecting
     manner.
 
@@ -738,7 +738,7 @@ fn keep[type: AnyRegType](inout val: type):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = Pointer.address_of(tmp)
+    let tmp_ptr = Pointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,
