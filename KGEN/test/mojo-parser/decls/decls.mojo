@@ -557,16 +557,16 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
         self.elements = args
 
 
-# CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
-# CHECK-SAME: Ts: variadic<type>>(%args: !kgen.pack<Ts> borrow)
+# CHECK-LABEL: lit.func @"pack{{.*}}"<
+# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow) packvararg
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
     # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
     var copy = args
 
 
-# CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
-# CHECK-SAME: Ts: variadic<type>>
+# CHECK-LABEL: lit.func @"packBorrowed{{.*}}"<
+# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow) packvararg
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
     # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
@@ -990,12 +990,10 @@ struct Foo:
 # CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<!Foo, mut {{.*}}> init_self, |, %a: !Int borrow, %self: !Int borrow)
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg
+# CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> var>
 @value
 @register_passable("trivial")
 struct ParamVarArg[*I: Int]:
-    # CHECK: lit.func @"__init__
-    # CHECK-SAME: param_vararg
     pass
 
 

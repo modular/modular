@@ -882,12 +882,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (isDef)
     fnSignature.effects.setThrows();
 
-  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
-  if (paramList.hasVarArgs() ||
-      // If the parent struct has param varargs, any member functions will too.
-      (structDecl && structDecl.getSignature().hasVariadicParam()))
-    fnSignature.varEffects.setParamVarArgs();
-
   // Parse the argument list next if present.
   if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
     return failure();
@@ -915,6 +909,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     decl.hasReferenceError = true;
   }
 
+  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (isCapturingByDefault(funcOp, structDecl, paramList.paramDeclAttrs))
     fnSignature.effects.setCapturing();
 

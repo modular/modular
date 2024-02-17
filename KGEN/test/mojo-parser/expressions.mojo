@@ -1182,7 +1182,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)> borrow) throws|async|ownedresult|packvararg|param_vararg -> !kgen.variant<!Error, none>
+  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type> var>(!kgen.pack<*(0,0)> borrow) throws|async|ownedresult|packvararg -> !kgen.variant<!Error, none>
   p2: async def[*Ts: AnyRegType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
@@ -1233,7 +1233,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
     fn __copyinit__(inout self, other: Self):
         pass
 
-# CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int>>
+# CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.varlet.decl
     # CHECK-NEXT: %0 = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)

@@ -87,7 +87,7 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool TypeSignatureType::isVarParam(size_t idx) const {
-  return llvm::is_contained(getParamListAttrs().getVariadicIndices(), idx);
+  return getParamListAttrs().isVariadic(idx);
 }
 
 bool TypeSignatureType::hasVariadicParam() const {

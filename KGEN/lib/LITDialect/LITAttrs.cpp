@@ -35,7 +35,7 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-//
+// ArgParamListAttr
 //===----------------------------------------------------------------------===//
 
 ArgParamListAttr ArgParamListAttr::get(MLIRContext *context) {
@@ -100,7 +100,15 @@ ArgParamListAttr::cloneWith(ArrayRef<StringAttr> names,
                             ArrayRef<PassingKind> passingKinds) const {
   return ArgParamListAttr::get(getContext(), names, passingKinds,
                                getDefaultPos(), getDefaultKwOnly(),
-                               /*variadicIndices=*/{}, /*packIndices=*/{});
+                               getVariadicIndices(), getPackIndices());
+}
+
+bool ArgParamListAttr::isVariadic(size_t idx) const {
+  return llvm::is_contained(getVariadicIndices(), idx);
+}
+
+bool ArgParamListAttr::isPack(size_t idx) const {
+  return llvm::is_contained(getPackIndices(), idx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -142,9 +150,19 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   if (numArgs < newDefaultPosArgs.size())
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
+  /// We drop varidic/pack indices if needed, and adjust the rest.
+  SmallVector<size_t> newVariadicIndices;
+  for (size_t idx : getArgListAttrs().getVariadicIndices())
+    if (idx >= numBound)
+      newVariadicIndices.push_back(idx - numBound);
+  SmallVector<size_t> newPackIndices;
+  for (size_t idx : getArgListAttrs().getPackIndices())
+    if (idx >= numBound)
+      newPackIndices.push_back(idx - numBound);
+
   auto newArgListAttrs = ArgParamListAttr::get(
       getContext(), newArgNames, newArgPassingKind, newDefaultPosArgs,
-      getDefaultKwOnlyArgs(), /*variadicIndices=*/{}, /*packIndices=*/{});
+      getDefaultKwOnlyArgs(), newVariadicIndices, newPackIndices);
   return get(newArgListAttrs, getParamListAttrs(),
              getNumImplicitLifetimeDecls(), getVariadicEffects());
 }
@@ -157,7 +175,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<PassingKind> newParamPassingKinds;
 
   DefaultValueHandler defaultHandler(getParamListAttrs());
-  for (size_t idx = 0; idx < boundParams.size(); ++idx) {
+  size_t numParams = boundParams.size();
+  for (size_t idx = 0; idx < numParams; ++idx) {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);
       newParamPassingKinds.emplace_back(getParamPassingKinds()[idx]);
@@ -168,9 +187,31 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     }
   }
 
+  ArrayRef<size_t> variadicIndices = getParamListAttrs().getVariadicIndices();
+  ArrayRef<size_t> packIndices = getParamListAttrs().getPackIndices();
+  SmallVector<size_t> newVariadicIndices;
+  SmallVector<size_t> newPackIndices;
+  if (!variadicIndices.empty() || !packIndices.empty()) {
+    // We need to calculate the cumulatives number of bound parameters to adjust
+    // the variadic and packs indices.
+    SmallVector<size_t> cumSum{boundParams[0]};
+    cumSum.reserve(numParams);
+    for (size_t idx = 1; idx < numParams; ++idx)
+      cumSum.push_back(cumSum[idx - 1] + boundParams[idx]);
+
+    // We drop an index that corresponds to a bound parameter, and adjust the
+    // rest according to how many preceding parameters are bound.
+    for (size_t idx : variadicIndices)
+      if (!boundParams[idx])
+        newVariadicIndices.push_back(idx - cumSum[idx]);
+    for (size_t idx : packIndices)
+      if (!boundParams[idx])
+        newPackIndices.push_back(idx - cumSum[idx]);
+  }
+
   auto newParamAttrs = ArgParamListAttr::get(
       getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
-      newDefaultKwOnlyParams, /*variadicIndices=*/{}, /*packIndices=*/{});
+      newDefaultKwOnlyParams, newVariadicIndices, newPackIndices);
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls(),
              getVariadicEffects());
 }
@@ -311,7 +352,7 @@ bool FnMetadataAttr::hasKwVarArgs() const {
 }
 
 bool FnMetadataAttr::hasParamVarArgs() const {
-  return getVariadicEffects().get(VariadicEffects::Impl::ParamVarArg);
+  return !getParamListAttrs().getVariadicIndices().empty();
 }
 
 bool FnMetadataAttr::isVarArg(size_t idx) const {
@@ -345,8 +386,8 @@ static ParseResult parseVariadicEffects(AsmParser &p,
 
   auto effectsValue = VariadicImpl::VariadicEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(
-      &kw, {"vararg", "packvararg", "kwvararg", "param_vararg"}))) {
+  while (succeeded(
+      p.parseOptionalKeyword(&kw, {"vararg", "packvararg", "kwvararg"}))) {
     effectsValue |= *VariadicImpl::symbolizeVariadicEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we

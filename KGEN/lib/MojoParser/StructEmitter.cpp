@@ -152,10 +152,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   LIT::FuncOp funcOp = createFunction(
       structDecl, name, params, paramListAttrs, argTypes, argConventions,
       argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
-      fnEffects,
-      varEffects.setParamVarArgs(varEffects.hasParamVarArgs() ||
-                                 structOp.getSignature().hasVariadicParam()),
-      suffix);
+      fnEffects, varEffects, suffix);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").

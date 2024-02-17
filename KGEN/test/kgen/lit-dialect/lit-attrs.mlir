@@ -22,12 +22,12 @@
 // CHECK: #lit.fn_metadata
 // CHECK-SAME: <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
 // CHECK-SAME: <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
-// CHECK-SAME: 2, param_vararg>
+// CHECK-SAME: 2, none>
 "some.op"() {metadata = #lit.fn_metadata<
   <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
   <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
   2,
-  param_vararg
+  none
 >} : () -> ()
 
 // CHECK: #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0, none>
