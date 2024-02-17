@@ -45,9 +45,9 @@ fn top() -> Int:
 # MATER: kgen.generator [[TARGET_FN]]
 # MATER-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]],
 # MATER-NEXT: kgen.param.if
-# ELAB: kgen.func export package [[TARGET_FN]]
+# ELAB: kgen.func [[TARGET_FN]]
 # ELAB-SAME: precompiledBodyRef = [[PKG:@.*target_dep_package.*]]}
-# LAST: kgen.extern.func export package [[TARGET_FN]]
+# LAST: kgen.extern.func [[TARGET_FN]]
 # LAST-SAME: from [[PKG:@.*target_dep_package.*]]
 
 # GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}}) archives()
@@ -55,8 +55,8 @@ fn top() -> Int:
 
 # GENLIB: kgen.extern.generator export @exported_func()
 # MATER: kgen.generator @exported_func()
-# ELAB: kgen.func export package @exported_func()
-# LAST: kgen.extern.func export package @exported_func()
+# ELAB: kgen.func @exported_func()
+# LAST: kgen.extern.func @exported_func()
 
 # ELAB: kgen.link dense_resource<{{.*}} as [[PKG]]
 # LAST: kgen.link dense_resource<{{.*}} as [[PKG]]
