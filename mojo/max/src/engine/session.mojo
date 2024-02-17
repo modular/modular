@@ -9,6 +9,7 @@ from collections.vector import InlinedFixedVector, DynamicVector
 from memory.anypointer import AnyPointer
 from os.atomic import Atomic
 from sys.ffi import DLHandle
+from pathlib import Path
 
 from max.graph import Module
 

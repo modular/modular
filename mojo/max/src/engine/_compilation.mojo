@@ -17,6 +17,7 @@ from ._tensor_spec_impl import CTensorSpec
 from tensor import TensorSpec
 from collections.vector import DynamicVector
 from ._dtypes import EngineDType
+from pathlib import Path
 
 
 @value

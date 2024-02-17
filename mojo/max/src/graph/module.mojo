@@ -9,6 +9,7 @@ from tensor import Tensor
 import mlir
 from mlir.builtin_attributes import StringAttr
 from mlir.builtin_types import FunctionType
+from pathlib import Path
 
 from .type import MOTensor, TypeTuple
 from . import _capi as capi
