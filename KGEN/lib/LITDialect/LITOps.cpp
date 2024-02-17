@@ -554,8 +554,11 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
+  SmallVector<size_t> argVariadicIndices;
+  SmallVector<size_t> argPackIndices;
 
   PassingKindParser passingKindParser(p);
+  size_t idx = 0;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
@@ -578,12 +581,13 @@ static ParseResult parseLITFunctionSignature(
       argName = p.getBuilder().getStringAttr((arg.ssaName.name.drop_front()));
     }
 
-    // A colon and type should come next, followed by an optional location and
-    // input convention.
+    // A colon and type should come next, followed by an optional location,
+    // input convention, and variadicness.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseArgConvention(p, argConventions.emplace_back(),
-                           ArgConvention::OwnedInReg))
+        parseConventionAndVariadicness(p, argConventions.emplace_back(),
+                                       argVariadicIndices, argPackIndices,
+                                       idx++))
       return failure();
 
     // Parse an optional default value.
@@ -616,7 +620,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetadataAttr::get(
       ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
                             defaultPosArgs, defaultKwOnlyArgs,
-                            /*variadicIndices=*/{}, /*packIndices=*/{}),
+                            argVariadicIndices, argPackIndices),
       paramListAttr, lifetimeDecls.size(), varEffects);
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
@@ -653,6 +657,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
                              signature.getParamListAttrs(), evaluator);
+  SmallVector<Variadicness> variadicness =
+      getVariadicness(signature.getArgListAttrs());
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
@@ -681,8 +687,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     // Then we print the optional location before and input convention.
     p.printOptionalLocationSpecifier(arg.getLoc());
-    printArgConvention(p, signature.getArgConvention(i),
-                       ArgConvention::OwnedInReg);
+    printConventionAndVariadicness(p, signature.getArgConvention(i),
+                                   variadicness[i]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";

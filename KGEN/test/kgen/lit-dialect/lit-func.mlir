@@ -105,6 +105,14 @@ lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
   kgen.return
 }
 
+// CHECK-LABEL: lit.func @variadic<x var, y: dtype pack>(
+lit.func @variadic<x var, y: dtype pack>(
+  // CHECK-SAME: %a: index var, %b: index borrow|var, %c: index pack
+  %a: index var, %b: index borrow|var, %c: index pack
+) {
+  kgen.return
+}
+
 // CHECK-LABEL: lit.func @default_params<
 // CHECK-SAME: a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
 // CHECK-SAME: d: dtype, e: dtype = si8, f: scalar<si16> = 2

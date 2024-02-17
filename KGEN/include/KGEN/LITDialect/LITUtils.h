@@ -132,6 +132,25 @@ size_t countNumPositional(ArrayRef<PassingKind> kinds);
 /// Count the number of implicit passing kinds.
 size_t countNumImplicitKinds(ArrayRef<PassingKind> kinds);
 
+/// Helper enum to make printing of variadicness easier.
+enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
+
+/// Return an array of enums representing the variadicness of each
+/// argument/parameter in the given list.
+SmallVector<Variadicness> getVariadicness(ArgParamListAttr listAttr);
+
+/// Parse an optional passing convention and variadicness. The the given index
+/// will be added to the appropriate index array if a variadicness is present.
+ParseResult
+parseConventionAndVariadicness(AsmParser &p, ArgConvention &convention,
+                               SmallVectorImpl<size_t> &variadicIndices,
+                               SmallVectorImpl<size_t> &packIndices,
+                               size_t idx);
+
+/// Print an optional passing convention and variadicness.
+void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
+                                    Variadicness variadicness);
+
 //===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
