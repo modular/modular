@@ -6,8 +6,9 @@
 # A temporary home for the experimental int list type.
 
 
-from utils.index import StaticIntTuple
 from math import max
+
+from utils.index import StaticIntTuple
 
 
 struct IntList[static_values: DimList = DimList()](Sized):

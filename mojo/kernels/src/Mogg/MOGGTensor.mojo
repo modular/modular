@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # A temporary home for the experimental tensor type.
 
-from algorithm.functional import vectorize, elementwise
 from math import fma
-from memory.buffer import NDBuffer
-from MOGGIntList import IntList
 from sys.intrinsics import strided_load
-from utils._optional import Optional
-from utils._annotations import *
 
-
+from algorithm.functional import elementwise, vectorize
+from memory.buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
+from MOGGIntList import IntList
+
+from utils._annotations import *
+from utils._optional import Optional
 
 
 @value

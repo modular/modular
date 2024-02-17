@@ -4,12 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from NN.Activations import relu
-from NN.GatherScatter import gather_shape, Axis, gather as _gather
-from math import abs, erf, exp, sqrt, max, min
-from utils._annotations import *
+from math import abs, erf, exp, max, min, sqrt
+
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
+from NN.Activations import relu
+from NN.GatherScatter import Axis
+from NN.GatherScatter import gather as _gather
+from NN.GatherScatter import gather_shape
+
+from utils._annotations import *
 
 alias MAX_BENEFIT = 1000
 
