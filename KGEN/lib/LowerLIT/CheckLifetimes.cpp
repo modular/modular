@@ -742,20 +742,15 @@ private:
   /// This is the set of values known to be live at this point.
   BitVector liveValues;
 
-  /// This is the set of values known to be mutated on any prior paths, used for
-  /// let-var warnings and errors about lazy-initialized let's.  This can be
-  /// true when the value isn't live because the value has since been consumed.
-  BitVector everMutatedValues;
-
   /// When analyzing the body of a loop, this bitset indicates what a 'continue'
   /// should intersect with.
-  BitVector *continueSet = nullptr, *continueEverMutatedSet = nullptr;
+  BitVector *continueSet = nullptr;
   /// When analyzing the body of a loop, this bitset indicates what a 'break'
   /// should intersect with.
-  BitVector *breakSet = nullptr, *breakEverMutatedSet = nullptr;
+  BitVector *breakSet = nullptr;
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
-  BitVector *raiseSet = nullptr, *raiseEverMutatedSet = nullptr;
+  BitVector *raiseSet = nullptr;
 };
 } // namespace
 
@@ -770,7 +765,6 @@ void UninitializedValueScan::dump() const {
   valueSet.printFuncName(os);
   os << "\n  live = ";
   valueSet.printBV(liveValues, os) << "\n  mutated = ";
-  valueSet.printBV(everMutatedValues, os) << "\n";
 
   if (raiseSet) {
     os << " raise: ";
@@ -954,7 +948,6 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
     valueRef.markBits(liveValues, true);
-    valueRef.markBits(everMutatedValues, true);
     return;
   }
 
@@ -992,9 +985,6 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
   // If tracked, marks its value as dead.
   if (!valueSet.isTrivial(value, isDeref))
     valueRef.markBits(liveValues, false);
-
-  // Mark the value as mutated.
-  valueRef.markBits(everMutatedValues, true);
 }
 
 /// The lit.ownership.mark_destroyed op consumes the whole object bit of
@@ -1039,7 +1029,6 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // defined) because we know that all uses must be after them due to SSA
   // dominance.
   liveValues.resize(valueSet.getNumTotalBits());
-  everMutatedValues.resize(valueSet.getNumTotalBits());
   for (const ValueInfo &info : valueSet.getValueInfos())
     if (!info.startsUninit) {
       // If the whole value is live on entry, notice that.
@@ -1228,20 +1217,17 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     *breakSet &= liveValues;
-    *breakEverMutatedSet |= everMutatedValues;
     return;
   }
   if (isa<HLCF::ContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     *continueSet &= liveValues;
-    *continueEverMutatedSet |= everMutatedValues;
     return;
   }
 
   assert(isa<LIT::TryRaiseOp>(op) && "Unknown local CF op");
   assert(raiseSet && "Not in a 'try'?");
   *raiseSet &= liveValues;
-  *raiseEverMutatedSet |= everMutatedValues;
 }
 
 /// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
@@ -1253,13 +1239,10 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
   BitVector liveValuesCopy = liveValues;
-  BitVector everMutatedCopy = everMutatedValues;
   scanBlock(op.getRegion(0).front());
   liveValuesCopy.swap(liveValues);
-  everMutatedCopy.swap(everMutatedValues);
   scanBlock(op.getRegion(1).front());
   liveValues &= liveValuesCopy;
-  everMutatedValues |= everMutatedCopy;
 
   // HandleVariant defines an owned value as its result, it is produced by an
   // enclosing lit.yield.  This is handled by the normal operand/result effects.
@@ -1271,15 +1254,12 @@ void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
   UninitializedValueScan bodySets(valueSet);
   // Loops are transparent to raise.
   bodySets.raiseSet = raiseSet;
-  bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
 
   // The default continueSet is the live-in set of values.  This can lose
   // values if some 'continue' path through the body of the loop consumes a
   // value.
   BitVector continueSet(liveValues);
   bodySets.continueSet = &continueSet;
-  BitVector continueEverMutatedSet(everMutatedValues);
-  bodySets.continueEverMutatedSet = &continueEverMutatedSet;
 
   // The 'breakSet' of the loop body will be the live outs of the loop.  We
   // use the existing liveValues that we'll continue with for that set, but
@@ -1287,7 +1267,6 @@ void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
   // from the body work correctly.
   liveValues.set();
   bodySets.breakSet = &liveValues;
-  bodySets.breakEverMutatedSet = &everMutatedValues;
 
   // Iteratively scan the loop body until the live-in set converges.  This is
   // a trivial lattice with each bit converging to "not live in", so we know
@@ -1299,7 +1278,6 @@ void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
     // 'breakSet', and any continues will intersect their live-out set with
     // 'continueSet'.
     bodySets.liveValues = continueSet;
-    bodySets.everMutatedValues = continueEverMutatedSet;
     bodySets.scanBlock(loopOp.getBody().front());
 
     // If any bits got cleared from the continueSet then we need to iterate.
@@ -1311,20 +1289,15 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   UninitializedValueScan bodySets(valueSet);
   // Our current live-in set is live-in to the try body.
   bodySets.liveValues = liveValues;
-  bodySets.everMutatedValues = everMutatedValues;
 
   // Try is transparent to break/continue.
   bodySets.continueSet = continueSet;
-  bodySets.continueEverMutatedSet = continueEverMutatedSet;
   bodySets.breakSet = breakSet;
-  bodySets.breakEverMutatedSet = breakEverMutatedSet;
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
   BitVector exceptSet(liveValues.size(), true);
   bodySets.raiseSet = &exceptSet;
-  BitVector exceptEverMutatedSet(liveValues.size(), false);
-  bodySets.raiseEverMutatedSet = &exceptEverMutatedSet;
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
   // The live-ins to the except block are the exceptSet.
@@ -1335,19 +1308,16 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
     ref.markBits(exceptSet, true);
 
   liveValues = std::move(exceptSet);
-  everMutatedValues = std::move(exceptEverMutatedSet);
   scanBlock(tryOp.getExceptRegion().front());
 
   // The live-out set of the bodySet is the live-in to the else block, but
   // exceptions raised in it go out of the try.
   bodySets.raiseSet = raiseSet;
-  bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
   bodySets.scanBlock(tryOp.getElseRegion().front());
 
   // The fall through live values are the intersection from the except and
   // else blocks.
   liveValues &= bodySets.liveValues;
-  everMutatedValues |= bodySets.everMutatedValues;
 }
 
 //===----------------------------------------------------------------------===//
