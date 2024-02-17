@@ -256,11 +256,13 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
                      FnEffects effects = {}, Attribute metadata = {},
                      function_ref<InFlightDiagnostic()> emitError = {});
 
-    /// Reconstruct the signature using a list of named input parameters. These
-    /// parameters are prepended to the current signature and references are
-    /// remapped to index references.
+    /// Reconstruct the signature using a list of named input parameters and
+    /// indices indicating which one of them are variadic. These parameters are
+    /// prepended to the current signature and references are remapped to index
+    /// references.
     static SignatureType prependParams(SignatureType sig,
-                                       ArrayRef<ParamDeclAttr> parentParams);
+      ArrayRef<ParamDeclAttr> parentParams,
+      ArrayRef<size_t> parentVariadicIndices = {});
   }];
 
   let genVerifyDecl = 1;

@@ -56,13 +56,6 @@
 
 // -----
 
-// expected-error @+1 {{passing kind of variadic must be pos_or_kw or kw, got pos}}
-#pos_only_variadic = #lit.arg_param_list<
-  ["a", "b", "c", "d"], [pos, pos, kw, kw], [], [], [1], []
->
-
-// -----
-
 // expected-error @+1 {{more than 1 variadic pack not allowed in an argument/parameter list}}
 #too_many_packs = #lit.arg_param_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, pos_or_kw, kw], [], [], [], [1, 2]
@@ -73,13 +66,6 @@
 // expected-error @+1 {{variadic pack cannot have a default value}}
 #pack_with_default = #lit.arg_param_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [1 : i8], [], [], [1]
->
-
-// -----
-
-// expected-error @+1 {{passing kind of variadic pack must be pos_or_kw, got pos}}
-#pos_only_pack = #lit.arg_param_list<
-  ["a", "b", "c", "d"], [pos, pos, kw, kw], [], [], [], [1]
 >
 
 // -----

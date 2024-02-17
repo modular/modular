@@ -118,9 +118,17 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "size_t":$numBound)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a signature with the given number of
-      positional input parameters are prepended to the signature.
+      positional input parameters prepended to the signature. An additional
+      array of indices corresponding to variadic parameters of the prepended
+      parameters is also required.
     }], "FnMetadataAttrInterface", "prependPosParams", (ins
-      "size_t":$numNewParams)>,
+      "size_t":$numNewParams, "ArrayRef<size_t>":$variadicIndices)>,
+    InterfaceMethod<[{
+      Get a new metadata attribute for a signature with a number of positional
+      input parameters prepended, determined from the number of declared by the
+      given ops. The given operations must implement `DeclInterface`.
+    }], "FnMetadataAttrInterface", "prependPosParamsFromOps", (ins
+      "ArrayRef<Operation *>":$ops)>,
   ];
 }
 
