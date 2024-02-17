@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from sys.info import simdwidthof, has_neon
+from sys.info import has_neon, simdwidthof
 
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
@@ -17,7 +17,6 @@ from memory.buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList
-
 
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 

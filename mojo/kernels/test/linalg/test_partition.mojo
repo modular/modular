@@ -7,7 +7,6 @@
 
 from MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
 
-
 alias kernel_height = 6
 alias kernel_width = 64
 alias a_type = DType.float32

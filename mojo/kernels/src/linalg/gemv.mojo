@@ -4,14 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer
 from algorithm.reduction import _reduce_generator
-from utils._optional import Optional
+from MatmulUtils import elementwise_epilogue_type
+from memory.buffer import Buffer, NDBuffer
 
+from utils._optional import Optional
 from utils.index import Index
 from utils.list import Dim, DimList
-from MatmulUtils import elementwise_epilogue_type
-
 
 # Parallelized version of Gemv
 

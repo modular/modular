@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import tile
 from collections.optional import Optional
-from memory.unsafe import DTypePointer
-from memory.buffer import partial_simd_load, partial_simd_store
-from memory import stack_allocation
+from math import fma
 from sys.info import has_neon
 from sys.intrinsics import PrefetchOptions
-from math import fma
+
+from algorithm.functional import tile
+from memory import stack_allocation
+from memory.buffer import partial_simd_load, partial_simd_store
+from memory.unsafe import DTypePointer
 
 # ===----------------------------------------------------------------------===#
 # Helper Functions

@@ -10,11 +10,11 @@ from sys.info import simdwidthof
 
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
+    get_matmul_arch_factor,
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
-    get_matmul_arch_factor,
-    use_vnni_fn,
     use_i8mm_fn,
+    use_vnni_fn,
 )
 from memory.buffer import NDBuffer
 

@@ -10,8 +10,9 @@
 # REQUIRES: neon_dotprod
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Neon import _neon_dotprod, _neon_dotprod_lane
 from sys.info import has_neon_int8_dotprod
+
+from Neon import _neon_dotprod, _neon_dotprod_lane
 
 
 # CHECK-LABEL: test_has_neon_int8_dotprod

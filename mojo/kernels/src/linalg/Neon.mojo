@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import llvm_intrinsic
-from memory.unsafe import bitcast
 
+from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#
 # dot product

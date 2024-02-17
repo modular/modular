@@ -9,22 +9,18 @@ from sys.info import (
     alignof,
     has_avx2,
     has_neon,
-    simdwidthof,
     has_neon_int8_dotprod,
+    simdwidthof,
 )
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import (
-    sync_parallelize,
-    tile,
-    unroll,
-    unswitch,
-    vectorize,
-)
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE, lane_id
-from gpu.memory import AddressSpace
+from algorithm import sync_parallelize, tile, unroll, unswitch, vectorize
+from algorithm.functional import tile_and_unswitch
+from Gemv import gemv
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
-from gpu.shuffle import warp_reduce, shuffle_down, shuffle_idx
+from gpu.memory import AddressSpace
+from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from MatmulUtils import (
     GemmShape,
     MatmulConfig,
@@ -36,14 +32,14 @@ from MatmulUtils import (
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
+    get_kernel_type,
+    get_matmul_arch_factor,
     get_min_task_size,
     get_packB_unroll_factor,
     get_partitioned_matmul,
-    get_kernel_type,
     search_mm_config,
-    use_vnni_fn,
     use_i8mm_fn,
-    get_matmul_arch_factor,
+    use_vnni_fn,
 )
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
@@ -54,17 +50,15 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer, bitcast
+from Neon import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
-from Neon import _neon_matmul, _neon_dotprod
 
+from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
-from utils._optional import Optional
 from utils.static_tuple import StaticTuple
-from algorithm.functional import tile_and_unswitch
-from Gemv import gemv
 
 
 fn elementwise_epilogue_c_tile[

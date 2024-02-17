@@ -10,8 +10,9 @@
 # REQUIRES: neon_matmul
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Neon import _neon_matmul
 from sys.info import has_neon_int8_matmul
+
+from Neon import _neon_matmul
 
 
 # CHECK-LABEL: test_has_neon_int8_matmul

@@ -5,18 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from math import abs, isclose
+from random import rand
 from sys.info import simdwidthof
 
-from Gemv import gemv, naive_gemv
-from memory.buffer import Buffer, NDBuffer
-from random import rand
-from math import abs, isclose
-from utils.index import Index, StaticIntTuple
-from Matmul import matmul
-
-from utils.list import Dim, DimList
-
 import benchmark
+from Gemv import gemv, naive_gemv
+from Matmul import matmul
+from memory.buffer import Buffer, NDBuffer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList
 
 alias alignment = 64
 

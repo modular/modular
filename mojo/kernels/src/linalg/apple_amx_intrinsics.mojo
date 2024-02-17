@@ -10,8 +10,8 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from sys.info import sizeof
 from sys._assembly import inlined_assembly
+from sys.info import sizeof
 
 from memory import memcpy, memset_zero
 from memory.buffer import NDBuffer

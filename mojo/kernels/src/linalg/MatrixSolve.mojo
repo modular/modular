@@ -6,7 +6,7 @@
 """The module implements Matrix Solve functions."""
 
 from memory.buffer import NDBuffer
-from runtime.tracing import TraceLevel, Trace
+from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

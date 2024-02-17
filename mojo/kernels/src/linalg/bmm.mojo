@@ -7,30 +7,30 @@
 from math import div_ceil, gcd, max, min
 from sys.info import simdwidthof
 
-
-from gpu import ThreadIdx, BlockIdx, BlockDim
-from gpu.host import Function, Stream
-
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
+from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu.host import Function, Stream
 from Matmul import _submatmul_sequential_sync
+from MatmulUtils import PartitionHeuristic
 from MatmulUtils import (
-    PartitionHeuristic,
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
+from MatmulUtils import (
+    get_kernel_type,
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,
-    get_kernel_type,
     partition_work,
-    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 
+from utils._optional import Optional
 from utils.index import StaticIntTuple
 from utils.list import DimList
-from utils._optional import Optional
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]
