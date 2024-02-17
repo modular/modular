@@ -17,6 +17,7 @@ from sys import argv
 from tensor import TensorSpec
 from collections import Optional
 from testing import assert_equal
+from pathlib import Path
 
 
 fn test_pytorch_model() raises:

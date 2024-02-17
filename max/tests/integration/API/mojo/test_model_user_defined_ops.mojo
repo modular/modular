@@ -16,6 +16,7 @@ from max.engine import (
 from sys import argv
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
+from pathlib import Path
 
 
 fn test_model_metadata() raises:
