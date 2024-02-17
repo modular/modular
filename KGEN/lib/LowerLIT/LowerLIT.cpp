@@ -364,26 +364,26 @@ LogicalResult LITLowerer::lowerLITFunc(LIT::FuncOp func,
 }
 
 LogicalResult
-LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
+LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
                          const Twine &parentPrefix,
                          ArrayRef<ParamDeclAttr> parentInputParams,
                          ArrayRef<size_t> parentVariadicIndices) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
-    StringAttr newName = flattenAndRenameSymbol(gen, symbolTable, symTableIt);
+    StringAttr newName = flattenAndRenameSymbol(func, symbolTable, symTableIt);
 
     // If this function has a subprogram attached, update its information to
     // account for the new name.
-    DebugInfo::updateSubprogram(gen, newName);
+    DebugInfo::updateSubprogram(func, newName);
   }
 
-  lowerLITOps(gen);
+  lowerLITOps(func);
 
-  OpBuilder b(gen->getContext());
-  LITSignatureType signature = gen.getSignature();
+  OpBuilder b(func->getContext());
+  LITSignatureType signature = func.getSignature();
 
   auto [implicitLifetimes, genParams, newFunctionType] =
-      extractImplicitLifetimeParams(gen);
+      extractImplicitLifetimeParams(func);
 
   auto newFunctionTypeAttr = TypeAttr::get(newFunctionType);
 
@@ -401,43 +401,43 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
 
   Operation *result;
   // If the function has an alias name, rename it.
-  if (StringAttr newName = gen.getLinkageNameAttr()) {
-    renamedSymbols[gen.getSymNameAttr()] = newName;
-    gen.setSymName(newName);
+  if (StringAttr newName = func.getLinkageNameAttr()) {
+    renamedSymbols[func.getSymNameAttr()] = newName;
+    func.setSymName(newName);
   }
-  if (gen.isExternal()) {
+
+  auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
+  auto resParamsArr = ParamDeclArrayAttr::get(b.getContext(), {});
+  auto sigAttr = TypeAttr::get(signature);
+  if (func.isExternal()) {
     // Replace external functions with `kgen.extern.generator` ops.
     result = b.create<ExternGeneratorOp>(
-        gen.getLoc(), gen.getPreElaborationNameAttr(), TypeAttr::get(signature),
-        newFunctionTypeAttr,
-        ParamDeclArrayAttr::get(b.getContext(), inputParams),
-        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getExportKindAttr(),
-        gen.getPreCompiledModuleRefAttr());
+        func.getLoc(), func.getPreElaborationNameAttr(), sigAttr,
+        newFunctionTypeAttr, inputParamsArr, resParamsArr,
+        func.getExportKindAttr(), func.getPreCompiledModuleRefAttr());
   } else {
     // Directly lower since these operations are exactly identical right now.
-    auto newGen = b.create<GeneratorOp>(
-        gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
-        newFunctionTypeAttr,
-        ParamDeclArrayAttr::get(b.getContext(), inputParams),
-        ParamDeclArrayAttr::get(b.getContext(), {}), gen.getDecoratorsAttr(),
-        gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        gen.getLLVMMetadata(), PreservedAttr::get(TypeAttr::get(signature)),
+    auto newFunc = b.create<GeneratorOp>(
+        func.getLoc(), func.getSymNameAttr(), sigAttr, newFunctionTypeAttr,
+        inputParamsArr, resParamsArr, func.getDecoratorsAttr(),
+        func.getInlineLevelAttr(), func.getExportKindAttr(),
+        func.getLLVMMetadata(), PreservedAttr::get(sigAttr),
         /*preCompiledBodyRef=*/nullptr);
-    result = newGen;
+    result = newFunc;
 
     // Move over the body.
-    newGen.getBodyRegion().takeBody(gen.getBodyRegion());
+    newFunc.getBodyRegion().takeBody(func.getBodyRegion());
 
     // Revise the inputs for implicit lifetimes.
-    rewriteImplicitLifetimeDeclsAndArgs(newGen.getBody(), implicitLifetimes,
-                                        newFunctionType, gen.getLoc());
+    rewriteImplicitLifetimeDeclsAndArgs(newFunc.getBody(), implicitLifetimes,
+                                        newFunctionType, func.getLoc());
   }
 
   // Move over the symbol, and we're done.
-  Block::iterator genIter = gen->getIterator();
-  symbolTable.remove(gen);
+  Block::iterator genIter = func->getIterator();
+  symbolTable.remove(func);
   symbolTable.insert(result, genIter);
-  gen.erase();
+  func.erase();
 
   return success();
 }
