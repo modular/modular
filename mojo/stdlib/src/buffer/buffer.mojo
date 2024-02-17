@@ -18,16 +18,16 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
+from gpu.memory import AddressSpace as GPUAddressSpace
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
-from gpu.memory import AddressSpace as GPUAddressSpace
 
 from .memory import stack_allocation
-from .unsafe import DTypePointer, Pointer, AddressSpace
+from .unsafe import AddressSpace, DTypePointer, Pointer
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
