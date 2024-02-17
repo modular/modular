@@ -45,10 +45,6 @@ public:
     return set(Impl::PackVarArg, packVarArgs);
   }
 
-  VariadicEffects setKWVarArgs(bool kwVarArgs = true) {
-    return set(Impl::KWVarArg, kwVarArgs);
-  }
-
   bool operator==(VariadicEffects rhs) const {
     return getImpl() == rhs.getImpl();
   }
