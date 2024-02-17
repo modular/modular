@@ -770,8 +770,8 @@ private:
                                          ParamNode *genNode, bool addWaiter);
 
   /// Specialize a generator by scheduling an elaboration task.
-  void specializeFromSource(ImplNode *inode, ParamNode *genNode,
-                            bool addWaiter);
+  void specializeFromSource(ImplNode *inode, ParamNode *genNode, bool addWaiter,
+                            SymbolRefAttr precompiled = {});
 
   /// Process all deferred search functions serially, re-queuing nodes as it
   /// completes. Returns true if there were deferred search functions.
@@ -2046,7 +2046,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 }
 
 void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
-                                          bool addWaiter) {
+                                          bool addWaiter,
+                                          SymbolRefAttr precompiled) {
   GeneratorOp gen = genNode->gen;
 
   // Bind all parameter values in this scope.
@@ -2101,6 +2102,8 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
                          gen.getSignature().getFnEffects()),
       gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
       gen.getLLVMMetadata());
+  if (precompiled)
+    newFunc.setPrecompiledBodyRefAttr(precompiled);
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -2354,94 +2357,12 @@ void ElaboratorImpl::completeSpecializationFromPackage(PackageState *state,
   if (!state->error && !state->reader)
     return specializeFromSource(parent, genNode, addWaiter);
 
-  // We will complete the ParamNode here, so schedule a waiter if requested.
-  if (addWaiter) {
-    [[maybe_unused]] bool added = genNode->state.addWaiter();
-    assert(added);
-    genNode->andThenSync([parent, this] { scheduleImplNode(parent); });
-  }
-
-  auto completeParamNode = [this, genNode] {
-    assert(genNode->numActive == 0 && "counter should always have been 0");
-    g.numWorkItems.fetch_add(genNode->state.markDone());
-    genNode->emplace();
-  };
-
-  // If the package is in an error state, create a dummy error.
-  if (state->error) {
-    auto impl = std::make_unique<ImplNode>(genNode);
-    impl->setToError(ErrorTree(state->link.getLoc(), state->error->copy()));
-    genNode->impls.push_back(std::move(impl));
-    return completeParamNode();
-  }
-
-  assert(state->reader && "expected a valid package");
-  PackageReaderState &reader = *state->reader;
-
-  // Otherwise, we are good to start reading into the concrete module.
-  // First, check if the specialization was already loaded.
-  StringAttr name = genNode->gen.getSymNameAttr();
-
-  // Each generator loadable from a package will only hit this code once,
-  // but two generators loadable from the same package where one is a
-  // dependency of the other can hit this code at the same time. Ensure one
-  // such worker cannot query the state of package loading while another is
-  // loading functions from the package.
-  reader.mutex.lock();
-  FuncOp func = newSymTab.read([name](const SymbolTable &symtab) {
-    return symtab.lookup<FuncOp>(name);
-  });
-
-  auto addImplNode = [genNode, this](FuncOp func) {
-    assert(genNode->impls.empty() && "could not be already specialized");
-    genNode->impls.push_back(std::make_unique<ImplNode>(
-        func, genNode, ParameterUseDefGraph(/*scope=*/nullptr), "",
-        IREvaluator(*this)));
-    return genNode->impls.back().get();
-  };
-
-  if (func) {
-    // The function was pulled in as a transitive dependency of another
-    // function. Just ensure an ImplNode is created for it.
-    reader.mutex.unlock();
-    addImplNode(func);
-    return completeParamNode();
-  }
-
-  // This function wasn't already pulled in. Load the specialization now
-  // into the concrete module.
-  func = reader.symtab->lookup<FuncOp>(name);
-  assert(func && "missing function in bytecode module");
-
-  // Move the function from the bytecode module into the concrete module
-  // and pull in all transitive dependencies. Avoid locking `newSymTab`
-  // for the whole duration because that blocks all other new
-  // instantiations of functions while the bytecode module is being read.
-  LogicalResult result = failure();
-  func->remove();
-  newSymTab.modify([func](auto &symtab) { symtab.insert(func); });
-  result = loadSymbolsFromBytecode(
-      func, reader.reader,
-      [&](StringAttr name) {
-        return newSymTab.read(
-            [name](auto &symtab) { return symtab.lookup(name); });
-      },
-      [&](Operation *op, Operation *after) {
-        return newSymTab.modify([op](auto &symtab) {
-          op->remove();
-          symtab.insert(op);
-        });
-      },
-      *reader.symtab);
-  // We are done loading functions, so release the mutex.
-  reader.mutex.unlock();
-
-  ImplNode *inode = addImplNode(func);
-  if (failed(result)) {
-    inode->setToError(ErrorTree(state->link.getLoc(),
-                                Error("failed to read body from bytecode")));
-  }
-  completeParamNode();
+  // FIXME(#32285): We cannot use the post-elaboration IR because it may have
+  // the incorrect ABI. We transform the ABI after elaboration, but do tag the
+  // precompiled reference to ensure we re-use the LLVM compilation results.
+  return specializeFromSource(
+      parent, genNode, addWaiter,
+      FlatSymbolRefAttr::get(state->link.getSymNameAttr()));
 }
 
 //===----------------------------------------------------------------------===//

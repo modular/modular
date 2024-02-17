@@ -68,6 +68,8 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   inlinerOpts.optimizationLevel = options.optimizationLevel;
   inlinerOpts.updateDebugInfo =
       options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug;
+  // FIXME(#32286): The bodies of precompiled functions are not available to the
+  // parametric inliner.
   pm.addPass(createInlineParametric(runtime, inlinerOpts));
   if (options.optimizationLevel >= 1) {
     pm.addPass(createVerifyParameters(
@@ -134,8 +136,9 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addPass(createResolveCompilerPromises(runtime));
 
   // We lower argument input conventions.
+  // FIXME: This should be parallelized on FuncOp.
   pm.addPass(createLowerArgConventions());
-  // TODO(#20700): should this be followed by mem-2-reg immediately?
+  pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the ForceInline pass with an inner function pass pipeline.
   auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
