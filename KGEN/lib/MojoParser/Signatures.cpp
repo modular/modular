@@ -988,7 +988,8 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
       ArgParamListAttr::get(ctx, paramList.names, paramList.passingKinds,
                             paramList.defaultPosParams,
                             paramList.defaultKwOnlyParams,
-                            /*variadicIndices=*/{}, /*packIndices=*/{}),
+                            paramList.variadicIndices,
+                            /*packIndices=*/{}),
       implicitLifetimeDecls.size(), argList.varEffects);
 
   /// Silence internal verifier errors when constructing types from the parser.
@@ -1001,6 +1002,6 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
 
   FunctionType functionType = getFunctionType();
   return SignatureType::remapToSignature(
-      paramList.paramDeclAttrs, {}, functionType, argConventions,
-      argList.effects, metadata, silenceErrors);
+      paramList.paramDeclAttrs, /*resultParams=*/{}, functionType,
+      argConventions, argList.effects, metadata, silenceErrors);
 }

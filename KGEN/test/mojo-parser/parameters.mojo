@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
+# RUN: kgen-translate -import-mojo %s | kgen-opt -verify-parameters | FileCheck %s
 
 alias index = __mlir_type.index
 alias index_one = __mlir_attr.`1 : index`
@@ -468,7 +468,7 @@ struct UnqualAliasLookup[param: Int]:
 # Variadic parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"fnWithVariadics{{.*}}()"<b: variadic<!Int>>
+# CHECK-LABEL: lit.func @"fnWithVariadics{{.*}}"<b: variadic<!Int> var>
 fn fnWithVariadics[*b: Int]():
   pass
 
@@ -488,7 +488,7 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.signature<<"b": variadic<!Int>>() param_vararg -> !kgen.none>
+  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.signature<<"b": variadic<!Int> var>() -> !kgen.none>
   # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 

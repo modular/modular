@@ -49,11 +49,6 @@ public:
     return set(Impl::KWVarArg, kwVarArgs);
   }
 
-  VariadicEffects setParamVarArgs(bool paramVarArgs = true) {
-    return set(Impl::ParamVarArg, paramVarArgs);
-  }
-  bool hasParamVarArgs() const { return get(Impl::ParamVarArg); }
-
   bool operator==(VariadicEffects rhs) const {
     return getImpl() == rhs.getImpl();
   }

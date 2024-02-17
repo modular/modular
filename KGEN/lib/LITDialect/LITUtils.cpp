@@ -423,8 +423,8 @@ ParseResult LIT::parseSignatureValues(
   auto varEffectsValue = VariadicImpl::VariadicEffects::None;
   StringRef kw;
   while (succeeded(p.parseOptionalKeyword(
-      &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
-            "param_vararg", "capturing", "ownedresult", "escaping"}))) {
+      &kw, {"throws", "async", "vararg", "packvararg", "kwvararg", "capturing",
+            "ownedresult", "escaping"}))) {
     if (std::optional<KGEN::impl::FnEffects> effectsOr =
             KGEN::impl::symbolizeFnEffects(kw)) {
       effectsValue |= *effectsOr;

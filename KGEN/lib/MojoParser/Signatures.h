@@ -152,9 +152,6 @@ public:
   SmallVector<TypedAttr> defaultKwOnlyParams;
   /// Indices of variadic parameters.
   SmallVector<size_t> variadicIndices;
-
-  /// TODO: remove this when migration to variadic indices is complete.
-  bool hasVarArgs() { return !variadicIndices.empty(); }
 };
 
 //===----------------------------------------------------------------------===//
