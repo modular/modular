@@ -1645,11 +1645,11 @@ LogicalResult AliasDeclOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclOp
+// VarDeclOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
-                                       ParamDeclAttr &lifetimeDecl) {
+static ParseResult parseVarDeclType(AsmParser &p, Type &resultType,
+                                    ParamDeclAttr &lifetimeDecl) {
   if (p.parseType(resultType))
     return failure();
   auto refType = dyn_cast<RefType>(resultType);
@@ -1666,24 +1666,24 @@ static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
   return success();
 }
 
-static void printVarLetDeclType(AsmPrinter &p, Operation *op, Type resultType,
-                                ParamDeclAttr decl) {
+static void printVarDeclType(AsmPrinter &p, Operation *op, Type resultType,
+                             ParamDeclAttr decl) {
   p.printType(resultType);
 }
 
-void VarLetDeclOp::getAsmResultNames(
+void VarDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }
 
-void VarLetDeclOp::walkDefinitions(
+void VarDeclOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), ParamDefValue());
 }
 
-void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
-                         StringRef name, StringRef lifetimeName,
-                         VarLetDeclKind kind) {
+void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
+                      StringRef name, StringRef lifetimeName,
+                      VarDeclKind kind) {
   auto lifetimeType = b.getType<LifetimeType>(/*isMutable=*/true);
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
@@ -1693,9 +1693,7 @@ void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
   build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{});
 }
 
-bool VarLetDeclOp::isSynthetic() {
-  return getKind() == VarLetDeclKind::Synthesized;
-}
+bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }
 
 //===----------------------------------------------------------------------===//
 // GlobalVarDeclOp

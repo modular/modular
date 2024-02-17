@@ -91,7 +91,7 @@ struct MyCallable:
 
 # CHECK-LABEL: lit.func @"test_callable_object
 fn test_callable_object(x: int, y: int):
-    # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl {{.*}}: !lit.ref<!MyCallable
+    # CHECK: %[[CALLABLE:.*]] = lit.var.decl {{.*}}: !lit.ref<!MyCallable
     var callable = MyCallable()
 
     # CHECK-DAG: %[[IMMREF:.*]] = lit.ref.immut %[[CALLABLE]]

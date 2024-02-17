@@ -379,7 +379,7 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.varlet.decl "a" imp
+    # CHECK: %a_0 = lit.var.decl "a" imp
     # CHECK: lit.ref.store %a, %a_0
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
@@ -432,7 +432,7 @@ fn callDefaultArgument(x: Int) -> Int:
     # CHECK-NEXT: lit.ref.store {{.*}}, %a
     var a = defaultArgument(x)
 
-    # CHECK-NEXT: %b = lit.varlet.decl
+    # CHECK-NEXT: %b = lit.var.decl
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
     var b = defaultArgument(x, x)
@@ -467,7 +467,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1):
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`0">
+    # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`0">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}1}
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
@@ -480,7 +480,7 @@ fn callNonRegisterDefaultArg():
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f = lit.varlet.decl "f"
+    # CHECK: %f = lit.var.decl "f"
     # CHECK: lit.ref.store %0, %f
     var f = defaultArgument
 
@@ -560,7 +560,7 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
 # CHECK-LABEL: lit.func @"pack{{.*}}"<
 # CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow) packvararg
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
-    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
+    # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
     var copy = args
 
@@ -568,7 +568,7 @@ fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}}"<
 # CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow) packvararg
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
-    # CHECK: %copy = lit.varlet.decl "copy" {{.*}}!kgen.pack<Ts>
+    # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
     var copy = args
 
@@ -582,15 +582,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.type`](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !lit.declref<#SIMD {{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, {{.*}}@builtin::@simd::@SIMD{{.*}}f32{{.*}}, !Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, {{.*}}@builtin::@simd::@SIMD{{.*}}f32{{.*}}, !Int]>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatLiteral, index]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatLiteral, index]>
     let d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> []>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> []>
     let e = MyTuple()
 
     # CHECK: [[C1:%.*]] = kgen.param.constant = <1>

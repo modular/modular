@@ -126,7 +126,7 @@ const char *LIT::getContextMessage(ExprContext context) {
 // ValueDest
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
+ValueDest::ValueDest(VarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
 ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
@@ -282,7 +282,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
-    if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
+    if (auto varOp = dyn_cast<VarDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(
@@ -357,9 +357,9 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // We model this as an mutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
-  return MLValue(emitter.emitVarLetDecl("anonymous*", slotType,
-                                        emitter.translateLocation(loc),
-                                        VarLetDeclKind::Synthesized));
+  return MLValue(emitter.emitVarDecl("anonymous*", slotType,
+                                     emitter.translateLocation(loc),
+                                     VarDeclKind::Synthesized));
 }
 
 /// Return an MLValue for this destination of the specified type that we can
@@ -650,9 +650,9 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
   PValue pvalue = value.ir;
   // We model this as an immutable let value with a separately stored
   // initializer.
-  VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
-                                    translateLocation(value.expr->getLoc()),
-                                    VarLetDeclKind::Synthesized);
+  VarDeclOp var = emitVarDecl("anonymous*", pvalue.getType(),
+                              translateLocation(value.expr->getLoc()),
+                              VarDeclKind::Synthesized);
   if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return MRValue(var);
@@ -708,8 +708,8 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
   // Promote SRValue to MRValue.
   if (SRValue srValue = rVal.getIfSRValue()) {
     Location argLoc = value.expr->getLocation(*this);
-    VarLetDeclOp varOp = emitVarLetDecl("__mem_tmp__", srValue.getType(),
-                                        argLoc, VarLetDeclKind::Synthesized);
+    VarDeclOp varOp = emitVarDecl("__mem_tmp__", srValue.getType(), argLoc,
+                                  VarDeclKind::Synthesized);
     builder->create<RefStoreOp>(argLoc, srValue, varOp);
     return MRValue(varOp);
   }
@@ -1844,7 +1844,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   // Narrow the decl to a CValue.
   CValue value;
-  if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+  if (auto var = dyn_cast<VarDeclOp>(decl)) {
     // Treat both 'var' and 'let' decls as mutable values and defer to check
     // lifetimes to verify 'let' decls. This allows lazy 'let' initialization.
     value = MLValue(var);
@@ -1924,8 +1924,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
-                                         VarLetDeclKind::Synthesized);
+  Value tmpDecl = emitter.emitVarDecl("__store_tmp__", rvalueType, loc,
+                                      VarDeclKind::Synthesized);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
@@ -2075,16 +2075,14 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 //===--------------------------------------------------------------------===//
 // Var/let emission helpers.
 
-VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
-                                         Location loc, VarLetDeclKind kind) {
+VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
+                                   VarDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
-  return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind);
+  return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
 }
 
-VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
-                                         Location loc, VarLetDeclKind kind) {
+VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
+                                   VarDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
-  return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind);
+  return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
 }

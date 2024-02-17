@@ -50,21 +50,21 @@ fn return_impl_convert_raises() raises -> Int:
 fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK:          hlcf.if
     if a:
-        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a" var
+        # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" var
         var inside_a: Int
     # CHECK:          } else {
     # CHECK:            hlcf.if
     elif b:
-        # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b" var
+        # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" var
         var inside_b: Int
     # CHECK:            } else {
     # CHECK:              hlcf.if
     elif c:
-        # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c" var
+        # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" var
         var inside_c: Int
     # CHECK:              } else {
     else:
-        # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else" var
+        # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" var
         var inside_else: Int
     # CHECK:                hlcf.yield
     # CHECK-NEXT:         }
@@ -72,7 +72,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:       }
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     }
-    # CHECK-NEXT: %z = lit.varlet.decl "z" var
+    # CHECK-NEXT: %z = lit.var.decl "z" var
     # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
     # CHECK-NEXT: store [[FOUR]], %z
     var z: Int = 4
@@ -94,23 +94,23 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:   [[I1:%.*]] = lit.call {{.*}}Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
     # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
-        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a" var
+        # CHECK-NEXT: %inside_a = lit.var.decl "inside_a" var
         var inside_a: Int
     # CHECK:                   } else {
     # CHECK:                     hlcf.if
     else:
         if b:
-            # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b" var
+            # CHECK-NEXT: %inside_b = lit.var.decl "inside_b" var
             var inside_b: Int
         # CHECK:                     } else {
         # CHECK:                       hlcf.if
         else:
             if c:
-                # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c" var
+                # CHECK-NEXT: %inside_c = lit.var.decl "inside_c" var
                 var inside_c: Int
             # CHECK:                       } else {
             else:
-                # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else" var
+                # CHECK-NEXT: %inside_else = lit.var.decl "inside_else" var
                 var inside_else: Int
     # CHECK:                         hlcf.yield
     # CHECK:                       }
@@ -126,12 +126,12 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <a> {
   @parameter
   if a:
-    # CHECK: lit.varlet.decl "inside_1" var
+    # CHECK: lit.var.decl "inside_1" var
     var inside_1: Int
   # CHECK: } else {
   # CHECK:     kgen.param.if <apply{{.*}}{{.*}}Bool::@"__mlir_i1__{{.*}}b)> {
   elif b:
-  # CHECK:     lit.varlet.decl "inside_2" var
+  # CHECK:     lit.var.decl "inside_2" var
     var inside_2: Int
   # CHECK:     kgen.param.yield
   # CHECK:   }
@@ -143,13 +143,13 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
   # CHECK: kgen.param.if <cond(a, b, a)>
   @parameter
   if a and b:
-  # CHECK:   lit.varlet.decl "v" var
+  # CHECK:   lit.var.decl "v" var
     var v: Int
   # CHECK:   kgen.param.yield
   # CHECK: } else {
   # CHECK: kgen.param.if <cond(a, a, b)>
   elif a or b:
-  # CHECK:   lit.varlet.decl "w" var
+  # CHECK:   lit.var.decl "w" var
     var w: Int
 
 
@@ -160,7 +160,7 @@ fn param_if_and[a: Bool, b: Bool]():
   # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)", a), b, a))> {
   @parameter
   if a and b:
-  # CHECK:   lit.varlet.decl "v" var
+  # CHECK:   lit.var.decl "v" var
     var v: Int
   # CHECK:   kgen.param.yield
   # CHECK: }
@@ -173,12 +173,12 @@ fn if_try(p: Bool):
     if p:
         # CHECK: lit.try {
         try:
-            # CHECK: lit.varlet.decl "b"
+            # CHECK: lit.var.decl "b"
             var b = 1
             # CHECK: lit.try.yield
         # CHECK: } except (%arg0: !Error)
         except e:
-            # CHECK: lit.varlet.decl "c"
+            # CHECK: lit.var.decl "c"
             var c = 2
             # CHECK: lit.try.yield
         # CHECK-NEXT: } else {
@@ -189,7 +189,7 @@ fn if_try(p: Bool):
         # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: } else {
     else:
-        # CHECK: lit.varlet.decl "d"
+        # CHECK: lit.var.decl "d"
         var d = 3
         # CHECK: hlcf.yield
     # CHECK-NEXT: }
@@ -200,9 +200,9 @@ fn if_try(p: Bool):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"test_while
-# CHECK:       %inside_a = lit.varlet.decl "inside_a" var
-# CHECK:       %inside_b = lit.varlet.decl "inside_b" var
-# CHECK:       %inside_else = lit.varlet.decl "inside_else" var
+# CHECK:       %inside_a = lit.var.decl "inside_a" var
+# CHECK:       %inside_b = lit.var.decl "inside_b" var
+# CHECK:       %inside_else = lit.var.decl "inside_else" var
 # CHECK:       lit.loop cond {
 # CHECK:         [[V0:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
 # CHECK:         lit.loop.condition [[V0]] : i1
@@ -258,7 +258,7 @@ fn test_simple(a: Bool):
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
-    # CHECK: %a_0 = lit.varlet.decl "a" imp
+    # CHECK: %a_0 = lit.var.decl "a" imp
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
@@ -349,7 +349,7 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" synth
+    # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %my_list
     # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%$RANGE, [[IMMREF]])
     for item in my_list:

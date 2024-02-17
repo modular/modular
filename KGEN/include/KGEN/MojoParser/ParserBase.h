@@ -224,7 +224,7 @@ public:
                               std::optional<size_t> stmtIndent = std::nullopt);
   ParseResult parseAssignExpression(ExprNode *&result,
                                     std::optional<size_t> stmtIndent);
-  ParseResult parseVarLetInitExpression(ExprNode *&result, size_t stmtIndent);
+  ParseResult parseVarInitExpression(ExprNode *&result, size_t stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
   /// tuple expression if there are commas.

@@ -648,8 +648,8 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
 
       // Mark the copy as synthetic.
       auto markAsSynthetic = [](Operation *op) {
-        if (VarLetDeclOp varLetDeclOp = dyn_cast<VarLetDeclOp>(op))
-          varLetDeclOp.setKind(VarLetDeclKind::Synthesized);
+        if (VarDeclOp varLetDeclOp = dyn_cast<VarDeclOp>(op))
+          varLetDeclOp.setKind(VarDeclKind::Synthesized);
       };
 
       if (SRValue srValue = declVal.dyn_cast<SRValue>())
@@ -1077,13 +1077,13 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
   if (varListType.isTypeCheckErrorType())
     return {};
 
-  // If this is a memory-only type, emit a VarLetDeclOp:  VaridicListMem needs a
+  // If this is a memory-only type, emit a VarDeclOp:  VaridicListMem needs a
   // lifetime for its self accesses.  This also provides a user name for the
   // argument.
   auto mlirLoc = emitter.translateLocation(loc);
-  VarLetDeclOp varDecl =
-      emitter.emitVarLetDecl(argName, UnresolvedType::get(emitter.getContext()),
-                             mlirLoc, VarLetDeclKind::Implicit);
+  VarDeclOp varDecl =
+      emitter.emitVarDecl(argName, UnresolvedType::get(emitter.getContext()),
+                          mlirLoc, VarDeclKind::Implicit);
 
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
@@ -1100,13 +1100,13 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
-                                         StringAttr argName,
-                                         ExprEmitter &emitter, SMLoc loc) {
+static VarDeclOp makeArgLValueVarSlot(const CValue &argValue,
+                                      StringAttr argName, ExprEmitter &emitter,
+                                      SMLoc loc) {
   // Emit the initializer expression into the slot.
-  VarLetDeclOp varDecl = emitter.emitVarLetDecl(
-      argName, argValue.getRValueType(), emitter.translateLocation(loc),
-      VarLetDeclKind::Implicit);
+  VarDeclOp varDecl = emitter.emitVarDecl(argName, argValue.getRValueType(),
+                                          emitter.translateLocation(loc),
+                                          VarDeclKind::Implicit);
 
   // Expr to provide location information.
   ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
@@ -1259,7 +1259,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   if (emptyBody && isa<TraitDeclOp>(*decl.getParentDecl())) {
     // Wipe out the body which may already contain some compiler generated
     // operations for handling argLValueVarSlot.
-    body->walk([&](LIT::VarLetDeclOp op) {
+    body->walk([&](LIT::VarDeclOp op) {
       // Remove the value from parent's declsInScope first before destroying the
       // value.
       auto iter = decl.declsInScope.find(op.getNameAttr());
@@ -1423,7 +1423,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   // Global variables require an initializer.
   ExprNode *initExpr = nullptr;
   if (p.parseToken(Token::equal, "expected '=' in global variable") ||
-      p.parseVarLetInitExpression(initExpr, decl.getIndentation()))
+      p.parseVarInitExpression(initExpr, decl.getIndentation()))
     return failure();
 
   // Emit the initializer into an initializer function. If we have a type, then

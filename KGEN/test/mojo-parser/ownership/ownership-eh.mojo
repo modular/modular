@@ -50,7 +50,7 @@ fn use(x: Int): pass
 # CHECK-LABEL: lit.func @"error_handling_int_let
 # https://github.com/modularml/modular/issues/25419
 def error_handling_int_let():
-    # CHECK: lit.varlet.decl "x"
+    # CHECK: lit.var.decl "x"
     var x: Int = 1
     _ = foo(x)
     use(x)

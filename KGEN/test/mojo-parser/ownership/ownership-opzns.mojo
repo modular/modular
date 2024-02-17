@@ -137,7 +137,7 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
@@ -147,7 +147,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
     # CHECK-NEXT: kgen.return [[A]]
@@ -156,7 +156,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
@@ -166,10 +166,10 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
     # CHECK-NEXT: lit.ref.store %a, %a_0
 
-    # CHECK-NEXT: %x = lit.varlet.decl "x"
+    # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
     # CHECK-NEXT: lit.ref.store [[A]], %x
@@ -215,7 +215,7 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # Check that copies that are immediately destroyed are elided.
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
-    # CHECK: %a = lit.varlet.decl "a"
+    # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__
     # CHECK-NEXT: lit.ref.store [[A]], %a
     var a = RegExample()
@@ -227,13 +227,13 @@ fn optimizeCopyElision():
     # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], [[A]])
     takeTwo(a, a)
 
-    # CHECK-NEXT: %x = lit.varlet.decl "x"
+    # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
     var x = MemExample()
 
     # We need one copy of 'x' here, not two + dtor.
 
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
@@ -249,14 +249,14 @@ fn optimizeCopyElision():
 fn optimizeCopyToMove():
     # All the copy ctors should be eliminated in favor of moves.
 
-    # CHECK: %m1 = lit.varlet.decl
+    # CHECK: %m1 = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
     var m1 = MemExample()  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m1.noop()
 
-    # CHECK: %m2 = lit.varlet.decl
+    # CHECK: %m2 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
     var m2 = m1  # expected-warning {{never mutated}}
@@ -264,7 +264,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m2.noop()
 
-    # CHECK: %m3 = lit.varlet.decl
+    # CHECK: %m3 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
     var m3 = m2  # expected-warning {{never mutated}}
@@ -276,7 +276,7 @@ fn optimizeCopyToMove():
 
     # All the copyinit's should be removed.
 
-    # CHECK-NEXT: %r1 = lit.varlet.decl "r1"
+    # CHECK-NEXT: %r1 = lit.var.decl "r1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: lit.ref.store
     var r1 = RegExample()
@@ -284,7 +284,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R1]])
     r1.noop()
 
-    # CHECK-NEXT: %r2 = lit.varlet.decl "r2"
+    # CHECK-NEXT: %r2 = lit.var.decl "r2"
     # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
     # CHECK-NEXT: lit.ref.store [[R1]], %r2
     var r2 = r1
@@ -292,7 +292,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R2]])
     r2.noop()
 
-    # CHECK-NEXT: %r3 = lit.varlet.decl "r3"
+    # CHECK-NEXT: %r3 = lit.var.decl "r3"
     # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
     # CHECK-NEXT: lit.ref.store [[R2]], %r3
     var r3 = r2
@@ -302,7 +302,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
 
-    # CHECK-NEXT: %v1 = lit.varlet.decl
+    # CHECK-NEXT: %v1 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: lit.ref.store [[TMP]], %v1
     var v1 = RegExample()  # expected-warning {{never mutated}}
@@ -310,7 +310,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
     v1.noop()
 
-    # CHECK-NEXT: %v2 = lit.varlet.decl
+    # CHECK-NEXT: %v2 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
     # CHECK-NEXT: lit.ref.store [[TMP]], %v2
     var v2 = v1  # expected-warning {{never mutated}}
@@ -318,7 +318,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
     v2.noop()
 
-    # CHECK-NEXT: %v3 = lit.varlet.decl
+    # CHECK-NEXT: %v3 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
     # CHECK-NEXT: lit.ref.store [[TMP]], %v3
     var v3 = v2  # expected-warning {{never mutated}}

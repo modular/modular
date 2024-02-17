@@ -23,10 +23,10 @@ struct MemExample:
 
 # CHECK-LABEL: lit.func @"if_examples
 fn if_examples(cond: __mlir_type.i1):
-  # CHECK: %a = lit.varlet.decl
+  # CHECK: %a = lit.var.decl
   var a: MemExample
 
-  # CHECK-NEXT: %b = lit.varlet.decl
+  # CHECK-NEXT: %b = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
   var b = MemExample()
@@ -45,7 +45,7 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: %c = lit.varlet.decl
+  # CHECK-NEXT: %c = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
   var c = MemExample()
   # CHECK: hlcf.if %cond {
@@ -64,7 +64,7 @@ fn if_examples(cond: __mlir_type.i1):
   c.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
-  # CHECK-NEXT:  %d = lit.varlet.decl "d"
+  # CHECK-NEXT:  %d = lit.var.decl "d"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
   var d = MemExample()
 
@@ -86,7 +86,7 @@ fn if_examples(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
-  # CHECK-NEXT: %a = lit.varlet.decl
+  # CHECK-NEXT: %a = lit.var.decl
   let a : MemExample
   # CHECK-NEXT: lit.try {
   # CHECK-NOT: %a
@@ -106,7 +106,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   a.noop()  # ok
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
 
-  # CHECK-NEXT: %b = lit.varlet.decl
+  # CHECK-NEXT: %b = lit.var.decl
   var b : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -127,7 +127,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   b = MemExample()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
 
-  # CHECK-NEXT: %c = lit.varlet.decl
+  # CHECK-NEXT: %c = lit.var.decl
   let c : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -148,7 +148,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   c.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
-  # CHECK-NEXT: %d = lit.varlet.decl
+  # CHECK-NEXT: %d = lit.var.decl
   let d : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -210,11 +210,11 @@ fn chris_lifetime_example(a: Bool, b: Bool):
 
 # CHECK-LABEL: lit.func @"loop_example
 fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
-  # CHECK-NEXT: %a = lit.varlet.decl "a"
+  # CHECK-NEXT: %a = lit.var.decl "a"
   var a : MemExample
-  # CHECK-NEXT: %b = lit.varlet.decl "b"
+  # CHECK-NEXT: %b = lit.var.decl "b"
   let b : MemExample
-  # CHECK-NEXT: %c = lit.varlet.decl "c"
+  # CHECK-NEXT: %c = lit.var.decl "c"
   let c : MemExample
 
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
@@ -269,7 +269,7 @@ struct TestLoopWithWholeObjectBit:
 
   # CHECK: lit.func @"__init__
   fn __init__(inout self, cond: __mlir_type.i1):
-        # CHECK-NEXT: %buf = lit.varlet.decl "buf"
+        # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
         let buf = MemExample()
 
@@ -303,7 +303,7 @@ fn testInfiniteloop():
   # CHECK-NEXT:      kgen.unreachable
   # CHECK-NEXT:    }
   while True:
-    # CHECK-NEXT:  %localThing = lit.varlet.decl
+    # CHECK-NEXT:  %localThing = lit.var.decl
     # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %localThing
     # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])

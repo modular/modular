@@ -30,8 +30,8 @@
 
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.varlet.decl "a" var : !lit.ref<index, mut life_a> loc(fused<#sp>["test.mlir":10:10])
-    %b = lit.varlet.decl "b" synth : !lit.ref<index, mut life_b> loc(fused<#sp>["test.mlir":12:10])
+    %a = lit.var.decl "a" var : !lit.ref<index, mut life_a> loc(fused<#sp>["test.mlir":10:10])
+    %b = lit.var.decl "b" synth : !lit.ref<index, mut life_b> loc(fused<#sp>["test.mlir":12:10])
     kgen.return %arg0 : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])
 }

@@ -799,41 +799,41 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclOp
+// VarDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
+def LIT_VarDeclOp : LITOp<"var.decl", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
-  let summary = "Addressible local let or var declaration";
+  let summary = "Addressible local var declaration";
   let description = [{
-    This declaration is used for var and let declarations with an exposed
+    This declaration is used for var declarations with an exposed
     address.  `kind` encodes how this declaration was created, either via
-    explicit `let` or `var` expressions, implicitly declared, or internally
+    explicit `var` expressions, implicitly declared, or internally
     synthesized (which suppresses some warnings).  This type defines a lifetime
     and returns a mutable reference to its result in that lifetime.
 
     Example:
 
     ```mlir
-    %foo = lit.varlet.decl "foo" var : !lit.ref<index, foo>
+    %foo = lit.var.decl "foo" var : !lit.ref<index, foo>
     ```
   }];
 
-  let arguments = (ins StrAttr:$name, LIT_VarLetDeclKindAttr:$kind,
+  let arguments = (ins StrAttr:$name, LIT_VarDeclKindAttr:$kind,
                        KGEN_ParamDeclAttr:$paramDecl,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
-    $name $kind `:` custom<VarLetDeclType>(type($result), $paramDecl) attr-dict
+    $name $kind `:` custom<VarDeclType>(type($result), $paramDecl) attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$lifetimeName,
-                   "VarLetDeclKind":$kind)>
+                   "VarDeclKind":$kind)>
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();

@@ -65,11 +65,11 @@ lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-  // CHECK-NEXT: %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
-  %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
+  // CHECK-NEXT: %a = lit.var.decl "a" imp : !lit.ref<scalar<ty>, mut life>
+  %a = lit.var.decl "a" imp : !lit.ref<scalar<ty>, mut life>
 
-  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" var : !lit.ref<index, mut lt>
-  %lifetime = lit.varlet.decl "lifetime" var : !lit.ref<index, mut lt>
+  // CHECK-NEXT: %lifetime = lit.var.decl "lifetime" var : !lit.ref<index, mut lt>
+  %lifetime = lit.var.decl "lifetime" var : !lit.ref<index, mut lt>
   kgen.return
 }
 
@@ -80,8 +80,8 @@ lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<scalar<ty>, mut life>
-  %size = lit.varlet.decl "size" var : !lit.ref<scalar<ty>, mut life>
+  // CHECK: %size = lit.var.decl "size" var : !lit.ref<scalar<ty>, mut life>
+  %size = lit.var.decl "size" var : !lit.ref<scalar<ty>, mut life>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
@@ -434,7 +434,7 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 // -----
 
 lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
-  %y = lit.varlet.decl "y" var : !lit.ref<@MyStruct, mut *"life">
+  %y = lit.var.decl "y" var : !lit.ref<@MyStruct, mut *"life">
   %none = kgen.param.constant: none = <#kgen.none>
   %ret = kgen.param.constant: !kgen.variant<@Error, none> = <#kgen.variant<:!kgen.none #kgen.none, 1>>
   // CHECK: [[YPTR:%.*]] = lit.ref.to_pointer

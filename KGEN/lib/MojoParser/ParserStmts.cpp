@@ -986,12 +986,12 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  VarLetDeclOp varDeclOp = getEmitter().emitVarLetDecl(
-      target, getUnresolvedType(), forLoc, VarLetDeclKind::Implicit);
+  VarDeclOp varDeclOp = getEmitter().emitVarDecl(target, getUnresolvedType(),
+                                                 forLoc, VarDeclKind::Implicit);
 
   // If there is a failure before we parse the for loop body, we still
   // want to call the parser on it so that it builds an ASTDecl node
-  // and adds the for loop VarLetDecl to the lookup path.  Otherwise,
+  // and adds the for loop VarDecl to the lookup path.  Otherwise,
   // we will get spurious “use of unknown declaration” errors on it
   // besides whatever error is raised while processing the loop
   // header.
@@ -1010,8 +1010,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return failure();
 
   // Emit a call to __iter__ into a var with an inferred type.
-  VarLetDeclOp rangeRef = getEmitter().emitVarLetDecl(
-      "$RANGE", getUnresolvedType(), forLoc, VarLetDeclKind::Synthesized);
+  VarDeclOp rangeRef = getEmitter().emitVarDecl(
+      "$RANGE", getUnresolvedType(), forLoc, VarDeclKind::Synthesized);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
@@ -1128,9 +1128,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       if (func && func.isDef()) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
-        VarLetDeclOp varDecl = getEmitter().emitVarLetDecl(
-            errName, errVal.getType(), errVal.getLoc(),
-            VarLetDeclKind::Implicit);
+        VarDeclOp varDecl = getEmitter().emitVarDecl(
+            errName, errVal.getType(), errVal.getLoc(), VarDeclKind::Implicit);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
         builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
       } else {
@@ -1228,10 +1227,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   }
 
   // Emit the context manager expression into a var with an inferred type.
-  VarLetDeclOp contextMgrDecl = getEmitter().emitVarLetDecl(
+  VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
       "$CONTEXTMGR", getUnresolvedType(),
-      shared.translateLocation(contextExp->getLoc()),
-      VarLetDeclKind::Synthesized);
+      shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
   ValueDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
   (void)getEmitter().emitExpr(contextExp, contextMgrDest);
 
@@ -1263,7 +1261,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // FIXME: This needs to parse this as a target expression and then handle it
   // like a destructuring pattern.
-  VarLetDeclOp targetDecl;
+  VarDeclOp targetDecl;
   bool addDecl = false;
   SMLoc targetLoc;
   SMLoc asLoc;
@@ -1289,9 +1287,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         return failure();
       }
     } else {
-      targetDecl = getEmitter().emitVarLetDecl(
-          name, getUnresolvedType(), shared.translateLocation(targetLoc),
-          VarLetDeclKind::Implicit);
+      targetDecl = getEmitter().emitVarDecl(name, getUnresolvedType(),
+                                            shared.translateLocation(targetLoc),
+                                            VarDeclKind::Implicit);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
     }
@@ -1472,8 +1470,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // Insert the flag and initialize it to 'True'.
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPoint(tryOp);
-    excVar = getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(),
-                                         loc, VarLetDeclKind::Synthesized);
+    excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(), loc,
+                                      VarDeclKind::Synthesized);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
   }
@@ -2016,8 +2014,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc,
-                                         VarLetDeclKind::Var);
+    declOp =
+        getEmitter().emitVarDecl(name, unresolvedType, loc, VarDeclKind::Var);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
@@ -2040,7 +2038,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
       getDeclResolver().attachDeclToParentNameTable(&decl, name);
   });
 
-  auto varOp = dyn_cast<VarLetDeclOp>(decl);
+  auto varOp = dyn_cast<VarDeclOp>(decl);
   if (!varOp) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
@@ -2071,7 +2069,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // Parse the initializer if present.
   ExprNode *initExpr = nullptr;
   if (consumeIf(Token::equal)) {
-    if (parseVarLetInitExpression(initExpr, stmtIndent))
+    if (parseVarInitExpression(initExpr, stmtIndent))
       return declParseError();
   }
 

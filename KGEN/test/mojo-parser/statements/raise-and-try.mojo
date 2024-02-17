@@ -63,7 +63,7 @@ def tryExceptArgDef():
         pass
     # CHECK: except (%arg0: !Error)
     except err:
-        # CHECK-NEXT: lit.varlet.decl "err" imp
+        # CHECK-NEXT: lit.var.decl "err" imp
         # CHECK: [[ERRVAL:%.*]] = lit.ref.load %err
         # CHECK: eatError{{.*}}([[ERRVAL]])
         eatError(err)
@@ -111,14 +111,14 @@ def propagateErrorInDef():
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
-    # CHECK: %a = lit.varlet.decl "a"
+    # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.ref.store %1, %a
     a = maybeRaises()
 
 
 # CHECK-LABEL: lit.func @"propagateErrorInRaisingFn
 fn propagateErrorInRaisingFn() raises:
-    # CHECK:  %a = lit.varlet.decl {{.*}} : !lit.ref<!Int,
+    # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<!Int,
     var a: Int
     # CHECK:  %0 = lit.call {{.*}}::@"maybeRaises()"()
     # CHECK:  %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
@@ -156,7 +156,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %err_0 = lit.varlet.decl "err"
+    # CHECK: %err_0 = lit.var.decl "err"
     # CHECK: lit.ref.store %err, %err_0
     # CHECK: %[[ERRVAL:.*]] = lit.ref.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = lit.call {{.*}}@Error::@"__copyinit__
@@ -233,7 +233,7 @@ fn call_raising():
         # CHECK:   kgen.unreachable
         # CHECK: }
         let x = fail("hello world")
-        # CHECK: %y = lit.varlet.decl "y"
+        # CHECK: %y = lit.var.decl "y"
         # CHECK: lit.call @{{.*}}__init__{{.*}}(%y)
         # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %y
         # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]

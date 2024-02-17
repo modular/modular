@@ -17,7 +17,7 @@ fn fudge_int(x: int) -> int:
 
 # CHECK-LABEL: lit.func @"var_decls()
 fn var_decls():
-    # CHECK: %y = lit.varlet.decl "y" var
+    # CHECK: %y = lit.var.decl "y" var
     var y: int
 
     # CHECK: %[[Y:.*]] = lit.ref.load %y
@@ -25,7 +25,7 @@ fn var_decls():
     # CHECK: lit.ref.store %[[F]], %y
     y = fudge_int(y)
 
-    # CHECK: %z = lit.varlet.decl {{.*}} : !lit.ref<index,
+    # CHECK: %z = lit.var.decl {{.*}} : !lit.ref<index,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %y
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = y
@@ -37,7 +37,7 @@ fn var_decls():
 # CHECK-LABEL: lit.func @"var_decls_implicit()
 def var_decls_implicit() -> None:
     # Implicit declaration is mutable.
-    # CHECK: %x = lit.varlet.decl "x" imp
+    # CHECK: %x = lit.var.decl "x" imp
     x = `123`
 
     # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%index42)
@@ -47,15 +47,15 @@ def var_decls_implicit() -> None:
 
 # CHECK-LABEL: lit.func @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
-    # CHECK: lit.varlet.decl "c"
+    # CHECK: lit.var.decl "c"
     # CHECK: if
     var c = `10`
     if cond:
-        # CHECK: lit.varlet.decl "c"
+        # CHECK: lit.var.decl "c"
         var c = `42`
     # CHECK: else
     else:
-        # CHECK: lit.varlet.decl "c"
+        # CHECK: lit.var.decl "c"
         var c = `123`
 
 

@@ -95,7 +95,7 @@ struct StaticOverloadStruct:
 # CHECK-LABEL: lit.func @"test_static_overload()"
 fn test_static_overload():
     var a = StaticOverloadStruct()
-    # CHECK-NEXT: %a = lit.varlet.decl
+    # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call @{{.*}}foo{{.*}}(%a)
     a.foo()

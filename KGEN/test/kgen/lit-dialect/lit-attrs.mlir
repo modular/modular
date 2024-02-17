@@ -141,8 +141,8 @@ kgen.generator @unpacked<T: type>() {
 
 // CHECK-LABEL: @lifetime_union
 kgen.generator @lifetime_union<x: !lit.lifetime<0>, y: !lit.lifetime<0>>() {
-  // CHECK-NEXT: %a = lit.varlet.decl
-  %a = lit.varlet.decl "a" imp : !lit.ref<index, mut z>
+  // CHECK-NEXT: %a = lit.var.decl
+  %a = lit.var.decl "a" imp : !lit.ref<index, mut z>
 
   // CHECK-NEXT: "a"() {a = #lit.lifetime : !lit.lifetime<0>} : () -> ()
   "a"() {a = #lit.lifetime.union<#lit.lifetime : !lit.lifetime<0>> : !lit.lifetime<0>} : () -> ()
