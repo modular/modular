@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from quantization import Q4sym
-from math import max, abs, ceil, div_ceil
-from sys.info import sizeof, alignof
+from math import abs, ceil, div_ceil, max
+from sys.info import alignof, sizeof
+
 from memory.buffer import NDBuffer
+from quantization import Q4sym
 
 
 fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:

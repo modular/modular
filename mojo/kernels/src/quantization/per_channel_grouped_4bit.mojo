@@ -3,11 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import roundeven, max, abs, ceil, floor, div_ceil
-from sys.info import sizeof, alignof
-from memory.unsafe import bitcast
+from math import abs, ceil, div_ceil, floor, is_power_of_2, max, roundeven
+from sys.info import alignof, sizeof
+
 from memory.buffer import NDBuffer, prod_dims
-from math import is_power_of_2
+from memory.unsafe import bitcast
 
 
 @always_inline
@@ -510,12 +510,14 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
                 )
 
 
-from math import min, align_down
+from math import align_down, min
+from sys.info import has_avx2, has_neon_int8_dotprod
+
+from algorithm import sync_parallelize
 from Neon import _neon_dotprod
 from VNNI import dot_i8_to_i32_saturated_x86
-from algorithm import sync_parallelize
+
 from utils.index import Index
-from sys.info import has_avx2, has_neon_int8_dotprod
 
 
 fn _block_quantize_a[
