@@ -99,10 +99,6 @@ fn field_sensitive():
     b.y = 2
     use(b)  # Ok
 
-fn invalid_mutation():
-  let x = MemExample() # expected-note {{'x' declared here}}
-  use_inout(x) # expected-error {{invalid mutation of immutable value 'x'}}
-
 
 # Issue #12859, bad location info
 fn take_int(a: Int):
@@ -352,13 +348,6 @@ fn testVarToLet(cond: Bool):
     let d: TwoRegs
     d = TwoRegs()
     let e = d ^  # Consume from let is fine.
-
-
-fn invalid_let():
-    let twoRegs = TwoRegs()  # expected-note {{'twoRegs' declared here}}
-    twoRegs.reg1 = (
-        RegExample()  # expected-error {{invalid mutation of immutable value 'twoRegs.reg1'}}
-    )
 
 # Consumption of struct works only on definition of __del__
 # https://github.com/modularml/mojo/issues/734

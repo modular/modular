@@ -92,7 +92,7 @@ lit.func @indirectCall(%a: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) {
 // CHECK-NOT: __del__
 lit.func @references1[mut alife](%a: !lit.ref<@Struct, mut alife> owned_in_mem,
                              %cond: i1 borrow) {
-  %x = lit.varlet.decl "x" let : !lit.ref<@Struct, mut xlife>
+  %x = lit.varlet.decl "x" var : !lit.ref<@Struct, mut xlife>
    // CHECK: lit.call @Struct::@__init__[mut xlife](%x)
   lit.call @Struct::@__init__[mut xlife](%x) : !lit.signature<[1](!lit.ref<@Struct, mut *[0,0]> init_self) -> !kgen.none>
 
@@ -133,7 +133,7 @@ lit.struct.decl @S attributes {destructor =
 
 lit.func @verify_destructor_post_throw() -> !kgen.none {
   lit.try {
-    %x = lit.varlet.decl "x" let : !lit.ref<@S, mut life>
+    %x = lit.varlet.decl "x" var : !lit.ref<@S, mut life>
     // CHECK: [[V:%.*]] = lit.call @foo(%x)
     %1 = lit.call @foo(%x) : !lit.signature<(!lit.ref<@S, mut *"life"> byref_result) throws|ownedresult -> !kgen.variant<@Error, none>>
     // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], %x : (!kgen.variant<@Error, none>, !lit.ref<@S, mut life>) -> !kgen.none {
@@ -167,7 +167,7 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
 
 // CHECK-LABEL: lit.func @verify_callee_destroys
 lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
-  %s = lit.varlet.decl "s" let : !lit.ref<@S, mut *"SLife">
+  %s = lit.varlet.decl "s" var : !lit.ref<@S, mut *"SLife">
   // CHECK: lit.call @S::@__init__(%s)
   %2 = lit.call @S::@__init__(%s) : !lit.signature<(!lit.ref<@S, mut *"SLife"> init_self) -> !kgen.none>
   lit.try {

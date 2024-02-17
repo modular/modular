@@ -299,10 +299,6 @@ struct ValueInfo {
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
 
-  /// True if this is a 'let' declaration which isn't allowed to be mutated
-  /// after it is initialized.
-  const bool isLet;
-
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
 
@@ -461,13 +457,6 @@ struct ValueSet {
     }
     unsigned firstValueBit = getNumTotalBits();
 
-    // Determine if we should reject mutations after initialization.
-    bool isLet = false;
-    if (val) {
-      if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
-        isLet = varLet.getKind() == VarLetDeclKind::Let;
-    }
-
     // Record this information in our tables.
     valueInfoIndex[val] = valueInfos.size();
     if (valueLifetime)
@@ -476,7 +465,7 @@ struct ValueSet {
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                           trackable.startsUninit, trackable.endsUninit,
                           trackable.isIndirect,
-                          trackable.isFullObjectLiveOnEntry, isLet,
+                          trackable.isFullObjectLiveOnEntry,
                           /*hasErrorDiagnosed=*/false});
   }
 
@@ -743,7 +732,6 @@ private:
   void diagnoseUsageError(ValueRef valueRef, Operation &op, bool isDef);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
-  void checkDefForLetDiagnostics(ValueRef valueRef, Operation &op);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
@@ -957,35 +945,11 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
       << "'" << valueEntry.getName().str() << "' declared here";
 }
 
-/// Check that lets are not mutated after initialization and remember that
-/// var's are mutated so we don't suggest they convert to let.
-void UninitializedValueScan::checkDefForLetDiagnostics(ValueRef valueRef,
-                                                       Operation &op) {
-  // If we are overwriting a value that has already been specified, then the
-  // underlying value must be declared a 'var' and not a 'let'.
-  if (valueRef.isAllMissing(everMutatedValues))
-    return;
-
-  // If this was declared as a let, then this is an error.
-  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-  if (info.isLet && !info.hasErrorDiagnosed) {
-    auto diag =
-        mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
-    BitVector mutatedBits(everMutatedValues.size(), true);
-    valueRef.markBits(mutatedBits, false);
-    addBadValueNameToDiag(valueRef, mutatedBits, valueSet, diag);
-    diag.attachNote(info.value.getLoc())
-        << "'" << info.getName().str() << "' declared here";
-    info.hasErrorDiagnosed = true;
-  }
-}
-
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
   // Direct accesses are handled in a field sensitive way, and this can count as
   // an initialization.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
-    checkDefForLetDiagnostics(valueRef, op);
 
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
@@ -1003,8 +967,6 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
       diagnoseUsageError(access, op, /*isDef=*/true);
-
-    checkDefForLetDiagnostics(access, op);
   }
 }
 
@@ -1068,9 +1030,6 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
       diagnoseUsageError(access, op, /*isDef=*/isMutate);
-
-    if (isMutate)
-      checkDefForLetDiagnostics(access, op);
   }
 }
 

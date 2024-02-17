@@ -98,7 +98,6 @@ async def test_global_variables_ref(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    await assert_hover_and_decl_location(requests, doc, "let_global_variable")
     await assert_hover_and_decl_location(requests, doc, "var_global_variable")
 
 

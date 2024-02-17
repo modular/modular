@@ -506,20 +506,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     nearestEscapingFnOrNone = nearestEscapingFnOrNone->getParentDecl()
                                   ->getNearestDeclOfType<LIT::FuncOp>();
 
-  ASTDecl *nearestCapturingFnOrNone =
-      container.getNearestDeclOfType<LIT::FuncOp>();
-  while (nearestCapturingFnOrNone &&
-         cast<M::KGEN::LIT::FuncOp>(nearestCapturingFnOrNone)
-             .getSignature()
-             .isEscaping())
-    nearestCapturingFnOrNone = nearestCapturingFnOrNone->getParentDecl()
-                                   ->getNearestDeclOfType<LIT::FuncOp>();
-  if (nearestCapturingFnOrNone &&
-      !cast<M::KGEN::LIT::FuncOp>(nearestCapturingFnOrNone)
-           .getSignature()
-           .isCapturing())
-    nearestCapturingFnOrNone = nullptr;
-
   ASTDecl *declRef = nullptr;
   if (!isa<LIT::FuncOp>(*decls[0])) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
@@ -542,17 +528,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (needsApplyCapture(nearestEscapingFnOrNone))
     emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
                                      *capture);
-
-  // Warn about capturing lets.
-  if (needsApplyCapture(nearestCapturingFnOrNone)) {
-    if (VarLetDeclOp declaration = dyn_cast<VarLetDeclOp>(declRef)) {
-      if (declaration.getKind() == VarLetDeclKind::Let &&
-          !declaration.isSynthetic()) {
-        emitter.emitError(getLoc(), "cannot capture let without copy: ")
-            << spelling;
-      }
-    }
-  }
 
   return emitter.emitResult(result, this, dest);
 }

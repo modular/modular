@@ -37,7 +37,7 @@ fn var_decl_without_type():
     # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'var' initializer}}
     var y : SomeOtherStruct = SomeStruct()
 
-    # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'let' initializer}}
+    # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'var' initializer}}
     let z: SomeOtherStruct = SomeStruct()
 
 fn fudge_int(x: Int): pass
@@ -70,9 +70,6 @@ fn cannot_fwd_declare_plus_equal():
 fn test_var_let_type_literal_value():
     # expected-error @below {{expected a type, not a value}}
     var c: `42`
-
-struct StructWithLets:
-    let struct_thing : Int # expected-error {{'let' fields in structs are not supported yet}}
 
 fn use_before_def():
     # expected-error @below {{use of unknown declaration 'x', 'fn' declarations require explicit variable declarations}}

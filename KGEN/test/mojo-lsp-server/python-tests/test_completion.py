@@ -121,7 +121,7 @@ async def test_completion_top_level_lookup(client: LanguageClient):
         "foo.mojo",
         """
 fn function() -> Int:
-    let value: Int = 10
+    var value: Int = 10
     return value
 """,
     )

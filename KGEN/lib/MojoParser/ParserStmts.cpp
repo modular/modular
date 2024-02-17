@@ -2016,8 +2016,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    VarLetDeclKind declKind = isVar ? VarLetDeclKind::Var : VarLetDeclKind::Let;
-    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc, declKind);
+    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc,
+                                         VarLetDeclKind::Var);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
@@ -2082,8 +2082,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into the varOp to infer its type.
     ValueDest dest;
-    ExprContext exprContext =
-        (varOp.getKind() == VarLetDeclKind::Let) ? EC_LetInit : EC_VarInit;
+    ExprContext exprContext = EC_VarInit;
     if (parsedType) {
       varOp.getResult().setType(
           RefType::get(parsedType, varOp.getType().getLifetime()));

@@ -20,7 +20,7 @@ async def test_document_symbols(client: LanguageClient):
 alias Value = 10
 
 fn foo(a: DTypePointer[DType.float32]) -> Float32:
-  let variable = 15
+  var variable = 15
   fn inner_fn():
     return
   fn inner_closure(arg: Int) -> Float32:

@@ -18,7 +18,7 @@ async def test_hover_letvar(client: LanguageClient):
         "foo.mojo",
         """
 fn function():
-  let foo: Int = 420
+  var foo: Int = 420
   var bar = 1 + `foo`
   print(bar)
 """,
@@ -33,7 +33,7 @@ fn function():
     assert (
         result.contents.value
         == """```mojo
-(variable) let foo: Int
+(variable) var foo: Int
 ```"""
     )
     assert result.range == Range(
@@ -417,13 +417,6 @@ async def test_hover_global_variables(client: LanguageClient):
         result = fail_if_none(await requests.hover(doc, range.start))
         assert isinstance(result.contents, MarkupContent)
         assert result.contents.value == expected
-
-    await assert_decl(
-        "let_global_variable",
-        """```mojo
-(variable) let let_global_variable: Int
-```""",
-    )
 
     await assert_decl(
         "var_global_variable",
