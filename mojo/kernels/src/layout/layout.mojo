@@ -4,24 +4,24 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from builtin.io import _printf
+from builtin.string import _calc_initial_buffer_size_int32
+
 from .dynamic_tuple import *
 from .int_tuple import (
     IntTuple,
     IntTupleBase,
-    inner_product,
-    product,
-    flatten,
-    is_tuple,
-    int,
-    tuple,
-    mul,
-    shape_div,
-    elementwise_min,
     crd2idx,
+    elementwise_min,
+    flatten,
+    inner_product,
+    int,
+    is_tuple,
+    mul,
+    product,
+    shape_div,
+    tuple,
 )
-
-from builtin.io import _printf
-from builtin.string import _calc_initial_buffer_size_int32
 
 
 @value

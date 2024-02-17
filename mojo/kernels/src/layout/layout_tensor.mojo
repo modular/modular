@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .layout import *
-from .int_tuple import int, flatten
 from memory.unsafe import DTypePointer
+
+from .int_tuple import flatten, int
+from .layout import *
 
 
 struct LayoutTensor[dtype: DType]:

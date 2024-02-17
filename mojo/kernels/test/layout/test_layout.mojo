@@ -11,12 +11,12 @@ from kernel_utils.layout import (
     Layout,
     LayoutList,
     coalesce,
-    composition,
     complement,
+    composition,
     logical_divide,
     logical_product,
-    zipped_divide,
     print_layout,
+    zipped_divide,
 )
 
 

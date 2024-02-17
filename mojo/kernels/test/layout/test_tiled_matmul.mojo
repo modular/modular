@@ -6,9 +6,9 @@
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils.layout_tensor import LayoutTensor, tile
-from kernel_utils.layout import Layout, LayoutList, composition
 from kernel_utils.int_tuple import IntTuple
+from kernel_utils.layout import Layout, LayoutList, composition
+from kernel_utils.layout_tensor import LayoutTensor, tile
 
 
 fn create_matrix[M: Int, N: Int]() -> LayoutTensor[DType.float32]:

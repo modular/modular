@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from utils.variant import Variant
 from kernel_utils.dynamic_tuple import *
 from testing import assert_equal, assert_not_equal
+
+from utils.variant import Variant
 
 alias General = Variant[Int, Float32, String]
 

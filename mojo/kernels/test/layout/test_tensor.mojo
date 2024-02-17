@@ -6,15 +6,15 @@
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils.layout_tensor import LayoutTensor, tile
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
     LayoutList,
     logical_divide,
-    zipped_divide,
     print_layout,
+    zipped_divide,
 )
+from kernel_utils.layout_tensor import LayoutTensor, tile
 from memory import stack_allocation
 
 

@@ -7,8 +7,9 @@
 function. This is very useful for kernel engineers that do not want to look
 at an entire file's assembly nor do they want to invoke the kgen tool manually.
 """
-from gpu.host._compile import _compile_code
 from sys.info import _current_target
+
+from gpu.host._compile import _compile_code
 
 
 fn compile_code[
