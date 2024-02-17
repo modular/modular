@@ -168,7 +168,7 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newParamPassingKinds;
 
-  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(*this);
+  DefaultValueHandler defaultHandler(getParamListAttrs());
   for (size_t idx = 0; idx < boundParams.size(); ++idx) {
     if (!boundParams[idx]) {
       newParamNames.emplace_back(getParamNames()[idx]);

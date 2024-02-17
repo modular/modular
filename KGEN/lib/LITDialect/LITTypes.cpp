@@ -436,7 +436,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<TypedAttr> newKwOnlyDefaults;
   SmallVector<size_t> newVariadicIndices;
 
-  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
+  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
   ParameterEvaluator evaluator;
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // Current value is unbound. This corresponds to a parameter in the
@@ -826,9 +826,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     p << '[' << numLifetimeDecls << ']';
 
   printOptionalParamSignature(p, signature.getParamTypes(),
-                              signature.getMetadata().getParamListAttrs());
+                              signature.getParamListAttrs());
 
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
@@ -869,6 +869,14 @@ LITSignatureType::LITSignatureType(SignatureType sig) : SignatureType(sig) {
 
 FnMetadataAttr LITSignatureType::getMetadata() {
   return ::cast<FnMetadataAttr>(SignatureType::getMetadata());
+}
+
+ArgParamListAttr LITSignatureType::getArgListAttrs() {
+  return getMetadata().getArgListAttrs();
+}
+
+ArgParamListAttr LITSignatureType::getParamListAttrs() {
+  return getMetadata().getParamListAttrs();
 }
 
 ArrayRef<StringAttr> LITSignatureType::getArgNames() {
@@ -913,11 +921,10 @@ size_t LITSignatureType::getNumImplicitLifetimeDecls() {
 }
 
 LITSignatureType LITSignatureType::dropParamValues() {
-  return get(getValues(), /*paramTypes=*/{}, getArgConventions(),
-             getFnEffects(),
-             FnMetadataAttr::get(getMetadata().getArgListAttrs(),
-                                 /*numImplicitLifetimeDecls=*/0,
-                                 getMetadata().getVariadicEffects()));
+  return get(
+      getValues(), /*paramTypes=*/{}, getArgConventions(), getFnEffects(),
+      FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0,
+                          getMetadata().getVariadicEffects()));
 }
 
 bool LITSignatureType::isVarArg(size_t index) {

@@ -422,7 +422,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
   size_t posOperandIdx = 0;
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames())) {
@@ -1032,7 +1032,7 @@ diagnoseKeywordOperands(LITSignatureType signature,
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
 
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
            signature.getArgNames(), signature.getArgPassingKinds())) {
     if (argPassingKind == PassingKind::KwOnly &&
@@ -1092,7 +1092,7 @@ diagnosePosOperands(LITSignatureType signature,
   bool hasByRefResult = numPosArguments && (signature.getArgConvention(0) ==
                                             ArgConvention::ByRefResult);
 
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (size_t argIdx = hasByRefResult; argIdx < numPosArguments; ++argIdx) {
     if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
       // If the argument is variadic, it is not required. But we remember this
@@ -1367,7 +1367,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(*shared.declResolver);
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
              passingKind] :
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),

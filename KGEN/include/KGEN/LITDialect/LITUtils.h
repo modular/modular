@@ -252,21 +252,7 @@ public:
         kwOnlyEnd(passingKinds.size() - countNumImplicitKinds(passingKinds)),
         defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
 
-  /// Return a DefaultValueHandler for the arguments of the given signature.
-  template <typename SigType>
-  static DefaultValueHandler getDefaultArgHandler(SigType sig) {
-    return DefaultValueHandler(sig.getArgPassingKinds(),
-                               sig.getDefaultPosArgs(),
-                               sig.getDefaultKwOnlyArgs());
-  }
-
-  /// Return a DefaultValueHandler for the parameters of the given signature.
-  template <typename SigType>
-  static DefaultValueHandler getDefaultParamHandler(SigType sig) {
-    return DefaultValueHandler(sig.getParamPassingKinds(),
-                               sig.getDefaultPosParams(),
-                               sig.getDefaultKwOnlyParams());
-  }
+  DefaultValueHandler(ArgParamListAttr listAttr);
 
   /// If the given index refers to an optional positional (pos-only or
   /// pos-or-kw) argument/parameter, return its default value or null otherwise.

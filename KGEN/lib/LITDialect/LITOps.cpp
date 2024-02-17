@@ -644,9 +644,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
-                             signature.getMetadata().getParamListAttrs(),
-                             evaluator);
-  auto defaultHandler = DefaultValueHandler::getDefaultArgHandler(signature);
+                             signature.getParamListAttrs(), evaluator);
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
@@ -1060,7 +1059,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SmallVector<TypedAttr> newKwOnlyDefaults;
   SmallVector<size_t> newVariadicIndices;
 
-  auto defaultHandler = DefaultValueHandler::getDefaultParamHandler(sig);
+  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
   for (auto [i, value, type, name, kind] :
        llvm::enumerate(paramValues, sig.getParamTypes(), sig.getParamNames(),
                        sig.getParamPassingKinds())) {

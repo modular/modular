@@ -280,9 +280,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   for (ParamDeclAttr param : paramDecls)
     evaluator.addInputValue(ParamDeclRefAttr::get(param));
 
-  DefaultValueHandler defaultHandler(paramListAttr.getPassingKinds(),
-                                     paramListAttr.getDefaultPos(),
-                                     paramListAttr.getDefaultKwOnly());
+  DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
@@ -367,13 +365,11 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
                                       ArgParamListAttr paramListAttr) {
-  ArrayRef<PassingKind> passingKinds = paramListAttr.getPassingKinds();
-  DefaultValueHandler defaultHandler(passingKinds,
-                                     paramListAttr.getDefaultPos(),
-                                     paramListAttr.getDefaultKwOnly());
+  DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, passingKinds, '|');
+  PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
+                                        '|');
   auto printWithDefault = [&](Type type) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -812,6 +808,14 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
     os << "(none)";
   return os;
 }
+
+//===----------------------------------------------------------------------===//
+// DefaultValueHandler
+//===----------------------------------------------------------------------===//
+
+DefaultValueHandler::DefaultValueHandler(ArgParamListAttr listAttr)
+    : DefaultValueHandler(listAttr.getPassingKinds(), listAttr.getDefaultPos(),
+                          listAttr.getDefaultKwOnly()) {}
 
 //===----------------------------------------------------------------------===//
 // Verifier helpers

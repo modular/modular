@@ -148,9 +148,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               bool allowPartiallyBound) const {
   ArrayRef<StringAttr> paramNames = paramListAttr.getNames();
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
-  DefaultValueHandler defaultHandler(paramPassingKinds,
-                                     paramListAttr.getDefaultPos(),
-                                     paramListAttr.getDefaultKwOnly());
+  DefaultValueHandler defaultHandler(paramListAttr);
 
   size_t numParams = expectedParamTypes.size();
   size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
@@ -644,10 +642,10 @@ ParamBindings::verifyBindings(LITSignatureType sig,
                               const DiagEmitter &diagEmitter,
                               ParameterInferenceHookTy parameterInferenceHook,
                               bool isPackVarArg) const {
-  return verifyBindings(
-      sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
-      sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg, diagEmitter,
-      /*allowPartiallyBound=*/false);
+  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                        sig.hasParamVarArgs(), parameterInferenceHook,
+                        isPackVarArg, diagEmitter,
+                        /*allowPartiallyBound=*/false);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
@@ -655,8 +653,7 @@ ParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(
-      sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
-      sig.hasParamVarArgs(),
+      sig.getParamTypes(), sig.getParamListAttrs(), sig.hasParamVarArgs(),
       /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
 }
 
@@ -674,7 +671,7 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               Location opLoc, llvm::SMLoc exprLoc) const {
   auto [newBindings, _] =
-      verifyBindings(sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
+      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
