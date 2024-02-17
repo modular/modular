@@ -5,7 +5,7 @@
 lit.func @lifetimes() {
   // CHECK: partial: !lit.signature<[1]<index>(!lit.ref<index, mut *[0,0]>) -> ()>
   lit.alias.decl partial: !lit.signature<[1]<index>(!lit.ref<index, mut *[0,0]>) -> ()> = <?>
-  lit.varlet.decl "x" var : !lit.ref<index, mut *"a`">
+  lit.var.decl "x" var : !lit.ref<index, mut *"a`">
   kgen.return
 }
 
@@ -26,7 +26,7 @@ lit.func @async_callee[mut a](%out: !lit.ref<index, mut a>) async -> !lit.ref<in
 }
 
 lit.func @calls(%f: !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>) {
-  %x = lit.varlet.decl "x" var : !lit.ref<index, mut a>
+  %x = lit.var.decl "x" var : !lit.ref<index, mut a>
 
   // CHECK: lit.call @callee[mut a](%x) : !lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
   %0 = lit.call @callee[mut a](%x) : !lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>

@@ -60,7 +60,7 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
-      .Case<GlobalVarDeclOp, VarLetDeclOp>(
+      .Case<GlobalVarDeclOp, VarDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FuncOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
@@ -73,7 +73,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     if (!op)
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
-        .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarLetDeclOp>(
+        .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
         .Case([&](FuncOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
@@ -118,7 +118,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
   if (isa<StructFieldOp>(*decl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<GlobalVarDeclOp, VarLetDeclOp>(*decl))
+  if (isa<GlobalVarDeclOp, VarDeclOp>(*decl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
   if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
@@ -168,7 +168,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
         .Default({nullptr});
   }
 
-  // FIXME(#17974): Owned arguments are resolved as VarLet decls, and currently
+  // FIXME(#17974): Owned arguments are resolved as Var decls, and currently
   // it is not possible to recover their original BlockArguments, so we can't
   // generate a proper View for this kind of decl.
   return nullptr;
@@ -185,7 +185,7 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
     return DeclViewKind::DK_StructDeclView;
   if (isa<StructFieldOp>(*decl))
     return DeclViewKind::DK_StructFieldDeclView;
-  if (isa<GlobalVarDeclOp, VarLetDeclOp>(*decl))
+  if (isa<GlobalVarDeclOp, VarDeclOp>(*decl))
     return DeclViewKind::DK_VariableDeclView;
   if (isa<PackageOp>(*decl))
     return DeclViewKind::DK_PackageDeclView;
@@ -201,7 +201,7 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
   if (getIfParameter(*this))
     return DeclViewKind::DK_ParameterDeclView;
 
-  // FIXME(#17974): Owned arguments are resolved as VarLet decls, and currently
+  // FIXME(#17974): Owned arguments are resolved as Var decls, and currently
   // it is not possible to recover their original BlockArguments, so we can't
   // generate a proper View for this kind of decl.
   return std::nullopt;

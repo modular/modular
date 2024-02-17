@@ -366,7 +366,7 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
                declRef.getName().value_or(StringRef{})),
       isGlobalVariable(false) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
-      .Case([&](VarLetDeclOp op) {
+      .Case([&](VarDeclOp op) {
         flagIsVar = true;
         type = declRef.getType().getReferenceElementType().getAsString();
       })

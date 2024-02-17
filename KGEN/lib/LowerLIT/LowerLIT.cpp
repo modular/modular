@@ -225,7 +225,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
           call, call.getResultTypes(), call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       call.setImplicitLifetimes({});
-    } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
+    } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
       RefType varRegType = varDecl.getType();
       bool isSynth = varDecl.isSynthetic();

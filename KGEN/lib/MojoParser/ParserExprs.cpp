@@ -1279,8 +1279,8 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   return success();
 }
 
-ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&result,
-                                                  size_t stmtIndent) {
+ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,
+                                               size_t stmtIndent) {
   return ExprParser(shared, getLexer(), stmtIndent)
       .parseStarredListAsTuple(result, /*terminators=*/{});
 }

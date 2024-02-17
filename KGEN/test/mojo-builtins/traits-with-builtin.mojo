@@ -78,7 +78,7 @@ fn take_intable[T: Intable](x: T):
 
 # CHECK-LABEL: lit.func @"nonmaterializable_trait
 fn nonmaterializable_trait():
-    # CHECK-NEXT: [[SLOT:%.*]] = lit.varlet.decl {{.*}} : !lit.ref<!Int,
+    # CHECK-NEXT: [[SLOT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!Int,
     # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: store [[VAL]], [[SLOT]]
     # CHECK-NEXT:  = lit.ref.immut [[SLOT]]

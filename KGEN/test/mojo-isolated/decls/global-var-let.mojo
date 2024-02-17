@@ -96,7 +96,7 @@ fn refGlobals():
     mutGlobalReg(reg_global_implicit)
 
     # CHECK: %[[MEM_REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<!ConvertibleFromInt
+    # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} : !lit.ref<!ConvertibleFromInt
     # CHECK-NEXT: %[[MEM_REF_IMM:.*]] = lit.ref.immut %[[MEM_REF]]
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, %[[MEM_REF_IMM]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)

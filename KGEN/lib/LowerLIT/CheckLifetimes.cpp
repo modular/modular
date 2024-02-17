@@ -2233,7 +2233,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // just catch the most obvious local cases to clean up the IR and provide a
 // "guaranteed" optimization.
 static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
-                                            VarLetDeclOp tmpDecl) {
+                                            VarDeclOp tmpDecl) {
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
     return false;
@@ -2379,11 +2379,11 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // implicit ones.  This is a policy decision, and we should look into
   // the impact on debug information, but generally one wouldn't want debug
   // information to block optimizations.
-  if (VarLetDeclOp tmpDecl =
-          copyInitCall.getOperand(0).getDefiningOp<VarLetDeclOp>()) {
+  if (VarDeclOp tmpDecl =
+          copyInitCall.getOperand(0).getDefiningOp<VarDeclOp>()) {
     if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
       // Insert a declaration of the lifetime for the tmp we're eliding, we know
-      // that VarLetDeclOp's always declare a unique lifetime.
+      // that VarDeclOp's always declare a unique lifetime.
       auto refType = cast<RefType>(tmpDecl.getType());
       auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
 

@@ -403,14 +403,13 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // This creates an untyped VarLetDeclOp which is then inferred from its
+  // This creates an untyped VarDeclOp which is then inferred from its
   // initializer.
-  auto createVarDecl = [&](OpBuilder &builder,
-                           VarLetDeclKind kind) -> VarLetDeclOp {
+  auto createVarDecl = [&](OpBuilder &builder, VarDeclKind kind) -> VarDeclOp {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
-    return emitter.emitVarLetDecl(spelling, contextualType,
-                                  getLocation(emitter), kind);
+    return emitter.emitVarDecl(spelling, contextualType, getLocation(emitter),
+                               kind);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this
@@ -419,14 +418,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // (which tells us we need to emit an LValue).
   if (lookup.isFailure() && emitter.varDeclCursor &&
       dest.getIfLValueInitializerType()) {
-    // Use this builder to place any VarLetDeclOps. In Python there is only one
+    // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    VarLetDeclOp varDecl = // Marked Implicit to disable warnings.
-        createVarDecl(varDeclBuilder, VarLetDeclKind::Implicit);
+    VarDeclOp varDecl = // Marked Implicit to disable warnings.
+        createVarDecl(varDeclBuilder, VarDeclKind::Implicit);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.

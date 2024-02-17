@@ -472,7 +472,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   auto addVars = [&](ASTDecl &decl) {
     for (auto &[name, decls] : decl.getDeclsInScope())
-      if (decls.size() == 1 && isa<VarLetDeclOp>(*decls.front()))
+      if (decls.size() == 1 && isa<VarDeclOp>(*decls.front()))
         variables.emplace_back(name, decls.front());
   };
   addVars(exprFnDecl);
@@ -492,7 +492,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
   auto anyRegTypeType = structBuilder.getType<TypeType>();
-  auto checkInsertPersistentVar = [&](VarLetDeclOp varOp) -> MRValue {
+  auto checkInsertPersistentVar = [&](VarDeclOp varOp) -> MRValue {
     Type elementType = varOp.getType().getElementType();
     PointerType type = PointerType::get(elementType);
 
@@ -553,7 +553,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   for (auto &[name, decl] : variables) {
     // Handle memory based decls.
-    if (auto varOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
+    if (auto varOp = dyn_cast<LIT::VarDeclOp>(*decl)) {
       if (MRValue field = checkInsertPersistentVar(varOp)) {
         varOp.replaceAllUsesWith(field);
         varOp.erase();

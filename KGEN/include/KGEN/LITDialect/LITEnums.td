@@ -45,11 +45,11 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclKind
+// VarDeclKind
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDeclKind : I32EnumAttr<"VarLetDeclKind",
-    "origin of a VarLetDeclOp", [
+def LIT_VarDeclKind : I32EnumAttr<"VarDeclKind",
+    "origin of a VarDeclOp", [
   /// Value is declared explicitly by the user to be mutable.
   I32EnumAttrCase<"Var", 0, "var">,
   /// Value is declared implicitly by the user via non-var/let syntax.

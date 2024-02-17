@@ -211,8 +211,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
             .Case([](TraitDeclOp) { return CodeCompletionResult::kTrait; })
             .Case([](FuncOp) { return CodeCompletionResult::kFunction; })
             .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
-            .Case(
-                [](VarLetDeclOp op) { return CodeCompletionResult::kVariable; })
+            .Case([](VarDeclOp op) { return CodeCompletionResult::kVariable; })
             .Default(CodeCompletionResult::kUnknown);
 
     CodeCompletionResult result(name, kind);

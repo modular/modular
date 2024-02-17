@@ -113,7 +113,7 @@ fn takes_inout_int(inout a: int):
 fn test_writebacks[
     x: int, y: int
 ](inout a: IndexArray, inout b: IndexArrayArray):
-    # CHECK: %[[LT:.*]] = lit.varlet.decl "anonymous*" synth
+    # CHECK: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
     # CHECK-NEXT: lit.ref.store %[[V1]], %[[LT]]
@@ -123,8 +123,8 @@ fn test_writebacks[
     # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
     takes_inout_int(a[x])
 
-    # CHECK: %[[LT1:.*]] = lit.varlet.decl
-    # CHECK: %[[LT2:.*]] = lit.varlet.decl {{.*}}!IndexArray
+    # CHECK: %[[LT1:.*]] = lit.var.decl
+    # CHECK: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%[[LT2]], %b, %[[C1]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
@@ -134,7 +134,7 @@ fn test_writebacks[
     # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], [[IMMREF]])
     # CHECK-NEXT: lit.ref.store %[[V5]], %[[LT1]]
     # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
-    # CHECK-NEXT: %[[LT3:.*]] = lit.varlet.decl
+    # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT3]], %b, %[[C1]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>

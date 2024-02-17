@@ -685,10 +685,10 @@ def LIT_PassingKindArrayAttr : LITAttr<"PassingKindArray", "passing.kinds"> {
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclKindAttr
+// VarDeclKindAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDeclKindAttr : EnumAttr<LITDialect, LIT_VarLetDeclKind,
-    "varlet.decl.kind">;
+def LIT_VarDeclKindAttr : EnumAttr<LITDialect, LIT_VarDeclKind,
+    "var.decl.kind">;
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

@@ -928,9 +928,9 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
           callExpr->getLoc(), resultRValueType, callEmitter.emitter);
     } else {
       // Create a temporary.
-      callArgs[0] = callEmitter.emitter.emitVarLetDecl(
-          "__call_result_tmp__", resultRValueType, loc,
-          VarLetDeclKind::Synthesized);
+      callArgs[0] = callEmitter.emitter.emitVarDecl("__call_result_tmp__",
+                                                    resultRValueType, loc,
+                                                    VarDeclKind::Synthesized);
     }
 
     implicitLifetimes[0] = cast<RefType>(callArgs[0].getType()).getLifetime();

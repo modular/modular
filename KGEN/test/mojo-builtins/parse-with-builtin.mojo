@@ -36,7 +36,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
 fn testSIMDGetter[
     type: DType
 ](owned a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
-    # CHECK: %a_0 = lit.varlet.decl "a"
+    # CHECK: %a_0 = lit.var.decl "a"
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: %[[AVAL:.*]] = lit.ref.load %a_0
     # CHECK: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>

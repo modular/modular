@@ -175,8 +175,8 @@ def PassingKindArrayAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$value
 )>;
 
-def VarLetDeclKindAttr : DialectAttribute<(attr
-  EnumAttr<"VarLetDeclKind">:$value
+def VarDeclKindAttr : DialectAttribute<(attr
+  EnumAttr<"VarDeclKind">:$value
 )>;
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
@@ -196,7 +196,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     TypeLineageAttr,
     TypeConventionAttr,
     PassingKindArrayAttr,
-    VarLetDeclKindAttr
+    VarDeclKindAttr
   ];
 }
 

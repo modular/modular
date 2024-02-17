@@ -25,7 +25,7 @@ class ExprEmitter;
 class CallOperands;
 class AliasDeclOp;
 class TraitType;
-class VarLetDeclOp;
+class VarDeclOp;
 
 //===----------------------------------------------------------------------===//
 // ExprContext
@@ -130,7 +130,7 @@ public:
   }
   ValueDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
-  ValueDest(VarLetDeclOp dest, ExprContext context);
+  ValueDest(VarDeclOp dest, ExprContext context);
   ValueDest(GlobalVarDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
       : representation(requiredType), context(context) {
@@ -549,11 +549,11 @@ public:
   //===--------------------------------------------------------------------===//
   // Var/let emission helpers.
 
-  /// Helper to emit a VarLetDeclOp with a uniquely generated lifetime name.
-  VarLetDeclOp emitVarLetDecl(const Twine &name, Type type, Location loc,
-                              VarLetDeclKind kind);
-  VarLetDeclOp emitVarLetDecl(StringAttr name, Type type, Location loc,
-                              VarLetDeclKind kind);
+  /// Helper to emit a VarDeclOp with a uniquely generated lifetime name.
+  VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
+                        VarDeclKind kind);
+  VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
+                        VarDeclKind kind);
 };
 
 } // namespace M::KGEN::LIT

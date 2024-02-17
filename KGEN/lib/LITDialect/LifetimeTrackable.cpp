@@ -29,8 +29,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   if (!v) // Null value isn't tracked.
     return;
 
-  // VarLetDeclOp is uninit and ends that way.
-  if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
+  // VarDeclOp is uninit and ends that way.
+  if (auto varLet = v.getDefiningOp<VarDeclOp>()) {
     name = varLet.getNameAttr();
     isIndirect = true;
     startsUninit = true;

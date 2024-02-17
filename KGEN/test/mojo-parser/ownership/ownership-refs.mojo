@@ -47,13 +47,13 @@ fn implicit_owned(owned a: MemExample):
 
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
-  # CHECK: lit.varlet.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
+  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
   let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <{42}>
   alias as2 : Int = 42
 
-  # CHECK: lit.varlet.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
+  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
   let ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
 
 # This preserves reference mutability
@@ -92,7 +92,7 @@ fn testUseConditional(cond: __mlir_type.i1):
   let aref = Reference(a).value
   let bref = Reference(b).value
 
-  # CHECK: %cref = lit.varlet.decl "cref"
+  # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
@@ -116,7 +116,7 @@ fn testDefConditional(cond: __mlir_type.i1):
   var aref = Reference(a).value
   var bref = Reference(b).value
 
-  # CHECK: %cref = lit.varlet.decl "cref"
+  # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
@@ -159,12 +159,12 @@ fn testDefConditional(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"testUseConditionalReference
 
 fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
-  # CHECK: %a = lit.varlet.decl {{.*}} : !lit.ref<!MemExample, mut *"a`0">
+  # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`0">
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
 
   var a = MemExample()
 
-  # CHECK-NEXT: %aref = lit.varlet.decl "aref"
+  # CHECK-NEXT: %aref = lit.var.decl "aref"
   # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[ARV]], %aref
   var aref = Reference(a)
@@ -189,13 +189,13 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
-  # CHECK-NEXT: %aref2 = lit.varlet.decl "aref2"
+  # CHECK-NEXT: %aref2 = lit.var.decl "aref2"
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
   # CHECK-NEXT: lit.ref.store [[AR]], %aref2
   var aref2 = aref
 
   # Reference can bind to immutable things as well, no problem.
-  # CHECK-NEXT: %immref = lit.varlet.decl "immref"
+  # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%imm)
   # CHECK-NEXT: lit.ref.store [[IMMRV]], %immref
   var immref = Reference(imm)
@@ -246,14 +246,14 @@ fn testLifetimeOf2(a: MemExample) -> _LITRef[
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
-  # CHECK: lit.varlet.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
+  # CHECK: lit.var.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.varlet.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`")>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`")>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.varlet.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.varlet.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`", :lifetime<0> *"z`">
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`", :lifetime<0> *"z`">
   var l4 = returnTwoArgLifetimes(z, z)
 
 fn returnOneArgLifetime(a: MemExample)
