@@ -7,7 +7,7 @@
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
-from mojobench import Bencher, MojoBench, BenchId, MojoBenchConfig, Mode
+from mojobench import Bencher, BenchId, Mode, MojoBench, MojoBenchConfig
 
 
 @parameter

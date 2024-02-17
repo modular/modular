@@ -137,13 +137,13 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
+from collections.vector import DynamicVector
 from math import max, min
-from time import time_function
-from math.limit import min_finite, max_finite
+from math.limit import max_finite, min_finite
 from sys._assembly import inlined_assembly
+from time import time_function
 
 from memory.unsafe import DTypePointer, Pointer
-from collections.vector import DynamicVector
 
 
 # ===----------------------------------------------------------------------===#
