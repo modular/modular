@@ -8,7 +8,8 @@
 
 from sys import external_call
 from sys.info import os_is_windows
-from memory.unsafe import Pointer, DTypePointer
+
+from memory.unsafe import DTypePointer, Pointer
 
 
 struct _POpenHandle:

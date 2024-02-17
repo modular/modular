@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from testing import *
 from _subprocess import run
+from testing import *
 
 
 def main():
