@@ -141,16 +141,16 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              ArrayRef<StringAttr> paramNames,
-                              ArrayRef<PassingKind> paramPassingKinds,
-                              ArrayRef<TypedAttr> defaultPosParams,
-                              ArrayRef<TypedAttr> defaultKwOnlyParams,
+                              ArgParamListAttr paramListAttr,
                               bool hasParamVarArgs,
                               ParameterInferenceHookTy parameterInferenceHook,
                               bool isPackVarArg, const DiagEmitter &diagEmitter,
                               bool allowPartiallyBound) const {
-  DefaultValueHandler defaultHandler(paramPassingKinds, defaultPosParams,
-                                     defaultKwOnlyParams);
+  ArrayRef<StringAttr> paramNames = paramListAttr.getNames();
+  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
+  DefaultValueHandler defaultHandler(paramPassingKinds,
+                                     paramListAttr.getDefaultPos(),
+                                     paramListAttr.getDefaultKwOnly());
 
   size_t numParams = expectedParamTypes.size();
   size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
@@ -545,13 +545,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              ArrayRef<StringAttr> paramNames,
-                              ArrayRef<PassingKind> paramPassingKinds,
-                              ArrayRef<TypedAttr> defaultPosParams,
-                              ArrayRef<TypedAttr> defaultKwOnlyParams,
+                              ArgParamListAttr paramListAttr,
                               bool hasParamVarArgs, StringRef baseName,
                               Location opLoc, llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
+  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
       expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
   DiagEmitter diagEmitter{
@@ -563,8 +561,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
               maxAllowed, numActual, "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
-                               defaultPosParams.size() -
-                               defaultKwOnlyParams.size();
+                               paramListAttr.getDefaultPos().size() -
+                               paramListAttr.getDefaultKwOnly().size();
           emitWrongArgOrParamCount(diag, minRequired, maxAllowed, numActual,
                                    "parameter");
         }
@@ -636,8 +634,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                          "doesn't allow deduction");
       }};
 
-  return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
-                        defaultPosParams, defaultKwOnlyParams, hasParamVarArgs,
+  return verifyBindings(expectedParamTypes, paramListAttr, hasParamVarArgs,
                         /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
                         diagEmitter, allowPartiallyBound);
 }
@@ -647,22 +644,20 @@ ParamBindings::verifyBindings(LITSignatureType sig,
                               const DiagEmitter &diagEmitter,
                               ParameterInferenceHookTy parameterInferenceHook,
                               bool isPackVarArg) const {
-  return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
-                        sig.getParamPassingKinds(), sig.getDefaultPosParams(),
-                        sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
-                        parameterInferenceHook, isPackVarArg, diagEmitter,
-                        /*allowPartiallyBound=*/false);
+  return verifyBindings(
+      sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
+      sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg, diagEmitter,
+      /*allowPartiallyBound=*/false);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr, nullptr, nullptr};
-  return verifyBindings(sig.getParamTypes(), sig.getParamNames(),
-                        sig.getParamPassingKinds(), sig.getDefaultPosParams(),
-                        sig.getDefaultKwOnlyParams(), sig.hasParamVarArgs(),
-                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
-                        diagEmitter);
+  return verifyBindings(
+      sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
+      sig.hasParamVarArgs(),
+      /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
 }
 
 ParameterExprArrayAttr
@@ -670,20 +665,17 @@ ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
                               llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
   auto [bindingValuesAttr, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
-      sig.hasVariadicParam(), structOp.getName(), structOp.getLoc(), exprLoc,
-      allowPartiallyBound);
+      sig.getParamTypes(), sig.getParamListAttrs(), sig.hasVariadicParam(),
+      structOp.getName(), structOp.getLoc(), exprLoc, allowPartiallyBound);
   return bindingValuesAttr;
 }
 
 ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               Location opLoc, llvm::SMLoc exprLoc) const {
-  auto [newBindings, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
-      sig.getDefaultPosParams(), sig.getDefaultKwOnlyParams(),
-      sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  auto [newBindings, _] =
+      verifyBindings(sig.getParamTypes(), sig.getMetadata().getParamListAttrs(),
+                     sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
 

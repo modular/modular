@@ -21,6 +21,7 @@ class SignatureType;
 namespace M::KGEN::LIT {
 class FuncOp;
 class LITSignatureType;
+class ArgParamListAttr;
 class ParserParamEvaluator;
 class StructDeclOp;
 class TypeSignatureType;
@@ -199,14 +200,12 @@ private:
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
-      ArrayRef<PassingKind> paramPassingKinds,
-      ArrayRef<TypedAttr> defaultPosParams,
-      ArrayRef<TypedAttr> defaultKwOnlyParamsdefaultKwParams,
-      bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-      bool isPackVarArg, const DiagEmitter &diagEmitter,
-      bool allowPartiallyBound = false) const;
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(ArrayRef<Type> expectedParamTypes,
+                 ArgParamListAttr paramListAttr, bool hasParamVarArgs,
+                 ParameterInferenceHookTy parameterInferenceHook,
+                 bool isPackVarArg, const DiagEmitter &diagEmitter,
+                 bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -216,10 +215,7 @@ private:
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArrayRef<StringAttr> paramNames,
-                 ArrayRef<PassingKind> paramPassingKinds,
-                 ArrayRef<TypedAttr> defaultPosParams,
-                 ArrayRef<TypedAttr> defaultKwOnlyParams, bool hasParamVarArgs,
+                 ArgParamListAttr paramListAttr, bool hasParamVarArgs,
                  StringRef baseName, Location opLoc, llvm::SMLoc exprLoc,
                  bool allowPartiallyBound = false) const;
 };
