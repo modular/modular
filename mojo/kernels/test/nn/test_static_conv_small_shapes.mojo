@@ -10,20 +10,17 @@
 from math import div_ceil
 from sys.info import simdwidthof
 
-from NN.Conv import (
-    ConvDirectNHWC,
-    ConvInfoStatic,
-)
+from memory.buffer import NDBuffer
+from NN.Conv import ConvDirectNHWC, ConvInfoStatic
 from NN.ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
-from memory.buffer import NDBuffer
 
 from utils.index import Index
-from utils.list import DimList, Dim
+from utils.list import Dim, DimList
 
 alias N = 1
 alias H = 14

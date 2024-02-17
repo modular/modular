@@ -5,38 +5,35 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import div_ceil, iota, max, min, sqrt, neginf, exp, align_down
-from algorithm import (
-    elementwise,
-    unswitch,
-)
+from math import align_down, div_ceil, exp, iota, max, min, neginf, sqrt
+
+from algorithm import elementwise, unswitch
 from BatchedMatmul import batched_matmul
-from Matmul import matmul
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer, bitcast
-from memory.unsafe import AddressSpace as _AddressSpace
-from memory import stack_allocation
-from .Softmax import softmax, softmax_3_pass
-from Transpose import transpose
-
-from utils.static_tuple import StaticTuple
-from utils.index import Index, StaticIntTuple
-from utils.list import DimList, Dim
-
 from gpu import (
-    ThreadIdx,
-    BlockIdx,
+    WARP_SIZE,
     BlockDim,
+    BlockIdx,
+    ThreadIdx,
     barrier,
     lane_id,
-    WARP_SIZE,
     shuffle_down,
     shuffle_xor,
     warp_reduce,
 )
 from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
+from Matmul import matmul
+from memory import stack_allocation
+from memory.buffer import NDBuffer
+from memory.unsafe import AddressSpace as _AddressSpace
+from memory.unsafe import DTypePointer, bitcast
+from Transpose import transpose
 
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList
+from utils.static_tuple import StaticTuple
+
+from .Softmax import softmax, softmax_3_pass
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

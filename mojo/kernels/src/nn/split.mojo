@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.vector import InlinedFixedVector
 from sys import external_call
 
 from algorithm import sync_parallelize
@@ -12,7 +13,6 @@ from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 
 from utils.index import product
 from utils.list import Dim, DimList
-from collections.vector import InlinedFixedVector
 
 
 struct _NDBufferVector[type: DType, rank: Int](Sized):

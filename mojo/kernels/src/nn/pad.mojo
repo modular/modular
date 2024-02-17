@@ -9,6 +9,8 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
+from collections.vector import InlinedFixedVector
+from math import min
 from sys.info import sizeof
 
 from memory import memcpy
@@ -20,10 +22,6 @@ from Transpose import _fill_strides
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-
-from collections.vector import InlinedFixedVector
-
-from math import min
 
 
 fn _fill[

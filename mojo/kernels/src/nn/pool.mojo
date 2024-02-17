@@ -9,12 +9,13 @@ from math.limit import neginf
 from sys.info import simdwidthof
 
 from algorithm import elementwise, stencil
-from .Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
-from .ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
+
+from .Image import Image2DLayout, ImageData, ImageShape
+from .ShapeFuncUtils import get_sliding_window_out_dim
 
 
 # Pooling method.

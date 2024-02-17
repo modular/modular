@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from NN.Concat import (
-    _concat_parallel,
-    concat,
-    variadic_list_to_vector,
-    _concat_serial,
-)
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
+from NN.Concat import (
+    _concat_parallel,
+    _concat_serial,
+    concat,
+    variadic_list_to_vector,
+)
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList

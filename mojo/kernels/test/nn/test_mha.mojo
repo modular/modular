@@ -5,17 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from math import div_ceil, min, abs, rsqrt, isclose
-from memory.buffer import NDBuffer, _compute_nd_index
-from memory.unsafe import DTypePointer
+from math import abs, div_ceil, isclose, min, rsqrt
 from random import rand
-from utils.index import Index
-from utils.list import DimList
-from testing import assert_true
 
 from BatchedMatmul import batched_matmul
+from memory.buffer import NDBuffer, _compute_nd_index
+from memory.unsafe import DTypePointer
+from NN.MultiHeadAttention import _naive_attention, fused_attention
 from NN.Softmax import softmax
-from NN.MultiHeadAttention import fused_attention, _naive_attention
+from testing import assert_true
+
+from utils.index import Index
+from utils.list import DimList
 
 
 # TODO: Move this function to a common space.

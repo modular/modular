@@ -6,16 +6,14 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 import builtin
-
-from NN.Image import Image2DLayout, ImageData, ImageShape
+from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from NN.Pool import max_pool, avg_pool, PoolMethod, pool_shape
+from NN.Image import Image2DLayout, ImageData, ImageShape
+from NN.Pool import PoolMethod, avg_pool, max_pool, pool_shape
+from tensor import Tensor
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
-from memory import stack_allocation
-
-from tensor import Tensor
 
 
 fn fill_tensor[rank: Int](tensor: Tensor[DType.float32]):

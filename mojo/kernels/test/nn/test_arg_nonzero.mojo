@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
 from memory.buffer import Buffer, NDBuffer
-from utils.list import DimList
+from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
+
+from utils.list import DimList
 
 
 # CHECK-LABEL: test_where_size

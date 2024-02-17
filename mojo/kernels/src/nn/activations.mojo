@@ -6,17 +6,7 @@
 
 """The module contains implementations of activation functions."""
 
-from math import (
-    clamp,
-    erf,
-    exp,
-    expm1,
-    fma,
-    identity,
-    max,
-    min,
-    tanh,
-)
+from math import clamp, erf, exp, expm1, fma, identity, max, min, tanh
 from math.bit import _is_neg
 
 

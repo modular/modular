@@ -7,16 +7,20 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys import argv
-from NN.Concat import _concat_gpu, _concat_inner_most_single_dim
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from memory.buffer import NDBuffer
 
+from algorithm.functional import _get_start_indices_of_nth_subvolume
 from gpu import BlockIdx, ThreadIdx
+from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
-from gpu.host import Stream, Context, Function
-from gpu.host.memory import _malloc, _free
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+)
 from gpu.host.sync import synchronize
-from gpu.host.memory import _copy_host_to_device, _copy_device_to_host
+from memory.buffer import NDBuffer
+from NN.Concat import _concat_gpu, _concat_inner_most_single_dim
 
 
 fn _create_buffer_host[

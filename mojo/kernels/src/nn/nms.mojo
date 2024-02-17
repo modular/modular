@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.vector import DynamicVector
 from math import abs, iota, max, min
 from math.limit import min_or_neginf
 
@@ -12,7 +13,6 @@ from memory.buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from collections.vector import DynamicVector
 
 
 @value

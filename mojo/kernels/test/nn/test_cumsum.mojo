@@ -7,8 +7,8 @@
 
 from math import iota
 
-from NN.Cumsum import cumsum
 from memory.buffer import NDBuffer
+from NN.Cumsum import cumsum
 
 
 # CHECK-LABEL: test_cumsum_1d

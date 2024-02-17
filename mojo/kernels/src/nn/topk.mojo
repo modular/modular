@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
 from collections.vector import DynamicVector
+from math import iota
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index

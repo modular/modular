@@ -4,33 +4,29 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, max, min, align_down
-from sys.info import sizeof, has_neon
+from math import align_down, div_ceil, max, min
+from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import (
-    sync_parallelize,
-    elementwise,
-    unroll,
-    vectorize,
-)
+from algorithm import elementwise, sync_parallelize, unroll, vectorize
 from algorithm.functional import (
-    _elementwise_impl,
     _async_elementwise_impl,
+    _elementwise_impl,
     tile,
 )
-from memory import memset_zero, stack_allocation, parallel_memcpy
+from gpu.host.memory import _copy_device_to_device_async
+from gpu.host.stream import Stream
+from memory import memset_zero, parallel_memcpy, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
-from .Reshape import reshape
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
+from utils._optional import Optional
+from utils._optional_param import OptionalParamInt
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-from utils._optional_param import OptionalParamInt
-from utils._optional import Optional
-from gpu.host.memory import _copy_device_to_device_async
-from gpu.host.stream import Stream
+
+from .Reshape import reshape
 
 
 @always_inline

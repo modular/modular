@@ -5,29 +5,29 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from algorithm.functional import vectorize
 from math import abs, div_ceil, isclose, min
 from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
 
+from algorithm.functional import vectorize
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
 from NN.ConvTranspose import (
-    conv_transpose_naive,
     ConvTransposedPacked,
+    conv_transpose_naive,
     pack_filter,
     pack_filter_shape,
 )
 from NN.ConvUtils import (
-    ConvShape,
     ConvInfoStatic,
+    ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

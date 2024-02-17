@@ -6,31 +6,31 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil, min, abs, rsqrt
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
+from math import abs, div_ceil, min, rsqrt
 from random import rand
-from utils.index import Index
-from utils.list import DimList
-from BatchedMatmul import batched_matmul
-from NN.Softmax import softmax
-from gpu.host.event import time_function
 from sys import argv
 
+from BatchedMatmul import batched_matmul
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
 from NN.MultiHeadAttention import (
+    _naive_attention_with_transpose,
     flash_attention_kernel,
     flash_attention_kernel_flexible_seqlen,
-    _naive_attention_with_transpose,
 )
+from NN.Softmax import softmax
+
+from utils.index import Index
+from utils.list import DimList
 
 alias type = DType.float32
 

@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import (
+    align_down,
+    align_up,
     div_ceil,
     exp,
     identity,
@@ -14,43 +16,25 @@ from math import (
     mul,
     reciprocal,
     sub,
-    align_down,
 )
 from math.limit import min_or_neginf, neginf
 
 from algorithm import sync_parallelize, vectorize
+from algorithm._gpu.reduction import block_reduce, row_reduce
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
+from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
+from gpu.host import Device, DeviceAttribute, Function, Stream
+from gpu.memory import AddressSpace
 from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
-
-from runtime.llcl import Runtime
-
-from math import align_up
-
-from algorithm._gpu.reduction import row_reduce, block_reduce
-
-from gpu import (
-    ThreadIdx,
-    BlockIdx,
-    BlockDim,
-    GridDim,
-    barrier,
-)
-
-from gpu.host import (
-    Stream,
-    Function,
-    Device,
-    DeviceAttribute,
-)
-from gpu.memory import AddressSpace
 
 # ===----------------------------------------------------------------------===#
 # Utilities

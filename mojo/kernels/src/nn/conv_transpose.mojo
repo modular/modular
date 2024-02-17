@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.memory import memset_zero
-
 from math import align_down, align_down_residual, div_ceil, fma, max, min
 from sys.info import (
     alignof,
@@ -16,23 +14,8 @@ from sys.info import (
     simdwidthof,
 )
 from sys.intrinsics import PrefetchOptions
-from .ConvUtils import (
-    ConvInfo,
-    ConvInfoStatic,
-    ConvShape,
-    ConvPartition,
-    elementwise_epilogue_type,
-    get_conv2d_shape,
-    get_conv_num_tasks,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-    get_micro_kernel_shape,
-    get_conv_shape,
-)
 
 from algorithm import (
-    sync_parallelize,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
@@ -40,15 +23,7 @@ from algorithm import (
     unswitch,
     vectorize,
 )
-from .AccumulateSIMD import (
-    accumulate,
-    init_register_tile,
-    load_register_tile,
-    store_register_tile,
-)
-
 from MatmulUtils import partition_work
-
 from memory.buffer import (
     Buffer,
     DynamicRankBuffer,
@@ -58,12 +33,34 @@ from memory.buffer import (
     partial_simd_store,
     prod_dims,
 )
+from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
+from runtime.llcl import Runtime
 
+from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
-from utils._optional import Optional
-from runtime.llcl import Runtime
+
+from .AccumulateSIMD import (
+    accumulate,
+    init_register_tile,
+    load_register_tile,
+    store_register_tile,
+)
+from .ConvUtils import (
+    ConvInfo,
+    ConvInfoStatic,
+    ConvPartition,
+    ConvShape,
+    elementwise_epilogue_type,
+    get_conv2d_shape,
+    get_conv_num_tasks,
+    get_conv_shape,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+    get_micro_kernel_shape,
+)
 
 # TODO: All attributes, except for groups and auto_pad, are supported.
 #       - Kernel assumes groups = 1.

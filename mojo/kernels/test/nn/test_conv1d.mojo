@@ -10,6 +10,8 @@ from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
 
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
 from NN.Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -24,8 +26,6 @@ from NN.ConvUtils import (
     get_direct_conv_micro_kernel_width,
 )
 from NN.Image import Image2DLayout, ImageData, ImageShape
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

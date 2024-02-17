@@ -4,19 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt, min, div_ceil
+from math import div_ceil, min, sqrt
 
 from algorithm import map_reduce, mean, variance, vectorize
+from algorithm.functional import sync_parallelize
 from algorithm.reduction import (
+    _get_nd_indices_from_flat_index,
     _simd_sum,
     _simd_sum_elementwise,
-    _get_nd_indices_from_flat_index,
 )
-from NN.Reshape import reshape
-from algorithm.functional import sync_parallelize
-from runtime.tracing import Trace, TraceLevel
-from runtime.llcl import Runtime
 from memory.buffer import Buffer, NDBuffer
+from NN.Reshape import reshape
+from runtime.llcl import Runtime
+from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList

@@ -7,8 +7,8 @@
 
 from sys.info import simdwidthof
 
-from NN.ConvUtils import ConvShape, get_conv_num_partitions
 from MatmulUtils import partition_work
+from NN.ConvUtils import ConvShape, get_conv_num_partitions
 
 from utils.index import Index, StaticIntTuple
 

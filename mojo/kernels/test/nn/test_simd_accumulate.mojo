@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
+from sys.info import has_neon, simdwidthof
+
 from algorithm.functional import vectorize
+from memory import stack_allocation
 from NN.AccumulateSIMD import (
     _simd_load_maybe_partial,
     accumulate,
     load_register_tile,
     store_register_tile,
 )
-from sys.info import simdwidthof, has_neon
 from testing import *
-from memory import stack_allocation
 
 
 def test_maybe_partial_load():

@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from collections.vector import DynamicVector
+
 from NN.NonMaxSuppression import (
     non_max_suppression,
     non_max_suppression_shape_func,
@@ -12,7 +14,6 @@ from NN.NonMaxSuppression import (
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from collections.vector import DynamicVector
 
 
 @register_passable("trivial")

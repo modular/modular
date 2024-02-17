@@ -9,21 +9,17 @@ from math import abs, div_ceil, isclose, min
 from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
-from NN.Conv import (
-    ConvDirectNHWC,
-    ConvInfoStatic,
-    pack_filter,
-)
+from memory.buffer import NDBuffer
+from NN.Conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from NN.ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
-from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList, Dim
+from utils.list import Dim, DimList
 
 
 fn test[

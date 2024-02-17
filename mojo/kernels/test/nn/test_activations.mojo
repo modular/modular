@@ -7,6 +7,7 @@
 # RUN: %mojo -debug-level full -I%S/.. %s | FileCheck %s
 
 from math import iota
+from random import randn, seed
 
 from NN.Activations import (
     elu,
@@ -16,10 +17,8 @@ from NN.Activations import (
     relu,
     relu_n1,
 )
-
 from tensor import Tensor, TensorShape
-from random import randn, seed
-from test_utils import get_minmax, compare, libm_call
+from test_utils import compare, get_minmax, libm_call
 
 
 # CHECK-LABEL: test_elu

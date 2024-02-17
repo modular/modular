@@ -4,15 +4,29 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.vector import InlinedFixedVector
 from math import align_down, align_up, div_ceil, max, min
 from sys import external_call
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
-    sync_parallelize,
     _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
+    sync_parallelize,
+)
+from gpu import BlockIdx, ThreadIdx
+from gpu.host import Context, Function, Stream, synchronize
+from gpu.host.memory import (
+    _copy_device_to_device_async,
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _copy_host_to_device_async,
+    _free,
+    _free_async,
+    _malloc,
+    _malloc_async,
+    _memset_async,
 )
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
@@ -20,21 +34,6 @@ from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple, product
 from utils.list import Dim, DimList
-from collections.vector import InlinedFixedVector
-
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _copy_host_to_device_async,
-    _copy_device_to_device_async,
-    _free,
-    _malloc,
-    _memset_async,
-)
-from gpu.host import Stream, Context, Function, synchronize
-from gpu.host.memory import _malloc_async, _free_async
-
-from gpu import ThreadIdx, BlockIdx
 
 # ===----------------------------------------------------------------------===#
 # concat

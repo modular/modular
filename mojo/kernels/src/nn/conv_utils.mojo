@@ -16,14 +16,14 @@ from sys.info import (
     sizeof,
 )
 
-from .Image import Image2DLayout, ImageData
 from MatmulUtils import partition_work
 from memory.buffer import NDBuffer
 
-from utils.index import Index, StaticIntTuple
-from utils.list import DimList, Dim
 from utils._optional_param import OptionalParamInt, OptionalParamInts
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList
 
+from .Image import Image2DLayout, ImageData
 
 # ===----------------------------------------------------------------------=== #
 # Epilogue Helper                                                              #

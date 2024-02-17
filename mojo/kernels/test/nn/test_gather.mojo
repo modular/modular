@@ -12,8 +12,8 @@
 
 from sys.info import simdwidthof
 
-from NN.GatherScatter import gather
 from memory.buffer import NDBuffer
+from NN.GatherScatter import gather
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

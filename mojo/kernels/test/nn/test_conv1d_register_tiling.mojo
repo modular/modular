@@ -8,13 +8,12 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
-from utils.index import Index
 from memory.buffer import NDBuffer
-
-from NN.ConvUtils import ConvShape
 from NN.Conv import conv1d_update_wo_tile
-
+from NN.ConvUtils import ConvShape
 from testing import *
+
+from utils.index import Index
 
 alias type = DType.float32
 alias micro_kernel_height = 2
