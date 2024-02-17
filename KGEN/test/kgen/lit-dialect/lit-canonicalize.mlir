@@ -119,3 +119,12 @@ kgen.func @no_cse_async_execute() -> (!pop.coroutine<() -> ()>, !pop.coroutine<(
   }
   kgen.return %0, %1 : !pop.coroutine<() -> ()>, !pop.coroutine<() -> ()>
 }
+
+// CHECK-LABEL: kgen.generator @ref_offset_zero
+kgen.generator @ref_offset_zero<l: !lit.lifetime<1>>
+  (%arg0: !lit.ref<@PairStruct, mut l>) -> !lit.ref<@PairStruct, mut l> {
+  // CHECK-NEXT: kgen.return %arg0
+  %zarro = index.constant 0
+  %0 = lit.ref.offset %arg0[%zarro] : <@PairStruct, mut l>
+  kgen.return %0 : !lit.ref<@PairStruct, mut l>
+}

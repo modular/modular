@@ -753,7 +753,8 @@ lit.func @loop_with_cond_raise(%cond: i1) {
   lit.end_func
 }
 
-
+// [QoI] Generate error for obviously self recursive functions
+// https://github.com/modularml/mojo/issues/222
 lit.func @self_recursive() -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive() : !lit.signature<() -> !kgen.none>
