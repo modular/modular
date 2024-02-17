@@ -388,7 +388,7 @@ struct Buffer[
             Constructed buffer with the allocated space.
         """
         constrained[size.has_value(), "must have known size"]()
-        var data_pointer = stack_allocation[
+        let data_pointer = stack_allocation[
             size.get(), type, alignment=alignment, address_space=address_space
         ]()
         return Self(data_pointer)
@@ -1479,7 +1479,7 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        var data_pointer = stack_allocation[
+        let data_pointer = stack_allocation[
             shape.product[rank]().get(),
             type,
             alignment=alignment,
@@ -1542,8 +1542,8 @@ struct NDBuffer[
 
             @unroll
             for j in range(0, TN, simd_size):
-                var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](i * TN + j)
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](i * TN + j)
                 self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
 
     @always_inline("nodebug")
@@ -1567,9 +1567,9 @@ struct NDBuffer[
 
             @unroll
             for j in range(0, TN, simd_size):
-                var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](idx)
-                var rhs_vec = SIMD[type, simd_size](
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](idx)
+                let rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
                 self.data.simd_store[simd_size](idx, vec * rhs_vec)
@@ -1595,9 +1595,9 @@ struct NDBuffer[
 
             @unroll
             for j in range(0, TN, simd_size):
-                var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](idx)
-                var rhs_vec = SIMD[type, simd_size](
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](idx)
+                let rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
                 self.data.simd_store[simd_size](idx, vec / rhs_vec)
@@ -1620,7 +1620,7 @@ struct NDBuffer[
 
         alias simd_size = simdwidthof[type]()
 
-        var res = Self.stack_allocation()
+        let res = Self.stack_allocation()
 
         @unroll
         for i in range(m):
@@ -1646,7 +1646,7 @@ struct NDBuffer[
 
         alias simd_size = simdwidthof[type]()
 
-        var res = Self.stack_allocation()
+        let res = Self.stack_allocation()
 
         @unroll
         for i in range(m):
@@ -1672,7 +1672,7 @@ struct NDBuffer[
 
         alias m = shape.at[0]().get()
 
-        var res = Self.stack_allocation()
+        let res = Self.stack_allocation()
 
         @unroll
         for i in range(m):
@@ -1705,14 +1705,14 @@ struct NDBuffer[
         alias n = shape.at[1]().get()
         alias simd_size = simdwidthof[type]()
 
-        var res = Self.stack_allocation()
+        let res = Self.stack_allocation()
 
         @unroll
         for i in range(m):
 
             @unroll
             for j in range(0, n, simd_size):
-                var idx = i * n + j
+                let idx = i * n + j
                 res.data.simd_store[simd_size](
                     idx, self.data.simd_load[simd_size](idx) - rhs.data.load(i)
                 )
@@ -1752,10 +1752,10 @@ fn partial_simd_load[
         The SIMD vector loaded and zero-filled.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = max(0, lbound)
-    var effective_rbound = min(width, rbound)
-    var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    let effective_lbound = max(0, lbound)
+    let effective_rbound = min(width, rbound)
+    let incr = iota[DType.int32, width]()
+    let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
     return masked_load[width](storage, mask, pad_value)
 
@@ -1790,10 +1790,10 @@ fn partial_simd_store[
         data: The vector value to store.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = max(0, lbound)
-    var effective_rbound = min(width, rbound)
-    var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    let effective_lbound = max(0, lbound)
+    let effective_rbound = min(width, rbound)
+    let incr = iota[DType.int32, width]()
+    let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
     # Rebind for the inconsistency between (1) `ptr: DTypePointer` deduces
     # address_space as ptr1 and (2) `DTypePointer[type]` sets address_space to
