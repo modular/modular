@@ -27,6 +27,8 @@ from NN.ConvUtils import (
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
+    extend_shape,
+    append_shape,
 )
 
 from utils.index import Index, StaticIntTuple
@@ -34,23 +36,6 @@ from utils.list import DimList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32
-
-
-@always_inline
-fn extend_shape[
-    rank: Int
-](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[
-    rank + 2
-]:
-    var out_shape = StaticIntTuple[rank + 2](0)
-    out_shape[0] = first
-    out_shape[rank + 1] = last
-
-    @unroll
-    for i in range(rank):
-        out_shape[i + 1] = in_shape[i]
-
-    return out_shape
 
 
 @always_inline
@@ -84,23 +69,6 @@ fn extend_shape_3d[
     @unroll
     for i in range(rank):
         out_shape[2 - i] = in_shape[rank - i - 1]
-
-    return out_shape
-
-
-@always_inline
-fn append_shape[
-    rank: Int
-](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[
-    rank + 2
-]:
-    var out_shape = StaticIntTuple[rank + 2](0)
-    out_shape[rank] = last2nd
-    out_shape[rank + 1] = last
-
-    @unroll
-    for i in range(rank):
-        out_shape[i] = in_shape[i]
 
     return out_shape
 

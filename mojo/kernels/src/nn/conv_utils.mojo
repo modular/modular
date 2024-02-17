@@ -461,6 +461,42 @@ fn get_conv_tile_shape[
     return Index(c_tile_size, f_tile_size)
 
 
+@always_inline
+fn extend_shape[
+    rank: Int
+](in_shape: StaticIntTuple[rank], first: Int, last: Int) -> StaticIntTuple[
+    rank + 2
+]:
+    """Extend input shape by inserting `first` and `last` at both ends."""
+    var out_shape = StaticIntTuple[rank + 2](0)
+    out_shape[0] = first
+    out_shape[rank + 1] = last
+
+    @unroll
+    for i in range(rank):
+        out_shape[i + 1] = in_shape[i]
+
+    return out_shape
+
+
+@always_inline
+fn append_shape[
+    rank: Int
+](in_shape: StaticIntTuple[rank], last2nd: Int, last: Int) -> StaticIntTuple[
+    rank + 2
+]:
+    """Append input shape by inserting `last2nd` and `last` at the end."""
+    var out_shape = StaticIntTuple[rank + 2](0)
+    out_shape[rank] = last2nd
+    out_shape[rank + 1] = last
+
+    @unroll
+    for i in range(rank):
+        out_shape[i] = in_shape[i]
+
+    return out_shape
+
+
 # must be register passable because it is used as a parameter
 @value
 @register_passable("trivial")
