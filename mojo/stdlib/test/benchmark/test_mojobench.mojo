@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: mojo %s -r 2 -o %t.csv | FileCheck %s
+# RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
+# RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
 from mojobench import Bencher, MojoBench, BenchId, MojoBenchConfig, Mode
 
@@ -27,7 +29,7 @@ fn bench2(inout b: Bencher, mystr: String):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(num_repetitions=2, max_iters=10_000))
+    var m = MojoBench(MojoBenchConfig(max_iters=10_000))
     m.bench_function[bench1](BenchId("bench1"))
 
     var inputs = DynamicVector[String]()
@@ -46,11 +48,7 @@ def main():
     # CHECK-NEXT: bench2/0
     # CHECK-NEXT: bench2/1
     # CHECK-NEXT: bench2/1
+    # CHECK-OUT: bench1
     m.dump_report()
 
-    # CHECK-LABEL: test_mode
-    print("== test_mode")
-    m = MojoBench(mode=Mode.Test)
-    m.bench_function[bench1](BenchId("bench1"))
-    # CHECK-COUNT-1: hello
-    m.dump_report()
+    # CHECK-TEST-COUNT-1: hello
