@@ -629,7 +629,7 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
       OpBuilder builder(parentOp.getContext());
       builder.setInsertionPoint(funcOp);
       ExprEmitter copyEmitter(shared, decl, builder);
-      ValueDest copyDest(EC_LetInit);
+      ValueDest copyDest(EC_VarInit);
       CValue result = copyEmitter.emitCopyOfValue({value, declRef}, copyDest);
       if (!result) {
         emitError(declRef->getLoc(), "cannot capture '")
@@ -1429,12 +1429,11 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   // Emit the initializer into an initializer function. If we have a type, then
   // emit directly into the LValue. Otherwise emit into the global to infer its
   // type.
-  ExprContext exprContext = op.getIsVar() ? EC_VarInit : EC_LetInit;
   if (parsedType)
     op.setType(parsedType);
   // If we don't, we emit into the varOp itself, because this will infer the
   // type of the varOp from the initializer expression.
-  ValueDest dest(op, exprContext);
+  ValueDest dest(op, EC_VarInit);
 
   op.getCtor().push_back(new Block);
   emitter.builder = OpBuilder::atBlockBegin(&op.getCtor().front());
