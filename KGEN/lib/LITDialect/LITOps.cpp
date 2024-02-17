@@ -1465,6 +1465,17 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 }
 
 //===----------------------------------------------------------------------===//
+// RefOffsetOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult RefOffsetOp::fold(FoldAdaptor adaptor) {
+  if (auto offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex()))
+    if (offset.getInt() == 0)
+      return getRef();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // RefImmutOp
 //===----------------------------------------------------------------------===//
 

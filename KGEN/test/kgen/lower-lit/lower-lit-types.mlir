@@ -195,7 +195,7 @@ lit.struct.decl @PairStruct {
   lit.struct.field y : ui32
 }
 
-// CHECK-LABEL: @gerToGEPFooFromBar
+// CHECK-LABEL: kgen.generator @gerToGEPFooFromBar
 kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime<1>>
   (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: si32) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
@@ -208,6 +208,16 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime<1>>
   %a = lit.ref.load %0 : !lit.ref<si32, mut l>
   // CHECK-NEXT: kgen.return %1
   kgen.return %a : si32
+}
+
+// CHECK-LABEL: kgen.generator @ref_offset
+kgen.generator @ref_offset<l: !lit.lifetime<1>>
+  (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: index) -> !lit.ref<@PairStruct, mut l> {
+  // CHECK-NEXT: %0 = pop.offset %arg0[%arg1]
+  %0 = lit.ref.offset %arg0[%arg1] : <@PairStruct, mut l>
+
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : !lit.ref<@PairStruct, mut l>
 }
 
 // Issue #29038 - lower lit can't change positions of parameters.

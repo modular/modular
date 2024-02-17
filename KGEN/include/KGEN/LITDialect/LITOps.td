@@ -1724,6 +1724,34 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// RefOffsetOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefOffsetOp : LITOp<"ref.offset",
+                           [Pure, AllTypesMatch<["ref", "result"]>]> {
+  let summary = "Offset a reference over its elements.";
+  let description = [{
+    The `lit.ref.offset` operation computes a reference to an adjacent element
+    of the current element type by doing pointer arithmetic.  The result has
+    the same type as the input.  This is equivalent to `ptr+i` in C or
+    `*(&ref+i)` in C++.
+
+    Example:
+
+    ```mlir
+    %0 = lit.ref.offset %ref[%i] : !lit.ref<f32, mut life>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$ref, Index:$index);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+    $ref `[` $index `]` attr-dict `:` type($ref)
+  }];
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RefLoadOp
 //===----------------------------------------------------------------------===//
 

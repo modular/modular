@@ -515,7 +515,7 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerAddrSpaceCastOo
+// PointerAddrSpaceCastOp
 //===----------------------------------------------------------------------===//
 
 def POP_PointerAddrSpaceCastOp : POPOp<"pointer.addrspacecast", [Pure,

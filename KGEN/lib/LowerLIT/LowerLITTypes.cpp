@@ -41,7 +41,7 @@ struct PointerLikeTypeTraits<KGEN::StructType>
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//
-// Struct Lowering
+// Type Lowering
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -70,11 +70,12 @@ struct StructDeclarations {
   /// Get the declaration for the type reference.
   const Decl &getDecl(DeclRefType ref) { return decls.at(ref.getName()); }
 };
+} // end anonymous namespace
 
+namespace {
 /// Struct operations need to refer to the struct declaration symbol.
-struct StructOperationLowerer : public mlir::IRRewriter {
-  explicit StructOperationLowerer(MLIRContext *ctx,
-                                  StructDeclarations &structDecls);
+struct LITTypeLowerer : public mlir::IRRewriter {
+  explicit LITTypeLowerer(MLIRContext *ctx, StructDeclarations &structDecls);
 
   /// Get the index of the struct field.
   int64_t getField(StringAttr name, DeclRefType ref) const {
@@ -150,12 +151,10 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 };
 } // namespace
 
-bool StructOperationLowerer::useReplaceCache() {
-  return lowerLitStructValues == 0;
-}
+bool LITTypeLowerer::useReplaceCache() { return lowerLitStructValues == 0; }
 
-StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
-                                               StructDeclarations &structDecls)
+LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx,
+                               StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls),
       anyRegTypeType(TypeType::get(ctx)) {
 
@@ -185,7 +184,7 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
 }
 
 template <typename T, typename U>
-U StructOperationLowerer::replaceImpl(T value) {
+U LITTypeLowerer::replaceImpl(T value) {
   SmallVector<Attribute, 16> replAttrs;
   SmallVector<Type, 16> replTypes;
   bool changed = false;
@@ -222,7 +221,7 @@ U StructOperationLowerer::replaceImpl(T value) {
   return result;
 }
 
-Attribute StructOperationLowerer::replace(Attribute attr) {
+Attribute LITTypeLowerer::replace(Attribute attr) {
   auto iter = attrTypeReplaceCache.find(attr.getAsOpaquePointer());
 
   if (useReplaceCache() && iter != attrTypeReplaceCache.end())
@@ -301,7 +300,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   return result;
 }
 
-Type StructOperationLowerer::replace(Type type) {
+Type LITTypeLowerer::replace(Type type) {
   auto iter = attrTypeReplaceCache.find(type.getAsOpaquePointer());
 
   if (useReplaceCache() && iter != attrTypeReplaceCache.end())
@@ -359,7 +358,7 @@ Type StructOperationLowerer::replace(Type type) {
 }
 
 PointerUnion<KGEN::StructType, Type>
-StructOperationLowerer::substituteStructRef(DeclRefType ref) {
+LITTypeLowerer::substituteStructRef(DeclRefType ref) {
   auto &decl = structDecls.getDecl(ref);
   ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
   SmallVector<Type> elementTypes;
@@ -384,7 +383,7 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
                          !decl.isRegisterPassable);
 }
 
-DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
+DebugInfo::DIType LITTypeLowerer::buildDebugInfoForStructRef(
     DeclRefType ref, DebugInfo::DebugInfoTypeConverter &converter) {
   // Substitute parameters into the field types.
   auto &decl = structDecls.getDecl(ref);
@@ -429,7 +428,7 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 }
 
 static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   PointerUnion<KGEN::StructType, Type> newType =
       lowerer.substituteStructRef(op.getType());
 
@@ -444,7 +443,7 @@ static Value lowerOp(LIT::StructCreateOp op, LIT::StructCreateOpAdaptor adaptor,
 }
 
 static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
 
@@ -481,7 +480,7 @@ static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
 
 static Value lowerOp(LIT::StructExtractOp op,
                      LIT::StructExtractOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
 
@@ -497,26 +496,26 @@ static Value lowerOp(LIT::StructExtractOp op,
 }
 
 static Value lowerOp(RefImmutOp op, RefImmutOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
   return adaptor.getRef();
 }
 
 static Value lowerOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
   return adaptor.getRef();
 }
 
 static Value lowerOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   return adaptor.getPtr();
 }
 
 static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
 
@@ -524,7 +523,7 @@ static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
 }
 
 static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   assert(isa<PointerType>(adaptor.getRef().getType()) &&
          "operand should be lowered");
 
@@ -534,7 +533,7 @@ static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
 }
 
 static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
-                     StructOperationLowerer &lowerer) {
+                     LITTypeLowerer &lowerer) {
   auto structType =
       cast<DeclRefType>(op.getContainer().getType().getElementType());
   int64_t index = lowerer.getField(op.getFieldAttr(), structType);
@@ -547,6 +546,15 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
 
   return lowerer.create<KGEN::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
                                            lowerer.getIndexAttr(index));
+}
+
+/// Lower lit.ref.offset %ref[%index] => pop.offset %ptr[%index]
+static Value lowerOp(RefOffsetOp op, RefOffsetOpAdaptor adaptor,
+                     LITTypeLowerer &lowerer) {
+  assert(isa<PointerType>(adaptor.getRef().getType()) &&
+         "operand should be lowered");
+  return lowerer.create<POP::OffsetOp>(op.getLoc(), adaptor.getRef(),
+                                       op.getIndex());
 }
 
 static Value getCastedToType(Location newLoc, Value value, Type destType,
@@ -567,7 +575,7 @@ static Value getCastedToType(Location newLoc, Value value, Type destType,
 }
 
 template <typename OpT>
-LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
+LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
   setInsertionPoint(op);
   SmallVector<Value> castedOperands;
   castedOperands.reserve(op->getNumOperands());
@@ -614,7 +622,7 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   return success();
 }
 
-void StructOperationLowerer::replaceElementsIn(Operation *op) {
+void LITTypeLowerer::replaceElementsIn(Operation *op) {
   // Functor that replaces the given element if the new value is different,
   // otherwise returns nullptr.
   auto replaceIfDifferent = [&](auto element) {
@@ -655,7 +663,7 @@ void StructOperationLowerer::replaceElementsIn(Operation *op) {
 /// rewrite them in-place to use the lowered types. Walk pre-order, and while
 /// doing so, erase any trivial casts left over from the type conversion.
 static LogicalResult replaceTypes(Operation *op,
-                                  StructOperationLowerer &structLowerer) {
+                                  LITTypeLowerer &structLowerer) {
   structLowerer.replaceElementsIn(op);
 
   if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
@@ -736,14 +744,14 @@ void LowerLITTypesPass::runOnOperation() {
     }
   }
 
-  StructOperationLowerer structLowerer(&getContext(), structDecls);
+  LITTypeLowerer structLowerer(&getContext(), structDecls);
 
   // Lower KGEN struct operations.
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp, RefStructGEROp,
-              RefLoadOp, RefStoreOp>(
+              RefOffsetOp, RefLoadOp, RefStoreOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });
