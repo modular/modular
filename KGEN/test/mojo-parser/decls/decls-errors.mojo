@@ -185,7 +185,7 @@ fn badCalls(arg: Int):
   TestTuple[Int, Float32]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
-  # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'let' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'var' initializer}}
   let b: ParameterizedStruct[Bool] = a
 
 # expected-note @below {{candidate declared here}}

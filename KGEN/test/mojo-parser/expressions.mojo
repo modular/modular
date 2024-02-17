@@ -77,7 +77,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[IMMREF]])
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.varlet.decl "v2" let
+  # CHECK-NEXT: %v2 = lit.varlet.decl "v2"
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, [[IMMREF]])
   let v2 : MemoryOnlyPair = a
@@ -89,7 +89,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.varlet.decl {{.*}} let
+  # CHECK-NEXT: %regX = lit.varlet.decl {{.*}}
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[AX]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[IMMREF]])

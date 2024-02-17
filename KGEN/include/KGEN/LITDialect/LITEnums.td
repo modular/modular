@@ -50,16 +50,14 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
 
 def LIT_VarLetDeclKind : I32EnumAttr<"VarLetDeclKind",
     "origin of a VarLetDeclOp", [
-  /// Value is declared explicitly by the user to be immutable.
-  I32EnumAttrCase<"Let", 0, "let">,
   /// Value is declared explicitly by the user to be mutable.
-  I32EnumAttrCase<"Var", 1, "var">,
+  I32EnumAttrCase<"Var", 0, "var">,
   /// Value is declared implicitly by the user via non-var/let syntax.
   /// For example, implicit declarations in `def` functions, target declarations
   /// in `for` statements.
-  I32EnumAttrCase<"Implicit", 2, "imp">,
+  I32EnumAttrCase<"Implicit", 1, "imp">,
   /// Value is not declared by the user at all.
-  I32EnumAttrCase<"Synthesized", 3, "synth">,
+  I32EnumAttrCase<"Synthesized", 2, "synth">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

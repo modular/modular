@@ -70,12 +70,3 @@ fn makeClosure(x: MemType):
         return z.a
 
     let y = formatter()
-
-
-fn makeClosureWithCaptureLetWarn(x: int):
-    let z = x
-
-    @parameter
-    async fn formatter() -> int:
-        # expected-error @below {{cannot capture let without copy: z}}
-        return z

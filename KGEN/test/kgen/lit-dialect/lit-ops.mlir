@@ -68,8 +68,8 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   // CHECK-NEXT: %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
   %a = lit.varlet.decl "a" imp : !lit.ref<scalar<ty>, mut life>
 
-  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
-  %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<index, mut lt>
+  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" var : !lit.ref<index, mut lt>
+  %lifetime = lit.varlet.decl "lifetime" var : !lit.ref<index, mut lt>
   kgen.return
 }
 

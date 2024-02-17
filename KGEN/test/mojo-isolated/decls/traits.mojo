@@ -430,7 +430,7 @@ fn default_construct[T: DefaultConstructible]() -> T:
 
 # CHECK-LABEL: lit.func @"generic_fn_return_type
 fn generic_fn_return_type():
-    # CHECK: lit.varlet.decl "c" let : !lit.ref<!NoDtor,
+    # CHECK: lit.varlet.decl "c" var : !lit.ref<!NoDtor,
     # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:!DefaultConstructible [!NoDtor,{{.*}}(%c)
     let c = default_construct[NoDtor]()
     # CHECK: call {{.*}}@NoDtor::@"method

@@ -268,7 +268,7 @@ lit.struct.decl @foo {
 //===----------------------------------------------------------------------===//
 
 lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
-  %y = lit.varlet.decl "y" let : !lit.ref<@MyStruct, mut *"life">
+  %y = lit.varlet.decl "y" var : !lit.ref<@MyStruct, mut *"life">
   %yp = lit.ref.to_pointer %y : !lit.ref<@MyStruct, mut *"life">
   %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !kgen.variant<@Error, none>
   // CHECK: [[V:%.*]] = kgen.call @throwing_callee(

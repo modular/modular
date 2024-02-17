@@ -21,7 +21,7 @@ fn function():
   """Test doc string.
 
   ```mojo
-  let foo = bar
+  var foo = bar
   ```
   """
 ''',
@@ -49,7 +49,7 @@ fn function():
 
   ```mojo
   fn test():
-    let foo: Int = 420
+    var foo: Int = 420
     var bar = 1 + `foo`
     print(bar)
   ```
@@ -65,7 +65,7 @@ fn function():
     assert (
         result.contents.value
         == """```mojo
-(variable) let foo: Int
+(variable) var foo: Int
 ```"""
     )
     assert result.range == Range(
@@ -81,7 +81,7 @@ fn function():
   """Test doc string.
 
   ```mojo
-  let value = 10
+  var value = 10
   ```
 
   ```mojo
