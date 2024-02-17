@@ -20,7 +20,7 @@ ErrorOr<DynamicLibrary>
 M::permanentPluginLibrary(const std::filesystem::path &libFilepath) {
   std::string errorMessage;
 #if defined(__linux__)
-#if LLVM_ADDRESS_SANITIZER_BUILD
+#if (LLVM_ADDRESS_SANITIZER_BUILD || LLVM_THREAD_SANITIZER_BUILD)
   // Disable RTLD_DEEPBIND since it breaks sanitizers
   // (https://github.com/google/sanitizers/issues/611).
   constexpr uint64_t dlopenFlags = RTLD_LAZY | RTLD_LOCAL;
