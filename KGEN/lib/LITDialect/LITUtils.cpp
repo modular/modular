@@ -248,11 +248,60 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   return success();
 }
 
-enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
+ParseResult
+LIT::parseConventionAndVariadicness(AsmParser &p, ArgConvention &convention,
+                                    SmallVectorImpl<size_t> &variadicIndices,
+                                    SmallVectorImpl<size_t> &packIndices,
+                                    size_t idx) {
+  mlir::SMLoc loc = p.getCurrentLocation();
+  StringRef str;
+  convention = ArgConvention::OwnedInReg;
+  if (succeeded(p.parseOptionalKeyword(&str))) {
+    if (std::optional<ArgConvention> conv = symbolizeArgConvention(str)) {
+      convention = *conv;
+      // If we just had a convention and no vertical bar, we're done.
+      if (failed(p.parseOptionalVerticalBar()))
+        return success();
+      // Otherwise we also parse a variadicness
+      return parseVariadicness(p, variadicIndices, packIndices, idx);
+    }
+    if (str == "var")
+      variadicIndices.push_back(idx);
+    else if (str == "pack")
+      packIndices.push_back(idx);
+    else
+      return p.emitError(loc, "expected convention|variadicnes, got: ") << str;
+  }
+  return success();
+}
+
+/// Print the variadicness as a strings.
+static void printVariadicness(AsmPrinter &p, Variadicness variadicness,
+                              char separator = ' ') {
+  if (variadicness != Variadicness::kNone) {
+    p << separator;
+    if (variadicness == Variadicness::kVariadic)
+      p << "var";
+    else if (variadicness == Variadicness::kPack)
+      p << "pack";
+    else
+      llvm_unreachable("unknown Variadicness");
+  }
+}
+
+void LIT::printConventionAndVariadicness(AsmPrinter &p,
+                                         ArgConvention convention,
+                                         Variadicness variadicness) {
+  if (convention == ArgConvention::OwnedInReg)
+    return printVariadicness(p, variadicness);
+
+  p << ' ' << stringifyArgConvention(convention);
+  printVariadicness(p, variadicness, '|');
+}
 
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
-static SmallVector<Variadicness> getVariadicness(ArgParamListAttr listAttr) {
+SmallVector<Variadicness> LIT::getVariadicness(ArgParamListAttr listAttr) {
   SmallVector<Variadicness> res(listAttr.getNames().size(),
                                 Variadicness::kNone);
   for (size_t varIdx : listAttr.getVariadicIndices())
@@ -261,15 +310,6 @@ static SmallVector<Variadicness> getVariadicness(ArgParamListAttr listAttr) {
     res[varIdx] = Variadicness::kPack;
 
   return res;
-}
-
-/// Print the variadicness of an argument/parameter at the given index.
-static void printVariadicness(AsmPrinter &p,
-                              ArrayRef<Variadicness> variadicness, size_t idx) {
-  if (variadicness[idx] == Variadicness::kVariadic)
-    p << " var";
-  else if (variadicness[idx] == Variadicness::kPack)
-    p << " pack";
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
@@ -289,7 +329,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     passingKindPrinter.printOptionalStarSlash(idx);
 
     printParamDecl(p, decl);
-    printVariadicness(p, variadicness, idx);
+    printVariadicness(p, variadicness[idx]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
@@ -378,7 +418,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
-    printVariadicness(p, variadicness, idx);
+    printVariadicness(p, variadicness[idx]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";

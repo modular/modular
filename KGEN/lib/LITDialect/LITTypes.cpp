@@ -737,8 +737,11 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
+  SmallVector<size_t> argVariadicIndices;
+  SmallVector<size_t> argPackIndices;
 
   PassingKindParser passingKindParser(p);
+  size_t idx = 0;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
@@ -750,9 +753,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
-    if (p.parseType(type) ||
-        parseArgConvention(p, argConventions.emplace_back(),
-                           ArgConvention::OwnedInReg))
+    if (p.parseType(type) || parseConventionAndVariadicness(
+                                 p, argConventions.emplace_back(),
+                                 argVariadicIndices, argPackIndices, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -784,8 +787,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                            defaultKwOnlyArgs, /*variadicIndices=*/{},
-                            /*packIndices=*/{}),
+                            defaultKwOnlyArgs, argVariadicIndices,
+                            argPackIndices),
       paramListAttr, numLifetimeDecls, varEffects);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
@@ -828,6 +831,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   printOptionalParamSignature(p, signature.getParamTypes(),
                               signature.getParamListAttrs());
 
+  SmallVector<Variadicness> variadicness =
+      getVariadicness(signature.getArgListAttrs());
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
@@ -840,9 +845,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     }
 
     p << signature.getArguments()[i];
-
-    printArgConvention(p, signature.getArgConvention(i),
-                       ArgConvention::OwnedInReg);
+    printConventionAndVariadicness(p, signature.getArgConvention(i),
+                                   variadicness[i]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";

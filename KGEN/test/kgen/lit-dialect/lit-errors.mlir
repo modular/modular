@@ -146,6 +146,27 @@ lit.func @slashAfterStar(%a: index, *, |, %b: index) {
 
 // -----
 
+// expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
+lit.func @incorrect_arg_variadicness(%a: index borrow|stuff) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{expected convention|variadicnes, got: stuff}}
+lit.func @incorrect_arg_conv_and_variadicness(%a: index stuff) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
+lit.func @incorrect_param_variadicness<a: dtype stuff>() {
+  kgen.return
+}
+
+// -----
+
 // expected-error @below {{'lit.func' expected positional parameter with default value}}
 lit.func @default_pos_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
   %0 = kgen.param.constant: none = <#kgen.none>
@@ -402,6 +423,7 @@ lit.call @calls[imm a, mut b]() : !lit.signature<[1]() -> ()>
 lit.call @calls[mut a]() : !lit.signature<[1](!lit.ref<index, mut *[0,1]>) -> ()>
 
 // -----
+
 lit.func @ref_immut<life: lifetime<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
