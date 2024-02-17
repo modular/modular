@@ -143,9 +143,9 @@ fn _tile_dpbssd_emulated(
                 var bi1 = b[l, 4 * j + 1].cast[DType.int32]()
                 var bi2 = b[l, 4 * j + 2].cast[DType.int32]()
                 var bi3 = b[l, 4 * j + 3].cast[DType.int32]()
-                var cv = c[i, j]
+                var cv = c[(i, j)]
                 cv += ai0 * bi0
                 cv += ai1 * bi1
                 cv += ai2 * bi2
                 cv += ai3 * bi3
-                c[i, j] = cv
+                c[(i, j)] = cv
