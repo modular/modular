@@ -315,7 +315,6 @@ static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
          << " " << argOrParam;
 }
 
-/// Core implementation of the parameter argument parsing logic.
 TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
     SharedState &shared)
@@ -392,6 +391,12 @@ TypeCheckedParamList::TypeCheckedParamList(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
   }
+}
+
+ArgParamListAttr TypeCheckedParamList::getParamListAttr() {
+  return ArgParamListAttr::get(shared.getContext(), names, passingKinds,
+                               defaultPosParams, defaultKwOnlyParams,
+                               variadicIndices, /*packIndices=*/{});
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -969,28 +974,31 @@ FunctionType TypeCheckedFnSignature::getFunctionType() const {
 LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   MLIRContext *ctx = paramList.shared.getContext();
 
+  size_t numArgs = argList.parsedArgs.size();
   SmallVector<StringAttr> argNames;
+  argNames.reserve(numArgs);
   SmallVector<PassingKind> argPassingKinds;
+  argPassingKinds.reserve(numArgs);
   SmallVector<ArgConvention> argConventions;
-  argNames.reserve(argList.parsedArgs.size());
-  argPassingKinds.reserve(argList.parsedArgs.size());
-  argConventions.reserve(argList.parsedArgs.size());
-  for (const ParsedArgument &arg : argList.parsedArgs) {
+  argConventions.reserve(numArgs);
+  SmallVector<size_t> argVariadicIndices;
+  SmallVector<size_t> argPackIndices;
+  for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     argPassingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     argNames.push_back(arg.name);
     argConventions.push_back(arg.kgenConvention);
+    if (arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg)
+      argVariadicIndices.push_back(idx);
+    else if (arg.vararg == VarArgKind::PackVarArg)
+      argPackIndices.push_back(idx);
   }
 
   auto metadata = FnMetadataAttr::get(
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                            defaultKwOnlyArgs, /*variadicIndices=*/{},
-                            /*packIndices=*/{}),
-      ArgParamListAttr::get(ctx, paramList.names, paramList.passingKinds,
-                            paramList.defaultPosParams,
-                            paramList.defaultKwOnlyParams,
-                            paramList.variadicIndices,
-                            /*packIndices=*/{}),
-      implicitLifetimeDecls.size(), argList.varEffects);
+                            defaultKwOnlyArgs, argVariadicIndices,
+                            argPackIndices),
+      paramList.getParamListAttr(), implicitLifetimeDecls.size(),
+      argList.varEffects);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

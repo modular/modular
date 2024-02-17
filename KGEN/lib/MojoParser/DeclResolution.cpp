@@ -1721,15 +1721,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   auto paramsArrayAttr =
       ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
-  structOp.setParamsAttr(paramsArrayAttr);
-  auto paramListAttr = ArgParamListAttr::get(
-      getContext(), paramSignature.names, paramSignature.passingKinds,
-      paramSignature.defaultPosParams, paramSignature.defaultKwOnlyParams,
-      paramSignature.variadicIndices, /*packIndices=*/{});
   auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), paramsArrayAttr, paramListAttr);
+      silenceErrors(getContext()), paramsArrayAttr,
+      paramSignature.getParamListAttr());
   if (!sig)
     return failure();
+  structOp.setParamsAttr(paramsArrayAttr);
   structOp.setSignature(sig);
   structOp.setParentTypes(parentTypes);
 
@@ -2607,13 +2604,12 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // trait.
   // - T: a ParamRef to MT which is the type of MT.
   // TODO: build AnyType instead
-  auto mt = ParamDeclAttr::get("MT", TypeType::get(decl.getContext()));
+  auto mt = ParamDeclAttr::get("MT", TypeType::get(getContext()));
   auto mtRef = ParamDeclAttr::get(
       "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
 
   auto params = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
-  traitOp.setParams(params);
-  SmallVector<StringAttr> paramNames(2, StringAttr::get(decl.getContext()));
+  SmallVector<StringAttr> paramNames(2, StringAttr::get(getContext()));
   SmallVector<PassingKind> paramPassingKinds(2, PassingKind::Implicit);
   auto paramListAttr =
       ArgParamListAttr::get(getContext(), paramNames, paramPassingKinds);
@@ -2621,6 +2617,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                                  params, paramListAttr);
   if (!sig)
     return failure();
+  traitOp.setParams(params);
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 
