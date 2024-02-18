@@ -38,10 +38,6 @@ class VariadicEffects {
 public:
   VariadicEffects(Impl impl = Impl::None) : impl(impl) {}
 
-  VariadicEffects setVarArgs(bool varArgs = true) {
-    return set(Impl::VarArg, varArgs);
-  }
-
   bool operator==(VariadicEffects rhs) const {
     return getImpl() == rhs.getImpl();
   }

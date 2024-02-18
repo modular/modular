@@ -939,10 +939,6 @@ bool LITSignatureType::isPackVarArg(size_t index) {
   return getMetadata().isPackVarArg(index);
 }
 
-bool LITSignatureType::isKwVarArg(size_t index) {
-  return getMetadata().isKwVarArg(index);
-}
-
 bool LITSignatureType::hasParamVarArgs() {
   return getMetadata().hasParamVarArgs();
 }

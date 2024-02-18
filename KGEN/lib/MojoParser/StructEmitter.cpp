@@ -472,8 +472,7 @@ struct ValueInfo {
         continue;
       // Skip any kind of var-args.
       FnMetadataAttr metadata = signature.getMetadata();
-      if (metadata.hasVarArgs() || metadata.hasPackVarArgs() ||
-          metadata.hasKwVarArgs())
+      if (metadata.hasVarArgs() || metadata.hasPackVarArgs())
         continue;
 
       bool isMatch = true;
