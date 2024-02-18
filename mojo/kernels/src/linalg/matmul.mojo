@@ -2432,7 +2432,7 @@ fn _small_matmul[
                 c.simd_store[width](coords, rebind[SIMD[type, width]](val))
 
         @always_inline
-        @__copy_capture(N, a_val)
+        @__copy_capture(N)
         @parameter
         fn accum_out_row[
             output_func: fn[type: DType, width: Int] (
