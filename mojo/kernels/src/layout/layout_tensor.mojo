@@ -10,7 +10,7 @@ from .int_tuple import flatten, int
 from .layout import *
 
 
-struct LayoutTensor[dtype: DType]:
+struct LayoutTensor[dtype: DType, M: Int, N: Int]:
     var ptr: DTypePointer[dtype]
     var layout: Layout
 
@@ -18,11 +18,15 @@ struct LayoutTensor[dtype: DType]:
     fn __init__(inout self, layout: Layout, ptr: DTypePointer[dtype]):
         self.ptr = ptr
         self.layout = layout
+        if self.dim(0) != M or self.dim(1) != N:
+            trap("Layout inconsistent with dimensions.")
 
     @always_inline
-    fn __init__(inout self, M: Int, N: Int):
+    fn __init__(inout self):
         self.ptr = DTypePointer[dtype].alloc(M * N)
         self.layout = Layout(IntTuple(M, N), IntTuple(N, 1))
+        if self.dim(0) != M or self.dim(1) != N:
+            trap("Layout inconsistent with dimensions.")
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
@@ -30,50 +34,71 @@ struct LayoutTensor[dtype: DType]:
         self.layout = existing.layout
 
     @always_inline
-    fn __getitem__(self, idx: IntTuple) -> SIMD[dtype, 1]:
+    fn __getitem__(self, idx: IntTuple) -> Scalar[dtype]:
         return self.ptr.simd_load[1](self.layout(idx))
 
     @always_inline
-    fn __setitem__(self, idx: IntTuple, val: SIMD[dtype, 1]):
+    fn __setitem__(self, idx: IntTuple, val: Scalar[dtype]):
         self.ptr.simd_store[1](self.layout(idx), val)
+
+    @always_inline
+    fn __getitem__(self, m: Int, n: Int) -> Scalar[dtype]:
+        return self.ptr.simd_load[1](self.layout(IntTuple(m, n)))
+
+    @always_inline
+    fn __setitem__(self, m: Int, n: Int, val: Scalar[dtype]):
+        self.ptr.simd_store[1](self.layout(IntTuple(m, n)), val)
+
+    fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
+        return self.ptr.simd_load[width](self.layout(IntTuple(m, n)))
+
+    fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+        return self.ptr.simd_store[width](self.layout(IntTuple(m, n)), val)
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
         return int(flatten(self.layout.shape)[idx])
 
-    fn view(self, tiler: LayoutList, coords: IntTuple) -> LayoutTensor[dtype]:
+    fn view[
+        M1: Int, N1: Int  # View's dimensions
+    ](self, m: Int, n: Int) -> LayoutTensor[dtype, M1, N1]:
+        let tiler = LayoutList(Layout(M1, 1), Layout(N1, 1))
         var tiled_layout = zipped_divide(self.layout, tiler)
+        let coords = IntTuple(m, n)
         if len(coords) > 0:
             var offset = inner_product(coords, tiled_layout[1].stride)
-            var res_tensor = LayoutTensor[dtype](
+            var res_tensor = LayoutTensor[dtype, M1, N1](
                 tiled_layout[0], self.ptr.offset(offset)
             )
             return res_tensor
-        return LayoutTensor[dtype](tiled_layout, self.ptr)
+        return LayoutTensor[dtype, M1, N1](tiled_layout, self.ptr)
 
-    fn transpose(self) -> LayoutTensor[dtype]:
-        return LayoutTensor(
+    fn transpose(self) -> LayoutTensor[dtype, N, M]:
+        return LayoutTensor[dtype, N, M](
             composition(
                 self.layout,
-                Layout(
-                    IntTuple(self.dim(1), self.dim(0)), IntTuple(self.dim(0), 1)
-                ),
+                Layout(IntTuple(N, M), IntTuple(M, 1)),
             ),
             self.ptr,
         )
 
     fn copyTo(self, other: Self):
-        if self.dim(0) != other.dim(0) or self.dim(1) != other.dim(1):
-            trap(
-                String("matrix dimensions don't match: ")
-                + self.dim(0)
-                + ":"
-                + self.dim(1)
-                + " != "
-                + other.dim(0)
-                + ":"
-                + other.dim(1)
-            )
-        for m in range(self.dim(0)):
-            for n in range(self.dim(1)):
+        for m in range(M):
+            for n in range(N):
                 other[IntTuple(m, n)] = self[IntTuple(m, n)]
+
+    fn linspace(self):
+        for m in range(M):
+            for n in range(N):
+                self[IntTuple(m, n)] = m * M + n
+
+    fn fill(self, val: Scalar[dtype]):
+        for m in range(M):
+            for n in range(N):
+                self[IntTuple(m, n)] = val
+
+    fn print(self):
+        for m in range(M):
+            for n in range(N):
+                print_no_newline(self[IntTuple(m, n)], "  ")
+            print("")
