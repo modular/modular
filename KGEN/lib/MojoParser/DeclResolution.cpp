@@ -2120,8 +2120,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       oldArgListAttrs.getNames().drop_front(replacedResult),
       oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
   auto metadata = FnMetadataAttr::get(
-      newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls,
-      traitSig.getMetadata().getVariadicEffects());
+      newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls);
   return SignatureType::get(
       FunctionType::get(traitSig.getContext(), argTypes, resultType),
       traitSig.getParamTypes(), traitSig.getResultParamTypes(), conventions,
@@ -2152,8 +2151,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
       memSig.getArgConventions(), memSig.getArgListAttrs(),
       memSig.getResultType(), structDecl, SpecialFunctionInfo::getKind(name),
-      memSig.getFnEffects(), memSig.getMetadata().getVariadicEffects(),
-      "_thunk");
+      memSig.getFnEffects(), "_thunk");
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2286,8 +2284,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         ArgParamListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
-        shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
-        "_thunk");
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
@@ -2312,8 +2309,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         {ArgConvention::InitSelf, existingConv},
         ArgParamListAttr::get(shared.getContext(), {empty, empty},
                               {PassingKind::PosOnly, PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), VariadicEffects(),
-        "_thunk");
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     func = ctor;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());

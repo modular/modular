@@ -118,20 +118,6 @@ using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;
 
-static LogicalResult readVariadicEffects(DialectBytecodeReader &reader,
-                                         VariadicEffects &effects) {
-  VariadicImpl::VariadicEffects impl;
-  if (failed(M::readIntegral(reader, impl)))
-    return failure();
-  effects = impl;
-  return success();
-}
-
-static void writeVariadicEffects(DialectBytecodeWriter &writer,
-                                 VariadicEffects effects) {
-  M::writeIntegral(writer, effects.getImpl());
-}
-
 static LogicalResult
 readStructValues(DialectBytecodeReader &reader,
                  SmallVectorImpl<std::tuple<StringAttr, TypedAttr>> &values) {

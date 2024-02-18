@@ -166,7 +166,6 @@ class ParsedArgumentList {
 public:
   SmallVector<ParsedArgument> parsedArgs;
   FnEffects effects;
-  VariadicEffects varEffects;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.

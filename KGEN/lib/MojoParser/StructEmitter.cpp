@@ -33,8 +33,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects,
-    VariadicEffects varEffects, StringRef suffix) {
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -84,7 +83,7 @@ LIT::FuncOp StructEmitter::createFunction(
   size_t numImplicitLifetimeDecls = fullParams.size();
 
   auto metadata = FnMetadataAttr::get(argListAttrs, paramListAttrs,
-                                      numImplicitLifetimeDecls, varEffects);
+                                      numImplicitLifetimeDecls);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
@@ -132,12 +131,12 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, VariadicEffects varEffects, StringRef suffix) {
+    FnEffects fnEffects, StringRef suffix) {
   return synthesizeMethodInStruct(
       name, /*params=*/{},
       /*paramListAttrs=*/ArgParamListAttr::get(getContext()), argTypes,
       argConventions, argListAttrs, resultType, structDecl, specialFnID,
-      fnEffects, varEffects, suffix);
+      fnEffects, suffix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
@@ -145,14 +144,14 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, VariadicEffects varEffects, StringRef suffix) {
+    FnEffects fnEffects, StringRef suffix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp = createFunction(
-      structDecl, name, params, paramListAttrs, argTypes, argConventions,
-      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
-      fnEffects, varEffects, suffix);
+  LIT::FuncOp funcOp =
+      createFunction(structDecl, name, params, paramListAttrs, argTypes,
+                     argConventions, argListAttrs, resultType, specialFnID,
+                     structDecl.getLoc(), builder, fnEffects, suffix);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").

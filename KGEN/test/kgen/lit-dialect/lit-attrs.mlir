@@ -1,54 +1,59 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: "arg_param_list.with_defaults"
+// CHECK-LABEL: "arg_param_list.with_defaults"
 // CHECK-SAME: {arg_param_list = #lit.arg_param_list<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64], [], []>}
 "arg_param_list.with_defaults"() {arg_param_list = #lit.arg_param_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.2 : f32], [1: i64], [], []
 >} : () -> ()
 
-// CHECK: "arg_param_list.with_variadics"
+// CHECK-LABEL: "arg_param_list.with_variadics"
 // CHECK-SAME: {arg_param_list = #lit.arg_param_list<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [3], [1]>}
 "arg_param_list.with_variadics"() {arg_param_list = #lit.arg_param_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [3], [1]
 >} : () -> ()
 
-// CHECK: "empty.arg_param_list"
+// CHECK-LABEL: "empty.arg_param_list"
 // CHECK-SAME: {arg_param_list = #lit.arg_param_list<[], [], [], [], [], []>}
 "empty.arg_param_list"() {arg_param_list = #lit.arg_param_list<[], [], [], [], [], []>} : () -> ()
 
-// CHECK: #lit.fn_metadata
+// CHECK-LABEL: "some.metadata"
+// CHECK-SAME: #lit.fn_metadata
 // CHECK-SAME: <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
 // CHECK-SAME: <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
-// CHECK-SAME: 2, none>
-"some.op"() {metadata = #lit.fn_metadata<
+// CHECK-SAME: 2>
+"some.metadata"() {metadata = #lit.fn_metadata<
   <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [], []>,
   <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [1], []>,
-  2,
-  none
+  2
 >} : () -> ()
 
-// CHECK: #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0, none>
-"some.op"() {metadata = #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0, none>} : () -> ()
+// CHECK-LABEL: "empty.metadata"
+// CHECK-SAME: #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0>
+"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], [], [], [], []>, <[], [], [], [], [], []>, 0>} : () -> ()
 
-// CHECK: #kgen.none : !kgen.none
-"a"() {a = #kgen.none : !kgen.none} : () -> ()
+// CHECK-LABEL: "none.type"
+// CHECK-SAME: #kgen.none : !kgen.none
+"none.type"() {a = #kgen.none : !kgen.none} : () -> ()
 
-// CHECK: #lit.type_lineage<index, [index]>
-"a"() {a = #lit.type_lineage<index, [index]>} : () -> ()
+// CHECK-LABEL: "type_lineage.attr"
+// CHECK-SAME: #lit.type_lineage<index, [index]>
+"type_lineage.attr"() {a = #lit.type_lineage<index, [index]>} : () -> ()
 
 lit.struct.decl @Foo {
   lit.struct.field foo : index
   lit.struct.field bar : !kgen.dtype
 }
 
-// CHECK: #lit.struct<{foo = 5, bar: dtype = f32}>
-"a"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.declref<@Foo>} : () -> ()
+// CHECK-LABEL: "struct.attr"
+// CHECK-SAME: #lit.struct<{foo = 5, bar: dtype = f32}>
+"struct.attr"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.declref<@Foo>} : () -> ()
 
+// CHECK-LABEL: "lifetime.attr"
 // CHECK: #lit.lifetime : !lit.lifetime<1>
-"a"() {a = #lit.lifetime : !lit.lifetime<1>} : () -> ()
+"lifetime.attr"() {a = #lit.lifetime : !lit.lifetime<1>} : () -> ()
 
 
 kgen.generator @lifetime_lower<p: !lit.lifetime<1>>(%a: !lit.lifetime<0>) {

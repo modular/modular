@@ -158,13 +158,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let parameters = (ins
     LIT_ArgParamListAttr:$argListAttrs,
     LIT_ArgParamListAttr:$paramListAttrs,
-    "size_t":$numImplicitLifetimeDecls,
-    "VariadicEffects":$variadicEffects
+    "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
-    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls `,`
-      custom<VariadicEffects>($variadicEffects)
-    `>`
+    `<` $argListAttrs `,` $paramListAttrs `,` $numImplicitLifetimeDecls `>`
   }];
 
   let builders = [
@@ -172,12 +169,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     AttrBuilderWithInferredContext<(ins
       "ArgParamListAttr":$argListAttrs,
       "ArgParamListAttr":$paramListAttrs,
-      CArg<"size_t", "0">:$numImplicitLifetimeDecls,
-      CArg<"VariadicEffects", "VariadicEffects()">:$variadicEffects)>,
+      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
       "ArgParamListAttr":$argListAttrs,
-      CArg<"size_t", "0">:$numImplicitLifetimeDecls,
-      CArg<"VariadicEffects", "VariadicEffects()">:$variadicEffects)>,
+      CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
   ];
 
   let extraClassDeclaration = [{
