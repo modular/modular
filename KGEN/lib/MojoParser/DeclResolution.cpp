@@ -575,20 +575,31 @@ void FnDecorators::applyMoveCapture(const CallNode &node) {
     LookupResult lookup = shared.lookupAndResolveDecl(
         declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
         /*searchParentScopes=*/true);
-    if (ArrayRef<ASTDecl *> decls = lookup.getIfSuccess(); !decls.empty()) {
-      ExprEmitter emitter(shared, decl, EC_CaptureCopy);
-      ValueDest dest(EC_CaptureCopy);
-      std::optional<Capture> capture;
-      if (emitter.emitDeclReference(declRef->spelling, decls, declRef, dest,
-                                    capture) &&
-          capture) {
-        shared.addCaptureToScope(decl, decls.front(),
-                                 Capture(capture->getValue(), /*isMove=*/true));
-        continue;
-      }
+    if (lookup.isErroneous())
+      continue;
+
+    ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+    if (decls.empty()) {
+      emitError(declRef->getLoc(), "cannot capture unknown value '")
+          << declRef->spelling << "'";
+      continue;
     }
-    emitError(declRef->getLoc(), "cannot capture '")
-        << declRef->spelling << "'";
+    if (decls.size() != 1) {
+      emitError(declRef->getLoc(), "cannot capture overloaded value '")
+          << declRef->spelling << "'";
+      continue;
+    }
+
+    ExprEmitter emitter(shared, decl, EC_CaptureCopy);
+    ValueDest dest(EC_CaptureCopy);
+    std::optional<Capture> capture;
+    if (emitter.emitDeclReference(declRef->spelling, decls, declRef, dest,
+                                  capture) &&
+        capture) {
+      shared.addCaptureToScope(decl, decls.front(),
+                               Capture(capture->getValue(), /*isMove=*/true));
+      continue;
+    }
   }
 }
 
@@ -604,64 +615,65 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
     LookupResult lookup = shared.lookupAndResolveDecl(
         declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
         /*searchParentScopes=*/true);
-    if (ArrayRef<ASTDecl *> decls = lookup.getIfSuccess(); !decls.empty()) {
-      // Emit an immutable copy of the captured declaration.
-      LIT::FuncOp parentOp = funcOp->getParentOfType<LIT::FuncOp>();
-      if (!parentOp) {
-        emitError(declRef->getLoc(), "'@__copy_capture' decorator is only "
-                                     "applicable to nested functions.");
-        return;
-      }
-      ExprEmitter emitter(shared, decl, EC_CaptureCopy);
-      ValueDest dest(EC_CaptureCopy);
-      std::optional<Capture> capture;
-      AnyValue declarationReference = emitter.emitDeclReference(
-          declRef->spelling, decls, declRef, dest, capture);
-      CValue value = declarationReference.getIfCValue();
-      if (!effects.isEscaping() &&
-          !value.getRValueType().isRegisterPassable(decl.getLoc(), shared)) {
-        emitError(declRef->getLoc(), "cannot capture '")
-            << declRef->spelling
-            << "' because capturing instances of memory only types in "
-               "parametric functions is not supported";
-        continue;
-      }
-      OpBuilder builder(parentOp.getContext());
-      builder.setInsertionPoint(funcOp);
-      ExprEmitter copyEmitter(shared, decl, builder);
-      ValueDest copyDest(EC_VarInit);
-      CValue result = copyEmitter.emitCopyOfValue({value, declRef}, copyDest);
-      if (!result) {
-        emitError(declRef->getLoc(), "cannot capture '")
-            << declRef->spelling << "'";
-        continue;
-      }
+    if (lookup.isErroneous())
+      continue;
 
-      // Bind the name in the scope.
-      DeclIRValue declVal = declIrValueFromCValue(result);
-      if (!declVal) {
-        emitError(declRef->getLoc(),
-                  "Encountered a capture of an unsupported value type: '")
-            << declRef->spelling << "'";
-        return;
-      }
-
-      // Mark the copy as synthetic.
-      auto markAsSynthetic = [](Operation *op) {
-        if (VarDeclOp varLetDeclOp = dyn_cast<VarDeclOp>(op))
-          varLetDeclOp.setKind(VarDeclKind::Synthesized);
-      };
-
-      if (SRValue srValue = declVal.dyn_cast<SRValue>())
-        markAsSynthetic(srValue.getDefiningOp());
-      else if (MRValue mrValue = declVal.dyn_cast<MRValue>())
-        markAsSynthetic(mrValue.getDefiningOp());
-
-      copyEmitter.getDeclResolver().addFullyResolvedDecl(
-          declVal, declRef->spelling, sigDecl.getLoc(), &sigDecl);
-      shared.addCaptureToScope(decl, decls.front(),
-                               Capture(result, /*isMove=*/false));
+    ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+    if (decls.empty()) {
+      emitError(declRef->getLoc(), "cannot capture unknown value '")
+          << declRef->spelling << "'";
+      continue;
     }
+    if (decls.size() != 1) {
+      emitError(declRef->getLoc(), "cannot capture overloaded value '")
+          << declRef->spelling << "'";
+      continue;
+    }
+
+    // Emit an immutable copy of the captured declaration.
+    LIT::FuncOp parentOp = funcOp->getParentOfType<LIT::FuncOp>();
+    if (!parentOp) {
+      emitError(declRef->getLoc(), "'@__copy_capture' decorator is only "
+                                   "applicable to nested functions.");
+      return;
+    }
+
+    ExprEmitter emitter(shared, *decl.getParentDecl(), OpBuilder(funcOp));
+    RValue copyResult = emitter.emitExprRValue(declRef, EC_CaptureCopy);
+
+    // We can only capture dynamic values so materialize param expressions.
+    if (auto pval = copyResult.getIfPValue()) {
+      if (pval.getType().isRegisterPassable(decl.getLoc(), shared))
+        copyResult = emitter.emitSRValue({copyResult, declRef}, EC_CaptureCopy);
+      else
+        copyResult = emitter.emitMRValue({copyResult, declRef}, EC_CaptureCopy);
+    }
+    if (!copyResult)
+      return;
+
+    if (!effects.isEscaping() &&
+        !copyResult.getRValueType().isRegisterPassable(decl.getLoc(), shared)) {
+      emitError(declRef->getLoc(), "cannot capture '")
+          << declRef->spelling
+          << "' because capturing instances of memory only types in "
+             "parametric functions is not supported";
+      continue;
+    }
+
+    // How is this transfering the RValue into the closure?
+    DeclIRValue resultVal;
+    if (auto srVal = copyResult.getIfSRValue())
+      resultVal = srVal;
+    else {
+      assert(copyResult.getIfMRValue() && "Unknown RValue kind");
+      resultVal = copyResult.getIfMRValue();
+    }
+
+    // Bind the name in the scope.
+    emitter.getDeclResolver().addFullyResolvedDecl(resultVal, declRef->spelling,
+                                                   sigDecl.getLoc(), &sigDecl);
+    shared.addCaptureToScope(decl, decls.front(),
+                             Capture(copyResult, /*isMove=*/false));
   }
 }
 
@@ -777,9 +789,8 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   SyntheticNode node(loc);
 
   // Create a copy of the captured value.
-  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFnDecl);
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
-  for (auto &[_, capture] : captureIteratorRange) {
+  for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl)) {
     AnyValue arg = capture.getValue();
     if (capture.isMoveCapture()) {
       // HACK(#16110): This transfers ownership without an explicit `^` from the

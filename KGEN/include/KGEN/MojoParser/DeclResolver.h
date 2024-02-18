@@ -48,8 +48,6 @@ enum class PassingKind : uint32_t;
 using DeclIRValue = PointerUnion<Operation *, PValue, SRValue, SBValue, MBValue,
                                  MRValue, MLValue>;
 
-DeclIRValue declIrValueFromCValue(CValue result);
-
 class DeclResolver : public SharedStateUser {
 public:
   DeclResolver(SharedState &state);

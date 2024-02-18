@@ -922,20 +922,3 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   mangledName += ')';
   return StringAttr::get(baseName.getContext(), mangledName);
 }
-
-DeclIRValue M::KGEN::LIT::declIrValueFromCValue(CValue result) {
-  DeclIRValue declVal;
-  if (auto srValue = result.getIfSRValue())
-    declVal = srValue;
-  else if (auto sbValue = result.getIfSBValue())
-    declVal = sbValue;
-  else if (auto pValue = result.getIfPValue())
-    declVal = pValue;
-  else if (auto mbValue = result.getIfMBValue())
-    declVal = mbValue;
-  else if (auto mlValue = result.getIfMLValue())
-    declVal = mlValue;
-  else if (auto mrValue = result.getIfMRValue())
-    declVal = mrValue;
-  return declVal;
-}
