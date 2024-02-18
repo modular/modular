@@ -3046,7 +3046,7 @@ fn conv[
         )
 
     @always_inline
-    @__copy_capture(strides_tuple, pad_h_tuple, pad_w_tuple)
+    @__copy_capture(pad_h_tuple, pad_w_tuple)
     @parameter
     fn description_fn() -> String:
         var input_shape_str = String("input=") + String("x").join(
