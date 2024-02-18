@@ -14,7 +14,7 @@ from kernel_utils.layout import (
     print_layout,
     zipped_divide,
 )
-from kernel_utils.layout_tensor import LayoutTensor, tile
+from kernel_utils.layout_tensor import LayoutTensor
 from memory import stack_allocation
 
 
@@ -82,8 +82,8 @@ fn test_basic_tensor_ops():
     for tile_i in range(4):
         for tile_j in range(2):
             print("----tile[", tile_i, ",", tile_j, "]----")
-            let tile_2x2 = tile(
-                row_major_tensor, tiler, IntTuple(tile_i, tile_j)
+            let tile_2x2 = row_major_tensor.view(
+                tiler, IntTuple(tile_i, tile_j)
             )
             print_tile_tensor(tile_2x2)
 

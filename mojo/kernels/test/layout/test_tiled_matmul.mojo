@@ -8,33 +8,26 @@
 
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import Layout, LayoutList, composition
-from kernel_utils.layout_tensor import LayoutTensor, tile
-
-
-fn create_matrix[M: Int, N: Int]() -> LayoutTensor[DType.float32]:
-    let ptr = DTypePointer[DType.float32].alloc(M * N)
-    return LayoutTensor[DType.float32](
-        Layout(IntTuple(M, N), IntTuple(N, 1)), ptr
-    )
+from kernel_utils.layout_tensor import LayoutTensor
 
 
 fn fill_matrix(matrix: LayoutTensor[DType.float32]):
     let M = matrix.dim(0)
     let N = matrix.dim(1)
-    for m in range(matrix.dim(0)):
-        for n in range(matrix.dim(1)):
+    for m in range(M):
+        for n in range(N):
             matrix[IntTuple(m, n)] = m * M + n
 
 
 fn fill_matrix(matrix: LayoutTensor[DType.float32], val: Float32):
     let M = matrix.dim(0)
     let N = matrix.dim(1)
-    for m in range(matrix.dim(0)):
-        for n in range(matrix.dim(1)):
+    for m in range(M):
+        for n in range(N):
             matrix[IntTuple(m, n)] = val
 
 
-fn print_raw_major_matrix[dtype: DType](matrix: LayoutTensor[dtype]):
+fn print_row_major_matrix[dtype: DType](matrix: LayoutTensor[dtype]):
     let M = matrix.dim(0)
     let N = matrix.dim(1)
     for m in range(M):
@@ -43,148 +36,212 @@ fn print_raw_major_matrix[dtype: DType](matrix: LayoutTensor[dtype]):
         print("")
 
 
-# matrix multiple and accumlate
-fn mma(
-    inout dst: LayoutTensor[DType.float32],
-    lhs: LayoutTensor[DType.float32],
-    rhs: LayoutTensor[DType.float32],
-):
-    let M = dst.dim(0)
-    let N = dst.dim(1)
-    let K = lhs.dim(1)
-    for m in range(M):
-        for n in range(N):
-            for k in range(K):
-                dst[IntTuple(m, n)] += lhs[IntTuple(m, k)] * rhs[IntTuple(k, n)]
+@register_passable
+struct Dim(Stringable):
+    var m: Int
+    var n: Int
+    var k: Int
+
+    fn __init__(m: Int, n: Int, k: Int) -> Self:
+        return Self {m: m, n: n, k: k}
+
+    fn subrange(self, sub_dim: Self) -> Self:
+        return Self(
+            self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
+        )
+
+    fn __str__(self) -> String:
+        return (
+            "m: " + str(self.m) + ", n: " + str(self.n) + ", k: " + str(self.k)
+        )
 
 
-# matrix multiple transposed and accumlate, returns matmul(lhs, rhs^T)
-fn mmta(
-    inout dst: LayoutTensor[DType.float32],
-    lhs: LayoutTensor[DType.float32],
-    rhs: LayoutTensor[DType.float32],
-):
-    let M = dst.dim(0)
-    let N = dst.dim(1)
-    let K = lhs.dim(1)
-    for m in range(M):
-        for n in range(N):
-            for k in range(K):
-                dst[IntTuple(m, n)] += lhs[IntTuple(m, k)] * rhs[IntTuple(n, k)]
+trait TiledOp:
+    @staticmethod
+    fn l1_dim() -> Dim:
+        pass
+
+    @staticmethod
+    fn l2_dim() -> Dim:
+        pass
+
+    @staticmethod
+    fn op[
+        dtype: DType, rhs_transposed: Bool = False
+    ](
+        inout dst: LayoutTensor[dtype],
+        lhs: LayoutTensor[dtype],
+        rhs: LayoutTensor[dtype],
+    ):
+        pass
 
 
-fn tiled_matmul(
-    dst: LayoutTensor[DType.float32],
-    lhs: LayoutTensor[DType.float32],
-    rhs: LayoutTensor[DType.float32],
-    transposed_mmta: Bool,
-    tile_1_m_size: Int = 4,
-    tile_1_n_size: Int = 4,
-    tile_1_k_size: Int = 4,
-    tile_2_m_size: Int = 2,
-    tile_2_n_size: Int = 2,
-    tile_2_k_size: Int = 2,
-):
-    let m = dst.dim(0)
-    let n = dst.dim(1)
-    let k = lhs.dim(1)
+fn compatible[
+    dtype: DType, rhs_transposed: Bool = False
+](
+    dst: LayoutTensor[dtype],
+    lhs: LayoutTensor[dtype],
+    rhs: LayoutTensor[dtype],
+) -> Bool:
+    if rhs_transposed:
+        return (
+            lhs.dim(0) == dst.dim(0)
+            and rhs.dim(0) == dst.dim(1)
+            and lhs.dim(1) == rhs.dim(1)
+        )
+    else:
+        return (
+            lhs.dim(0) == dst.dim(0)
+            and rhs.dim(1) == dst.dim(1)
+            and lhs.dim(1) == rhs.dim(0)
+        )
+
+
+# matrix multiply and accumlate
+struct MMA(TiledOp):
+    # FIXME: Non square tiles don't seem to work.
+    @staticmethod
+    fn l1_dim() -> Dim:
+        return Dim(4, 4, 4)
+
+    @staticmethod
+    fn l2_dim() -> Dim:
+        return Dim(2, 2, 2)
+
+    @staticmethod
+    fn op[
+        dtype: DType, rhs_transposed: Bool = False
+    ](
+        inout dst: LayoutTensor[dtype],
+        lhs: LayoutTensor[dtype],
+        rhs: LayoutTensor[dtype],
+    ):
+        if not compatible(dst, lhs, rhs):
+            trap("Incompatible matrices")
+
+        let M = dst.dim(0)
+        let N = dst.dim(1)
+        let K = lhs.dim(1)
+        for m in range(M):
+            for n in range(N):
+                for k in range(K):
+                    let rhs_t = rhs[IntTuple(n, k)] if rhs_transposed else rhs[
+                        IntTuple(k, n)
+                    ]
+                    dst[IntTuple(m, n)] += lhs[IntTuple(m, k)] * rhs_t
+
+
+struct Tiling(Stringable):
+    var dst: LayoutList
+    var lhs: LayoutList
+    var rhs: LayoutList
+
+    fn __init__(inout self, dim: Dim):
+        self.dst = Self.tile_layout(dim.m, dim.n)
+        self.lhs = Self.tile_layout(dim.m, dim.k)
+        self.rhs = Self.tile_layout(dim.k, dim.n)
+
+    @staticmethod
+    fn tile_layout(n: Int, m: Int) -> LayoutList:
+        return LayoutList(Layout(n, 1), Layout(m, 1))
+
+    fn __str__(self) -> String:
+        return (
+            "dst: "
+            + str(self.dst)
+            + ", lhs: "
+            + str(self.lhs)
+            + ", rhs: "
+            + str(self.rhs)
+        )
+
+
+fn gemm[
+    dtype: DType,
+    mma: TiledOp,
+    rhs_transposed: Bool = False,
+](dst: LayoutTensor[dtype], lhs: LayoutTensor[dtype], rhs: LayoutTensor[dtype]):
+    if not compatible[dtype, False](dst, lhs, rhs):
+        trap("Incompatible matrices")
+
+    # Dimensions of the Operation
+    let op_dim = Dim(dst.dim(0), dst.dim(1), lhs.dim(1))
+
+    # L1 and L2 Tilings
+    let l1_tiling = Tiling(mma.l1_dim())
+    let l2_tiling = Tiling(mma.l2_dim())
+
+    # L1 and L2 Tiile ranges
+    let l1_dim = op_dim.subrange(mma.l1_dim())
+    let l2_dim = mma.l1_dim().subrange(mma.l2_dim())
+
+    # Cache matrix to materialize L1 tiles
+    var l1_rhs_cache = LayoutTensor[dtype](
+        mma.l1_dim().k, mma.l1_dim().n
+    ) if rhs_transposed else LayoutTensor[dtype](mma.l1_dim().n, mma.l1_dim().k)
+
+    # Transposed view on rhs
+    let rhs_t = rhs.transpose() if rhs_transposed else rhs
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
-    for m_1 in range(m // tile_1_m_size):
-        for n_1 in range(n // tile_1_n_size):
-            var dst_l1_tile = tile(
-                dst,
-                LayoutList(
-                    Layout(tile_1_m_size, 1),
-                    Layout(tile_1_n_size, 1),
-                ),
-                IntTuple(m_1, n_1),
-            )
-            for k_1 in range(k // tile_1_k_size):
-                let lhs_l1_tile = tile(
-                    lhs,
-                    LayoutList(
-                        Layout(tile_1_m_size, 1),
-                        Layout(tile_1_k_size, 1),
-                    ),
-                    IntTuple(m_1, k_1),
-                )
-                let rhs_l1_tile = tile(
-                    rhs,
-                    LayoutList(
-                        Layout(tile_1_k_size, 1),
-                        Layout(tile_1_n_size, 1),
-                    ),
-                    IntTuple(k_1, n_1),
-                )
+    for m_1 in range(l1_dim.m):
+        for n_1 in range(l1_dim.n):
+            var dst_l1_tile = dst.view(l1_tiling.dst, IntTuple(m_1, n_1))
+
+            for k_1 in range(l1_dim.k):
+                let lhs_l1_tile = lhs.view(l1_tiling.lhs, IntTuple(m_1, k_1))
+
+                # Materialize L1 rhs (transposed) tile
+                # rhs tile indices have to be swapped when transposed
+                let rhs_l1_tile_idx = IntTuple(
+                    n_1, k_1
+                ) if rhs_transposed else IntTuple(k_1, n_1)
+                rhs_t.view(
+                    l1_tiling.rhs,
+                    rhs_l1_tile_idx,
+                ).copyTo(l1_rhs_cache)
+                let rhs_l1_tile = l1_rhs_cache
+
                 # Second level of tiling (instruction, vectorization..etc)
-                for m_2 in range(tile_1_m_size // tile_2_m_size):
-                    for n_2 in range(tile_1_n_size // tile_2_n_size):
-                        var dst_l2_tile = tile(
-                            dst_l1_tile,
-                            LayoutList(
-                                Layout(tile_2_m_size, 1),
-                                Layout(tile_2_n_size, 1),
-                            ),
-                            IntTuple(m_2, n_2),
+                for m_2 in range(l2_dim.m):
+                    for n_2 in range(l2_dim.n):
+                        var dst_l2_tile = dst_l1_tile.view(
+                            l2_tiling.dst, IntTuple(m_2, n_2)
                         )
 
-                        for k_2 in range(tile_1_k_size // tile_2_k_size):
-                            let lhs_l2_tile = tile(
-                                lhs_l1_tile,
-                                LayoutList(
-                                    Layout(tile_2_m_size, 1),
-                                    Layout(tile_2_k_size, 1),
-                                ),
-                                IntTuple(m_2, k_2),
+                        for k_2 in range(l2_dim.k):
+                            let lhs_l2_tile = lhs_l1_tile.view(
+                                l2_tiling.lhs, IntTuple(m_2, k_2)
                             )
-                            let rhs_l2_tile = tile(
-                                rhs_l1_tile,
-                                LayoutList(
-                                    Layout(tile_2_k_size, 1),
-                                    Layout(tile_2_n_size, 1),
-                                ),
-                                IntTuple(k_2, n_2),
+
+                            # rhs tile indices have to be swapped when transposed
+                            let rhs_l2_tile_idx = IntTuple(
+                                n_2, k_2
+                            ) if rhs_transposed else IntTuple(k_2, n_2)
+                            let rhs_l2_tile = rhs_l1_tile.view(
+                                l2_tiling.rhs,
+                                rhs_l2_tile_idx,
                             )
-                            if transposed_mmta:
-                                # Apply transpose composition to access transpose of r.h.s
-                                let rhs_l2_tile_transposed = composition(
-                                    rhs_l2_tile.layout,
-                                    Layout(IntTuple(2, 2), IntTuple(2, 1)),
-                                )
-                                let rhs_l2_tile_t = LayoutTensor(
-                                    rhs_l2_tile_transposed, rhs_l2_tile.ptr
-                                )
-                                mmta(dst_l2_tile, lhs_l2_tile, rhs_l2_tile_t)
-                            else:
-                                mma(dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
+
+                            # Execute mma.op - rhs_l2_tile is already transposed
+                            mma.op[dtype, rhs_transposed](
+                                dst_l2_tile, lhs_l2_tile, rhs_l2_tile
+                            )
+
+    # TODO: Make tensor more ergonomic
+    l1_rhs_cache.ptr.free()
 
 
-fn test_tiled_matmul():
+fn test_tiled_matmul[rhs_transposed: Bool = False]():
     print("=== test_tiled_matmul")
-    let dst = create_matrix[8, 8]()
-    let rhs = create_matrix[8, 8]()
-    let lhs = create_matrix[8, 8]()
+    let dst = LayoutTensor[DType.float32](8, 8)
+    let rhs = LayoutTensor[DType.float32](8, 8)
+    let lhs = LayoutTensor[DType.float32](8, 8)
     fill_matrix(dst, 0)
     fill_matrix(rhs)
     fill_matrix(lhs)
-    tiled_matmul(dst, lhs, rhs, False)
-    print_raw_major_matrix(dst)
-    dst.ptr.free()
-    lhs.ptr.free()
-    rhs.ptr.free()
-
-
-fn test_tiled_matmul_transpose():
-    print("=== test_tiled_matmul_transpose")
-    let dst = create_matrix[8, 8]()
-    let rhs = create_matrix[8, 8]()
-    let lhs = create_matrix[8, 8]()
-    fill_matrix(dst, 0)
-    fill_matrix(rhs)
-    fill_matrix(lhs)
-    tiled_matmul(dst, lhs, rhs, True)
-    print_raw_major_matrix(dst)
+    gemm[DType.float32, MMA, rhs_transposed](dst, lhs, rhs)
+    print_row_major_matrix(dst)
     dst.ptr.free()
     lhs.ptr.free()
     rhs.ptr.free()
@@ -201,6 +258,7 @@ fn main():
     # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
     # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
     test_tiled_matmul()
+
     # CHECK: === test_tiled_matmul_transpose
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
@@ -210,4 +268,4 @@ fn main():
     # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
     # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
     # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
-    test_tiled_matmul_transpose()
+    test_tiled_matmul[True]()
