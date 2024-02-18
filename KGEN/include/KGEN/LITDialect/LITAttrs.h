@@ -41,9 +41,6 @@ public:
   VariadicEffects setVarArgs(bool varArgs = true) {
     return set(Impl::VarArg, varArgs);
   }
-  VariadicEffects setPackVarArgs(bool packVarArgs = true) {
-    return set(Impl::PackVarArg, packVarArgs);
-  }
 
   bool operator==(VariadicEffects rhs) const {
     return getImpl() == rhs.getImpl();
