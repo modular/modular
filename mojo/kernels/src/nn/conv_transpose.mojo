@@ -1271,7 +1271,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
         var group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
         @always_inline
-        @__copy_capture(group_start, R, S, C, F_per_group, F)
+        @__copy_capture(group_start, C, F_per_group, F)
         @parameter
         fn pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * window_dims_prod * C

@@ -1049,7 +1049,7 @@ fn scatter_elements[
 
     var input_ax_dim = input.get_shape()[axis]
 
-    @__copy_capture(index_ax_dim, axis, input_ax_dim)
+    @__copy_capture(axis, input_ax_dim)
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int

@@ -66,7 +66,7 @@ fn layer_norm[
             out_buf._offset(start_coord), n
         )
 
-        @__copy_capture(sum_val, n)
+        @__copy_capture(n)
         @parameter
         fn input_gen_wrapper[
             return_type: DType, simd_width: Int
