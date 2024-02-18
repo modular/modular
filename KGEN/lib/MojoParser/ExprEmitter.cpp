@@ -1286,6 +1286,7 @@ CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
 
 /// Emit the specified expression into the specified destination.
 AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
+  assert(expr && "cannot emit a null node");
   if (auto result = expr->emitIR(dest, *this))
     return result;
   dest.resetForError();
@@ -1305,13 +1306,11 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
 }
 
 CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
-  assert(expr && "cannot emit a null node");
   return emitCValue({emitExpr(expr, context), expr}, context);
 }
 
 SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
                                      ASTType resultType) {
-  assert(expr && "cannot emit a null node");
   return emitSRValue({emitExpr(expr, context, resultType), expr}, context,
                      resultType);
 }
@@ -1873,15 +1872,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   capture = Capture(value);
   return emitResult(value, expr, dest);
-}
-
-AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
-                                        ArrayRef<ASTDecl *> decls,
-                                        ExprContext context) {
-  SyntheticNode dummyNode({});
-  std::optional<Capture> capture;
-  ValueDest dest(context);
-  return emitDeclReference(spelling, decls, &dummyNode, dest, capture);
 }
 
 //===----------------------------------------------------------------------===//

@@ -868,14 +868,17 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Handle module or package references.
   if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
-    FailureOr<ArrayRef<ASTDecl *>> decls =
-        emitter.getDeclResolver().lookupDeclInModule(
-            *typeDecl, StringAttr::get(emitter.getContext(), spelling),
-            getLoc());
-    if (failed(decls))
-      return {};
-    std::optional<Capture> unused;
-    return emitter.emitDeclReference(spelling, *decls, this, dest, unused);
+    // Look up the unqualified identifier in the right scope.
+    DeclRefNode declRef(spelling);
+    if (emitter.builder) {
+      ExprEmitter moduleEmitter(emitter.shared, *typeDecl, *emitter.builder,
+                                emitter.varDeclCursor);
+
+      return declRef.emitIR(dest, moduleEmitter);
+    }
+    ExprEmitter moduleEmitter(emitter.shared, *typeDecl, emitter.paramContext);
+
+    return declRef.emitIR(dest, moduleEmitter);
   }
 
   if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl)) {

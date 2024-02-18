@@ -537,14 +537,12 @@ public:
                            SMLoc errLoc);
 
   /// Emit a reference to a declaration to an AnyValue. If the value is concrete
-  /// and has a runtime value, `mlirValue` is populated with the corresponding
+  /// and has a runtime value, `capture` is populated with the corresponding
   /// SSA value.
-  /// FIXME: The `mlirValue` is a hack for closures and should be removed.
+  /// FIXME: The `capture` is a hack for closures and should be removed.
   AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
                              const ExprNode *expr, ValueDest &dest,
                              std::optional<Capture> &capture);
-  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
-                             ExprContext context);
 
   //===--------------------------------------------------------------------===//
   // Var/let emission helpers.

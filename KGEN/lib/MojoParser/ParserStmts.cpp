@@ -1274,8 +1274,12 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
     if (!useLexicalScope && !decls.empty()) {
       SMLoc declLoc = decls[0]->getLoc();
+      ValueDest dest(EC_WithContextMgr);
+
+      SyntheticNode node(asLoc);
+      std::optional<Capture> capture;
       AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
-                                                        EC_WithContextMgr);
+                                                        &node, dest, capture);
       if (auto ref = emitted.getIfMLValue()) {
         enterDest = ValueDest(ref, EC_WithContextMgr);
       } else {

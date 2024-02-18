@@ -62,7 +62,6 @@ fn makeClosure(x: MemType):
     var rp: NoCopyType = NoCopyType(x.a)
 
     # expected-error @below {{cannot capture 'z' because capturing instances of memory only types in parametric functions is not supported}}
-    # expected-error @below {{cannot capture 'rp'}}
     # expected-error @below {{'NoCopyType' does not implement the '__copyinit__' method}}
     @__copy_capture(z, rp)
     @parameter
@@ -70,3 +69,16 @@ fn makeClosure(x: MemType):
         return z.a
 
     let y = formatter()
+
+fn bad_capture(x: Int):
+    var z = x
+
+    # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
+    @__copy_capture(not_a_thing)
+    @parameter
+    async fn closure_1(): pass
+
+    # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
+    @__move_capture(not_a_thing)
+    @parameter
+    async fn closure_2(): pass
