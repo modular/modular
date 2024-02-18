@@ -558,7 +558,7 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
 
 
 # CHECK-LABEL: lit.func @"pack{{.*}}"<
-# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow|pack) packvararg
+# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow|pack)
 fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
     # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy
@@ -566,7 +566,7 @@ fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}}"<
-# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow|pack) packvararg
+# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow|pack)
 fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
     # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
     # CHECK-NEXT: lit.ref.store %args, %copy

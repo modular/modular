@@ -344,7 +344,7 @@ bool FnMetadataAttr::hasVarArgs() const {
 }
 
 bool FnMetadataAttr::hasPackVarArgs() const {
-  return getVariadicEffects().get(VariadicEffects::Impl::PackVarArg);
+  return !getArgListAttrs().getPackIndices().empty();
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {
@@ -373,9 +373,7 @@ bool FnMetadataAttr::isKwVarArg(size_t idx) const {
 }
 
 bool FnMetadataAttr::isPackVarArg(size_t idx) const {
-  if (!hasPackVarArgs())
-    return false;
-  return idx + 1 == getArgPassingKinds().size();
+  return llvm::is_contained(getArgListAttrs().getPackIndices(), idx);
 }
 
 static ParseResult parseVariadicEffects(AsmParser &p,
@@ -387,7 +385,7 @@ static ParseResult parseVariadicEffects(AsmParser &p,
 
   auto effectsValue = VariadicImpl::VariadicEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(&kw, {"vararg", "packvararg"}))) {
+  while (succeeded(p.parseOptionalKeyword(&kw, {"vararg"}))) {
     effectsValue |= *VariadicImpl::symbolizeVariadicEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we

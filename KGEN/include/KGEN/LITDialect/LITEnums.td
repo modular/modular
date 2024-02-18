@@ -75,8 +75,6 @@ def LIT_VariadicEffectsImpl : I16BitEnumAttr<"VariadicEffects",
   I16BitEnumAttrCaseNone<"None", "none">,
   /// This function has vararg arguments.
   I16BitEnumAttrCaseBit<"VarArg", 0, "vararg">,
-  /// This function has pack arguments.
-  I16BitEnumAttrCaseBit<"PackVarArg", 1, "packvararg">,
 ]> {
   let cppNamespace = "M::KGEN::LIT::VariadicImpl";
   let genSpecializedAttr = 0;
