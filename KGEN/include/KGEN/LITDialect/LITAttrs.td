@@ -210,14 +210,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     bool hasVarArgs() const;
     /// Return true if the signature has a variadic pack argument.
     bool hasPackVarArgs() const;
-    /// Return true if the signature has a variadic keyword argument.
-    bool hasKwVarArgs() const;
     /// Return true if the signature has a variadic parameter.
     bool hasParamVarArgs() const;
     /// Return true if the argument at `idx` is a variadic argument.
     bool isVarArg(size_t idx) const;
-    /// Return true if the argument at `idx` is a variadic keyword argument.
-    bool isKwVarArg(size_t idx) const;
     /// Return true if the argument at `idx` is a variadic pack argument.
     bool isPackVarArg(size_t idx) const;
   }];

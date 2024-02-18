@@ -493,7 +493,7 @@ struct Outer[X: Int]:
         pass
 
 
-# CHECK-LABEL: lit.func @"variadics({{.*}}int::Int*)"(%a: !kgen.variadic<!Int> borrow|var) vararg
+# CHECK-LABEL: lit.func @"variadics({{.*}}int::Int*)"(%a: !kgen.variadic<!Int> borrow|var)
 fn variadics(*a: Int):
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     let size = len(a)
@@ -638,7 +638,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, mut #lit.lifetime>, borrow_in_mem> borrow|var) vararg -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, mut #lit.lifetime>, borrow_in_mem> borrow|var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -1025,7 +1025,7 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.func @"__init__(decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow|var) vararg -> !VarArgInit
+    # CHECK: lit.func @"__init__(decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow|var) -> !VarArgInit
     # The argument is intentionally memory-only.
     fn __init__(*values: ValueMem) -> Self:
         return Self {a: 42}

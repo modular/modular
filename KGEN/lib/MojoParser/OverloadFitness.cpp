@@ -1373,8 +1373,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames(),
                        signature.getArgPassingKinds())) {
-    assert(!signature.isKwVarArg(expectedArgIdx) &&
-           "`**arg` variadics not supported yet");
+    assert(!(passingKind == PassingKind::KwOnly &&
+             signature.isVarArg(expectedArgIdx)) &&
+           "keyword variadics not supported yet");
 
     // Ignore the return slot if present.
     Type expectedType = evaluator.refineType(unboundExpectedType);

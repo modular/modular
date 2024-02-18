@@ -340,18 +340,11 @@ LogicalResult FnMetadataAttr::verifySignature(
 }
 
 bool FnMetadataAttr::hasVarArgs() const {
-  return getVariadicEffects().get(VariadicEffects::Impl::VarArg);
+  return !getArgListAttrs().getVariadicIndices().empty();
 }
 
 bool FnMetadataAttr::hasPackVarArgs() const {
   return !getArgListAttrs().getPackIndices().empty();
-}
-
-bool FnMetadataAttr::hasKwVarArgs() const {
-  ArrayRef<PassingKind> passingKinds = getArgPassingKinds();
-  return llvm::any_of(getArgListAttrs().getVariadicIndices(), [&](size_t idx) {
-    return passingKinds[idx] == PassingKind::KwOnly;
-  });
 }
 
 bool FnMetadataAttr::hasParamVarArgs() const {
@@ -359,17 +352,7 @@ bool FnMetadataAttr::hasParamVarArgs() const {
 }
 
 bool FnMetadataAttr::isVarArg(size_t idx) const {
-  if (!hasVarArgs())
-    return false;
-
-  size_t numArgs = getArgPassingKinds().size();
-  // If the function has keyword varargs, the vararg index is the second last.
-  // Otherwise, it's the last.
-  return (idx + 1 + hasKwVarArgs()) == numArgs;
-}
-
-bool FnMetadataAttr::isKwVarArg(size_t idx) const {
-  return isVarArg(idx) && getArgPassingKinds()[idx] == PassingKind::KwOnly;
+  return llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
 }
 
 bool FnMetadataAttr::isPackVarArg(size_t idx) const {
@@ -385,7 +368,7 @@ static ParseResult parseVariadicEffects(AsmParser &p,
 
   auto effectsValue = VariadicImpl::VariadicEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(&kw, {"vararg"}))) {
+  while (succeeded(p.parseOptionalKeyword(&kw, {}))) {
     effectsValue |= *VariadicImpl::symbolizeVariadicEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we

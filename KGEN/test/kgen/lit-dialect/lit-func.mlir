@@ -105,10 +105,10 @@ lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @variadic<x var, y: dtype pack>(
-lit.func @variadic<x var, y: dtype pack>(
-  // CHECK-SAME: %a: index var, %b: index borrow|var, %c: index pack
-  %a: index var, %b: index borrow|var, %c: index pack
+// CHECK-LABEL: lit.func @variadic<x: variadic<index> var, y: dtype pack>(
+lit.func @variadic<x: variadic<index> var, y: dtype pack>(
+  // CHECK-SAME: %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> borrow|var, %c: !kgen.pack<[index, index]> pack
+  %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> borrow|var, %c: !kgen.pack<[index, index]> pack
 ) {
   kgen.return
 }
