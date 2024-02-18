@@ -29,50 +29,6 @@ class FnMetadataAttr;
 
 namespace M::KGEN::LIT {
 
-/// This class represents the effects of a callable. A callable can throw an
-/// error, be an async function, have different kinds of varargs, etc. The
-/// effect of a callable is load-bearing on its type.
-class VariadicEffects {
-  using Impl = VariadicImpl::VariadicEffects;
-
-public:
-  VariadicEffects(Impl impl = Impl::None) : impl(impl) {}
-
-  bool operator==(VariadicEffects rhs) const {
-    return getImpl() == rhs.getImpl();
-  }
-  bool operator!=(VariadicEffects rhs) const {
-    return getImpl() != rhs.getImpl();
-  }
-
-  Impl getImpl() const { return impl; }
-
-private:
-  VariadicEffects set(Impl bit, bool value) {
-    impl = VariadicImpl::bitEnumSet(impl, bit, value);
-    return *this;
-  }
-  bool get(Impl bit) const {
-    return VariadicImpl::bitEnumContainsAny(impl, bit);
-  }
-
-  Impl impl;
-
-  friend FnMetadataAttr;
-};
-
-template <typename StreamT>
-inline StreamT &operator<<(StreamT &os, VariadicEffects effects) {
-  os << VariadicImpl::stringifyVariadicEffects(effects.getImpl());
-  return os;
-}
-
-namespace VariadicImpl {
-inline VariadicEffects operator|=(VariadicEffects &lhs, VariadicEffects rhs) {
-  return lhs = lhs | rhs;
-}
-} // namespace VariadicImpl
-
 /// Given a list of operations, create an array of indices indicating variadic
 /// parameters in their concatenated list of parameter declarations, and also
 /// count the number of parameters they declare. The given operations must all

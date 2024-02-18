@@ -776,9 +776,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   FunctionType functionType;
   FnEffects effects;
-  VariadicEffects varEffects;
-  if (LIT::parseSignatureValues(p, parseArg, functionType, effects, varEffects,
-                                /*optionalResultList=*/false))
+  if (parseSignatureValues(p, parseArg, functionType, effects,
+                           /*optionalResultList=*/false))
     return failure();
 
   SmallVector<PassingKind> argPassingKinds;
@@ -789,7 +788,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                             defaultKwOnlyArgs, argVariadicIndices,
                             argPackIndices),
-      paramListAttr, numLifetimeDecls, varEffects);
+      paramListAttr, numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       /*resultParamTypes=*/{}, argConventions, effects, metadata);
@@ -857,8 +856,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     passingKindPrinter.printOptionalTrailingSlash(i);
   };
 
-  LIT::printSignatureValues(p, printElt, signature.getValues(), signature,
-                            /*optionalResultList=*/false);
+  printSignatureValues(p, printElt, signature.getValues(), signature,
+                       /*optionalResultList=*/false);
   p << '>';
 }
 
@@ -927,8 +926,7 @@ size_t LITSignatureType::getNumImplicitLifetimeDecls() {
 LITSignatureType LITSignatureType::dropParamValues() {
   return get(
       getValues(), /*paramTypes=*/{}, getArgConventions(), getFnEffects(),
-      FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0,
-                          getMetadata().getVariadicEffects()));
+      FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0));
 }
 
 bool LITSignatureType::isVarArg(size_t index) {

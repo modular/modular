@@ -608,10 +608,8 @@ static ParseResult parseLITFunctionSignature(
   };
 
   FnEffects effects;
-  VariadicEffects varEffects;
-  if (failed(LIT::parseSignatureValues(p, parseArg, functionType, effects,
-                                       varEffects,
-                                       /*optionalResultList=*/true)))
+  if (failed(parseSignatureValues(p, parseArg, functionType, effects,
+                                  /*optionalResultList=*/true)))
     return failure();
 
   SmallVector<PassingKind> argPassingKinds;
@@ -621,7 +619,7 @@ static ParseResult parseLITFunctionSignature(
       ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
                             defaultPosArgs, defaultKwOnlyArgs,
                             argVariadicIndices, argPackIndices),
-      paramListAttr, lifetimeDecls.size(), varEffects);
+      paramListAttr, lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
       metadata, [&] { return p.emitError(startLoc); });
@@ -699,8 +697,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(i);
   };
-  LIT::printSignatureValues(p, printElt, functionType, signature,
-                            /*optionalResultList=*/true);
+  printSignatureValues(p, printElt, functionType, signature,
+                       /*optionalResultList=*/true);
 }
 
 /// Parses a LIT Generator.

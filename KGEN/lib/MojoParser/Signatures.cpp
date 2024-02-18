@@ -989,8 +989,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
       ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                             defaultKwOnlyArgs, argVariadicIndices,
                             argPackIndices),
-      paramList.getParamListAttr(), implicitLifetimeDecls.size(),
-      argList.varEffects);
+      paramList.getParamListAttr(), implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.
