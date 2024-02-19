@@ -96,29 +96,27 @@ public:
   /// Add a pre-existing set of declarations as children of the specified
   /// context, using the provided alias name (which may differ from that of the
   /// decl).
-  void aliasDecls(const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
+  void aliasDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
                   llvm::SMLoc aliasLoc, ASTDecl &context);
   /// Try to add a pre-existing set of declarations as children of the specified
   /// context, using the provided alias name (which may differ from that of the
   /// decl). Does not error on failure, but returns a failure result.
-  LogicalResult tryAliasDecls(const TinyPtrVector<ASTDecl *> &decls,
-                              StringAttr name, llvm::SMLoc aliasLoc,
-                              ASTDecl &context);
+  LogicalResult tryAliasDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
+                              llvm::SMLoc aliasLoc, ASTDecl &context);
   /// Add a pre-existing set of declarations imported from the given module, as
   /// children of the specified context, using the provided alias name (which
   /// may differ from that of the decl).
-  LogicalResult aliasImportDecls(const TinyPtrVector<ASTDecl *> &decls,
-                                 StringAttr name, StringAttr declName,
-                                 StringAttr moduleName, llvm::SMLoc aliasLoc,
-                                 ASTDecl &context);
+  LogicalResult aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
+                                 StringAttr declName, StringAttr moduleName,
+                                 llvm::SMLoc aliasLoc, ASTDecl &context);
 
 private:
   /// Add a pre-existing set of declarations, which may optionally be imported
   /// from a given module, as children of the specified context, using the
   /// provided alias name (which may differ from that of the decl).
-  LogicalResult aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
-                               StringAttr name, llvm::SMLoc aliasLoc,
-                               ASTDecl &context, bool emitDiagnostics = true,
+  LogicalResult aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
+                               llvm::SMLoc aliasLoc, ASTDecl &context,
+                               bool emitDiagnostics = true,
                                StringAttr moduleName = StringAttr(),
                                StringAttr declNameInModule = StringAttr());
 
@@ -141,15 +139,6 @@ public:
                                               StringAttr moduleName,
                                               bool isFullImport,
                                               llvm::SMLoc loc);
-
-  //===--------------------------------------------------------------------===//
-  // Decl Lookup
-  //===--------------------------------------------------------------------===//
-
-  /// Lookup a declaration from within a given module or package, emitting an
-  /// error if it was not found.
-  FailureOr<ArrayRef<ASTDecl *>>
-  lookupDeclInModule(ASTDecl &module, StringAttr sourceName, SMLoc loc);
 
   //===--------------------------------------------------------------------===//
   // Decl Resolution

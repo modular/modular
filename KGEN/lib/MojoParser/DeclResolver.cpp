@@ -209,30 +209,31 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 //===----------------------------------------------------------------------===//
 // Import Resolution
 
-void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
-                              StringAttr name, llvm::SMLoc aliasLoc,
-                              ASTDecl &context) {
+void DeclResolver::aliasDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
+                              llvm::SMLoc aliasLoc, ASTDecl &context) {
   (void)aliasDeclsImpl(decls, name, aliasLoc, context);
 }
 
-LogicalResult DeclResolver::tryAliasDecls(const TinyPtrVector<ASTDecl *> &decls,
+LogicalResult DeclResolver::tryAliasDecls(ArrayRef<ASTDecl *> decls,
                                           StringAttr name, llvm::SMLoc aliasLoc,
                                           ASTDecl &context) {
   return aliasDeclsImpl(decls, name, aliasLoc, context,
                         /*emitDiagnostics=*/false);
 }
 
-LogicalResult DeclResolver::aliasImportDecls(
-    const TinyPtrVector<ASTDecl *> &decls, StringAttr name, StringAttr declName,
-    StringAttr moduleName, llvm::SMLoc aliasLoc, ASTDecl &context) {
+LogicalResult
+DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
+                               StringAttr declName, StringAttr moduleName,
+                               llvm::SMLoc aliasLoc, ASTDecl &context) {
   return aliasDeclsImpl(decls, name, aliasLoc, context,
                         /*emitDiagnostics=*/true, moduleName, declName);
 }
 
-LogicalResult DeclResolver::aliasDeclsImpl(
-    const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
-    llvm::SMLoc aliasLoc, ASTDecl &context, bool emitDiagnostics,
-    StringAttr moduleName, StringAttr declNameInModule) {
+LogicalResult
+DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
+                             llvm::SMLoc aliasLoc, ASTDecl &context,
+                             bool emitDiagnostics, StringAttr moduleName,
+                             StringAttr declNameInModule) {
   // Check to see if the decl is an import. We create new decls within the
   // context for thse instead of aliasing, because import decls lazily replace
   // themselves with new decls (depending on what gets imported). That
@@ -252,7 +253,8 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     return success(!importDecl.hasReferenceError);
   }
 
-  auto [it, inserted] = context.declsInScope.insert({name, decls});
+  auto [it, inserted] =
+      context.declsInScope.insert({name, TinyPtrVector<ASTDecl *>(decls)});
   if (inserted)
     return success();
   TinyPtrVector<ASTDecl *> &entries = it->second;
@@ -266,7 +268,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
       // Mark the placeholder imports as being resolved.
       for (ASTDecl *decl : entries)
         decl->resolvedness = DeclResolvedness::fully;
-      entries = decls;
+      entries = TinyPtrVector<ASTDecl *>(decls);
     }
     return success();
   }
@@ -338,7 +340,7 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
   shared.notifyListenerOnRef(&module, importName, importNameLoc);
 
-  return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
+  return aliasImportDecls(&module, importName,
                           /*declName=*/StringAttr(), moduleName, importNameLoc,
                           dest);
 }
@@ -351,15 +353,25 @@ DeclResolver::importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
 
-  FailureOr<ArrayRef<ASTDecl *>> results =
-      lookupDeclInModule(module, sourceName, sourceNameLoc);
-  if (failed(results))
+  // Check to see if the module has the construct we are importing.
+  auto result = shared.lookupAndResolveDecl(sourceName, sourceNameLoc, module,
+                                            /*searchParentScopes=*/false);
+  if (result.isErroneous())
     return failure();
-  shared.notifyListenerOnRef(*results, sourceName, sourceNameLoc);
-  shared.notifyListenerOnRef(*results, destName, destNameLoc);
+  if (result.isFailure()) {
+    StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
+    StringRef declType = isa<PackageOp>(module) ? "package" : "module";
+    emitError(sourceNameLoc, declType + " '" + name + "' does not contain '" +
+                                 sourceName.getValue() + "'");
+    return failure();
+  }
+  ArrayRef<ASTDecl *> results = result.getIfSuccess();
+  assert(!results.empty() && "other cases handled above");
+  shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
+  shared.notifyListenerOnRef(results, destName, destNameLoc);
 
-  return aliasImportDecls(TinyPtrVector<ASTDecl *>(*results), destName,
-                          sourceName, moduleName, destNameLoc, dest);
+  return aliasImportDecls(results, destName, sourceName, moduleName,
+                          destNameLoc, dest);
 }
 
 LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
@@ -388,30 +400,6 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
       result = failure();
   }
   return result;
-}
-
-//===----------------------------------------------------------------------===//
-// Decl Lookup
-
-FailureOr<ArrayRef<ASTDecl *>>
-DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
-                                 SMLoc loc) {
-  if (failed(resolveFully(module, loc)))
-    return failure();
-
-  // Check to see if the module has the construct we are importing.
-  auto result = shared.lookupAndResolveDecl(sourceName, loc, module,
-                                            /*searchParentScopes=*/false);
-  if (result.isErroneous())
-    return failure();
-  if (result.isFailure()) {
-    StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
-    StringRef declType = isa<PackageOp>(module) ? "package" : "module";
-    emitError(loc, declType + " '" + name + "' does not contain '" +
-                       sourceName.getValue() + "'");
-    return failure();
-  }
-  return result.getIfSuccess();
 }
 
 //===----------------------------------------------------------------------===//
