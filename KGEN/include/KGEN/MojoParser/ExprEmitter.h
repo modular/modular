@@ -9,7 +9,6 @@
 
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/ExprNode.h"
-#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "mlir/IR/Builders.h"
@@ -524,25 +523,6 @@ public:
                                const ASTDecl &funcDecl);
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                FuncOp funcDecl);
-
-  //===--------------------------------------------------------------------===//
-  // Declaration reference emission helpers.
-
-  /// Given a AliasDeclOp, return the value that should be used in a reference
-  /// to it.  This currently fully substitutes members unless they are in a
-  /// function definition.
-  PValue
-  resolveAliasDeclareValue(AliasDeclOp param,
-                           std::optional<ArrayRef<TypedAttr>> paramValues,
-                           SMLoc errLoc);
-
-  /// Emit a reference to a declaration to an AnyValue. If the value is concrete
-  /// and has a runtime value, `capture` is populated with the corresponding
-  /// SSA value.
-  /// FIXME: The `capture` is a hack for closures and should be removed.
-  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
-                             const ExprNode *expr, ValueDest &dest,
-                             std::optional<Capture> &capture);
 
   //===--------------------------------------------------------------------===//
   // Var/let emission helpers.

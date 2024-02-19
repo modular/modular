@@ -245,6 +245,60 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   return UnboundMLIROperationAttr::get(unboundOp.getName(), attrs);
 }
 
+/// Given a AliasDeclOp, return the value that should be used in a reference
+/// to it.  This currently fully substitutes members unless they are in a
+/// function definition.
+static PValue
+resolveAliasDeclareValue(AliasDeclOp param,
+                         std::optional<ArrayRef<TypedAttr>> paramValues,
+                         SMLoc errLoc, SharedState &shared) {
+  // If the param is declared in a function, then just directly use it.
+  Operation *parent = param->getParentOp();
+  while (true) {
+    // If this reference is within a function then keep it symbolic.
+    if (parent && isa<LIT::FuncOp>(parent))
+      return ParamDeclRefAttr::get(param.getName(), param.getType());
+
+    // If this is at file scope, inline it.
+    if (!parent || isa<FileModuleOp>(parent))
+      return param.getValue();
+
+    // If this is in a struct, then the value may refer to parameters declared
+    // on the struct, whose values come through 'bindings'.  Remap.
+    if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
+      // If the reference is to a member of the struct that has bindings, remap
+      // them.  This allows things like `SomeType[a,b].someAlias` to substitute
+      // the a/b values into the body of `someAlias`.  If we have no bindings,
+      // then we know we're in a context where the body of the alias is still
+      // valid.
+      if (!paramValues)
+        return param.getValue();
+
+      // Disallow accessing alias members of an unbound type.
+      // TODO: This should return a parametric alias instead.
+      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getParams();
+      size_t numParams = llvm::count_if(*paramValues, [](TypedAttr value) {
+        return !isa<UnboundAttr>(value);
+      });
+      if (paramDecls.size() != numParams) {
+        shared.emitError(errLoc,
+                         "incorrect number of type parameters: expected ")
+            << structDecl.getParams().size() << " but got " << numParams;
+        return PValue();
+      }
+
+      ParserParamEvaluator evaluator(*shared.declResolver, paramDecls,
+                                     *paramValues);
+      return PValue(evaluator.getReboundAttribute(param.getValue()));
+    }
+
+    // Ignore if and other control flow things.
+    parent = parent->getParentOp();
+  }
+
+  return ParamDeclRefAttr::get(param.getName(), param.getType());
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
@@ -487,17 +541,80 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  std::optional<Capture> capture;
-  ValueDest refDest(dest.getContext());
-  AnyValue result =
-      emitter.emitDeclReference(spelling, decls, this, refDest, capture);
+  emitter.shared.notifyListenerOnRef(decls, spelling, this);
 
-  if (!capture)
+  // Functions form an address, and may be overloaded.
+  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
+    // Form an overload set value with all the candidates.
+    auto result = OverloadSetUValue::create(
+        spelling, decls, ParamBindings(emitter), this, CallSyntax::kDirectCall);
     return emitter.emitResult(result, this, dest);
+  }
+
+  assert(decls.size() == 1 && "Only functions may be overloaded");
+  ASTDecl &decl = *decls[0];
+
+  // Aliases form a PValue.
+  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
+    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{}, getLoc(),
+                                             emitter.shared);
+    return emitter.emitResult(result.get(), this, dest);
+  }
+
+  // If this is a type declaration, return it as a type.
+  if (auto structOp = dyn_cast<StructDeclOp>(decl))
+    return emitter.emitResult(structOp.bindReference(), this, dest);
+  if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
+    return emitter.emitResult(traitOp.bindReference(), this, dest);
+
+  // If this is a module or package declaration, form a module reference.
+  if (isa<FileModuleOp, PackageOp>(decl)) {
+    PValue result(ModuleAttr::get(MetaTypeType::get(
+        decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext()))));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  if (auto pvalue = decl.getIfPValue())
+    return emitter.emitResult(pvalue, this, dest);
+
+  // Narrow the decl to a CValue.
+  CValue value;
+  if (auto var = dyn_cast<VarDeclOp>(decl)) {
+    value = MLValue(var); // Var decls are always mutable.
+  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+    // If this is a parameter context then we cannot return a dynamic field.
+    if (!emitter.builder)
+      return emitter.emitErrorForDynamicValueInParameter(this);
+    // Return a mutable value only if the global variable is mutable.
+    auto ref =
+        emitter.builder->create<GlobalVarRefOp>(getLocation(emitter), globalOp);
+    if (globalOp.getIsVar())
+      value = MLValue(ref);
+    else
+      value = MBValue(ref);
+  } else if (auto rvalue = decl.getIfRValue()) {
+    value = rvalue;
+  } else if (auto bvalue = decl.getIfBValue()) {
+    value = bvalue;
+  } else if (auto lvalue = decl.getIfMLValue()) {
+    value = lvalue;
+  } else {
+    emitter.emitError(getLoc(), "use of declaration '")
+        << spelling << "' as a value isn't supported yet" << getRange();
+    return {};
+  }
+
+  // Now that we're referencing a potentially dynamic value, see if it is from
+  // an outer function.  If so, record it as a capture in this nested function.
+  ASTDecl *declRef = nullptr;
+  if (!isa<LIT::FuncOp>(*decls[0])) {
+    assert(decls.size() == 1 && "Only functions may be overloaded");
+    declRef = decls[0];
+  }
 
   // Find the nearest escaping closure, if there is one.
   ASTDecl *nearestEscapingFnOrNone =
-      container.getNearestDeclOfType<LIT::FuncOp>();
+      declRef ? container.getNearestDeclOfType<LIT::FuncOp>() : nullptr;
   while (nearestEscapingFnOrNone &&
          cast<M::KGEN::LIT::FuncOp>(nearestEscapingFnOrNone)
              .getSignature()
@@ -505,30 +622,25 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     nearestEscapingFnOrNone = nearestEscapingFnOrNone->getParentDecl()
                                   ->getNearestDeclOfType<LIT::FuncOp>();
 
-  ASTDecl *declRef = nullptr;
-  if (!isa<LIT::FuncOp>(*decls[0])) {
-    assert(decls.size() == 1 && "Only functions may be overloaded");
-    declRef = decls[0];
-  }
-
-  auto needsApplyCapture = [&](ASTDecl *funcDecl) -> bool {
-    if (funcDecl && declRef) {
+  if (nearestEscapingFnOrNone) {
+    assert(declRef && "can only reach here if single decl known");
+    auto needsCapture = [&]() -> bool {
       for (ASTDecl *decl = declRef->getParentDecl(); decl;
            decl = decl->getParentDecl()) {
-        if (decl == funcDecl)
+        if (decl == nearestEscapingFnOrNone)
           return false;
       }
       return true;
-    }
-    return false;
-  };
+    };
 
-  // Record Runtime Value Capture.
-  if (needsApplyCapture(nearestEscapingFnOrNone))
-    emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
-                                     *capture);
+    // If this is a reference to a value from an outer function scope, record
+    // the capture.
+    if (needsCapture())
+      emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
+                                       Capture(value));
+  }
 
-  return emitter.emitResult(result, this, dest);
+  return emitter.emitResult(value, this, dest);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
@@ -954,8 +1066,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
-    PValue result = emitter.resolveAliasDeclareValue(
-        param, baseRVType.getParamBindings(), getLoc());
+    PValue result = resolveAliasDeclareValue(
+        param, baseRVType.getParamBindings(), getLoc(), emitter.shared);
     return emitter.emitResult(result.get(), this, dest);
   }
 
