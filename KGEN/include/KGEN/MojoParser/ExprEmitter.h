@@ -70,7 +70,7 @@ enum ExprContext {
   EC_SliceIndex,            // y[:x:]
   EC_ParameterList,         // something[x]
   EC_Destructor,            // Looking up T's destructor for `var x : T`
-  EC_CaptureCopy,           // def f(): use(x)
+  EC_Capture,               // def f(): var x = 4; def nested(): use(x)
   EC_Decorator,             // @x
   EC_MutabilitySpec,        // ref[mut=x, y] z
   EC_LifetimeSpec,          // ref[x] y

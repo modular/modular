@@ -47,6 +47,12 @@ enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
 /// parent function.
+///
+/// In the case of a capture list, the 'value' of the capture is an RValue
+/// defined in parent function, which is transfered into the closure struct.
+///
+/// If the case of a transparent reference, this an LValue for a 'var', a BValue
+/// for a borrowed argument reference, etc.
 class Capture {
 public:
   Capture(CValue value, bool isMove = false) : value(value), isMove(isMove) {}
