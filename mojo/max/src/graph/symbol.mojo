@@ -100,7 +100,7 @@ struct Symbol(CollectionElement, Stringable):
         let result_type = self.type().list().eltype
         return g.op("mo.list.insert", (self, v, i), result_type)
 
-    fn print(self, label: StringRef = "debug_tensor") raises:
+    fn print(self, label: String = "debug_tensor") raises:
         var g = self.graph()
         let attrs = AttrMap(g.module().string_attr("label", label))
         _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)

@@ -55,9 +55,7 @@ struct Module(Stringable):
 
     fn tensor_attr[
         dtype: DType
-    ](
-        self, name: StringRef, owned value: Tensor[dtype]
-    ) -> _mlir.NamedAttribute:
+    ](self, name: String, owned value: Tensor[dtype]) -> _mlir.NamedAttribute:
         let t = MOTensor(value.spec()).to_mlir(self)
         return _c.attr_new_tensor(
             self._module,
@@ -68,7 +66,7 @@ struct Module(Stringable):
         )
 
     fn tensor_resource_attr(
-        self, name: StringRef, file_name: StringRef, type: MOTensor
+        self, name: String, file_name: String, type: MOTensor
     ) -> _mlir.NamedAttribute:
         return _c.attr_new_tensor_from_file(
             self._module, name, file_name, type.to_mlir(self)
@@ -77,7 +75,7 @@ struct Module(Stringable):
     fn vector_attr[
         dtype: DType
     ](
-        self, name: StringRef, values: DynamicVector[Scalar[dtype]]
+        self, name: String, values: DynamicVector[Scalar[dtype]]
     ) -> _mlir.NamedAttribute:
         return _c.attr_new_tensor(
             self._module,
@@ -90,7 +88,7 @@ struct Module(Stringable):
     fn scalar_attr[
         dtype: DType
     ](
-        self, name: StringRef, value: Scalar[dtype], rank: Int = 0
+        self, name: String, value: Scalar[dtype], rank: Int = 0
     ) raises -> _mlir.NamedAttribute:
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
@@ -99,9 +97,7 @@ struct Module(Stringable):
             shape.append(1)
         return self.tensor_attr[dtype](name, Tensor(shape, value))
 
-    fn string_attr(
-        self, name: StringRef, value: StringRef
-    ) -> _mlir.NamedAttribute:
+    fn string_attr(self, name: String, value: String) -> _mlir.NamedAttribute:
         let ctx = self._module.context()
         return _mlir.NamedAttribute(
             name=_mlir.Identifier(ctx, name),
@@ -113,7 +109,7 @@ struct Module(Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn graph(
-        self, name: StringRef, in_types: TypeTuple, out_types: TypeTuple
+        self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
         let ctx = self._module.context()
         let loc = _mlir.Location.unknown(ctx)

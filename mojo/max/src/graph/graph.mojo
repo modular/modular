@@ -75,7 +75,7 @@ struct Graph(CollectionElement):
 
     fn nvop(
         self,
-        name: StringRef,
+        name: String,
         inputs: SymbolTuple = SymbolTuple(),
         out_types: TypeTuple = TypeTuple(),
         attrs: AttrMap = AttrMap(),
@@ -130,10 +130,7 @@ struct Graph(CollectionElement):
     # ===------------------------------------------------------------------=== #
 
     fn op(
-        self,
-        name: StringRef,
-        out_type: AnyMOType,
-        attrs: AttrMap = AttrMap(),
+        self, name: String, out_type: AnyMOType, attrs: AttrMap = AttrMap()
     ) raises -> Symbol:
         """Adds a new single-output, nullary `Node` to the `Graph`.
 
@@ -152,7 +149,7 @@ struct Graph(CollectionElement):
 
     fn op(
         self,
-        name: StringRef,
+        name: String,
         inputs: SymbolTuple,
         out_type: AnyMOType,
         attrs: AttrMap = AttrMap(),

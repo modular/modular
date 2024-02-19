@@ -76,7 +76,7 @@ fn cfunc[T: AnyRegType](name: StringRef) -> T:
 fn graph_new(
     module: _mlir.Module,
     loc: _mlir.Location,
-    name: StringRef,
+    name: String,
     signature: _mlir.builtin_types.FunctionType,
 ) -> _mlir.Operation:
     return cfunc[
@@ -86,7 +86,9 @@ fn graph_new(
             StringRef,
             _mlir.Type.c_type,
         ) -> _mlir.Operation.c_type
-    ]("MAXG_graphNew")(module.c, loc.c, name, signature.to_mlir().c)
+    ]("MAXG_graphNew")(
+        module.c, loc.c, name._strref_dangerous(), signature.to_mlir().c
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -98,7 +100,7 @@ fn attr_new_tensor[
     T: CollectionElement
 ](
     m: _mlir.Module,
-    name: StringRef,
+    name: String,
     data: DynamicVector[T],
     type: _mlir.Type,
     is_owned: Bool,
@@ -111,12 +113,14 @@ fn attr_new_tensor[
             _mlir.Type.c_type,
             Bool,
         ) -> _mlir.NamedAttribute.c_type
-    ]("MAXG_attrNewTensor")(m.c, name, data.data, type.c, is_owned)
+    ]("MAXG_attrNewTensor")(
+        m.c, name._strref_dangerous(), data.data, type.c, is_owned
+    )
 
 
 fn attr_new_tensor(
     m: _mlir.Module,
-    name: StringRef,
+    name: String,
     data: DTypePointer[DType.invalid],
     type: _mlir.Type,
     is_owned: Bool,
@@ -129,17 +133,21 @@ fn attr_new_tensor(
             _mlir.Type.c_type,
             Bool,
         ) -> _mlir.NamedAttribute.c_type
-    ]("MAXG_attrNewTensor")(m.c, name, data, type.c, is_owned)
+    ]("MAXG_attrNewTensor")(
+        m.c, name._strref_dangerous(), data, type.c, is_owned
+    )
 
 
 fn attr_new_tensor_from_file(
-    m: _mlir.Module, name: StringRef, file_name: StringRef, type: _mlir.Type
+    m: _mlir.Module, name: String, file_name: String, type: _mlir.Type
 ) -> _mlir.NamedAttribute:
     return cfunc[
         fn (
             _mlir.Module.c_type, StringRef, StringRef, _mlir.Type.c_type
         ) -> _mlir.NamedAttribute.c_type
-    ]("MAXG_attrNewTensorFromFile")(m.c, name, file_name, type.c)
+    ]("MAXG_attrNewTensorFromFile")(
+        m.c, name._strref_dangerous(), file_name._strref_dangerous(), type.c
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -217,10 +225,10 @@ fn dim_new_static(ctx: _mlir.Context, dim: Int64) -> _mlir.Attribute:
     )(ctx.c, dim)
 
 
-fn dim_new_symbolic(ctx: _mlir.Context, name: StringRef) -> _mlir.Attribute:
+fn dim_new_symbolic(ctx: _mlir.Context, name: String) -> _mlir.Attribute:
     return cfunc[
         fn (_mlir.Context.c_type, StringRef) -> _mlir.Attribute.c_type
-    ]("MAXG_dimNewSymbolic")(ctx.c, name)
+    ]("MAXG_dimNewSymbolic")(ctx.c, name._strref_dangerous())
 
 
 fn dim_is_dynamic(a: _mlir.Attribute) -> Bool:
