@@ -127,8 +127,8 @@ fn gemm_l2_cache[
             var dst_l1_tile = dst.view[l1.m, l1.n](m_1, n_1)
 
             for k_1 in range(l1_size.k):
-                let lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
-                let rhs_l1_tile = rhs.view[l1.k, l1.n](k_1, n_1)
+                var lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
+                var rhs_l1_tile = rhs.view[l1.k, l1.n](k_1, n_1)
 
                 # Second level of tiling (instruction, vectorization..etc)
                 for m_2 in range(l2_size.m):
@@ -136,10 +136,10 @@ fn gemm_l2_cache[
                         var dst_l2_tile = dst_l1_tile.view[l2.m, l2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            let lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
+                            var lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
                                 m_2, k_2
                             )
-                            let rhs_l2_tile = rhs_l1_tile.view[l2.k, l2.n](
+                            var rhs_l2_tile = rhs_l1_tile.view[l2.k, l2.n](
                                 k_2, n_2
                             )
 
@@ -187,7 +187,7 @@ fn gemm_l1_cache[
             var dst_l1_tile = dst.view[l1.m, l1.n](m_1, n_1)
 
             for k_1 in range(l1_size.k):
-                let lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
+                var lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
 
                 # Materialize L1 rhs transposed tile
                 rhs.view[l1.k, l1.n](k_1, n_1).transpose().copyTo(l1_rhs_cache)
@@ -198,11 +198,11 @@ fn gemm_l1_cache[
                         var dst_l2_tile = dst_l1_tile.view[l2.m, l2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            let lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
+                            var lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
                                 m_2, k_2
                             )
                             # Transposed tile -> transposed indices
-                            let rhs_l2_tile = l1_rhs_cache.view[l2.n, l2.k](
+                            var rhs_l2_tile = l1_rhs_cache.view[l2.n, l2.k](
                                 n_2, k_2
                             )
 
@@ -221,9 +221,9 @@ fn gemm_l1_cache[
 fn test_tiled_matmul[use_l1_cache: Bool]():
     print("=== test_tiled_matmul")
 
-    let dst = LayoutTensor[DType.float32, 8, 8]()
-    let rhs = LayoutTensor[DType.float32, 8, 8]()
-    let lhs = LayoutTensor[DType.float32, 8, 8]()
+    var dst = LayoutTensor[DType.float32, 8, 8]()
+    var rhs = LayoutTensor[DType.float32, 8, 8]()
+    var lhs = LayoutTensor[DType.float32, 8, 8]()
 
     dst.fill(0)
     rhs.linspace()

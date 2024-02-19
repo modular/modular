@@ -25,7 +25,7 @@ fn test_tuple_basic():
     print(len(IntTuple(1, IntTuple(2, 3))))
 
     # CHECK: 5
-    let t0: IntTuple = 5
+    var t0: IntTuple = 5
     print(t0)
 
     # CHECK: ((()))

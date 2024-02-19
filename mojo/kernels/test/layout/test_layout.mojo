@@ -24,9 +24,9 @@ from kernel_utils.layout import (
 # CHECK: Layout((2, (3, 4)):(1, (2, 6)))
 fn test_layout_basic():
     print("== test_layout_basic")
-    let shape = IntTuple(2, IntTuple(3, IntTuple(4)))
-    let stride = IntTuple(1, IntTuple(2, IntTuple(6)))
-    let layout = Layout(shape, stride)
+    var shape = IntTuple(2, IntTuple(3, IntTuple(4)))
+    var stride = IntTuple(1, IntTuple(2, IntTuple(6)))
+    var layout = Layout(shape, stride)
     print(layout)
 
 
@@ -34,7 +34,7 @@ fn test_layout_basic():
 # CHECK: Layout((2, 6):(1, 2))
 fn test_coalesce():
     print("== test_coalesce")
-    let layout = Layout(
+    var layout = Layout(
         IntTuple(2, IntTuple(1, 6)), IntTuple(1, IntTuple(6, 2))
     )
     print(coalesce(layout))
@@ -137,7 +137,7 @@ fn test_print_layout():
 fn test_zipped_divide():
     print("== test_zipped_divide")
     # CHECK: Layout((2, (2, 4)):(4, (8, 1)))
-    let layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    var layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
     print(zipped_divide(layout_4x4_row_major, Layout(2, 1)))
     # CHECK: Layout(((2, 2), (2, 2)):((4, 1), (8, 2)))
     print(

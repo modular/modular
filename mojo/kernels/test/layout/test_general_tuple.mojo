@@ -19,8 +19,8 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn is_equal[T: CollectionElement](va: Variant[T], vb: Variant[T]) -> Bool:
         if va.isa[General]() and vb.isa[General]():
-            let a = va.get[General]()
-            let b = vb.get[General]()
+            var a = va.get[General]()
+            var b = vb.get[General]()
             if a.isa[Int]() and b.isa[Int]():
                 return a.get[Int]() == b.get[Int]()
             elif a.isa[Float32]() and b.isa[Float32]():
@@ -34,7 +34,7 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn to_string[T: CollectionElement](a: Variant[T]) -> String:
         if a.isa[General]():
-            let v = a.get[General]()
+            var v = a.get[General]()
             if v.isa[Int]():
                 return v.get[Int]()
             if v.isa[Float32]():

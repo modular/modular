@@ -35,12 +35,12 @@ fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
 # CHECK-LABEL: test_basic_tensor_ops
 fn test_basic_tensor_ops():
     print("== test_basic_tensor_ops")
-    let data_ptr = stack_allocation[32, DType.float32]()
+    var data_ptr = stack_allocation[32, DType.float32]()
     for i in range(32):
         data_ptr[i] = i
 
-    let layout_8x4 = Layout(IntTuple(8, 4), IntTuple(4, 1))  # 4 x 2
-    let row_major_tensor = LayoutTensor[DType.float32](layout_8x4, data_ptr)
+    var layout_8x4 = Layout(IntTuple(8, 4), IntTuple(4, 1))  # 4 x 2
+    var row_major_tensor = LayoutTensor[DType.float32](layout_8x4, data_ptr)
     # CHECK: ----original matrix----
     # CHECK: 0.0      1.0     2.0     3.0
     # CHECK: 4.0      5.0     6.0     7.0
@@ -82,7 +82,7 @@ fn test_basic_tensor_ops():
     for tile_i in range(4):
         for tile_j in range(2):
             print("----tile[", tile_i, ",", tile_j, "]----")
-            let tile_2x2 = row_major_tensor.view(
+            var tile_2x2 = row_major_tensor.view(
                 tiler, IntTuple(tile_i, tile_j)
             )
             print_tile_tensor(tile_2x2)
