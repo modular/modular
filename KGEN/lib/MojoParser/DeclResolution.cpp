@@ -643,11 +643,19 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
       resultVal = captureRVal.getIfMRValue();
     }
 
-    // Bind the name in the scope.
+    // Bind the name in the scope so further references don't look like
+    // reference captures.
+    // FIXME: It would be cleaner to have an explicit representation of this,
+    // e.g. an op that produces a ref to the value in the capture list.  Instead
+    // we are still forming references outside the closure for things that are
+    // copied and moved into the closure.
     emitter.getDeclResolver().addFullyResolvedDecl(resultVal, declRef->spelling,
                                                    sigDecl.getLoc(), &sigDecl);
+
+    // Both move and copy captures are the same here - a move capture just does
+    // the transfer above to generate its RValue.
     shared.addCaptureToScope(decl, decls.front(),
-                             Capture(captureRVal, /*isMove=*/isMove));
+                             Capture(captureRVal, Capture::kCopy));
   }
 }
 

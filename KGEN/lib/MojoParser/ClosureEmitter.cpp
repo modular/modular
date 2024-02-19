@@ -570,18 +570,24 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SmallVector<ArgConvention> initSigConventions{ArgConvention::InitSelf};
   unsigned fieldNameIdx = 0;
   for (auto &[decl, capture] : captures) {
-    bool move = capture.isMoveCapture();
+    // If this is a reference capture, then we are capturing the address of the
+    // value in the closure, otherwise we are taking an RValue that is either
+    // copied or moved.
+    bool isRef = capture.isRef();
     ASTType rvalueType = capture.getValue().getRValueType();
     initSigNames.push_back(StringAttr::get(ctx, "fld" + Twine(fieldNameIdx++)));
+    // FIXME: By-reference captures should be capturable either as by-imm-ref or
+    // by-mut-ref.  Right now we type check var captures as mutable but codegen
+    // them as immutable references!
     if (rvalueType.isRegisterPassable(decl->getLoc(), shared)) {
-      initSigConventions.push_back(move ? ArgConvention::OwnedInReg
-                                        : ArgConvention::BorrowedInReg);
+      initSigConventions.push_back(isRef ? ArgConvention::BorrowedInReg
+                                         : ArgConvention::OwnedInReg);
       initSigTypes.push_back(rvalueType);
     } else {
-      initSigConventions.push_back(move ? ArgConvention::OwnedInMem
-                                        : ArgConvention::BorrowedInMem);
+      initSigConventions.push_back(isRef ? ArgConvention::BorrowedInMem
+                                         : ArgConvention::OwnedInMem);
       initSigTypes.push_back(rvalueType.getRefForArgument(
-          initSigNames.back().str(), /*isMut=*/move));
+          initSigNames.back().str(), /*isMut=*/!isRef));
     }
   }
 

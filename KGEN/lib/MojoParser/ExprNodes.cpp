@@ -637,7 +637,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // the capture.
     if (needsCapture())
       emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
-                                       Capture(value));
+                                       Capture(value, Capture::kRef));
   }
 
   return emitter.emitResult(value, this, dest);

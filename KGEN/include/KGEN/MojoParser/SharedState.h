@@ -48,25 +48,29 @@ enum class CallSyntax : uint8_t;
 /// Capture represents a nested function value whose declaration is in the
 /// parent function.
 ///
-/// In the case of a capture list, the 'value' of the capture is an RValue
-/// defined in parent function, which is transfered into the closure struct.
+/// In the case of a __move_capture/__copy_capture, the 'value' of the capture
+/// is an RValue defined in parent function, which is transfered into the
+/// closure struct.
 ///
-/// If the case of a transparent reference, this an LValue for a 'var', a BValue
+/// If the case of a captured reference, this an LValue for a 'var', a BValue
 /// for a borrowed argument reference, etc.
 class Capture {
 public:
-  Capture(CValue value, bool isMove = false) : value(value), isMove(isMove) {}
+  /// Whether this capture is a reference or copy into the closure.  The "move"
+  /// closure kind just does a transfer when the closure is formed.
+  enum Kind { kRef, kCopy };
+
+  Capture(CValue value, Kind kind) : value(value), kind(kind) {}
   CValue getValue() const { return value; }
-  bool isMoveCapture() const { return isMove; }
+  bool isCopy() const { return kind == kCopy; }
+  bool isRef() const { return kind == kRef; }
 
   /// Get the underlying MLIR value.
   Value getMlirValue() const;
 
 private:
-  /// The value of the capture.
   CValue value;
-  /// True if the capture is by move, otherwise it is by copy.
-  bool isMove;
+  Kind kind;
 };
 
 /// This enum indicates how much parsing and type checking has been done on
