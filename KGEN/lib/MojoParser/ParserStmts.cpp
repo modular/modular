@@ -1216,16 +1216,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   if (parseExpression(contextExp))
     return failure();
 
-  // If we are in a def, we need to use function scoping.  If we are in a fn,
-  // we need to use lexical scope.  When we support `with` at the top level, we
-  // should decide whether it is lexical or global scope.  This largely depends
-  // on our view of what `python superset` or `python++` means.
-  bool useLexicalScope = true;
-  if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
-    if (funcOp.isDef())
-      useLexicalScope = false;
-  }
-
   // Emit the context manager expression into a var with an inferred type.
   VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
       "$CONTEXTMGR", getUnresolvedType(),
@@ -1259,50 +1249,20 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // generate logic to deal with it.
   bool inExceptRegion = findOpProcessingRaise(builder.getInsertionBlock());
 
-  // FIXME: This needs to parse this as a target expression and then handle it
-  // like a destructuring pattern.
-  VarDeclOp targetDecl;
-  bool addDecl = false;
-  SMLoc targetLoc;
-  SMLoc asLoc;
-  ValueDest enterDest(EC_WithContextMgr);
-  if (consumeIf(Token::kw_as, &asLoc)) {
-    StringAttr name;
-    if (parseIdentifier(name, "expected identifier for target in 'with'",
-                        &targetLoc))
+  // If this has a 'as TARGET' specifier, parse the name into targetName,
+  // otherwise targetName will be null.
+  std::optional<DeclRefNode> targetNode;
+  if (consumeIf(Token::kw_as)) {
+    // FIXME: This needs to parse this as a target expression and then handle it
+    // like a destructuring pattern.
+    targetNode.emplace(DeclRefNode(getToken().getSpelling(),
+                                   getToken().is(Token::escaped_identifier)));
+    if (parseIdentifier("expected identifier for target in 'with'"))
       return failure();
-    ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
-    if (!useLexicalScope && !decls.empty()) {
-      SMLoc declLoc = decls[0]->getLoc();
-      ValueDest dest(EC_WithContextMgr);
-
-      SyntheticNode node(asLoc);
-      std::optional<Capture> capture;
-      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
-                                                        &node, dest, capture);
-      if (auto ref = emitted.getIfMLValue()) {
-        enterDest = ValueDest(ref, EC_WithContextMgr);
-      } else {
-        auto diag =
-            emitError(targetLoc)
-            << name
-            << " is not a valid mutable variable for `with ... as` to target";
-        diag.attachNote(declLoc) << name << " declared here";
-        return failure();
-      }
-    } else {
-      targetDecl = getEmitter().emitVarDecl(name, getUnresolvedType(),
-                                            shared.translateLocation(targetLoc),
-                                            VarDeclKind::Implicit);
-      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
-      addDecl = true;
-    }
   }
 
-  if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
-    enterDest.resetForError();
+  if (parseToken(Token::colon, "expected ':' after 'with' expression"))
     return failure();
-  }
 
   // We are about to generate the call to __enter__ but need to decide how to
   // pass the context expression, either as an LValue referring to the bound
@@ -1348,6 +1308,31 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     }
   }
 
+  // If we are in a def, we need to use function scoping.  If we are in a fn,
+  // we need to use lexical scope.  When we support `with` at the top level, we
+  // should decide whether it is lexical or global scope.  This largely depends
+  // on our view of what `python superset` or `python++` means.
+  bool useLexicalScope = !getEmitter().varDeclCursor.has_value();
+
+  // If there is an explicit target specified, use it.
+  ValueDest enterDest(EC_WithContextMgr);
+  VarDeclOp targetDecl;
+  if (targetNode.has_value()) {
+    if (useLexicalScope) {
+      auto name = StringAttr::get(getContext(), targetNode->spelling);
+      auto emitter = getEmitter();
+      targetDecl = emitter.emitVarDecl(name, getUnresolvedType(),
+                                       targetNode->getLocation(emitter),
+                                       VarDeclKind::Implicit);
+      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
+    } else {
+      // If we're in a 'def' just use the DeclRefNode as the destination. This
+      // ensures that we reuse and/or implicitly declare variables at the top
+      // level of the function, just like "x = foo()" does for "x".
+      enterDest = ValueDest(&*targetNode, EC_WithContextMgr);
+    }
+  }
+
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
   CValue enterResult = getEmitter().emitNamedMethodCall(
@@ -1360,10 +1345,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     pushChildScope(scopeGuard, keepDecl);
 
   // Inject the target into our scope if asked for.
-  if (addDecl) {
+  if (targetDecl) {
     auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
-        targetDecl.getOperation(), targetDecl.getNameAttr(), targetLoc,
-        curDeclScope);
+        targetDecl.getOperation(), targetDecl.getNameAttr(),
+        targetNode->getLoc(), curDeclScope);
     if (!enterResult)
       targetDeclResolved.hasReferenceError = true;
   }
