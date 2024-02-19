@@ -4,16 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.param_env import env_get_string
-from tensor import Tensor, TensorShape, TensorSpec
-from testing import assert_true, assert_almost_equal, assert_equal
+from tensor import Tensor
+from testing import assert_almost_equal, assert_equal
 
-from max.engine import EngineTensorView, InferenceSession, TensorMap
-
-
-fn assert_no_dynamic_dims(spec: TensorSpec) raises:
-    for i in range(spec.rank()):
-        assert_true(spec[i] >= 0)
+from max.engine import InferenceSession, TensorMap
 
 
 fn assert_tensors_almost_equal[
@@ -24,10 +18,7 @@ fn assert_tensors_almost_equal[
     atol: Scalar[dtype] = 1e-8,
     rtol: Scalar[dtype] = 1e-5,
 ) raises:
-    assert_true(a.spec() == b.spec())
-    assert_no_dynamic_dims(a.spec())
-    assert_no_dynamic_dims(b.spec())
-
+    assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
         assert_almost_equal[dtype](a[i], b[i], atol, rtol)
 
@@ -35,40 +26,35 @@ fn assert_tensors_almost_equal[
 fn assert_tensors_equal[
     dtype: DType
 ](a: Tensor[dtype], b: Tensor[dtype]) raises:
-    assert_true(a.spec() == b.spec())
-    assert_no_dynamic_dims(a.spec())
-    assert_no_dynamic_dims(b.spec())
-
+    assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
         assert_equal[dtype](a[i], b[i])
 
 
 fn execute_nullary[
     outtype: DType = DType.float32
-](module: Module, name: StringRef) raises -> Tensor[outtype]:
-    let result_map = execute_no_args(module, name)
+](module: Module) raises -> Tensor[outtype]:
+    let result_map = execute_no_args(module)
     return result_map.get[outtype]("output0")
 
 
 fn execute_unary[
     intype: DType = DType.float32, outtype: DType = DType.float32
-](module: Module, name: StringRef, input: Tensor[intype]) raises -> Tensor[
-    outtype
-]:
-    let result_map = execute_base(module, name, input)
+](module: Module, input: Tensor[intype]) raises -> Tensor[outtype]:
+    let result_map = execute_base(module, input)
     return result_map.get[outtype]("output0")
 
 
 fn execute_binary[
     intype: DType = DType.float32, outtype: DType = DType.float32
-](
-    module: Module, name: StringRef, x: Tensor[intype], y: Tensor[intype]
-) raises -> Tensor[outtype]:
-    let result_map = execute_base(module, name, x, y)
+](module: Module, x: Tensor[intype], y: Tensor[intype]) raises -> Tensor[
+    outtype
+]:
+    let result_map = execute_base(module, x, y)
     return result_map.get[outtype]("output0")
 
 
-fn execute_no_args(m: Module, name: StringRef) raises -> TensorMap:
+fn execute_no_args(m: Module) raises -> TensorMap:
     m.verify()
 
     let session = InferenceSession()
@@ -84,7 +70,6 @@ fn execute_n_args[
     dt1: DType, dt2: DType, dt3: DType, dt4: DType, dt5: DType
 ](
     m: Module,
-    name: StringRef,
     t1: Tensor[dt1],
     t2: Tensor[dt2],
     t3: Tensor[dt3],
@@ -108,9 +93,7 @@ fn execute_n_args[
     return result_map ^
 
 
-fn execute_base(
-    m: Module, name: StringRef, *tensors: Tensor
-) raises -> TensorMap:
+fn execute_base(m: Module, *tensors: Tensor) raises -> TensorMap:
     m.verify()
 
     let session = InferenceSession()
@@ -118,12 +101,7 @@ fn execute_base(
 
     let input_map = session.new_tensor_map()
     for i in range(len(tensors)):
-        let input_name = "input" + String(i)
-        input_map.borrow(
-            input_name._strref_dangerous(),
-            tensors[i],
-        )
-        input_name._strref_keepalive()
+        input_map.borrow("input" + str(i), tensors[i])
 
     let result_map = model.execute(input_map)
 

@@ -124,3 +124,6 @@ struct Module(Stringable):
         let op = capi.graph_new(self._module, loc, name, function_type)
 
         return Graph(op)
+
+    fn graph(self, in_types: TypeTuple, out_types: TypeTuple) -> Graph:
+        return self.graph("graph", in_types, out_types)
