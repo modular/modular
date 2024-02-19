@@ -16,12 +16,12 @@ from mojobench import MojoBench, Bencher, BenchId
 @parameter
 fn bench_gather_reduce(inout b: Bencher):
     alias type = DType.float32
-    let num_rows = 500000
-    let embedding_dim = 32
-    let multi_hot_dim = 100
+    var num_rows = 500000
+    var embedding_dim = 32
+    var multi_hot_dim = 100
     alias l3_size = 32  # mb
     alias clear_size = l3_size * 2 * 1_000_000
-    let num_indices = clear_size // (
+    var num_indices = clear_size // (
         sizeof[type]() * embedding_dim * multi_hot_dim
     )
     var input = Tensor[type](num_rows, embedding_dim)

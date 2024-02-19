@@ -15,25 +15,25 @@ from random import rand
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):
-    let m = c.get_shape()[0]
-    let n = c.get_shape()[1]
-    let k = a.get_shape()[1]
+    var m = c.get_shape()[0]
+    var n = c.get_shape()[1]
+    var k = a.get_shape()[1]
     c.zero()
 
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                let a_val = a[i, p].cast[c.type]()
-                let b_val = b[p, j].cast[c.type]()
+                var a_val = a[i, p].cast[c.type]()
+                var b_val = b[p, j].cast[c.type]()
                 c[(i, j)] += a_val * b_val
 
 
 fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
-    let m = c.get_shape()[0]
-    let n = c.get_shape()[1]
+    var m = c.get_shape()[0]
+    var n = c.get_shape()[1]
 
-    let c_ref_ptr = DTypePointer[c.type].alloc(m * n)
-    let c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
+    var c_ref_ptr = DTypePointer[c.type].alloc(m * n)
+    var c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
@@ -66,9 +66,9 @@ fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
     alias c_type = spec.static_info.c_type
     alias b_packed = spec.static_info.b_packed
     alias alignment = 64
-    let a_ptr = DTypePointer[a_type].alloc(spec.m * spec.k, alignment=alignment)
-    let b_ptr = DTypePointer[b_type].alloc(spec.k * spec.n, alignment=alignment)
-    let c_ptr = DTypePointer[c_type].alloc(spec.m * spec.n, alignment=alignment)
+    var a_ptr = DTypePointer[a_type].alloc(spec.m * spec.k, alignment=alignment)
+    var b_ptr = DTypePointer[b_type].alloc(spec.k * spec.n, alignment=alignment)
+    var c_ptr = DTypePointer[c_type].alloc(spec.m * spec.n, alignment=alignment)
     var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
     var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
     var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
@@ -88,10 +88,10 @@ fn bench_matmul(inout bencher: Bencher, spec: MatmulSpec) capturing:
         single_thread_blocking_override=False,
     ](b)
 
-    let padded_n = padded_n_k[1] if b_packed else spec.n
-    let padded_k = padded_n_k[0] if b_packed else spec.k
+    var padded_n = padded_n_k[1] if b_packed else spec.n
+    var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    let bp_ptr = DTypePointer[b_type].alloc(
+    var bp_ptr = DTypePointer[b_type].alloc(
         padded_k * padded_n, alignment=alignment
     )
     var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))

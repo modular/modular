@@ -54,7 +54,7 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-    let f_per_group = spec.f // spec.num_groups
+    var f_per_group = spec.f // spec.num_groups
 
     var output_dims = StaticIntTuple[spec.static_info.rank](1)
 
@@ -79,18 +79,18 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
     packed_filter_shape[spec.static_info.rank + 1] = spec.c
     packed_filter_shape[spec.static_info.rank + 2] = micro_kernel_f_size
 
-    let input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
-    let input_ptr = DTypePointer[input_type].aligned_alloc(
+    var input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
+    var input_ptr = DTypePointer[input_type].aligned_alloc(
         alignment, input_shape.flattened_length()
     )
 
-    let packed_filter_size = packed_filter_shape.flattened_length()
-    let filter_ptr = DTypePointer[filter_type].aligned_alloc(
+    var packed_filter_size = packed_filter_shape.flattened_length()
+    var filter_ptr = DTypePointer[filter_type].aligned_alloc(
         alignment, packed_filter_size
     )
 
-    let output_shape = extend_shape(output_dims, spec.n, spec.f)
-    let output_ptr = DTypePointer[output_type].aligned_alloc(
+    var output_shape = extend_shape(output_dims, spec.n, spec.f)
+    var output_ptr = DTypePointer[output_type].aligned_alloc(
         alignment, output_shape.flattened_length()
     )
 
@@ -122,7 +122,7 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
         pad_h = Index(spec.pad[2], spec.pad[3])
         pad_w = Index(spec.pad[4], spec.pad[5])
 
-    let conv_shape = ConvShape[spec.static_info.rank] {
+    var conv_shape = ConvShape[spec.static_info.rank] {
         n: spec.n,
         input_dims: spec.input_dims,
         output_dims: output_dims,

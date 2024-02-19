@@ -23,7 +23,7 @@ alias accum_type = DType.float32
 
 
 fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
-    let a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+    var a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, n)
     )
     for i in range(m):
@@ -55,11 +55,11 @@ fn kernel(
     k: Int,
     kc: Int,
 ):
-    let a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    let b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    let c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
+    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
+    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
 
-    let c_local = Buffer[mr * nr, DType.float32]().aligned_stack_allocation[
+    var c_local = Buffer[mr * nr, DType.float32]().aligned_stack_allocation[
         alignment
     ]()
 
@@ -68,7 +68,7 @@ fn kernel(
     @parameter
     @always_inline
     fn loadc[idx0: Int, idx1: Int]():
-        let cv = c.simd_load[simd_size](n * idx0 + simd_size * idx1)
+        var cv = c.simd_load[simd_size](n * idx0 + simd_size * idx1)
         c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
 
     unroll[loadc, mr, nr2]()
@@ -87,8 +87,8 @@ fn kernel(
         @parameter
         @always_inline
         fn calc[idx0: Int, idx1: Int]():
-            let av = a.simd_load[1](idx0 * k + pr).cast[accum_type]()
-            let bv = b.simd_load[simd_size](nr * pr + simd_size * idx1)
+            var av = a.simd_load[1](idx0 * k + pr).cast[accum_type]()
+            var bv = b.simd_load[simd_size](nr * pr + simd_size * idx1)
             var cv = c_local.simd_load[simd_size](nr * idx0 + simd_size * idx1)
             cv += av * bv
             c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
@@ -98,7 +98,7 @@ fn kernel(
     @parameter
     @always_inline
     fn storec[idx0: Int, idx1: Int]():
-        let cv = c_local.simd_load[simd_size](nr * idx0 + simd_size * idx1)
+        var cv = c_local.simd_load[simd_size](nr * idx0 + simd_size * idx1)
         c.simd_store[simd_size](n * idx0 + simd_size * idx1, cv)
 
     unroll[storec, mr, nr2]()
@@ -112,8 +112,8 @@ fn pack_B(
     kc: Int,
     nc: Int,
 ):
-    let b = Buffer[Dim(), DType.float32](b_ptr, kc * n)
-    let bc = Buffer[Dim(), DType.float32](b2_ptr, kc * n)
+    var b = Buffer[Dim(), DType.float32](b_ptr, kc * n)
+    var bc = Buffer[Dim(), DType.float32](b2_ptr, kc * n)
     for pr in range(kc):
         for ir in range(nc // nr):
             for v in range(nr):
@@ -160,12 +160,12 @@ fn gemm(
 
 
 fn main():
-    let m: Int = 960
-    let n: Int = 1024
-    let k: Int = 1024
-    let mc: Int = m
-    let nc: Int = 64
-    let kc: Int = k
+    var m: Int = 960
+    var n: Int = 1024
+    var k: Int = 1024
+    var mc: Int = m
+    var nc: Int = 64
+    var kc: Int = k
     if m % 6 != 0:
         print("m must be multiple of 6")
         return
@@ -179,24 +179,24 @@ fn main():
     print_no_newline("x")
     print(k)
 
-    let a_ptr = DTypePointer[DType.float32].alloc(m * k, alignment=alignment)
-    let b_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
-    let b2_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
-    let c_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
-    let c2_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
-    let a = Buffer[Dim(), DType.float32](a_ptr, m * k)
-    let b = Buffer[Dim(), DType.float32](b_ptr, k * n)
-    let b2 = Buffer[Dim(), DType.float32](b2_ptr, k * n)
-    let c = Buffer[Dim(), DType.float32](c_ptr, m * n)
-    let c2 = Buffer[Dim(), DType.float32](c2_ptr, m * n)
+    var a_ptr = DTypePointer[DType.float32].alloc(m * k, alignment=alignment)
+    var b_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
+    var b2_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
+    var c_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
+    var c2_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
+    var a = Buffer[Dim(), DType.float32](a_ptr, m * k)
+    var b = Buffer[Dim(), DType.float32](b_ptr, k * n)
+    var b2 = Buffer[Dim(), DType.float32](b2_ptr, k * n)
+    var c = Buffer[Dim(), DType.float32](c_ptr, m * n)
+    var c2 = Buffer[Dim(), DType.float32](c2_ptr, m * n)
 
-    let am = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+    var am = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, k)
     )
-    let bm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+    var bm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         b_ptr, Index(k, n)
     )
-    let cm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+    var cm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         c_ptr, Index(m, n)
     )
 
@@ -227,15 +227,15 @@ fn main():
         gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    let time = benchmark.run[bench_gemm](num_warmup).mean()
-    let flops = 2.0 * m * n * k / time / 1e9
+    var time = benchmark.run[bench_gemm](num_warmup).mean()
+    var flops = 2.0 * m * n * k / time / 1e9
     print_no_newline(time)
     print(" seconds")
     print_no_newline(flops)
     print(" GFLOPS")
 
     # assume turbo is disabled and the frequency set to 2.9 GHz
-    let rpeak = flops / (2.9 * 64)
+    var rpeak = flops / (2.9 * 64)
     print_no_newline(rpeak)
     print(" measured/peak FLOPS assuming 2.9 GHz")
 

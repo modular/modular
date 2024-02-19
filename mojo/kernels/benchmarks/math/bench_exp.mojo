@@ -71,9 +71,9 @@ fn ldexp2kf_opt[
 
     #   u = intBitsToFloat(((int32_t)m) << 23);
     var u = bitcast[dtype, simd_width, DType.int32, simd_width](m << 23)
-    let x = x_in * u * u * u * u
+    var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
-    let xu = (
+    var xu = (
         ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()) << 23
     )
     return x * xu.cast[dtype]()
@@ -146,7 +146,7 @@ fn exp_sleef[
     alias inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
     alias lg2it = SIMD[dtype, simd_width](0.6931471805599453)
 
-    let q = floor(d.fma(inv_lg2, 0.5))
+    var q = floor(d.fma(inv_lg2, 0.5))
 
     ## upper and lower parts of log(2)
     alias L2Uf = SIMD[dtype, simd_width](0.693145751953125)
@@ -200,13 +200,13 @@ fn exp_mojo_opt[
     alias max_val = SIMD[type, simd_width](88.3762626647950)
 
     alias im_type = DType.float64
-    let xc = clamp(x, min_val, max_val).cast[im_type]()
-    let k = floor(xc.fma(inv_lg2, 0.5)).cast[im_type]()
+    var xc = clamp(x, min_val, max_val).cast[im_type]()
+    var k = floor(xc.fma(inv_lg2, 0.5)).cast[im_type]()
 
-    let r = k.fma(neg_ln2, xc)
+    var r = k.fma(neg_ln2, xc)
     # let r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
-    let taylor_result = _exp_taylor(r.cast[im_type]()).cast[type]()
-    let expr = ldexp(taylor_result, k.cast[DType.int32]())
+    var taylor_result = _exp_taylor(r.cast[im_type]()).cast[type]()
+    var expr = ldexp(taylor_result, k.cast[DType.int32]())
     return expr
     # let val1 = (expr > min_val).select(expr, SIMD[type,simd_width](0))
     # return (val1 < max_val).select(val1, SIMD[type,simd_width](inf[type]()))

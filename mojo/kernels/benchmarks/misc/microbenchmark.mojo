@@ -45,13 +45,13 @@ fn run[
     var total_time = 0.0
     for _ in range(num_iters):
         benchmark_obj.pre_run()
-        let start_time = time.now()
+        var start_time = time.now()
         benchmark_obj.run()
-        let end_time = time.now()
+        var end_time = time.now()
         benchmark_obj.post_run()
         total_time += end_time - start_time
 
-    let average_execution_time = total_time / num_iters / 1e3
+    var average_execution_time = total_time / num_iters / 1e3
 
     benchmark_obj.global_post_run()
     print(name, average_execution_time)

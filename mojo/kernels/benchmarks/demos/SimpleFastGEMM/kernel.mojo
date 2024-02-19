@@ -25,9 +25,9 @@ fn kernel6x4(
     k: Int,
     kc: Int,
 ):
-    let a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    let b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    let c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
+    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
+    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
 
     var cv0 = c.simd_load[simd_size](n * 0 + simd_size * 0)
     var cv1 = c.simd_load[simd_size](n * 0 + simd_size * 1)
@@ -55,10 +55,10 @@ fn kernel6x4(
     var cv23 = c.simd_load[simd_size](n * 5 + simd_size * 3)
 
     for pr in range(kc):
-        let bv0 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 0)
-        let bv1 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 1)
-        let bv2 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 2)
-        let bv3 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 3)
+        var bv0 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 0)
+        var bv1 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 1)
+        var bv2 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 2)
+        var bv3 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 3)
         b_ptr.offset(4 * simd_size * pr + simd_size * 16).prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
         ]()
@@ -142,9 +142,9 @@ fn kernel6x4_naive(
     k: Int,
     kc: Int,
 ):
-    let a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    let b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    let c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
+    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
+    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
 
     for ir in range(mr):
         for jr in range(nr):

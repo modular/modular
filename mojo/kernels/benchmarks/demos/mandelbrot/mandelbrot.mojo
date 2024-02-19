@@ -36,12 +36,12 @@ alias max_y = 1.12
 
 
 fn draw_mandelbrot(inout out: Tensor[int_type]):
-    let charset = String(".,c8M@jawrpogOQEPGJ")
+    var charset = String(".,c8M@jawrpogOQEPGJ")
     for row in range(out.dim(0)):
         for col in range(out.dim(1)):
-            let v: Int = out[row, col].value
+            var v: Int = out[row, col].value
             if v > 0:
-                let p = charset[v % len(charset)]
+                var p = charset[v % len(charset)]
                 _printf("%c", p)
             else:
                 print_no_newline("0")
@@ -102,16 +102,16 @@ fn mandelbrot_blog_1[
     min_y: SIMD[float_type, 1],
     max_y: SIMD[float_type, 1],
 ):
-    let scalex = (max_x - min_x) / w
-    let scaley = (max_y - min_y) / h
+    var scalex = (max_x - min_x) / w
+    var scaley = (max_y - min_y) / h
 
     for row in range(h):
         for col in range(w):
-            let cx = min_x + col * scalex
-            let cy = min_y + row * scaley
-            let c = ComplexSIMD[float_type, 1](cx, cy)
+            var cx = min_x + col * scalex
+            var cy = min_y + row * scaley
+            var c = ComplexSIMD[float_type, 1](cx, cy)
 
-            let res: SIMD[int_type, 1]
+            var res: SIMD[int_type, 1]
 
             @parameter
             if part == 0:
@@ -136,15 +136,15 @@ fn main_blog_part1():
     @always_inline
     @parameter
     fn bench_fn[part: Int]():
-        let min_x = -2.0
-        let max_x = 0.47
-        let min_y = -1.12
-        let max_y = 1.12
+        var min_x = -2.0
+        var max_x = 0.47
+        var min_y = -1.12
+        var max_y = 1.12
 
         mandelbrot_blog_1[height, width, part](m, min_x, max_x, min_y, max_y)
 
     var time: Float64
-    let ns_per_second: Int = 1_000_000_000
+    var ns_per_second: Int = 1_000_000_000
 
     bench_fn[2]()
     var pixel_sum: Int = 0
@@ -231,17 +231,17 @@ fn mandelbrot[
     @always_inline
     @parameter
     fn worker(row: Int):
-        let scale_x = (max_x - min_x) / w
-        let scale_y = (max_y - min_y) / h
+        var scale_x = (max_x - min_x) / w
+        var scale_y = (max_y - min_y) / h
 
         @always_inline
         @__copy_capture(scale_x, scale_y)
         @parameter
         fn compute_vector[simd_width: Int](col: Int):
             """Each time we operate on a `simd_width` vector of pixels."""
-            let cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
-            let cy = min_y + row * scale_y
-            let c = ComplexSIMD[float_type, simd_width](cx, cy)
+            var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
+            var cy = min_y + row * scale_y
+            var c = ComplexSIMD[float_type, simd_width](cx, cy)
             out.simd_store[simd_width](
                 Index(row, col), mandelbrot_kernel[simd_width](c)
             )

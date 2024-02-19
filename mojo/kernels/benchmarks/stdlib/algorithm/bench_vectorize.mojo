@@ -24,8 +24,8 @@ alias its = 1000
 
 
 fn main():
-    let p1 = DTypePointer[type].alloc(size)
-    let p2 = DTypePointer[type].alloc(size)
+    var p1 = DTypePointer[type].alloc(size)
+    var p2 = DTypePointer[type].alloc(size)
 
     rand(p1, size)
 
@@ -65,19 +65,19 @@ fn main():
         for i in range(its):
             vectorize[closure, width, size, unroll_factor]()
 
-    let arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
+    var arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
     print(p2.simd_load[size]())
     memset_zero(p2, size)
 
-    let param = run[param_size](max_runtime_secs=0.5).mean(unit)
+    var param = run[param_size](max_runtime_secs=0.5).mean(unit)
     print(p2.simd_load[size]())
     memset_zero(p2, size)
 
-    let arg_unroll = run[arg_size_unroll](max_runtime_secs=0.5).mean(unit)
+    var arg_unroll = run[arg_size_unroll](max_runtime_secs=0.5).mean(unit)
     print(p2.simd_load[size]())
     memset_zero(p2, size)
 
-    let param_unroll = run[param_size_unroll](max_runtime_secs=0.5).mean(unit)
+    var param_unroll = run[param_size_unroll](max_runtime_secs=0.5).mean(unit)
     print(p2.simd_load[size]())
 
     print(

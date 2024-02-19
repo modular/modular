@@ -32,8 +32,8 @@ fn gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                let a_val = a[i, p].cast[c_type]()
-                let b_val = b[p, j].cast[c_type]()
+                var a_val = a[i, p].cast[c_type]()
+                var b_val = b[p, j].cast[c_type]()
                 c[i, j] += a_val * b_val
 
 
@@ -88,11 +88,11 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         print("Generating Random Input Data")
         for i in range(self.m):
             for j in range(self.k):
-                let val = random_si64(0, 255)
+                var val = random_si64(0, 255)
                 self.am[i, j] = val.cast[a_type]()
         for i in range(self.k):
             for j in range(self.n):
-                let val = random_si64(-128, 127)
+                var val = random_si64(-128, 127)
                 self.bm[i, j] = val.cast[b_type]()
         for i in range(self.m):
             for j in range(self.n):
@@ -171,11 +171,11 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
         print("Generating Random Input Data")
         for i in range(self.m):
             for j in range(self.k):
-                let val = random_si64(0, 255)
+                var val = random_si64(0, 255)
                 self.am[i, j] = val.cast[a_type]()
         for i in range(self.k):
             for j in range(self.n):
-                let val = random_si64(-128, 127)
+                var val = random_si64(-128, 127)
                 self.bm[i, j] = val.cast[b_type]()
         for i in range(self.m):
             for j in range(self.n):
