@@ -618,7 +618,7 @@ fn single_thread_blocking_override_test[
 fn test_static_shape(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
-    let out = empty_tensor[x.type](x.shape)
+    var out = empty_tensor[x.type](x.shape)
     var out_shape = IntList[x.static_shape](x.shape)
 
     @always_inline
