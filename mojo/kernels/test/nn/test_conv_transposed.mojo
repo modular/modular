@@ -412,6 +412,18 @@ fn main() raises:
         1,  # num_groups
     )
 
+    test_conv_transposed[DType.float32, 3](
+        1,  # N
+        Index(5, 5, 5),
+        4,  # C
+        Index(3, 3, 3),
+        8,  # F
+        Index(1, 1, 1),  # stride
+        Index(1, 1, 1),  # dilation
+        StaticIntTuple[6](0, 0, 0, 0, 0, 0),  # pad
+        1,  # num_groups
+    )
+
     # Large shapes commented out to save CI cost.
 
     # # StarGan shape
