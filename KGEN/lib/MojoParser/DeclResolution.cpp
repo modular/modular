@@ -497,8 +497,8 @@ struct FnDecorators : public SharedStateUser {
 
 private:
   void applyStaticMethod(const DeclRefNode &node);
-  void applyMoveCapture(const CallNode &node);
-  void applyCopyCapture(const CallNode &node);
+  void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
+                              StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
 
   ASTDecl &decl;
@@ -540,9 +540,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
         applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
                     funcOp);
       else if (declRef->spelling == "__move_capture")
-        applyMoveCapture(*callNode);
+        applyCopyOrMoveCapture(*callNode, /*isMove=*/true, declRef->spelling);
       else if (declRef->spelling == "__copy_capture")
-        applyCopyCapture(*callNode);
+        applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
       else
@@ -562,54 +562,15 @@ void FnDecorators::applyStaticMethod(const DeclRefNode &node) {
   funcOp.setIsStatic(true);
 }
 
-void FnDecorators::applyMoveCapture(const CallNode &node) {
+void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
+                                          StringRef decoratorSpelling) {
   // HACK(#16110): Need to implement proper capture list syntax rather than rely
   // on a special decorator.
   for (const Operand &operand : node.operands) {
     auto *declRef = dyn_cast<DeclRefNode>(operand.value);
     if (!declRef) {
-      emitError(operand.getLoc(), "'@__move_capture' expected a declaration");
-      continue;
-    }
-
-    LookupResult lookup = shared.lookupAndResolveDecl(
-        declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
-        /*searchParentScopes=*/true);
-    if (lookup.isErroneous())
-      continue;
-
-    ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-    if (decls.empty()) {
-      emitError(declRef->getLoc(), "cannot capture unknown value '")
-          << declRef->spelling << "'";
-      continue;
-    }
-    if (decls.size() != 1) {
-      emitError(declRef->getLoc(), "cannot capture overloaded value '")
-          << declRef->spelling << "'";
-      continue;
-    }
-
-    ExprEmitter emitter(shared, decl, EC_CaptureCopy);
-    ValueDest dest(EC_CaptureCopy);
-    std::optional<Capture> capture;
-    if (emitter.emitDeclReference(declRef->spelling, decls, declRef, dest,
-                                  capture) &&
-        capture) {
-      shared.addCaptureToScope(decl, decls.front(),
-                               Capture(capture->getValue(), /*isMove=*/true));
-      continue;
-    }
-  }
-}
-
-void FnDecorators::applyCopyCapture(const CallNode &node) {
-  // HACK(#16110): Need to implement proper capture list syntax rather than rely
-  // on a special decorator.
-  for (const Operand &operand : node.operands) {
-    auto *declRef = dyn_cast<DeclRefNode>(operand.value);
-    if (!declRef) {
-      emitError(operand.getLoc(), "'@__copy_capture' expected a declaration");
+      emitError(operand.getLoc(), "'@")
+          << decoratorSpelling << "' expected a declaration";
       continue;
     }
     LookupResult lookup = shared.lookupAndResolveDecl(
@@ -633,26 +594,39 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
     // Emit an immutable copy of the captured declaration.
     LIT::FuncOp parentOp = funcOp->getParentOfType<LIT::FuncOp>();
     if (!parentOp) {
-      emitError(declRef->getLoc(), "'@__copy_capture' decorator is only "
-                                   "applicable to nested functions.");
+      emitError(declRef->getLoc(), "'@")
+          << decoratorSpelling
+          << "' decorator only applies to nested functions";
       return;
     }
 
     ExprEmitter emitter(shared, *decl.getParentDecl(), OpBuilder(funcOp));
-    RValue copyResult = emitter.emitExprRValue(declRef, EC_CaptureCopy);
+    RValue captureRVal;
+    if (!isMove) {
+      // For a copy capture, just emit the value reference as an RValue, which
+      // will make sure to copy it.
+      captureRVal = emitter.emitExprRValue(declRef, EC_Capture);
+    } else {
+      // For a move capture, we emit this with an implicit transfer.
+      // HACK(#16110): This transfers ownership without an explicit `^` from
+      // the user, because we don't have capture list syntax.
+      UnaryOpNode transfer(ExprNode::kTransfer, declRef->getLoc(), declRef);
+      captureRVal = emitter.emitExprRValue(&transfer, EC_Capture);
+    }
 
     // We can only capture dynamic values so materialize param expressions.
-    if (auto pval = copyResult.getIfPValue()) {
+    if (auto pval = captureRVal.getIfPValue()) {
       if (pval.getType().isRegisterPassable(decl.getLoc(), shared))
-        copyResult = emitter.emitSRValue({copyResult, declRef}, EC_CaptureCopy);
+        captureRVal = emitter.emitSRValue({captureRVal, declRef}, EC_Capture);
       else
-        copyResult = emitter.emitMRValue({copyResult, declRef}, EC_CaptureCopy);
+        captureRVal = emitter.emitMRValue({captureRVal, declRef}, EC_Capture);
     }
-    if (!copyResult)
+    if (!captureRVal)
       return;
 
     if (!effects.isEscaping() &&
-        !copyResult.getRValueType().isRegisterPassable(decl.getLoc(), shared)) {
+        !captureRVal.getRValueType().isRegisterPassable(decl.getLoc(),
+                                                        shared)) {
       emitError(declRef->getLoc(), "cannot capture '")
           << declRef->spelling
           << "' because capturing instances of memory only types in "
@@ -662,18 +636,18 @@ void FnDecorators::applyCopyCapture(const CallNode &node) {
 
     // How is this transfering the RValue into the closure?
     DeclIRValue resultVal;
-    if (auto srVal = copyResult.getIfSRValue())
+    if (auto srVal = captureRVal.getIfSRValue())
       resultVal = srVal;
     else {
-      assert(copyResult.getIfMRValue() && "Unknown RValue kind");
-      resultVal = copyResult.getIfMRValue();
+      assert(captureRVal.getIfMRValue() && "Unknown RValue kind");
+      resultVal = captureRVal.getIfMRValue();
     }
 
     // Bind the name in the scope.
     emitter.getDeclResolver().addFullyResolvedDecl(resultVal, declRef->spelling,
                                                    sigDecl.getLoc(), &sigDecl);
     shared.addCaptureToScope(decl, decls.front(),
-                             Capture(copyResult, /*isMove=*/false));
+                             Capture(captureRVal, /*isMove=*/isMove));
   }
 }
 
@@ -788,19 +762,12 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   ExprEmitter exprEmitter(shared, *nestedFnDecl.getParentDecl(), builder);
   SyntheticNode node(loc);
 
-  // Create a copy of the captured value.
+  // Pass all the captured values into the initializer.  In the case of a move
+  // capture, this will be an RValue for the thing captured, transfering to the
+  // owned argument in the initializer.
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
-  for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl)) {
-    AnyValue arg = capture.getValue();
-    if (capture.isMoveCapture()) {
-      // HACK(#16110): This transfers ownership without an explicit `^` from the
-      // user, because we don't have capture list syntax.
-      UnaryOpNode transfer(ExprNode::kTransfer, loc, node);
-      ValueDest dest(EC_CaptureCopy);
-      arg = transfer.emitTransfer(arg, dest, exprEmitter);
-    }
-    closureImplInitArgs.push_back({arg, node});
-  }
+  for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
+    closureImplInitArgs.push_back({capture.getValue(), node});
 
   ValueDest closureDest;
 

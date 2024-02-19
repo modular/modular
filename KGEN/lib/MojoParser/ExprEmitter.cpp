@@ -108,8 +108,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in parameter list";
   case EC_Destructor:
     return " in '__del__' resolution";
-  case EC_CaptureCopy:
-    return " in capture-by-copy";
+  case EC_Capture:
+    return " in capture";
   case EC_Decorator:
     return " in decorator";
   case EC_MutabilitySpec:
@@ -1844,9 +1844,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // Narrow the decl to a CValue.
   CValue value;
   if (auto var = dyn_cast<VarDeclOp>(decl)) {
-    // Treat both 'var' and 'let' decls as mutable values and defer to check
-    // lifetimes to verify 'let' decls. This allows lazy 'let' initialization.
-    value = MLValue(var);
+    value = MLValue(var); // Var decls are always mutable.
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!builder)
