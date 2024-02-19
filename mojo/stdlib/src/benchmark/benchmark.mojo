@@ -19,7 +19,7 @@ a `Report` where you can get the mean, duration, max, and more:
 fn sleeper():
     sleep(.01)
 
-let report = benchmark.run[sleeper]()
+var report = benchmark.run[sleeper]()
 print(report.mean())
 ```
 
@@ -328,7 +328,7 @@ struct Report(CollectionElement):
         Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
-        let divisor = _divisor(unit)
+        var divisor = _divisor(unit)
         print("---------------------")
         print_no_newline("Benchmark Report (")
         print_no_newline(unit)
@@ -356,7 +356,7 @@ struct Report(CollectionElement):
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
 
-        let divisor = _divisor(unit)
+        var divisor = _divisor(unit)
         self.print(unit)
 
         for i in range(len(self.runs)):
@@ -521,8 +521,8 @@ fn _run_impl(opts: _RunOptions) -> Report:
     report.warmup_duration = prev_dur
     var total_iters: Int = 0
     var time_elapsed: Int = 0
-    let min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
-    let max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
+    var min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
+    var max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
 
     while time_elapsed < max_time_ns:
         if total_iters > opts.max_iters and time_elapsed > min_time_ns:
@@ -663,7 +663,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
         return
 
     var tmp = val
-    let tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = Pointer.address_of(tmp)
 
     @parameter
     if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
@@ -714,7 +714,7 @@ fn keep[type: AnyRegType](val: Pointer[type]):
       val: The value to not optimize away.
     """
     var tmp = val
-    let tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = Pointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,
@@ -738,7 +738,7 @@ fn keep[type: AnyRegType](inout val: type):
       val: The value to not optimize away.
     """
     var tmp = val
-    let tmp_ptr = Pointer.address_of(tmp)
+    var tmp_ptr = Pointer.address_of(tmp)
     inlined_assembly[
         "",
         NoneType,
