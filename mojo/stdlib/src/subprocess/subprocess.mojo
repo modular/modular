@@ -72,5 +72,5 @@ fn run(cmd: String) raises -> String:
     Returns:
       The output of running the command as a string.
     """
-    let hdl = _POpenHandle(cmd)
+    var hdl = _POpenHandle(cmd)
     return hdl.read()
