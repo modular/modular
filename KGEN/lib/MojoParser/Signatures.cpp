@@ -16,6 +16,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserBase.h"
+#include "llvm/ADT/StringExtras.h"
 
 using namespace M;
 using namespace KGEN;
