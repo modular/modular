@@ -8,14 +8,14 @@
 from tensor import TensorSpec
 from utils.variant import Variant
 
-import mlir
+import _mlir
 
 from .module import Module
-from . import _capi as capi
+import ._c
 
 
 fn _dyn() -> Int64:
-    return capi.dim_type_new_dynamic()
+    return _c.dim_type_new_dynamic()
 
 
 @value
@@ -274,47 +274,47 @@ struct Dim(CollectionElement):
         """
         return not (self == other)
 
-    fn to_mlir(self, m: Module) -> mlir.Attribute:
-        """Creates an mlir.Attribute representing this dimension.
+    fn to_mlir(self, m: Module) -> _mlir.Attribute:
+        """Creates an _mlir.Attribute representing this dimension.
 
-        This is used internally when constructing tensor MLIR types.
+        This is used internally when constructing tensor _mlir types.
 
         Args:
-            m: A Module instance holding an mlir.Context.
+            m: A Module instance holding an _mlir.Context.
 
         Returns:
-            A mlir.Attribute in the Module's context representing the dimension.
+            A _mlir.Attribute in the Module's context representing the dimension.
         """
 
         let ctx = m._module.context()
         if self.value.isa[DynamicDim]():
-            return capi.dim_new_dynamic(ctx)
+            return _c.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
             let name = self.value.get[SymbolicDim]().name
-            let result = capi.dim_new_symbolic(ctx, name._strref_dangerous())
+            let result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
             name._strref_keepalive()
             return result
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
             let dim = self.value.get[StaticDim]().dim
-            return capi.dim_new_static(ctx, dim)
+            return _c.dim_new_static(ctx, dim)
 
 
 trait MOType:
-    """An internal helper trait for MLIR construction.
+    """An internal helper trait for _mlir construction.
 
     MOTypes have methods to help us convert between our structured types
-    and their MLIR representations.
+    and their _mlir representations.
     """
 
-    fn to_mlir(self, m: Module) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+    fn to_mlir(self, m: Module) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An _mlir.Type in the specified Context.
         """
         ...
 
@@ -341,16 +341,16 @@ struct ElementType(MOType):
     var dtype: DType
     """The underlying dtype."""
 
-    fn to_mlir(self, m: Module) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+    fn to_mlir(self, m: Module) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An _mlir.Type in the specified Context.
         """
-        return capi.dtype_new(m._module, self.dtype)
+        return _c.dtype_new(m._module, self.dtype)
 
     fn to_string(self, m: Module) -> String:
         """Converts to a maybe-human-readable string.
@@ -467,19 +467,19 @@ struct MOTensor(MOType, CollectionElement):
     # MOType trait
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+    fn to_mlir(self, m: Module) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An _mlir.Type in the specified Context.
         """
-        var dims = DynamicVector[mlir.Attribute](capacity=len(self.dims))
+        var dims = DynamicVector[_mlir.Attribute](capacity=len(self.dims))
         for i in range(len(self.dims)):
             dims.append(self.dims[i].to_mlir(m))
-        return capi.tensor_type_new(
+        return _c.tensor_type_new(
             m._module,
             self.dtype.to_mlir(m),
             dims,
@@ -498,32 +498,32 @@ struct MOTensor(MOType, CollectionElement):
         return str(self.to_mlir(m))
 
     @staticmethod
-    fn from_mlir(t: mlir.Type) raises -> Self:
-        """Constructs a tensor type from an MLIR type.
+    fn from_mlir(t: _mlir.Type) raises -> Self:
+        """Constructs a tensor type from an _mlir type.
 
         Args:
-            t: The mlir Type object to parse into a tensor type.
+            t: The _mlir Type object to parse into a tensor type.
 
         Returns:
-            The tensor type represented by the mlir Type value.
+            The tensor type represented by the _mlir Type value.
         """
-        let dtype = capi.tensor_type_get_dtype(t)
-        let ranked = capi.tensor_type_is_ranked(t)
+        let dtype = _c.tensor_type_get_dtype(t)
+        let ranked = _c.tensor_type_is_ranked(t)
         if ranked:
-            let rank = capi.tensor_type_get_rank(t)
+            let rank = _c.tensor_type_get_rank(t)
             var dims = DynamicVector[Dim](capacity=rank.to_int())
             for i in range(rank):
-                let dim_attr = capi.tensor_type_get_dim(t, i)
+                let dim_attr = _c.tensor_type_get_dim(t, i)
                 let dim: Dim
-                if capi.dim_is_dynamic(dim_attr):
+                if _c.dim_is_dynamic(dim_attr):
                     dim = Dim.dynamic()
-                elif capi.dim_is_static(dim_attr):
-                    dim = Dim.static(capi.dim_static_value(dim_attr))
-                elif capi.dim_is_symbolic(dim_attr):
-                    dim = Dim.symbolic(str(capi.dim_symbolic_name(dim_attr)))
+                elif _c.dim_is_static(dim_attr):
+                    dim = Dim.static(_c.dim_static_value(dim_attr))
+                elif _c.dim_is_symbolic(dim_attr):
+                    dim = Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
                 else:
                     debug_assert(
-                        capi.dim_is_symbolic_expression(dim_attr),
+                        _c.dim_is_symbolic_expression(dim_attr),
                         "unknown dim variant",
                     )
                     raise "Unsupported dim type: symbolic expression"
@@ -668,16 +668,16 @@ struct MOList(MOType, CollectionElement):
     # MOType trait
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+    fn to_mlir(self, m: Module) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An _mlir.Type in the specified Context.
         """
-        return capi.list_type_new(m._module, self.eltype.to_mlir(m))
+        return _c.list_type_new(m._module, self.eltype.to_mlir(m))
 
     fn to_string(self, m: Module) -> String:
         """Converts to a maybe-human-readable string.
@@ -751,14 +751,14 @@ struct AnyMOType(MOType, CollectionElement):
             raise "Not a tensor type!"
         return self.type.get[MOTensor]()
 
-    fn to_mlir(self, m: Module) -> mlir.Type:
-        """Converts to an mlir.Type instance.
+    fn to_mlir(self, m: Module) -> _mlir.Type:
+        """Converts to an _mlir.Type instance.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            An mlir.Type in the specified Context.
+            An _mlir.Type in the specified Context.
         """
         if self.type.isa[MOTensor]():
             return self.type.get[MOTensor]().to_mlir(m)
@@ -767,22 +767,20 @@ struct AnyMOType(MOType, CollectionElement):
             return self.type.get[MOList]().to_mlir(m)
 
     @staticmethod
-    fn from_mlir(t: mlir.Type) raises -> Self:
-        """Constructs a type from an MLIR type.
+    fn from_mlir(t: _mlir.Type) raises -> Self:
+        """Constructs a type from an _mlir type.
 
         Args:
-            t: The mlir Type object to parse into a type.
+            t: The _mlir Type object to parse into a type.
 
         Returns:
-            The type represented by the mlir Type value.
+            The type represented by the _mlir Type value.
         """
-        if capi.type_is_list(t):
-            let element_type = MOTensor.from_mlir(
-                capi.list_type_element_type(t)
-            )
+        if _c.type_is_list(t):
+            let element_type = MOTensor.from_mlir(_c.list_type_element_type(t))
             return Self(MOList(element_type))
         else:
-            debug_assert(capi.type_is_tensor(t), "MO type variants")
+            debug_assert(_c.type_is_tensor(t), "MO type variants")
             return Self(MOTensor.from_mlir(t))
 
     fn to_string(self, m: Module) -> String:
@@ -858,19 +856,19 @@ struct TypeTuple(Sized):
         return len(self.elts)
 
     # ===------------------------------------------------------------------=== #
-    # MLIR conversion
+    # _mlir conversion
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> DynamicVector[mlir.Type]:
-        """Converts to a sequence of mlir.Type instances.
+    fn to_mlir(self, m: Module) -> DynamicVector[_mlir.Type]:
+        """Converts to a sequence of _mlir.Type instances.
 
         Args:
-            m: The Module object holding an mlir.Context to create in.
+            m: The Module object holding an _mlir.Context to create in.
 
         Returns:
-            A list of mlir.Types representing the tuple's types.
+            A list of _mlir.Types representing the tuple's types.
         """
-        var retval = DynamicVector[mlir.Type]()
+        var retval = DynamicVector[_mlir.Type]()
         for i in range(len(self.elts)):
             retval.append(self.elts[i].to_mlir(m))
         return retval

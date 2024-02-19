@@ -8,7 +8,7 @@ from collections.optional import Optional
 from memory.unsafe import _LITRef
 from tensor import Tensor, TensorShape, TensorSpec
 
-import mlir
+import _mlir
 
 from .attr import AttrMap
 from .graph import Graph
@@ -33,7 +33,7 @@ from .ops import add, div, matmul, mul, pow, sub, transpose
 
 @value
 struct Symbol(CollectionElement, Stringable):
-    var _value: mlir.Value
+    var _value: _mlir.Value
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
@@ -41,11 +41,11 @@ struct Symbol(CollectionElement, Stringable):
 
     fn graph(self) -> Graph:
         let parent = self._value.parent()
-        let block: mlir.Block
-        if parent.isa[mlir.Block]():
-            block = parent.get[mlir.Block]()
+        let block: _mlir.Block
+        if parent.isa[_mlir.Block]():
+            block = parent.get[_mlir.Block]()
         else:
-            let op = parent.get[mlir.Operation]()
+            let op = parent.get[_mlir.Operation]()
             block = op.block()
 
         let graph_op = block.parent()
@@ -392,8 +392,8 @@ struct SymbolTuple(Sized):
     fn __getitem__(self, idx: Int) -> Symbol:
         return self.symbols[idx]
 
-    fn as_values(self) -> DynamicVector[mlir.Value]:
-        var values = DynamicVector[mlir.Value]()
+    fn as_values(self) -> DynamicVector[_mlir.Value]:
+        var values = DynamicVector[_mlir.Value]()
         for i in range(len(self.symbols)):
             values.append(self.symbols[i]._value)
         return values

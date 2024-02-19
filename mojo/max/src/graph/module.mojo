@@ -5,29 +5,27 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor import Tensor
-
-import mlir
-from mlir.builtin_attributes import StringAttr
-from mlir.builtin_types import FunctionType
 from pathlib import Path
 
+import _mlir
+
 from .type import MOTensor, TypeTuple
-from . import _capi as capi
+import ._c
 
 
 @value
 struct Module(Stringable):
-    var _module: mlir.Module
+    var _module: _mlir.Module
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self):
-        var ctx = mlir.Context()
+        var ctx = _mlir.Context()
         ctx.load_modular_dialects()
         ctx.load_all_available_dialects()
-        self._module = mlir.Module(mlir.Location.unknown(ctx))
+        self._module = _mlir.Module(_mlir.Location.unknown(ctx))
 
     fn __str__(self) -> String:
         return str(self._module)
@@ -48,8 +46,8 @@ struct Module(Stringable):
     # Location factories
     # ===------------------------------------------------------------------=== #
 
-    fn unknown_loc(self) -> mlir.Location:
-        return mlir.Location.unknown(self._module.context())
+    fn unknown_loc(self) -> _mlir.Location:
+        return _mlir.Location.unknown(self._module.context())
 
     # ===------------------------------------------------------------------=== #
     # Attribute factories
@@ -57,9 +55,11 @@ struct Module(Stringable):
 
     fn tensor_attr[
         dtype: DType
-    ](self, name: StringRef, owned value: Tensor[dtype]) -> mlir.NamedAttribute:
+    ](
+        self, name: StringRef, owned value: Tensor[dtype]
+    ) -> _mlir.NamedAttribute:
         let t = MOTensor(value.spec()).to_mlir(self)
-        return capi.attr_new_tensor(
+        return _c.attr_new_tensor(
             self._module,
             name,
             value._steal_ptr().bitcast[DType.invalid](),
@@ -69,8 +69,8 @@ struct Module(Stringable):
 
     fn tensor_resource_attr(
         self, name: StringRef, file_name: StringRef, type: MOTensor
-    ) -> mlir.NamedAttribute:
-        return capi.attr_new_tensor_from_file(
+    ) -> _mlir.NamedAttribute:
+        return _c.attr_new_tensor_from_file(
             self._module, name, file_name, type.to_mlir(self)
         )
 
@@ -78,8 +78,8 @@ struct Module(Stringable):
         dtype: DType
     ](
         self, name: StringRef, values: DynamicVector[Scalar[dtype]]
-    ) -> mlir.NamedAttribute:
-        return capi.attr_new_tensor(
+    ) -> _mlir.NamedAttribute:
+        return _c.attr_new_tensor(
             self._module,
             name,
             values,
@@ -91,7 +91,7 @@ struct Module(Stringable):
         dtype: DType
     ](
         self, name: StringRef, value: Scalar[dtype], rank: Int = 0
-    ) raises -> mlir.NamedAttribute:
+    ) raises -> _mlir.NamedAttribute:
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
         var shape = DynamicVector[Int](capacity=rank)
@@ -101,11 +101,11 @@ struct Module(Stringable):
 
     fn string_attr(
         self, name: StringRef, value: StringRef
-    ) -> mlir.NamedAttribute:
+    ) -> _mlir.NamedAttribute:
         let ctx = self._module.context()
-        return mlir.NamedAttribute(
-            name=mlir.Identifier(ctx, name),
-            attr=StringAttr(ctx, value),
+        return _mlir.NamedAttribute(
+            name=_mlir.Identifier(ctx, name),
+            attr=_mlir.builtin_attributes.StringAttr(ctx, value),
         )
 
     # ===------------------------------------------------------------------=== #
@@ -116,12 +116,16 @@ struct Module(Stringable):
         self, name: StringRef, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
         let ctx = self._module.context()
-        let loc = mlir.Location.unknown(ctx)
+        let loc = _mlir.Location.unknown(ctx)
 
-        let function_type = FunctionType(
-            ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+        let op = _c.graph_new(
+            self._module,
+            loc,
+            name,
+            _mlir.builtin_types.FunctionType(
+                ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+            ),
         )
-        let op = capi.graph_new(self._module, loc, name, function_type)
 
         return Graph(op)
 

@@ -17,6 +17,8 @@ compiled and executed by MAX Engine, for example using the MAX Engine API.
 
 from collections import Optional
 
+import _mlir
+
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
@@ -30,18 +32,18 @@ from .type import MOList, MOType, MOTensor, TypeTuple
 struct Graph(CollectionElement):
     """Represents a single MAX graph."""
 
-    var _op: mlir.Operation
+    var _op: _mlir.Operation
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
 
-    fn _body(self) raises -> mlir.Block:
+    fn _body(self) raises -> _mlir.Block:
         return self._op.region(0).first_block()
 
     fn module(self) raises -> Module:
         """Returns the `Module` containing this `Graph`."""
-        return Module(mlir.Module.from_op(self._op.parent()))
+        return Module(_mlir.Module.from_op(self._op.parent()))
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
@@ -104,9 +106,9 @@ struct Graph(CollectionElement):
         # TODO: Add input verification.
         let ctx = self._op.context()
 
-        let op = mlir.Operation(
+        let op = _mlir.Operation(
             name=name,
-            location=mlir.Location.unknown(ctx),
+            location=_mlir.Location.unknown(ctx),
             operands=inputs.as_values(),
             results=out_types.to_mlir(self.module()),
             attributes=attrs.attrs,
@@ -178,7 +180,7 @@ struct Graph(CollectionElement):
     fn constant[
         dtype: DType = DType.float32
     ](self, owned value: Tensor[dtype]) raises -> Symbol:
-        """Creates a node representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with the same
         shape and dtype as `value`.
@@ -201,7 +203,7 @@ struct Graph(CollectionElement):
     fn vector[
         dtype: DType = DType.float32
     ](self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
-        """Creates a node representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with 1D shape,
         consistent with the size of `values`.
@@ -224,7 +226,7 @@ struct Graph(CollectionElement):
     fn scalar[
         dtype: DType = DType.float32
     ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
-        """Creates a node representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type scalar `MOTensor`
         (0D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
@@ -250,7 +252,7 @@ struct Graph(CollectionElement):
     ](
         self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
-        """Creates a node representing a `mo.range` operation.
+        """Adds a node representing a `mo.range` operation.
 
         Params:
             dtype: The output tensor's element type.
@@ -274,7 +276,7 @@ struct Graph(CollectionElement):
         )
 
     fn output(self, outs: SymbolTuple) raises:
-        """Creates a node representing a `mo.output` operation.
+        """Adds a node representing a `mo.output` operation.
 
         This is a special node that all `Graph`s must have. The inputs must
         match the `Graph`s signature (specifically, its return values).

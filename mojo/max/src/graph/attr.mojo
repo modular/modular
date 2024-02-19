@@ -4,19 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import mlir
+import _mlir
 
 
 @value
 struct AttrMap(Sized):
-    var attrs: DynamicVector[mlir.NamedAttribute]
+    var attrs: DynamicVector[_mlir.NamedAttribute]
 
     # ===------------------------------------------------------------------=== #
     # Basic constructors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, *attrs: mlir.NamedAttribute):
-        self.attrs = DynamicVector[mlir.NamedAttribute]()
+    fn __init__(inout self, *attrs: _mlir.NamedAttribute):
+        self.attrs = DynamicVector[_mlir.NamedAttribute]()
         for attr in attrs:
             self.attrs.append(attr[])
 

@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """List operations.
 
-Note: All the helpers in this module are documented as "creates <foo>". This is
-a shorthnd notation for "creates a node representing an op that returns <foo>",
-used for the sake of brevity.
+Note: All the helpers in this module are documented as "Creates <foo>". This is
+a shorthand notation for "Adds a node representing an op that returns <foo>".
 """
 
 from collections import Optional
