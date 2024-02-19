@@ -27,7 +27,7 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
 
     fn run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
         var packed_result = Q4sym[group_size, DType.float32](input_vec)
-        let decoded_result = packed_result.decode_fully()
+        var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)
         print("fakeq_result     :", decoded_result)
         print("abs-err          :", input_vec - decoded_result)
@@ -39,8 +39,8 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
             (input_vec - decoded_result) * (input_vec - decoded_result)
         ).reduce_add()
         l2_norm_err = l2_norm_err**0.5
-        let l2_norm_input = (input_vec * input_vec).reduce_add() ** 0.5
-        let rel_l2_norm = l2_norm_err / l2_norm_input
+        var l2_norm_input = (input_vec * input_vec).reduce_add() ** 0.5
+        var rel_l2_norm = l2_norm_err / l2_norm_input
         print("rel-l2-norm      :", rel_l2_norm)
 
         return rel_l2_norm < tolerance
@@ -60,17 +60,17 @@ fn test_fake_quant_error[l2_tolerance: FloatLiteral]():
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
-    let g8_result = _run_test_quant[8, l2_tolerance]()
+    var g8_result = _run_test_quant[8, l2_tolerance]()
     print("G08 PASS" if g8_result else "FAIL")
     print()
 
     print("********** GROUP SIZE 16 **********")
-    let g16_result = _run_test_quant[16, l2_tolerance]()
+    var g16_result = _run_test_quant[16, l2_tolerance]()
     print("G16 PASS" if g16_result else "FAIL")
     print()
 
     print("********** GROUP SIZE 32 **********")
-    let g32_result = _run_test_quant[32, l2_tolerance]()
+    var g32_result = _run_test_quant[32, l2_tolerance]()
     print("------------test_fake_quant_error------------")
     print("G32 PASS" if g32_result else "FAIL")
     print()
@@ -131,7 +131,7 @@ fn _read_write_to_tensors[
 
     # Allocate and populate tensor to encode
     # Buffer with the original data
-    let data_matrix = NDBuffer[
+    var data_matrix = NDBuffer[
         DType.float32,
         rank,
         DimList(num_elements),
@@ -143,12 +143,12 @@ fn _read_write_to_tensors[
     constrained[num_elements % group_size == 0]()
     alias num_blocks = div_ceil(num_elements, group_size)
     alias block_size = sizeof[Q4sym[group_size]]()
-    let packed_blob = NDBuffer[
+    var packed_blob = NDBuffer[
         DType.uint8, rank, DimList(num_blocks * block_size)
     ].stack_allocation()
 
     # Tensor to store the dequantized data
-    let out_data_matrix = NDBuffer[
+    var out_data_matrix = NDBuffer[
         DType.float32,
         1,
         DimList(num_elements),
@@ -156,9 +156,9 @@ fn _read_write_to_tensors[
     for i in range(num_elements):
         out_data_matrix[i] = 0
 
-    let rebound_data_matrix = rebind[NDBuffer[DType.float32, rank]](data_matrix)
-    let rebound_packed_block = rebind[NDBuffer[DType.uint8, rank]](packed_blob)
-    let rebound_out_data_matrix = rebind[NDBuffer[DType.float32, rank]](
+    var rebound_data_matrix = rebind[NDBuffer[DType.float32, rank]](data_matrix)
+    var rebound_packed_block = rebind[NDBuffer[DType.uint8, rank]](packed_blob)
+    var rebound_out_data_matrix = rebind[NDBuffer[DType.float32, rank]](
         out_data_matrix
     )
 
@@ -177,10 +177,10 @@ fn _read_write_to_tensors[
     var allClose: Bool = True
     # See if it prints the correct results!
     for i in range(num_elements):
-        let localRDiff = abs(
+        var localRDiff = abs(
             (data_matrix[i] - out_data_matrix[i]) / (data_matrix[i] + 1e-10)
         )
-        let acceptableErr = abs(data_matrix[i] * rtol) + atol
+        var acceptableErr = abs(data_matrix[i] * rtol) + atol
         print(
             "fake-quantized:",
             out_data_matrix[i],
@@ -197,17 +197,17 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
     print("------------test_fake_quant_error------------")
 
     print("********** GROUP SIZE 08 **********")
-    let g8_result = _read_write_to_tensors[8, rtol, atol]()
+    var g8_result = _read_write_to_tensors[8, rtol, atol]()
     print("G08 PASS" if g8_result else "FAIL")
     print()
 
     print("********** GROUP SIZE 16 **********")
-    let g16_result = _read_write_to_tensors[16, rtol, atol]()
+    var g16_result = _read_write_to_tensors[16, rtol, atol]()
     print("G16 PASS" if g8_result else "FAIL")
     print()
 
     print("********** GROUP SIZE 32 **********")
-    let g32_result = _read_write_to_tensors[32, rtol, atol]()
+    var g32_result = _read_write_to_tensors[32, rtol, atol]()
     print("G32 PASS" if g8_result else "FAIL")
     print()
 
