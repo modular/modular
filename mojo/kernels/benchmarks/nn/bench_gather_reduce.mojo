@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from NN.GatherScatter import gather, gather_reduce
-from random import random_si64
-from runtime.llcl import Runtime
 from math import add
-from utils.index import Index
+from random import random_si64
+
 from memory.buffer import NDBuffer
-from mojobench import MojoBench, Bencher, BenchId
+from mojobench import Bencher, BenchId, MojoBench
+from NN.GatherScatter import gather, gather_reduce
+from runtime.llcl import Runtime
+
+from utils.index import Index
 
 
 @parameter

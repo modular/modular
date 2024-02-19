@@ -8,8 +8,9 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-from algorithm.functional import vectorize
 from random import rand
+
+from algorithm.functional import vectorize
 from benchmark import Unit, run
 
 alias type = DType.uint8

@@ -11,15 +11,16 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from builtin.io import _printf
-from utils.index import Index
-from tensor import Tensor
+from math import abs, iota
+from sys.info import num_physical_cores, simdwidthof
+
 from algorithm import parallelize, vectorize
-from math import iota
+from benchmark import keep, run
+from builtin.io import _printf
 from complex import ComplexSIMD
-from benchmark import run, keep
-from sys.info import simdwidthof, num_physical_cores
-from math import abs
+from tensor import Tensor
+
+from utils.index import Index
 
 alias float_type = DType.float64
 alias int_type = DType.index

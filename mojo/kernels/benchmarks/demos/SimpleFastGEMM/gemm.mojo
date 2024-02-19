@@ -6,13 +6,15 @@
 
 # Meant to be run on an AVX512 system
 
-import benchmark
-from memory.unsafe import DTypePointer
-from utils.list import Dim, DimList
-from memory.buffer import Buffer, NDBuffer
-from utils.index import Index
 from sys.intrinsics import PrefetchOptions
+
+import benchmark
 from algorithm import unroll
+from memory.buffer import Buffer, NDBuffer
+from memory.unsafe import DTypePointer
+
+from utils.index import Index
+from utils.list import Dim, DimList
 
 alias mr = 6
 alias nr = 64

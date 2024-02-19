@@ -4,6 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import div_ceil
+from random import rand
+from sys import argv
+from sys.param_env import env_get_string
+
+from benchmark import keep
+from memory.buffer import NDBuffer
+from mojobench import *
 from NN.Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -11,21 +19,14 @@ from NN.Conv import (
     pack_filter,
 )
 from NN.ConvUtils import (
+    ConvShape,
     append_shape,
     extend_shape,
     get_direct_conv_micro_kernel_width,
-    ConvShape,
 )
-from memory.buffer import NDBuffer
-from utils.index import Index
-
-from math import div_ceil
-from mojobench import *
-from benchmark import keep
 from testing import assert_almost_equal
-from random import rand
-from sys import argv
-from sys.param_env import env_get_string
+
+from utils.index import Index
 
 
 fn bench_conv(inout m: MojoBench, spec: ConvSpec) raises:

@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from mojobench import MojoBench, Bencher, BenchId
-from benchmark import keep
 from math import *
-from math.math import _simd_apply, _exp_taylor
+from math.math import _exp_taylor, _simd_apply
+
 from algorithm.functional import vectorize
+from benchmark import keep
+from mojobench import Bencher, BenchId, MojoBench
 
 
 fn apply[

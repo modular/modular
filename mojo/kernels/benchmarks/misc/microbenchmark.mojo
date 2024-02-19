@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import max, min
 import time
-from math.limit import min_finite, max_finite
 from collections.vector import InlinedFixedVector
+from math import max, min
+from math.limit import max_finite, min_finite
 
 
 trait Benchmarkable:

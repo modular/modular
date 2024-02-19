@@ -6,10 +6,12 @@
 
 # Meant to be run on an AVX512 system
 
-from memory.unsafe import DTypePointer
-from utils.list import Dim, DimList
-from memory.buffer import Buffer, NDBuffer
 from sys.intrinsics import PrefetchOptions
+
+from memory.buffer import Buffer, NDBuffer
+from memory.unsafe import DTypePointer
+
+from utils.list import Dim, DimList
 
 alias mr = 6
 alias nr = 64

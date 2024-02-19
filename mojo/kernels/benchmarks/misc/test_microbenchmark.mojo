@@ -4,17 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
 import time
-from microbenchmark import Benchmarkable
-import microbenchmark
-from random import seed, random_si64
-from memory.unsafe import DTypePointer, bitcast
+from random import random_si64, seed
 from sys.info import sizeof
+from time import now
+
+import microbenchmark
+from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer, bitcast
+from microbenchmark import Benchmarkable
+
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from time import now
 
 alias alignment = 64
 

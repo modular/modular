@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from random import rand
+
+from benchmark import keep
 from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from memory.buffer import NDBuffer
-from utils.index import Index
-
 from mojobench import *
-from benchmark import keep
 from testing import assert_almost_equal
-from random import rand
+
+from utils.index import Index
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):
