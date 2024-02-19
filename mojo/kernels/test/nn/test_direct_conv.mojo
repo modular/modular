@@ -56,11 +56,11 @@ fn test[
     print("== test_direct_conv")
 
     # fmt: off
-    let HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[0] + 1
-    let WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[1] + 1
+    var HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[0] + 1
+    var WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
 
-    let conv_shape = ConvShape[2] {
+    var conv_shape = ConvShape[2] {
         n: N,
         input_dims: Index(H, W),
         output_dims: Index(HO, WO),
@@ -75,10 +75,10 @@ fn test[
         num_groups: num_groups,
     }
 
-    let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
-    let output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
-    let output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    var input_ptr = DTypePointer[type].alloc(N * H * W * C)
+    var filter_ptr = DTypePointer[type].alloc(R * S * C * F)
+    var output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    var output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
 
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
@@ -87,28 +87,28 @@ fn test[
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    let num_threads = num_physical_cores()
-    let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
-    let num_partitions = get_conv_num_partitions[
+    var num_threads = num_physical_cores()
+    var num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+    var num_partitions = get_conv_num_partitions[
         micro_kernel_height, micro_kernel_width * simd_size
     ](num_tasks, conv_shape)
 
     # Rounded C and F size for pre-packed filter.
-    let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
+    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
+    var rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    let input = NDBuffer[type, 4](input_ptr, Index(N, H, W, C))
-    let filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C // num_groups, F))
-    let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    let packed_filter_ptr = DTypePointer[type].alloc(
+    var input = NDBuffer[type, 4](input_ptr, Index(N, H, W, C))
+    var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C // num_groups, F))
+    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+    var packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[type, 5, DimList.create_unknown[5]()](
+    var packed_filter = NDBuffer[type, 5, DimList.create_unknown[5]()](
         packed_filter_ptr,
         packed_filter_shape,
     )
-    let output = NDBuffer[type, 4](output_ptr, Index(N, HO, WO, F))
-    let output_ref = NDBuffer[type, 4](output_ref_ptr, Index(N, HO, WO, F))
+    var output = NDBuffer[type, 4](output_ptr, Index(N, HO, WO, F))
+    var output_ref = NDBuffer[type, 4](output_ref_ptr, Index(N, HO, WO, F))
 
     @parameter
     if filter_packed:

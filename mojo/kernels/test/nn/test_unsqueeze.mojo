@@ -18,7 +18,7 @@ from utils.list import DimList
 fn test_calculate_unsqueeze_shape():
     print("== test_calculate_unsqueeze_shape")
 
-    let data_matrix = NDBuffer[
+    var data_matrix = NDBuffer[
         DType.index,
         1,
         DimList(2),
@@ -28,7 +28,7 @@ fn test_calculate_unsqueeze_shape():
 
     # Main thing is indices not sorted.
     # Final shape should be [1, 1, 10, 1, 11, 1]
-    let padding_indices = NDBuffer[
+    var padding_indices = NDBuffer[
         DType.index,
         1,
         DimList(4),
@@ -38,7 +38,7 @@ fn test_calculate_unsqueeze_shape():
     padding_indices[StaticIntTuple[1](2)] = -6  # same as index 0
     padding_indices[StaticIntTuple[1](3)] = 5
 
-    let final_shape = NDBuffer[
+    var final_shape = NDBuffer[
         DType.index,
         1,
         DimList(6),

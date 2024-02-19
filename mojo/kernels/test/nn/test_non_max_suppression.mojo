@@ -35,10 +35,10 @@ struct BoxCoords[type: DType]:
 fn fill_boxes[
     type: DType
 ](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> Tensor[type]:
-    let num_boxes = len(box_list) // batch_size
+    var num_boxes = len(box_list) // batch_size
     var boxes = Tensor[type](batch_size, num_boxes, 4)
     for i in range(len(box_list)):
-        let coords = linear_offset_to_coords[2](
+        var coords = linear_offset_to_coords[2](
             i, TensorShape(batch_size, num_boxes)
         )
         boxes[Index(coords[0], coords[1], 0)] = box_list[i].y1
@@ -66,12 +66,12 @@ fn fill_scores[
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[SIMD[type, 1]]
 ) -> Tensor[type]:
-    let num_boxes = len(scores_list) // batch_size // num_classes
+    var num_boxes = len(scores_list) // batch_size // num_classes
 
-    let shape = TensorShape(batch_size, num_classes, num_boxes)
+    var shape = TensorShape(batch_size, num_classes, num_boxes)
     var scores = Tensor[type](shape)
     for i in range(len(scores_list)):
-        let coords = linear_offset_to_coords[3](i, shape)
+        var coords = linear_offset_to_coords[3](i, shape)
         scores[coords] = scores_list[i]
 
     return scores
@@ -89,17 +89,17 @@ fn test_case[
     box_list: VariadicList[BoxCoords[type]],
     scores_list: VariadicList[SIMD[type, 1]],
 ):
-    let boxes = fill_boxes[type](batch_size, box_list)
-    let scores = fill_scores[type](batch_size, num_classes, scores_list)
+    var boxes = fill_boxes[type](batch_size, box_list)
+    var scores = fill_scores[type](batch_size, num_classes, scores_list)
 
-    let shape = non_max_suppression_shape_func(
+    var shape = non_max_suppression_shape_func(
         boxes._to_ndbuffer[3](),
         scores._to_ndbuffer[3](),
         max_output_boxes_per_class,
         iou_threshold,
         score_threshold,
     )
-    let selected_idxs = Tensor[DType.int64](shape[0], shape[1])
+    var selected_idxs = Tensor[DType.int64](shape[0], shape[1])
     non_max_suppression(
         boxes._to_ndbuffer[3](),
         scores._to_ndbuffer[3](),
@@ -126,7 +126,7 @@ fn test_case[
 fn main():
     fn test_no_score_threshold():
         print("== test_no_score_threshold")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -134,7 +134,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -142,7 +142,7 @@ fn main():
 
     fn test_flipped_coords():
         print("== test_flipped_coords")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](1.0, 1.0, 0.0, 0.0),
             BoxCoords[DType.float32](1.0, 1.1, 0.0, 0.1),
             BoxCoords[DType.float32](1.0, 0.9, 0.0, -0.1),
@@ -150,7 +150,7 @@ fn main():
             BoxCoords[DType.float32](1.0, 11.1, 0.0, 10.1),
             BoxCoords[DType.float32](1.0, 101.0, 0.0, 100.0),
         )
-        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -158,7 +158,7 @@ fn main():
 
     fn test_reflect_over_yx():
         print("== test_reflect_over_yx")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](-1.0, -1.0, 0.0, 0.0),
             BoxCoords[DType.float32](-1.0, -1.1, 0.0, -0.1),
             BoxCoords[DType.float32](-1.0, -0.9, 0.0, 0.1),
@@ -166,7 +166,7 @@ fn main():
             BoxCoords[DType.float32](-1.0, -11.1, 0.0, -10.1),
             BoxCoords[DType.float32](-1.0, -101.0, 0.0, -100.0),
         )
-        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -174,7 +174,7 @@ fn main():
 
     fn test_score_threshold():
         print("== test_score_threshold")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -182,7 +182,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.4), 3, box_list, scores_list
@@ -190,7 +190,7 @@ fn main():
 
     fn test_limit_outputs():
         print("== test_limit_outputs")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -198,7 +198,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -206,10 +206,10 @@ fn main():
 
     fn test_single_box():
         print("== test_single_box")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
         )
-        let scores_list = VariadicList[Float32](0.9)
+        var scores_list = VariadicList[Float32](0.9)
 
         test_case[DType.float32](
             1, 1, 1, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -217,7 +217,7 @@ fn main():
 
     fn test_two_classes():
         print("== test_two_classes")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -225,7 +225,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[Float32](
+        var scores_list = VariadicList[Float32](
             0.9,
             0.75,
             0.6,
@@ -246,7 +246,7 @@ fn main():
 
     fn test_two_batches():
         print("== test_two_batches")
-        let box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = VariadicList[BoxCoords[DType.float32]](
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -260,7 +260,7 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
         )
-        let scores_list = VariadicList[Float32](
+        var scores_list = VariadicList[Float32](
             0.9,
             0.75,
             0.6,

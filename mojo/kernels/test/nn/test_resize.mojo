@@ -56,7 +56,7 @@ def main():
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
-        let output = Tensor[type](1, 1, 4, 6)
+        var output = Tensor[type](1, 1, 4, 6)
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
@@ -72,7 +72,7 @@ def main():
         linear_fill[type](
             input, VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8)
         )
-        let output = Tensor[type](1, 1, 1, 2)
+        var output = Tensor[type](1, 1, 1, 2)
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
@@ -92,7 +92,7 @@ def main():
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        let output = Tensor[type](1, 1, 1, 2)
+        var output = Tensor[type](1, 1, 1, 2)
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel1D, RoundMode.HalfDown
@@ -107,7 +107,7 @@ def main():
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
-        let output = Tensor[type](1, 1, 7, 8)
+        var output = Tensor[type](1, 1, 7, 8)
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
@@ -127,7 +127,7 @@ def main():
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        let output = Tensor[type](1, 1, 8, 8)
+        var output = Tensor[type](1, 1, 8, 8)
 
         test_case_nearest[
             4, CoordinateTransformationMode.AlignCorners, RoundMode.Floor
@@ -147,7 +147,7 @@ def main():
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        let output = Tensor[type](1, 1, 8, 8)
+        var output = Tensor[type](1, 1, 8, 8)
 
         test_case_nearest[
             4, CoordinateTransformationMode.Asymmetric, RoundMode.HalfUp
@@ -167,7 +167,7 @@ def main():
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        let output = Tensor[type](1, 1, 8, 8)
+        var output = Tensor[type](1, 1, 8, 8)
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.Ceil
@@ -185,7 +185,7 @@ def main():
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4),
         )
-        let output = Tensor[type](1, 1, 4, 4)
+        var output = Tensor[type](1, 1, 4, 4)
         var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
@@ -231,7 +231,7 @@ def main():
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4),
         )
-        let output = Tensor[type](1, 1, 4, 4)
+        var output = Tensor[type](1, 1, 4, 4)
         var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
@@ -277,7 +277,7 @@ def main():
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
         )
-        let output = Tensor[type](1, 1, 1, 2)
+        var output = Tensor[type](1, 1, 1, 2)
         var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
@@ -303,7 +303,7 @@ def main():
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
         )
-        let output = Tensor[type](1, 1, 1, 2)
+        var output = Tensor[type](1, 1, 1, 2)
         var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
@@ -331,7 +331,7 @@ def main():
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        let output = Tensor[type](1, 6, 4, 4)
+        var output = Tensor[type](1, 6, 4, 4)
         var reference = Tensor[type](1, 6, 4, 4)
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 2, 2))
@@ -377,7 +377,7 @@ def main():
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        let output = Tensor[type](1, 1, 2, 2)
+        var output = Tensor[type](1, 1, 2, 2)
         var reference = Tensor[type](1, 1, 2, 2)
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 4))

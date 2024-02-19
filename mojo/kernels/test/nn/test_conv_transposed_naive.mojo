@@ -30,20 +30,20 @@ fn test_convtranspose_pads():
     print("== test_convtranspose_pads")
     alias type = DType.float32
 
-    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
     for i in range(9):
         input.data[i] = i
 
-    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
     filter.fill(1.0)
 
-    let output = NDBuffer[type, 5, DimList(1, 1, 7, 3, 2)].stack_allocation()
+    var output = NDBuffer[type, 5, DimList(1, 1, 7, 3, 2)].stack_allocation()
 
-    let stride = Index(1, 3, 2)
-    let dilation = Index(1, 1, 1)
-    let pad_d = Index(0, 0)
-    let pad_h = Index(1, 1)
-    let pad_w = Index(2, 2)
+    var stride = Index(1, 3, 2)
+    var dilation = Index(1, 1, 1)
+    var pad_d = Index(0, 0)
+    var pad_h = Index(1, 1)
+    var pad_w = Index(2, 2)
 
     conv_transpose_naive[type](
         output.make_dims_unknown(),
@@ -81,20 +81,20 @@ fn test_convtranspose():
     print("== test_convtranspose")
     alias type = DType.float32
 
-    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
     for i in range(9):
         input.data[i] = i
 
-    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
     filter.fill(1.0)
 
-    let output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 2)].stack_allocation()
+    var output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 2)].stack_allocation()
 
-    let stride = Index(1, 1, 1)
-    let dilation = Index(1, 1, 1)
-    let pad_d = Index(0, 0)
-    let pad_h = Index(0, 0)
-    let pad_w = Index(0, 0)
+    var stride = Index(1, 1, 1)
+    var dilation = Index(1, 1, 1)
+    var pad_d = Index(0, 0)
+    var pad_h = Index(0, 0)
+    var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
         output.make_dims_unknown(),
@@ -127,7 +127,7 @@ fn test_convtranspose_dilation():
     print("== test_convtranspose_dilation")
     alias type = DType.float32
 
-    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
     input.data[0] = 3
     input.data[1] = 8
     input.data[2] = 1
@@ -138,18 +138,18 @@ fn test_convtranspose_dilation():
     input.data[7] = 2
     input.data[8] = 6
 
-    let filter = NDBuffer[type, 5, DimList(1, 2, 2, 1, 1)].stack_allocation()
+    var filter = NDBuffer[type, 5, DimList(1, 2, 2, 1, 1)].stack_allocation()
     filter.data[0] = 7
     filter.data[1] = 2
     filter.data[2] = 1
     filter.data[3] = 9
 
-    let output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 1)].stack_allocation()
-    let stride = Index(1, 1, 1)
-    let dilation = Index(1, 2, 2)
-    let pad_d = Index(0, 0)
-    let pad_h = Index(0, 0)
-    let pad_w = Index(0, 0)
+    var output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 1)].stack_allocation()
+    var stride = Index(1, 1, 1)
+    var dilation = Index(1, 2, 2)
+    var pad_d = Index(0, 0)
+    var pad_h = Index(0, 0)
+    var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
         output.make_dims_unknown(),
@@ -197,20 +197,20 @@ fn test_convtranspose_attributes():
     print("== test_convtranspose_attributes")
     alias type = DType.float32
 
-    let input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
     for i in range(9):
         input.data[i] = i
 
-    let filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
     filter.fill(1.0)
 
-    let output = NDBuffer[type, 5, DimList(1, 1, 10, 8, 2)].stack_allocation()
+    var output = NDBuffer[type, 5, DimList(1, 1, 10, 8, 2)].stack_allocation()
 
-    let stride = Index(1, 3, 2)
-    let dilation = Index(1, 1, 1)
-    let pad_d = Index(0, 0)
-    let pad_h = Index(0, 0)
-    let pad_w = Index(0, 0)
+    var stride = Index(1, 3, 2)
+    var dilation = Index(1, 1, 1)
+    var pad_d = Index(0, 0)
+    var pad_h = Index(0, 0)
+    var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
         output.make_dims_unknown(),

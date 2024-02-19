@@ -51,7 +51,7 @@ fn test[
     alias simd_size = simdwidthof[type]()
     alias num_groups = 1
 
-    let conv_shape = ConvShape[2] {
+    var conv_shape = ConvShape[2] {
         n: N,
         input_dims: Index(H, W),
         output_dims: Index(HO, WO),
@@ -66,35 +66,35 @@ fn test[
         num_groups: num_groups,
     }
 
-    let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
+    var input_ptr = DTypePointer[type].alloc(N * H * W * C)
+    var filter_ptr = DTypePointer[type].alloc(R * S * C * F)
 
     # output from conv w/ dynamic and static shapes.
-    let output_ptr_static = DTypePointer[type].alloc(N * HO * WO * F)
-    let output_ptr_dynamic = DTypePointer[type].alloc(N * HO * WO * F)
+    var output_ptr_static = DTypePointer[type].alloc(N * HO * WO * F)
+    var output_ptr_dynamic = DTypePointer[type].alloc(N * HO * WO * F)
 
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    let input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
-    let filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))
-    let output_static = NDBuffer[type, 4, DimList(N, HO, WO, F)](
+    var input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
+    var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))
+    var output_static = NDBuffer[type, 4, DimList(N, HO, WO, F)](
         output_ptr_static
     )
-    let output_dynamic = NDBuffer[type, 4](
+    var output_dynamic = NDBuffer[type, 4](
         output_ptr_dynamic, Index(N, HO, WO, F)
     )
 
     # Pre-packed filter for dynamic shapes.
     alias micro_kernel_width_default = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size_default = micro_kernel_width_default * simd_size
-    let rounded_F_dynamic = div_ceil(
+    var rounded_F_dynamic = div_ceil(
         F, micro_kernel_f_size_default
     ) * micro_kernel_f_size_default
-    let packed_filter_ptr_dynamic = DTypePointer[type].alloc(
+    var packed_filter_ptr_dynamic = DTypePointer[type].alloc(
         R * S * C * rounded_F_dynamic
     )
-    let packed_filter_dynamic = NDBuffer[type, 5](
+    var packed_filter_dynamic = NDBuffer[type, 5](
         packed_filter_ptr_dynamic,
         Index(
             div_ceil(F, micro_kernel_f_size_default),
@@ -148,10 +148,10 @@ fn test[
     alias packed_filter_shape = DimList(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
-    let packed_filter_ptr_static = DTypePointer[type].alloc(
+    var packed_filter_ptr_static = DTypePointer[type].alloc(
         R * S * C * rounded_F_static
     )
-    let packed_filter_static = NDBuffer[type, 5, packed_filter_shape](
+    var packed_filter_static = NDBuffer[type, 5, packed_filter_shape](
         packed_filter_ptr_static
     )
 
@@ -199,8 +199,8 @@ fn test[
                         1e-4,  # absolute error tolerance
                         1e-5,  # relative error tolerance
                     ):
-                        let expected = output_dynamic[n, ho, wo, f]
-                        let actual = output_static[n, ho, wo, f]
+                        var expected = output_dynamic[n, ho, wo, f]
+                        var actual = output_static[n, ho, wo, f]
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))
                         print(

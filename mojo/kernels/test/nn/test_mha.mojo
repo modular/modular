@@ -49,9 +49,9 @@ fn is_ndbuffer_close[
     var is_close = True
 
     for i in range(a.num_elements()):
-        let nd_idx = _compute_nd_index(a, i)
-        let expect = a.simd_load[1](nd_idx)
-        let actual = b.simd_load[1](nd_idx)
+        var nd_idx = _compute_nd_index(a, i)
+        var expect = a.simd_load[1](nd_idx)
+        var actual = b.simd_load[1](nd_idx)
         if not isclose(expect, actual, abs_tol, rel_tol):
             is_close = False
             if print_wrong_value and num_errs < max_num_print:
@@ -81,12 +81,12 @@ def test_mha():
     alias qkv_size = batch_size * num_heads * seq_len * depth
 
     # Allocate memory for all variables.
-    let q_ptr = DTypePointer[type].alloc(qkv_size)
-    let k_ptr = DTypePointer[type].alloc(qkv_size)
-    let v_ptr = DTypePointer[type].alloc(qkv_size)
-    let mask_ptr = DTypePointer[type].alloc(seq_len * seq_len)
-    let output_ptr = DTypePointer[type].alloc(qkv_size)
-    let mha_output_ptr = DTypePointer[type].alloc(qkv_size)
+    var q_ptr = DTypePointer[type].alloc(qkv_size)
+    var k_ptr = DTypePointer[type].alloc(qkv_size)
+    var v_ptr = DTypePointer[type].alloc(qkv_size)
+    var mask_ptr = DTypePointer[type].alloc(seq_len * seq_len)
+    var output_ptr = DTypePointer[type].alloc(qkv_size)
+    var mha_output_ptr = DTypePointer[type].alloc(qkv_size)
 
     # Q, K, V are randomly initialized.
     rand(q_ptr, qkv_size)
@@ -101,20 +101,20 @@ def test_mha():
             mask_ptr[b * seq_len + i] = mask_val
 
     # Contruct buffers.
-    let q = NDBuffer[type, 4, BHSD](q_ptr)
-    let v = NDBuffer[type, 4, BHSD](v_ptr)
-    let mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, seq_len))
-    let output = NDBuffer[type, 4, BHSD](output_ptr)
-    let mha_output = NDBuffer[type, 4, BHSD](mha_output_ptr)
+    var q = NDBuffer[type, 4, BHSD](q_ptr)
+    var v = NDBuffer[type, 4, BHSD](v_ptr)
+    var mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, seq_len))
+    var output = NDBuffer[type, 4, BHSD](output_ptr)
+    var mha_output = NDBuffer[type, 4, BHSD](mha_output_ptr)
 
     @__copy_capture(mha_output, output, mask, v, q, k_ptr)
     @parameter
     @always_inline
     fn test_body[transpose_k: Bool]() raises:
-        let k_shape = Index(
+        var k_shape = Index(
             batch_size, num_heads, seq_len, depth
         ) if transpose_k else Index(batch_size, num_heads, depth, seq_len)
-        let k = NDBuffer[type, 4](k_ptr, k_shape)
+        var k = NDBuffer[type, 4](k_ptr, k_shape)
 
         _naive_attention[type, transpose_k](
             output.make_dims_unknown(),

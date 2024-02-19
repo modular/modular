@@ -63,7 +63,7 @@ fn test_case[
     linear_fill(indices, indices_vals)
     var updates = Tensor[type](indices_shape)
     linear_fill(updates, updates_vals)
-    let output = Tensor[type](input_shape)
+    var output = Tensor[type](input_shape)
 
     scatter_elements[reduce_fn](
         data._to_ndbuffer[2](),
@@ -89,10 +89,10 @@ fn test_case[
 fn main() raises:
     fn test_scatter_ax0() raises:
         print("== test_scatter_ax0")
-        let data = VariadicList[Float32](0, 0, 0, 0, 0, 0, 0, 0, 0)
-        let indices = VariadicList[Int32](1, 0, 2, 0, 2, 1)
-        let updates = VariadicList[Float32](1.0, 1.1, 1.2, 2.0, 2.1, 2.2)
-        let output_ref = VariadicList[Float32](
+        var data = VariadicList[Float32](0, 0, 0, 0, 0, 0, 0, 0, 0)
+        var indices = VariadicList[Int32](1, 0, 2, 0, 2, 1)
+        var updates = VariadicList[Float32](1.0, 1.1, 1.2, 2.0, 2.1, 2.2)
+        var output_ref = VariadicList[Float32](
             2.0, 1.1, 0.0, 1.0, 0.0, 2.2, 0.0, 2.1, 1.2
         )
         test_case[DType.float32](
@@ -111,10 +111,10 @@ fn main() raises:
 
     fn test_scatter_ax1() raises:
         print("== test_scatter_ax1")
-        let data = VariadicList[Float32](1, 2, 3, 4, 5)
-        let indices = VariadicList[Int32](1, 3)
-        let updates = VariadicList[Float32](1.1, 2.1)
-        let output_ref = VariadicList[Float32](1.0, 1.1, 3.0, 2.1, 5.0)
+        var data = VariadicList[Float32](1, 2, 3, 4, 5)
+        var indices = VariadicList[Int32](1, 3)
+        var updates = VariadicList[Float32](1.1, 2.1)
+        var output_ref = VariadicList[Float32](1.0, 1.1, 3.0, 2.1, 5.0)
         test_case[DType.float32](
             TensorShape(1, 5),
             TensorShape(1, 2),
@@ -131,10 +131,10 @@ fn main() raises:
 
     fn test_scatter_neg_indices() raises:
         print("== test_scatter_neg_indices")
-        let data = VariadicList[Float32](1, 2, 3, 4, 5)
-        let indices = VariadicList[Int32](1, -3)
-        let updates = VariadicList[Float32](1.1, 2.1)
-        let output_ref = VariadicList[Float32](1.0, 1.1, 2.1, 4.0, 5.0)
+        var data = VariadicList[Float32](1, 2, 3, 4, 5)
+        var indices = VariadicList[Int32](1, -3)
+        var updates = VariadicList[Float32](1.1, 2.1)
+        var output_ref = VariadicList[Float32](1.0, 1.1, 2.1, 4.0, 5.0)
         test_case[DType.float32](
             TensorShape(1, 5),
             TensorShape(1, 2),
@@ -151,10 +151,10 @@ fn main() raises:
 
     fn test_scatter_reduce_max() raises:
         print("== test_scatter_reduce_max")
-        let data = VariadicList[Float32](1, 2, 3, 4, 5)
-        let indices = VariadicList[Int32](1, 1)
-        let updates = VariadicList[Float32](1.1, 2.1)
-        let output_ref = VariadicList[Float32](1.0, 2.1, 3.0, 4.0, 5.0)
+        var data = VariadicList[Float32](1, 2, 3, 4, 5)
+        var indices = VariadicList[Int32](1, 1)
+        var updates = VariadicList[Float32](1.1, 2.1)
+        var output_ref = VariadicList[Float32](1.0, 2.1, 3.0, 4.0, 5.0)
 
         @always_inline
         @parameter

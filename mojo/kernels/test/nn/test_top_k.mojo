@@ -50,12 +50,12 @@ fn test_case[
     largest: Bool = True,
     sorted: Bool = True,
 ):
-    let input = TestTensor[rank, type](input_shape)
+    var input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape
     output_shape[axis] = K
-    let out_vals = TestTensor[rank, type](output_shape)
-    let out_idxs = TestTensor[rank, DType.int64](output_shape)
+    var out_vals = TestTensor[rank, type](output_shape)
+    var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
@@ -71,7 +71,7 @@ fn test_case[
         sorted,
     )
 
-    let xxx_no_lifetimes = input ^  # intentionally bad name
+    var xxx_no_lifetimes = input ^  # intentionally bad name
 
     for i in range(out_vals.storage.size):
         print_no_newline(out_vals.storage[i])
@@ -189,7 +189,7 @@ fn main():
 
     @parameter
     fn fill_custom[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
-        let flat_buf = buf.flatten()
+        var flat_buf = buf.flatten()
         for i in range(len(flat_buf)):
             flat_buf[i] = len(flat_buf) - i - 1
         flat_buf[0] = -1

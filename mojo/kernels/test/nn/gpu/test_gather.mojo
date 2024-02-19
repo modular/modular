@@ -34,7 +34,7 @@ fn test_gather() raises:
         alias num_rows = 16
         alias row_size = 4
 
-        let input_host = NDBuffer[
+        var input_host = NDBuffer[
             DType.float32,
             2,
             DimList(num_rows, row_size),
@@ -42,28 +42,28 @@ fn test_gather() raises:
         for i in range(num_rows):
             for j in range(row_size):
                 input_host[Index(i, j)] = Float32(i).value
-        let input_device_ptr = _malloc[DType.float32](
+        var input_device_ptr = _malloc[DType.float32](
             input_host.size() * sizeof[DType.float32]()
         )
         _copy_host_to_device(
             input_device_ptr, input_host.data, input_host.size()
         )
-        let input_device = NDBuffer[
+        var input_device = NDBuffer[
             DType.float32,
             2,
             DimList(num_rows, row_size),
         ](input_device_ptr)
 
         alias num_indices = 16
-        let indices_host = NDBuffer[
+        var indices_host = NDBuffer[
             indices_type,
             1,
             DimList(num_indices),
         ].stack_allocation()
-        let indices_device_ptr = _malloc[indices_type](
+        var indices_device_ptr = _malloc[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
-        let indices_device = NDBuffer[
+        var indices_device = NDBuffer[
             indices_type,
             1,
             DimList(num_indices),
@@ -79,15 +79,15 @@ fn test_gather() raises:
         )
 
         # create output
-        let output_host = NDBuffer[
+        var output_host = NDBuffer[
             DType.float32,
             2,
             DimList(num_indices, row_size),
         ].stack_allocation()
-        let output_device_ptr = _malloc[DType.float32](
+        var output_device_ptr = _malloc[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
-        let output_device = NDBuffer[
+        var output_device = NDBuffer[
             DType.float32,
             2,
             DimList(num_indices, row_size),

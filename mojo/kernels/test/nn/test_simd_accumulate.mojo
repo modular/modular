@@ -22,7 +22,7 @@ def test_maybe_partial_load():
     alias simd_size = 4
     alias size = simd_size + 1
 
-    let a = stack_allocation[size, DType.float32]()
+    var a = stack_allocation[size, DType.float32]()
 
     for i in range(size):
         a[i] = 1.0
@@ -43,9 +43,9 @@ def test_accumulate[
     #     [ 1.0, 1.0 ],
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
-    let a = stack_allocation[2 * num_rows * length, type]()
+    var a = stack_allocation[2 * num_rows * length, type]()
     for i in range(2 * num_rows):
-        let a_ptr = a + i * length
+        var a_ptr = a + i * length
         a_ptr[0] = SIMD[type, 1](i)
         a_ptr[1] = SIMD[type, 1](i)
 
@@ -54,17 +54,17 @@ def test_accumulate[
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
     alias b_size = 2 * num_cols * simd_size * length
     alias kernel_width = num_cols * simd_size
-    let b = stack_allocation[b_size, type]()
+    var b = stack_allocation[b_size, type]()
 
     for i in range(2 * length):
-        let b_ptr = b + i * num_cols * simd_size
+        var b_ptr = b + i * num_cols * simd_size
 
         @unroll
         for j in range(num_cols):
             (b_ptr + j * simd_size).simd_store(SIMD[type, simd_size](i))
 
     alias c_size = num_rows * num_cols * simd_size
-    let c = stack_allocation[c_size, type]()
+    var c = stack_allocation[c_size, type]()
 
     @__copy_capture(c)
     @parameter
@@ -155,7 +155,7 @@ def test_load_store_register_tile[
     alias one_vec = SIMD[type, simd_size](1.0)
     alias residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
-    let a = stack_allocation[num_rows * row_size, type]()
+    var a = stack_allocation[num_rows * row_size, type]()
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0],]
@@ -174,7 +174,7 @@ def test_load_store_register_tile[
             SIMD[type, residual](-1.0),
         )
 
-    let tile0 = stack_allocation[num_rows * num_cols * simd_size, type]()
+    var tile0 = stack_allocation[num_rows * num_cols * simd_size, type]()
 
     load_register_tile[num_rows, num_cols, simd_size](tile0, a, row_size)
 
@@ -201,7 +201,7 @@ def test_load_store_register_tile[
     tile0.simd_store(3 * simd_size, one_vec)
     store_register_tile[num_rows, num_cols, simd_size](a, row_size, tile0)
 
-    let tile1 = stack_allocation[num_rows * (num_cols + 1) * simd_size, type]()
+    var tile1 = stack_allocation[num_rows * (num_cols + 1) * simd_size, type]()
 
     load_register_tile[num_rows, num_cols + 1, simd_size, partial_load=True](
         tile1, a, row_size, residual

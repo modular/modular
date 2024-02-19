@@ -63,7 +63,7 @@ fn test_case[
     linear_fill(indices, indices_vals)
     var updates = Tensor[type](updates_shape)
     linear_fill(updates, updates_vals)
-    let output = Tensor[type](input_shape)
+    var output = Tensor[type](input_shape)
 
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
@@ -93,7 +93,7 @@ fn test_case[
 fn main() raises:
     fn test_scatternd() raises:
         print("== test_scatternd")
-        let data = VariadicList[Float32](
+        var data = VariadicList[Float32](
             1,
             2,
             3,
@@ -160,9 +160,9 @@ fn main() raises:
             8,
         )
 
-        let indices = VariadicList[Int64](0, 2)
+        var indices = VariadicList[Int64](0, 2)
 
-        let updates = VariadicList[Float32](
+        var updates = VariadicList[Float32](
             5,
             5,
             5,
@@ -197,7 +197,7 @@ fn main() raises:
             4,
         )
 
-        let output_ref = VariadicList[Float32](
+        var output_ref = VariadicList[Float32](
             5,
             5,
             5,
@@ -280,7 +280,7 @@ fn main() raises:
 
     fn test_scatternd_add() raises:
         print("== test_scatternd_add")
-        let data = VariadicList[Float32](
+        var data = VariadicList[Float32](
             1,
             2,
             3,
@@ -347,9 +347,9 @@ fn main() raises:
             8,
         )
 
-        let indices = VariadicList[Int64](0, 0)
+        var indices = VariadicList[Int64](0, 0)
 
-        let updates = VariadicList[Float32](
+        var updates = VariadicList[Float32](
             5,
             5,
             5,
@@ -384,7 +384,7 @@ fn main() raises:
             4,
         )
 
-        let output_ref = VariadicList[Float32](
+        var output_ref = VariadicList[Float32](
             7,
             8,
             9,
@@ -474,7 +474,7 @@ fn main() raises:
 
     fn test_scatternd_max() raises:
         print("== test_scatternd_max")
-        let data = VariadicList[Float32](
+        var data = VariadicList[Float32](
             1,
             2,
             3,
@@ -541,9 +541,9 @@ fn main() raises:
             8,
         )
 
-        let indices = VariadicList[Int64](0, 0)
+        var indices = VariadicList[Int64](0, 0)
 
-        let updates = VariadicList[Float32](
+        var updates = VariadicList[Float32](
             5,
             5,
             5,
@@ -578,7 +578,7 @@ fn main() raises:
             4,
         )
 
-        let output_ref = VariadicList[Float32](
+        var output_ref = VariadicList[Float32](
             5,
             5,
             5,
@@ -668,7 +668,7 @@ fn main() raises:
 
     fn test_scatternd_min() raises:
         print("== test_scatternd_min")
-        let data = VariadicList[Float32](
+        var data = VariadicList[Float32](
             1,
             2,
             3,
@@ -735,9 +735,9 @@ fn main() raises:
             8,
         )
 
-        let indices = VariadicList[Int64](0, 0)
+        var indices = VariadicList[Int64](0, 0)
 
-        let updates = VariadicList[Float32](
+        var updates = VariadicList[Float32](
             5,
             5,
             5,
@@ -772,7 +772,7 @@ fn main() raises:
             4,
         )
 
-        let output_ref = VariadicList[Float32](
+        var output_ref = VariadicList[Float32](
             1,
             1,
             1,
@@ -862,7 +862,7 @@ fn main() raises:
 
     fn test_scatternd_multiply() raises:
         print("== test_scatternd_multiply")
-        let data = VariadicList[Float32](
+        var data = VariadicList[Float32](
             1,
             2,
             3,
@@ -929,9 +929,9 @@ fn main() raises:
             8,
         )
 
-        let indices = VariadicList[Int64](0, 0)
+        var indices = VariadicList[Int64](0, 0)
 
-        let updates = VariadicList[Float32](
+        var updates = VariadicList[Float32](
             5,
             5,
             5,
@@ -966,7 +966,7 @@ fn main() raises:
             4,
         )
 
-        let output_ref = VariadicList[Float32](
+        var output_ref = VariadicList[Float32](
             5,
             10,
             15,

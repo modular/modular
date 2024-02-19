@@ -80,7 +80,7 @@ fn test[
         pad_h = Index(pad[2], pad[3])
         pad_w = Index(pad[4], pad[5])
 
-    let conv_shape = ConvShape[rank] {
+    var conv_shape = ConvShape[rank] {
         n: N,
         input_dims: input_dims,
         output_dims: output_dims,
@@ -95,21 +95,21 @@ fn test[
         num_groups: num_groups,
     }
 
-    let C_per_group = C // num_groups
+    var C_per_group = C // num_groups
 
-    let input_size = N * conv_shape.input_image_flat_size() * C
-    let input_ptr = DTypePointer[type].alloc(input_size)
+    var input_size = N * conv_shape.input_image_flat_size() * C
+    var input_ptr = DTypePointer[type].alloc(input_size)
     rand(input_ptr, input_size)
 
-    let filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    let filter_ptr = DTypePointer[type].alloc(filter_size)
+    var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
+    var filter_ptr = DTypePointer[type].alloc(filter_size)
     rand(filter_ptr, filter_size)
 
-    let output_size = N * conv_shape.output_image_flat_size() * F
-    let output_ptr = DTypePointer[type].alloc(output_size)
-    let output_ref_ptr = DTypePointer[type].alloc(output_size)
+    var output_size = N * conv_shape.output_image_flat_size() * F
+    var output_ptr = DTypePointer[type].alloc(output_size)
+    var output_ref_ptr = DTypePointer[type].alloc(output_size)
 
-    let bias_ptr = DTypePointer[type].alloc(F)
+    var bias_ptr = DTypePointer[type].alloc(F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -117,28 +117,28 @@ fn test[
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     # Rounded C and F size for pre-packed filter.
-    let micro_kernel_f_size = micro_kernel_width * simd_size
-    let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
+    var micro_kernel_f_size = micro_kernel_width * simd_size
+    var rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)
-    let input = NDBuffer[type, rank + 2](input_ptr, input_shape)
+    var input = NDBuffer[type, rank + 2](input_ptr, input_shape)
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    let filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
+    var filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
 
-    let packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    let packed_filter_ptr = DTypePointer[type].alloc(
+    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+    var packed_filter_ptr = DTypePointer[type].alloc(
         packed_filter_shape.flattened_length()
     )
-    let packed_filter = NDBuffer[type, rank + 3](
+    var packed_filter = NDBuffer[type, rank + 3](
         packed_filter_ptr, rebind[StaticIntTuple[rank + 3]](packed_filter_shape)
     )
 
-    let output_shape = extend_shape(output_dims, N, F)
-    let output = NDBuffer[type, rank + 2](output_ptr, output_shape)
-    let output_ref = NDBuffer[type, rank + 2](output_ref_ptr, output_shape)
+    var output_shape = extend_shape(output_dims, N, F)
+    var output = NDBuffer[type, rank + 2](output_ptr, output_shape)
+    var output_ref = NDBuffer[type, rank + 2](output_ref_ptr, output_shape)
 
     @parameter
     if filter_packed:
@@ -196,10 +196,10 @@ fn test[
         )
 
     # Add bias and activatiion separately.
-    let output_image_size = output_dims.flattened_length()
+    var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            let output_ref_ptr = output_ref.data + F * (
+            var output_ref_ptr = output_ref.data + F * (
                 i + output_image_size * n
             )
 
@@ -228,7 +228,7 @@ fn test[
             var curr_coords = coords
             curr_coords[rank + 1] += idx
 
-            let vec = output.simd_load[width](curr_coords)
+            var vec = output.simd_load[width](curr_coords)
 
             output.simd_store(
                 curr_coords,

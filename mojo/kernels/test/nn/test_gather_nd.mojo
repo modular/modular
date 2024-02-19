@@ -24,7 +24,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int32
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
@@ -34,7 +34,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
@@ -44,7 +44,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 1)] = 1
 
         alias output_rank = 1
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -54,8 +54,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[2, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[2, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -79,7 +79,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int8
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2)
         ]().stack_allocation()
 
@@ -89,7 +89,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
@@ -97,7 +97,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -107,8 +107,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -139,7 +139,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.float32
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
@@ -153,7 +153,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 2)
         ]().stack_allocation()
 
@@ -163,7 +163,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 1)] = 0
 
         alias output_rank = 2
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -173,8 +173,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -205,7 +205,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.int8
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
@@ -219,7 +219,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1, 2)
         ]().stack_allocation()
 
@@ -229,7 +229,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0, 1)] = 0
 
         alias output_rank = 3
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -239,8 +239,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -271,7 +271,7 @@ fn main():
         alias batch_dims = 1
         alias data_rank = 3
         alias data_type = DType.int32
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
@@ -285,7 +285,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
@@ -293,7 +293,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -303,8 +303,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[4, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -335,7 +335,7 @@ fn main():
         alias batch_dims = 2
         alias data_rank = 3
         alias data_type = DType.int8
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 3, 4)
         ]().stack_allocation()
 
@@ -370,7 +370,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 2, 3)] = 24
 
         alias indices_rank = 4
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 3, 1, 1)
         ]().stack_allocation()
 
@@ -382,7 +382,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 2, 0, 0)] = 2
 
         alias output_rank = 3
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -392,8 +392,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[6, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[6, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -428,7 +428,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.int8
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 2, 2)
         ]().stack_allocation()
 
@@ -442,7 +442,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1, 1)
         ]().stack_allocation()
 
@@ -450,7 +450,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0, 0)] = 1
 
         alias output_rank = 4
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -460,8 +460,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[8, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[8, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[
@@ -501,7 +501,7 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int8
-        let data = NDBuffer[
+        var data = NDBuffer[
             data_type, data_rank, DimList(2, 3)
         ]().stack_allocation()
 
@@ -513,7 +513,7 @@ fn main():
         data[StaticIntTuple[data_rank](1, 2)] = 5
 
         alias indices_rank = 2
-        let indices = NDBuffer[
+        var indices = NDBuffer[
             DType.int64, indices_rank, DimList(2, 1)
         ]().stack_allocation()
 
@@ -521,7 +521,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = gather_nd_shape[
+        var output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -531,8 +531,8 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        let output_data_data = stack_allocation[6, data_type]()
-        let output_data_buffer = NDBuffer[data_type, output_rank](
+        var output_data_data = stack_allocation[6, data_type]()
+        var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data, output_shape
         )
         gather_nd[

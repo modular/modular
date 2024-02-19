@@ -25,7 +25,7 @@ from test_utils import compare, get_minmax, libm_call
 fn test_elu():
     print("== test_elu")
 
-    let simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(elu(simd_val))
@@ -41,7 +41,7 @@ fn test_elu():
 fn test_relu():
     print("== test_relu")
 
-    let simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(relu(simd_val))
@@ -57,7 +57,7 @@ fn test_relu():
 fn test_relu_n1():
     print("== test_relu_n1")
 
-    let simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 1.0, 1.0]
     print(relu_n1(simd_val))
@@ -73,7 +73,7 @@ fn test_relu_n1():
 fn test_gelu_float32():
     print("== test_gelu_float32")
 
-    let simd_val = 2 - 0.5 * iota[DType.float32, 4]()
+    var simd_val = 2 - 0.5 * iota[DType.float32, 4]()
 
     # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.95449{{[0-9]+}}, 1.39978{{[0-9]+}}, 0.84134{{[0-9]+}}, 0.34573{{[0-9]+}}]
@@ -106,7 +106,7 @@ fn test_gelu_float32():
 fn test_gelu_float64():
     print("== test_gelu_float64")
 
-    let simd_val = 2 - 0.5 * iota[DType.float64, 4]()
+    var simd_val = 2 - 0.5 * iota[DType.float64, 4]()
 
     # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.95449{{[0-9]+}}, 1.39978{{[0-9]+}}, 0.84134{{[0-9]+}}, 0.34573{{[0-9]+}}]
@@ -139,7 +139,7 @@ fn test_gelu_float64():
 fn erf_libm[
     type: DType, simd_width: Int
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    let eval = libm_call[type, simd_width, "erff", "err"](arg)
+    var eval = libm_call[type, simd_width, "erff", "err"](arg)
     return eval
 
 
@@ -170,8 +170,8 @@ fn gelu_libm[
     ]()
     # 0.5 * x * (1 + erf(x / SQRT_2))
     # x_half + x_half * erf_res
-    let x_half = 0.5 * x
-    let erf_res = erf_libm(x * inv_SQRT_2)
+    var x_half = 0.5 * x
+    var erf_res = erf_libm(x * inv_SQRT_2)
     return x_half.fma(erf_res, x_half)
 
 
@@ -181,7 +181,7 @@ fn test_gelu_libm():
     seed(0)
     alias N = 8192
     # generate input values and write them to file
-    let x32 = randn[DType.float32](N, 0, 9.0)
+    var x32 = randn[DType.float32](N, 0, 9.0)
     print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################

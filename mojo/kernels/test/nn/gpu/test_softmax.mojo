@@ -30,17 +30,17 @@ fn test_gpu_softmax() raises:
 
     alias type = DType.float32
     alias rank = 3
-    let shape = StaticIntTuple[rank](3, 5, 515)
-    let in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
-    let in_device_ptr = _malloc[type](shape.flattened_length())
-    let in_host = NDBuffer[type, rank](in_host_ptr, shape)
-    let in_device = NDBuffer[type, rank](in_device_ptr, shape)
-    let out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
-    let out_ref_ptr = DTypePointer[type].alloc(shape.flattened_length())
-    let out_device_ptr = _malloc[type](shape.flattened_length())
-    let out_host = NDBuffer[type, rank](out_host_ptr, shape)
-    let out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
-    let out_device = NDBuffer[type, rank](out_device_ptr, shape)
+    var shape = StaticIntTuple[rank](3, 5, 515)
+    var in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var in_device_ptr = _malloc[type](shape.flattened_length())
+    var in_host = NDBuffer[type, rank](in_host_ptr, shape)
+    var in_device = NDBuffer[type, rank](in_device_ptr, shape)
+    var out_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var out_ref_ptr = DTypePointer[type].alloc(shape.flattened_length())
+    var out_device_ptr = _malloc[type](shape.flattened_length())
+    var out_host = NDBuffer[type, rank](out_host_ptr, shape)
+    var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
+    var out_device = NDBuffer[type, rank](out_device_ptr, shape)
 
     rand[type](in_host_ptr, shape.flattened_length())
     _copy_host_to_device(in_device_ptr, in_host_ptr, shape.flattened_length())

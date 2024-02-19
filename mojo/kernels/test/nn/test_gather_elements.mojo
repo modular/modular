@@ -26,7 +26,7 @@ fn test_case[
     linear_fill(data, data_vals)
     var indices = Tensor[DType.int32](indices_shape)
     linear_fill(indices, indices_vals)
-    let output = Tensor[type](indices_shape)
+    var output = Tensor[type](indices_shape)
 
     gather_elements(
         data._to_ndbuffer[2](),
@@ -50,9 +50,9 @@ fn test_case[
 fn main() raises:
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
-        let data = VariadicList[Float32](1, 2, 3, 4)
-        let indices = VariadicList[Int32](0, 0, 1, 0)
-        let output_ref = VariadicList[Float32](1, 1, 4, 3)
+        var data = VariadicList[Float32](1, 2, 3, 4)
+        var indices = VariadicList[Int32](0, 0, 1, 0)
+        var output_ref = VariadicList[Float32](1, 1, 4, 3)
         test_case[DType.float32](
             TensorShape(2, 2),
             TensorShape(2, 2),
@@ -68,9 +68,9 @@ fn main() raises:
 
     fn test_gather_ax0() raises:
         print("== test_gather_ax0")
-        let data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
-        let indices = VariadicList[Int32](1, 2, 0, 2, 0, 0)
-        let output_ref = VariadicList[Float32](4, 8, 3, 7, 2, 3)
+        var data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
+        var indices = VariadicList[Int32](1, 2, 0, 2, 0, 0)
+        var output_ref = VariadicList[Float32](4, 8, 3, 7, 2, 3)
         test_case[DType.float32](
             TensorShape(3, 3),
             TensorShape(2, 3),
@@ -86,9 +86,9 @@ fn main() raises:
 
     fn test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
-        let data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
-        let indices = VariadicList[Int32](-1, -2, 0, -2, 0, 0)
-        let output_ref = VariadicList[Float32](7, 5, 3, 4, 2, 3)
+        var data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
+        var indices = VariadicList[Int32](-1, -2, 0, -2, 0, 0)
+        var output_ref = VariadicList[Float32](7, 5, 3, 4, 2, 3)
         test_case[DType.float32](
             TensorShape(3, 3),
             TensorShape(2, 3),

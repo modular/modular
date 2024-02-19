@@ -26,7 +26,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
     fn print_elements_lambda[
         simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[in_rank]](idx)
+        var index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
     elementwise[in_rank, 1, print_elements_lambda](
@@ -38,16 +38,16 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 fn test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
-    let memory1 = stack_allocation[1, dtype, 1]()
-    let start_tensor = NDBuffer[dtype, 1](memory1, StaticIntTuple[1](1))
+    var memory1 = stack_allocation[1, dtype, 1]()
+    var start_tensor = NDBuffer[dtype, 1](memory1, StaticIntTuple[1](1))
     start_tensor[0] = start
 
-    let memory2 = stack_allocation[1, dtype, 1]()
-    let stop_tensor = NDBuffer[dtype, 1](memory2, StaticIntTuple[1](1))
+    var memory2 = stack_allocation[1, dtype, 1]()
+    var stop_tensor = NDBuffer[dtype, 1](memory2, StaticIntTuple[1](1))
     stop_tensor[0] = stop
 
-    let memory3 = stack_allocation[1, dtype, 1]()
-    let step_tensor = NDBuffer[dtype, 1](memory3, StaticIntTuple[1](1))
+    var memory3 = stack_allocation[1, dtype, 1]()
+    var step_tensor = NDBuffer[dtype, 1](memory3, StaticIntTuple[1](1))
     step_tensor[0] = step
 
     var outshape = StaticIntTuple[1]()
@@ -66,15 +66,15 @@ fn test_arange[
         print("Memory is larger than static limit, test failed")
         return
 
-    let memory4 = stack_allocation[max_output_size, dtype, 1]()
-    let out_tensor = NDBuffer[dtype, 1](memory4, outshape)
+    var memory4 = stack_allocation[max_output_size, dtype, 1]()
+    var out_tensor = NDBuffer[dtype, 1](memory4, outshape)
 
     @always_inline
     @__copy_capture(out_tensor, step_tensor, start_tensor, stop_tensor)
     @parameter
     fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[1]](idx)
-        let range_val = arange[dtype, simd_width](
+        var index = rebind[StaticIntTuple[1]](idx)
+        var range_val = arange[dtype, simd_width](
             start_tensor, stop_tensor, step_tensor, index
         )
         out_tensor.simd_store[simd_width](index, range_val)

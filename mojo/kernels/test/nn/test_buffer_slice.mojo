@@ -25,7 +25,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
     fn print_elements_lambda[
         simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[in_rank]](idx)
+        var index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
     elementwise[in_rank, 1, print_elements_lambda](
@@ -44,10 +44,10 @@ fn test_slice[
     use_copy: Bool,
 ):
     # Isn't always used but is used for the output buffer if we copy.
-    let output_mem = stack_allocation[numelems, dtype, 1]()
+    var output_mem = stack_allocation[numelems, dtype, 1]()
 
-    let memory1 = stack_allocation[numelems, dtype, 1]()
-    let in_tensor = NDBuffer[
+    var memory1 = stack_allocation[numelems, dtype, 1]()
+    var in_tensor = NDBuffer[
         dtype,
         outer_rank,
         rebind[DimList](static_shape),
@@ -56,18 +56,18 @@ fn test_slice[
     print("In shape:", in_tensor.dynamic_shape)
     print("In strides:", in_tensor.dynamic_stride)
 
-    let start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
-    let start_tensor = NDBuffer[DType.index, 1](
+    var start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var start_tensor = NDBuffer[DType.index, 1](
         start_tensor_mem.address, StaticIntTuple[1](outer_rank)
     )
 
-    let end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
-    let end_tensor = NDBuffer[DType.index, 1](
+    var end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var end_tensor = NDBuffer[DType.index, 1](
         end_tensor_mem.address, StaticIntTuple[1](outer_rank)
     )
 
-    let step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
-    let step_tensor = NDBuffer[DType.index, 1](
+    var step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var step_tensor = NDBuffer[DType.index, 1](
         step_tensor_mem.address, StaticIntTuple[1](outer_rank)
     )
 
@@ -80,7 +80,7 @@ fn test_slice[
         in_tensor.data[i] = i
 
     # Perform the slice even if we are testing the copy so we get the target size.
-    let sliced = slice_as_view(
+    var sliced = slice_as_view(
         rebind[NDBuffer[dtype, outer_rank]](in_tensor),
         start_tensor,
         end_tensor,
@@ -92,7 +92,7 @@ fn test_slice[
     else:
         print("As copy")
 
-        let output_buffer = NDBuffer[
+        var output_buffer = NDBuffer[
             dtype,
             outer_rank,
             rebind[DimList](static_shape),

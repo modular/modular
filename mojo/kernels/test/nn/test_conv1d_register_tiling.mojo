@@ -56,7 +56,7 @@ fn conv1d_register_tiling(
     f_tile_size: Int,
     wo: Int,
 ):
-    let conv_shape = ConvShape[2] {
+    var conv_shape = ConvShape[2] {
         n: N,
         input_dims: Index(H, W),
         output_dims: Index(HO, WO),
@@ -99,26 +99,26 @@ fn conv1d_register_tiling(
 
 
 fn test_conv1d_register_tiling() raises:
-    let output = NDBuffer[type, 3, output_shape].stack_allocation()
-    let input = NDBuffer[type, 3, input_shape].stack_allocation()
-    let filter = NDBuffer[type, 4, filter_shape].stack_allocation()
+    var output = NDBuffer[type, 3, output_shape].stack_allocation()
+    var input = NDBuffer[type, 3, input_shape].stack_allocation()
+    var filter = NDBuffer[type, 4, filter_shape].stack_allocation()
 
     output.fill(0.0)
     input.fill(1.0)
     filter.fill(1.0)
 
-    let c_tile_offset = 0
-    let c_tile_size = C
-    let f_tile_offset = F // 2
-    let f_tile_size = F // 2
-    let wo = 2
-    let w = wo * stride_w - pad_left
+    var c_tile_offset = 0
+    var c_tile_size = C
+    var f_tile_offset = F // 2
+    var f_tile_size = F // 2
+    var wo = 2
+    var w = wo * stride_w - pad_left
 
     # FRSCf
-    let filter_ptr = filter.data + f_tile_offset * R * S * C
+    var filter_ptr = filter.data + f_tile_offset * R * S * C
     # NHWC
-    let input_ptr = input.data + c_tile_offset + C * w
-    let output_ptr = output.data + f_tile_offset + F * (wo)
+    var input_ptr = input.data + c_tile_offset + C * w
+    var output_ptr = output.data + f_tile_offset + F * (wo)
 
     conv1d_register_tiling(
         output_ptr,

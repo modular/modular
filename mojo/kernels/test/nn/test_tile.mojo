@@ -19,7 +19,7 @@ fn test_tile_eg1() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
@@ -35,7 +35,7 @@ fn test_tile_eg1() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -46,7 +46,7 @@ fn test_tile_eg1() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 4),
@@ -78,7 +78,7 @@ fn test_tile_eg2() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
@@ -94,7 +94,7 @@ fn test_tile_eg2() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -105,7 +105,7 @@ fn test_tile_eg2() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(6, 4),
@@ -135,7 +135,7 @@ fn test_tile_eg3() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
@@ -151,7 +151,7 @@ fn test_tile_eg3() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -162,7 +162,7 @@ fn test_tile_eg3() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 6),
@@ -196,7 +196,7 @@ fn test_tile_eg4() raises:
     alias rank = 3
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
@@ -217,7 +217,7 @@ fn test_tile_eg4() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
@@ -229,7 +229,7 @@ fn test_tile_eg4() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 2, 2),
@@ -265,7 +265,7 @@ fn test_tile_eg5() raises:
     alias rank = 3
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
@@ -286,7 +286,7 @@ fn test_tile_eg5() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
@@ -298,7 +298,7 @@ fn test_tile_eg5() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 2, 4),
@@ -328,7 +328,7 @@ fn test_tile_eg6() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
@@ -344,7 +344,7 @@ fn test_tile_eg6() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -355,7 +355,7 @@ fn test_tile_eg6() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(2, 4),
@@ -385,7 +385,7 @@ fn test_tile_eg7() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
@@ -401,7 +401,7 @@ fn test_tile_eg7() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -412,7 +412,7 @@ fn test_tile_eg7() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 2),
@@ -442,7 +442,7 @@ fn test_tile_eg8() raises:
     alias rank = 2
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(1, 4),
@@ -458,7 +458,7 @@ fn test_tile_eg8() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
@@ -469,7 +469,7 @@ fn test_tile_eg8() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 4),
@@ -515,7 +515,7 @@ fn test_tile_eg9() raises:
     alias rank = 3
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
@@ -536,7 +536,7 @@ fn test_tile_eg9() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
@@ -548,7 +548,7 @@ fn test_tile_eg9() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 4, 2),
@@ -605,7 +605,7 @@ fn test_tile_eg10() raises:
     alias rank = 3
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
@@ -626,7 +626,7 @@ fn test_tile_eg10() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
@@ -638,7 +638,7 @@ fn test_tile_eg10() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(6, 4, 6),
@@ -702,7 +702,7 @@ fn test_tile_eg11() raises:
     alias rank = 3
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(3, 2, 2),
@@ -728,7 +728,7 @@ fn test_tile_eg11() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
@@ -740,7 +740,7 @@ fn test_tile_eg11() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(6, 6, 2),
@@ -777,7 +777,7 @@ fn test_tile_eg12() raises:
     alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(1, 1, 2, 2),
@@ -793,7 +793,7 @@ fn test_tile_eg12() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
@@ -806,7 +806,7 @@ fn test_tile_eg12() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(1, 1, 4, 6),
@@ -858,7 +858,7 @@ fn test_tile_eg13() raises:
     alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2, 2),
@@ -889,7 +889,7 @@ fn test_tile_eg13() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
@@ -902,7 +902,7 @@ fn test_tile_eg13() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(2, 4, 4, 6),
@@ -970,7 +970,7 @@ fn test_tile_eg14() raises:
     alias rank = 4
     alias type = DType.float32
 
-    let input = NDBuffer[
+    var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2, 2),
@@ -1001,7 +1001,7 @@ fn test_tile_eg14() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    let repeats = NDBuffer[
+    var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
@@ -1014,7 +1014,7 @@ fn test_tile_eg14() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    let output = NDBuffer[
+    var output = NDBuffer[
         type,
         rank,
         DimList(4, 4, 4, 6),

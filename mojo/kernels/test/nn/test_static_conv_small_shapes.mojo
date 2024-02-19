@@ -68,7 +68,7 @@ fn static_conv(
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
     ],
 ):
-    let conv_shape = ConvShape[2] {
+    var conv_shape = ConvShape[2] {
         n: N,
         input_dims: Index(H, W),
         output_dims: Index(HO, WO),
@@ -83,7 +83,7 @@ fn static_conv(
         num_groups: num_groups,
     }
 
-    let tile_size = get_conv_tile_shape[value_type](
+    var tile_size = get_conv_tile_shape[value_type](
         C, R * S, micro_kernel_shape[1]
     )
 
@@ -115,11 +115,11 @@ fn static_conv(
 def test_static_conv():
     print("== test_static_conv")
 
-    let output = NDBuffer[
+    var output = NDBuffer[
         value_type, 4, DimList(N, HO, WO, F)
     ].stack_allocation()
-    let input = NDBuffer[value_type, 4, DimList(N, H, W, C)].stack_allocation()
-    let filter = NDBuffer[
+    var input = NDBuffer[value_type, 4, DimList(N, H, W, C)].stack_allocation()
+    var filter = NDBuffer[
         value_type,
         5,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),

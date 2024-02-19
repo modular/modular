@@ -48,20 +48,20 @@ fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
     alias in_shape = DimList(2, 5, 7, 2)
     alias out_shape = DimList(2, 2, 2, 2)
 
-    let input_tensor = Tensor[DType.float32](2, 5, 7, 2)
-    let output_tensor = Tensor[DType.float32](2, 2, 2, 2)
+    var input_tensor = Tensor[DType.float32](2, 5, 7, 2)
+    var output_tensor = Tensor[DType.float32](2, 2, 2, 2)
     fill_tensor[4](input_tensor)
     fill_tensor[4](output_tensor, 0.0)
 
-    let paddings = StaticIntTuple[4](0, 0, 0, 0)
-    let filter = StaticIntTuple[2](3, 2)
-    let stride = StaticIntTuple[2](2, 3)
-    let dilation = StaticIntTuple[2](1, 1)
+    var paddings = StaticIntTuple[4](0, 0, 0, 0)
+    var filter = StaticIntTuple[2](3, 2)
+    var stride = StaticIntTuple[2](2, 3)
+    var dilation = StaticIntTuple[2](1, 1)
 
-    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    let filter_tensor = _static_int_tuple_to_tensor(filter)
-    let stride_tensor = _static_int_tuple_to_tensor(stride)
-    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    var filter_tensor = _static_int_tuple_to_tensor(filter)
+    var stride_tensor = _static_int_tuple_to_tensor(stride)
+    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
 
     alias simd_width = simdwidthof[DType.float32]()
 
@@ -165,20 +165,20 @@ fn test_avg_pool_2d_with_padding[count_boundary: Bool = False]():
     alias in_shape = DimList(1, 7, 7, 1)
     alias out_shape = DimList(1, 7, 7, 1)
 
-    let input_tensor = Tensor[DType.float32](1, 7, 7, 1)
-    let output_tensor = Tensor[DType.float32](1, 7, 7, 1)
+    var input_tensor = Tensor[DType.float32](1, 7, 7, 1)
+    var output_tensor = Tensor[DType.float32](1, 7, 7, 1)
     fill_tensor[4](input_tensor)
     fill_tensor[4](output_tensor, 0.0)
 
-    let paddings = StaticIntTuple[4](1, 1, 1, 1)
-    let filter = StaticIntTuple[2](3, 3)
-    let stride = StaticIntTuple[2](1, 1)
-    let dilation = StaticIntTuple[2](1, 1)
+    var paddings = StaticIntTuple[4](1, 1, 1, 1)
+    var filter = StaticIntTuple[2](3, 3)
+    var stride = StaticIntTuple[2](1, 1)
+    var dilation = StaticIntTuple[2](1, 1)
 
-    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    let filter_tensor = _static_int_tuple_to_tensor(filter)
-    let stride_tensor = _static_int_tuple_to_tensor(stride)
-    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    var filter_tensor = _static_int_tuple_to_tensor(filter)
+    var stride_tensor = _static_int_tuple_to_tensor(stride)
+    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
 
     alias simd_width = simdwidthof[DType.float32]()
 
@@ -207,24 +207,24 @@ fn pool_ceil_test[
     alias in_shape = DimList(1, 4, 4, 1)
     alias out_shape = DimList(1, 2, 2, 1)
 
-    let input_tensor = Tensor[DType.float32](1, 4, 4, 1)
-    let output_tensor = Tensor[DType.float32](1, 2, 2, 1)
+    var input_tensor = Tensor[DType.float32](1, 4, 4, 1)
+    var output_tensor = Tensor[DType.float32](1, 2, 2, 1)
     fill_tensor[4](input_tensor)
     fill_tensor[4](output_tensor, 0.0)
 
-    let paddings = StaticIntTuple[4](0, 0, 0, 0)
-    let filter = StaticIntTuple[2](3, 3)
-    let stride = StaticIntTuple[2](2, 2)
-    let dilation = StaticIntTuple[2](1, 1)
+    var paddings = StaticIntTuple[4](0, 0, 0, 0)
+    var filter = StaticIntTuple[2](3, 3)
+    var stride = StaticIntTuple[2](2, 2)
+    var dilation = StaticIntTuple[2](1, 1)
 
-    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    let filter_tensor = _static_int_tuple_to_tensor(filter)
-    let stride_tensor = _static_int_tuple_to_tensor(stride)
-    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    var filter_tensor = _static_int_tuple_to_tensor(filter)
+    var stride_tensor = _static_int_tuple_to_tensor(stride)
+    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
 
     alias simd_width = simdwidthof[DType.float32]()
 
-    let output_shape = pool_shape[
+    var output_shape = pool_shape[
         4,
         DType.float32,
         DType.int32,
