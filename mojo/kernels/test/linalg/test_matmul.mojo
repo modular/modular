@@ -37,8 +37,8 @@ fn gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                let a_val = a[i, p].cast[c_type]()
-                let b_val = b[p, j].cast[c_type]()
+                var a_val = a[i, p].cast[c_type]()
+                var b_val = b[p, j].cast[c_type]()
                 c[StaticIntTuple[2]((i, j))] += a_val * b_val
 
 
@@ -50,9 +50,9 @@ fn test_matmul[
     c_type: DType,
     saturated: Bool,
 ](m: Int, n: Int, k: Int) -> Int:
-    let a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
-    let b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
-    let b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
+    var b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
+    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
     padded_n_k = pack_matmul_b_shape_func_M[
@@ -66,38 +66,38 @@ fn test_matmul[
         True,
     ](b, m)
 
-    let padded_n = padded_n_k[1] if b_packed else n
-    let padded_k = padded_n_k[0] if b_packed else k
+    var padded_n = padded_n_k[1] if b_packed else n
+    var padded_k = padded_n_k[0] if b_packed else k
 
-    let bp_ptr = DTypePointer[b_type].alloc(
+    var bp_ptr = DTypePointer[b_type].alloc(
         padded_k * padded_n, alignment=alignment
     )
-    let c0_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
-    let c1_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
+    var c0_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
+    var c1_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
 
-    let a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
+    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
 
-    let bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
-    let c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
+    var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
+    var c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
 
-    let am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
+    var am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, k)
     )
-    let bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+    var bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         b_ptr, Index(k, n)
     )
-    let bpm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+    var bpm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         bp_ptr, Index(k, n)
     )
-    let cm0 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
+    var cm0 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
         c0_ptr, Index(m, n)
     )
-    let cm1 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
+    var cm1 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
         c1_ptr, Index(m, n)
     )
 
     # saturated VNNI only has a range [0,127] for the input a
-    let vnni_range: Int = 128 if saturated else 256
+    var vnni_range: Int = 128 if saturated else 256
     var cnt: Int = 0
     for i in range(m):
         for p in range(k):
@@ -198,28 +198,28 @@ fn test_matmul[bPacked: Bool, saturated: Bool]() -> Int:
 
 fn test_matmul_vnni():
     print("== test_matmul_vnni")
-    let errors = test_matmul[False, False]()
+    var errors = test_matmul[False, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked():
     print("== test_matmul_vnni_bpacked")
-    let errors = test_matmul[True, False]()
+    var errors = test_matmul[True, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_saturated():
     print("== test_matmul_vnni_saturated")
-    let errors = test_matmul[False, True]() if has_avx2() else 0
+    var errors = test_matmul[False, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked_saturated():
     print("== test_matmul_vnni_bpacked_saturated")
-    let errors = test_matmul[True, True]() if has_avx2() else 0
+    var errors = test_matmul[True, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 

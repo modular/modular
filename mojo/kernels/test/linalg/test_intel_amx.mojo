@@ -40,18 +40,18 @@ alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[type](a_ptr.bitcast[type](), n)
+    var a = Buffer[type](a_ptr.bitcast[type](), n)
     for i in range(n):
-        let v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
+        var v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
         print(v)
 
 
 fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[type](a_ptr.bitcast[type](), m * n)
+    var a = Buffer[type](a_ptr.bitcast[type](), m * n)
     for i in range(m):
         print("row")
         for j in range(n):
-            let ai = __mlir_op.`pop.cast`[_type=int32_pop](a[n * i + j].value)
+            var ai = __mlir_op.`pop.cast`[_type=int32_pop](a[n * i + j].value)
             print(ai)
 
 
@@ -75,11 +75,11 @@ fn init_matrices(
     c_ptr: DTypePointer[DType.int32],
     c2_ptr: DTypePointer[DType.int32],
 ):
-    let a = Buffer[DType.int8](a_ptr.address, 1024)
-    let b = Buffer[DType.int8](b_ptr.address, 1024)
-    let c = Buffer[DType.int32](c_ptr.address, 256)
-    let c2 = Buffer[DType.int32](c2_ptr.address, 256)
-    let b2 = Buffer[DType.int8, 1024].stack_allocation()
+    var a = Buffer[DType.int8](a_ptr.address, 1024)
+    var b = Buffer[DType.int8](b_ptr.address, 1024)
+    var c = Buffer[DType.int32](c_ptr.address, 256)
+    var c2 = Buffer[DType.int32](c2_ptr.address, 256)
+    var b2 = Buffer[DType.int8, 1024].stack_allocation()
 
     for i in range(1024):
         a[i] = Int8(i & 127)
@@ -88,16 +88,16 @@ fn init_matrices(
     memset_zero[DType.int32](c.data, 1024)
     memset_zero[DType.int32](c2.data, 1024)
 
-    let b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data.address)
-    let bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr.address)
+    var b2m = NDBuffer[DType.int8, 2, DimList(64, 16)](b2.data.address)
+    var bm = NDBuffer[DType.int8, 2, DimList(16, 64)](b_ptr.address)
     # transpose from 64x16 to 16x64
     transpose[2, DimList(16, 64), DimList(64, 16), DType.int8](bm, b2m)
 
-    let b32_ptr = b.data.bitcast[DType.int32]()
-    let b32m = NDBuffer[DType.int32, 2, DimList(16, 16)](b32_ptr.address)
+    var b32_ptr = b.data.bitcast[DType.int32]()
+    var b32m = NDBuffer[DType.int32, 2, DimList(16, 16)](b32_ptr.address)
     transpose_inplace[16, 16, DType.int32](b32m)
-    let am = NDBuffer[DType.int8, 2, DimList(16, 64)](a.data.address)
-    let c2m = NDBuffer[DType.int32, 2, DimList(16, 16)](c2.data.address)
+    var am = NDBuffer[DType.int8, 2, DimList(16, 64)](a.data.address)
+    var c2m = NDBuffer[DType.int32, 2, DimList(16, 16)](c2.data.address)
     naive_matmul[
         DimList(16, 64),
         DimList(64, 16),
@@ -113,12 +113,12 @@ fn init_matrices(
 
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
-    let ptr = Pointer.address_of(tc)
-    let tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
+    var ptr = Pointer.address_of(tc)
+    var tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
-    let nrows: UInt8 = 16
-    let colb: UInt16 = 64
+    var nrows: UInt8 = 16
+    var colb: UInt16 = 64
 
     tc.palette_id = 1
 
@@ -132,10 +132,10 @@ fn setup_tile_config() -> tileconfig:
 
 
 fn main():
-    let a = Buffer[DType.int8, 1024].stack_allocation()
-    let b = Buffer[DType.int8, 1024].stack_allocation()
-    let c = Buffer[DType.int32, 256].stack_allocation()
-    let c2 = Buffer[DType.int32, 256].stack_allocation()
+    var a = Buffer[DType.int8, 1024].stack_allocation()
+    var b = Buffer[DType.int8, 1024].stack_allocation()
+    var c = Buffer[DType.int32, 256].stack_allocation()
+    var c2 = Buffer[DType.int32, 256].stack_allocation()
 
     init_matrices(a.data, b.data, c.data, c2.data)
     # print_matrix[16, 64, DType.int8](b.data.bitcast[void]())
@@ -153,8 +153,8 @@ fn main():
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
-        let ptr = Pointer[tileconfig].address_of(tc)
-        let tc_ptr = DTypePointer[void](
+        var ptr = Pointer[tileconfig].address_of(tc)
+        var tc_ptr = DTypePointer[void](
             ptr.bitcast[__mlir_type.`!pop.scalar<invalid>`]().address
         )
 

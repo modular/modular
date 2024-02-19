@@ -18,11 +18,11 @@ alias c_type = DType.float32
 fn test_partition():
     print("== test_partition")
     # Matmul dimensions
-    let M = 4
-    let N = 768
-    let K = 3072
+    var M = 4
+    var N = 768
+    var K = 3072
 
-    let num_tasks = 8
+    var num_tasks = 8
 
     var config: SubMatmulConfig
 

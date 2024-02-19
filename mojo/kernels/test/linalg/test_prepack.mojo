@@ -34,17 +34,17 @@ fn test_prepack():
     alias src_shape_static = DimList(k, n)
     alias dst_shape_static = DimList(k_padded, n_padded)
 
-    let src_storage = Buffer[type, Dim(n * k)].aligned_stack_allocation[64]()
+    var src_storage = Buffer[type, Dim(n * k)].aligned_stack_allocation[64]()
     src_storage.fill(0)
-    let dst_storage = Buffer[
+    var dst_storage = Buffer[
         type, Dim(n_padded * k_padded)
     ].aligned_stack_allocation[64]()
     dst_storage.fill(0)
 
-    let src_buf = NDBuffer[type, 2, src_shape_dyn](
+    var src_buf = NDBuffer[type, 2, src_shape_dyn](
         src_storage.data, src_shape_static
     )
-    let dst_buf = NDBuffer[type, 2, dst_shape_dyn](
+    var dst_buf = NDBuffer[type, 2, dst_shape_dyn](
         dst_storage.data, dst_shape_static
     )
 

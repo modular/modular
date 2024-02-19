@@ -24,7 +24,7 @@ fn test(m: NDBuffer[DType.int32, 2, DimList(4, 4)]):
     # CHECK: [12, 13, 14, 15]
     print(m.simd_load[4](3, 0))
 
-    let v = iota[DType.int32, 4]()
+    var v = iota[DType.int32, 4]()
     m.simd_store[4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))
@@ -40,7 +40,7 @@ fn test_dynamic_shape(m: NDBuffer[DType.int32, 2, DimList.create_unknown[2]()]):
     # CHECK: [12, 13, 14, 15]
     print(m.simd_load[4](3, 0))
 
-    let v = iota[DType.int32, 4]()
+    var v = iota[DType.int32, 4]()
     m.simd_store[4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))
@@ -48,8 +48,8 @@ fn test_dynamic_shape(m: NDBuffer[DType.int32, 2, DimList.create_unknown[2]()]):
 
 fn test_matrix_static():
     print("== test_matrix_static")
-    let a = Buffer[DType.int32, 16].stack_allocation()
-    let m = NDBuffer[DType.int32, 2, DimList(4, 4)](a.data)
+    var a = Buffer[DType.int32, 16].stack_allocation()
+    var m = NDBuffer[DType.int32, 2, DimList(4, 4)](a.data)
     for i in range(16):
         a[i] = i
     test(m)
@@ -57,8 +57,8 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    let a = Buffer[DType.int32, 16].stack_allocation()
-    let m = NDBuffer[DType.int32, 2, DimList(4, 4)](a.data)
+    var a = Buffer[DType.int32, 16].stack_allocation()
+    var m = NDBuffer[DType.int32, 2, DimList(4, 4)](a.data)
     for i in range(16):
         a[i] = i
     test(m)
@@ -66,9 +66,9 @@ fn test_matrix_dynamic():
 
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    let a = Buffer[DType.int32, 16].stack_allocation()
+    var a = Buffer[DType.int32, 16].stack_allocation()
     # let m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
-    let m = NDBuffer[DType.int32, 2, DimList.create_unknown[2]()](
+    var m = NDBuffer[DType.int32, 2, DimList.create_unknown[2]()](
         a.data, Index(4, 4)
     )
     for i in range(16):

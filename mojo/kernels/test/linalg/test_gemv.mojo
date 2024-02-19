@@ -43,17 +43,17 @@ fn test_gemv():
     alias m = 4096
     alias k = 11008
 
-    let lhs_storage = DTypePointer[type].alloc(m * k, alignment=alignment)
-    let lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
+    var lhs_storage = DTypePointer[type].alloc(m * k, alignment=alignment)
+    var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
-    let rhs_storage = DTypePointer[type].alloc(k, alignment=alignment)
-    let rhs = Buffer[type, Dim(k)](rhs_storage)
+    var rhs_storage = DTypePointer[type].alloc(k, alignment=alignment)
+    var rhs = Buffer[type, Dim(k)](rhs_storage)
 
-    let out_storage = DTypePointer[type].alloc(m, alignment=alignment)
-    let out = Buffer[type, Dim(m)](out_storage)
+    var out_storage = DTypePointer[type].alloc(m, alignment=alignment)
+    var out = Buffer[type, Dim(m)](out_storage)
 
-    let ref_out_storage = DTypePointer[type].alloc(m, alignment=alignment)
-    let ref_out = Buffer[type, Dim(m)](ref_out_storage)
+    var ref_out_storage = DTypePointer[type].alloc(m, alignment=alignment)
+    var ref_out = Buffer[type, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -68,8 +68,8 @@ fn test_gemv():
 
     # Verify the result
     for i in range(out.__len__()):
-        let expect = ref_out[i]
-        let actual = out[i]
+        var expect = ref_out[i]
+        var actual = out[i]
         if not isclose[type, 1](
             expect, actual, absolute_tolerance, relative_tolerance
         ):
@@ -84,8 +84,8 @@ fn test_gemv():
 
     # Verify the result
     for i in range(out.__len__()):
-        let expect = ref_out[i]
-        let actual = out[i]
+        var expect = ref_out[i]
+        var actual = out[i]
         if not isclose[type, 1](
             expect, actual, absolute_tolerance, relative_tolerance
         ):
@@ -103,9 +103,9 @@ fn test_gemv():
     fn bench_fn_serial():
         gemv[parallelize=False](out, lhs, rhs)
 
-    let serial_perf = bench_run[bench_fn_serial]()
+    var serial_perf = bench_run[bench_fn_serial]()
     benchmark.keep(out[10])
-    let serial_bandwidth = (bytes_per_iteration / serial_perf.mean()) / gigabyte
+    var serial_bandwidth = (bytes_per_iteration / serial_perf.mean()) / gigabyte
     print(
         "Serial GEMV Bandwidth: ",
         serial_bandwidth,
@@ -122,14 +122,14 @@ fn test_gemv():
     fn bench_fn_parallel():
         gemv[parallelize=True](out, lhs, rhs)
 
-    let par_perf = bench_run[bench_fn_parallel]()
+    var par_perf = bench_run[bench_fn_parallel]()
     benchmark.keep(out[10])
 
-    let rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
-    let out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
+    var rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
+    var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
 
     # Compute speedup and bandwidth stats
-    let par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
+    var par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
     print(
         "Parallel GEMV Bandwidth: ",
         par_bandwidth,
@@ -139,10 +139,10 @@ fn test_gemv():
     )
     print("Parallel GEMV GFLOP/s", 1e-9 * ((2 * m * k) / par_perf.mean()))
 
-    let bandwidth_increase = par_bandwidth / serial_bandwidth
+    var bandwidth_increase = par_bandwidth / serial_bandwidth
     print("--> Bandwidth increase: ", bandwidth_increase)
 
-    let speedup = serial_perf.mean() / par_perf.mean()
+    var speedup = serial_perf.mean() / par_perf.mean()
     print("--> Mean Runtime Speedup: ", speedup)
 
     @always_inline
@@ -153,7 +153,7 @@ fn test_gemv():
 
     bench_fn_matmul()
 
-    let matmul_perf = bench_run[bench_fn_matmul]()
+    var matmul_perf = bench_run[bench_fn_matmul]()
     benchmark.keep(out[10])
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))

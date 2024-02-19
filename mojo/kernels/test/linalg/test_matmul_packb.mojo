@@ -49,11 +49,11 @@ fn pack_b(
 
 
 fn test_pack_b():
-    let packed_b = NDBuffer[
+    var packed_b = NDBuffer[
         type, 3, DimList(width // tile_inner_size, K, tile_inner_size)
     ].aligned_stack_allocation[64]()
     packed_b.fill(1)
-    let b = NDBuffer[type, 2, DimList(K, N)].aligned_stack_allocation[64]()
+    var b = NDBuffer[type, 2, DimList(K, N)].aligned_stack_allocation[64]()
     b.fill(1)
     pack_b(packed_b, b)
 

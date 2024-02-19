@@ -28,11 +28,11 @@ fn fill_a(
     ]
 ):
     # Fills the A matrix with the following values row + 2*col
-    let rows = 16
-    let cols = 16
+    var rows = 16
+    var cols = 16
     for i in range(rows):
         for j in range(cols):
-            let val = Float32(i + 2 * j)
+            var val = Float32(i + 2 * j)
             buf[StaticIntTuple[2](i, j)] = val.value
 
 
@@ -44,11 +44,11 @@ fn fill_b(
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col
-    let rows = 16
-    let cols = 16
+    var rows = 16
+    var cols = 16
     for i in range(rows):
         for j in range(cols):
-            let val = Float32(i // (j + 1) + j)
+            var val = Float32(i // (j + 1) + j)
             buf[StaticIntTuple[2](i, j)] = val.value
 
 
@@ -70,8 +70,8 @@ fn print_matrix(
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col + 3
-    let rows = 16
-    let cols = 16
+    var rows = 16
+    var cols = 16
     for i in range(rows):
         for j in range(cols):
             print(buf[i, j])
@@ -82,17 +82,17 @@ fn test_amx_matmul():
     if is_apple_m1():
         print("== test_amx_matmul")
 
-    let a_matrix = NDBuffer[
+    var a_matrix = NDBuffer[
         DType.float32,
         2,
         DimList(16, 16),
     ].stack_allocation()
-    let b_matrix = NDBuffer[
+    var b_matrix = NDBuffer[
         DType.float32,
         2,
         DimList(16, 16),
     ].stack_allocation()
-    let c_matrix = NDBuffer[
+    var c_matrix = NDBuffer[
         DType.float32,
         2,
         DimList(16, 16),

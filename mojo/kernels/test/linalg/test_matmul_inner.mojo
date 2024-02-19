@@ -91,10 +91,10 @@ fn test_micro_kernel[
     alias pack_inner_size = kernel_shape.pack_inner_size
     alias tile_inner_size: Int = pack_inner_size * simd_size
 
-    let a = NDBuffer[a_type, 2, DimList(M, K)].aligned_stack_allocation[128]()
+    var a = NDBuffer[a_type, 2, DimList(M, K)].aligned_stack_allocation[128]()
     a.fill(1)
 
-    let b_packed = NDBuffer[
+    var b_packed = NDBuffer[
         b_type,
         3,
         DimList(
@@ -105,7 +105,7 @@ fn test_micro_kernel[
     ].aligned_stack_allocation[128]()
     b_packed.fill(1)
 
-    let c = NDBuffer[c_type, 2, DimList(M, N)].aligned_stack_allocation[128]()
+    var c = NDBuffer[c_type, 2, DimList(M, N)].aligned_stack_allocation[128]()
     c.fill(0)
 
     matmul_inner_loop[
