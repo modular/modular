@@ -38,11 +38,36 @@ fn execute_nullary[
     return result_map.get[outtype]("output0")
 
 
+fn execute_nullary_list[
+    outtype: DType = DType.float32
+](module: Module) raises -> DynamicVector[Tensor[outtype]]:
+    let result_map = execute_no_args(module)
+    let engine_list = result_map.get_value("output0").as_list()
+    var results = DynamicVector[Tensor[outtype]]()
+    for i in range(len(engine_list)):
+        results.append(engine_list[i].as_tensor_copy[outtype]())
+    return results
+
+
 fn execute_unary[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](module: Module, input: Tensor[intype]) raises -> Tensor[outtype]:
     let result_map = execute_base(module, input)
     return result_map.get[outtype]("output0")
+
+
+fn execute_unary_list[
+    intype: DType = DType.float32, outtype: DType = DType.float32
+](module: Module, input: Tensor[intype]) raises -> DynamicVector[
+    Tensor[outtype]
+]:
+    let result_map = execute_base(module, input)
+    let engine_list = result_map.get_value("output0").as_list()
+    var results = DynamicVector[Tensor[outtype]]()
+    for i in range(len(engine_list)):
+        results.append(engine_list[i].as_tensor_copy[outtype]())
+    _ = result_map ^
+    return results
 
 
 fn execute_binary[

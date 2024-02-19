@@ -37,5 +37,6 @@ from .linalg import (
     matmul_broadcast,
     outer,
 )
+from .lists import list
 from .reduction import mean, arg_max
 from .slicing import gather, slice, split, concat, stack
