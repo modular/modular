@@ -22,11 +22,11 @@ from NN.Conv import (
 )
 from NN.ConvUtils import (
     ConvShape,
+    append_shape,
+    extend_shape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
-    extend_shape,
-    append_shape,
 )
 from NN.Image import Image2DLayout, ImageData, ImageShape
 

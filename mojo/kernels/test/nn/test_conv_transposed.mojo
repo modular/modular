@@ -22,13 +22,13 @@ from NN.ConvTranspose import (
 from NN.ConvUtils import (
     ConvInfoStatic,
     ConvShape,
+    append_shape,
+    extend_shape,
     get_conv_num_partitions,
     get_conv_num_tasks,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
-    extend_shape,
-    append_shape,
 )
 
 from utils.index import Index, StaticIntTuple
