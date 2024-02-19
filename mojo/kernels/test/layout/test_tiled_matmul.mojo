@@ -6,9 +6,9 @@
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
+from algorithm import parallelize, vectorize
 from kernel_utils.layout import Layout, LayoutList, composition
 from kernel_utils.layout_tensor import LayoutTensor
-from algorithm import vectorize, parallelize
 
 
 @register_passable
