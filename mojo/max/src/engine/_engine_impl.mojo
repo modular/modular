@@ -65,4 +65,4 @@ struct _EngineImpl:
 
     fn __del__(owned self):
         if self.can_close_lib:
-            self.lib._del_old()
+            self.lib.close()

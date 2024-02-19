@@ -302,7 +302,7 @@ struct CompileConfig:
     fn __del__(owned self):
         if self.torch_lib:
             var torch = self.torch_lib.value()
-            torch._del_old()
+            torch.close()
 
         __get_address_as_lvalue(self.ptr.address).free(self.lib)
         _ = __get_address_as_owned_value(self.ptr.address)
