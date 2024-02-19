@@ -53,18 +53,18 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
 
     # Q, K, V shapes.
-    let q_size = batch_size * num_heads * seq_len * depth
-    let k_size = batch_size * num_heads * num_keys * depth
-    let v_size = k_size
-    let o_size = q_size
+    var q_size = batch_size * num_heads * seq_len * depth
+    var k_size = batch_size * num_heads * num_keys * depth
+    var v_size = k_size
+    var o_size = q_size
 
     # Allocate memory for all variables.
-    let q_ptr = DTypePointer[type].alloc(q_size)
-    let k_ptr = DTypePointer[type].alloc(k_size)
-    let v_ptr = DTypePointer[type].alloc(v_size)
-    let mask_ptr = DTypePointer[type].alloc(seq_len * num_keys)
-    let output_ptr = DTypePointer[type].alloc(o_size)
-    let flash_output_ptr = DTypePointer[type].alloc(o_size)
+    var q_ptr = DTypePointer[type].alloc(q_size)
+    var k_ptr = DTypePointer[type].alloc(k_size)
+    var v_ptr = DTypePointer[type].alloc(v_size)
+    var mask_ptr = DTypePointer[type].alloc(seq_len * num_keys)
+    var output_ptr = DTypePointer[type].alloc(o_size)
+    var flash_output_ptr = DTypePointer[type].alloc(o_size)
 
     # Q, K, V are randomly initalized.
     rand[type](q_ptr, q_size)
@@ -73,17 +73,17 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     rand[type](mask_ptr, seq_len * num_keys)
 
     # Contruct buffers.
-    let q = NDBuffer[type, 4](
+    var q = NDBuffer[type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
-    let k = NDBuffer[type, 4](
+    var k = NDBuffer[type, 4](
         k_ptr, Index(batch_size, num_keys, num_heads, depth)
     )
-    let v = NDBuffer[type, 4](
+    var v = NDBuffer[type, 4](
         v_ptr, Index(batch_size, num_keys, num_heads, depth)
     )
-    let mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, num_keys))
-    let output = NDBuffer[type, 4](
+    var mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, num_keys))
+    var output = NDBuffer[type, 4](
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
@@ -96,14 +96,14 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
         scale,
     )
 
-    let stream = Stream()
+    var stream = Stream()
 
     # Device pointers
-    let q_device_ptr = _malloc[type](q_size)
-    let k_device_ptr = _malloc[type](k_size)
-    let v_device_ptr = _malloc[type](v_size)
-    let mask_device_ptr = _malloc[type](seq_len * num_keys)
-    let output_device_ptr = _malloc[type](o_size)
+    var q_device_ptr = _malloc[type](q_size)
+    var k_device_ptr = _malloc[type](k_size)
+    var v_device_ptr = _malloc[type](v_size)
+    var mask_device_ptr = _malloc[type](seq_len * num_keys)
+    var output_device_ptr = _malloc[type](o_size)
 
     # Copy from host to device
     _copy_host_to_device(q_device_ptr, q_ptr, q_size)
@@ -114,7 +114,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     alias q_tile_num_rows = 32
 
     if seq_len == num_keys and seq_len % 128 == 0:
-        let func = Function[
+        var func = Function[
             fn (
                 DTypePointer[type],
                 DTypePointer[type],
@@ -167,7 +167,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             run_func(stream)
 
             var nstime = time_function[run_func](stream) / nrun
-            let sectime = nstime / 1000000
+            var sectime = nstime / 1000000
             print(nrun, "runs avg", sectime, "ms")
 
         else:
@@ -188,7 +188,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             )
 
     else:
-        let func = Function[
+        var func = Function[
             fn (
                 DTypePointer[type],
                 DTypePointer[type],
@@ -236,8 +236,8 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                let expect = output_ptr.load(d + depth * (h + s * num_heads))
-                let actual = flash_output_ptr.load(
+                var expect = output_ptr.load(d + depth * (h + s * num_heads))
+                var actual = flash_output_ptr.load(
                     d + depth * (h + s * num_heads)
                 )
                 if abs(expect - actual) > 1e-4 * abs(expect):
