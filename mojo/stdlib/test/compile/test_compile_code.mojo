@@ -17,7 +17,7 @@ def main():
         return x + y
 
     alias func = my_add_function[DType.float32, 4]
-    let asm: String = compile_code[
+    var asm: String = compile_code[
         __type_of(func), func, emission_kind="llvm"
     ]()
 
