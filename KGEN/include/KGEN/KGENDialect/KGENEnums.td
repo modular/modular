@@ -232,4 +232,25 @@ def KGEN_IntLiteralBinopKind : I32EnumAttr<"IntLiteralBinopKind",
 
 def KGEN_IntLiteralBinopKindAttr : EnumAttr<KGENDialect, KGEN_IntLiteralBinopKind, "int_literal.binop_kind">;
 
+//===----------------------------------------------------------------------===//
+// FloatLiteral support
+//===----------------------------------------------------------------------===//
+
+/// This encodes special values for `#kgen.float_literal` attributes.
+def KGEN_FloatLiteralSpecialValues : I32EnumAttr<"FloatLiteralSpecialValues",
+  "Special value kinds for float literals", [
+  I32EnumAttrCase<"Normal", 0, "normal">,
+  I32EnumAttrCase<"NegZero", 1, "neg_zero">,
+  I32EnumAttrCase<"Inf", 2, "inf">,
+  I32EnumAttrCase<"NegInf", 3, "neg_inf">,
+  I32EnumAttrCase<"Nan", 4, "nan">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_FloatLiteralSpecialValuesAttr :
+  EnumAttr<KGENDialect, KGEN_FloatLiteralSpecialValues,
+           "float_literal.special_values">;
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD

@@ -498,6 +498,48 @@ def KGEN_IntLiteralAttr : KGEN_ExprAttr<"IntLiteral", "int_literal"> {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralAttr : KGEN_ExprAttr<"FloatLiteral", "float_literal"> {
+  let summary = "Attribute for holding infinite precision float literals.";
+  let description = [{
+    The `#kgen.float_literal` represents an float literal, though it
+    is actually stored as a rational number IPRational.
+
+    The `special` field tells whether it is a normal number or one of
+    the special values (infinities, negative zero, or NAN).  When it
+    is a non-normal number, it does not include a rational number
+    value.
+
+    TODO(#23387): MLIR's AsmParser doesn't have `parseSlash` or a more
+    generic way to parse literal strings/characters, so we use
+    the pipe "|" character instead for rationals.
+
+    Example:
+
+    ```mlir
+    #kgen.float_literal<normal(5|3)>
+    #kgen.float_literal<neg_zero>
+    #kgen.float_literal<inf>
+    #kgen.float_literal<neg_inf>
+    #kgen.float_literal<nan>
+    ```
+  }];
+
+  let parameters = (ins
+    KGEN_FloatLiteralSpecialValuesAttr:$special,
+    "std::optional<IPRational>":$rational
+  );
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 

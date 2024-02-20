@@ -119,6 +119,22 @@ def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal",[
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralType
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralType : KGENType<"FloatLiteral", "float_literal",[]> {
+  let summary = "Arbitrary-precision float type for literals.";
+  let description = [{
+    The `!kgen.float_literal` type is for use in arbitrary precision
+    compile time computations.  They are implemented as infinite precision
+    rational number values.  It can't be materialized, but allows for
+    arbitrary precision for compile time computations.
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
