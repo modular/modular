@@ -15,6 +15,12 @@ kgen.func @int_literal(%arg0: !kgen.int_literal) {
   kgen.return
 }
 
+// CHECK-LABEL: @float_literal
+// CHECK-SAME: %arg0: !kgen.float_literal
+kgen.func @float_literal(%arg0: !kgen.float_literal) {
+  kgen.return
+}
+
 // CHECK-LABEL: @memory_only_struct
 // CHECK-SAME: %arg0: !kgen.struct<()>,
 // CHECK-SAME: %arg1: !kgen.struct<() memoryOnly>,

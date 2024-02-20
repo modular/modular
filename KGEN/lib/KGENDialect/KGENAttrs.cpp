@@ -394,6 +394,66 @@ Type IntLiteralAttr::getType() const {
 bool IntLiteralAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
+  if (p.parseLess()) {
+    p.emitError(p.getCurrentLocation(), "expected '<' character");
+  }
+  FloatLiteralSpecialValuesAttr specialAttr;
+  if (p.parseCustomAttributeWithFallback(specialAttr, ::mlir::Type{})) {
+    p.emitError(p.getCurrentLocation(),
+                "expected FloatLiteralSpecialValueAttr");
+    return {};
+  }
+
+  std::optional<IPRational> rational;
+
+  if (specialAttr.getValue() == FloatLiteralSpecialValues::Normal) {
+    APInt numerator;
+    APInt denominator;
+    // MLIR's AsmParser doesn't have `parseSlash` or a more generic way to parse
+    // literal strings/characters, so we will use the pipe "|" character
+    // instead. https://github.com/modularml/modular/issues/23387
+    if (p.parseLParen() || p.parseInteger(numerator) ||
+        p.parseOptionalVerticalBar() || p.parseInteger(denominator) ||
+        p.parseRParen()) {
+      p.emitError(p.getCurrentLocation(),
+                  "expected rational number with pipe in parens");
+      return {};
+    }
+    if (denominator == 0) {
+      p.emitError(p.getCurrentLocation(),
+                  "expected rational number with non-zero denominator");
+    }
+    rational = IPRational(numerator, denominator);
+  }
+
+  if (p.parseGreater()) {
+    p.emitError(p.getCurrentLocation(), "expected '>' character");
+  }
+
+  return FloatLiteralAttr::get(p.getContext(), specialAttr, rational);
+}
+
+void FloatLiteralAttr::print(AsmPrinter &p) const {
+  p.getStream() << "<" << getSpecial().getValue();
+  if (getSpecial().getValue() == FloatLiteralSpecialValues::Normal) {
+    assert(getRational().has_value() &&
+           "rational has value when special value is normal");
+    p.getStream() << " " << getRational().value();
+  }
+  p.getStream() << ">";
+}
+
+Type FloatLiteralAttr::getType() const {
+  return FloatLiteralType::get(this->getContext());
+}
+
+bool FloatLiteralAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // VTableAttr
 //===----------------------------------------------------------------------===//
 
