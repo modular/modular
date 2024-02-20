@@ -7,3 +7,4 @@ lit_config.load_config(
 lit_config.load_config(config, "@MODULAR_SOURCE_DIR@/All/test/API/lit.cfg.py")
 
 config.available_features.add("@TORCH_LIB@")
+config.available_features.add("@TF_LIB@")

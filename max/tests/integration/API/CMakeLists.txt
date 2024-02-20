@@ -11,6 +11,11 @@ if(TARGET mtorch)
   list(APPEND FRAMEWORK_DYLIB_DEPS mtorch)
 endif()
 
+if(TARGET tf)
+  set(TF_LIB "tf")
+  list(APPEND FRAMEWORK_DYLIB_DEPS tf)
+endif()
+
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -31,7 +36,6 @@ add_modular_testsuite(check-api-integration-tests
   mt
 
   DEPENDS
-  tf
   tfl
   monnx
   mof
