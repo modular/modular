@@ -237,32 +237,6 @@ fn gelu_approximate[
     return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
 
 
-@always_inline
-fn gelu_approximate_sigmoid[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the approximate GELU Op using the equation
-    $x*sigmoid(1.702x)$.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x : The value to compute the GELU operation on.
-
-    Returns:
-        SIMD[type, size]: The result of the approximate GELU operation.
-
-    Constraints:
-        Type must be a floating point type.
-    """
-    constrained[
-        type.is_floating_point(), "dtype must be a floating point type"
-    ]()
-    return x * sigmoid(x * 1.702)
-
-
 # ===----------------------------------------------------------------------===#
 # sigmoid
 # ===----------------------------------------------------------------------===#

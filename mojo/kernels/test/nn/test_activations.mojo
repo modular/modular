@@ -13,7 +13,6 @@ from NN.Activations import (
     elu,
     gelu,
     gelu_approximate,
-    gelu_approximate_sigmoid,
     relu,
     relu_n1,
 )
@@ -95,12 +94,6 @@ fn test_gelu_float32():
     # CHECK: 107.523
     print(gelu_approximate(Float32(107.5230)))
 
-    # CHECK: 108.523
-    print(gelu_approximate_sigmoid(Float32(108.5230)))
-
-    # CHECK: 107.523
-    print(gelu_approximate_sigmoid(Float32(107.5230)))
-
 
 # CHECK-LABEL: test_gelu_float64
 fn test_gelu_float64():
@@ -127,12 +120,6 @@ fn test_gelu_float64():
 
     # CHECK: 107.5229
     print(gelu_approximate(Float64(107.5230)))
-
-    # CHECK: 108.523
-    print(gelu_approximate_sigmoid(Float64(108.5230)))
-
-    # CHECK: 107.523
-    print(gelu_approximate_sigmoid(Float64(107.5230)))
 
 
 @always_inline
