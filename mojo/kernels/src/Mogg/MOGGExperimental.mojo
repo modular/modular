@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import abs, erf, exp, max, min, sqrt
+from math import abs, ceil, erf, exp, sqrt, max, min, isnan, tanh, log, iota
+from math.limit import isinf
 
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -397,6 +398,9 @@ fn mo_abs(
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
 
+    x.enable_fusion()
+    out.enable_fusion()
+
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
@@ -412,6 +416,9 @@ fn mo_erf(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
 
     @parameter
     @always_inline
@@ -429,10 +436,70 @@ fn mo_exp(
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
 
+    x.enable_fusion()
+    out.enable_fusion()
+
     @parameter
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return exp(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.is_inf", MAX_BENEFIT)
+@export
+fn mo_is_inf(
+    x: Tensor,
+) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](isinf(x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.is_nan", MAX_BENEFIT)
+@export
+fn mo_is_nan(
+    x: Tensor,
+) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](isnan(x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.log", MAX_BENEFIT)
+@export
+fn mo_log(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](log(x.simd_load[width](i)))
 
     out.for_each[1, func]()
     return out
@@ -476,6 +543,25 @@ fn my_sqrt(
     return out
 
 
+@mogg_register_override("mo.tanh", MAX_BENEFIT)
+@export
+fn mo_tanh(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](tanh(x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
 # ===----------------------------------------------------------------------===#
 # Binary elementwise op
 # ===----------------------------------------------------------------------===#
@@ -495,6 +581,44 @@ fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.and", MAX_BENEFIT)
+@export
+fn mo_and(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) & i2)
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.equal", MAX_BENEFIT)
+@export
+fn mo_equal(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) == i2)
 
     out.for_each[1, func]()
     return out
@@ -580,12 +704,33 @@ fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     return out
 
 
+@mogg_register_override("mo.not_equal", MAX_BENEFIT)
+@export
+fn mo_not_equal(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
+    var out = empty_tensor[DType.bool](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) != i2)
+
+    out.for_each[1, func]()
+    return out
+
+
 @mogg_register_override("mo.sub", MAX_BENEFIT)
 @export
-fn my_sub_without_fusion(
-    x: Tensor, y: Tensor
-) -> Tensor[x.type, x.static_shape]:
+fn mo_sub(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
 
     @parameter
     @always_inline
@@ -595,6 +740,69 @@ fn my_sub_without_fusion(
 
     out.for_each[1, func]()
     return out
+
+
+# ===----------------------------------------------------------------------===#
+# Tertiary elementwise op
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("mo.select", MAX_BENEFIT)
+@export
+fn mo_select(
+    cond: Tensor, x: Tensor, y: Tensor
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    cond.enable_fusion()
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        var c = cond.simd_load[width](i)
+        var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        return rebind[SIMD[_t, width]](c.select(x.simd_load[width](i), i2))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.range", MAX_BENEFIT)
+@export
+fn mo_range[
+    out_type: DType, out_shape: DimList
+](start: Tensor, stop: Tensor, step: Tensor) -> Tensor[out_type, out_shape]:
+    var start_ = start.simd_load[1](0)
+    var stop_ = rebind[SIMD[start.type, 1]](stop.simd_load[1](0))
+    var step_ = rebind[SIMD[start.type, 1]](step.simd_load[1](0))
+
+    var shape: IntList[out_shape]
+
+    @parameter
+    if start.type.is_integral():
+        shape = StaticIntTuple[1](len(range(start_, stop_, step_)))
+    else:
+        shape = StaticIntTuple[1](int(ceil(abs(stop_ - start_) / abs(step_))))
+
+    var out = empty_tensor[out_type](shape)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, 1]](start_[0]) + (
+            iota[_t, width](i[0]) * rebind[SIMD[_t, 1]](step_)
+        )
+
+    out.for_each[1, func]()
+    return out
+
+
+# ===----------------------------------------------------------------------===#
+# Test utils
+# ===----------------------------------------------------------------------===#
 
 
 @mogg_register_override("single_thread_blocking_override_test", MAX_BENEFIT)
