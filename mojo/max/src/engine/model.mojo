@@ -108,6 +108,9 @@ struct Model:
         Args:
           inputs: A variadic list of tuples with first element of tuple is
                   input name and second element is non owning view of a Tensor.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         return self._execute_view[StringRef, EngineTensorView](inputs)
 
@@ -119,6 +122,9 @@ struct Model:
         Args:
           inputs: A variadic list of tuples with first element of tuple is
                   input name and second element is non owning view of a Tensor.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         return self._execute_view[StringLiteral, EngineTensorView](inputs)
 
@@ -131,6 +137,8 @@ struct Model:
           inputs: A variadic list of tuples with first element of tuple is
                   input name and second element is non owning view of a Numpy
                   array.
+        Returns:
+            A TensorMap with output names as keys.
         """
         return self._execute_view[StringLiteral, EngineNumpyView](inputs)
 
@@ -142,6 +150,9 @@ struct Model:
         Args:
           name: Name of the input tensor.
           input: Input tensor to the model.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name, input)
@@ -155,6 +166,9 @@ struct Model:
         Args:
           name: Name of the input tensor.
           input: Inpu to the model as numpy array.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name, EngineNumpyView(input))
@@ -176,6 +190,9 @@ struct Model:
           input1: First Input tensor to the model.
           name2: Name of the second input tensor.
           input2: Second Input tensor to the model.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, input1)
@@ -196,6 +213,9 @@ struct Model:
           input1: First Input to the model as numpy array.
           name2: Name of the second input tensor.
           input2: Second Input to the model as numpy array.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, EngineNumpyView(input1))
@@ -222,6 +242,9 @@ struct Model:
           input2: Second Input tensor to the model.
           name3: Name of the third input tensor.
           input3: Third Input tensor to the model.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, input1)
@@ -247,6 +270,9 @@ struct Model:
           input2: Second Input to the model as numpy array.
           name3: Name of the third input tensor.
           input3: Third Input to the model as numpy array.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, EngineNumpyView(input1))

@@ -372,6 +372,11 @@ struct InferenceSession:
         return ptr
 
     fn copy(self) -> Self:
+        """Get a reference counted copy of inference session.
+
+        Returns:
+            An instance of inference session with incremented reference count.
+        """
         _ = __get_address_as_lvalue(self.ptr.value).ref_count.fetch_add(1)
         return Self {ptr: self.ptr}
 
@@ -463,6 +468,11 @@ struct InferenceSession:
         ).get_as_engine_tensor_spec(name, shape, dtype, self.copy())
 
     fn new_tensor_map(self) raises -> TensorMap:
+        """Gets a new TensorMap. This can be used to pass inputs to model.
+
+        Returns:
+            A new instance of TensorMap.
+        """
         return __get_address_as_lvalue(self.ptr.value).new_tensor_map(
             self.copy()
         )
