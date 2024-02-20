@@ -40,7 +40,8 @@ public:
     EK_GPU = 3,
     EK_MAX_THREADS_UNLIMITED = 4,
     EK_ENTERPRISE = 5,
-    EK_UNKNOWN = 6, ///< This must be the max value of the currently known
+    EK_ADMIN = 6,
+    EK_UNKNOWN = 7, ///< This must be the max value of the currently known
                     ///< entitlements.
   };
 
@@ -220,7 +221,7 @@ public:
                                                       ArrayRef<uint8_t> data);
 };
 
-/// Restricts users to a specific number of threads.
+/// Enables enterprise-related features.
 class EnterpriseEntitlement : public Entitlement {
 public:
   EnterpriseEntitlement() : Entitlement(EK_ENTERPRISE) {}
@@ -228,6 +229,18 @@ public:
     return e->getKind() == EK_ENTERPRISE;
   }
   static Kind getKind() { return EK_ENTERPRISE; }
+
+  StringRef getName() const override;
+  static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
+                                                      ArrayRef<uint8_t> data);
+};
+
+/// Enables admin-level permissions.
+class AdminEntitlement : public Entitlement {
+public:
+  AdminEntitlement() : Entitlement(EK_ADMIN) {}
+  static bool classof(const Entitlement *e) { return e->getKind() == EK_ADMIN; }
+  static Kind getKind() { return EK_ADMIN; }
 
   StringRef getName() const override;
   static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,

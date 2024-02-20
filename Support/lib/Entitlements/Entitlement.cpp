@@ -83,6 +83,17 @@ EnterpriseEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
 }
 
 //===----------------------------------------------------------------------===//
+// AdminEntitlement
+//===----------------------------------------------------------------------===//
+
+StringRef AdminEntitlement::getName() const { return "admin"; }
+
+ErrorOr<std::unique_ptr<Entitlement>>
+AdminEntitlement::create(bool critical, ArrayRef<uint8_t> data) {
+  return std::make_unique<AdminEntitlement>();
+}
+
+//===----------------------------------------------------------------------===//
 // BuilderRegistry
 //===----------------------------------------------------------------------===//
 
@@ -177,4 +188,5 @@ void M::registerAllEntitlements() {
   Entitlement::registerEntitlement<GPUEntitlement>();
   Entitlement::registerEntitlement<MaxThreadsUnlimitedEntitlement>();
   Entitlement::registerEntitlement<EnterpriseEntitlement>();
+  Entitlement::registerEntitlement<AdminEntitlement>();
 }
