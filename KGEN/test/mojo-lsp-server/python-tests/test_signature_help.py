@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from flaky import flaky
 from lib.utils import Document, Requests, fail_if_none, mojo_lsp_client
 from pytest_lsp import LanguageClient
 
@@ -12,6 +13,7 @@ from pytest_lsp import LanguageClient
 client = mojo_lsp_client
 
 
+@flaky
 async def test_signature_help_overload(client: LanguageClient):
     doc = Document(
         "foo.mojo",

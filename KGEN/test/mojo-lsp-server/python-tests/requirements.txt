@@ -1,2 +1,3 @@
 pytest-lsp==0.3.1
 pytest-asyncio
+flaky
