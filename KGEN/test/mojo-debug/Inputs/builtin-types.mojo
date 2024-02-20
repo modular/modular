@@ -61,8 +61,7 @@ fn main():
         value = __mlir_attr.`48:index`
     ]()
 
-    # TODO: https://github.com/modularml/modular/issues/29497
-    #    let a_register_passable_struct = ARegisterPassableStruct()
+    let a_register_passable_struct = ARegisterPassableStruct()
 
     let a_struct = AStruct()
 

@@ -8,6 +8,32 @@
 
 # RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:112' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
 
+# CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
+# CHECK:   int = -101
+# CHECK:   f32 = {
+# CHECK:     [0] = 24.125
+# CHECK:   }
+# CHECK:   another_int = 101
+# CHECK:   float16 = {
+# CHECK:     [0] = 25.125
+# CHECK:   }
+# CHECK:   uint8 = {
+# CHECK:     [0] = 123
+# CHECK:   }
+# CHECK:   simd = {
+# CHECK:     [0] = -0.125
+# CHECK:     [1] = -1.5
+# CHECK:     [2] = -1
+# CHECK:     [3] = 5.7266
+# CHECK:   }
+# CHECK:   none = None
+# CHECK:   uint16 = {
+# CHECK:     [0] = 123
+# CHECK:   }
+# CHECK:   int32 = {
+# CHECK:     [0] = 485
+# CHECK:   }
+# CHECK: }
 # CHECK: (AStruct) a_struct = {
 # CHECK:   int = {
 # CHECK:     [0] = 12

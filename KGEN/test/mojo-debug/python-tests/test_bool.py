@@ -27,9 +27,8 @@ class TestBool(LLDBTestBase):
             assert false.GetChildAtIndex(0).GetValueAsUnsigned(2) == 0
             assert false.GetSummary() == "False"
 
-            # FIXME(29497): re-enable.
-            # other = ctx.frame.FindVariable("other")
-            # assert other.GetTypeName() == "!pop.scalar<bool>"
-            # assert other.GetByteSize() == 1
-            # assert other.GetChildAtIndex(0).GetValueAsUnsigned(2) == 1
-            # assert other.GetSummary() == "True"
+            other = ctx.frame.FindVariable("other")
+            assert other.GetTypeName() == "!pop.scalar<bool>"
+            assert other.GetByteSize() == 1
+            assert other.GetChildAtIndex(0).GetValueAsUnsigned(2) == 1
+            assert other.GetSummary() == "True"
