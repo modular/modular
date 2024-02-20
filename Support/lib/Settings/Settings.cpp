@@ -46,11 +46,8 @@ static ErrorOr<EntitlementStore> openEntitlementStore(HTTPContextRef httpCtx,
   if (storeOr->has_value())
     return std::move(storeOr->value());
 
-  // Finally, we don't have one, generate it.
-  auto genOr = EntitlementStore::generate(config, std::move(httpCtx));
-  if (genOr.isError())
-    return genOr.takeError();
-  return std::move(*genOr);
+  // This should only open an existing store.
+  return Error("unable to open store: try `modular auth`?");
 }
 
 ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx, bool createIfMissing,
@@ -73,7 +70,8 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx, bool createIfMissing,
   }
 
   // If we have decided that we should not create a new one if it's missing,
-  // then simply return an empty one.
+  // then simply return an empty one. In the future, this may instead propagate
+  // the error above, as entitlements are not available.
   if (!createIfMissing)
     return Settings(cfgOr.takeValue(),
                     EntitlementStore::alwaysOpen(httpCtx.copy(), llvm::errs()));
