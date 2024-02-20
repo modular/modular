@@ -332,19 +332,7 @@ def test_dir():
 
 @pytest.fixture(params=top_models.keys(), scope="module")
 def model_name(request):
-    model_name = request.param
-    model_meta = top_models[request.param]
-
-    if (
-        model_meta.framework == PYTORCH
-        and TEST_ENV_OS == "main"  # main is 20.04
-        and TEST_ENV_ARCH == "graviton"
-    ):
-        pytest.skip(
-            "PyTorch via python API not supported on aarch64 + Ubuntu 20.04"
-        )
-
-    return model_name
+    return request.param
 
 
 @pytest.fixture(scope="module")
