@@ -52,12 +52,14 @@ struct FileHandle {
         return nullptr;
       }
 
-      std::filesystem::create_directories(fsPath.parent_path(), err);
-      if (err) {
-        *errMsg = copyString((llvm::Twine("unable to create directories '") +
-                              fsPath.parent_path().string() + "' for write")
-                                 .str());
-        return nullptr;
+      if (!fsPath.parent_path().empty()) {
+        std::filesystem::create_directories(fsPath.parent_path(), err);
+        if (err) {
+          *errMsg = copyString((llvm::Twine("unable to create directories '") +
+                                fsPath.parent_path().string() + "' for write")
+                                   .str());
+          return nullptr;
+        }
       }
     } else if (fileAccess & llvm::sys::fs::FileAccess::FA_Read &&
                !std::filesystem::exists(fsPath)) {
