@@ -6,9 +6,9 @@
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
-from algorithm import parallelize, vectorize
 from kernel_utils.layout import Layout, LayoutList, composition
 from kernel_utils.layout_tensor import LayoutTensor
+from algorithm import vectorize, parallelize
 
 
 @register_passable
@@ -66,7 +66,7 @@ struct MMA(TiledOp):
 
 
 # matrix multiply and accumlate, vectorized and parallelized
-struct MMA_VecPar(TiledOp):
+struct MMA_Vec(TiledOp):
     @staticmethod
     fn op[
         dtype: DType,
@@ -80,8 +80,7 @@ struct MMA_VecPar(TiledOp):
     ):
         alias width = simdwidthof[dtype]() * 2
 
-        @parameter
-        fn calc_row(m: Int):
+        for m in range(M):
             for n in range(N):
 
                 @parameter
@@ -95,8 +94,6 @@ struct MMA_VecPar(TiledOp):
 
                 vectorize[dot, width, size=K]()
 
-        parallelize[calc_row](M, M)
-
 
 fn gemm_l2_cache[
     dtype: DType,
@@ -104,8 +101,8 @@ fn gemm_l2_cache[
     N: Int,
     K: Int,
     mma: TiledOp,
-    l1: Dim,
-    l2: Dim,
+    L1: Dim,
+    L2: Dim,
 ](
     dst: LayoutTensor[dtype, M, N],
     lhs: LayoutTensor[dtype, M, K],
@@ -115,47 +112,44 @@ fn gemm_l2_cache[
     alias op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(l1)
-    alias l2_size = l1.subrange(l2)
+    alias l1_size = op_dim.subrange(L1)
+    alias l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
-    var l2_rhs_cache = LayoutTensor[dtype, l2.n, l2.k]()
+    var l2_rhs_cache = LayoutTensor[dtype, L2.n, L2.k]()
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
     for m_1 in range(l1_size.m):
         for n_1 in range(l1_size.n):
-            var dst_l1_tile = dst.view[l1.m, l1.n](m_1, n_1)
+            var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
 
             for k_1 in range(l1_size.k):
-                var lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
-                var rhs_l1_tile = rhs.view[l1.k, l1.n](k_1, n_1)
+                var lhs_l1_tile = lhs.view[L1.m, L1.k](m_1, k_1)
+                var rhs_l1_tile = rhs.view[L1.k, L1.n](k_1, n_1)
 
                 # Second level of tiling (instruction, vectorization..etc)
                 for m_2 in range(l2_size.m):
                     for n_2 in range(l2_size.n):
-                        var dst_l2_tile = dst_l1_tile.view[l2.m, l2.n](m_2, n_2)
+                        var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
+                            var lhs_l2_tile = lhs_l1_tile.view[L2.m, L2.k](
                                 m_2, k_2
                             )
-                            var rhs_l2_tile = rhs_l1_tile.view[l2.k, l2.n](
+                            var rhs_l2_tile = rhs_l1_tile.view[L2.k, L2.n](
                                 k_2, n_2
                             )
 
                             # Materialize L2 rhs transposed tile
-                            rhs_l2_tile.transpose().copyTo(l2_rhs_cache)
+                            l2_rhs_cache.copy_from(rhs_l2_tile.transpose())
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op[
                                 dtype,
-                                l2.m,
-                                l2.n,
-                                l2.k,
+                                L2.m,
+                                L2.n,
+                                L2.k,
                             ](dst_l2_tile, lhs_l2_tile, l2_rhs_cache)
-
-    # TODO: Make tensor more ergonomic
-    l2_rhs_cache.ptr.free()
 
 
 fn gemm_l1_cache[
@@ -164,8 +158,8 @@ fn gemm_l1_cache[
     N: Int,
     K: Int,
     mma: TiledOp,
-    l1: Dim,
-    l2: Dim,
+    L1: Dim,
+    L2: Dim,
 ](
     dst: LayoutTensor[dtype, M, N],
     lhs: LayoutTensor[dtype, M, K],
@@ -175,47 +169,53 @@ fn gemm_l1_cache[
     alias op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(l1)
-    alias l2_size = l1.subrange(l2)
+    alias l1_size = op_dim.subrange(L1)
+    alias l2_size = L1.subrange(L2)
 
-    # Cache matrix to materialize L1 transposed tiles
-    var l1_rhs_cache = LayoutTensor[dtype, l1.n, l1.k]()
+    @parameter
+    fn process_raw(m_1: Int):
+        # This GEMM implementation caches the l1_lhs_tile to reuse across the k_1 loop
+        # The l1_rhs_tile is also cached to minimize the transpose operatipons.
 
-    # First level of tiling (grid_blocks, L1 cache ..etc).
-    for m_1 in range(l1_size.m):
-        for n_1 in range(l1_size.n):
-            var dst_l1_tile = dst.view[l1.m, l1.n](m_1, n_1)
+        # TODO: Allocate this statically
+        var l1_lhs_cache = LayoutTensor[dtype, L1.m, L1.k]()
+        var l1_rhs_cache = LayoutTensor[dtype, L1.n, L1.k]()
 
-            for k_1 in range(l1_size.k):
-                var lhs_l1_tile = lhs.view[l1.m, l1.k](m_1, k_1)
+        for k_1 in range(l1_size.k):
+            # Cache the current lhs tile and reuse it for all rhs tiles in the column
+            l1_lhs_cache.copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
+
+            for n_1 in range(l1_size.n):
+                var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
 
                 # Materialize L1 rhs transposed tile
-                rhs.view[l1.k, l1.n](k_1, n_1).transpose().copyTo(l1_rhs_cache)
+                l1_rhs_cache.copy_from(
+                    rhs.view[L1.k, L1.n](k_1, n_1).transpose()
+                )
 
                 # Second level of tiling (instruction, vectorization..etc)
                 for m_2 in range(l2_size.m):
                     for n_2 in range(l2_size.n):
-                        var dst_l2_tile = dst_l1_tile.view[l2.m, l2.n](m_2, n_2)
+                        var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = lhs_l1_tile.view[l2.m, l2.k](
+                            var lhs_l2_tile = l1_lhs_cache.view[L2.m, L2.k](
                                 m_2, k_2
                             )
                             # Transposed tile -> transposed indices
-                            var rhs_l2_tile = l1_rhs_cache.view[l2.n, l2.k](
+                            var rhs_l2_tile = l1_rhs_cache.view[L2.n, L2.k](
                                 n_2, k_2
                             )
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op[
                                 dtype,
-                                l2.m,
-                                l2.n,
-                                l2.k,
+                                L2.m,
+                                L2.n,
+                                L2.k,
                             ](dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
 
-    # TODO: Make tensor more ergonomic
-    l1_rhs_cache.ptr.free()
+    parallelize[process_raw](l1_size.m, l1_size.m)
 
 
 fn test_tiled_matmul[use_l1_cache: Bool]():
@@ -235,7 +235,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
             8,
             8,
             8,
-            MMA_VecPar,
+            MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
         ](dst, lhs, rhs)
@@ -245,15 +245,11 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
             8,
             8,
             8,
-            MMA_VecPar,
+            MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
         ](dst, lhs, rhs)
     dst.print()
-
-    dst.ptr.free()
-    lhs.ptr.free()
-    rhs.ptr.free()
 
 
 fn main():

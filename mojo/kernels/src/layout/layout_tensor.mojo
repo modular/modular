@@ -12,11 +12,13 @@ from .layout import *
 
 struct LayoutTensor[dtype: DType, M: Int, N: Int]:
     var ptr: DTypePointer[dtype]
+    var is_view: Bool
     var layout: Layout
 
     @always_inline
     fn __init__(inout self, layout: Layout, ptr: DTypePointer[dtype]):
         self.ptr = ptr
+        self.is_view = True
         self.layout = layout
         if self.dim(0) != M or self.dim(1) != N:
             trap("Layout inconsistent with dimensions.")
@@ -24,13 +26,19 @@ struct LayoutTensor[dtype: DType, M: Int, N: Int]:
     @always_inline
     fn __init__(inout self):
         self.ptr = DTypePointer[dtype].alloc(M * N)
+        self.is_view = False
         self.layout = Layout(IntTuple(M, N), IntTuple(N, 1))
         if self.dim(0) != M or self.dim(1) != N:
             trap("Layout inconsistent with dimensions.")
 
+    fn __del__(owned self):
+        if not self.is_view:
+            self.ptr.free()
+
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
         self.ptr = existing.ptr
+        self.is_view = True
         self.layout = existing.layout
 
     @always_inline
@@ -82,10 +90,10 @@ struct LayoutTensor[dtype: DType, M: Int, N: Int]:
             self.ptr,
         )
 
-    fn copyTo(self, other: Self):
+    fn copy_from(self, other: Self):
         for m in range(M):
             for n in range(N):
-                other[IntTuple(m, n)] = self[IntTuple(m, n)]
+                self[IntTuple(m, n)] = other[IntTuple(m, n)]
 
     fn linspace(self):
         for m in range(M):
