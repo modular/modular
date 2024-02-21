@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 ##===----------------------------------------------------------------------===##
 # Functions
@@ -63,14 +63,11 @@ fn issue14191() -> Int:
     return 1
 
 fn issue1242():
-    try:
-        let decorator: Int
+    let decorator: Int
 
-        @decorator # expected-error {{cannot use a dynamic value in decorator}}
-        fn on_message(abc:Int) -> None:
-            print(abc)
-    except e:
-        print(e)
+    @decorator # expected-error {{cannot use a dynamic value in decorator}}
+    fn on_message():
+        pass
 
 
 @value
@@ -131,9 +128,9 @@ fn starSpaceStar(* *a: Int): pass
 fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
-fn exampleVariadic(a: Float32, *b: Int): pass
+fn exampleVariadic(a: FloatLiteral, *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
+fn exampleByRefVariadic(a: FloatLiteral, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
@@ -163,10 +160,10 @@ fn badCalls(arg: Int):
   exampleVariadic(1.0, 1, 2, 1.0)
 
   var x: Int
-  var y: Float32
+  var y: FloatLiteral
   # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
-  # expected-error-re @+1 {{invalid call to 'exampleByRefVariadic': l-value of type 'SIMD[f32, 1]' cannot be converted to reference of type 'Int'}}
+  # expected-error-re @+1 {{invalid call to 'exampleByRefVariadic': l-value of type 'FloatLiteral' cannot be converted to reference of type 'Int'}}
   exampleByRefVariadic(1.0, x, y)
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
@@ -182,7 +179,7 @@ fn badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{callee expects 3 parameters, but 2 were specified}}
-  TestTuple[Int, Float32]().test[1]()
+  TestTuple[Int, FloatLiteral]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'var' initializer}}
@@ -252,9 +249,9 @@ fn badPackCalls(value: Int):
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
-  examplePack[Int, Float32](1)
-  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
-  examplePack[Int, Float32](1, Int(2).value)
+  examplePack[Int, FloatLiteral](1)
+  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatLiteral'}}
+  examplePack[Int, FloatLiteral](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 0 positional operands, but 1 was specified}}
   examplePack(packArgOverload)
@@ -273,7 +270,7 @@ def fn_redecl(): pass
 # expected-note @+1 {{previous definition here}}
 def fn_redecl2() -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
-def fn_redecl2() -> Float32: pass
+def fn_redecl2() -> FloatLiteral: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
@@ -281,31 +278,31 @@ def fn_redecl2() -> Float32: pass
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
+# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'FloatLiteral'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
-fn overloadIntFloat32(a: Float32): pass
+fn overloadIntFloat32(a: FloatLiteral): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
-# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
+# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'FloatLiteral' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
-fn overloadIntFloat32(a: Int, inout b: Float32): pass
+fn overloadIntFloat32(a: Int, inout b: FloatLiteral): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntFloat32(a: Int, inout b: Float32, c: Int, *args: Int): pass
+fn overloadIntFloat32(a: Int, inout b: FloatLiteral, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
 
-  fn test(self, a: Int, b: Float32):
+  fn test(self, a: Int, b: FloatLiteral):
     # expected-error @+1 {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
 
@@ -533,8 +530,8 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[Int(1).value]):
-    var x : __mlir_type[`!pop.simd<`, size, `, Float32>`]
-    # expected-error @+1 {{cannot implicitly convert 'simd<size, Float32>' value to 'BadInit[size]' in assignment}}
+    var x : __mlir_type[`!pop.simd<`, size, `, FloatLiteral>`]
+    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatLiteral>' value to 'BadInit[size]' in assignment}}
     self = x
 
   # expected-error @+1 {{'__init__' result type must be elided (or None)}}
@@ -805,7 +802,7 @@ def func_overloaded(x: Bool):
 
 
 # Issue #12090
-from memory.unsafe import DTypePointer # expected-note {{previous definition here}}
+from imported_module import DTypePointer # expected-note {{previous definition here}}
 struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
     pass
 
@@ -846,6 +843,9 @@ struct AnyTypeMember[T: AnyType]:
 fn top_level_func() raises -> Int:
    pass
 
+fn use_error(e: Error):
+   pass
+
 # expected-error @below {{cannot call function that may raise in a context that cannot raise}}
 # expected-note @below {{try surrounding the call in a 'try' block}}
 let np = top_level_func()
@@ -855,11 +855,15 @@ try:
     let np2 = top_level_func()
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-    _ = e
+    use_error(e)
+
+
+fn top_level_func_param[p: Int]():
+    pass
 
 alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-constrained[a == 10]()
+top_level_func_param[a]()
 
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}

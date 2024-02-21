@@ -24,6 +24,10 @@ alias `10` = __mlir_attr.`10 : index`
 alias `42` = __mlir_attr.`42 : index`
 alias `123` = __mlir_attr.`123 : index`
 
+# ===----------------------------------------------------------------------=== #
+# Builtin Types
+# ===----------------------------------------------------------------------=== #
+
 
 @register_passable
 struct Error:
@@ -31,7 +35,11 @@ struct Error:
 
 
 struct object:
-    pass
+    fn __init__(inout self):
+        pass
+
+    fn __init__(inout self, value: Int):
+        pass
 
 
 @value
@@ -39,6 +47,12 @@ struct object:
 @register_passable("trivial")
 struct IntLiteral:
     var value: __mlir_type.`!kgen.int_literal`
+
+
+@value
+@register_passable("trivial")
+struct FloatLiteral:
+    var value: __mlir_type.f64
 
 
 @value
@@ -57,6 +71,16 @@ struct Int:
     @always_inline("nodebug")
     fn __add__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.add`(lhs.value, rhs.value)
+
+    @always_inline("nodebug")
+    fn __iadd__(inout self, rhs: Int):
+        self = self + rhs
+
+
+@value
+@register_passable("trivial")
+struct StringLiteral:
+    var value: __mlir_type.`!kgen.string`
 
 
 @register_passable("trivial")
@@ -102,6 +126,21 @@ trait AnyType:
 
 
 # ===----------------------------------------------------------------------=== #
+# Coroutine Stubs
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+@register_passable
+struct Coroutine[T: AnyRegType]:
+    var value: __mlir_type[`!pop.coroutine<() ->`, T, `>`]
+
+    fn __await__(self) -> T:
+        while __mlir_attr.`true`:
+            pass
+
+
+# ===----------------------------------------------------------------------=== #
 # Builtin Collection Stubs
 # ===----------------------------------------------------------------------=== #
 
@@ -112,6 +151,38 @@ struct VariadicList[type: AnyRegType]:
 
     fn __init__(value: Self.storage_type) -> Self:
         return Self {}
+
+
+struct VariadicListMem[
+    element_type: AnyType,
+    elt_is_mutable: __mlir_type.i1,
+    lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
+]:
+    alias mlir_ref_type = __mlir_type[
+        `!lit.ref<:`, AnyType, ` `, element_type, `, `, lifetime, `, 0>`
+    ]
+
+    fn __init__(
+        inout self,
+        value: __mlir_type[
+            `!kgen.variadic<`, Self.mlir_ref_type, `, borrow_in_mem>`
+        ],
+    ):
+        pass
+
+    fn __init__(
+        inout self,
+        value: __mlir_type[`!kgen.variadic<`, Self.mlir_ref_type, `, byref>`],
+    ):
+        pass
+
+    fn __init__(
+        inout self,
+        value: __mlir_type[
+            `!kgen.variadic<`, Self.mlir_ref_type, `, owned_in_mem>`
+        ],
+    ):
+        pass
 
 
 @register_passable
