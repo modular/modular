@@ -39,11 +39,6 @@ int main(int argc, char *argv[]) {
                "stuff will break!"),
       cl::init(false)};
 
-  M::cl::MOpt<bool> disableParserCaching{
-      "mojo-disable-parser-caching",
-      cl::desc("Disable caching when parsing the input Mojo file."),
-      cl::init(false)};
-
   M::cl::MOpt<bool> enablePrebuiltPackages{
       "mojo-enable-prebuilt-packages",
       cl::desc("Use prebuilt packages when parsing the input Mojo file."),
@@ -106,8 +101,6 @@ int main(int argc, char *argv[]) {
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
-        if (disableParserCaching)
-          config.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
         OwningOpRef<ModuleOp> output =
             LIT::importMojoFile(sourceMgr, config, ts);
 

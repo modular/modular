@@ -46,7 +46,7 @@ tools = [
 
 parse_isolated = (
     "kgen-translate -import-mojo -mojo-enable-prebuilt-packages"
-    " -mojo-disable-parser-caching -mojo-search-paths={0}".format(
+    " -mojo-search-paths={0}".format(
         config.parser_stubs_source
     )
 )
