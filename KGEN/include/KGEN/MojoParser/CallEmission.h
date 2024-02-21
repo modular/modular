@@ -183,8 +183,7 @@ public:
   /// An optional hook can be provided to infer parameters.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(LITSignatureType sig, const DiagEmitter &diagEmitter,
-                 ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool isPackVarArg = false) const;
+                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
@@ -200,12 +199,10 @@ private:
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArgParamListAttr paramListAttr, bool hasParamVarArgs,
-                 ParameterInferenceHookTy parameterInferenceHook,
-                 bool isPackVarArg, const DiagEmitter &diagEmitter,
-                 bool allowPartiallyBound = false) const;
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      ArrayRef<Type> expectedParamTypes, ArgParamListAttr paramListAttr,
+      ParameterInferenceHookTy parameterInferenceHook,
+      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -215,8 +212,8 @@ private:
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArgParamListAttr paramListAttr, bool hasParamVarArgs,
-                 StringRef baseName, Location opLoc, llvm::SMLoc exprLoc,
+                 ArgParamListAttr paramListAttr, StringRef baseName,
+                 Location opLoc, llvm::SMLoc exprLoc,
                  bool allowPartiallyBound = false) const;
 };
 
