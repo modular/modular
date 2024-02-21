@@ -302,3 +302,19 @@ kgen.generator export @persistent_variadic() {
   kgen.param.constant: variadic<index> = <apply(:(!kgen.variadic<index>) -> !kgen.variadic<index> @pass_and_read_variadic, [1, 2])>
   kgen.return
 }
+
+// -----
+
+kgen.generator @variadic_of_pointers(%arg0: !kgen.variadic<pointer<index>>) -> index {
+  %idx0 = index.constant 0
+  %0 = pop.variadic.get %arg0[%idx0] : !kgen.variadic<pointer<index>>
+  %1 = pop.load %0 : !kgen.pointer<index>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func export @interp_nested_pointer
+kgen.generator export @interp_nested_pointer() {
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:(!kgen.variadic<pointer<index>>) -> index @variadic_of_pointers, [store_to_mem(1)])>
+  kgen.return
+}
