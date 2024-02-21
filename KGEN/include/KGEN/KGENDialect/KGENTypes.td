@@ -563,7 +563,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     ```
   }];
 
-  let parameters = (ins OptionalParameter<"TypedAttr">:$variadic);
+  let parameters = (ins "TypedAttr":$variadic);
   let assemblyFormat = "`<` custom<PackType>($variadic) `>`";
   let genVerifyDecl = 1;
 
