@@ -4,43 +4,58 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s | kgen-opt -verify-parameters | FileCheck %s
-
-alias index = __mlir_type.index
-alias index_one = __mlir_attr.`1 : index`
-alias index_two = __mlir_attr.`2 : index`
-alias index_three = __mlir_attr.`3 : index`
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @OurSIMD
+@value
+@register_passable("trivial")
+struct DType:
+    var value: __mlir_type.`!kgen.dtype`
+
+    alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+    alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
+
+# CHECK-LABEL: lit.struct.decl @SIMD
 # CHECK-SAMEL <[[SIMDSIZE:.*]]: !Int, [[SIMDDT:.*]]: !DType>
 # CHECK-SAME: register_passable
 @register_passable
-struct OurSIMD[size: Int, dt: DType]:
-  fn __copyinit__(self) -> Self: pass
+struct SIMD[size: Int, dt: DType]:
+    var value: __mlir_type[`!pop.simd<`, size.value, `, `, dt.value, `>`]
+
+    fn __copyinit__(existing: Self) -> Self:
+        return Self{value: existing.value}
+
+    fn __add__(lhs, rhs: Self) -> Self:
+        while __mlir_attr.`true`:
+            pass
+
+    @staticmethod
+    fn splat():
+        pass
 
 
 @register_passable
 struct StructWithIntParam[size: Int]:
-  pass
+    pass
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
-  # CHECK: lit.alias.decl {{.*}} = <{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>
-  alias y = x == -100 + 1
+    # CHECK: lit.alias.decl {{.*}} = <{{.*}}apply({{.*}}__eq__{{.*}}, x, {99})>
+    alias y = x == 98 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
-  return a
+    return a
 
 # CHECK-LABEL: lit.func @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
-# CHECK-SAME: (%x: {{.*}}#OurSIMD <:!Int size, :!DType dt>{{.*}}> borrow,
-# CHECK-SAME: %exp: {{.*}}#OurSIMD <:!Int size, :!DType dt>{{.*}}> borrow) -> !Int
-fn fancy_signature[dt: DType, size: Int]
-  (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
-
+# CHECK-SAME: (%x: {{.*}}#SIMD <:!Int size, :!DType dt>{{.*}}> borrow,
+# CHECK-SAME: %exp: {{.*}}#SIMD <:!Int size, :!DType dt>{{.*}}> borrow) -> !Int
+fn fancy_signature[dt: DType, size: Int](
+    x: SIMD[size, dt],
+    exp: (SIMD)[size, dt]
+) -> Int:
   # CHECK: %local = lit.var.decl "local" var
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <size>
@@ -64,8 +79,8 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type @parameters::@OurSIMD<:!Int {4}{{.*}}, :!DType dt>{{.*}}>(%[[C57_2]])
-  generic_fn[dt, 13, OurSIMD[4, dt]](57)
+  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type @parameters::@SIMD<:!Int {4}{{.*}}, :!DType dt>{{.*}}>(%[[C57_2]])
+  generic_fn[dt, 13, SIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
@@ -80,10 +95,10 @@ struct TestParamStruct[A: Int]:
 
   # CHECK-LABEL: lit.func @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
-    # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
-    alias B = A*A+1
-    # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
-    alias C = B*A
+    # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__add__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
+    alias B = A+A+1
+    # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__add__{{.*}}, [[B]], [[A]])>
+    alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}#TestParamStruct <:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
@@ -92,11 +107,11 @@ struct TestParamStruct[A: Int]:
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
     alias intVal : Int = 42
 
-    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
+    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], [[A]])
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
-  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
-  alias TypeLevelAlias = A*A
+  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <apply({{.*}}__add__{{.*}}, [[A]], [[A]])
+  alias TypeLevelAlias = A+A
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
@@ -110,28 +125,26 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.func @"testSIMD(
-fn testSIMD(a: Float64,
-            b: Int32,
-            inout reff: SIMD[DType.int32, 1]):
-  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f64>,
+fn testSIMD(a: SIMD[1, DType.float32],
+            b: SIMD[1, DType.int32],
+            inout reff: SIMD[1, DType.int32]):
+  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>,
   var field1 = a.value
   # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>,
   var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
-  _ = a.fma(a, a)
-  _ = b.fma(b, b)
-  # CHECK: lit.call {{.*}}@builtin::@simd::@SIMD::@"__add__({{.*}}<:!DType {:dtype f64}, :!Int {1}>(%a, %a)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!Int {1}, :!DType {:dtype f32}>(%a, %a)
   var x = a+a
-  # CHECK: lit.call {{.*}}@builtin::@simd::@SIMD::@"__add__({{.*}}<:!DType {:dtype si32}, :!Int {1}>(%b, %b)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!Int {1}, :!DType {:dtype si32}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
 #
 # CHECK-LABEL: lit.func @"paramResolution[
-# CHECK-SAME: int::Int,
+# CHECK-SAME: Int,
 # CHECK-SAME: parameters::StructWithIntParam[*(0,0)],
-# CHECK-SAME: int::Int,
+# CHECK-SAME: Int,
 # CHECK-SAME: parameters::StructWithIntParam[*(0,2)]
 # CHECK-SAME: ]()"<
 # CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1>,
@@ -149,16 +162,16 @@ fn implConversion[a: StructWithIntParam[42]]():
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
 @register_passable
 struct Pair[dt: DType]:
- # CHECK: lit.struct.field a : {{.*}}#OurSIMD <:!Int {{.*}}42{{.*}}, :!DType dt>{{.*}}>
+ # CHECK: lit.struct.field a : {{.*}}#SIMD <:!Int {{.*}}42{{.*}}, :!DType dt>{{.*}}>
  # CHECK: lit.struct.field b : !Int
-  var a : OurSIMD[42, dt]
+  var a : SIMD[42, dt]
   var b : Int
 
   # CHECK: lit.func @"__init__{{.*}} -> {{.*}}#Pair <:!DType dt>{{.*}}> attributes {{.*}}isStatic
-  fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
+  fn __init__(a: SIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: !Int = <{4}>
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#OurSIMD <:!Int {42}, :!DType dt>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#SIMD <:!Int {42}, :!DType dt>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -169,11 +182,11 @@ struct Pair[dt: DType]:
 # CHECK: useParameterizedField
 fn useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
-  alias y : OurSIMD[42, DType.float32] = x.a
+  alias y : SIMD[42, DType.float32] = x.a
 
 
 # CHECK-LABEL: lit.func @"makePair
-fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
+fn makePair(a: SIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
   # CHECK: [[TMP1:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
   # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
   return Pair[DType.float32]{a: a, b: b}
@@ -196,12 +209,12 @@ struct ParamSubst[
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
   # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<@parameters::@ParamSubst<:type index, :variadic<index> [1, 2]>
-  var xx : ParamSubst[index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
+  var xx : ParamSubst[int, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.
 # CHECK-LABEL: lit.func @"fnToCall{{.*}}"<size, arr: array<size, f32>>()
-fn fnToCall[size: index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
+fn fnToCall[size: int, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
   pass
 
 # CHECK: lit.func @"fnWithCall{{.*}}"<array: array<10, f32>
@@ -238,7 +251,7 @@ fn my_constrained[cond: Bool, message: StringLiteral]():
 
 # CHECK-LABEL: lit.func @"pass_str_param
 fn pass_str_param():
-    # CHECK: lit.call {{.+}}my_constrained{{.*}}"<{{.*}}true{{.*}}, :!StringLiteral {{.*}}"foo"{{.*}}>()
+    # CHECK: lit.call {{.+}}my_constrained{{.*}}"<:!Bool {:i1 1}, :!StringLiteral {{.*}}"foo"{{.*}}>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.func @"implicit_params
@@ -280,12 +293,12 @@ fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
 @register_passable("trivial")
-struct IndexParam[x: index]:
+struct IndexParam[x: int]:
   pass
 
 
 # CHECK-LABEL: lit.func @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a
-fn auto_kw_default[u: index = index_three, /, v: index = index_three](a: IndexParam, b: IndexParam):
+fn auto_kw_default[u: int = `3`, /, v: int = `3`](a: IndexParam, b: IndexParam):
   pass
 
 
@@ -295,11 +308,11 @@ fn test_auto_kw_default(a: IndexParam, b: IndexParam):
   # CHECK-NEXT: <3, 3, [[A]], [[B]]>
   auto_kw_default(a, b)
   # CHECK-NEXT: <1, 3, [[A]], [[B]]>
-  auto_kw_default[index_one](a, b)
+  auto_kw_default[`1`](a, b)
   # CHECK-NEXT: <3, 2, [[A]], [[B]]>
-  auto_kw_default[v=index_two](a, b)
+  auto_kw_default[v=`2`](a, b)
   # CHECK-NEXT: <1, 2, [[A]], [[B]]>
-  auto_kw_default[index_one, v=index_two](a, b)
+  auto_kw_default[`1`, v=`2`](a, b)
 
 
 ##===----------------------------------------------------------------------===##
@@ -361,17 +374,17 @@ fn memoryParam[value: MemoryType]():
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
 # CHECK-SAME: callable: !lit.signature<(index borrow, |) -> index>>(%a: index borrow) -> index
 fn takeCallable[
-     callable: fn(index) -> index
-   ](a: index) -> index:
+     callable: fn(int) -> int
+   ](a: int) -> int:
   # CHECK-NEXT: %0 = lit.call_param[!lit.signature<(index borrow, |) -> index>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
-fn takeAndReturnIndex(x: index) -> index:
+fn takeAndReturnIndex(x: int) -> int:
   return x
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
-fn passFunction(a: index) -> index:
+fn passFunction(a: int) -> int:
   # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.signature<(index borrow, |) -> index>
   # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @parameters::@"takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
@@ -394,12 +407,12 @@ fn passFunctionParam2():
 
 
 @register_passable("trivial")
-struct ParamType[x: index]:
+struct ParamType[x: int]:
     pass
 
 
 # CHECK-LABEL: lit.func @"dependent_function_type
-fn dependent_function_type[a: index, f: fn (ParamType[a]) -> None]():
+fn dependent_function_type[a: int, f: fn (ParamType[a]) -> None]():
     alias func = dependent_function_type
     # CHECK: bind_signature
     func[a, f]()
@@ -421,24 +434,24 @@ struct A[v: Int]:
   alias member = v + FOURTY_TWO
 
 # CHECK-LABEL: lit.func @"testUseOfAliases
-fn testUseOfAliases(a: Bool):
+fn testUseOfAliases():
   # This type checks.
-  _ = SIMD[DType(boolDtype), 4].splat(a)
+  SIMD[4, DType(boolDtype)].splat()
   # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
   alias y = A[2].member
 
 @register_passable
 struct MyDType:
-  var state : __mlir_type.index
+  var state : int
 
   fn __copyinit__(self) -> Self:
     return Self{state: self.state}
 
-  fn __init__(value: __mlir_type.index) -> MyDType:
+  fn __init__(value: int) -> MyDType:
      return MyDType{state: value}
 
   fn __eq__(self, rhs: MyDType) -> Bool:
-     return True  # TODO: buggy impl :-)
+     return __mlir_attr.`true`
 
   alias ui8 = MyDType(Int(1).value)
   alias float32 = MyDType(Int(2).value)
@@ -448,12 +461,11 @@ struct MyDType:
   alias ui16 = MyDType{state: Int(7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
-  pass
+    pass
 
 fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
                             b: MyVector[4, dt]):
-
-   constrained[dt == MyDType.float64]()
+    pass
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
@@ -544,21 +556,21 @@ struct StaticVec[size: Int]:
 
 fn callee1[size: Int](v: StaticVec[size]): pass
 fn callee2[T: __mlir_type.`!kgen.type`](v: T): pass
-fn callee3[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]
+fn callee3[size: int, type: __mlir_type.`!kgen.dtype`]
    (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]): pass
 fn callee4[T: __mlir_type.`!kgen.type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.func @"testParamInference{{.*}}"<size: !Int>(
 fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
-                                 b2: StaticVec[size*2],
+                                 b2: StaticVec[size+2],
                                  c: __mlir_type.`!pop.simd<17, f32>`,
                                  d: __mlir_type.`!kgen.pointer<f32>`):
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<{{.*}}4{{.*}}>(%a)
   callee1(a)
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int size>(%b)
   callee1(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int apply({{.*}}__mul__{{.*}}, size, {{.*}}2{{.*}})>(%b2)
+  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int apply({{.*}}__add__{{.*}}, size, {{.*}}2{{.*}})>(%b2)
   callee1(b2)
   # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @parameters::@StaticVec<:!Int size>{{.*}}>(%b)
   callee2(b)
@@ -746,7 +758,7 @@ fn test_indirect_default_params():
 
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.func @"inferred_default_param
-fn inferred_default_param[dt: DType, w: Int = 8](a: OurSIMD[w, dt]):
+fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[w, dt]):
     pass
 
 
@@ -755,7 +767,7 @@ fn inferred_default_param[dt: DType, w: Int = 8](a: OurSIMD[w, dt]):
 # CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {:dtype f32}, :!Int x>
 fn test_inferred_default_param[
     x: Int
-](concrete: OurSIMD[4, DType.float32], p: OurSIMD[x, DType.float32]):
+](concrete: SIMD[4, DType.float32], p: SIMD[x, DType.float32]):
     inferred_default_param(concrete)
     inferred_default_param(p)
 
@@ -949,9 +961,12 @@ fn dependent_default_ctad():
     alias value = DependentDefault()
 
 
+alias Scalar = SIMD[1, _]
+
+
 # CHECK-LABEL: lit.func @"scalar_type{{.*}}"<dt: !DType>
 fn scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*]]: metatype<{{.*}}SIMD<:!DType dt,
+    # CHECK: alias.decl [[T:.*]]: metatype<{{.*}}SIMD<:!Int {1}, :!DType dt>
     alias T = Scalar[dt]
 
     #FIXME(29495): reenable.
