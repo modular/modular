@@ -4,25 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
-
-# ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias AnyRegType = __mlir_type.`!kgen.type`
-alias Int = __mlir_type.index
-
-alias `42` = __mlir_attr.`42 : index`
-
-# ===----------------------------------------------------------------------=== #
-# Actual tests
-# ===----------------------------------------------------------------------=== #
-
-# COM: Stubs to allow testing without builtins
-struct Bool:
-    fn __mlir_i1__(self) -> __mlir_type.i1:
-        pass
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 struct SomeStruct:
     fn __init__(inout self): pass
@@ -95,4 +77,4 @@ fn take_variadic(*elements: MemoryStruct): pass
 
 fn test_var_let_type_variadic_func():
   # expected-error @below {{expected a type, not a value}}
-  var a: take_variadic(`42`)
+  var a: take_variadic(42)
