@@ -201,3 +201,33 @@ fn test_variadic_and_kw_only_args(x: int):
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
     takes_variadic_and_kw_only_args(x, x, x, x, c=x)
+
+
+fn takes_variadic_and_kw_only_params[
+    a: int, b: int, *args: int, c: int, d: int = `0`
+]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_params
+fn test_variadic_and_kw_only_params[x: int]():
+    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, 0>()
+    takes_variadic_and_kw_only_params[x, x, c=x]()
+
+    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, x>()
+    takes_variadic_and_kw_only_params[x, x, d=x, c=x]()
+
+    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [x, x], x, 0>()
+    takes_variadic_and_kw_only_params[x, x, x, x, c=x]()
+
+
+# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_params_indirect
+fn test_variadic_and_kw_only_params_indirect[x: int]():
+    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
+    alias callee = takes_variadic_and_kw_only_params
+
+    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [], x, 0)]()
+    callee[x, x, c=x]()
+
+    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [x, x], x, 0)]()
+    callee[x, x, x, x, c=x]()

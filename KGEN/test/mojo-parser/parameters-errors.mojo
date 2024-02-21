@@ -192,9 +192,9 @@ fn test_pos_only():
 fn indirect_callable_pos_only[
     callable: fn[a: Int, b: Int, /, c: Int = 9] () -> None
 ]():
-    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
+    # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
     _ = callable[0, b=1, c=2]
-    # expected-error @below {{parametric callable expects at least 2 positional parameters, but 0 were specified}}
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     _ = callable[b=1, a=3, c=2]
     # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
     _ = callable[1, c=9]

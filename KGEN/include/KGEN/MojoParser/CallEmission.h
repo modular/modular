@@ -188,9 +188,9 @@ public:
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
-  ParameterExprArrayAttr verifyBindings(LITSignatureType sig,
-                                        StringRef baseName, Location opLoc,
-                                        llvm::SMLoc exprLoc) const;
+  ParameterExprArrayAttr
+  verifyBindings(LITSignatureType sig, StringRef baseName, llvm::SMLoc exprLoc,
+                 std::optional<Location> opLoc = std::nullopt) const;
 
 private:
   /// Check that our set of parameter bindings work with the specified input
@@ -212,8 +212,9 @@ private:
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArgParamListAttr paramListAttr, StringRef baseName,
-                 Location opLoc, llvm::SMLoc exprLoc,
+                 ArgParamListAttr paramListAttr, const Twine &baseName,
+                 llvm::SMLoc exprLoc,
+                 std::optional<Location> opLoc = std::nullopt,
                  bool allowPartiallyBound = false) const;
 };
 
