@@ -557,7 +557,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     } else if (isa<KGEN::NoneType>(resultType)) {
       os << "None";
     } else if (sig.isThrows()) {
-      ASTType(cast<VariantType>(resultType).getTypes().back())
+      ASTType(*std::next(cast<VariantType>(resultType).getTypes().begin()))
           .print(os, forDiag);
     } else {
       ASTType(resultType).print(os, forDiag);
@@ -577,7 +577,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     llvm::interleaveComma(fnType.getResults(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << ")";
-  } else if (auto variantType = dyn_cast<VariantType>(type)) {
+  } else if (auto variantType = dyn_cast<VariantType>(type);
+             variantType && isa<VariadicAttr>(variantType.getVariadic())) {
     os << "Variant[";
     llvm::interleaveComma(variantType.getTypes(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });

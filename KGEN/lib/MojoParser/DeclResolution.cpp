@@ -2059,7 +2059,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       // For a throwing function, we need to insert the type into the variant.
       // The error type is the first type.
       auto variant = cast<VariantType>(resultType);
-      resultType = VariantType::get({variant.getTypes().front(), selfType});
+      resultType = VariantType::get({*variant.getTypes().begin(), selfType});
 
       // The result is always owned because it includes a variant containing an
       // error.

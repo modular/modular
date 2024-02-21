@@ -761,7 +761,7 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
   }
   // If the async function throws, extract the normal result type.
   if (sig.isThrows())
-    resultType = cast<VariantType>(resultType).getTypes().back();
+    resultType = *std::next(cast<VariantType>(resultType).getTypes().begin());
 
   // Bind the result type to the base coroutine type.
   auto typeExpr =

@@ -49,3 +49,10 @@ kgen.generator @type_printing() {
   kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @variadic_variant
+// CHECK-SAME: !kgen.variant<[values]>
+// CHECK-SAME-LITERAL: !kgen.variant<[[]]>
+kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
+  kgen.return
+}
