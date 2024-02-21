@@ -1478,6 +1478,25 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(InitializerUValue::create(operands), this, dest);
 }
 
+/// Return a ParamBindings set for a list of PValue operands. If any operand
+/// fails be emitted as a PValue, the function returns null.
+static std::optional<ParamBindings>
+getBindingsForParameterOperands(ArrayRef<Operand> operands,
+                                ExprEmitter &emitter) {
+  ParamBindings paramBindings(emitter);
+  for (const Operand &operand : operands) {
+    auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
+    if (!pValue)
+      return std::nullopt;
+
+    if (operand.isKeywordOrUnpackedKeyword())
+      paramBindings.add(operand.value, pValue.get(), operand.name);
+    else
+      paramBindings.add(operand.value, pValue.get());
+  }
+  return std::move(paramBindings);
+}
+
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
@@ -1496,24 +1515,17 @@ static PValue substituteParametersIntoUserDefinedType(
   emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
 
   // Build up a ParamBindings set to validate and check the bindings.
-  ParamBindings paramBindings(emitter);
-  for (const Operand &operand : operands) {
-    auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
-    if (!pValue)
-      return {};
-
-    if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.value, pValue.get(), operand.name);
-    else
-      paramBindings.add(operand.value, pValue.get());
-  }
+  std::optional<ParamBindings> paramBindings =
+      getBindingsForParameterOperands(operands, emitter);
+  if (!paramBindings)
+    return {};
 
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyBindings(structOp, metaType.getSignature(), loc,
-                                   /*allowPartiallyBound=*/true);
+      paramBindings->verifyBindings(structOp, metaType.getSignature(), loc,
+                                    /*allowPartiallyBound=*/true);
   if (!bindingValuesAttr)
     return {};
 
@@ -1581,78 +1593,19 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
                                  ArrayRef<Operand> operands,
                                  ExprEmitter &emitter,
                                  const SourceRange &range) {
-  ArrayRef<Operand> posOperands = operands.take_while(
-      [](Operand p) { return !p.isKeywordOrUnpackedKeyword(); });
-  size_t numPosOperands = posOperands.size();
-
-  SmallDenseMap<StringAttr, Operand> kwOperands;
-  for (Operand p : operands.drop_front(numPosOperands)) {
-    assert(!p.name.empty());
-    auto [_, addedNew] = kwOperands.try_emplace(p.name, p);
-    assert(addedNew && "duplicate keyword parameter");
-  }
-
-  // Helper to install a single operand in the binding list.
-  SmallVector<TypedAttr> bindOperands({callable.get()});
-  ParameterEvaluator evaluator;
-  auto addBoundOperand = [&](const Operand &operand,
-                             Type paramType) -> LogicalResult {
-    PValue pValue = emitter.emitExprPValue(operand.value, EC_CallParamValue,
-                                           evaluator.getReboundType(paramType));
-    if (!pValue)
-      return failure();
-    bindOperands.emplace_back(pValue);
-    evaluator.addInputValue(pValue);
-    return success();
-  };
-
-  ArrayRef<PassingKind> passingKinds = sig.getParamPassingKinds();
-  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
-  size_t posIdx = 0;
-  size_t numParams = sig.getNumParams();
-  for (auto [idx, paramType, paramName, paramPassingKind] : llvm::enumerate(
-           sig.getParamTypes(), sig.getParamNames(), passingKinds)) {
-    // Emit positional operands while possible.
-    if (posIdx < numPosOperands) {
-      if (failed(addBoundOperand(posOperands[posIdx++], paramType)))
-        return {};
-      continue;
-    }
-
-    if (paramPassingKind == PassingKind::PosOnly) {
-      size_t numPosOnly = idx;
-      while (numPosOnly < numParams &&
-             passingKinds[numPosOnly] == PassingKind::PosOnly)
-        ++numPosOnly;
-
-      InflightDiag diag = emitter.emitError(range.getStart())
-                          << "parametric callable";
-      emitWrongArgOrParamCount(diag, numPosOnly, numParams, numPosOperands,
-                               "positional parameter");
-      return {};
-    }
-
-    // If we have no more positional operands, try keyword
-    if (auto it = kwOperands.find(paramName); it != kwOperands.end()) {
-      if (failed(addBoundOperand(it->getSecond(), paramType)))
-        return {};
-      continue;
-    }
-
-    // If no operand is provided, try a default.
-    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
-      bindOperands.emplace_back(defaultOr);
-      continue;
-    }
-
-    InflightDiag diag = emitter.emitError(range.getStart())
-                        << "parametric callable";
-    emitWrongArgOrParamCount(diag, numParams, numParams,
-                             numPosOperands + kwOperands.size(), "parameter");
-    diag << range;
+  // Build up a ParamBindings set to validate and check the bindings.
+  std::optional<ParamBindings> paramBindings =
+      getBindingsForParameterOperands(operands, emitter);
+  if (!paramBindings)
     return {};
-  }
 
+  ParameterExprArrayAttr newBindings = paramBindings->verifyBindings(
+      sig, "parametric callable", range.getStart());
+  if (!newBindings)
+    return {};
+
+  SmallVector<TypedAttr> bindOperands{{callable.get()}};
+  llvm::append_range(bindOperands, newBindings);
   return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
 }
 

@@ -540,15 +540,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ArgParamListAttr paramListAttr,
-                              StringRef baseName, Location opLoc,
-                              llvm::SMLoc exprLoc,
+                              const Twine &baseName, llvm::SMLoc exprLoc,
+                              std::optional<Location> opLoc,
                               bool allowPartiallyBound) const {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
       expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
-        InflightDiag diag = shared.emitError(exprLoc, "'") << baseName << "'";
+        InflightDiag diag = shared.emitError(exprLoc, baseName);
         if (posOnly) {
           emitWrongArgOrParamCount(
               diag, /*minRequired=*/countNumPosOnly(paramPassingKinds),
@@ -560,45 +560,50 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           emitWrongArgOrParamCount(diag, minRequired, maxAllowed, numActual,
                                    "parameter");
         }
-
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitPosType=*/
       [&](size_t index, const Binding &binding, ASTType expectedType) {
-        auto diag = shared.emitError(binding.expr->getLoc(), "'")
-                    << baseName << "' parameter #" << index << " has "
-                    << expectedType << " type, but value has type "
+        auto diag = shared.emitError(binding.expr->getLoc(), baseName)
+                    << " parameter #" << index << " has " << expectedType
+                    << " type, but value has type "
                     << ASTType(binding.getValue().getType())
                     << binding.expr->getRange();
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitKwType=*/
       [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
-        auto diag = shared.emitError(binding.expr->getLoc(), "'")
-                    << baseName << "' parameter '" << paramName << "' has "
-                    << expectedType << " type, but value has type "
+        auto diag = shared.emitError(binding.expr->getLoc(), baseName)
+                    << " parameter '" << paramName << "' has " << expectedType
+                    << " type, but value has type "
                     << ASTType(binding.getValue().getType())
                     << binding.expr->getRange();
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnknownKw=*/
       [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
         InflightDiag diag = shared.emitError(exprLoc);
         emitUnknownKeywords(diag, std::move(unknownKeywords), "parameter");
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitRedundantKw=*/
       [&](size_t paramIdx, StringAttr paramName) {
         InflightDiag diag = shared.emitError(exprLoc);
         diag << "parameter #" << paramIdx << " (" << paramName
              << ") passed both as positional and keyword operand";
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitPosOnlyPassedByKw=*/
       [&](SmallVectorImpl<StringRef> &&names) {
         InflightDiag diag = shared.emitError(exprLoc);
         emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
@@ -610,7 +615,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         InflightDiag diag = shared.emitError(binding.expr->getLoc());
         diag << "unbound pack syntax cannot be used where variadic parameters "
                 "are expected";
-        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnpack=*/
       [&](const Binding &binding) {
@@ -654,17 +660,21 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
                               llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
-  auto [bindingValuesAttr, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(), structOp.getName(),
-      structOp.getLoc(), exprLoc, allowPartiallyBound);
+  auto [bindingValuesAttr, _] =
+      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                     Twine("'") + structOp.getName() + "'", exprLoc,
+                     structOp.getLoc(), allowPartiallyBound);
   return bindingValuesAttr;
 }
 
 ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
-                              Location opLoc, llvm::SMLoc exprLoc) const {
+                              llvm::SMLoc exprLoc,
+                              std::optional<Location> opLoc) const {
+
   auto [newBindings, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(), baseName, opLoc, exprLoc);
+      sig.getParamTypes(), sig.getParamListAttrs(),
+      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc);
   return newBindings;
 }
 
@@ -701,7 +711,7 @@ static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
     // Check that the signature can be rebound with our set of bindings.
     LITSignatureType signature = funcOp.getFullSignature();
     ParameterExprArrayAttr newBindings = paramBindings.verifyBindings(
-        signature, baseName, funcOp.getLoc(), expr->getLoc());
+        signature, baseName, expr->getLoc(), funcOp.getLoc());
     if (!newBindings)
       return {};
 
@@ -733,7 +743,7 @@ static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
     return fnRef;
 
   ParameterExprArrayAttr newBindings = bindings.verifyBindings(
-      signature, baseName, funcOp.getLoc(), expr->getLoc());
+      signature, baseName, expr->getLoc(), funcOp.getLoc());
   if (!newBindings)
     return {};
   SmallVector<TypedAttr> operands{fnRef};
