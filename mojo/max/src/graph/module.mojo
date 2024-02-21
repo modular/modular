@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Defines the Module Graph container."""
 
 from tensor import Tensor
 from pathlib import Path
@@ -16,18 +17,28 @@ import ._c
 @value
 struct Module(Stringable):
     var _module: _mlir.Module
+    """A Module is a container that holds a Graph."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self):
+        """Constructs an empty Module instance."""
         var ctx = _mlir.Context()
         ctx.load_modular_dialects()
         ctx.load_all_available_dialects()
         self._module = _mlir.Module(_mlir.Location.unknown(ctx))
 
     fn __str__(self) -> String:
+        """Constructs a human-readable string representation of the module.
+
+        The string is in MLIR text format, and will include representations
+        of any graphs and ops inside it.
+
+        Returns:
+            A human-readable string representation of the module.
+        """
         return str(self._module)
 
     # ===------------------------------------------------------------------=== #
@@ -35,10 +46,42 @@ struct Module(Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn verify(self) raises:
+        """Verifies the module, and the validity of the graph structure.
+
+        The module is valid if every op inside of it is valid.
+
+        A graph is valid if
+        1. it has an `output` op whose types match the `out_types` of the graph
+        2. every op in the graph is valid
+            a. it has a valid op name
+            b. it has the right number and type of operands and attributes
+                for that operation (see the [`mo`](/engine/reference/mlir/mo)
+                reference for op documentation).
+        3. there are no cycles in the graph
+        4. every symbol in the graph is defined before its first use
+
+        If a graph is constructed forwards with only op construction and no
+        op mutations, 3) and 4) will always be true.
+
+        Raises:
+            If the module is invalid. In this case it will also print a diagonstic
+            to help debug why the graph is invalid.
+        """
         if not self._module.as_op().verify():
             raise "Module did not verify"
 
     fn save_to_file(self, path: Path) raises:
+        """Save the module to a file.
+
+        > ⚠️⚠️⚠️ **THIS IS NOT A DURABLE REPRESENTATION!!!** Saved modules may
+        > not correctly load or execute in future versions of the API or engine.
+
+        Args:
+            path: The path to save the module to.
+
+        Raises:
+            If writing to the file fails.
+        """
         with open(path, "w") as file:
             self._module.as_op().write(file)
 
@@ -111,6 +154,21 @@ struct Module(Stringable):
     fn graph(
         self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
+        """Constructs a new Graph object in the Module.
+
+        The constructed Graph will not be valid unless it has no outputs;
+        a graph with outputs will need a `graph.output` call to tell it
+        what to return. The graph's validity can be checked by calling
+        `graph.verify()`.
+
+        Args
+            name: A name for the graph.
+            in_types: The input types of the graph's computation.
+            out_types: The output types of the graph's computation.
+
+        Returns:
+            A new `Graph` instance inside the module.
+        """
         let ctx = self._module.context()
         let loc = _mlir.Location.unknown(ctx)
 

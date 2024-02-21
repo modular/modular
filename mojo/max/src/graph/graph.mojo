@@ -37,10 +37,30 @@ struct Graph(CollectionElement, Stringable):
     fn __init__(
         inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ):
+        """Constructs a new Graph object.
+
+        The constructed Graph will not be valid unless it has no outputs;
+        a graph with outputs will need a `graph.output` call to tell it
+        what to return. The graph's validity can be checked by calling
+        `graph.module().verify()`.
+
+        Args
+            name: A name for the graph.
+            in_types: The input types of the graph's computation.
+            out_types: The output types of the graph's computation.
+        """
         let module = Module()
         self = module.graph(name, in_types, out_types)
 
     fn __str__(self) -> String:
+        """Constructs a human-readable string representation of the graph.
+
+        The string is in MLIR text format, and will show the graph's name,
+        inputs, outputs, and the operations in the graph in order.
+
+        Returns:
+            A human-readable string representation of the graph.
+        """
         return str(self._op)
 
     # ===------------------------------------------------------------------=== #
