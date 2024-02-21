@@ -6,6 +6,8 @@
 
 import os
 
+from lit.llvm import llvm_config
+
 # name: The name of this test suite.
 config.name = "mojo-isolated"
 
@@ -36,6 +38,12 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
+tools = [
+    "kgen-translate",
+    "kgen-opt",
+    "hash-mlir",
+]
+llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 translate_with_prebuilt_packages = (
     "kgen-translate -import-mojo -mojo-enable-prebuilt-packages"
@@ -47,12 +55,6 @@ translate_with_prebuilt_packages = (
 config.substitutions.append(
     ("%parse-mojo-isolated", translate_with_prebuilt_packages)
 )
-
-tools = [
-    "kgen-translate",
-    "kgen-opt",
-    "hash-mlir",
-]
 
 config.environment["MODULAR_HOME"] = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-isolated"
