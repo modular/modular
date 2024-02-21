@@ -1804,7 +1804,15 @@ fn pack_matmul_b_shape_func_M[
 
     var output = StaticIntTuple[2]()
 
-    var m = a_shape.at[0]().get() if m_override == 0 else m_override
+    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    var m = 0
+
+    @parameter
+    if a_shape.at[0]().has_value():
+        m = a_shape.at[0]().get()
+    else:
+        m = m_override
+
     var n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
     var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
@@ -2017,7 +2025,15 @@ fn _pack_b_ndbuffer_impl[
         memcpy(output_buffer.data, b_input.data, b_input.dim(0))
 
     else:
-        var m = a_shape.at[0]().get() if m_override == 0 else m_override
+        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+        var m = 0
+
+        @parameter
+        if a_shape.at[0]().has_value():
+            m = a_shape.at[0]().get()
+        else:
+            m = m_override
+
         var n = b_input.dim(0) if transposed else b_input.dim(1)
         var k = b_input.dim(1) if transposed else b_input.dim(0)
 
