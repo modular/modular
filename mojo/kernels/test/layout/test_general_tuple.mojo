@@ -19,14 +19,14 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn is_equal[T: CollectionElement](va: Variant[T], vb: Variant[T]) -> Bool:
         if va.isa[General]() and vb.isa[General]():
-            var a = va.get[General]()
-            var b = vb.get[General]()
+            var a = va.get[General]()[]
+            var b = vb.get[General]()[]
             if a.isa[Int]() and b.isa[Int]():
-                return a.get[Int]() == b.get[Int]()
+                return a.get[Int]()[] == b.get[Int]()[]
             elif a.isa[Float32]() and b.isa[Float32]():
-                return a.get[Float32]() == b.get[Float32]()
+                return a.get[Float32]()[] == b.get[Float32]()[]
             elif a.isa[String]() and b.isa[String]():
-                return a.get[String]() == b.get[String]()
+                return a.get[String]()[] == b.get[String]()[]
         trap("Unexpected data type.")
         return False
 
@@ -34,13 +34,13 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn to_string[T: CollectionElement](a: Variant[T]) -> String:
         if a.isa[General]():
-            var v = a.get[General]()
+            var v = a.get[General]()[]
             if v.isa[Int]():
-                return v.get[Int]()
+                return v.get[Int]()[]
             if v.isa[Float32]():
-                return v.get[Float32]()
+                return v.get[Float32]()[]
             if v.isa[String]():
-                return v.get[String]()
+                return v.get[String]()[]
         trap("Unexpected data type.")
         return "#"
 
@@ -68,9 +68,9 @@ fn test_tuple_general() raises:
     # CHECK: 3.5
     # CHECK: Mojo
     # CHECK: (1, (3.5, Mojo))
-    print(gt[0].value().get[Int]())
-    print(gt[1][0].value().get[Float32]())
-    print(gt[1][1].value().get[String]())
+    print(gt[0].value().get[Int]()[])
+    print(gt[1][0].value().get[Float32]()[])
+    print(gt[1][1].value().get[String]()[])
     print(gt)
 
     # CHECK: (7, (3.5, Mojo))

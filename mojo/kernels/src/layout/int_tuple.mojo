@@ -17,7 +17,7 @@ struct IntDelegate(ElementDelegate):
     @staticmethod
     fn is_equal[T: CollectionElement](a: Variant[T], b: Variant[T]) -> Bool:
         if a.isa[Int]() and b.isa[Int]():
-            return a.get[Int]() == b.get[Int]()
+            return a.get[Int]()[] == b.get[Int]()[]
         else:
             trap("Unexpected data type.")
             return False
@@ -26,7 +26,7 @@ struct IntDelegate(ElementDelegate):
     @staticmethod
     fn to_string[T: CollectionElement](a: Variant[T]) -> String:
         if a.isa[Int]():
-            return a.get[Int]()
+            return a.get[Int]()[]
         else:
             trap("Unexpected data type.")
             return "#"
@@ -192,7 +192,7 @@ fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     var res = IntTuple()
     for elem in lhs:
         if is_int(elem):
-            res.append(elem.get[Int]() * rhs)
+            res.append(elem.get[Int]()[] * rhs)
         else:
             for elem_i in tuple(elem):
                 res.append(mul(IntTuple(elem_i), rhs))

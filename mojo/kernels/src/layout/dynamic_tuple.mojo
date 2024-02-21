@@ -42,14 +42,14 @@ struct _DynamicTupleIter[
     fn __next__(inout self) -> Self.ElementType:
         self.index += 1
         if self.src.isa[T]():
-            return self.src.get[T]()
+            return self.src.get[T]()[]
         else:
-            return self.src.get[Self.BaseType]()[self.index - 1]
+            return self.src.get[Self.BaseType]()[][self.index - 1]
 
     @always_inline
     fn __len__(self) -> Int:
         return (
-            1 if self.src.isa[T]() else len(self.src.get[Self.BaseType]())
+            1 if self.src.isa[T]() else len(self.src.get[Self.BaseType]()[])
         ) - self.index
 
 
@@ -109,7 +109,7 @@ struct DynamicTupleBase[
     @always_inline
     @staticmethod
     fn rewrap(v: Self.Element) -> Variant[T]:
-        return Variant[T](v.get[T]())
+        return Variant[T](v.get[T]()[])
 
     @staticmethod
     fn to_string(v: Self.Element) -> String:
@@ -118,7 +118,7 @@ struct DynamicTupleBase[
         else:
             var result = String("(")
             if v.isa[Self]():
-                var elts = v.get[Self]().elts
+                var elts = v.get[Self]()[].elts
                 for i in range(len(elts)):
                     var e: Self.Element = elts[i]
                     result += Self.to_string(e)
@@ -131,8 +131,8 @@ struct DynamicTupleBase[
         if a.isa[T]() and b.isa[T]():
             return D.is_equal[T](Self.rewrap(a), Self.rewrap(b))
         if a.isa[Self]() and b.isa[Self]():
-            var ta = a.get[Self]()
-            var tb = b.get[Self]()
+            var ta = a.get[Self]()[]
+            var tb = b.get[Self]()[]
             if len(ta) == len(tb):
                 for i in range(len(ta)):
                     if not Self.is_equal(ta[i], tb[i]):
@@ -199,7 +199,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn tuple(self) -> Self.BaseType:
-        return self.content.get[Self.BaseType]()
+        return self.content.get[Self.BaseType]()[]
 
     @always_inline
     fn is_value(self) -> Bool:
@@ -207,7 +207,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn value(self) -> T:
-        return self.content.get[T]()
+        return self.content.get[T]()[]
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
