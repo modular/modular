@@ -372,6 +372,10 @@ fn _batched_matmul_cpu[
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
             )
 
+            var batch_coords = _get_start_indices_of_nth_subvolume[rank, 2](
+                batch, c_buf.get_shape()
+            )
+
             @parameter
             fn elementwise_lambda_2d[
                 c_type: DType, width: Int
@@ -381,14 +385,11 @@ fn _batched_matmul_cpu[
                 # so un-collapse the batch dims here
                 @parameter
                 if elementwise_epilogue_fn:
-                    var coords = _get_start_indices_of_nth_subvolume[rank, 2](
-                        batch, c_buf.get_shape()
-                    )
-                    coords[rank - 1] = out_coords[1]
-                    coords[rank - 2] = out_coords[0]
+                    batch_coords[rank - 1] = out_coords[1]
+                    batch_coords[rank - 2] = out_coords[0]
 
                     alias func = elementwise_epilogue_fn.value()
-                    func[c_type, width, rank](coords, out_val)
+                    func[c_type, width, rank](batch_coords, out_val)
 
             fn rowwise_closure(start_row: Int, num_rows: Int):
                 rowwise_epilogue(start_row, num_rows, c_view)
