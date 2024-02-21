@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics --mojo-disable-parser-caching=true -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S %s | FileCheck %s
 
 from test_package.module import *
 

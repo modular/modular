@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -mojo-disable-parser-caching %s | FileCheck %s
+# RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 # The following function has a use of the builtin Error type, make sure that
 # gets pulled in.

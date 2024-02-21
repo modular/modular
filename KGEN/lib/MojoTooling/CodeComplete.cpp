@@ -374,12 +374,6 @@ parseCompletionImpl(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
   ParserConfig config(context, runtime, options);
   config.parserListener = &listener;
 
-  // We don't want to cache the main module, but imported modules can be cached
-  // if desired.
-  config.moduleCachingLevel = disableModuleCaching
-                                  ? ParserConfig::kCacheNone
-                                  : ParserConfig::kCacheImports;
-
   // Disable as much of the diagnostic machinery as possible, we don't care
   // about diagnostics for completion results.
   config.maxNotesPerDiagnostic = 0;

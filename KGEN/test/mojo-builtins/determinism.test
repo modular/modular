@@ -5,17 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 // RUN: echo "" > %t.mojo
-// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-disable-parser-caching=true --bytecode-output - | hash-mlir -o %t.0
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.0
 // RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.1
-// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.2
-// RUN: cat %t.0 %t.1 %t.2 | FileCheck %s
+// RUN: cat %t.0 %t.1 | FileCheck %s
 
 // RUN: echo "def main(): print(\"hello\")" > %t.mojo
-// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-disable-parser-caching=true --bytecode-output - | hash-mlir -o %t.0
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.0
 // RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.1
-// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --bytecode-output - | hash-mlir -o %t.2
-// RUN: cat %t.0 %t.1 %t.2 | FileCheck %s
+// RUN: cat %t.0 %t.1 | FileCheck %s
 
 // CHECK: [[HASH:.*]]
-// CHECK-NEXT: [[HASH]]
 // CHECK-NEXT: [[HASH]]
