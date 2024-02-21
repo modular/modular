@@ -54,7 +54,8 @@ struct FieldParser<MemoryBlob> {
     MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
                           .Case("stack", MemoryKind::Stack)
                           .Case("heap", MemoryKind::Heap)
-                          .Case("const_global", MemoryKind::ConstGlobal);
+                          .Case("const_global", MemoryKind::ConstGlobal)
+                          .Case("persistent", MemoryKind::Persistent);
     return MemoryBlob(*hdl, kind, std::move(pointerRegions));
   }
 };
@@ -72,6 +73,9 @@ static AsmPrinter &operator<<(AsmPrinter &p, const MemoryBlob &blob) {
     break;
   case MemoryKind::ConstGlobal:
     p << "const_global";
+    break;
+  case MemoryKind::Persistent:
+    p << "persistent";
     break;
   }
   p << ", [";

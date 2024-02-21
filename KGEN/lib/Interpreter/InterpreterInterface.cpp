@@ -29,13 +29,17 @@ static constexpr int64_t kTableSize = 1'000'000'000;
 static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
 /// The start of constant global memory.
 static constexpr int64_t kConstGlobalBaseAddr = kStackBaseAddr + kTableSize;
+/// The start of persistent memory.
+static constexpr int64_t kPersistentBaseAddr =
+    kConstGlobalBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
     : ctx(ctx), target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
       memory{{MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize},
              {MemoryKind::Stack, kStackBaseAddr, kStackBaseAddr + kTableSize},
              {MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
-              kConstGlobalBaseAddr + kTableSize}} {}
+              kConstGlobalBaseAddr + kTableSize},
+             {MemoryKind::Persistent, kPersistentBaseAddr, kTableSize}} {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
