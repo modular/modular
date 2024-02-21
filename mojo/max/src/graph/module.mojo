@@ -114,14 +114,13 @@ struct Module(Stringable):
         let ctx = self._module.context()
         let loc = _mlir.Location.unknown(ctx)
 
-        let op = _c.graph_new(
-            self._module,
-            loc,
-            name,
-            _mlir.builtin_types.FunctionType(
-                ctx, in_types.to_mlir(self), out_types.to_mlir(self)
-            ),
+        let function_type = _mlir.builtin_types.FunctionType(
+            ctx, in_types.to_mlir(self), out_types.to_mlir(self)
         )
+        let op = _c.graph_new(
+            self._module, loc, name._strref_dangerous(), function_type
+        )
+        name._strref_keepalive()
 
         return Graph(op)
 

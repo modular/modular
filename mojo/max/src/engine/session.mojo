@@ -11,7 +11,7 @@ from os.atomic import Atomic
 from sys.ffi import DLHandle
 from pathlib import Path
 
-from max.graph import Module
+from max.graph import Graph, Module
 
 from ._context import _Device, RuntimeContext, RuntimeConfig
 from ._compilation import (
@@ -403,6 +403,22 @@ struct InferenceSession:
         return __get_address_as_lvalue(self.ptr.value).load_model(
             load_config ^, self.copy()
         )
+
+    fn load_model(
+        self, graph: Graph, config: Optional[LoadOptions] = None
+    ) raises -> Model:
+        """Compile and Initialize AI model with Max
+           engine with given Max `Graph` and config.
+
+        Args:
+            graph: Max `Graph` module.
+            config: Configurations need for compiling model.
+
+        Returns:
+            Initialized model ready for inference.
+
+        """
+        return self.load_model(graph.module(), config)
 
     fn load_model(
         self, module: Module, config: Optional[LoadOptions] = None

@@ -29,10 +29,19 @@ from .type import MOList, MOType, MOTensor, TypeTuple
 
 
 @value
-struct Graph(CollectionElement):
+struct Graph(CollectionElement, Stringable):
     """Represents a single MAX graph."""
 
     var _op: _mlir.Operation
+
+    fn __init__(
+        inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
+    ):
+        let module = Module()
+        self = module.graph(name, in_types, out_types)
+
+    fn __str__(self) -> String:
+        return str(self._op)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
