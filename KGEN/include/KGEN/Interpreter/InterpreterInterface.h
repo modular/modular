@@ -300,7 +300,7 @@ private:
 
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.
-  MemoryTable memory[3];
+  MemoryTable memory[4];
 
   //===--------------------------------------------------------------------===//
   // Interpreter Execution
