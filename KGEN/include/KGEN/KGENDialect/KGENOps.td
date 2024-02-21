@@ -1347,6 +1347,31 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralToFloatLiteralOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralToFloatLiteralOp : KGENOp<"int_literal.to_float_literal",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+  let summary = "Convert int_literal to float_literal type.";
+  let description = [{
+    The `kgen.int_literal.to_float_literal` operator converts from int_literal
+    to float_literal, of course.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.int_literal.to_float_literal %arg0
+    ```
+  }];
+
+  let arguments = (ins KGEN_IntLiteralType:$input);
+  let results = (outs KGEN_FloatLiteralType:$output);
+
+  let assemblyFormat = "$input attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 
