@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Run parsing twice to ensure the cache is populated.
-# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s -o /dev/null
-# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I=%S %s -o /dev/null
 
 # CHECK: !Trait = !lit.trait<@imported_cached_module::@Trait>
 
