@@ -18,4 +18,5 @@ add_modular_testsuite(check-mojo-integration
   mojo-stdlib
   kgen
   kgen-translate
+  kgen-opt
 )

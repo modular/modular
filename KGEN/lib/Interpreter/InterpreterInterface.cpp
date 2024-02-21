@@ -479,22 +479,32 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         return {PointerAttr::get(*addr, ref.getType()), WalkResult::advance()};
       });
 
+  mlir::AttrTypeReplacer liftStore;
+  liftStore.addReplacement(
+      [&](StoreToMemAttr store) -> std::pair<Attribute, WalkResult> {
+        Type valueType = store.getValue().getType();
+        ErrorOr<PointerAttr> ptr =
+            allocateInternalStackFor(valueType, store.getType());
+        if (ptr.isError()) {
+          err = ptr.takeError();
+          return {store, WalkResult::interrupt()};
+        }
+        if (ErrorOrSuccess err =
+                writeAttributeToMemory(ptr->getAddr(), store.getValue());
+            err.isError()) {
+          err = ptr.takeError();
+          return {store, WalkResult::interrupt()};
+        }
+        return {ptr.takeValue(), WalkResult::advance()};
+      });
+
   for (Attribute &arg : args) {
     arg = replacer.replace(arg);
     if (err)
       return std::move(*err);
-    if (auto store = dyn_cast<StoreToMemAttr>(arg)) {
-      Type valueType = store.getValue().getType();
-      ErrorOr<PointerAttr> ptr =
-          allocateInternalStackFor(valueType, store.getType());
-      if (ptr.isError())
-        return ptr.takeError();
-      if (ErrorOrSuccess err =
-              writeAttributeToMemory(ptr->getAddr(), store.getValue());
-          err.isError())
-        return err.takeError();
-      arg = ptr.takeValue();
-    }
+    arg = liftStore.replace(arg);
+    if (err)
+      return std::move(*err);
   }
   return success();
 }
