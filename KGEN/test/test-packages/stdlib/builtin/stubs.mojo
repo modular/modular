@@ -8,6 +8,7 @@ alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
+alias NoneType = __mlir_type.`!kgen.none`
 alias AnyRegType = __mlir_type.`!kgen.type`
 
 alias `0` = __mlir_attr.`0 : index`
@@ -36,6 +37,9 @@ struct Error:
 
 struct object:
     fn __init__(inout self):
+        pass
+
+    fn __init__(inout self, value: NoneType):
         pass
 
     fn __init__(inout self, value: Int):
@@ -76,6 +80,10 @@ struct Int:
     fn __iadd__(inout self, rhs: Int):
         self = self + rhs
 
+    @always_inline("nodebug")
+    fn __eq__(lhs, rhs: Int) -> Bool:
+        return __mlir_attr.`true`
+
 
 @value
 @register_passable("trivial")
@@ -83,6 +91,7 @@ struct StringLiteral:
     var value: __mlir_type.`!kgen.string`
 
 
+@value
 @register_passable("trivial")
 struct Bool(AnyType):
     var value: __mlir_type.i1
@@ -133,9 +142,21 @@ trait AnyType:
 @value
 @register_passable
 struct Coroutine[T: AnyRegType]:
-    var value: __mlir_type[`!pop.coroutine<() ->`, T, `>`]
+    var value: __mlir_type[`!pop.coroutine<() -> `, T, `>`]
 
     fn __await__(self) -> T:
+        while __mlir_attr.`true`:
+            pass
+
+
+@value
+@register_passable
+struct RaisingCoroutine[T: AnyRegType]:
+    var value: __mlir_type[
+        `!pop.coroutine<() throws -> !kgen.variant<`, Error, `, `, T, `>>`
+    ]
+
+    fn __await__(self) raises -> T:
         while __mlir_attr.`true`:
             pass
 
@@ -212,3 +233,11 @@ struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
     @always_inline("nodebug")
     fn expand(self):
         __mlir_op.`kgen.capture_list.expand`(self.value)
+
+
+@register_passable
+struct Tuple[*Ts: AnyRegType]:
+    var storage: __mlir_type[`!kgen.pack<`, Ts, `>`]
+
+    fn __init__(*args: *Ts) -> Self:
+        pass
