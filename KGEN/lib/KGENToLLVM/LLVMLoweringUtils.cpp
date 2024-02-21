@@ -641,7 +641,10 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     // Create the relevant allocation.
     Value popAlloc;
     mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
-    if (blob.getKind() == MemoryKind::Stack) {
+    if (blob.getKind() == MemoryKind::Stack ||
+        // FIXME(#32052): Persistent memory requires planning, but downcast to a
+        // stack allocation for now.
+        blob.getKind() == MemoryKind::Persistent) {
       popAlloc = b.create<POP::StackAllocationOp>(
           PointerType::get(b.getI8Type()), mem->getData().size(),
           b.getIndexAttr(mem->getDataAlignment()));
