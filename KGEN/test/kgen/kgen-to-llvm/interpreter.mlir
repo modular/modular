@@ -25,6 +25,13 @@ kgen.func @stack() {
   kgen.return
 }
 
+// CHECK-LABEL: llvm.func internal @persistent
+kgen.func @persistent() {
+  // CHECK: pop.stack_allocation 2 x i8 align 8
+  %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(variadic, persistent, [])], 0, 0>>
+  kgen.return
+}
+
 // CHECK-LABEL: llvm.func internal @stack_shared
 kgen.func @stack_shared() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
@@ -147,7 +154,8 @@ kgen.func @ptr_inside_blob() {
       mem_string: "hello world",
       foo: "0x10000000000000000000000008",
       bar: "0x100000000000",
-      large: "0x10000000000102030405060708090001020304050607080900"
+      large: "0x10000000000102030405060708090001020304050607080900",
+      variadic: "0x08000000DEAD"
     }
   }
 #-}
