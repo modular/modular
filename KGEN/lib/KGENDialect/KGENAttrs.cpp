@@ -61,42 +61,6 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ConstraintAttr
-//===----------------------------------------------------------------------===//
-
-/// Parse an optional location or use the current location of the parser.
-static ParseResult parseConstraintLoc(AsmParser &parser,
-                                      FailureOr<Location> &loc) {
-  if (succeeded(parser.parseOptionalComma())) {
-    mlir::LocationAttr locAttr;
-    if (parser.parseAttribute(locAttr))
-      return failure();
-    loc.emplace(locAttr);
-  } else {
-    loc = parser.getEncodedSourceLoc(parser.getCurrentLocation());
-  }
-  return success();
-}
-
-/// Always print the location.
-static void printConstraintLoc(AsmPrinter &printer, Location loc) {
-  printer << ", ";
-  printer.printAttribute(loc);
-}
-
-//===----------------------------------------------------------------------===//
-// ConstraintAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr expr, StringAttr message, Location loc) {
-  if (!expr.getType().isSignlessInteger(1))
-    return emitError() << "expected an expression of type i1";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicAttr
 //===----------------------------------------------------------------------===//
 

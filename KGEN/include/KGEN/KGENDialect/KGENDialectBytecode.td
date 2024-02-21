@@ -99,16 +99,6 @@ def ParamDeclArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"ParamDeclAttr">:$value
 )>;
 
-def ConstraintAttr : DialectAttribute<(attr
-  TypedAttr:$expr,
-  StringAttr:$message,
-  ConcreteAttribute<"mlir::LocationAttr">:$loc
-)>;
-
-def ConstraintArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"ConstraintAttr">:$value
-)>;
-
 def VariadicAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"VariadicType">:$type
@@ -246,8 +236,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
-    ConstraintAttr,
-    ConstraintArrayAttr,
     VariadicAttr,
     UnknownAttr,
     UnboundAttr,
