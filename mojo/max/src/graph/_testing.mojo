@@ -46,6 +46,7 @@ fn execute_nullary_list[
     var results = DynamicVector[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
+    _ = result_map ^
     return results
 
 
