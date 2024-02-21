@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I %S %s | FileCheck %s
-# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I %S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S %s | FileCheck %s
 
 # COM: Run it twice to ensure it works on a cache hit.
 
