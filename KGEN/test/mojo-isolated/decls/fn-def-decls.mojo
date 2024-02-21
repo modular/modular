@@ -53,3 +53,9 @@ fn star_and_slash_2(a: int, /, b: int, *, c: int):
 # CHECK-SAME: (%a: index borrow, %b: index borrow = 8, *, %c: index borrow, %d: index borrow = 9)
 fn default_args(a: int, b: int = `8`, *, c: int, d: int = `9`):
     pass
+
+
+# CHECK-LABEL: lit.func @"variadic_and_kw_only
+# CHECK-SAME: (%a: index borrow, %b: index borrow, %args: !kgen.variadic<index> borrow|var, *, %c: index borrow, %d: index borrow = 9)
+fn variadic_and_kw_only(a: int, b: int, *args: int, c: int, d: int = `9`):
+    pass

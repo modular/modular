@@ -203,10 +203,10 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   };
 
   // This is invoked when we see a '*' marker or '*arg' argument.
-  auto handleStarMarker = [&](SMLoc loc, bool isMarker) {
+  auto handleStarMarker = [&](SMLoc loc, bool isMarker) -> ParseResult {
     if (hasStarMarker) {
-      p.emitError(loc, "cannot have two '*' markers in the same ")
-          << argOrParam << " list";
+      return p.emitError(loc, "cannot have two '*' markers in the same ")
+             << argOrParam << " list";
     }
 
     // Diagnose '*' marker at end of argument list for completeness.
@@ -218,6 +218,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     // From now on, any parsed arguments are keyword only.
     defaultKWArgHandling = KWArgHandling::kKeywordOnly;
     hasStarMarker = true;
+
+    return success();
   };
 
   // This parses either an argument or a keyword argument specifier.
@@ -233,7 +235,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     if (marker == KWArgMarkerInfo::kSlash)
       return handleSlashMarker(arg.loc), success();
     if (marker == KWArgMarkerInfo::kStar)
-      return handleStarMarker(arg.loc, /*isMarker=*/true), success();
+      return handleStarMarker(arg.loc, /*isMarker=*/true);
 
     if (arg.name.empty()) {
       if (foundName)
@@ -251,7 +253,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     // argument.
     if (arg.vararg == VarArgKind::VarArg ||
         arg.vararg == VarArgKind::PackVarArg)
-      handleStarMarker(arg.loc, /*isMarker=*/false);
+      if (failed(handleStarMarker(arg.loc, /*isMarker=*/false)))
+        return failure();
 
     // If we have a **arg then it must be the last argument.
     if (arg.vararg == VarArgKind::KWVarArg && p.getToken().isNot(stopTokens)) {
@@ -287,15 +290,6 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     arg.kwArgHandling = KWArgHandling::kPositionalOnly;
   }
 
-  // TODO(#21950): we currently don't allow keyword-only args after variadics.
-  auto hasVarArg = [](const ParsedArgument &arg) { return arg.vararg; };
-  if (!parsedArgs.empty() &&
-      parsedArgs.back().kwArgHandling == KWArgHandling::kKeywordOnly &&
-      llvm::any_of(parsedArgs, hasVarArg)) {
-    return p.emitError(
-        parsedArgs.back().loc,
-        "keyword-only arguments after variadics not supported yet");
-  }
   return success();
 }
 

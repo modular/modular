@@ -47,6 +47,7 @@ fn test_unknown_arg_type(a: InvalidType):
     _ = a.value  # Should not produce a follow-on error.
     return
 
+# expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_stars(a: int, *, *, b: int):
     pass
@@ -67,24 +68,14 @@ fn leading_slash(/, a: int):
 fn trailing_star(a: int, *):
     pass
 
-# TODO(#21950): fix how we model variadics to suppress this error
-# expected-error @+3 {{keyword-only arguments after variadics not supported yet}}
 # expected-error @+2 {{unexpected token in expression}}
 # # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_variadics(*a: int, *b: int):
     pass
 
-# TODO(#21950): fix how we model variadics to suppress this error
-# expected-error @+3 {{keyword-only arguments after variadics not supported yet}}
 # expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
-    pass
-
-# TODO(#21950): fix how we model variadics to allow this
-# expected-error @+2 {{unexpected token in expression}}
-# expected-error @+1 {{keyword-only arguments after variadics not supported yet}}
-fn variadic_and_kw_only(a: int, *b: int, c: int):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}

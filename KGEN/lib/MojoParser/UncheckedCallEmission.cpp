@@ -450,10 +450,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         posOperands.begin() + posOperandIdx, posOperands.end());
     posOperandIdx = posOperands.size();
 
+    // NOTE: this implicitly assumes that variadics/packs are at the end.
     if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
                                            convention, expectedType,
                                            argumentValues)))
-      break;
+      continue;
 
     return failure();
   }
@@ -852,8 +853,9 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
   SmallVector<TypedAttr> implicitLifetimes;
+  ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
   for (auto [argIdx, argValAndExpr, conventionX] :
-       llvm::enumerate(argumentValues, calleeSig.getArgConventions())) {
+       llvm::enumerate(argumentValues, conventions)) {
     ArgConvention convention = conventionX;
 
     // If this is a byref_result slot, we will have emitted a null value for

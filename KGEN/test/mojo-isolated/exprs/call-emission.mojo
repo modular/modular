@@ -178,3 +178,26 @@ fn test_kw_only_params_indirect[x: int]():
 
     # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, x, x)]()
     callee[x, d=x, c=x]()
+
+
+fn takes_variadic_and_kw_only_args(
+    a: int, b: int, *args: int, c: int, d: int = `0`
+):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_variadic_and_kw_only_args
+fn test_variadic_and_kw_only_args(x: int):
+    # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<index> = <[]>
+    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
+    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
+    takes_variadic_and_kw_only_args(x, x, c=x)
+
+    # CHECK: %[[VAR:.*]] = kgen.param.constant: variadic<index> = <[]>
+    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %x)
+    takes_variadic_and_kw_only_args(x, x, d=x, c=x)
+
+    # CHECK-DAG: %[[VAR:.*]] = pop.variadic.splat  2, %x : !kgen.variadic<index>
+    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
+    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
+    takes_variadic_and_kw_only_args(x, x, x, x, c=x)

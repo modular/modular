@@ -105,3 +105,14 @@ fn test_missing_kw_only_param[x: int]():
     # TODO: we should emit an error with a list of expected kwargs here
     # expected-error @+1 {{callee expects 3 parameters, but 0 were specified}}
     takes_kw_only_param[]()
+
+# expected-note @+1 {{function declared here}}
+fn takes_kw_only_args(a: int, b: int, *args: int, c: int, d: int = `2`):
+    pass
+
+fn test_missing_positional_arg_with_vararg_keyword(x: int):
+   # expected-error @+1 {{missing 1 required positional argument: 'b'}}
+   takes_kw_only_args(x, c=`2`)
+
+fn test_missing_keyword_arg_with_vararg_keyword(x: int):
+   takes_kw_only_args(x, x, c=`2`)
