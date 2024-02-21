@@ -897,7 +897,7 @@ ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
 
   // Allocate stack memory for the elements.
   ErrorOr<int64_t> valuesAddr =
-      state.allocateStackMemory(*allocSize * values.size(), *typeAlign);
+      state.allocatePersistentMemory(*allocSize * values.size(), *typeAlign);
   if (valuesAddr.isError())
     return valuesAddr.takeError();
   int64_t baseAddr = *valuesAddr;

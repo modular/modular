@@ -19,11 +19,11 @@ using namespace M;
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
+/// Give the memory segments a healthy amount of maximum memory.
+static constexpr int64_t kTableSize = 1'000'000'000;
 /// Provide a virtual "invalid space" for the interpreter's memory. This is so
 /// that an address of 0 can actually be considered a null pointer.
 static constexpr int64_t kHeapBaseAddr = 1'000'000'000;
-/// Give the memory segments a healthy amount of maximum memory.
-static constexpr int64_t kTableSize = 1'000'000'000;
 /// Put the stack after the heap.
 /// FIXME: The stack pointer does not grow downwards like in every system.
 static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
@@ -39,7 +39,8 @@ InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
              {MemoryKind::Stack, kStackBaseAddr, kStackBaseAddr + kTableSize},
              {MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
               kConstGlobalBaseAddr + kTableSize},
-             {MemoryKind::Persistent, kPersistentBaseAddr, kTableSize}} {}
+             {MemoryKind::Persistent, kPersistentBaseAddr,
+              kPersistentBaseAddr + kTableSize}} {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
@@ -151,6 +152,17 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
                                                       size_t align) {
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::Heap).addBlob(size, align, /*hdl=*/{});
+  if (blob.isError())
+    return blob.takeError();
+  // Zero-initialize the memory.
+  memset(blob->getOwned(), 0, size);
+  return blob->baseAddr;
+}
+
+ErrorOr<int64_t> InterpreterState::allocatePersistentMemory(size_t size,
+                                                            size_t align) {
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::Persistent).addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
