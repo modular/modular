@@ -1210,7 +1210,7 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralCastOp
+// IntLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
 static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP,
@@ -1266,6 +1266,36 @@ OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
   if (errOrSuccess.isError())
     return {};
   return attrResult;
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralToFloatLiteral
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+IntLiteralToFloatLiteralOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  assert(!operands.empty() &&
+         "IntLiteralToFloatLiteralOp must have an operand");
+  auto inval = ::cast<IntLiteralAttr>(operands[0]);
+  FloatLiteralAttr attrResult = FloatLiteralAttr::get(
+      inval.getContext(),
+      FloatLiteralSpecialValuesAttr::get(inval.getContext(),
+                                         FloatLiteralSpecialValues::Normal),
+      IPRational(inval.getValue(), IPInt(1)));
+  state.mapResults(attrResult);
+  return success();
+}
+
+OpFoldResult IntLiteralToFloatLiteralOp::fold(FoldAdaptor adaptor) {
+  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
+  if (!in)
+    return {};
+  return FloatLiteralAttr::get(
+      in.getContext(),
+      FloatLiteralSpecialValuesAttr::get(in.getContext(),
+                                         FloatLiteralSpecialValues::Normal),
+      IPRational(in.getValue(), IPInt(1)));
 }
 
 //===----------------------------------------------------------------------===//
