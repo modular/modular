@@ -144,22 +144,14 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ArgParamListAttr paramListAttr,
-                              bool hasParamVarArgs,
                               ParameterInferenceHookTy parameterInferenceHook,
-                              bool isPackVarArg, const DiagEmitter &diagEmitter,
+                              const DiagEmitter &diagEmitter,
                               bool allowPartiallyBound) const {
   ArrayRef<StringAttr> paramNames = paramListAttr.getNames();
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   DefaultValueHandler defaultHandler(paramListAttr);
 
   size_t numParams = expectedParamTypes.size();
-  size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
-
-  auto isVarArg = [&](size_t idx) {
-    // The variadic argument is the last non-implicit argument.
-    return (idx + 1 == numParams - numImplicit) && hasParamVarArgs;
-  };
-
   assert(paramNames.size() == numParams);
 
   // First, we separate the expected parameter names into positional-only and
@@ -168,7 +160,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   SmallPtrSet<StringAttr, 4> posOnlyNames;
   for (auto [idx, paramName, passingKind] :
        llvm::enumerate(paramNames, paramPassingKinds)) {
-    if (isVarArg(idx) || isPackVarArg)
+    if (paramListAttr.isVariadic(idx) || paramListAttr.isPack(idx))
       continue; // Variadic/pack parameters cannot be specified by keyword.
     if (passingKind == PassingKind::PosOnly) {
       // Implicit parameters can be unnamed.
@@ -282,6 +274,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     }
 
     // Check if we have too many parameters after unpacking
+    bool hasParamVarArgs = !paramListAttr.getVariadicIndices().empty();
     size_t numPosPassable = countNumPositional(paramPassingKinds);
     size_t numUnpackedPositionals =
         unpackedPosBindingsStorage.size() - (unpackedUnboundIdx != -1);
@@ -335,7 +328,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       Type requestedType = evaluator.getReboundType(type);
       ASTType expectedType = requestedType;
       // If this is a vararg parameter, infer using the element type.
-      if (isVarArg(idx))
+      if (paramListAttr.isVariadic(idx))
         if (auto varType = dyn_cast<VariadicType>(expectedType))
           expectedType = ASTType(varType.getElementType());
 
@@ -385,7 +378,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl. If this isn't actually a variadic type, then we simply reached
       // the end of the parameter list.
-      if (isVarArg(idx)) {
+      if (paramListAttr.isVariadic(idx)) {
         if (auto varType = dyn_cast<VariadicType>(type)) {
           setParamValue(VariadicAttr::get({}, varType));
           fitness.lastExpectedType = expectedType;
@@ -444,7 +437,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
         // If this parameter is a variadic, allow binding an empty list if a
         // value is not provided and it will not be inferred from a pack vararg.
-        if (isVarArg(idx)) {
+        if (paramListAttr.isVariadic(idx)) {
           if (auto varType = dyn_cast<VariadicType>(type)) {
             setParamValue(VariadicAttr::get({}, varType));
             ++posBindingIdx;
@@ -501,7 +494,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // of the same type, we can use it as the value of the parameter directly.
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
-    if (!isVarArg(idx) || binding.getValue().getType() == type) {
+    if (!paramListAttr.isVariadic(idx) ||
+        binding.getValue().getType() == type) {
       if (failed(checkRedundantKwParam()))
         return {{}, fitness};
       PValue paramValue =
@@ -546,8 +540,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ArgParamListAttr paramListAttr,
-                              bool hasParamVarArgs, StringRef baseName,
-                              Location opLoc, llvm::SMLoc exprLoc,
+                              StringRef baseName, Location opLoc,
+                              llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
@@ -634,19 +628,17 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                          "doesn't allow deduction");
       }};
 
-  return verifyBindings(expectedParamTypes, paramListAttr, hasParamVarArgs,
-                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
-                        diagEmitter, allowPartiallyBound);
+  return verifyBindings(expectedParamTypes, paramListAttr,
+                        /*parameterInferenceHook=*/{}, diagEmitter,
+                        allowPartiallyBound);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITSignatureType sig,
-                              const DiagEmitter &diagEmitter,
-                              ParameterInferenceHookTy parameterInferenceHook,
-                              bool isPackVarArg) const {
+ParamBindings::verifyBindings(
+    LITSignatureType sig, const DiagEmitter &diagEmitter,
+    ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                        sig.hasParamVarArgs(), parameterInferenceHook,
-                        isPackVarArg, diagEmitter,
+                        parameterInferenceHook, diagEmitter,
                         /*allowPartiallyBound=*/false);
 }
 
@@ -654,9 +646,8 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr, nullptr, nullptr};
-  return verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(), sig.hasParamVarArgs(),
-      /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
+  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+                        /*parameterInferenceHook=*/{}, diagEmitter);
 }
 
 ParameterExprArrayAttr
@@ -664,17 +655,16 @@ ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
                               llvm::SMLoc exprLoc,
                               bool allowPartiallyBound) const {
   auto [bindingValuesAttr, _] = verifyBindings(
-      sig.getParamTypes(), sig.getParamListAttrs(), sig.hasVariadicParam(),
-      structOp.getName(), structOp.getLoc(), exprLoc, allowPartiallyBound);
+      sig.getParamTypes(), sig.getParamListAttrs(), structOp.getName(),
+      structOp.getLoc(), exprLoc, allowPartiallyBound);
   return bindingValuesAttr;
 }
 
 ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               Location opLoc, llvm::SMLoc exprLoc) const {
-  auto [newBindings, _] =
-      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                     sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  auto [newBindings, _] = verifyBindings(
+      sig.getParamTypes(), sig.getParamListAttrs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
 
