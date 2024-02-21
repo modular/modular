@@ -281,3 +281,24 @@ kgen.generator export @call_it() {
   kgen.param.constant: () -> () = <apply(:(!kgen.signature<() -> ()>) -> !kgen.signature<() -> ()> @load_store_function, @a_function)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @store_variadic(%arg0: !kgen.variadic<index>, %arg1: !kgen.pointer<variadic<index>>) {
+  pop.store %arg0, %arg1 : !kgen.pointer<variadic<index>>
+  kgen.return
+}
+
+kgen.generator @pass_and_read_variadic(%arg0: !kgen.variadic<index>) -> !kgen.variadic<index> {
+  %0 = pop.stack_allocation 1 x !kgen.variadic<index>
+  kgen.call @store_variadic(%arg0, %0) : (!kgen.variadic<index>, !kgen.pointer<variadic<index>>) -> ()
+  %1 = pop.load %0 : !kgen.pointer<variadic<index>>
+  kgen.return %1 : !kgen.variadic<index>
+}
+
+// CHECK-LABEL: kgen.func export @persistent_variadic
+kgen.generator export @persistent_variadic() {
+  // CHECK-NEXT: variadic<index> = <[1, 2]>
+  kgen.param.constant: variadic<index> = <apply(:(!kgen.variadic<index>) -> !kgen.variadic<index> @pass_and_read_variadic, [1, 2])>
+  kgen.return
+}
