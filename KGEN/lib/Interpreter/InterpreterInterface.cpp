@@ -32,11 +32,10 @@ static constexpr int64_t kConstGlobalBaseAddr = kStackBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
     : ctx(ctx), target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
-      heapMemory(MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize),
-      stackMemory(MemoryKind::Stack, kStackBaseAddr,
-                  kStackBaseAddr + kTableSize),
-      constGlobalMemory(MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
-                        kConstGlobalBaseAddr + kTableSize) {}
+      memory{{MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize},
+             {MemoryKind::Stack, kStackBaseAddr, kStackBaseAddr + kTableSize},
+             {MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
+              kConstGlobalBaseAddr + kTableSize}} {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
@@ -135,7 +134,8 @@ ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
   // Track the additional stack allocation on the current frame.
   ++getCurrentFrame().numStackAllocs;
 
-  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(size, align, /*hdl=*/{});
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::Stack).addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
@@ -145,7 +145,8 @@ ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
 
 ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
                                                       size_t align) {
-  ErrorOr<MemoryBlob &> blob = heapMemory.addBlob(size, align, /*hdl=*/{});
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::Heap).addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
   // Zero-initialize the memory.
@@ -157,7 +158,7 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
   // Free functions tolerate null pointers.
   if (addr == 0)
     return success();
-  ErrorOr<MemoryBlob &> blob = heapMemory.getBlob(addr);
+  ErrorOr<MemoryBlob &> blob = getTable(MemoryKind::Heap).getBlob(addr);
   if (blob.isError())
     return blob.takeError();
   // Don't do anything fancy here. Just free the underlying memory and mark the
@@ -168,14 +169,15 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
 
 ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandle hdl) {
   // Look for an existing mapped blob for the handle.
-  for (const MemoryBlob &blob : constGlobalMemory.blobs)
+  MemoryTable &table = getTable(MemoryKind::ConstGlobal);
+  for (const MemoryBlob &blob : table.blobs)
     if (blob.getHandle() == hdl)
       return blob.baseAddr;
 
   // Otherwise, try to map it in.
   mlir::AsmResourceBlob *mem = hdl.getBlob();
-  ErrorOr<MemoryBlob &> blob = constGlobalMemory.addBlob(
-      mem->getData().size(), mem->getDataAlignment(), hdl);
+  ErrorOr<MemoryBlob &> blob =
+      table.addBlob(mem->getData().size(), mem->getDataAlignment(), hdl);
   if (blob.isError())
     return blob.takeError();
   return blob->baseAddr;
@@ -184,9 +186,12 @@ ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandle hdl) {
 ErrorOr<std::pair<InterpreterState::MemoryBlob &, int64_t>>
 InterpreterState::getMemory(int64_t addr, size_t size) {
   // Determine which table the address belongs to and then lookup the blob.
-  MemoryTable &table = stackMemory.contains(addr)  ? stackMemory
-                       : heapMemory.contains(addr) ? heapMemory
-                                                   : constGlobalMemory;
+  MemoryTable &table = [&]() -> MemoryTable & {
+    for (MemoryTable &table : memory)
+      if (table.contains(addr))
+        return table;
+    return *memory;
+  }();
 
   ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
   if (blob.isError())
@@ -309,9 +314,8 @@ InterpreterState::externalizeMemory(Region &entry,
 
     // First map all the blobs to indices so that pointers can be unmapped.
     int64_t blobIndex = 0;
-    for (const MemoryTable *table :
-         {&heapMemory, &stackMemory, &constGlobalMemory}) {
-      for (const MemoryBlob &blob : table->blobs) {
+    for (const MemoryTable &table : memory) {
+      for (const MemoryBlob &blob : table.blobs) {
         // Don't extern freed blobs.
         if (blob.isFreed())
           continue;
@@ -321,9 +325,8 @@ InterpreterState::externalizeMemory(Region &entry,
 
     // Now unmap the memory.
     std::vector<M::MemoryBlob> blobs;
-    for (const MemoryTable *table :
-         {&heapMemory, &stackMemory, &constGlobalMemory}) {
-      for (const MemoryBlob &blob : table->blobs) {
+    for (const MemoryTable &table : memory) {
+      for (const MemoryBlob &blob : table.blobs) {
         if (blob.isFreed())
           continue;
 
@@ -356,7 +359,7 @@ InterpreterState::externalizeMemory(Region &entry,
             blob.isOwned() ? blobMgr.getOrAddBlobResource(blob.getOwned(),
                                                           blob.size, blob.align)
                            : blob.getHandle();
-        blobs.emplace_back(hdl, table->kind, std::move(pointerRegions));
+        blobs.emplace_back(hdl, table.kind, std::move(pointerRegions));
       }
     }
     interpreterMemorySpace = MemorySpaceAttr::get(ctx, blobs);
@@ -403,10 +406,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     // Process and intern the blobs.
     InternedMemorySpace map;
     for (const M::MemoryBlob &blob : space.getValue()) {
-      MemoryTable &table = blob.getKind() == MemoryKind::Stack ? stackMemory
-                           : blob.getKind() == MemoryKind::Heap
-                               ? heapMemory
-                               : constGlobalMemory;
+      MemoryTable &table = getTable(blob.getKind());
 
       // Constant global is mapped directly into the interpreter.
       std::optional<MemoryHandle> hdl;
@@ -492,7 +492,8 @@ ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
   if (!size || !align)
     return Error("could not get result slot type size or alignment");
 
-  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(*size, *align, /*hdl=*/{});
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::Stack).addBlob(*size, *align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
   return PointerAttr::get(blob->baseAddr, ptrType);
@@ -585,9 +586,8 @@ InterpreterState::startInterpreterAt(Region &region,
 void InterpreterState::reset() {
   pc = nullptr;
   stack.clear();
-  heapMemory.reset();
-  stackMemory.reset();
-  returnValues.reset();
+  for (MemoryTable &table : memory)
+    table.reset();
 }
 
 ErrorTree InterpreterState::addStackTrace(ErrorTree error) {
@@ -718,8 +718,9 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
 
 Operation *InterpreterState::popFrame() {
   // Drop all stack memory on the current frame.
+  MemoryTable &table = getTable(MemoryKind::Stack);
   for (size_t i = 0, e = getCurrentFrame().numStackAllocs; i != e; ++i)
-    stackMemory.blobs.pop_back();
+    table.blobs.pop_back();
 
   Operation *origin = getCurrentFrame().origin;
   stack.pop_back();
