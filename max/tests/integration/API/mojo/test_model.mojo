@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir | FileCheck %s
+# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
 
 from max.engine import (
     InferenceSession,
@@ -143,6 +143,36 @@ fn test_model_tuple_input() raises:
     print(expected_output == output_tensor)
 
 
+fn test_model_tuple_input_different_dtypes() raises:
+    # CHECK: test_model_tuple_input_different_dtypes
+    print("====test_model_tuple_input_different_dtypes")
+
+    let args = argv()
+    let model_path = args[3]
+
+    var input_tensor_float = Tensor[DType.float32](5)
+    var input_tensor_int = Tensor[DType.int32](5)
+
+    for i in range(5):
+        input_tensor_float[i] = 1.0
+        input_tensor_int[i] = i
+
+    let session = InferenceSession()
+    let model = session.load_model(Path(model_path))
+    let outputs = model.execute(
+        ("input0", EngineTensorView(input_tensor_float)),
+        ("input1", EngineTensorView(input_tensor_int)),
+    )
+    _ = input_tensor_float ^
+    let output_tensor = outputs.get[DType.int32]("output")
+
+    # CHECK: 5xint32
+    print(output_tensor.spec())
+
+    # CHECK: True
+    print(input_tensor_int == output_tensor)
+
+
 fn test_model_tuple_input_dynamic() raises:
     # CHECK: test_model_tuple_input_dynamic
     print("====test_model_tuple_input_dynamic")
@@ -182,4 +212,5 @@ fn main() raises:
     test_model_mismatched_input_output_count()
     test_model()
     test_model_tuple_input()
+    test_model_tuple_input_different_dtypes()
     test_model_tuple_input_dynamic()
