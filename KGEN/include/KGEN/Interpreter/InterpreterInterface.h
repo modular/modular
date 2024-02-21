@@ -251,7 +251,7 @@ private:
 
   /// A memory table is just a vector of blobs organized by ascending address.
   struct MemoryTable {
-    explicit MemoryTable(MemoryKind kind, int64_t minAddr, int64_t maxAddr)
+    MemoryTable(MemoryKind kind, int64_t minAddr, int64_t maxAddr)
         : kind(kind), minAddr(minAddr), maxAddr(maxAddr) {}
 
     /// Get the memory blob corresponding to the address.
@@ -289,16 +289,18 @@ private:
 
   ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
 
+  /// Get the memory table for the memory kind.
+  MemoryTable &getTable(MemoryKind kind) {
+    return memory[static_cast<unsigned>(kind)];
+  }
+
   /// The blob manager to materializing interpreter memory into the IR. Access
   /// to the blob manager is thread-safe.
   DialectResourceManager &blobMgr;
 
-  /// An internal memory table for heap-allocated memory.
-  MemoryTable heapMemory;
-  /// A stack of stack-allocated blobs.
-  MemoryTable stackMemory;
-  /// Constant global memory mapped into interpreter memory.
-  MemoryTable constGlobalMemory;
+  /// All interpreter memory tables, containing stack, heap, persistent, and
+  /// constant global memory.
+  MemoryTable memory[3];
 
   //===--------------------------------------------------------------------===//
   // Interpreter Execution

@@ -17,7 +17,7 @@
 //===----------------------------------------------------------------------===//
 
 namespace M {
-enum class MemoryKind : uint8_t { Stack, Heap, ConstGlobal };
+enum class MemoryKind : uint8_t { Heap, Stack, ConstGlobal };
 
 class MemoryBlob {
 public:
