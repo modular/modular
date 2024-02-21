@@ -230,7 +230,7 @@ struct Dim(CollectionElement):
             Otherwise, return an internal value representing an unknown
             dimension size.
         """
-        return self.value.get[StaticDim]().dim if self.is_static() else _dyn()
+        return self.value.get[StaticDim]()[].dim if self.is_static() else _dyn()
 
     fn __eq__(self, other: Dim) -> Bool:
         """Checks whether two dimensions are equal.
@@ -251,14 +251,15 @@ struct Dim(CollectionElement):
         elif self.value.isa[SymbolicDim]():
             return (
                 other.value.isa[SymbolicDim]()
-                and self.value.get[SymbolicDim]()
-                == other.value.get[SymbolicDim]()
+                and self.value.get[SymbolicDim]()[]
+                == other.value.get[SymbolicDim]()[]
             )
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
             return (
                 other.value.isa[StaticDim]()
-                and self.value.get[StaticDim]() == other.value.get[StaticDim]()
+                and self.value.get[StaticDim]()[]
+                == other.value.get[StaticDim]()[]
             )
 
     fn __ne__(self, other: Dim) -> Bool:
@@ -290,13 +291,13 @@ struct Dim(CollectionElement):
         if self.value.isa[DynamicDim]():
             return _c.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
-            let name = self.value.get[SymbolicDim]().name
+            let name = self.value.get[SymbolicDim]()[].name
             let result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
             name._strref_keepalive()
             return result
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            let dim = self.value.get[StaticDim]().dim
+            let dim = self.value.get[StaticDim]()[].dim
             return _c.dim_new_static(ctx, dim)
 
 
@@ -733,7 +734,7 @@ struct AnyMOType(MOType, CollectionElement):
         """
         if not self.type.isa[MOList]():
             raise "Not a list type!"
-        return self.type.get[MOList]()
+        return self.type.get[MOList]()[]
 
     fn tensor(self) raises -> MOTensor:
         """Extracts the type as a tensor type.
@@ -749,7 +750,7 @@ struct AnyMOType(MOType, CollectionElement):
         """
         if not self.type.isa[MOTensor]():
             raise "Not a tensor type!"
-        return self.type.get[MOTensor]()
+        return self.type.get[MOTensor]()[]
 
     fn to_mlir(self, m: Module) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
@@ -761,10 +762,10 @@ struct AnyMOType(MOType, CollectionElement):
             An _mlir.Type in the specified Context.
         """
         if self.type.isa[MOTensor]():
-            return self.type.get[MOTensor]().to_mlir(m)
+            return self.type.get[MOTensor]()[].to_mlir(m)
         else:
             debug_assert(self.type.isa[MOList](), "MO type variants")
-            return self.type.get[MOList]().to_mlir(m)
+            return self.type.get[MOList]()[].to_mlir(m)
 
     @staticmethod
     fn from_mlir(t: _mlir.Type) raises -> Self:

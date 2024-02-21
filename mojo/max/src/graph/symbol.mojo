@@ -43,9 +43,9 @@ struct Symbol(CollectionElement, Stringable):
         let parent = self._value.parent()
         let block: _mlir.Block
         if parent.isa[_mlir.Block]():
-            block = parent.get[_mlir.Block]()
+            block = parent.get[_mlir.Block]()[]
         else:
-            let op = parent.get[_mlir.Operation]()
+            let op = parent.get[_mlir.Operation]()[]
             block = op.block()
 
         let graph_op = block.parent()
