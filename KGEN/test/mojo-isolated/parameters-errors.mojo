@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
 ##===----------------------------------------------------------------------===##
@@ -85,12 +85,12 @@ fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.i
   return callable[a]
 
 # expected-note @+1 {{function declared here}}
-def generic_fn[a: DType, b: Int](c : Int):
+def generic_fn[a: FloatLiteral, b: Int](c : Int):
   pass
 
-def call_generic[dt: DType]():
+def call_generic[dt: FloatLiteral]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
-  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'DType'}}
+  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'FloatLiteral'}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -135,7 +135,7 @@ fn testAliases(variable: Int):
   alias MissingInit
 
   # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
-  alias NotConstant = variable*2
+  alias NotConstant = variable+2
 
 
 fn testConversionQoI():

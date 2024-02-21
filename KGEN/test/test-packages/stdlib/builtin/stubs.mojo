@@ -82,7 +82,9 @@ struct Int:
 
     @always_inline("nodebug")
     fn __eq__(lhs, rhs: Int) -> Bool:
-        return __mlir_attr.`true`
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate eq>`
+        ](lhs.value, rhs.value)
 
 
 @value
