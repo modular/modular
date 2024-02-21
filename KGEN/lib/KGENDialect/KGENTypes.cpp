@@ -1126,23 +1126,84 @@ VariadicAttr PackType::getVariadicAttr() const {
 // VariantType
 //===----------------------------------------------------------------------===//
 
-VariantType VariantType::get(ArrayRef<Type> types) {
-  assert(!types.empty());
-  return get(types.front().getContext(), types);
+static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
+  auto metatype = TypeType::get(p.getContext());
+  auto variadicType = VariadicType::get(metatype, ArgConvention::BorrowedInReg);
+
+  // Special case `[<variadic>]` to parse the variadic parameter directly.
+  if (succeeded(p.parseOptionalLSquare())) {
+    if (parseParamValue(p, variadic, variadicType))
+      return failure();
+    return p.parseRSquare();
+  }
+
+  // Otherwise, parse a non-empty list of concrete types.
+  SmallVector<Type> values;
+  if (parseParamTypes(p, values))
+    return failure();
+  SmallVector<TypedAttr> elements;
+  for (Type type : values)
+    elements.push_back(TypeConstantAttr::get(type, metatype));
+  variadic = VariadicAttr::get(elements, variadicType);
+  return success();
 }
 
-/// Return the number of types in the variant.
-size_t VariantType::getNumTypes() const { return getTypes().size(); }
+static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
+  // Print an empty variadic or a parametric variadic.
+  auto attr = dyn_cast<VariadicAttr>(variadic);
+  if (!attr || attr.getValues().empty()) {
+    p << '[';
+    printParamValue(p, variadic);
+    p << ']';
+    return;
+  }
 
-Type VariantType::getType(unsigned index) const { return getTypes()[index]; }
+  SmallVector<Type> values;
+  for (TypedAttr value : attr.getValues())
+    values.push_back(ParamRefType::get(value));
+  printParamTypes(p, values);
+}
+
+VariantType VariantType::get(ArrayRef<Type> types) {
+  assert(!types.empty());
+  SmallVector<TypedAttr> values;
+  MLIRContext *ctx = types.front().getContext();
+  auto metatype = TypeType::get(ctx);
+  for (Type type : types)
+    values.push_back(TypeConstantAttr::get(type, metatype));
+  return get(ctx, VariadicAttr::get(
+                      values, VariadicType::get(metatype,
+                                                ArgConvention::BorrowedInReg)));
+}
+
+llvm::iterator_range<
+    llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator, Type (*)(TypedAttr)>>
+VariantType::getTypes() const {
+  auto attr = ::dyn_cast<VariadicAttr>(getVariadic());
+  assert(attr && "expected a concrete variant");
+  return llvm::map_range(
+      attr.getValues(),
+      +[](TypedAttr attr) -> Type { return ParamRefType::get(attr); });
+}
+
+size_t VariantType::getNumTypes() const { return llvm::size(getTypes()); }
+
+Type VariantType::getType(unsigned index) const {
+  return *std::next(getTypes().begin(), index);
+}
 
 /// Compute the size in bytes of just the content section of a variant. The
 /// content field is the biggest element size rounded up to the nearest
 /// multiple of the content element type size, which is i64.
 static std::optional<int64_t> computeVariantContentSize(VariantType type,
                                                         TargetInfoAttr target) {
+  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+  if (!variadic)
+    return {};
+
   int64_t maxSize = 0;
-  for (Type elType : type.getTypes()) {
+  for (TypedAttr value : variadic.getValues()) {
+    Type elType = ParamRefType::get(value);
     std::optional<int64_t> typeSize =
         DataLayoutInterface::getTypeAllocSize(target, elType);
     if (!typeSize)
@@ -1156,7 +1217,7 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
 /// discriminator field is the smallest integer type whose maximum value is
 /// greater than the number of possible subtypes, but which is at least `i1`.
 int64_t VariantType::getDiscrSizeInBits() const {
-  return std::max(1u, llvm::Log2_32_Ceil(getTypes().size()));
+  return std::max(1u, llvm::Log2_32_Ceil(getNumTypes()));
 }
 
 /// Get the width of the integer used to represent the discriminator in bytes.

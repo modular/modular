@@ -609,8 +609,8 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
     ```
   }];
 
-  let parameters = (ins ArrayRefParameter<"Type">:$types);
-  let assemblyFormat = "`<` custom<ParamTypes>($types) `>`";
+  let parameters = (ins "TypedAttr":$variadic);
+  let assemblyFormat = "`<` custom<VariantTypes>($variadic) `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
@@ -625,6 +625,11 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
 
     /// Get the number of bits allocated for the discriminator.
     int64_t getDiscrSizeInBits() const;
+
+    /// Get the concrete variant types.
+    llvm::iterator_range<llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator,
+                                               Type (*)(TypedAttr)>>
+    getTypes() const;
   }];
 }
 
