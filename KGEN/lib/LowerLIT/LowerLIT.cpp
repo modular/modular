@@ -186,7 +186,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<ParamDeclareOp>(
           alias, TypeRange(), alias.getParamDecl(), alias.getValue());
     } else if (isa<OwnershipUseOp, OwnershipMarkDestroyedOp,
-                   OwnershipDefLValueOp>(op)) {
+                   OwnershipDefLValueOp, UnresolvedImportOp,
+                   UnresolvedWildcardImportOp>(op)) {
       // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
