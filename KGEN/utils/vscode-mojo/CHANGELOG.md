@@ -4,6 +4,17 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+- [#1741](https://github.com/modularml/mojo/issues/1741) - Mojo documentation
+  generation doesn't show `inout`/`owned` on variadic arguments.
+
+## 0.7.0
+
+### Added
+
 - The Mojo Language Server now implements the References request. IDEs use
   this to provide support for **Go to References** and **Find All References**.
   A current limitation is that references outside of the current document are
