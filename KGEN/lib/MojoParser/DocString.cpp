@@ -229,6 +229,43 @@ StringRef DocString::CodeBlock::getRawCode() const {
 // Verification
 //===----------------------------------------------------------------------===//
 
+/// Return the names of the arguments to the given function.
+static ArrayRef<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
+  // In general, each function argument must be documented, but exceptions are
+  // pruned from the list below.
+  ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
+
+  // The compiler can insert an implicit `__result__` argument, which stores
+  // memory-only results, at the beginning of an argument list.  Because these
+  // arguments are hidden artifacts of the compiler, they don't need to be
+  // documented.
+  if (funcOp.getSignature().hasMemoryOnlyResult())
+    argNames = argNames.drop_front();
+  // Methods take `self` as an explicit first argument, for which
+  // documentation isn't required.
+  if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
+      !funcOp.getIsStatic())
+    argNames = argNames.drop_front();
+
+  return argNames;
+}
+
+/// Return the names of the parameters to the given function.
+static SmallVector<StringAttr> getFunctionParameterNames(LIT::FuncOp funcOp) {
+  SmallVector<StringAttr> result;
+  LITSignatureType signature = funcOp.getSignature();
+  for (auto [paramName, passingKind] :
+       llvm::zip(signature.getParamNames(), signature.getParamPassingKinds()))
+    if (passingKind != PassingKind::Implicit)
+      result.push_back(paramName);
+  return result;
+}
+
+/// Return if the given function is expecting results.
+static bool doesFunctionHaveResults(LIT::FuncOp funcOp) {
+  return !ASTType(funcOp.getUserResultType()).isNoneType();
+}
+
 namespace {
 /// Used to specify the level of validation to perform for doc strings. The idea
 /// is that some doc strings, such as ones added to non-public functions, act as
@@ -533,33 +570,15 @@ private:
   /// Validate documentation for the given function.
   void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp,
                     ValidationKind validation) {
-    // In general, each function argument must be documented, but exceptions are
-    // pruned from the list below.
-    ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
-    // The compiler can insert an implicit `__result__` argument, which stores
-    // memory-only results, at the beginning of an argument list.  Because these
-    // arguments are hidden artifacts of the compiler, they don't need to be
-    // documented.
-    if (funcOp.getSignature().hasMemoryOnlyResult())
-      argNames = argNames.drop_front();
-    // Methods take `self` as an explicit first argument, for which
-    // documentation isn't required.
-    if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
-        !funcOp.getIsStatic())
-      argNames = argNames.drop_front();
-
     // Grab the types of the arguments to the function.
     llvm::MapVector<StringRef, const char *> seenArguments;
-    for (StringAttr argName : argNames)
+    for (StringAttr argName : getFunctionArgumentNames(funcOp))
       seenArguments.insert({argName, nullptr});
 
     // Grab the parameters to the function.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    LITSignatureType signature = funcOp.getSignature();
-    for (auto [paramName, passingKind] :
-         llvm::zip(signature.getParamNames(), signature.getParamPassingKinds()))
-      if (passingKind != PassingKind::Implicit)
-        seenParameters.insert({paramName, nullptr});
+    for (StringAttr paramName : getFunctionParameterNames(funcOp))
+      seenParameters.insert({paramName, nullptr});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
@@ -569,7 +588,7 @@ private:
         {DocString::kSectionReturns, nullptr},
     };
     ArrayRef<StringRef> description = docStr->getDescription();
-    bool hasResults = !ASTType(funcOp.getUserResultType()).isNoneType();
+    bool hasResults = doesFunctionHaveResults(funcOp);
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionArgs)
@@ -692,4 +711,120 @@ private:
 void M::KGEN::LIT::validateDocString(SharedState &sharedState, ASTDecl &decl) {
   DocStringValidator validator(sharedState, decl);
   validator.validate(decl);
+}
+
+//===----------------------------------------------------------------------===//
+// Generation
+//===----------------------------------------------------------------------===//
+
+namespace {
+class DocStringGenerator {
+public:
+  DocStringGenerator(size_t indent) : indent(indent), os(rawOS) {}
+
+  std::optional<std::string> generate(ASTDecl &decl) {
+    if (decl.hasReferenceError)
+      return std::nullopt;
+
+    TypeSwitch<ASTDecl &>(decl)
+        .Case<LIT::FuncOp, FileModuleOp, StructDeclOp, StructFieldOp,
+              TraitDeclOp>([&](auto op) {
+          StringRef summaryCodeBlock = "[summary].";
+          os << summaryCodeBlock;
+
+          // Indent and generate the rest of the decl.
+          for (size_t i = 0; i < indent; i += 2)
+            os.indent();
+          generateDecl(decl, op);
+
+          // If we added anything other than the summary, add a newline.
+          if (rawOS.str().size() > summaryCodeBlock.size()) {
+            os << "\n";
+            os.indent(indent);
+          }
+        });
+
+    // If we actually generated something, return it, otherwise bail.
+    if (rawOS.str().empty())
+      return std::nullopt;
+    return std::move(result);
+  }
+
+private:
+  //===----------------------------------------------------------------------===//
+  // Arguments and Parameters
+
+  /// Process a parameter or argument section.
+  void processParamOrArgs(StringRef sectionName, ArrayRef<StringAttr> names) {
+    if (names.empty())
+      return;
+    os << "\n\n" << sectionName << ":";
+    for (StringRef name : names)
+      os << "\n    " << name << ": [description].";
+  }
+  void processArguments(ArrayRef<StringAttr> argNames) {
+    processParamOrArgs("Args", argNames);
+  }
+  void processParameters(ArrayRef<StringAttr> params) {
+    processParamOrArgs("Parameters", params);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Functions
+
+  void generateDecl(ASTDecl &decl, LIT::FuncOp funcOp) {
+    processParameters(getFunctionParameterNames(funcOp));
+    processArguments(getFunctionArgumentNames(funcOp));
+    if (doesFunctionHaveResults(funcOp))
+      os << "\n\nReturns:\n    [description].";
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Modules
+
+  void generateDecl(ASTDecl &decl, FileModuleOp moduleOp) {
+    // Nothing to do.
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Structs
+
+  void generateDecl(ASTDecl &decl, StructDeclOp structOp) {
+    // Grab the parameters to the struct.
+    SmallVector<StringAttr> paramNames;
+    for (ParamDeclAttr decl : structOp.getParams())
+      paramNames.push_back(demangleIfNeeded(decl).getName());
+    processParameters(paramNames);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+
+  void generateDecl(ASTDecl &decl, StructFieldOp fieldOp) {
+    // Nothing to do.
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Traits
+
+  void generateDecl(ASTDecl &decl, TraitDeclOp traitDeclOp) {
+    // TODO(#21850): Add generation for trait docstrings.
+  }
+
+  /// The desired indentation level for the generated doc string.
+  size_t indent;
+
+  /// The resultant template string.
+  std::string result;
+
+  /// The stream used to populate the template.
+  llvm::raw_string_ostream rawOS{result};
+  mlir::raw_indented_ostream os;
+};
+} // namespace
+
+std::optional<std::string>
+M::KGEN::LIT::generateDocStringTemplate(ASTDecl &decl, size_t indent) {
+  DocStringGenerator generator(indent);
+  return generator.generate(decl);
 }

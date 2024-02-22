@@ -10,9 +10,12 @@ from typing import Generator, List, Optional, TypeVar
 
 import pytest_lsp
 from lsprotocol.types import (
+    CodeActionContext,
+    CodeActionParams,
     CompletionList,
     CompletionParams,
     DefinitionParams,
+    Diagnostic,
     DidOpenNotebookDocumentParams,
     DidOpenTextDocumentParams,
     DocumentSymbolParams,
@@ -252,6 +255,17 @@ class Requests:
                     ),
                     doc.cells,
                 ),
+            )
+        )
+
+    async def code_action(
+        self, doc: Document, pos: Range, diagnostics: List[Diagnostic] = None
+    ):
+        return await self.client.text_document_code_action_async(
+            CodeActionParams(
+                text_document=doc.identifier,
+                range=pos,
+                context=CodeActionContext(diagnostics),
             )
         )
 

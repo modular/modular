@@ -59,6 +59,10 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
   return {loc, SMLoc::getFromPointer(loc.getPointer() + text.size())};
 }
 
+/// The message used when emitting a diagnostic for missing documentation.
+static constexpr StringRef kMissingDocMessage =
+    "Unexpected empty documentation string";
+
 //===----------------------------------------------------------------------===//
 // Inlay Hints
 //===----------------------------------------------------------------------===//
@@ -663,6 +667,13 @@ void MojoDocument::parseDocument() {
   for (auto &params : llvm::make_second_range(fileToDiags))
     sendDiagnosticsFn(*params);
 
+  // Process the fixit actions, using a custom title for certain actions.
+  auto missingDocFixitsIt = fixits.find(kMissingDocMessage);
+  if (missingDocFixitsIt != fixits.end()) {
+    for (auto &[range, actions] : missingDocFixitsIt->second)
+      actions[0].title = "Generate documentation";
+  }
+
   // Sort any inlay hints computed during parsing.
   llvm::stable_sort(inlayHints);
 
@@ -866,8 +877,7 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
     if (diagFixits.size() == 1)
       diagFixits[0].isPreferred = true;
 
-    fixits.emplace(std::make_pair(lspDiag.range, lspDiag.message),
-                   std::move(diagFixits));
+    fixits[lspDiag.message].emplace(lspDiag.range, std::move(diagFixits));
   }
 
   return lspDiag;
@@ -899,8 +909,11 @@ MojoDocument::getCodeActionsSync(SMRange range,
       continue;
 
     // Find the fixits for this diagnostic.
-    auto it = fixits.find(std::make_pair(diag.range, diag.message));
-    if (it == fixits.end())
+    auto fixitIt = fixits.find(diag.message);
+    if (fixitIt == fixits.end())
+      continue;
+    auto it = fixitIt->second.find(diag.range);
+    if (it == fixitIt->second.end())
       continue;
     for (auto &action : it->second) {
       actions.emplace_back(action);
@@ -1399,6 +1412,35 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
   if (!docStartLoc.isValid())
     return;
   StringRef rawDocStr = decl->getDocString().getString();
+
+  // Handle the case where the doc string is empty. In this case, we add a
+  // code action for inserting a doc string.
+  if (rawDocStr.empty()) {
+    // Grab the indent for the doc string.
+    size_t indent = docLocAttr.getColumn() - 1;
+    const char *docStrStartLocPtr = docStartLoc.getPointer() - 1;
+    while (indent > 0 && *docStrStartLocPtr == '\"') {
+      --indent;
+      --docStrStartLocPtr;
+    }
+
+    std::optional<std::string> docStr =
+        generateDocStringTemplate(*decl, indent);
+    if (docStr) {
+      // Use the full string token for the warning.
+      const char *docStrEndLocPtr = docStrStartLocPtr + 1;
+      while (*docStrEndLocPtr == '\"')
+        ++docStrEndLocPtr;
+      SMLoc docStrStartLoc = SMLoc::getFromPointer(docStrStartLocPtr + 1);
+      SMLoc docStrEndLoc = SMLoc::getFromPointer(docStrEndLocPtr);
+
+      // Emit a warning with a fixit.
+      sourceMgr.PrintMessage(docStrStartLoc, llvm::SourceMgr::DK_Warning,
+                             kMissingDocMessage,
+                             SMRange(docStrStartLoc, docStrEndLoc),
+                             llvm::SMFixIt(docStartLoc, *docStr));
+    }
+  }
 
   // Translate a doc string location to a source location in the main buffer.
   auto translateLoc = [&](const char *loc) -> const char * {

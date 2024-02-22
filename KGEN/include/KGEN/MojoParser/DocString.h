@@ -119,6 +119,12 @@ private:
 /// invalid format issues.
 void validateDocString(SharedState &sharedState, ASTDecl &decl);
 
+/// Generate a template doc string for the given decl. Returns nullopt if no
+/// template is available. The provided `indent` is the desired indentation
+/// level of the template after the first line, and should be a multiple of 2.
+std::optional<std::string> generateDocStringTemplate(ASTDecl &decl,
+                                                     size_t indent = 0);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_DOCSTRING_H
