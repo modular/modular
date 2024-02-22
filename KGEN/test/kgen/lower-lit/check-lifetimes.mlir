@@ -664,6 +664,31 @@ lit.func @destroy_generic<T: trait<@AnyType>>(%x: !lit.ref<:trait<@AnyType> T, m
   kgen.return
 }
 
+lit.struct.decl @Wrapper<T: type> attributes {
+    destructor = #kgen.symbol.constant<@__del__> : !lit.signature<[1]<type>(!lit.ref<@Wrapper<:type *(0,0)>, mut *[0,0]> owned_in_mem) -> !kgen.none>
+} {
+  lit.struct.field value : !kgen.paramref<T>
+}
+
+lit.struct.decl @Int {
+  lit.struct.field value : index
+}
+
+// COM: Ensure value scan and destructor insertion scan doesn't crash.
+// CHECK-LABEL: lit.func @destroy_field
+lit.func @destroy_field() {
+  %x = lit.var.decl "x" var : !lit.ref<@Wrapper<:type @Int>, mut lt>
+  %0 = kgen.param.constant: @Wrapper<:type @Int> = <?>
+  lit.ref.store %0, %x : <@Wrapper<:type @Int>, mut lt>
+  %1 = lit.ref.struct.ger %x[value] : <@Int, mut lt> from @Wrapper<:type @Int>
+  %2 = kgen.param.constant: @Int = <{1}>
+  // CHECK: lit.ref.store %2
+  lit.ref.store %2, %1 : <@Int, mut lt>
+  // CHECK-NEXT: call @__del__
+  // CHECK-NEXT: return
+  kgen.return
+}
+
 // -----
 
 // https://github.com/modularml/modular/issues/25211
