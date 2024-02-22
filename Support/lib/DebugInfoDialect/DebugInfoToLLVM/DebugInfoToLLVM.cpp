@@ -540,17 +540,22 @@ static void convertDbgValueToAddr(ModuleOp module) {
 
       // If the locationExpr begins with a deref, just pop off the deref and
       // convert directly into a DbgDeclareOp.
-      ArrayRef<LLVM::DIExpressionElemAttr> location =
-          op.getLocationExpr().getOperations();
-      if (!location.empty() &&
-          location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
-        auto refLocation = LLVM::DIExpressionAttr::get(op->getContext(),
-                                                       location.drop_front());
-        OpBuilder(op).create<LLVM::DbgDeclareOp>(op.getLoc(), value,
-                                                 op.getVarInfo(), refLocation);
-        op->erase();
+      auto processDerefValue = [&](LLVM::DbgValueOp op) {
+        ArrayRef<LLVM::DIExpressionElemAttr> location =
+            op.getLocationExpr().getOperations();
+        if (!location.empty() &&
+            location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
+          auto refLocation = LLVM::DIExpressionAttr::get(op->getContext(),
+                                                         location.drop_front());
+          OpBuilder(op).create<LLVM::DbgDeclareOp>(
+              op.getLoc(), value, op.getVarInfo(), refLocation);
+          op->erase();
+          return mlir::success();
+        }
+        return failure();
+      };
+      if (succeeded(processDerefValue(op)))
         continue;
-      }
 
       // Build a new allocation to store the intermediate value.
       OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
@@ -567,10 +572,35 @@ static void convertDbgValueToAddr(ModuleOp module) {
           op.getLoc(), allocaOp, op.getVarInfo(), op.getLocationExpr());
       op->erase();
 
-      // Update all of the old value uses to route through the alloca instead of
-      // using the value directly.
-      while (!value.use_empty()) {
-        auto *user = *value.user_begin();
+      // Update all of the old value uses to route through the alloca instead
+      // of using the value directly.
+      for (auto it = value.user_begin(), e = value.user_end(); it != e;) {
+        // Grab the next unique user.
+        auto *user = *it;
+        while (++it != e && *it == user)
+          continue;
+
+        // If the user is another debug value, generate a declare instead of
+        // trying to load the value.
+        if (auto dbgValue = dyn_cast<LLVM::DbgValueOp>(user)) {
+          // If this value can be converted into a declare, do so.
+          if (std::exchange(dbgValueCount[dbgValue.getVarInfo()], nullptr)) {
+            if (succeeded(processDerefValue(dbgValue)))
+              continue;
+            OpBuilder(dbgValue).create<LLVM::DbgDeclareOp>(
+                dbgValue.getLoc(), allocaOp, dbgValue.getVarInfo(),
+                dbgValue.getLocationExpr());
+            dbgValue->erase();
+          }
+          continue;
+        }
+
+        // If the user was already converted to a declare, skip it.
+        if (isa<LLVM::DbgDeclareOp>(user))
+          continue;
+
+        // Otherwise, this is a normal use, replace it with a load from an
+        // alloca.
         OpBuilder loadBuilder(user);
         user->replaceUsesOfWith(
             value, loadBuilder.create<LLVM::LoadOp>(user->getLoc(),
