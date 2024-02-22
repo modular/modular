@@ -22,9 +22,8 @@ class TestStrings(LLDBTestBase):
 
             literal = ctx.frame.FindVariable("literal")
             s1 = ctx.frame.FindVariable("s1")
-            # FIXME(29497): reenable tests over s2 and s3.
-            # s2 = ctx.frame.FindVariable("s2")
-            # s3 = ctx.frame.FindVariable("s3")
+            s2 = ctx.frame.FindVariable("s2")
+            s3 = ctx.frame.FindVariable("s3")
             s4 = ctx.frame.FindVariable("s4")
 
             # StringLiterals, being built-in, provide the underlying strings
@@ -33,8 +32,6 @@ class TestStrings(LLDBTestBase):
             # C++'s convention in LLDB.
             assert literal.GetValue() == '"string_literal"'
             assert s1.GetSummary() == '"let_string"'
-            # assert '"012345678910111213141' in s2.GetSummary()
-            # TODO(#31429): This test currently doesn't work when the standard
-            # library is built with debug information.
-            # assert s3.GetSummary() == '""'
+            assert '"012345678910111213141' in s2.GetSummary()
+            assert s3.GetSummary() == '""'
             assert '"012345678910111213141' in s4.GetSummary()
