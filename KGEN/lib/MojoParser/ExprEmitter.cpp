@@ -1180,7 +1180,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         }
 
         // PValues of lifetime type have a special conversion.
-        if (isa<LifetimeType>(requiredType))
+        if (isa<LifetimeType>(requiredType) &&
+            isa<LifetimeType>(cValue.getType()))
           if (auto pv = cValue.getIfPValue())
             value = LifetimeMutCastAttr::get(pv, requiredType);
 
