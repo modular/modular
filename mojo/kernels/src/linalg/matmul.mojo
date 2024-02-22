@@ -1049,15 +1049,15 @@ struct MatmulInnerLoopBPacked[
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                var a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
                 var c_idx = Index(idx0, idx1 * simd_size)
+                var a_val = a_ptr[idx0 * K].cast[c_type]()
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
                     c_idx
                 )
-                var b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                    simd_size, alignment
-                ]().cast[c_type]()
+                var b_val = b_ptr.aligned_simd_load[simd_size, alignment](
+                    idx1 * simd_size
+                ).cast[c_type]()
                 c_val = fma[c_type, simd_size](a_val, b_val, c_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
