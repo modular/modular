@@ -21,6 +21,9 @@ StringRef Mojo::LSP::toLspSemanticTokenType(SemanticTokenKind kind) {
   switch (kind) {
   case SemanticTokenKind::kVariable:
     return "variable";
+  case SemanticTokenKind::kSpecialVariable:
+    // NOTE: This is a non-standard token type.
+    return "specialVariable";
   case SemanticTokenKind::kParameter:
     return "parameter";
   case SemanticTokenKind::kFunction:

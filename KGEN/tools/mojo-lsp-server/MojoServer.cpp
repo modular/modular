@@ -1259,6 +1259,19 @@ void MojoDocument::onSemanticTokens(
   });
 }
 
+/// Return if the given decl corresponds to the `self` argument
+/// of a method.
+static bool isSelfArgument(MojoASTDeclRef decl) {
+  if (decl.getName() == "self") {
+    auto parentFunc = dyn_cast<KGEN::LIT::FuncOp>(decl->getParentDecl());
+    return parentFunc &&
+           isa<KGEN::LIT::StructDeclOp, KGEN::LIT::TraitDeclOp>(
+               parentFunc->getParentOp()) &&
+           !parentFunc.getIsStatic();
+  }
+  return false;
+}
+
 /// Return a semantic token kind for the given ast decl.
 static SemanticTokenKind
 getSemanticTokenKind(MojoASTDeclRef symDecl,
@@ -1281,6 +1294,8 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
     return SemanticTokenKind::kVariable;
   }
   case DeclViewKind::DK_ArgumentDeclView:
+    if (isSelfArgument(symDecl))
+      return SemanticTokenKind::kSpecialVariable;
     return SemanticTokenKind::kVariable;
   case DeclViewKind::DK_FunctionDeclView:
     return SemanticTokenKind::kFunction;
