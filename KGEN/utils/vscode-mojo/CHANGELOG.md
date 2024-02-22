@@ -10,6 +10,10 @@
 
 - [#1741](https://github.com/modularml/mojo/issues/1741) - Mojo documentation
   generation doesn't show `inout`/`owned` on variadic arguments.
+- [#1621](https://github.com/modularml/mojo/issues/1621) - `raises` and
+  `capturing` are not highlighted in functional type expressions.
+- [#1617](https://github.com/modularml/mojo/issues/1617) - `fn` is not
+  highlighted in specific contexts.
 
 ## 0.7.0
 

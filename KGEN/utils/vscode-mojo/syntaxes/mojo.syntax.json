@@ -99,7 +99,7 @@
       "patterns": [
         {
           "name": "storage.type.function.python",
-          "match": "\\b((async\\s+)?\\s*def)\\b"
+          "match": "\\b((async\\s+)?\\s*(def|fn))\\b"
         },
         {
           "name": "keyword.control.flow.python",
@@ -149,9 +149,6 @@
       "patterns": [
         {
           "include": "#backticks"
-        },
-        {
-          "include": "#illegal-anno"
         },
         {
           "include": "#literal"
@@ -1052,9 +1049,6 @@
               "include": "#backticks"
             },
             {
-              "include": "#illegal-anno"
-            },
-            {
               "include": "#lambda-parameter-with-default"
             },
             {
@@ -1136,7 +1130,7 @@
       },
       "patterns": [
         {
-          "include": "#raises-modifier"
+          "include": "#function-modifier"
         },
         {
           "include": "#function-def-name"
@@ -1169,9 +1163,9 @@
         }
       ]
     },
-    "raises-modifier": {
+    "function-modifier": {
       "name": "storage.modifier",
-      "match": "(raises)"
+      "match": "(raises|capturing)"
     },
     "parameters": {
       "name": "meta.function.parameters.python",
@@ -1676,12 +1670,15 @@
       ]
     },
     "illegal-names": {
-      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | struct | trait | continue | def\n       | fn\n      | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (\n      as | import\n    )\n  )\\b\n",
+      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | struct | trait | continue | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (def | fn | capturing | raises) | (\n      as | import\n    )\n  )\\b\n",
       "captures": {
         "1": {
           "name": "keyword.control.flow.python"
         },
         "2": {
+          "name": "storage.type.function.python"
+        },
+        "3": {
           "name": "keyword.control.import.python"
         }
       }
@@ -1727,10 +1724,6 @@
       "comment": "It's illegal to name class or function \"True\"",
       "name": "keyword.illegal.name.python",
       "match": "\\b(True|False|None)\\b"
-    },
-    "illegal-anno": {
-      "name": "invalid.illegal.annotation.python",
-      "match": "->"
     },
     "regexp-base-expression": {
       "patterns": [
