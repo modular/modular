@@ -278,7 +278,7 @@ fn gather[
         if prefetch_offset > 0:
             var indices_ptr = indices._offset(indices_coords)
             var indices_remaining = (
-                end_indices_ptr.__as_index() - indices_ptr.__as_index()
+                int(end_indices_ptr) - int(indices_ptr)
             ) // sizeof[indices_type]()
             # assumes that indices are layed out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
