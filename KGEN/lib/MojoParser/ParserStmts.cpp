@@ -1745,9 +1745,15 @@ ParseResult StmtParser::parseFromImportStmt() {
     shared.notifyListenerOnMemberLookup(loc, [&]() -> ASTDecl & {
       // Resolve the module if we haven't yet.
       if (!currentResolvedModule) {
+        ASTDecl *curModuleDecl = curDeclScope;
+        while (curModuleDecl && !isa<FileModuleOp>(curModuleDecl))
+          curModuleDecl = curModuleDecl->getParentDecl();
+
         currentResolvedModule = &shared.importModule(
             moduleAttr,
-            curDeclScope->getIfOperation()->getParentOfType<PackageOp>(),
+            curModuleDecl
+                ? curModuleDecl->getIfOperation()->getParentOfType<PackageOp>()
+                : PackageOp(),
             importLoc);
       }
       return *currentResolvedModule;
