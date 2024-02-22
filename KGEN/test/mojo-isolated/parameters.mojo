@@ -990,3 +990,20 @@ fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
     # CHECK-SAME: :!lit.signature<<"s": !T>() -> !kgen.none>
     # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> F, x, ?))>
     alias H: fn[u: T] () -> None = F[x, _]
+
+
+##===----------------------------------------------------------------------===##
+# Lifetime Parameters
+##===----------------------------------------------------------------------===##
+
+
+@register_passable("trivial")
+struct SomeReference[lt: __mlir_type.`!lit.lifetime<0>`]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"unbound_lifetime
+# CHECK-SAME: <?, [[R:.*]]: lifetime<0>>
+# CHECK-SAME: #SomeReference <:lifetime<0> [[R]]>
+fn unbound_lifetime(r: SomeReference[_]):
+    pass
