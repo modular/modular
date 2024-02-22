@@ -634,78 +634,64 @@ ASTDecl *SharedState::lookupMovableTrait(llvm::SMLoc loc, ASTDecl *context) {
 
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
-static std::optional<std::string>
-resolveModulePath(SharedState &shared, llvm::SMLoc includeLoc,
-                  StringRef moduleName, StringRef includeDir,
-                  bool isParsingStandardLibrary) {
+static std::optional<std::string> resolveModulePath(SharedState &shared,
+                                                    llvm::SMLoc includeLoc,
+                                                    StringRef moduleName,
+                                                    StringRef includeDir,
+                                                    bool ignorePrebuilt) {
+  using namespace std::filesystem;
+
+  // Find a path in `includeDir` that is a mojo package for `moduleName`. This
+  // is either a directory with an `__init__.mojo` file inside it, a
+  // `moduleName.mojo` file, or a `moduleName.mojopkg` file. Of course, the
+  // emoji extensions are supported as well, but a conflict is not allowed. Make
+  // sure to ignore other `moduleName.*` files that are definitely not mojo
+  // packages.
+  std::error_code ec;
+  auto iter = directory_iterator(includeDir.str(), ec);
+  if (ec)
+    return std::nullopt;
+
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
-  auto getFileName =
-      [moduleName = moduleName.str(),
-       includeDir =
-           includeDir.str()]() -> std::optional<std::filesystem::path> {
-  // The file system is always case-sensitive on linux.
-#ifdef __linux__
-    return std::filesystem::path(includeDir) / moduleName;
-#else  // !__linux__
-    std::error_code ec;
-    auto iter = std::filesystem::directory_iterator(includeDir, ec);
-    if (ec)
-      return std::nullopt;
-    for (const auto &entry : iter)
-      if (entry.path().filename().stem().string() == moduleName)
-        return entry.path();
-
-    return std::nullopt;
-#endif // __linux__
+  std::optional<path> nameOr;
+  path source, emoji;
+  auto emitConflictError = [&] {
+    shared.emitError(includeLoc, "ambiguous import, both ")
+        << source.string() << " and " << emoji.string()
+        << " exist in the file system.";
   };
+  for (const auto &entry : iter) {
+    if (entry.path().filename().stem().string() != moduleName)
+      continue;
+
+    // If we found a package path, we can return immediately.
+    if (Filesystem::isMojoSourcePackagePath(entry.path())) {
+      if (exists(source = entry.path() / "__init__.mojo", ec) &&
+          exists(emoji = entry.path() / "__init__.🔥", ec))
+        emitConflictError();
+      return entry.path();
+    }
+
+    path ext = entry.path().filename().extension();
+    if (!ignorePrebuilt && (ext == ".mojopkg" || ext == ".📦")) {
+      if (exists(source = path(entry.path()).replace_extension("mojopkg"),
+                 ec) &&
+          exists(emoji = path(entry.path()).replace_extension("📦"), ec))
+        emitConflictError();
+      return entry.path();
+    }
+    if (ext == ".mojo" || ext == ".🔥") {
+      if (exists(source = path(entry.path()).replace_extension("mojo"), ec) &&
+          exists(emoji = path(entry.path()).replace_extension("🔥"), ec))
+        emitConflictError();
+      return entry.path();
+    }
+  }
 
   // If we cannot find a file or directory with the case-sensitive name, then
   // return early.
-  auto nameOr = getFileName();
-  if (!nameOr)
-    return std::nullopt;
-
-  std::filesystem::path name = *nameOr;
-
-  // Check if we have a source package with this name.
-  if (Filesystem::isMojoSourcePackagePath(name))
-    return name.generic_string();
-
-  // Check for a binary package with this name. We don't enable binary packages
-  // when parsing the standard library, as many packages are interdependent,
-  // which means we can't serialize their processing.
-  std::error_code ec;
-  std::string foundName;
-  if (!isParsingStandardLibrary) {
-    if (std::filesystem::exists(name.replace_extension("mojopkg"), ec))
-      foundName = name.string();
-    if (std::filesystem::exists(name.replace_extension("📦"), ec)) {
-      if (!foundName.empty()) {
-        shared.emitError(includeLoc, "ambiguous import, both ")
-            << foundName << " and " << name.string()
-            << " exist in file system.";
-      }
-      foundName = name.string();
-    }
-    if (!foundName.empty())
-      return foundName;
-  }
-
-  // Otherwise, check for a source module with this name.
-  if (std::filesystem::exists(name.replace_extension("mojo"), ec))
-    foundName = name.string();
-  if (std::filesystem::exists(name.replace_extension("🔥"), ec)) {
-    if (!foundName.empty()) {
-      shared.emitError(includeLoc, "ambiguous import, both ")
-          << foundName << " and " << name.string() << " exist in file system.";
-    }
-    foundName = name.string();
-  }
-  if (!foundName.empty())
-    return foundName;
-
   return std::nullopt;
 }
 
