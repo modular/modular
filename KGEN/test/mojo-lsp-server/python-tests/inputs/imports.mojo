@@ -10,4 +10,8 @@ from .aliases import function, StructWithAlias
 
 
 fn main():
-    pass
+    # Test nested imports.
+    if False:
+        pass
+    else:
+        from memory import Pointer
