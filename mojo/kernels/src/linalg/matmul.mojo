@@ -2642,10 +2642,10 @@ fn sgemm_warp_tiling_kernel[
 
         barrier()
 
-        for dot_idx in range(int(BK)):
+        for dot_idx in range(BK):
             # Populate registers for whole warptile.
             @unroll
-            for w_sub_row_idx in range(int(WMITER)):
+            for w_sub_row_idx in range(WMITER):
 
                 @unroll
                 for i in range(0, int(TM), 4):
@@ -2661,7 +2661,7 @@ fn sgemm_warp_tiling_kernel[
                     reg_m.simd_store(Index(w_sub_row_idx, i), vec)
 
             @unroll
-            for w_sub_col_idx in range(int(WNITER)):
+            for w_sub_col_idx in range(WNITER):
 
                 @unroll
                 for i in range(0, int(TN), 4):
@@ -2677,16 +2677,16 @@ fn sgemm_warp_tiling_kernel[
 
             # Execute warptile matmul.
             @unroll
-            for w_sub_row_idx in range(int(WMITER)):
+            for w_sub_row_idx in range(WMITER):
 
                 @unroll
-                for w_sub_col_idx in range(int(WNITER)):
+                for w_sub_col_idx in range(WNITER):
                     # Calculate per-thread results.
                     @unroll
-                    for res_idx_m in range(int(TM)):
+                    for res_idx_m in range(TM):
 
                         @unroll
-                        for res_idx_n in range(int(TN)):
+                        for res_idx_n in range(TN):
                             thread_results[
                                 Index(
                                     w_sub_row_idx,
@@ -2704,17 +2704,17 @@ fn sgemm_warp_tiling_kernel[
 
     # Write out the results.
     @unroll
-    for w_sub_row_idx in range(int(WMITER)):
+    for w_sub_row_idx in range(WMITER):
 
         @unroll
-        for w_sub_col_idx in range(int(WNITER)):
+        for w_sub_col_idx in range(WNITER):
             # Move C pointer to current warp subtile.
             var C_interim = cc_ptr.offset(
                 int((w_sub_row_idx * w_sub_m) * N + w_sub_col_idx * w_sub_n)
             )
 
             @unroll
-            for res_idx_m in range(int(TM)):
+            for res_idx_m in range(TM):
 
                 @unroll
                 for res_idx_n in range(0, int(TN), 4):
