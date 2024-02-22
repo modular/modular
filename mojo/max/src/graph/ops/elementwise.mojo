@@ -691,7 +691,7 @@ def logsoftmax(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise logsoftmax of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.logsoftmax`](https://docs.staging.modular.com/engine/reference/mlir/mo#mologsoftmax-mmologsoftmaxop)
+    See [`mo.logsoftmax`](/engine/reference/mlir/mo#mologsoftmax-mmologsoftmaxop)
     for more details.
 
     Args:
@@ -714,7 +714,7 @@ def relu(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise relu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.relu`](https://docs.staging.modular.com/engine/reference/mlir/mo#morelu-mmoreluop)
+    See [`mo.relu`](/engine/reference/mlir/mo#morelu-mmoreluop)
     for more details.
 
     Args:
@@ -737,7 +737,7 @@ def softmax(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise softmax of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.softmax`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosoftmax-mmosoftmaxop)
+    See [`mo.softmax`](/engine/reference/mlir/mo#mosoftmax-mmosoftmaxop)
     for more details.
 
     Args:
@@ -760,7 +760,7 @@ def sigmoid(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise sigmoid of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.sigmoid`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosigmoid-mmosigmoidop)
+    See [`mo.sigmoid`](/engine/reference/mlir/mo#mosigmoid-mmosigmoidop)
     for more details.
 
     Args:
@@ -783,7 +783,7 @@ def silu(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise silu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    `silu` is defined as `silu(x) = x * [sigmoid](https://docs.staging.modular.com/engine/reference/mojo/graph/ops/elementwise.html#sigmoid)(x)`.
+    `silu` is defined as `silu(x) = x * [sigmoid](/engine/reference/mojo/graph/ops/elementwise.html#sigmoid)(x)`.
 
     Args:
         value: The symbolic tensor to use as the input to the silu
@@ -805,7 +805,7 @@ def cos(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise cosine of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.cos`](https://docs.staging.modular.com/engine/reference/mlir/mo#mocos-mmocosop)
+    See [`mo.cos`](/engine/reference/mlir/mo#mocos-mmocosop)
     for more details.
 
     Args:
@@ -830,7 +830,7 @@ def floor(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise floor of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.floor`](https://docs.staging.modular.com/engine/reference/mlir/mo#mofloor-mmofloorop)
+    See [`mo.floor`](/engine/reference/mlir/mo#mofloor-mmofloorop)
     for more details.
 
     Args:
@@ -855,7 +855,7 @@ def round(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise round of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.round`](https://docs.staging.modular.com/engine/reference/mlir/mo#moround-mmoroundop)
+    See [`mo.round`](/engine/reference/mlir/mo#moround-mmoroundop)
     for more details.
 
     Args:
@@ -880,7 +880,7 @@ def roundeven(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise roundeven of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.roundeven`](https://docs.staging.modular.com/engine/reference/mlir/mo#moroundeven-mmoroundevenop)
+    See [`mo.roundeven`](/engine/reference/mlir/mo#moroundeven-mmoroundevenop)
     for more details.
 
     Args:
@@ -905,7 +905,7 @@ def rsqrt(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise rsqrt of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.rsqrt`](https://docs.staging.modular.com/engine/reference/mlir/mo#morsqrt-mmorsqrtop)
+    See [`mo.rsqrt`](/engine/reference/mlir/mo#morsqrt-mmorsqrtop)
     for more details.
 
     Args:
@@ -930,7 +930,7 @@ def sqrt(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise sqrt of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.sqrt`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosqrt-mmosqrtop)
+    See [`mo.sqrt`](/engine/reference/mlir/mo#mosqrt-mmosqrtop)
     for more details.
 
     Args:
@@ -955,7 +955,7 @@ def sin(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise sine of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.sin`](https://docs.staging.modular.com/engine/reference/mlir/mo#mosin-mmosinop)
+    See [`mo.sin`](/engine/reference/mlir/mo#mosin-mmosinop)
     for more details.
 
     Args:
@@ -980,7 +980,7 @@ def tanh(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise tanh of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.tanh`](https://docs.staging.modular.com/engine/reference/mlir/mo#motanh-mmotanhop)
+    See [`mo.tanh`](/engine/reference/mlir/mo#motanh-mmotanhop)
     for more details.
 
     Args:
@@ -1005,7 +1005,7 @@ def trunc(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise trunc of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.trunc`](https://docs.staging.modular.com/engine/reference/mlir/mo#motrunc-mmotruncop)
+    See [`mo.trunc`](/engine/reference/mlir/mo#motrunc-mmotruncop)
     for more details.
 
     Args:
@@ -1030,7 +1030,7 @@ def is_nan(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise is_nan of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.is_nan`](https://docs.staging.modular.com/engine/reference/mlir/mo#mois_nan-mmois_nanop)
+    See [`mo.is_nan`](/engine/reference/mlir/mo#mois_nan-mmois_nanop)
     for more details.
 
     Args:
@@ -1055,7 +1055,7 @@ def is_inf(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise is_inf of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.is_inf`](https://docs.staging.modular.com/engine/reference/mlir/mo#mois_inf-mmois_infop)
+    See [`mo.is_inf`](/engine/reference/mlir/mo#mois_inf-mmois_infop)
     for more details.
 
     Args:
