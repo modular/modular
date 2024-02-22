@@ -256,11 +256,7 @@ static ParseResult parseParamForkOpValue(OpAsmParser &p,
 
   if (parseParamName(p, name) || parseColonTypeOrIndex(p, valTy) ||
       p.parseEqual() || p.parseLess() ||
-      parseParamValue(p, value,
-                      VariadicType::get(valTy,
-                                        // FIXME: Support other element types?
-                                        ArgConvention::BorrowedInReg)) ||
-      p.parseGreater())
+      parseParamValue(p, value, VariadicType::get(valTy)) || p.parseGreater())
     return failure();
 
   paramDecl = ParamDeclAttr::get(name, valTy);
@@ -383,10 +379,7 @@ static ParseResult parseParamEvaluateOp(AsmParser &p, ParamDeclAttr &paramDecl,
                                         TypedAttr &candidates) {
   SignatureType evaluatorType;
   if (parseParamDecl(p, paramDecl) || p.parseEqual() ||
-      parseParamValue(p, candidates,
-                      VariadicType::get(paramDecl.getType(),
-                                        // TODO: Other conventions?
-                                        ArgConvention::BorrowedInReg)) ||
+      parseParamValue(p, candidates, VariadicType::get(paramDecl.getType())) ||
       p.parseKeyword("with") || p.parseLSquare() ||
       parseKGENType(p, evaluatorType) || p.parseColon() ||
       parseParamValue(p, evaluator, evaluatorType) || p.parseRSquare())

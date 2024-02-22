@@ -146,8 +146,7 @@ LogicalResult CastOp::verify() {
 static ParseResult parseShuffleMask(AsmParser &p, TypedAttr &mask,
                                     Type resultType) {
   return parseParamValue(p, mask,
-                         VariadicType::get(p.getBuilder().getIndexType(),
-                                           ArgConvention::BorrowedInReg));
+                         VariadicType::get(p.getBuilder().getIndexType()));
 }
 
 static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
