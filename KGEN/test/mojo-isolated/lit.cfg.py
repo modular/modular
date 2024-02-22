@@ -29,6 +29,7 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
 config.excludes = [
     "test_package",
+    "test_package.foo",
     "test_bad_package",
     "test_package_user",
     "debuginfo_module.mojo",
