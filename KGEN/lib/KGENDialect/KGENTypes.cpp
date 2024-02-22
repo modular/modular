@@ -1060,7 +1060,7 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
   auto anyRegTypeType = TypeType::get(p.getContext());
-  Type type = VariadicType::get(anyRegTypeType, ArgConvention::BorrowedInReg);
+  Type type = VariadicType::get(anyRegTypeType);
   if (succeeded(p.parseOptionalColon()))
     if (parseKGENType(p, type))
       return failure();
@@ -1128,7 +1128,7 @@ VariadicAttr PackType::getVariadicAttr() const {
 
 static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
   auto metatype = TypeType::get(p.getContext());
-  auto variadicType = VariadicType::get(metatype, ArgConvention::BorrowedInReg);
+  auto variadicType = VariadicType::get(metatype);
 
   // Special case `[<variadic>]` to parse the variadic parameter directly.
   if (succeeded(p.parseOptionalLSquare())) {
@@ -1164,6 +1164,20 @@ static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
   printParamTypes(p, values);
 }
 
+VariantType VariantType::get(MLIRContext *ctx, TypedAttr variadic) {
+  // When the type is concrete, canonicalize away the type info.
+  if (auto attr = ::dyn_cast<VariadicAttr>(variadic)) {
+    SmallVector<TypedAttr> values;
+    auto metatype = TypeType::get(ctx);
+    for (TypedAttr value : attr.getValues()) {
+      values.push_back(
+          TypeConstantAttr::get(ParamRefType::get(value), metatype));
+    }
+    variadic = VariadicAttr::get(values, VariadicType::get(metatype));
+  }
+  return Base::get(ctx, variadic);
+}
+
 VariantType VariantType::get(ArrayRef<Type> types) {
   assert(!types.empty());
   SmallVector<TypedAttr> values;
@@ -1171,9 +1185,7 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   auto metatype = TypeType::get(ctx);
   for (Type type : types)
     values.push_back(TypeConstantAttr::get(type, metatype));
-  return get(ctx, VariadicAttr::get(
-                      values, VariadicType::get(metatype,
-                                                ArgConvention::BorrowedInReg)));
+  return get(ctx, VariadicAttr::get(values, VariadicType::get(metatype)));
 }
 
 llvm::iterator_range<

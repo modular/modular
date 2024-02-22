@@ -403,8 +403,9 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "ArgConvention":$convention), [{
+    TypeBuilderWithInferredContext<(ins
+        "Type":$elementType,
+        CArg<"ArgConvention", "ArgConvention::BorrowedInReg">:$convention), [{
       return $_get(elementType.getContext(), elementType, convention);
     }]>,
   ];
@@ -611,8 +612,10 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
 
   let parameters = (ins "TypedAttr":$variadic);
   let assemblyFormat = "`<` custom<VariantTypes>($variadic) `>`";
+  let skipDefaultBuilders = 1;
 
   let builders = [
+    TypeBuilder<(ins "TypedAttr":$variadic)>,
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
   ];
 
