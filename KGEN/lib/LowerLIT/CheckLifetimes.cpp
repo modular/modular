@@ -2173,6 +2173,12 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
+  // Initialize an evaluator so that we can resolve the field types.
+  ParameterEvaluator evaluator;
+  for (auto [decl, value] :
+       llvm::zip(structDecl.getParams(), valueType.getParamValues()))
+    evaluator.setParameterValue(decl, value);
+
   unsigned nextBit = 0;
   for (auto field : structDecl.getFieldDecls()) {
     Operation *fieldVal;
@@ -2181,8 +2187,8 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     else
       fieldVal = builder.create<RefStructGEROp>(value, field);
 
-    unsigned numBits =
-        valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
+        evaluator.getReboundType(field.getType()));
     destroyValueIfNeeded(fieldVal->getResult(0),
                          valueRef.getSubfield(nextBit, numBits), builder,
                          /*opWithUse=*/nullptr);
