@@ -716,6 +716,19 @@ fn reference_params_through_struct():
     # CHECK: lit.call @{{.*}}foo{{.*}}<:!Int {3}>
     foo[MultiStruct[1, 2, 3].p3]()
 
+
+@register_passable
+struct DependentParam[x: int, y: ParamType[x]]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"auto_param_dependent
+# CHECK-SAME: <?, [[Y0:.*]], [[Y1:.*]]: {{.*}}ParamType<[[Y0]]>>
+fn auto_param_dependent(value: DependentParam[*_]):
+    # CHECK-NEXT: ParamType<[[Y0]]> = <[[Y1]]>
+    alias param = value.y
+
+
 ##===----------------------------------------------------------------------===##
 # Default function parameters
 ##===----------------------------------------------------------------------===##

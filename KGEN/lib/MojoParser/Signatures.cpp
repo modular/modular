@@ -16,6 +16,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserBase.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
@@ -424,14 +425,16 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
     return type;
 
   SmallVector<TypedAttr> paramValues;
+  ParserParamEvaluator evaluator(*shared.declResolver);
   for (Type type : params) {
     auto funcDecl = ParamDeclAttr::get(
         declScope.getUniqueParamNameNew(arg.name, /*isUserDefinedDecl=*/false),
-        type);
+        evaluator.getReboundType(type));
     paramList.names.push_back(StringAttr::get(type.getContext()));
     paramList.passingKinds.push_back(PassingKind::Implicit);
     paramList.paramDeclAttrs.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
+    evaluator.addInputValue(paramValues.back());
   }
   return BindTypeAttr::get(PValue(type), paramValues);
 }
