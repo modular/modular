@@ -68,6 +68,16 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
+/// Refine the convention for the given type and input convention.
+static std::optional<ArgConvention>
+refineConventionForType(Type type, std::optional<ArgConvention> convention) {
+  if (!convention)
+    return convention;
+  if (auto variadic = dyn_cast<VariadicType>(type))
+    return variadic.getConvention();
+  return convention;
+}
+
 /// Generate a user-readable representation of the given type, with an optional
 /// value convention, parent struct "Self" type. It also prepends * to variadic
 /// types.
@@ -82,8 +92,6 @@ generateTypeString(Type type, std::optional<ASTType> selfType = std::nullopt,
   if (auto variadic = dyn_cast<VariadicType>(type)) {
     astType = astType.getVariadicElementType();
     os << "*";
-    if (convention)
-      convention = variadic.getConvention();
   }
 
   // Process the convention if present.
@@ -664,8 +672,9 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
-  for (auto [type, name, convention, passingKind] :
-       llvm::zip(argTypes, argNames, argConventions, argPassingKinds))
+  for (auto [type, name, initConvention, passingKind] :
+       llvm::zip(argTypes, argNames, argConventions, argPassingKinds)) {
+    auto convention = refineConventionForType(type, initConvention);
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
         passingKind,
@@ -673,6 +682,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
             convention == ArgConvention::InitSelf,
         /*owned=*/convention == ArgConvention::OwnedInMem ||
             convention == ArgConvention::OwnedInReg));
+  }
 
   // Grab the types of the parameters to the function.
   size_t numImplicitLifetimes =
