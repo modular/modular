@@ -19,24 +19,11 @@ class TestTupleAndSIMD(LLDBTestBase):
             [success, output, error] = ctx.run_command("v")
             assert (
                 """(array<4, scalar<si16>>) tuple = {
-  [0] = {
-    [0] = 1
-  }
-  [1] = {
-    [0] = 2
-  }
-  [2] = {
-    [0] = 3
-  }
-  [3] = {
-    [0] = 4
-  }
+  [0] = ([0] = 1)
+  [1] = ([0] = 2)
+  [2] = ([0] = 3)
+  [3] = ([0] = 4)
 }
-(simd<4, si16>) simd = {
-  [0] = 1
-  [1] = 2
-  [2] = 3
-  [3] = 4
-}"""
+(simd<4, si16>) simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4)"""
                 in output
             )

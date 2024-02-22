@@ -8,12 +8,12 @@
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoDynamicVectorTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
+#include "lldb/API/SBValue.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/VectorType.h"
-#include <lldb/API/SBValue.h>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -180,73 +180,56 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   SyntheticChildren::Flags synthFlags;
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
-  constexpr const char *kDynamicVectorREPLRegex =
-      R"(^!lit.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*$)";
-  constexpr const char *kDynamicVectorDWARFRegex =
-      R"(^!lit.declref<@stdlib::@collections::@vector::@"DynamicVector\[.*)";
+  constexpr const char *kDynamicVectorRegex =
+      R"(^!lit.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*)";
+  constexpr const char *kLLDBFormatterWrappingTypeRegex =
+      R"(.* {@stdlib::debug::visualizers::lldb_formatter_wrapping_type\(.*)";
 
-  // Formatters are matched in reverse order, so this one that uses .* should
-  // be added first so that it's the last one to be matched against. In fact,
-  // this formatter acts like a sink that will match everything that doesn't
-  // match the other formatters.
+  // Formatters are matched in reverse order.
   AddCXXSynthetic(mojoCategorySP,
-                  mojoDecoratorBasedTypeSyntheticFrontEndCreator,
-                  "Mojo decorator-based synthetic children", ".*", synthFlags,
+                  MojoLLDBWrappingTypeTypeSyntheticFrontEndCreator,
+                  "Mojo decorator-based synthetic children",
+                  kLLDBFormatterWrappingTypeRegex, synthFlags,
                   /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
-                  "Mojo DynamicVector synthetic children",
-                  kDynamicVectorDWARFRegex, synthFlags, /*regex=*/true);
-  AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
-                  "Mojo DynamicVector synthetic children",
-                  kDynamicVectorREPLRegex, synthFlags, /*regex=*/true);
+                  "Mojo DynamicVector synthetic children", kDynamicVectorRegex,
+                  synthFlags, /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoKGENVariantSyntheticFrontEndCreator,
                   "Mojo !kgen.variant synthetic children",
                   R"(^!kgen\.variant<.*>)", synthFlags, /*regex=*/true);
 
-  // These settings are the same as the C++ ones.
   TypeSummaryImpl::Flags summaryFlags;
   summaryFlags.SetCascades(true)
       .SetSkipPointers(false)
       .SetSkipReferences(false)
-      .SetDontShowChildren(true)
-      .SetDontShowValue(true)
+      .SetDontShowChildren(false)
+      .SetDontShowValue(false)
       .SetShowMembersOneLiner(false)
       .SetHideItemNames(false);
 
-  // Summary providers are matched in reverse order, so this one that uses .*
-  // should be added first so that it's the last one to be matched against. In
-  // fact, this provider acts like a sink that will match everything that
-  // doesn't match the other providers.
-  AddCXXSummary(mojoCategorySP, mojoDecoratorBasedSummaryProvider,
-                "Mojo decorator-based summary provider", ".*", summaryFlags,
+  // Summary providers are matched in reverse order.
+  AddCXXSummary(mojoCategorySP, MojoLLDBWrappingTypeSummaryProvider,
+                "Mojo decorator-based summary provider",
+                kLLDBFormatterWrappingTypeRegex, summaryFlags,
                 /*regex=*/true);
+
+  summaryFlags.SetDontShowChildren(true).SetDontShowValue(true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);
   AddCXXSummary(mojoCategorySP, popScalarBoolSummaryProvider,
                 "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
                 summaryFlags, /*regex=*/false);
-  // For the REPL.
   AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
                 "builtin::string::String summary provider",
-                R"(!lit.declref<@stdlib::@builtin::@string::@String>)",
-                summaryFlags, /*regex=*/false);
-  // For DWARF.
-  AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
-                "builtin::string::String summary provider",
-                R"(!lit.declref<@builtin::@string::@String>)", summaryFlags,
-                /*regex=*/false);
+                R"(!lit.declref<(@stdlib::)?@builtin::@string::@String>)",
+                summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);
   summaryFlags.SetDontShowValue(false);
-  // For the REPL.
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
                 "utils::vector::DynamicVector summary provider",
-                kDynamicVectorDWARFRegex, summaryFlags, /*regex=*/true);
-  // For DWARF.
-  AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-                "utils::vector::DynamicVector summary provider",
-                kDynamicVectorREPLRegex, summaryFlags, /*regex=*/true);
+                kDynamicVectorRegex, summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {

@@ -8,7 +8,9 @@
 #include "../../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "MojoWrappingTypeSyntheticFrontEnd.h"
+#include "lldb/DataFormatters/DataVisualization.h"
+#include "lldb/DataFormatters/FormatManager.h"
+#include "lldb/DataFormatters/FormattersHelpers.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -30,53 +32,43 @@ public:
       return {};
     return m_backend.GetChildAtIndex(0, /*can_create=*/true);
   }
+
+  size_t CalculateNumChildren() override {
+    if (!MightHaveChildren())
+      return 0;
+    return GetSyntheticValue()->GetNumChildren();
+  }
+
+  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override {
+    return GetSyntheticValue()->GetChildAtIndex(idx);
+  }
+
+  size_t GetIndexOfChildWithName(ConstString name) override {
+    return GetSyntheticValue()->GetIndexOfChildWithName(name);
+  }
+
+  bool MightHaveChildren() override {
+    // If the summary provider for this child asks for no children, then we
+    // simply report as this type has no children, otherwise structs like `Bool`
+    // are displayed with its nested `i1` field.
+    lldb::TypeSummaryImplSP typeSummary =
+        GetSyntheticValue()->GetSummaryFormat();
+    if (typeSummary && (typeSummary->GetOptions() & eTypeOptionHideChildren))
+      return false;
+    return GetSyntheticValue()->MightHaveChildren();
+  }
 };
 } // namespace
 
-/// Check if the type of the given value is using the decorator
-/// @lldb_formatter_wrapping_type.
-static bool isUsingLLDBFormatterWrappingType(const ValueObjectSP &valobjSP) {
-  if (!valobjSP)
-    return false;
-  CompilerType type = valobjSP->GetCompilerType();
-  if (!type.IsValid())
-    return false;
-  std::shared_ptr<MojoTypeSystem> mojoTypeSystem =
-      type.GetTypeSystem().dyn_cast_or_null<MojoTypeSystem>();
-  if (!mojoTypeSystem)
-    return false;
-
-  for (TypedAttr decorator :
-       mojoTypeSystem->getStructDecorators(type.GetOpaqueQualType())) {
-    if (auto constantSymbol = dyn_cast<KGEN::SymbolConstantAttr>(decorator)) {
-      SymbolRefAttr symbol = constantSymbol.getSymbol();
-      auto nestedReferences = symbol.getNestedReferences();
-      if (nestedReferences.size() == 3 &&
-          symbol.getRootReference() == "stdlib" &&
-          nestedReferences[0].getValue() == "debug" &&
-          nestedReferences[1].getValue() == "visualizers" &&
-          nestedReferences[2].getValue() == "lldb_formatter_wrapping_type()") {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 SyntheticChildrenFrontEnd *
-M::KGEN::Mojo::mojoDecoratorBasedTypeSyntheticFrontEndCreator(
+M::KGEN::Mojo::MojoLLDBWrappingTypeTypeSyntheticFrontEndCreator(
     CXXSyntheticChildren *x, const ValueObjectSP &valobjSP) {
-  if (isUsingLLDBFormatterWrappingType(valobjSP))
-    return new MojoWrappingTypeSyntheticFrontEnd(*valobjSP);
-  return nullptr;
+  return new WrappingTypeSyntheticFrontEnd(*valobjSP);
 }
 
-bool M::KGEN::Mojo::mojoDecoratorBasedSummaryProvider(
-    ValueObject &valobj, Stream &stream,
-    const TypeSummaryOptions &summaryOptions) {
+bool M::KGEN::Mojo::MojoLLDBWrappingTypeSummaryProvider(
+    ValueObject &valobj, Stream &stream, TypeSummaryOptions summaryOptions) {
   ValueObjectSP nonSyntheticValobj = valobj.GetNonSyntheticValue();
-  if (!isUsingLLDBFormatterWrappingType(nonSyntheticValobj))
-    return false;
   ValueObjectSP impl = nonSyntheticValobj->GetChildAtIndex(0);
   std::string dest;
   impl->GetSummaryAsCString(dest, summaryOptions);

@@ -27,7 +27,7 @@ class TestStackTrace(LLDBTestBase):
                 frame_descs[0],
                 (
                     r"stack-trace.Foo\[...\].getParametrized\[...\]"
-                    r".nested_function\(z=!pop.scalar<f32> @ 0x.*\) at"
+                    r".nested_function\(z=\(\[0\] = 105.25\)\) at"
                     r" stack-trace.mojo:15:13"
                 ),
             )
@@ -36,14 +36,14 @@ class TestStackTrace(LLDBTestBase):
                 (
                     r"stack-trace.Foo\[index, index\]"
                     r".getParametrized\[scalar<f32>\]\(self=0x.*,"
-                    r" val=!pop.scalar<f32> @ 0x.*\) at stack-trace.mojo:17:31"
+                    r" val=\(\[0] = 105.25\)\) at stack-trace.mojo:17:31"
                 ),
             )
             self.assertRegex(
                 frame_descs[2],
                 (
                     r"stack-trace.Foo\[index, index\]"
-                    r".getFloat\(self=0x.*, x=!pop.scalar<f32> @ 0x.*, y=100\)"
+                    r".getFloat\(self=0x.*, x=\(\[0\] = 1.125\), y=100\)"
                     r" at stack-trace.mojo:20:45"
                 ),
             )

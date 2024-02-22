@@ -27,6 +27,7 @@
 #include "MojoTypeDataLayout.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/Core/Debugger.h"
@@ -181,6 +182,11 @@ struct MojoTypeSystem::Impl {
   std::unique_ptr<MojoTypeDataLayoutContext> dataLayoutContext;
 
   std::unique_ptr<MojoDWARFParser> dwarfParser;
+
+  /// A cache for the full type names. The `GetTypeName` method of the type
+  /// system gets called very frequently for the same type, hence the value of
+  /// having a cache.
+  DenseMap<lldb::opaque_compiler_type_t, ConstString> typeNames;
 };
 
 //===----------------------------------------------------------------------===//
@@ -508,11 +514,27 @@ ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
   MojoASTTypeRef astType = dereferenceIfREPLResult(type);
   if (!astType)
     return {};
+  mlir::Type mlirType = astType.getMLIRType();
+  lldb::opaque_compiler_type_t opaqueType =
+      const_cast<lldb::opaque_compiler_type_t>(mlirType.getAsOpaquePointer());
+
+  if (auto it = impl->typeNames.find(opaqueType); it != impl->typeNames.end())
+    return it->second;
 
   std::string name;
   llvm::raw_string_ostream os(name);
-  astType.getMLIRType().print(os);
-  return ConstString(name);
+  mlirType.print(os);
+
+  // We include the decorators in the full type name so that parts of LLDB
+  // that perform queries based on type names can operate also on decorators. An
+  // example of this are the data formatters.
+  for (TypedAttr decorator : getStructDecorators(opaqueType)) {
+    if (auto constantSymbol = dyn_cast<KGEN::SymbolConstantAttr>(decorator)) {
+      os << " {@" << M::getFlattenedSymbolName(constantSymbol.getSymbol())
+         << "}";
+    }
+  }
+  return impl->typeNames.insert({opaqueType, ConstString(name)}).first->second;
 }
 
 ConstString

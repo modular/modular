@@ -17,7 +17,6 @@ add_modular_library(MojoLLDB SHARED
   Language/Formatters/MojoDecoratorBasedTypeFormatter.cpp
   Language/Formatters/MojoDynamicVectorTypeFormatter.cpp
   Language/Formatters/MojoKGENVariantTypeFormatter.cpp
-  Language/Formatters/MojoWrappingTypeSyntheticFrontEnd.cpp
   Language/MojoLanguage.cpp
   Logging/MojoExpressionLogger.cpp
   REPL/MojoREPL.cpp

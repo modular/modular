@@ -10,64 +10,32 @@
 
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
-# CHECK:   f32 = {
-# CHECK:     [0] = 24.125
-# CHECK:   }
+# CHECK:   f32 = ([0] = 24.125)
 # CHECK:   another_int = 101
-# CHECK:   float16 = {
-# CHECK:     [0] = 25.125
-# CHECK:   }
-# CHECK:   uint8 = {
-# CHECK:     [0] = 123
-# CHECK:   }
-# CHECK:   simd = {
-# CHECK:     [0] = -0.125
-# CHECK:     [1] = -1.5
-# CHECK:     [2] = -1
-# CHECK:     [3] = 5.7266
-# CHECK:   }
+# CHECK:   float16 = ([0] = 25.125)
+# CHECK:   uint8 = ([0] = 123)
+# CHECK:   simd = ([0] = -0.125, [1] = -1.5, [2] = -1, [3] = 5.7266)
 # CHECK:   none = None
-# CHECK:   uint16 = {
-# CHECK:     [0] = 123
-# CHECK:   }
-# CHECK:   int32 = {
-# CHECK:     [0] = 485
-# CHECK:   }
+# CHECK:   uint16 = ([0] = 123)
+# CHECK:   int32 = ([0] = 485)
 # CHECK: }
 # CHECK: (AStruct) a_struct = {
-# CHECK:   int = {
-# CHECK:     [0] = 12
-# CHECK:   }
+# CHECK:   int = ([0] = 12)
 # CHECK:   tuple = {
 # CHECK:     [0] = 1
-# CHECK:     [1] = {
-# CHECK:       [0] = 87
-# CHECK:     }
-# CHECK:     [2] = {
-# CHECK:       [0] = 123.125
-# CHECK:     }
+# CHECK:     [1] = ([0] = 87)
+# CHECK:     [2] = ([0] = 123.125)
 # CHECK:   }
 # CHECK: }
-# CHECK: (ParamStruct[_"stdlib::builtin::int::Int"]) p_struct_int = {
-# CHECK:   t = 8
-# CHECK: }
-# CHECK: (scalar<f32>) another_float = {
-# CHECK:   [0] = 4.125
-# CHECK: }
+# CHECK: (ParamStruct[_"stdlib::builtin::int::Int"]) p_struct_int = (t = 8)
+# CHECK: (scalar<f32>) another_float = ([0] = 4.125)
 # CHECK: (string) a_string_literal = "fofofo"
 # CHECK: (!kgen.pack<[index, scalar<f64>, index]>) a_list = {
 # CHECK:   [0] = 1
-# CHECK:   [1] = {
-# CHECK:     [0] = 2.125
-# CHECK:   }
+# CHECK:   [1] = ([0] = 2.125)
 # CHECK:   [2] = 3
 # CHECK: }
-# CHECK: (simd<4, f16>) a_simd = {
-# CHECK:   [0] = 1.125
-# CHECK:   [1] = 2.5
-# CHECK:   [2] = 0
-# CHECK:   [3] = -3.7246
-# CHECK: }
+# CHECK: (simd<4, f16>) a_simd = ([0] = 1.125, [1] = 2.5, [2] = 0, [3] = -3.7246)
 # CHECK: (simd<32, si64>) b_simd = {
 # CHECK:   [0] = 1
 # CHECK:   [1] = 2
@@ -88,24 +56,14 @@
 # CHECK:   [30] = -15
 # CHECK:   [31] = -16
 # CHECK: }
-# CHECK: (simd<2, index>) c_simd = {
-# CHECK:   [0] = 5
-# CHECK:   [1] = 6
-# CHECK: }
+# CHECK: (simd<2, index>) c_simd = ([0] = 5, [1] = 6)
 # CHECK: (Variant[scalar<f64>, scalar<bool>, simd<2, index>]) a_float_or_bool_or_simd = {
-# CHECK:   variant[2] = {
-# CHECK:     [0] = 5
-# CHECK:     [1] = 6
-# CHECK:   }
+# CHECK:   variant[2] = ([0] = 5, [1] = 6)
 # CHECK: }
 # CHECK: (None) none = None
 # CHECK: (si64) a_var_index = 48
 # CHECK: (si64) a_let_index = 48
 # CHECK: (si64) an_int = 123
-# CHECK: (scalar<f64>) a_literal_float = {
-# CHECK:   [0] = 3.125
-# CHECK: }
-# CHECK: (scalar<f32>) a_float = {
-# CHECK:   [0] = 3.125
-# CHECK: }
+# CHECK: (scalar<f64>) a_literal_float = ([0] = 3.125)
+# CHECK: (scalar<f32>) a_float = ([0] = 3.125)
 # CHECK: (si64) ^ uncommon name = 1123123
