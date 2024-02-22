@@ -26,6 +26,23 @@
   arg = 0,
   alignInBits = 32
 > : !debuginfo.unresolved<i32>
+#local_variable_2 = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo_2",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 64
+> : !debuginfo.unresolved<!llvm.ptr>
+#local_variable_3 = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo_3",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 64
+> : !debuginfo.unresolved<!llvm.ptr>
+#deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<!llvm.ptr {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<!llvm.ptr>
 
 // CHECK-LABEL: func @simple
 func.func @simple() {
@@ -67,6 +84,57 @@ func.func @value_to_addr_op() -> i32 {
   %value = "test.op"() : () -> i32
   debuginfo.value #local_variable = %value : i32
   return %value : i32
+}
+
+// CHECK-LABEL: func @two_value_to_addr_op
+func.func @two_value_to_addr_op() -> !llvm.ptr {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : !llvm.ptr
+
+  %value = "test.op"() : () -> !llvm.ptr
+  debuginfo.value #local_variable_2 = %value : !llvm.ptr
+  debuginfo.value #local_variable_3 = %value : !llvm.ptr
+  return %value : !llvm.ptr
+}
+
+// CHECK-LABEL: func @one_value_one_deref_to_addr_op
+func.func @one_value_one_deref_to_addr_op() -> !llvm.ptr {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : !llvm.ptr
+
+  %value = "test.op"() : () -> !llvm.ptr
+  debuginfo.value #local_variable_2 = %value : !llvm.ptr
+  debuginfo.value #local_variable_3 #deref_expr = %value : !llvm.ptr
+  return %value : !llvm.ptr
+}
+
+// CHECK-LABEL: func @one_deref_one_value_to_addr_op
+func.func @one_deref_one_value_to_addr_op() -> !llvm.ptr {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : !llvm.ptr
+
+  %value = "test.op"() : () -> !llvm.ptr
+  debuginfo.value #local_variable_2 #deref_expr = %value : !llvm.ptr
+  debuginfo.value #local_variable_3 = %value : !llvm.ptr
+  return %value : !llvm.ptr
 }
 
 // CHECK-LABEL: @block_arguments
