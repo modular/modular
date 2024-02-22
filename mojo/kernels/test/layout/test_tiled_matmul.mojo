@@ -219,7 +219,10 @@ fn gemm_l1_cache[
 
 
 fn test_tiled_matmul[use_l1_cache: Bool]():
-    print("=== test_tiled_matmul")
+    if use_l1_cache:
+        print("=== test_tiled_matmul_l1_cache")
+    else:
+        print("=== test_tiled_matmul_l2_cache")
 
     var dst = LayoutTensor[DType.float32, 8, 8]()
     var rhs = LayoutTensor[DType.float32, 8, 8]()
