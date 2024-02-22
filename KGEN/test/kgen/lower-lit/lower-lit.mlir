@@ -525,6 +525,20 @@ lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
   kgen.return
 }
 
+// -----
+
+// COM: Ensure the linkage name is respected when it could conflict.
+
+// CHECK: kgen.generator export @main
+lit.package @main {
+  lit.file_module @main {
+    lit.func export @main() attributes {linkageName = "main"} {
+      kgen.return
+    }
+  }
+}
+
+
 //===----------------------------------------------------------------------===//
 // Implicit lifetimes.
 //===----------------------------------------------------------------------===//

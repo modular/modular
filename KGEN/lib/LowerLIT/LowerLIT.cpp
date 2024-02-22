@@ -543,6 +543,10 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
               return lowerStructDecl(op, opSymTableIt);
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
+              // Make sure to remove the op from the symbol table if needed.
+              if (op->getParentOp() == symbolTable.getOp())
+                symbolTable.remove(op);
+
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
               if (failed(lowerModuleDecl(fileBody, opSymTableIt,
@@ -559,11 +563,7 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
               op->getBlock()->getOperations().splice(
                   op->getIterator(), fileBody->getOperations(),
                   fileBody->begin(), fileBody->end());
-              // Make sure to remove the op from the symbol table if needed.
-              if (op->getParentOp() == symbolTable.getOp())
-                symbolTable.erase(op);
-              else
-                op->erase();
+              op->erase();
               return mlir::success();
             })
             .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
