@@ -386,10 +386,10 @@ private:
   AsyncValueRef<Chain> isDocumentParsed;
   std::mutex isDocumentParsedMutex;
 
-  /// An ordered set of fixits for diagnostics emitted for the current version
-  /// of the file.
-  std::map<std::pair<mlir::lsp::Range, std::string>,
-           std::vector<mlir::lsp::CodeAction>>
+  /// A set of fixits for diagnostics emitted for the current version of the
+  /// file.
+  llvm::StringMap<
+      std::map<mlir::lsp::Range, std::vector<mlir::lsp::CodeAction>>>
       fixits;
 
   /// An ordered set of inlay hints for the current version of the file.
