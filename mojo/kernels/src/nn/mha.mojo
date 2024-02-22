@@ -1092,7 +1092,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 if mask_row + i < seq_len:
 
                     @unroll
-                    for j in range(int(TN)):
+                    for j in range(TN):
                         if mask_col + j < num_keys:
                             var idx = i * TN + j
                             var val = reg_result[idx]
@@ -1131,7 +1131,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 reg_result[idx] = exp(reg_result[idx] - curr_rowmax)
 
             if exceed > 0:
-                for j in range(int(TN) - int(exceed), TN):
+                for j in range(TN - exceed, TN):
                     reg_result[i * TN + j] = 0.0
 
             var curr_rowsum = Float32(0.0)
