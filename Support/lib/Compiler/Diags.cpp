@@ -208,7 +208,9 @@ Location Diags::translateLocation(SMLoc loc) const {
 }
 
 SMLoc Diags::convertLocToSMLoc(mlir::LocationAttr loc) const {
-  if (FileLineColLoc fileLoc = dyn_cast_if_present<FileLineColLoc>(loc))
+  if (!loc)
+    return SMLoc();
+  if (FileLineColLoc fileLoc = loc.findInstanceOf<FileLineColLoc>())
     return sourceMgrMapper->convertLocToSMLoc(sourceMgr, fileLoc);
   return SMLoc();
 }

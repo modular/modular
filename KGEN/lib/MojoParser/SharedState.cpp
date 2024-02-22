@@ -1473,8 +1473,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // Functor to build a decl for a nested operation.
   auto addDeclForOp = [&](Operation *op, StringAttr name) -> ASTDecl & {
+    SMLoc declLoc = declResolver->shared.diags.convertLocToSMLoc(op->getLoc());
     ASTDecl &newDecl = declResolver->addDecl(
-        DeclIRValue(op), decl.getLoc(), name, &decl, decl.getCursor(),
+        DeclIRValue(op), declLoc, name, &decl, decl.getCursor(),
         decl.getCursor(), /*indentation=*/-1);
     newDecl.loadedFromBytecode = true;
     return newDecl;
