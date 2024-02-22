@@ -94,6 +94,15 @@
         }
       }
     ],
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "specialVariable": [
+            "storage.type.function.python"
+          ]
+        }
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Mojo",

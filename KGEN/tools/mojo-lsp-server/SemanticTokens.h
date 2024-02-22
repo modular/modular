@@ -21,6 +21,7 @@ namespace M::Mojo::LSP {
 /// highlighted.
 enum class SemanticTokenKind {
   kVariable = 0,
+  kSpecialVariable,
   kParameter,
   kFunction,
   kMethod,
