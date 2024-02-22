@@ -210,6 +210,7 @@ static LogicalResult readMemoryBlobs(DialectBytecodeReader &reader,
         failed(reader.readSignedVarInt(blobIndex)) ||
         failed(reader.readSignedVarInt(blobOffset)))
       return failure();
+    region = MemoryBlob::PointerRegion{offset, blobIndex, blobOffset};
     return LogicalResult::success();
   };
 
