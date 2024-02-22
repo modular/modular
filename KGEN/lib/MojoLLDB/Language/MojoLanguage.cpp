@@ -51,7 +51,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
   // Otherwise, if we return false, for example, LLDB would print the contents
   // of the inner DynamicVector.
   auto onError = [&stream]() {
-    stream << "<invalid string>";
+    stream << "Summary Unavailable";
     return true;
   };
 

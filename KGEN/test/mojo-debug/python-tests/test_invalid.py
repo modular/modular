@@ -20,9 +20,6 @@ class TestInvalidScalar(LLDBTestBase):
             _index = dict.GetChildMemberWithName("_index")
             data = _index.GetChildMemberWithName("data")
             assert data.GetTypeName() == "!kgen.pointer<scalar<invalid>>"
-            invalid_scalar = data.GetChildAtIndex(0)
-            assert invalid_scalar.GetTypeName() == "!pop.scalar<invalid>"
-            assert invalid_scalar.GetByteSize() == 0
-            none = invalid_scalar.GetChildAtIndex(0)
-            assert none.GetTypeName() == "!kgen.none"
-            assert none.GetByteSize() == 0
+            invalid = data.GetChildAtIndex(0)
+            assert invalid.GetTypeName() == "!kgen.none"
+            assert invalid.GetByteSize() == 0
