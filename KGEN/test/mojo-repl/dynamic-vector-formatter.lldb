@@ -20,23 +20,24 @@ struct Point(CollectionElement):
   fn __init__(x: Int, y:Int) -> Self:
     return Point {x: x, y: y}
 
-# CHECK: (DynamicVector[Int]) vec = {
-# CHECK:   (Int) [0] = 1
+# CHECK: (DynamicVector[Int]) vec = (size 5) {
+# FIXME(32514): We need to fix the display type for the first entry of a vector.
+# CHECK:   (index) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-# CHECK: (DynamicVector[SIMD[f32, 1]]) vec2 = {
-# CHECK:   (SIMD[f32, 1]) [0] = {
+# CHECK: (DynamicVector[SIMD[f32, 1]]) vec2 = (size 2) {
+# FIXME(32514): We need to fix the display type for the first entry of a vector.
+# CHECK:   (scalar<f32>) [0] = {
 # CHECK:     (f32) [0] = 4.3{{[0-9]*}}
 # CHECK:   }
 # CHECK:   (SIMD[f32, 1]) [1] = {
 # CHECK:     (f32) [0] = 8.8{{[0-9]*}}
 # CHECK:   }
 # CHECK: }
-# CHECK: (DynamicVector[Point]) vec3 =
-# CHECK:  {
+# CHECK: (DynamicVector[Point]) vec3 = (size 3) {
 # CHECK:   (Point) [0] = {
 # CHECK:     (Int) x = 1
 # CHECK:     (Int) y = 1
