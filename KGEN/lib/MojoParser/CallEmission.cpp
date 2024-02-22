@@ -1267,7 +1267,9 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
     posOperandsWithSelf.reserve(posOperands.size() + 1);
     posOperandsWithSelf.push_back(baseValue);
     posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
+    assert((syntax == CallSyntax::kMethodCall ||
+            syntax == CallSyntax::kMethodCallSynthetic) &&
+           "Unexpected syntax form");
     operands.posOperands = posOperandsWithSelf;
     operands.hasSelfOperand = true;
   }
@@ -1386,6 +1388,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
                 << type << " does not implement the '" << methodName
                 << "' method";
     switch (syntax) {
+    case CallSyntax::kMethodCallSynthetic:
     case CallSyntax::kMethodCall:
       [[fallthrough]];
     case CallSyntax::kOperator:

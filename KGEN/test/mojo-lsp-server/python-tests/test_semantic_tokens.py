@@ -40,6 +40,10 @@ alias int_alias = 10
 trait ATrait:
   fn foo(owned self, i: Self):
      ...
+
+struct StructWithTrait(ATrait):
+    fn foo(owned self, i: Self):
+        pass
 """,
     )
     requests.open_document(doc)
@@ -100,5 +104,13 @@ trait ATrait:
     assert any(
         token.range == doc.find_first_range("Self")
         and token.token_type == "interface"
+        for token in tokens
+    )
+
+    # Check that we didn't add a token for the synthetic methods of the
+    # StructWithTrait struct.
+    assert not any(
+        token.range.start == doc.find_last_pos("struct StructWithTrait")
+        and token.token_type == "function"
         for token in tokens
     )

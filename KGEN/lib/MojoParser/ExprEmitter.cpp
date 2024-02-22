@@ -1085,7 +1085,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
       // Grab the matching function.
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
-                     CallSyntax::kMethodCall);
+                     CallSyntax::kMethodCallSynthetic);
       ov.baseType = ASTType(typeValue);
       PValue result = ov.filterOverloadSetForValueType(
           sig, /*emitDiagnosticOnFailure=*/false);

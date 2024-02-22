@@ -52,11 +52,8 @@ struct struct_name:
 
     assert results[2].name == "struct_name"
     assert results[2].kind == SymbolKind.Struct
-    assert len(results[2].children) == 3
+    assert len(results[2].children) == 2
     assert results[2].children[0].name == "struct_fn"
     assert results[2].children[1].name == "field"
     assert results[2].children[1].kind == SymbolKind.Field
     assert results[2].children[1].detail == "Int"
-    assert results[2].children[2].name == "__del__"
-    assert results[2].children[2].kind == SymbolKind.Function
-    assert results[2].children[2].detail == "__del__(owned self: Self)"
