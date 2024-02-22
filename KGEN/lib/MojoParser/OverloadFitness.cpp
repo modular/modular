@@ -592,7 +592,8 @@ private:
 
 void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
   // If this is a method syntax call, don't count the receiver.
-  if (callSyntax == CallSyntax::kMethodCall) {
+  if (callSyntax == CallSyntax::kMethodCall ||
+      callSyntax == CallSyntax::kMethodCallSynthetic) {
     // It is probably possible for this assert to fire, if it does we should
     // tailor the error message.
     assert(argIdx != 0 && "TODO: unexpected self mismatch");
@@ -730,7 +731,9 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   InflightDiag diag = initDiag();
   switch (kind) {
   case ArgTypeMismatchKind::kNotLValue:
-    if (callSyntax == CallSyntax::kMethodCall && argIdx == 0) {
+    if ((callSyntax == CallSyntax::kMethodCall ||
+         callSyntax == CallSyntax::kMethodCallSynthetic) &&
+        argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
       if (ASTType type = getRValueType(operand))
         diag << type;

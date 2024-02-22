@@ -33,6 +33,8 @@
   `capturing` are not highlighted in functional type expressions.
 - [#1617](https://github.com/modularml/mojo/issues/1617) - `fn` is not
   highlighted in specific contexts.
+- [#1740](https://github.com/modularml/mojo/issues/1740) - LSP shows unrelated
+  info when hovering over a struct.
 
 ## 0.7.0
 

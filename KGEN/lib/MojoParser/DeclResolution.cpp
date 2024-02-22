@@ -2387,7 +2387,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
             SpecialFunctionInfo::getKind(name));
 
         OverloadSet ov(name, decls, std::move(bindings), node,
-                       CallSyntax::kMethodCall);
+                       CallSyntax::kMethodCallSynthetic);
         PValue result = ov.filterOverloadSetForValueType(
             newSignature, emitError
                               ? function_ref<InflightDiag &(SMLoc)>(

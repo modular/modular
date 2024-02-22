@@ -222,17 +222,18 @@ private:
 /// happened in the first place.  This allows producing better-tuned
 /// diagnostics.
 enum class CallSyntax : uint8_t {
-  kDirectCall,       //< f()
-  kIndirectCall,     //< expr()
-  kMethodCall,       //< x.f()
-  kTypeCall,         //< T()
-  kOperator,         //< -x and x + y
-  kReversedOperator, //< y + x          (where the method was looked up on x).
-  kSubscript,        // v[1, 2]
-  kAttribute,        // v.x             (where x is not a static member of v).
-  kImplicitConvert,  //< Conversion in an argument context
-  kDestructor,       //< Destructor due to a value definition.
-  kTupleGetItem,     //< Call to getitem in a tuple assignment.
+  kDirectCall,         //< f()
+  kIndirectCall,       //< expr()
+  kMethodCall,         //< x.f()
+  kTypeCall,           //< T()
+  kOperator,           //< -x and x + y
+  kReversedOperator,   //< y + x          (where the method was looked up on x).
+  kSubscript,          // v[1, 2]
+  kAttribute,          // v.x             (where x is not a static member of v).
+  kImplicitConvert,    //< Conversion in an argument context
+  kDestructor,         //< Destructor due to a value definition.
+  kTupleGetItem,       //< Call to getitem in a tuple assignment.
+  kMethodCallSynthetic //< Call to a method for synthetic checks.
 };
 
 /// Struct to that carries both positional and keyword operands for a call. This
