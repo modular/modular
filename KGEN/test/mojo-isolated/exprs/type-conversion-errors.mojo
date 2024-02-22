@@ -29,3 +29,18 @@ fn test_type_instead_of_instance() -> Foo:
     takes_instance_arg(Foo)
     # expected-error @+1 {{cannot implicitly convert 'Foo' type value to an instance of 'Foo' in return value; did you mean to instantiate 'Foo'?}}
     return Foo
+
+
+# COM: https://github.com/modularml/modular/issues/29438
+# COM: ensure we do not crash in the example below, but emit an error.
+struct MadeFromPack[*Ts: AnyRegType]:
+    fn __init__(inout self, *args: *Ts):
+        pass
+
+
+struct WrapsMadeFromPack[*Ts: AnyRegType]:
+    var data: MadeFromPack[Ts]
+
+    fn __init__(inout self, *args: *Ts):
+        # expected-error @+1 {{cannot implicitly convert '!kgen.pack<Ts>' value to 'MadeFromPack[Ts]' in assignment}}
+        self.data = args

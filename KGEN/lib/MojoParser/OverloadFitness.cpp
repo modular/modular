@@ -809,7 +809,7 @@ InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
 
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
-/// otherwise, NOTE: this function heavily assumes that a signature has at most
+/// NOTE: this function heavily assumes that a signature has at most
 /// one pack variadic argument and that variadics are always the last positional
 /// args.
 static std::pair<size_t, size_t>
@@ -836,8 +836,9 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
     if (auto packType = getIfPackType(signature, lastPosIdx)) {
       // NOTE: we adjust the number of user declared pos args since that
       // includes the pack itself (hence the "-1").
-      if (size_t packSize = packType.getVariadicAttr().getValues().size())
-        return {numUserPosArgs - 1 + packSize, numUserPosArgs - 1 + packSize};
+      if (VariadicAttr packed = packType.getVariadicAttr())
+        if (size_t packSize = packed.getValues().size())
+          return {numUserPosArgs - 1 + packSize, numUserPosArgs - 1 + packSize};
       return {0, numUserPosArgs - 1};
     }
   }
