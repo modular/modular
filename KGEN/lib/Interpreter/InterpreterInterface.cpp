@@ -409,7 +409,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   // This struct represents an interned memory space and allows index + offset
   // pairs to be mapped to addresses.
   struct InternedMemorySpace {
-    std::vector<MemoryBlob *> blobs;
+    std::vector<std::pair<MemoryTable *, size_t>> blobs;
   };
   DenseMap<MemorySpaceAttr, InternedMemorySpace> interned;
 
@@ -431,6 +431,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 
       // Initialize the memory.
       mlir::AsmResourceBlob *asmBlob = blob.getHandle().getBlob();
+      map.blobs.emplace_back(&table, table.blobs.size());
       ErrorOr<MemoryBlob &> mem = table.addBlob(
           asmBlob->getData().size(), asmBlob->getDataAlignment(), hdl);
       if (mem.isError())
@@ -438,15 +439,17 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       if (!hdl)
         memcpy(mem->getOwned(), asmBlob->getData().data(),
                asmBlob->getData().size());
-      map.blobs.push_back(&*mem);
     }
 
     // Now that all the blobs have been processed, map any pointer values.
-    for (auto [blob, interned] : llvm::zip(space.getValue(), map.blobs)) {
+    for (auto [blob, tabIdx] : llvm::zip(space.getValue(), map.blobs)) {
       for (const M::MemoryBlob::PointerRegion &ptr : blob.getPointerRegions()) {
+        auto [tab, blobIdx] = tabIdx;
+        MemoryBlob *interned = &tab->blobs[blobIdx];
         assert(interned->isOwned() && "const memory cannot have pointers");
         // Map the pointer to an interpreter address.
-        int64_t addr = map.blobs[ptr.blobIndex]->baseAddr + ptr.blobOffset;
+        auto [ptrTab, ptrBlobIdx] = map.blobs[ptr.blobIndex];
+        int64_t addr = ptrTab->blobs[ptrBlobIdx].baseAddr + ptr.blobOffset;
         // Write the address in memory.
         APInt addrInt(target.getDataLayout().getPointerBitWidth(), addr);
         llvm::StoreIntToMemory(addrInt,
@@ -463,7 +466,8 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     ErrorOr<InternedMemorySpace &> space = getOrInternSpace(ref.getMemory());
     if (space.isError())
       return space.takeError();
-    return space->blobs[ref.getIndex()]->baseAddr + ref.getOffset();
+    auto [tab, blobIdx] = space->blobs[ref.getIndex()];
+    return tab->blobs[blobIdx].baseAddr + ref.getOffset();
   };
 
   // Replace memory references in the inputs with interpreter memory pointers.
