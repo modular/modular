@@ -213,7 +213,7 @@ struct amx_detail:
         """
         Utility to do the bit encoding for load and store ops.
         """
-        var src_idx = src.__as_index() | (start_index << 56)
+        var src_idx = int(src) | (start_index << 56)
         if row_count == 2:
             src_idx |= 1 << 62
         return src_idx
