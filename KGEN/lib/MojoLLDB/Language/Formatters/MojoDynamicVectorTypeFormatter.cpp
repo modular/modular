@@ -61,6 +61,9 @@ bool MojoDynamicVectorSyntheticFrontEnd::Update() {
 std::optional<std::pair<ValueObjectSP, size_t>>
 MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
     lldb::ValueObjectSP valobj) {
+  if (!valobj || !valobj->GetError().Success())
+    return {};
+
   valobj = valobj->GetNonSyntheticValue();
   if (!valobj || !valobj->GetError().Success())
     return {};

@@ -534,7 +534,7 @@ public:
 
   lldb_private::CompilerType GetChildCompilerTypeAtIndex(
       lldb::opaque_compiler_type_t type, lldb_private::ExecutionContext *exeCtx,
-      size_t idx, bool transparent_pointers, bool omitEmptyBaseClasses,
+      size_t idx, bool transparentPointers, bool omitEmptyBaseClasses,
       bool ignoreArrayBounds, std::string &childName, uint32_t &childByteSize,
       int32_t &childByteOffset, uint32_t &childBitfieldBitSize,
       uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
@@ -546,9 +546,7 @@ public:
                                    bool omitEmptyBaseClasses) override;
 
   // GetIndexOfChildMemberWithName returns a path of child indices towards
-  // a member. This makes sense in languages like C++ with inheritance, but as
-  // of now, for Mojo, this path will contain 0 or 1 elements. This makes this
-  // method equivalent to GetChildCompilerTypeAtIndex.
+  // a member, including descending into child structs.
   size_t
   GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
                                 llvm::StringRef name, bool omitEmptyBaseClasses,

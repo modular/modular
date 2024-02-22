@@ -297,6 +297,7 @@ bool MojoTypeSystem::IsAggregateType(lldb::opaque_compiler_type_t type) {
   switch (GetTypeClass(type)) {
   case lldb::eTypeClassArray:
   case lldb::eTypeClassStruct:
+  case lldb::eTypeClassVector:
     return true;
   default:
     return false;
@@ -360,7 +361,7 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
   if (isa<POP::SIMDType>(astType))
     return lldb::eTypeClassVector;
 
-  if (isa<POP::ArrayType>(astType))
+  if (isa<POP::ArrayType, PackType>(astType))
     return lldb::eTypeClassArray;
 
   if (impl->getIfStructDecl(astType))
@@ -576,8 +577,12 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   if (!astType)
     return 0;
 
-  if (isa<KGEN::PointerType>(astType))
+  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType)) {
+    CompilerType eltType = createCompilerType(ptrType.getElementType());
+    if (eltType.IsAggregateType())
+      return eltType.GetNumChildren(omitEmptyBaseClasses, exeCtx);
     return 1;
+  }
 
   if (auto simdTy = dyn_cast<POP::SIMDType>(astType)) {
     if (simdTy.isScalar())
@@ -606,7 +611,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
 
 lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     lldb::opaque_compiler_type_t type, lldb_private::ExecutionContext *exeCtx,
-    size_t idx, bool transparent_pointers, bool omitEmptyBaseClasses,
+    size_t idx, bool transparentPointers, bool omitEmptyBaseClasses,
     bool ignoreArrayBounds, std::string &childName, uint32_t &childByteSize,
     int32_t &childByteOffset, uint32_t &childBitfieldBitSize,
     uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
@@ -623,6 +628,20 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   // Pointer only has one child, so just return the unwrapped pointer type
   if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType())) {
     MojoASTTypeRef eltType(ptrType.getElementType());
+    CompilerType eltCompilerType = createCompilerType(eltType);
+
+    // If transparentPointers is true, LLDB expects that a pointer is equivalent
+    // to its child aggregate type wrt traversing children.
+    if (transparentPointers && eltCompilerType.IsAggregateType()) {
+      childIsDerefOfParent = false;
+      bool tmpChildIsDerefOfParent = false;
+      return eltCompilerType.GetChildCompilerTypeAtIndex(
+          exeCtx, idx, transparentPointers, omitEmptyBaseClasses,
+          ignoreArrayBounds, childName, childByteSize, childByteOffset,
+          childBitfieldBitSize, childBitfieldBitOffset, childIsBaseClass,
+          tmpChildIsDerefOfParent, valobj, languageFlags);
+    }
+
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(eltType)) {
       childByteSize = layout->getByteSize();
@@ -719,8 +738,8 @@ uint32_t
 MojoTypeSystem::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                         StringRef name,
                                         bool omitEmptyBaseClasses) {
-  uint32_t errorValue = UINT32_MAX; // Default value based on
-                                    // CompilerType::GetIndexOfChildWithName.
+  // Default value based on CompilerType::GetIndexOfChildWithName.
+  uint32_t errorValue = UINT32_MAX;
   if (!type || name.empty())
     return errorValue;
   std::vector<uint32_t> childIndices;
@@ -739,6 +758,16 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   MojoASTTypeRef astType = dereferenceIfREPLResult(type);
   if (!astType || name.empty())
     return 0;
+
+  // LLDB expects that a pointer is equivalent to its child aggregate type wrt
+  // traversing children.
+  if (auto ptrType = dyn_cast<KGEN::PointerType>(astType)) {
+    CompilerType eltType = createCompilerType(ptrType.getElementType());
+    if (eltType.IsAggregateType()) {
+      return eltType.GetIndexOfChildMemberWithName(name, omitEmptyBaseClasses,
+                                                   childIndices);
+    }
+  }
 
   // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
   if (isa<PackType, POP::SIMDType, POP::ArrayType>(astType)) {
