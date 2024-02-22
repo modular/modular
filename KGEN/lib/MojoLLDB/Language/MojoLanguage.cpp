@@ -8,7 +8,6 @@
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoDynamicVectorTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
-#include "Formatters/MojoLLDBResultRefTypeFormatter.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
@@ -185,7 +184,6 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
       R"(^!lit.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*$)";
   constexpr const char *kDynamicVectorDWARFRegex =
       R"(^!lit.declref<@stdlib::@collections::@vector::@"DynamicVector\[.*)";
-  constexpr const char *kREPLResultRegex = "^!lit.replresultref<.*>$";
 
   // Formatters are matched in reverse order, so this one that uses .* should
   // be added first so that it's the last one to be matched against. In fact,
@@ -195,11 +193,6 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                   mojoDecoratorBasedTypeSyntheticFrontEndCreator,
                   "Mojo decorator-based synthetic children", ".*", synthFlags,
                   /*regex=*/true);
-  // This formatter will replace a REPLResultRef with the value of its inner
-  // type. REPLResultRef owns a pointer, so we need to dereference the pointer.
-  AddCXXSynthetic(mojoCategorySP, mojoREPLResultRefTypeSyntheticFrontEndCreator,
-                  "REPLResultRefType synthetic children", kREPLResultRegex,
-                  synthFlags, /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
                   "Mojo DynamicVector synthetic children",
                   kDynamicVectorDWARFRegex, synthFlags, /*regex=*/true);
@@ -233,32 +226,27 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, popScalarBoolSummaryProvider,
                 "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
                 summaryFlags, /*regex=*/false);
-  // For the REPL
+  // For the REPL.
   AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
                 "builtin::string::String summary provider",
                 R"(!lit.declref<@stdlib::@builtin::@string::@String>)",
                 summaryFlags, /*regex=*/false);
-  // For DWARF
+  // For DWARF.
   AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
                 "builtin::string::String summary provider",
                 R"(!lit.declref<@builtin::@string::@String>)", summaryFlags,
                 /*regex=*/false);
-  AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
-                "REPLResultRefType summary provider", kREPLResultRegex,
-                summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);
   summaryFlags.SetDontShowValue(false);
-  // FIXME(26722): add support for this summary provider in the REPL. Right now
-  // the regex only includes the DWARF version of this type.
+  // For the REPL.
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
                 "utils::vector::DynamicVector summary provider",
                 kDynamicVectorDWARFRegex, summaryFlags, /*regex=*/true);
-  // FIXME(28737): We need to remove the REPL resultant type synthetic value
-  // in order to enable summaries for synthetic types.
-  // AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-  //               "utils::vector::DynamicVector summary provider",
-  //               kDynamicVectorREPLRegex, summaryFlags, /*regex=*/true);
+  // For DWARF.
+  AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
+                "utils::vector::DynamicVector summary provider",
+                kDynamicVectorREPLRegex, summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {

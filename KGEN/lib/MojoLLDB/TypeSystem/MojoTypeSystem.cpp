@@ -72,6 +72,18 @@ getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
   return {};
 }
 
+/// Method used to get the correct MojoASTTypeRef of a given opaque type. It
+/// also dereferences REPLResultRefType if present.
+static MojoASTTypeRef
+dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return MojoASTTypeRef();
+  auto mlirType = mlir::Type::getFromOpaquePointer(type);
+  if (auto refType = dyn_cast<LIT::REPLResultRefType>(mlirType))
+    return MojoASTTypeRef(refType.getElementType());
+  return MojoASTTypeRef(mlirType);
+}
+
 //===----------------------------------------------------------------------===//
 // MojoTypeSystem::Impl
 //===----------------------------------------------------------------------===//
@@ -293,10 +305,11 @@ bool MojoTypeSystem::IsAggregateType(lldb::opaque_compiler_type_t type) {
 
 bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
                                    lldb_private::CompilerType *pointeeType) {
-  if (!type)
+  MojoASTTypeRef astType(type);
+  if (!astType)
     return false;
 
-  if (auto pointerType = dyn_cast<KGEN::PointerType>(MojoASTTypeRef(type))) {
+  if (auto pointerType = dyn_cast<KGEN::PointerType>(astType)) {
     if (pointeeType)
       *pointeeType = createCompilerType(pointerType.getElementType());
     return true;
@@ -307,33 +320,39 @@ bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
 bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
                                      lldb_private::CompilerType *pointeeType,
                                      bool *isRValue) {
+  if (!type)
+    return false;
+  if (auto refType = dyn_cast<LIT::REPLResultRefType>(MojoASTTypeRef(type))) {
+    if (pointeeType)
+      *pointeeType = createCompilerType(refType.getElementType());
+    return true;
+  }
   return false;
 }
 
 lldb_private::CompilerType
 MojoTypeSystem::GetPointeeType(lldb::opaque_compiler_type_t type) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return {};
-  MojoASTTypeRef astType(type);
-  if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType()))
+  if (auto ptrType = dyn_cast<PointerType>(astType))
     return createCompilerType(ptrType.getElementType());
   return {};
 }
 
 lldb_private::CompilerType
 MojoTypeSystem::GetPointerType(lldb::opaque_compiler_type_t type) {
-  if (!type)
-    return {};
   MojoASTTypeRef astType(type);
+  if (!astType)
+    return {};
   return createCompilerType(KGEN::PointerType::get(astType.getMLIRType()));
 }
 
 lldb::TypeClass
 MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return {};
-
-  MojoASTTypeRef astType(type);
 
   if (auto ptrType = dyn_cast<PointerType>(astType))
     return lldb::eTypeClassPointer;
@@ -353,13 +372,12 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
 uint32_t MojoTypeSystem::GetTypeInfo(
     lldb::opaque_compiler_type_t type,
     lldb_private::CompilerType *pointeeOrElementCompilerType) {
-  if (!type)
+  MojoASTTypeRef astType(type);
+  if (!astType)
     return 0;
 
   if (pointeeOrElementCompilerType)
     pointeeOrElementCompilerType->Clear();
-
-  MojoASTTypeRef astType(type);
 
   if (auto ptrType = dyn_cast<PointerType>(astType)) {
     if (pointeeOrElementCompilerType) {
@@ -392,9 +410,6 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   if (impl->getIfStructDecl(astType))
     return lldb::eTypeHasChildren | lldb::eTypeIsClass;
 
-  if (isa<LIT::REPLResultRefType>(astType))
-    return lldb::eTypeHasChildren;
-
   return {};
 }
 
@@ -418,7 +433,7 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
 
 lldb_private::CompilerType
 MojoTypeSystem::GetNonReferenceType(lldb::opaque_compiler_type_t type) {
-  return createCompilerType(type);
+  return createCompilerType(dereferenceIfREPLResult(type));
 }
 
 lldb_private::CompilerType
@@ -438,10 +453,11 @@ uint32_t MojoTypeSystem::GetPointerByteSize() {
 std::optional<uint64_t>
 MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
                            lldb_private::ExecutionContextScope *exeScope) {
-  if (!type)
+  MojoASTTypeRef astType(type);
+  if (!astType)
     return {};
 
-  if (auto &layout = impl->dataLayoutContext->getOrCalculate(type))
+  if (auto &layout = impl->dataLayoutContext->getOrCalculate(astType))
     return layout->getByteSize() * CHAR_BIT;
 
   return {};
@@ -450,10 +466,11 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
 std::optional<size_t>
 MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
                                 lldb_private::ExecutionContextScope *exeScope) {
-  if (!type)
+  MojoASTTypeRef astType(type);
+  if (!astType)
     return {};
 
-  if (auto &layout = impl->dataLayoutContext->getOrCalculate(type))
+  if (auto &layout = impl->dataLayoutContext->getOrCalculate(astType))
     return layout->getAlignment() * CHAR_BIT;
 
   return {};
@@ -461,7 +478,8 @@ MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
 
 lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type,
                                            uint64_t &count) {
-  if (!type)
+  MojoASTTypeRef astType(type);
+  if (!astType)
     return lldb::eEncodingInvalid;
 
   // Count is the number of elements encoded in the type.
@@ -486,26 +504,21 @@ lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type,
 
 ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
                                         bool baseOnly) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return {};
 
   std::string name;
   llvm::raw_string_ostream os(name);
-  mlir::Type::getFromOpaquePointer(type).print(os);
+  astType.getMLIRType().print(os);
   return ConstString(name);
 }
 
 ConstString
 MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return {};
-
-  MojoASTTypeRef astType(type);
-
-  // There's no way to change the display type name using synthetic formatters,
-  // so we have to do it here for REPLResultRefType.
-  if (auto replType = dyn_cast<LIT::REPLResultRefType>(astType))
-    return createCompilerType(replType.getElementType()).GetDisplayTypeName();
 
   std::string name = astType.getAsString();
 
@@ -559,12 +572,11 @@ uint32_t
 MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
                                bool omitEmptyBaseClasses,
                                const lldb_private::ExecutionContext *exeCtx) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return 0;
 
-  MojoASTTypeRef astType(type);
-
-  if (isa<KGEN::PointerType>(astType) || isa<LIT::REPLResultRefType>(astType))
+  if (isa<KGEN::PointerType>(astType))
     return 1;
 
   if (auto simdTy = dyn_cast<POP::SIMDType>(astType)) {
@@ -600,14 +612,13 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
     bool &childIsDerefOfParent, lldb_private::ValueObject *valobj,
     uint64_t &languageFlags) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return lldb_private::CompilerType();
 
   if (!ignoreArrayBounds &&
       idx >= GetNumChildren(type, omitEmptyBaseClasses, exeCtx))
     return {};
-
-  MojoASTTypeRef astType(type);
 
   // Pointer only has one child, so just return the unwrapped pointer type
   if (auto ptrType = dyn_cast<PointerType>(astType.getMLIRType())) {
@@ -626,16 +637,6 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
       return createCompilerType(eltType);
     }
     return {};
-  }
-
-  // REPLResultRefType owns a pointer, so we return it as its child.
-  if (auto replType = dyn_cast<LIT::REPLResultRefType>(astType)) {
-    MojoASTTypeRef eltType(replType.getElementType());
-    auto compilerType = GetPointerType(
-        const_cast<void *>(replType.getElementType().getAsOpaquePointer()));
-    childByteSize = GetPointerByteSize();
-    childByteOffset = 0;
-    return compilerType;
   }
 
   if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
@@ -718,11 +719,14 @@ uint32_t
 MojoTypeSystem::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                         StringRef name,
                                         bool omitEmptyBaseClasses) {
+  uint32_t errorValue = UINT32_MAX; // Default value based on
+                                    // CompilerType::GetIndexOfChildWithName.
+  if (!type || name.empty())
+    return errorValue;
   std::vector<uint32_t> childIndices;
   GetIndexOfChildMemberWithName(type, name, omitEmptyBaseClasses, childIndices);
   if (childIndices.size() != 1)
-    return UINT32_MAX; // Default value based on
-                       // CompilerType::GetIndexOfChildWithName.
+    return errorValue;
   return childIndices[0];
 }
 
@@ -732,7 +736,9 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   // This method should return the total number of indices in `childIndices`
   // in the case of success. As a remark, the `childIndices` vector passed in
   // might not be empty.
-  MojoASTTypeRef astType(type);
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType || name.empty())
+    return 0;
 
   // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
   if (isa<PackType, POP::SIMDType, POP::ArrayType>(astType)) {
@@ -765,9 +771,9 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
 
 llvm::ArrayRef<TypedAttr>
 MojoTypeSystem::getStructDecorators(lldb::opaque_compiler_type_t type) {
-  if (!type)
+  MojoASTTypeRef astType = dereferenceIfREPLResult(type);
+  if (!astType)
     return {};
-  MojoASTTypeRef astType(type);
   if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType))
     return structDeclOp.getDecorators();
   return {};

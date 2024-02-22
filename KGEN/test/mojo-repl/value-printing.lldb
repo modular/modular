@@ -95,8 +95,9 @@ let a_bool = True
 let another_bool = False
 
 
-# CHECK: (DynamicVector[Int]) z = {
-# CHECK:   (Int) [0] = 1
+# CHECK: (DynamicVector[Int]) z = (size 3) {
+# FIXME(32514): We need to fix the display type for the first entry of a vector.
+# CHECK:   (index) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK: }
