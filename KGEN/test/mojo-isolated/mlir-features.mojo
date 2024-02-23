@@ -118,10 +118,11 @@ fn getAddressOf[T: __mlir_type.`!kgen.type`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
-    # CHECK-NEXT: lit.ownership.def_lvalue %arg
-    # CHECK-NEXT: %0 = lit.ref.to_pointer %arg
-    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__{{.*}}"<:type T>(%0)
-    # CHECK-NEXT: lit.return %1
+    # CHECK-NEXT: [[IMM:%.*]] = kgen.rebind %arg : {{.*}}#lit.invalid.ref.lifetime
+    # CHECK-NEXT: lit.ownership.def_lvalue [[IMM]]
+    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[IMM]]
+    # CHECK-NEXT: [[RES:%.*]] = lit.call @"{{.*}}@MyPointer::@"__init__{{.*}}"<:type T>([[PTR]])
+    # CHECK-NEXT: lit.return [[RES]]
 
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"

@@ -123,9 +123,6 @@ struct LITTypeLowerer : public mlir::IRRewriter {
   /// The struct decl map.
   StructDeclarations &structDecls;
 
-  /// Set to the value of an invalid DeclRefType.
-  DeclRefType errDeclRef;
-
   /// The empty `#kgen.struct<>` attribute, which has empty struct type.
   KGEN::StructAttr emptyStructAttr;
 
@@ -557,6 +554,17 @@ static Value lowerOp(RefOffsetOp op, RefOffsetOpAdaptor adaptor,
                                        op.getIndex());
 }
 
+/// Squash noop rebinds exposed by ref -> ptr lowering.
+static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor,
+                     LITTypeLowerer &lowerer) {
+  // If this is a noop after lowering, squish it
+  if (adaptor.getInput().getType() == lowerer.replace(op.getType()))
+    return adaptor.getInput();
+  // Otherwise just leave it and type replacement will form a valid rebind in
+  // the new type domain.
+  return op.getResult();
+}
+
 static Value getCastedToType(Location newLoc, Value value, Type destType,
                              OpBuilder &b) {
   // If already casted, done.
@@ -606,7 +614,9 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
     Value result = lowerOp(op, adaptor, *this);
     if (result.getType() != resultType)
       result = getCastedToType(result.getLoc(), result, resultType, *this);
-    replaceOp(op, {result});
+
+    if (op->getResult(0) != result)
+      replaceOp(op, {result});
   } else {
     assert(op->getNumResults() == 0);
     Value result = lowerOp(op, adaptor, *this);
@@ -614,11 +624,6 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
     assert(!result && "nullary lowering shouldn't produce an op");
   }
 
-  if (LLVM_UNLIKELY(errDeclRef)) {
-    return op.emitError("operation contains a declref type that does not refer "
-                        "to a struct: ")
-           << errDeclRef;
-  }
   return success();
 }
 
@@ -666,11 +671,6 @@ static LogicalResult replaceTypes(Operation *op,
                                   LITTypeLowerer &structLowerer) {
   structLowerer.replaceElementsIn(op);
 
-  if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
-    return op->emitError("operation contains a declref type that does not "
-                         "refer to a struct: ")
-           << structLowerer.errDeclRef;
-  }
   if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op)) {
     // Fold trivial casts.
     if (cast.getOperandTypes() == cast.getResultTypes()) {
@@ -751,7 +751,7 @@ void LowerLITTypesPass::runOnOperation() {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp, RefStructGEROp,
-              RefOffsetOp, RefLoadOp, RefStoreOp>(
+              RefOffsetOp, RefLoadOp, RefStoreOp, RebindOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });

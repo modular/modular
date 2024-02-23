@@ -103,6 +103,10 @@ public:
   TypeConvention getRegisterPassability(llvm::SMLoc loc,
                                         SharedState &shared) const;
 
+  /// Return true if this type is @register_passable or if it is a generic type
+  /// that could bind to a concrete @register_passable type.
+  bool mightBeRegisterPassable(llvm::SMLoc loc, SharedState &shared) const;
+
   /// Return the nonmaterializable decorator target for the type, or null if
   /// there is none.
   ASTType getNonmaterializableTarget(SharedState &shared) const;
@@ -131,9 +135,6 @@ public:
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.
-  ///
-  /// TODO: This accepts pointer types while we're phasing in first class
-  /// references.
   ASTType getReferenceElementType() const;
 
   /// Given a VariadicType, return the element as an ASTType.  This aborts if
