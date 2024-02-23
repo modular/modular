@@ -7,12 +7,13 @@
 from collections.optional import Optional
 from memory.unsafe import _LITRef
 from tensor import Tensor, TensorShape, TensorSpec
+from utils.variant import Variant
 
 import _mlir
 
 from .attr import AttrMap
 from .graph import Graph
-from .ops import add, div, matmul, mul, pow, sub, transpose
+from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
 # dtype, etc.
@@ -59,6 +60,31 @@ struct Symbol(CollectionElement, Stringable):
 
     fn __str__(self) -> String:
         return str(self._value)
+
+    fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
+        var shape = DynamicVector[Dim]()
+        var symbols = DynamicVector[Symbol]()
+        for dim in dims:
+            if dim[].isa[Symbol]():
+                shape.append(Dim.dynamic())
+                symbols.append(dim[].get[Symbol]()[])
+            else:
+                let d = dim[].get[Int]()[]
+                shape.append(d if d >= 0 else Dim.dynamic())
+                symbols.append(self.graph().scalar[DType.int64](d))
+
+        return reshape(self, symbols).hint_shape(shape)
+
+    fn hint_shape(owned self, shape: DynamicVector[Dim]) raises -> Self:
+        return self.hint_type(MOTensor(self.tensor_type().dtype, shape, True))
+
+    fn hint_type(owned self, type: AnyMOType) raises -> Self:
+        # TODO(32611): bottom out to a `rebind`-like op instead.
+        self._value.set_type(type.to_mlir(self.graph().module()))
+        return self
+
+    fn hint_type(owned self, like: Symbol) raises -> Self:
+        return self.hint_type(like.type())
 
     # ===------------------------------------------------------------------=== #
     # Overloaded operators

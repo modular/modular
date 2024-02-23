@@ -12,7 +12,7 @@ from max.graph.ops.casting import reshape
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Outer product of two vectors. This function does not broadcast."""
-    return reshape(lhs, -1, 1) * reshape(rhs, 1, -1)
+    return lhs.reshape(-1, 1) * rhs.reshape(1, -1)
 
 
 def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:

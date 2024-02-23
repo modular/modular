@@ -204,7 +204,7 @@ struct Graph(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn constant[
-        dtype: DType = DType.float32
+        dtype: DType
     ](self, owned value: Tensor[dtype]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
@@ -227,7 +227,7 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn vector[
-        dtype: DType = DType.float32
+        dtype: DType
     ](self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
@@ -250,7 +250,7 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn scalar[
-        dtype: DType = DType.float32
+        dtype: DType
     ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 

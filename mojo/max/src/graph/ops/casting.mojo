@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor import TensorShape
+from utils.variant import Variant
 
-from max.graph import ops
 from max.graph.type import Dim, ElementType
 
 
@@ -29,7 +29,6 @@ def shape_of(v: Symbol) -> Symbol:
 
 
 def cast(v: Symbol, dtype: ElementType) -> Symbol:
-    var g = v.graph()
     return v.graph().op("mo.cast", v, v.tensor_type().cast(dtype))
 
 
@@ -96,9 +95,29 @@ fn reshape(
     v: Symbol, shape: Symbol, out_dims: DynamicVector[Dim]
 ) raises -> Symbol:
     var g = v.graph()
+    let dtype = shape.tensor_type().dtype.dtype
+    if not (dtype == DType.int64 or dtype == DType.int32):
+        raise "reshape shape must be int32 or int64"
+    if shape.tensor_type().rank() != 1:
+        raise "reshape shape must be rank 1"
     return g.op(
         "mo.reshape", (v, shape), MOTensor(v.tensor_type().dtype, out_dims)
     )
+
+
+fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
+    var g = v.graph()
+
+    if len(shape) == 0:  # Can't `stack` an empty tuple
+        let dims = DynamicVector[Dim]()
+        return reshape(v, g.constant(Tensor[DType.int64](TensorShape(0))), dims)
+
+    for i in range(len(shape)):
+        if shape[i].tensor_type().rank() != 0:
+            print(shape[i])
+            raise "reshape requires 0-rank dims"
+
+    return reshape(v, stack(shape))
 
 
 fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
@@ -112,23 +131,6 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
         out_dims.append(Dim.dynamic())
 
     return reshape(v, shape, out_dims)
-
-
-def reshape(v: Symbol, dims: DynamicVector[Int64]) -> Symbol:
-    var g = v.graph()
-
-    var out_dims = DynamicVector[Dim]()
-    for i in range(len(dims)):
-        out_dims.append(Dim.dynamic() if dims[i] < 0 else Dim.static(dims[i]))
-
-    return reshape(v, g.vector[DType.int64](dims), out_dims)
-
-
-def reshape(v: Symbol, *dims: Int) -> Symbol:
-    var shape = DynamicVector[Int64]()
-    for d in dims:
-        shape.append(d)
-    return reshape(v, shape)
 
 
 fn reshape_like(v: Symbol, like: Symbol) raises -> Symbol:
