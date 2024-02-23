@@ -21,7 +21,7 @@ def DiscardType : DialectType<(type)>;
 
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
-  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs
+  ConcreteAttribute<"PogsAttr">:$paramListAttrs
 )>;
 
 def UnpackedType : DialectType<(type
@@ -87,7 +87,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
-def ArgParamListAttr : DialectAttribute<(attr
+def PogsAttr : DialectAttribute<(attr
   StringAttrArray:$names,
   EnumAttrArray<"PassingKind">:$passingKinds,
   TypedAttrArray:$defaultPos,
@@ -97,8 +97,8 @@ def ArgParamListAttr : DialectAttribute<(attr
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr
-  ConcreteAttribute<"ArgParamListAttr">:$argListAttrs,
-  ConcreteAttribute<"ArgParamListAttr">:$paramListAttrs,
+  ConcreteAttribute<"PogsAttr">:$argListAttrs,
+  ConcreteAttribute<"PogsAttr">:$paramListAttrs,
   VarInt:$numImplicitLifetimeDecls
 )>;
 
@@ -180,7 +180,7 @@ def VarDeclKindAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
-    ArgParamListAttr,
+    PogsAttr,
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,

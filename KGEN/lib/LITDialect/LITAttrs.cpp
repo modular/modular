@@ -35,20 +35,20 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ArgParamListAttr
+// PogsAttr
 //===----------------------------------------------------------------------===//
 
-ArgParamListAttr ArgParamListAttr::get(MLIRContext *context) {
-  return ArgParamListAttr::get(context, {}, {}, {}, {}, {}, {});
+PogsAttr PogsAttr::get(MLIRContext *context) {
+  return PogsAttr::get(context, {}, {}, {}, {}, {}, {});
 }
 
-ArgParamListAttr ArgParamListAttr::get(MLIRContext *context,
+PogsAttr PogsAttr::get(MLIRContext *context,
                                        ArrayRef<StringAttr> names,
                                        ArrayRef<PassingKind> passingKinds) {
-  return ArgParamListAttr::get(context, names, passingKinds, {}, {}, {}, {});
+  return PogsAttr::get(context, names, passingKinds, {}, {}, {}, {});
 }
 
-LogicalResult ArgParamListAttr::verify(
+LogicalResult PogsAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> names,
     ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
     ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<size_t> variadicIndices,
@@ -95,19 +95,19 @@ LogicalResult ArgParamListAttr::verify(
   return success();
 }
 
-ArgParamListAttr
-ArgParamListAttr::cloneWith(ArrayRef<StringAttr> names,
+PogsAttr
+PogsAttr::cloneWith(ArrayRef<StringAttr> names,
                             ArrayRef<PassingKind> passingKinds) const {
-  return ArgParamListAttr::get(getContext(), names, passingKinds,
+  return PogsAttr::get(getContext(), names, passingKinds,
                                getDefaultPos(), getDefaultKwOnly(),
                                getVariadicIndices(), getPackIndices());
 }
 
-bool ArgParamListAttr::isVariadic(size_t idx) const {
+bool PogsAttr::isVariadic(size_t idx) const {
   return llvm::is_contained(getVariadicIndices(), idx);
 }
 
-bool ArgParamListAttr::isPack(size_t idx) const {
+bool PogsAttr::isPack(size_t idx) const {
   return llvm::is_contained(getPackIndices(), idx);
 }
 
@@ -116,21 +116,21 @@ bool ArgParamListAttr::isPack(size_t idx) const {
 //===----------------------------------------------------------------------===//
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
-  auto list = ArgParamListAttr::get(context);
+  auto list = PogsAttr::get(context);
   return FnMetadataAttr::get(context, list, list, 0);
 }
 
-FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
-                                   ArgParamListAttr paramListAttrs,
+FnMetadataAttr FnMetadataAttr::get(PogsAttr argListAttrs,
+                                   PogsAttr paramListAttrs,
                                    size_t numImplicitLifetimeDecls) {
   return get(argListAttrs.getContext(), argListAttrs, paramListAttrs,
              numImplicitLifetimeDecls);
 }
 
-FnMetadataAttr FnMetadataAttr::get(ArgParamListAttr argListAttrs,
+FnMetadataAttr FnMetadataAttr::get(PogsAttr argListAttrs,
                                    size_t numImplicitLifetimeDecls) {
   MLIRContext *ctx = argListAttrs.getContext();
-  return get(ctx, argListAttrs, ArgParamListAttr::get(ctx),
+  return get(ctx, argListAttrs, PogsAttr::get(ctx),
              numImplicitLifetimeDecls);
 }
 
@@ -158,7 +158,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
     if (idx >= numBound)
       newPackIndices.push_back(idx - numBound);
 
-  auto newArgListAttrs = ArgParamListAttr::get(
+  auto newArgListAttrs = PogsAttr::get(
       getContext(), newArgNames, newArgPassingKind, newDefaultPosArgs,
       getDefaultKwOnlyArgs(), newVariadicIndices, newPackIndices);
   return get(newArgListAttrs, getParamListAttrs(),
@@ -207,7 +207,7 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
         newPackIndices.push_back(idx - cumSum[idx]);
   }
 
-  auto newParamAttrs = ArgParamListAttr::get(
+  auto newParamAttrs = PogsAttr::get(
       getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
       newDefaultKwOnlyParams, newVariadicIndices, newPackIndices);
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
@@ -226,12 +226,12 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
   llvm::append_range(newPassingKinds, getParamPassingKinds());
 
   // We need to prepend the new variadic indices, and offset the existing ones.
-  ArgParamListAttr oldParamListAttr = getParamListAttrs();
+  PogsAttr oldParamListAttr = getParamListAttrs();
   SmallVector<size_t> newVariadicIndices(variadicIndices);
   for (size_t idx : oldParamListAttr.getVariadicIndices())
     newVariadicIndices.push_back(idx + numNewParams);
 
-  auto newParamListAttr = ArgParamListAttr::get(
+  auto newParamListAttr = PogsAttr::get(
       getContext(), newParamNames, newPassingKinds, getDefaultPosParams(),
       getDefaultKwOnlyParams(), newVariadicIndices,
       oldParamListAttr.getPackIndices());
@@ -249,7 +249,7 @@ LIT::getContextualVariadicIndices(ArrayRef<Operation *> ops) {
     numNewParams += ::cast<DeclInterface>(op).getInputParams().size();
 
     // If we are dealing with a struct or trait, we collect the variadics.
-    ArgParamListAttr paramListAttr;
+    PogsAttr paramListAttr;
     if (auto structDecl = ::dyn_cast<StructDeclOp>(op))
       paramListAttr = structDecl.getSignature().getParamListAttrs();
     else if (auto traitDecl = ::dyn_cast<TraitDeclOp>(op))

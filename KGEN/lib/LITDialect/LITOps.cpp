@@ -546,7 +546,7 @@ static ParseResult parseLITFunctionSignature(
                                 parseLifetimeDecl))
     return failure();
 
-  ArgParamListAttr paramListAttr;
+  PogsAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 
@@ -616,9 +616,8 @@ static ParseResult parseLITFunctionSignature(
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   auto metadata = FnMetadataAttr::get(
-      ArgParamListAttr::get(p.getContext(), argNames, argPassingKinds,
-                            defaultPosArgs, defaultKwOnlyArgs,
-                            argVariadicIndices, argPackIndices),
+      PogsAttr::get(p.getContext(), argNames, argPassingKinds, defaultPosArgs,
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
       paramListAttr, lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
@@ -993,7 +992,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
-  ArgParamListAttr paramListAttr;
+  PogsAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 

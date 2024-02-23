@@ -67,14 +67,14 @@ public:
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ArgConvention> argConventions,
-                            ArgParamListAttr argListAttrs,
+                            PogsAttr argListAttrs,
                             SpecialFunctionKind kind,
                             ArrayRef<ParamDeclAttr> params,
-                            ArgParamListAttr paramListAttrs);
+                            PogsAttr paramListAttrs);
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ArgConvention> argConventions,
-                            ArgParamListAttr argListAttrs,
+                            PogsAttr argListAttrs,
                             SpecialFunctionKind kind);
 
   /// Return the initializer method with the specified signature if it exists
@@ -86,8 +86,8 @@ public:
   /// `suffix` is appended to the mangled function name.
   LIT::FuncOp createFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
-      ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+      PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
+      ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
       StringRef suffix = "");
@@ -101,20 +101,20 @@ public:
   LIT::FuncOp synthesizeMemberwiseInit(ASTDecl &structDecl,
                                        ArrayRef<Type> argTypes,
                                        ArrayRef<ArgConvention> argConventions,
-                                       ArgParamListAttr argListAttrs);
+                                       PogsAttr argListAttrs);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
-      ArgParamListAttr paramListAttrs, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+      PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
+      ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, ArgParamListAttr argListAttrs,
+      ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "");

@@ -97,7 +97,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
   let parameters = (ins
     ArrayRefParameter<"Type">:$paramTypes,
-    "ArgParamListAttr":$paramListAttrs
+    "PogsAttr":$paramListAttrs
   );
 
   let assemblyFormat = [{
@@ -134,7 +134,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     /// structure to a nameless representation.
     static TypeSignatureType remapToSignature(
       function_ref<InFlightDiagnostic()> emitError,
-      ParamDeclArrayAttr paramDecls, ArgParamListAttr paramListAttrs);
+      ParamDeclArrayAttr paramDecls, PogsAttr paramListAttrs);
 
     /// Return true if the signature has a variadic parameter.
     /// TODO: remove this when migration to variadic indices is complete.

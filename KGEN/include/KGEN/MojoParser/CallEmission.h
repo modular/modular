@@ -21,7 +21,7 @@ class SignatureType;
 namespace M::KGEN::LIT {
 class FuncOp;
 class LITSignatureType;
-class ArgParamListAttr;
+class PogsAttr;
 class ParserParamEvaluator;
 class StructDeclOp;
 class TypeSignatureType;
@@ -210,8 +210,7 @@ private:
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArgParamListAttr paramListAttr,
+  verifyBindings(ArrayRef<Type> expectedParamTypes, PogsAttr paramListAttr,
                  ParameterInferenceHookTy parameterInferenceHook,
                  const DiagEmitter &diagEmitter,
                  Boundness boundness = Boundness::Explicit) const;
@@ -223,9 +222,8 @@ private:
   /// in the evaluator used by the implementation. If the parameters do not
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArgParamListAttr paramListAttr, const Twine &baseName,
-                 llvm::SMLoc exprLoc,
+  verifyBindings(ArrayRef<Type> expectedParamTypes, PogsAttr paramListAttr,
+                 const Twine &baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt,
                  Boundness boundness = Boundness::Explicit) const;
 };

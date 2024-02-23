@@ -18,7 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN::LIT {
-class ArgParamListAttr;
+class PogsAttr;
 class FnMetadataAttr;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
@@ -32,10 +32,10 @@ public:
   FnMetadataAttr getMetadata();
 
   /// Get the argument list metadata.
-  ArgParamListAttr getArgListAttrs();
+  PogsAttr getArgListAttrs();
 
   /// Get the parameter list metadata.
-  ArgParamListAttr getParamListAttrs();
+  PogsAttr getParamListAttrs();
 
   /// Get the function input argument names.
   ArrayRef<StringAttr> getArgNames();

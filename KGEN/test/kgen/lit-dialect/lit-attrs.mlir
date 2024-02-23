@@ -1,23 +1,23 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: "arg_param_list.with_defaults"
-// CHECK-SAME: {arg_param_list = #lit.arg_param_list<
+// CHECK-LABEL: "pogs.with_defaults"
+// CHECK-SAME: {pogs = #lit.pogs<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64], [], []>}
-"arg_param_list.with_defaults"() {arg_param_list = #lit.arg_param_list<
+"pogs.with_defaults"() {pogs = #lit.pogs<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.2 : f32], [1: i64], [], []
 >} : () -> ()
 
-// CHECK-LABEL: "arg_param_list.with_variadics"
-// CHECK-SAME: {arg_param_list = #lit.arg_param_list<
+// CHECK-LABEL: "pogs.with_variadics"
+// CHECK-SAME: {pogs = #lit.pogs<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [3], [1]>}
-"arg_param_list.with_variadics"() {arg_param_list = #lit.arg_param_list<
+"pogs.with_variadics"() {pogs = #lit.pogs<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [3], [1]
 >} : () -> ()
 
-// CHECK-LABEL: "empty.arg_param_list"
-// CHECK-SAME: {arg_param_list = #lit.arg_param_list<[], [], [], [], [], []>}
-"empty.arg_param_list"() {arg_param_list = #lit.arg_param_list<[], [], [], [], [], []>} : () -> ()
+// CHECK-LABEL: "empty.pogs"
+// CHECK-SAME: {pogs = #lit.pogs<[], [], [], [], [], []>}
+"empty.pogs"() {pogs = #lit.pogs<[], [], [], [], [], []>} : () -> ()
 
 // CHECK-LABEL: "some.metadata"
 // CHECK-SAME: #lit.fn_metadata

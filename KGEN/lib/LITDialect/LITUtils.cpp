@@ -171,7 +171,7 @@ static ParseResult parseVariadicness(AsmParser &p,
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParamDecls,
-                                            ArgParamListAttr &paramListAttr) {
+                                            PogsAttr &paramListAttr) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -239,7 +239,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = ArgParamListAttr::get(
+  paramListAttr = PogsAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
       defaultKwOnlyParams, variadicIndices, packIndices);
   return success();
@@ -298,7 +298,7 @@ void LIT::printConventionAndVariadicness(AsmPrinter &p,
 
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
-SmallVector<Variadicness> LIT::getVariadicness(ArgParamListAttr listAttr) {
+SmallVector<Variadicness> LIT::getVariadicness(PogsAttr listAttr) {
   SmallVector<Variadicness> res(listAttr.getNames().size(),
                                 Variadicness::kNone);
   for (size_t varIdx : listAttr.getVariadicIndices())
@@ -311,7 +311,7 @@ SmallVector<Variadicness> LIT::getVariadicness(ArgParamListAttr listAttr) {
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> paramDecls,
-                                     ArgParamListAttr paramListAttr,
+                                     PogsAttr paramListAttr,
                                      ParameterEvaluator &evaluator) {
   // Substitute input parameters when printing default parameters.
   for (ParamDeclAttr param : paramDecls)
@@ -344,7 +344,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
 ParseResult
 LIT::parseOptionalParamSignature(AsmParser &p,
                                  SmallVectorImpl<Type> &inputParamTypes,
-                                 ArgParamListAttr &paramListAttr) {
+                                 PogsAttr &paramListAttr) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -393,7 +393,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = ArgParamListAttr::get(
+  paramListAttr = PogsAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
       defaultKwOnlyParams, variadicIndices, packIndices);
   return success();
@@ -401,7 +401,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
-                                      ArgParamListAttr paramListAttr) {
+                                      PogsAttr paramListAttr) {
   DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
@@ -775,7 +775,7 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 // DefaultValueHandler
 //===----------------------------------------------------------------------===//
 
-DefaultValueHandler::DefaultValueHandler(ArgParamListAttr listAttr)
+DefaultValueHandler::DefaultValueHandler(PogsAttr listAttr)
     : DefaultValueHandler(listAttr.getPassingKinds(), listAttr.getDefaultPos(),
                           listAttr.getDefaultKwOnly()) {}
 
