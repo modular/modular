@@ -118,11 +118,12 @@ fn variadic_kw_result_binding[**a: Int]():
 fn variadic_kw_binding[*a: Int]():
     variadic_kw_result_binding[**a]() # expected-error {{keyword unpacking not supported yet}}
 
+# expected-note @below {{function declared here}}
 fn variadic_int_params[*a: Int]():
     pass
 
 fn callVariadic():
-  variadic_int_params[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
+  variadic_int_params[1.0]() # expected-error {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteral'}}
 
 
 ##===----------------------------------------------------------------------===##

@@ -318,20 +318,59 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   size_t posBindingIdx = 0;
   size_t numPosBindings = unpackedPosBindings.size();
-  for (auto [idx, type, paramName, passingKind] :
+
+  auto fulfillValue = [&](size_t idx, Type requestedType) -> PValue {
+    // If we have a method to infer parameter values, invoke it to see if we
+    // can get an inferred value for the parameter.
+    if (parameterInferenceHook) {
+      if (PValue value = parameterInferenceHook(idx, newBindings, evaluator)) {
+        assert(value.getType().mlirType == requestedType &&
+               "inferred a parameter value of wrong type");
+        return value;
+      }
+    }
+
+    // If the parameter decl is a variadic parameter list, and do not have
+    // pack operands that could be used to infer those parameters, then we can
+    // fulfill it with an empty list.  We know it must be the last parameter
+    // decl. If this isn't actually a variadic type, then we simply reached
+    // the end of the parameter list.
+    if (paramListAttr.isVariadic(idx))
+      if (auto varType = dyn_cast<VariadicType>(requestedType))
+        return VariadicAttr::get({}, varType);
+
+    // If available, we use a default parameter value.
+    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
+      // Default parameter values may reference other parameter values, so we
+      // need to evaluate these.
+      return evaluator.getReboundAttribute(defaultOr);
+    }
+
+    // Determine if we can use a default parameter for CTAD.
+    size_t defaultStartIdx = numCtadParams - defaultTypeParams.size();
+    if (idx < numCtadParams && idx >= defaultStartIdx) {
+      return cast<TypedAttr>(evaluator.getReboundAttribute(
+          defaultTypeParams[idx - defaultStartIdx]));
+    }
+
+    return {};
+  };
+
+  for (auto [idx, sigType, paramName, passingKind] :
        llvm::enumerate(expectedParamTypes, paramNames, paramPassingKinds)) {
+    // This is the refined type expected by the signature.
+    Type requestedType = evaluator.getReboundType(sigType);
+    // This is the expected type of a value satisfying this parameter.
+    ASTType expectedType = requestedType;
+    // If this is a vararg parameter, infer using the element type.
+    if (paramListAttr.isVariadic(idx))
+      if (auto varType = dyn_cast<VariadicType>(expectedType))
+        expectedType = ASTType(varType.getElementType());
+
     // Check to see if we ran out of bindings to provide to this param decl.
     // Implicit parameters are infer-only. They cannot be explicitly passed.
     if (posBindingIdx == numPosBindings ||
         (parameterInferenceHook && passingKind == PassingKind::Implicit)) {
-      // Determine what type we expect next.
-      Type requestedType = evaluator.getReboundType(type);
-      ASTType expectedType = requestedType;
-      // If this is a vararg parameter, infer using the element type.
-      if (paramListAttr.isVariadic(idx))
-        if (auto varType = dyn_cast<VariadicType>(expectedType))
-          expectedType = ASTType(varType.getElementType());
-
       // We first check if we have a keyword parameter.
       if (auto it = kwBindings.find(paramName); it != kwBindings.end()) {
         assert(passingKind != PassingKind::PosOnly);
@@ -356,48 +395,20 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         continue;
       }
 
-      // If we have a method to infer parameter values, invoke it to see if we
-      // can get an inferred value for the parameter.
-      if (parameterInferenceHook) {
-        if (PValue pValue =
-                parameterInferenceHook(idx, newBindings, evaluator)) {
-          assert(pValue.getType().mlirType == requestedType &&
-                 "inferred a parameter value of wrong type");
-          setParamValue(pValue);
-          continue;
-        }
-        if (passingKind == PassingKind::Implicit) {
-          diagEmitter.emitInferOnlyFailure(idx);
-          return {{}, fitness};
-        }
-      }
-
-      // If the parameter decl is a variadic parameter list, and do not have
-      // pack operands that could be used to infer those parameters, then we can
-      // fulfill it with an empty list.  We know it must be the last parameter
-      // decl. If this isn't actually a variadic type, then we simply reached
-      // the end of the parameter list.
-      if (paramListAttr.isVariadic(idx)) {
-        if (auto varType = dyn_cast<VariadicType>(type)) {
-          setParamValue(VariadicAttr::get({}, varType));
-          fitness.lastExpectedType = expectedType;
-          continue;
-        }
-      }
-
-      // If available, we use a default parameter value.
-      if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
-        // Default parameter values may reference other parameter values, so we
-        // need to evaluate these.
-        setParamValue(
-            cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr)));
+      if (PValue value = fulfillValue(idx, requestedType)) {
+        setParamValue(value);
         continue;
+      }
+      if (passingKind == PassingKind::Implicit) {
+        if (diagEmitter.emitInferOnlyFailure)
+          diagEmitter.emitInferOnlyFailure(idx);
+        return {{}, fitness};
       }
 
       // Otherwise, we're simply missing bindings.
       fitness.lastExpectedType = expectedType;
       if (boundness == Boundness::Partial) {
-        setParamValue(UnboundAttr::get(expectedType));
+        setParamValue(UnboundAttr::get(requestedType));
         continue;
       }
       if (diagEmitter.emitParamCount) {
@@ -412,42 +423,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     const Binding &binding = unpackedPosBindings[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
       if (parameterInferenceHook) {
-        // Determine if we can use a default parameter for CTAD.
-        TypedAttr defaultParam;
-        size_t defaultStartIdx = numCtadParams - defaultTypeParams.size();
-        if (idx < numCtadParams && idx >= defaultStartIdx) {
-          defaultParam = cast<TypedAttr>(evaluator.getReboundAttribute(
-              defaultTypeParams[idx - defaultStartIdx]));
-        }
-
-        Type requestedType = evaluator.getReboundType(type);
-        if (PValue pValue =
-                parameterInferenceHook(idx, newBindings, evaluator)) {
-          assert(pValue.getType().mlirType == requestedType &&
-                 "inferred a parameter value of wrong type");
-          setParamValue(pValue);
+        if (PValue value = fulfillValue(idx, requestedType)) {
+          setParamValue(value);
           ++posBindingIdx;
           continue;
-        }
-
-        if (defaultParam) {
-          // Default parameter values may reference other parameter values, so
-          // we need to evaluate these.
-          setParamValue(
-              cast<TypedAttr>(evaluator.getReboundAttribute(defaultParam)));
-          ++posBindingIdx;
-          continue;
-        }
-
-        // If this parameter is a variadic, allow binding an empty list if a
-        // value is not provided and it will not be inferred from a pack vararg.
-        if (paramListAttr.isVariadic(idx)) {
-          if (auto varType = dyn_cast<VariadicType>(type)) {
-            setParamValue(VariadicAttr::get({}, varType));
-            ++posBindingIdx;
-            fitness.lastExpectedType = varType.getElementType();
-            continue;
-          }
         }
 
         // We tried but couldn't infer an unbound parameter, we must error.
@@ -499,11 +478,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!paramListAttr.isVariadic(idx) ||
-        binding.getValue().getType() == type) {
+        binding.getValue().getType() == requestedType) {
       if (failed(checkRedundantKwParam()))
         return {{}, fitness};
-      PValue paramValue =
-          handlePosBinding(idx, binding, evaluator.getReboundType(type));
+      PValue paramValue = handlePosBinding(idx, binding, requestedType);
       if (!paramValue)
         return {{}, fitness};
       setParamValue(paramValue);
@@ -515,8 +493,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // all get packed up into a VariadicAttr.
     fitness.hasVariadicParams = true;
     SmallVector<TypedAttr> elements;
-    auto variadicType = cast<VariadicType>(type);
-    Type expectedType = variadicType.getElementType();
+    auto variadicType = cast<VariadicType>(requestedType);
     do {
       const Binding &binding = unpackedPosBindings[posBindingIdx++];
       PValue pValue = handlePosBinding(idx, binding, expectedType);
