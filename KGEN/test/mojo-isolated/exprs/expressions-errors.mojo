@@ -41,3 +41,9 @@ fn test_pos_after_kw_param[x: int]():
         j=x,
         x,  # expected-error {{positional parameter follows keyword parameter}}
     ]
+
+
+fn invalid_with():
+    # expected-error @below {{use of unknown declaration 'bogus'}}
+    with bogus() as foo:
+        foo.something()
