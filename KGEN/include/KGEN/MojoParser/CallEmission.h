@@ -135,13 +135,24 @@ public:
     Type lastExpectedType = {};
   };
 
+  /// This enum represents how bound a parameter list must be.
+  enum class Boundness {
+    /// The parameter list can be implicitly partially bound.
+    /// FIXME(#32612): Require explicit unbinding.
+    Partial,
+    /// The parameter list can be explicitly partially bound.
+    Explicit,
+    /// The parameter list must be fully bound.
+    Full
+  };
+
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
                                         TypeSignatureType sig,
                                         llvm::SMLoc exprLoc,
-                                        bool allowPartiallyBound) const;
+                                        Boundness boundness) const;
 
   /// Helper class to customizing diagnostic emission for verification. The
   /// default implementation suppresses all diagnostics.
@@ -199,10 +210,12 @@ private:
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows
   /// customizing diagnostics by passing a custom DiagEmitter.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> expectedParamTypes, ArgParamListAttr paramListAttr,
-      ParameterInferenceHookTy parameterInferenceHook,
-      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(ArrayRef<Type> expectedParamTypes,
+                 ArgParamListAttr paramListAttr,
+                 ParameterInferenceHookTy parameterInferenceHook,
+                 const DiagEmitter &diagEmitter,
+                 Boundness boundness = Boundness::Explicit) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -215,7 +228,7 @@ private:
                  ArgParamListAttr paramListAttr, const Twine &baseName,
                  llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt,
-                 bool allowPartiallyBound = false) const;
+                 Boundness boundness = Boundness::Explicit) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call
