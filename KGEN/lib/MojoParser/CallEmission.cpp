@@ -1340,7 +1340,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
       // resolution error but we are inside the body of a closure. In this case
       // we want to silently error.
       for (ASTDecl *scope = &declScope; scope; scope = scope->getParentDecl()) {
-        if (scope->hasReferenceError) {
+        if (scope->isErroneous()) {
           dest.resetForError();
           return {};
         }

@@ -926,7 +926,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
       else {
         assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
-        fnDecl->hasReferenceError = true;
+        fnDecl->setErroneous();
         paramList.shared.emitError(fnDecl->getLoc(), "'")
             << fnInfo.name
             << "' is not supported for @register_passable types, they "

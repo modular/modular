@@ -326,7 +326,7 @@ public:
   }
 
   void validate(ASTDecl &decl) {
-    if (decl.hasReferenceError)
+    if (decl.isErroneous())
       return;
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp,
@@ -723,7 +723,7 @@ public:
   DocStringGenerator(size_t indent) : indent(indent), os(rawOS) {}
 
   std::optional<std::string> generate(ASTDecl &decl) {
-    if (decl.hasReferenceError)
+    if (decl.isErroneous())
       return std::nullopt;
 
     TypeSwitch<ASTDecl &>(decl)

@@ -21,6 +21,8 @@ DocStringAttr ASTDecl::getDocString() const {
   return {};
 }
 
+void ASTDecl::setErroneous() { hasReferenceError = true; }
+
 std::optional<DocString> ASTDecl::getParsedDocString() const {
   if (auto rawDocStr = getDocString())
     return DocString(rawDocStr);
@@ -41,7 +43,8 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 }
 
 void ASTDecl::takeDecls(ASTDecl &src) {
-  hasReferenceError |= src.hasReferenceError;
+  if (src.isErroneous())
+    setErroneous();
   for (auto &[name, children] : src.declsInScope)
     for (ASTDecl *child : children)
       child->parentDecl = this;
