@@ -27,7 +27,7 @@ from a.b.c import d
 
     assert (
         doc.uri in requests.client.diagnostics
-        and len(requests.client.diagnostics[doc.uri]) == 1
+        and len(requests.client.diagnostics[doc.uri]) == 2
         and requests.client.diagnostics[doc.uri][0].message
         == "unable to locate module 'a'"
     )

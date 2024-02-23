@@ -1233,16 +1233,12 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
 SharedState::ModuleState &SharedState::createErrorModuleState(
     SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
-  // If the error context hasn't already had an error, emit the provided
-  // message.
-  if (!errorContext.isErroneous()) {
-    errorContext.setErroneous();
-    emitError(loc, errorMsg);
-  }
-
   // Check if we already have an error decl with this name.
   if (auto *it = impl->topLevelModuleState->nestedModules.lookup(name))
     return *it;
+
+  // Emit the error message the first time this error module state is created.
+  emitError(loc, errorMsg);
 
   // Otherwise, create one.
   ASTDecl *decl =
