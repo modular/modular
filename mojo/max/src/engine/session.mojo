@@ -386,6 +386,9 @@ struct InferenceSession:
         """Compile and Initialize AI model with Max
            engine with given path and config.
 
+        Note: PyTorch models must be in TorchScript format, and TensorFlow
+        models must be in SavedModel format. Or pass any ONNX model.
+
         Args:
             path: Location of model in filesystem.
             config: Configurations need for compiling model.
