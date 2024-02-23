@@ -47,3 +47,14 @@ fn invalid_with():
     # expected-error @below {{use of unknown declaration 'bogus'}}
     with bogus() as foo:
         foo.something()
+
+
+@register_passable("trivial")
+struct HasMember:
+    var value: int
+
+
+fn invalid_member_access():
+    var type = HasMember
+    # expected-error @below {{cannot access instance field 'value' without an instance of 'HasMember'}}
+    type.value
