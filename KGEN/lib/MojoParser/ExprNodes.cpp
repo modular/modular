@@ -3048,6 +3048,18 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
       }
     }
 
+    // If the lifetime is an InvalidRefLifetimeAttr then this value is
+    // derived from an argument which might be bound (after elaboration)
+    // to a register value that has no lifetime.  Emit an error because
+    // you can't form a Reference to these things.
+    auto lifetime = cast<RefType>(refValue.getType()).getLifetime();
+    if (isa<InvalidRefLifetimeAttr>(lifetime)) {
+      emitter.emitError(getLoc(),
+                        "cannot get a reference to an argument that might "
+                        "instantiate to @register_passable type");
+      return {};
+    }
+
     // Return the M[BR]Value as an SRValue since the ref itself is the result.
     return emitter.emitResult(SRValue(refValue), this, dest);
   }
@@ -3102,6 +3114,18 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
 
   Value mvalue = subExprValue.getMValueReference();
   auto lifetime = cast<RefType>(mvalue.getType()).getLifetime();
+
+  // If the lifetime is an InvalidRefLifetimeAttr then this value is
+  // derived from an argument which might be bound (after elaboration)
+  // to a register value that has no lifetime.  Emit an error because
+  // you can't form a Reference to these things.
+  if (isa<InvalidRefLifetimeAttr>(lifetime)) {
+    emitter.emitError(getLoc(),
+                      "cannot get the lifetime of an argument that might "
+                      "instantiate to @register_passable type");
+    return {};
+  }
+
   return emitter.emitResult(PValue(lifetime), this, dest);
 }
 
