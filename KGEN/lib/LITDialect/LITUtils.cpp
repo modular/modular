@@ -239,9 +239,9 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogsAttr::get(
-      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, packIndices);
+  paramListAttr = PogsAttr::get(p.getContext(), paramNames, paramPassingKinds,
+                                defaultPosParams, defaultKwOnlyParams,
+                                variadicIndices, packIndices);
   return success();
 }
 
@@ -393,9 +393,9 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogsAttr::get(
-      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, packIndices);
+  paramListAttr = PogsAttr::get(p.getContext(), paramNames, paramPassingKinds,
+                                defaultPosParams, defaultKwOnlyParams,
+                                variadicIndices, packIndices);
   return success();
 }
 

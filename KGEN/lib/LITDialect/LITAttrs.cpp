@@ -42,17 +42,18 @@ PogsAttr PogsAttr::get(MLIRContext *context) {
   return PogsAttr::get(context, {}, {}, {}, {}, {}, {});
 }
 
-PogsAttr PogsAttr::get(MLIRContext *context,
-                                       ArrayRef<StringAttr> names,
-                                       ArrayRef<PassingKind> passingKinds) {
+PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
+                       ArrayRef<PassingKind> passingKinds) {
   return PogsAttr::get(context, names, passingKinds, {}, {}, {}, {});
 }
 
-LogicalResult PogsAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> names,
-    ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
-    ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<size_t> variadicIndices,
-    ArrayRef<size_t> packIndices) {
+LogicalResult PogsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               ArrayRef<StringAttr> names,
+                               ArrayRef<PassingKind> passingKinds,
+                               ArrayRef<TypedAttr> defaultPos,
+                               ArrayRef<TypedAttr> defaultKwOnly,
+                               ArrayRef<size_t> variadicIndices,
+                               ArrayRef<size_t> packIndices) {
   size_t numEl = names.size();
   if (size_t numPassingKinds = passingKinds.size(); numEl != numPassingKinds) {
     return emitError() << "number of argument/parameter names and passing "
@@ -95,12 +96,11 @@ LogicalResult PogsAttr::verify(
   return success();
 }
 
-PogsAttr
-PogsAttr::cloneWith(ArrayRef<StringAttr> names,
-                            ArrayRef<PassingKind> passingKinds) const {
-  return PogsAttr::get(getContext(), names, passingKinds,
-                               getDefaultPos(), getDefaultKwOnly(),
-                               getVariadicIndices(), getPackIndices());
+PogsAttr PogsAttr::cloneWith(ArrayRef<StringAttr> names,
+                             ArrayRef<PassingKind> passingKinds) const {
+  return PogsAttr::get(getContext(), names, passingKinds, getDefaultPos(),
+                       getDefaultKwOnly(), getVariadicIndices(),
+                       getPackIndices());
 }
 
 bool PogsAttr::isVariadic(size_t idx) const {
@@ -130,8 +130,7 @@ FnMetadataAttr FnMetadataAttr::get(PogsAttr argListAttrs,
 FnMetadataAttr FnMetadataAttr::get(PogsAttr argListAttrs,
                                    size_t numImplicitLifetimeDecls) {
   MLIRContext *ctx = argListAttrs.getContext();
-  return get(ctx, argListAttrs, PogsAttr::get(ctx),
-             numImplicitLifetimeDecls);
+  return get(ctx, argListAttrs, PogsAttr::get(ctx), numImplicitLifetimeDecls);
 }
 
 FnMetadataAttrInterface
@@ -231,10 +230,10 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
   for (size_t idx : oldParamListAttr.getVariadicIndices())
     newVariadicIndices.push_back(idx + numNewParams);
 
-  auto newParamListAttr = PogsAttr::get(
-      getContext(), newParamNames, newPassingKinds, getDefaultPosParams(),
-      getDefaultKwOnlyParams(), newVariadicIndices,
-      oldParamListAttr.getPackIndices());
+  auto newParamListAttr =
+      PogsAttr::get(getContext(), newParamNames, newPassingKinds,
+                    getDefaultPosParams(), getDefaultKwOnlyParams(),
+                    newVariadicIndices, oldParamListAttr.getPackIndices());
   return get(getArgListAttrs(), newParamListAttr,
              getNumImplicitLifetimeDecls());
 }

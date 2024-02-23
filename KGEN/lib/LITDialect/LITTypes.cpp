@@ -73,8 +73,7 @@ static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
 
 LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                          ArrayRef<Type> paramTypes,
-                          PogsAttr paramListAttrs) {
+                          ArrayRef<Type> paramTypes, PogsAttr paramListAttrs) {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
   if (paramPassingKinds.size() != paramTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
@@ -123,9 +122,9 @@ TypeSignatureType TypeSignatureType::get(
     ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
     ArrayRef<TypedAttr> defaultPosParams,
     ArrayRef<TypedAttr> defaultKwOnlyParams, ArrayRef<size_t> variadicIndices) {
-  auto paramListAttrs = PogsAttr::get(
-      context, paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, /*packIndices=*/{});
+  auto paramListAttrs =
+      PogsAttr::get(context, paramNames, paramPassingKinds, defaultPosParams,
+                    defaultKwOnlyParams, variadicIndices, /*packIndices=*/{});
   return get(context, paramTypes, paramListAttrs);
 }
 
@@ -786,8 +785,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                            defaultKwOnlyArgs, argVariadicIndices,
-                            argPackIndices),
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
       paramListAttr, numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,

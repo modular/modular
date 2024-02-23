@@ -67,15 +67,13 @@ public:
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ArgConvention> argConventions,
-                            PogsAttr argListAttrs,
-                            SpecialFunctionKind kind,
+                            PogsAttr argListAttrs, SpecialFunctionKind kind,
                             ArrayRef<ParamDeclAttr> params,
                             PogsAttr paramListAttrs);
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ArgConvention> argConventions,
-                            PogsAttr argListAttrs,
-                            SpecialFunctionKind kind);
+                            PogsAttr argListAttrs, SpecialFunctionKind kind);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
@@ -84,13 +82,15 @@ public:
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `suffix` is appended to the mangled function name.
-  LIT::FuncOp createFunction(
-      ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
-      PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
-      Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-      ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
-      StringRef suffix = "");
+  LIT::FuncOp createFunction(ASTDecl &parent, StringRef name,
+                             ArrayRef<ParamDeclAttr> params,
+                             PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
+                             ArrayRef<ArgConvention> argConventions,
+                             PogsAttr argListAttrs, Type resultType,
+                             SpecialFunctionKind specialFnID, SMLoc loc,
+                             ImplicitLocOpBuilder &builder,
+                             FnEffects fnEffects = FnEffects(),
+                             StringRef suffix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -106,10 +106,9 @@ public:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
-      StringRef name, ArrayRef<ParamDeclAttr> params,
-      PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
-      ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
-      Type resultType, ASTDecl &structDecl,
+      StringRef name, ArrayRef<ParamDeclAttr> params, PogsAttr paramListAttrs,
+      ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
+      PogsAttr argListAttrs, Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
