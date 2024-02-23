@@ -1235,8 +1235,10 @@ SharedState::ModuleState &SharedState::createErrorModuleState(
     SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
   // If the error context hasn't already had an error, emit the provided
   // message.
-  if (!std::exchange(errorContext.hasReferenceError, true))
+  if (!errorContext.isErroneous()) {
+    errorContext.setErroneous();
     emitError(loc, errorMsg);
+  }
 
   // Check if we already have an error decl with this name.
   if (auto *it = impl->topLevelModuleState->nestedModules.lookup(name))
@@ -1306,7 +1308,7 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     StringRef moduleName = symbol.getRootReference();
     ASTDecl *decl =
         &shared.importModule(moduleName, /*currentPackage=*/nullptr, loc);
-    if (decl->hasReferenceError ||
+    if (decl->isErroneous() ||
         failed(shared.declResolver->resolveFully(*decl, loc)))
       return {};
     ArrayRef<FlatSymbolRefAttr> nestedRefs = symbol.getNestedReferences();

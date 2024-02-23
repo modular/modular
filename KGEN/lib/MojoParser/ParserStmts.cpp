@@ -998,7 +998,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
     std::ignore = parseLocalScopeSuite(
         curIndent, ScopeDecl{&*varDeclOp, targetLoc, target,
-                             [](ASTDecl &d) { d.hasReferenceError = true; }});
+                             [](ASTDecl &d) { d.setErroneous(); }});
   });
 
   // retrieve the iterator object from the sequence expression
@@ -1350,7 +1350,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         targetDecl.getOperation(), targetDecl.getNameAttr(),
         targetNode->getLoc(), curDeclScope);
     if (!enterResult)
-      targetDeclResolved.hasReferenceError = true;
+      targetDeclResolved.setErroneous();
   }
 
   // Lookup the error type if we're in an exception region.
@@ -2044,7 +2044,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // fully resolve the decl now. If an error occurs, skip the declaration and
   // keep parsing to emit as many diagnostics as possible.
   auto declParseError = [&] {
-    decl.hasReferenceError = true;
+    decl.setErroneous();
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
   };

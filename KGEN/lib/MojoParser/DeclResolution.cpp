@@ -140,7 +140,7 @@ void Decorators::applySignatureDecorators(
 void Decorators::applyBodyDecorators(
     function_ref<LogicalResult(ExprNode *)> process) {
   // Don't run decorators if the declaration is invalid.
-  if (decl.hasReferenceError)
+  if (decl.isErroneous())
     return;
 
   ArrayRef<ExprNode *> decoratorExprs = decl.getBodyDecorators(shared);
@@ -281,12 +281,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
   auto emitErrorLoc = [&](SMLoc loc,
                           const Twine &message = Twine()) -> InflightDiag {
     fnInfo = SpecialFunctionInfo();
-    decl.hasReferenceError = true;
+    decl.setErroneous();
     return shared.emitError(loc, message);
   };
   auto emitError = [&](const Twine &message = Twine()) -> InflightDiag {
     fnInfo = SpecialFunctionInfo();
-    decl.hasReferenceError = true;
+    decl.setErroneous();
     return shared.emitError(funcOp.getLoc(), message);
   };
 
@@ -891,9 +891,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // error, then we won't allow forming a reference to this function.
   if (isa<TypeCheckErrorType>(tcSignature.resultType.mlirType) ||
       llvm::any_of(fnSignature.parsedArgs,
-                   [](ParsedArgument &arg) { return arg.isErroneous; })) {
-    decl.hasReferenceError = true;
-  }
+                   [](ParsedArgument &arg) { return arg.isErroneous; }))
+    decl.setErroneous();
 
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (isCapturingByDefault(funcOp, structDecl, paramList.paramDeclAttrs))
@@ -988,7 +987,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
                   << baseName << errorMessage;
       diag.attachNote(existing->getLoc()) << "previous definition here";
-      decl.hasReferenceError = true;
+      decl.setErroneous();
     }
   }
 
@@ -1570,7 +1569,7 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
       } else {
         p.emitError(loc) << "don't know how to inherit from this type";
       }
-      declScope.hasReferenceError = true;
+      declScope.setErroneous();
       return success();
     }
 
@@ -1697,7 +1696,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
                               shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
-      decl.hasReferenceError)
+      decl.isErroneous())
     return failure();
 
   TypeCheckedParamList paramSignature(parsedParams.params, sigDecl, shared);
@@ -1965,7 +1964,7 @@ static void processRegisterPassableDecorator(
       // We cannot support IRGen'ing references to this type, since it will
       // break invariant about being register passable without being composed
       // of such types.
-      fieldDecl->getParentDecl()->hasReferenceError = true;
+      fieldDecl->getParentDecl()->setErroneous();
       return;
     }
   }
@@ -2500,7 +2499,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     return structDecorators.processDecorator(decorator);
   });
 
-  if (structDecl.hasReferenceError)
+  if (structDecl.isErroneous())
     return success();
 
   // Finally, verify conformance of inherited traits.

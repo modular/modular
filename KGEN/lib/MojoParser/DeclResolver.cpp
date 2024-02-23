@@ -95,7 +95,7 @@ ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
   BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
   ASTDecl &errDecl =
       addFullyResolvedDecl(PValue(dummyAttr), baseName, loc, parentDecl);
-  errDecl.hasReferenceError = true;
+  errDecl.setErroneous();
   return errDecl;
 }
 
@@ -112,13 +112,13 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   // references to it are invalid.
   if (auto rv = decl->getIfRValue()) {
     if (rv.getType().isTypeCheckErrorType())
-      decl->hasReferenceError = true;
+      decl->setErroneous();
   } else if (auto lv = decl->getIfMLValue()) {
     if (lv.getRValueType().isTypeCheckErrorType())
-      decl->hasReferenceError = true;
+      decl->setErroneous();
   } else if (auto bv = decl->getIfBValue()) {
     if (bv.getRValueType().isTypeCheckErrorType())
-      decl->hasReferenceError = true;
+      decl->setErroneous();
   }
 
   return *decl;
@@ -174,8 +174,8 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
                     << name;
         diag.attachNote(previous->getLoc())
             << "cannot overload with this non-function definition";
-        decl->hasReferenceError = true;
-        previous->hasReferenceError = true;
+        decl->setErroneous();
+        previous->setErroneous();
         return;
       }
     }
@@ -201,9 +201,9 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 
   // Mark the existing decl and this one as erroneous so uses of either
   // don't create confusing errors.
-  decl->hasReferenceError = true;
+  decl->setErroneous();
   for (ASTDecl *previous : entries)
-    previous->hasReferenceError = true;
+    previous->setErroneous();
 }
 
 //===----------------------------------------------------------------------===//
@@ -250,7 +250,7 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
     ASTDecl &importDecl = addDecl(
         frontDecl->getIfOperation(), frontDecl->getLoc(), name, &context,
         frontDecl->getCursor(), frontDecl->getCursor(), /*indentation=*/-1);
-    return success(!importDecl.hasReferenceError);
+    return success(!importDecl.isErroneous());
   }
 
   auto [it, inserted] =
@@ -326,7 +326,7 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
     diag.attachNote(existing->getLoc()) << "previous definition here";
 
     for (ASTDecl *previous : it->second)
-      previous->hasReferenceError = true;
+      previous->setErroneous();
   }
   return failure();
 }
@@ -410,7 +410,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If decl is already resolved enough, we're done.
   if (decl.resolvedness >= howResolved) {
     // If decl is busted, then return failure.
-    return success(!decl.hasReferenceError);
+    return success(!decl.isErroneous());
   }
 
   auto emitError = [&](SMLoc loc, const Twine &message) -> InflightDiag {
@@ -423,7 +423,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     emitError(loc, "recursive reference to declaration")
             .attachNote(declsCurrentlyProcessing[&decl])
         << "previously used here";
-    decl.hasReferenceError = true;
+    decl.setErroneous();
     return failure();
   }
 
@@ -431,10 +431,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // decls originating from source files.
   if (decl.loadedFromBytecode) {
     if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
-      decl.hasReferenceError = true;
+      decl.setErroneous();
 
     declsCurrentlyProcessing.erase(&decl);
-    return success(!decl.hasReferenceError);
+    return success(!decl.isErroneous());
   }
 
   // If the signature hasn't been parsed, do so.
@@ -456,7 +456,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           // is malformed and should not be referenced to silence downstream
           // errors.
           if (failed(resolveSignature(op, lexer, decl)))
-            decl.hasReferenceError = true;
+            decl.setErroneous();
           decl.getCursor() = lexer.getCursor();
         })
         .Case<UnresolvedImportOp>([&](auto op) {
@@ -464,17 +464,17 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           // is malformed and should not be referenced to silence downstream
           // errors.
           if (failed(resolveSignature(op, decl)))
-            decl.hasReferenceError = true;
+            decl.setErroneous();
         })
         .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
               UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           // Invalid function arguments will not be resolved to a value and will
           // have a null IR representation.
-          if (!decl.hasReferenceError) {
+          if (!decl.isErroneous()) {
             emitError(decl.getLoc(),
                       "do not know how to resolve the signature of this decl!");
-            decl.hasReferenceError = true;
+            decl.setErroneous();
           }
         });
     // Never regress resolvedness. In the case of non inlined nested functions,
@@ -491,8 +491,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       // If the final parse of the declaration didn't match the initial
       // parse, report an error about unrecognized tokens at end of
       // declaration.
-      if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
-          !decl.hasReferenceError) {
+      if (!decl.isMatchingEndCursor(lexer.getCursor()) && !decl.isErroneous()) {
         if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
                                    Token::kw_trait, Token::kw_class,
                                    Token::kw_var)) {
@@ -535,7 +534,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
-          if (!decl.hasReferenceError)
+          if (!decl.isErroneous())
             emitError(decl.getLoc(),
                       "do not know how to resolve the body of this decl!");
         });
@@ -543,7 +542,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
   declsCurrentlyProcessing.erase(&decl);
   // If decl is busted, then return failure.
-  return success(!decl.hasReferenceError);
+  return success(!decl.isErroneous());
 }
 
 //===----------------------------------------------------------------------===//

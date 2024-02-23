@@ -176,11 +176,10 @@ public:
   /// through.  It is maintained by DeclResolver.
   DeclResolvedness resolvedness = DeclResolvedness::unparsed;
 
-  /// This is set to true when an error is detected and reported about this
-  /// declaration that could cause references to it to cause spurious downstream
-  /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
-  /// every reference to 'x' because the type will be bogus.
-  bool hasReferenceError = false;
+  /// Indicate that the decl has reference errors.
+  void setErroneous();
+  /// Return true if the decl has reference errors.
+  bool isErroneous() const { return hasReferenceError; }
 
   /// Return any decorators that need to be processed as part of body resolution
   /// phase for a decl.
@@ -258,6 +257,12 @@ private:
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
   llvm::SMLoc loc;
+
+  /// This is set to true when an error is detected and reported about this
+  /// declaration that could cause references to it to cause spurious downstream
+  /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
+  /// every reference to 'x' because the type will be bogus.
+  bool hasReferenceError = false;
 
   /// For a type declaration like a struct, this is the type of 'self' in a
   /// member.  This is only valid after signature resolution.
