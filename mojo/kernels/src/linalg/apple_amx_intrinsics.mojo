@@ -440,8 +440,8 @@ struct amx_detail:
         Self._set()
 
         for i in range(8):
-            Self.ldx((i << 56) | b_buffer.offset(i * b.dim[0]()).__as_index())
-            Self.ldy((i << 56) | a_buffer.offset(i * a.dim[0]()).__as_index())
+            Self.ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
+            Self.ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
 
         Self.fma32(1 << 27)
 
@@ -449,20 +449,14 @@ struct amx_detail:
             Self.fma32((i << 6 << 10) | (i << 6))
 
         for i in range(8):
-            Self.ldx(
-                (i << 56) | b_buffer.offset((i + 8) * b.dim[0]()).__as_index()
-            )
-            Self.ldy(
-                (i << 56) | a_buffer.offset((i + 8) * a.dim[0]()).__as_index()
-            )
+            Self.ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
+            Self.ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
 
         for i in range(8):
             Self.fma32((i << 6 << 10) | (i << 6))
 
         for i in range(0, 64, 4):
-            Self.stz(
-                (i << 56) | c_buffer.offset((i >> 2) * c.dim[0]()).__as_index()
-            )
+            Self.stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
 
         Self._clr()
 
