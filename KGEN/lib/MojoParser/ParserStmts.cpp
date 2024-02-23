@@ -1221,7 +1221,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       "$CONTEXTMGR", getUnresolvedType(),
       shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
   ValueDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
-  (void)getEmitter().emitExpr(contextExp, contextMgrDest);
+  if (!getEmitter().emitExpr(contextExp, contextMgrDest))
+    return failure();
 
   // Determine if the context manager has an __exit__ method.  If not, that is
   // fine, we silently just don't call it.  This mode of supporting context
