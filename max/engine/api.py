@@ -421,6 +421,9 @@ class InferenceSession:
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
+        Note: PyTorch models must be in TorchScript format, and TensorFlow
+        models must be in SavedModel format. Or pass any ONNX model.
+
         Parameters
         ----------
         model_path: Union[str, pathlib.Path]
