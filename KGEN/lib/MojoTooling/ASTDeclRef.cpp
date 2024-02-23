@@ -92,7 +92,10 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
     auto func = cast<FuncOp>(*decl->getParentDecl());
-    return func.getSignature().getArgName(bbArg.getArgNumber());
+    ArrayRef<StringAttr> argNames = func.getSignature().getArgNames();
+    if (size_t argNumber = bbArg.getArgNumber(); argNumber < argNames.size())
+      return argNames[argNumber];
+    return std::nullopt;
   }
 
   if (auto paramRef = getIfParameter(*this))

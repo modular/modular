@@ -23,7 +23,7 @@ fn foo(a: DTypePointer[DType.float32]) -> Float32:
   var variable = 15
   fn inner_fn():
     return
-  fn inner_closure(arg: Int) -> Float32:
+  fn inner_closure(arg: Int, arg2: __type_of(arg)) -> Float32:
     return a.load(arg)
   return inner_fn(variable)
 

@@ -347,10 +347,24 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
   for (MojoASTDeclRef ref : declRefs) {
     // Capture the symbol if it exists, otherwise try to register it, as it
     // might come from a non-main doc.
-    if (Symbol *symbol = findSymbol(ref))
+    if (Symbol *symbol = findSymbol(ref)) {
       symbols.push_back(symbol);
-    else if (Symbol *symbol = registerSymbol(
-                 ref, ref.getName(), mainDoc.translateParserLoc(ref.getLoc())))
+      continue;
+    }
+
+    // Grab the name of the decl.
+    std::optional<StringRef> symName = ref.getName();
+    if (!symName) {
+      // If we can't compute one, handle the edge case where we're dealing with
+      // a reference to an argument which could manifest while type checking
+      // the signature (so the normal way of computing the name isn't ready
+      // yet).
+      if (ref.getApproximateViewKind() == DeclViewKind::DK_ArgumentDeclView)
+        symName = spelling;
+    }
+
+    if (Symbol *symbol = registerSymbol(
+            ref, symName, mainDoc.translateParserLoc(ref.getLoc())))
       symbols.push_back(symbol);
   }
 
