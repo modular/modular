@@ -131,10 +131,9 @@ static int doc(const State &state) {
   ModularVersion version = getModularVersion();
   jsonOS.value(llvm::json::Object({
       {"decl", declView->toJSON(parserContext)},
-      {"version",
-       llvm::formatv("{0}.{1}.{2}{3} ({4})", version.major, version.minor,
-                     version.patch, version.label, version.revision)
-           .str()},
+      {"version", llvm::formatv("{0}.{1}.{2}{3}", version.major, version.minor,
+                                version.patch, version.label)
+                      .str()},
   }));
 
   out->keep();
