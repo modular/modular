@@ -239,31 +239,14 @@ fn max_pool[
             point[1] * stride_w - padding_w_low,
         )
         var upper_bound = StaticIntTuple[stencil_rank](
-            lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
-            lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
+            lower_bound[0] + pool_window_h * dilation_h,
+            lower_bound[1] + pool_window_w * dilation_w,
         )
         return lower_bound, upper_bound
 
     @always_inline
-    @__copy_capture(input_width, input_height)
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        if (
-            point[1] < 0
-            or point[1] >= input_height
-            or point[2] < 0
-            or point[2] >= input_width
-        ):
-            return neginf[type]()
-        return rebind[SIMD[type, simd_width]](
-            input.simd_load[simd_width](point)
-        )
-
-    @always_inline
-    @parameter
-    fn load_fn_no_padding[
         simd_width: Int, type: DType
     ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
         return rebind[SIMD[type, simd_width]](
@@ -320,18 +303,17 @@ fn max_pool[
         type,
         map_fn[stencil_rank],
         dilation_fn,
-        load_fn_no_padding,
+        load_fn,
         max_pool_compute_init,
         max_pool_compute,
         max_pool_compute_finalize,
     ]
     # ceil_mode = True implies padding to the right/bottom with neginfinity
-    # value, so in that case we use stencil_with_padding that uses load_fn (vs.
-    # load_fn_no_padding)
+    # value, so in that case we use stencil_with_padding
     if empty_padding and not ceil_mode:
-        return stencil_empty_padding(output.get_shape())
+        return stencil_empty_padding(output.get_shape(), input.get_shape())
     else:
-        return stencil_with_padding(output.get_shape())
+        return stencil_with_padding(output.get_shape(), input.get_shape())
 
 
 @always_inline
@@ -414,7 +396,6 @@ fn avg_pool[
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    var pad_value = 0
 
     @always_inline
     @__copy_capture(
@@ -440,31 +421,14 @@ fn avg_pool[
             point[1] * stride_w - padding_w_low,
         )
         var upper_bound = StaticIntTuple[stencil_rank](
-            lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
-            lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
+            lower_bound[0] + pool_window_h * dilation_h,
+            lower_bound[1] + pool_window_w * dilation_w,
         )
         return lower_bound, upper_bound
 
     @always_inline
-    @__copy_capture(input_width, input_height, pad_value)
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        if (
-            point[1] < 0
-            or point[1] >= input_height
-            or point[2] < 0
-            or point[2] >= input_width
-        ):
-            return pad_value
-        return rebind[SIMD[type, simd_width]](
-            input.simd_load[simd_width](point)
-        )
-
-    @always_inline
-    @parameter
-    fn load_fn_no_padding[
         simd_width: Int, type: DType
     ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
         return rebind[SIMD[type, simd_width]](
@@ -578,20 +542,20 @@ fn avg_pool[
         type,
         map_fn[stencil_rank],
         dilation_fn,
-        load_fn_no_padding,
+        load_fn,
         avg_pool_compute_init,
         avg_pool_compute,
         avg_pool_compute_finalize,
     ]
 
     if empty_padding and not ceil_mode:
-        return stencil_empty_padding(output.get_shape())
+        return stencil_empty_padding(output.get_shape(), input.get_shape())
     else:
 
         @parameter
         if count_boundary:
-            return stencil_with_padding(output.get_shape())
+            return stencil_with_padding(output.get_shape(), input.get_shape())
         else:
             return stencil_with_padding_count_exclude_boundary(
-                output.get_shape()
+                output.get_shape(), input.get_shape()
             )

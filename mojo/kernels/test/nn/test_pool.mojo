@@ -290,6 +290,47 @@ fn test_average_pool_2d_ceil_includeBound() raises:
     pool_ceil_test[True, True](PoolMethod.AVG)
 
 
+fn test_max_pool_pad_dilation_2d():
+    print("== test_max_pool_pad_dilation_2d")
+    alias in_shape = DimList(1, 4, 4, 1)
+    alias out_shape = DimList(1, 1, 3, 1)
+
+    let input_tensor = Tensor[DType.float32](1, 4, 4, 1)
+    let output_tensor = Tensor[DType.float32](1, 1, 3, 1)
+    fill_tensor[4](input_tensor)
+    fill_tensor[4](output_tensor, 0.0)
+
+    let paddings = StaticIntTuple[4](0, 0, 2, 0)
+    let filter = StaticIntTuple[2](2, 2)
+    let stride = StaticIntTuple[2](1, 1)
+    let dilation = StaticIntTuple[2](3, 3)
+
+    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    let filter_tensor = _static_int_tuple_to_tensor(filter)
+    let stride_tensor = _static_int_tuple_to_tensor(stride)
+    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+
+    alias simd_width = simdwidthof[DType.float32]()
+
+    max_pool[int_type = DType.int32](
+        input_tensor._to_ndbuffer[4](),
+        filter_tensor._to_ndbuffer[1](),
+        stride_tensor._to_ndbuffer[1](),
+        dilation_tensor._to_ndbuffer[1](),
+        paddings_tensor._to_ndbuffer[1](),
+        output_tensor._to_ndbuffer[4](),
+    )
+
+    print_buffer[4](output_tensor._to_ndbuffer[4]())
+
+    _ = input_tensor
+    _ = output_tensor
+    _ = paddings_tensor
+    _ = filter_tensor
+    _ = stride_tensor
+    _ = dilation_tensor
+
+
 fn main() raises:
     test_max_pool_2d()
     test_avg_pool_2d()
@@ -419,3 +460,9 @@ fn main() raises:
     # CHECK: 7.3333
     # CHECK: 5.5556
     test_average_pool_2d_ceil_includeBound()
+
+    # CHECK-LABEL: test_max_pool_pad_dilation_2d
+    # CHECK: 13.0000
+    # CHECK: 14.0000
+    # CHECK: 15.0000
+    test_max_pool_pad_dilation_2d()
