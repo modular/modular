@@ -1073,7 +1073,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
-    if (hasTypeBase) {
+    if (hasTypeBase || isa<MetaTypeType>(baseRVType)) {
       emitter.emitError(getLoc(), "cannot access instance field '")
           << spelling << "' without an instance of " << baseRVType
           << getRange();
