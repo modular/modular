@@ -487,3 +487,10 @@ struct SomeThing:
 fn testSomeThing(a: SomeThing):
    # expected-error @+1 {{TODO: partial application requires closure generation 'SomeThing'}}
    a.overloaded[4] / 1.0
+
+# Test invalid references that cannot bind to potentially-register_passable
+# argument values.
+# Issue #32603: References to borrowed args in generics miscompile when instantiated on regpassable types
+fn getRefToBadArgument[T: AnyType](a: T) -> Reference[T,  __mlir_attr.`0: i1`, __lifetime_of(a)]:
+  # expected-error @+1 {{cannot form a reference to an argument that might instantiate to @register_passable type}}
+  return Reference(a)

@@ -62,12 +62,8 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       // Unwrap variadics pointers if necessary.
       if (sig.isVarArg(i))
         type = cast<VariadicType>(type).getElementType();
-      if (SignatureType::hasAddress(conv)) {
-        if (auto ref = dyn_cast<RefType>(type))
-          type = ref.getElementType();
-        else
-          type = cast<PointerType>(type).getElementType();
-      }
+      if (SignatureType::hasAddress(conv))
+        type = cast<RefType>(type).getElementType();
       argTypes.push_back(getSourceName(type));
     }
     kind = DebugInfo::SourceNameKind::Fn;

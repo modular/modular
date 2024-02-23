@@ -1219,6 +1219,31 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
     }
 
+    // If this is an MValue argument whose underlying type could be a register
+    // type (e.g. because it is generic) then we cannot allow arbitrary user
+    // defined references to bind to the argument.  These arguments will be
+    // lowered late (after elaboration) by argument convention lowering to be
+    // direct register passes, so any references will be invalid.
+    //
+    // To handle this, we cast the value to a marker lifetime which cannot be
+    // bound to Reference.
+    if (SignatureType::hasAddress(convention)) {
+      auto argRefType = cast<RefType>(bbArg.getType());
+      if (ASTType(argRefType.getElementType())
+              .mightBeRegisterPassable(argDecl.getLoc(), shared)) {
+        // Cast away our lifetime since the body can't use it.
+        auto expectedType = argRefType.getWithLifetime(
+            InvalidRefLifetimeAttr::get(argRefType.isMutable()));
+        Value castedArg = emitter.builder->create<RebindOp>(
+            emitter.translateLocation(argDecl.getLoc()), expectedType, bbArg);
+        if (convention == ArgConvention::BorrowedInMem)
+          setDecl(MBValue(castedArg));
+        else
+          setDecl(MLValue(castedArg));
+        continue;
+      }
+    }
+
     // Otherwise, nothing fancy is needed.
     shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
   }

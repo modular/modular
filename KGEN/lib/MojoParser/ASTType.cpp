@@ -144,17 +144,18 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
   return {};
 }
 
-/// Return the StructDeclOp::RegisterPassable enum for this type.
-TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
-                                               SharedState &shared) const {
-  ASTDecl *decl = getDecl(shared);
+/// Return whether the specified type is known to be @register_passable; if
+/// generic, this returns the 'genericsDefault' value.
+static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
+                                             SharedState &shared,
+                                             TypeConvention genericDefault) {
+  ASTDecl *decl = type.getDecl(shared);
 
   if (!decl) {
-    // If this is a generic type, we treat it as memory only. If the metatype
-    // is a parameter reference, then pessimistically assume it is memory-only.
-    if (auto paramRefTy = dyn_cast<ParamRefType>(mlirType))
+    // If this is a generic type, use the default specification.
+    if (auto paramRefTy = dyn_cast<ParamRefType>(type.mlirType))
       if (isa<ParamRefType>(paramRefTy.getParam().getType()))
-        return TypeConvention::MemoryOnly;
+        return genericDefault;
 
     // MLIR types are assumed to be register-passable + Trivial.
     return TypeConvention::RegisterPassableTrivial;
@@ -169,13 +170,22 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
   if (isa<FileModuleOp, PackageOp>(decl))
     return TypeConvention::MemoryOnly;
 
-  // Trait values are generic and therefore memory-only by default.
+  // Trait values are generic and therefore use the default specification.
   if (isa<TraitDeclOp>(decl))
-    return TypeConvention::MemoryOnly;
+    return genericDefault;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
   return structOp.getConvention();
+}
+
+/// Return the StructDeclOp::RegisterPassable enum for this type.
+TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
+                                               SharedState &shared) const {
+  // If this is a generic type, we treat it as memory only. If the metatype
+  // is a parameter reference, then pessimistically assume it is memory-only.
+  return ::getRegisterPassability(*this, loc, shared,
+                                  TypeConvention::MemoryOnly);
 }
 
 /// Return true if this type is a 'trivial' type, that is one that can be
@@ -192,6 +202,16 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
 /// invalid in this location.
 bool ASTType::isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const {
   return getRegisterPassability(loc, shared) != TypeConvention::MemoryOnly;
+}
+
+/// Return true if this type is @register_passable or if it is a generic type
+/// that could bind to a concrete @register_passable type.
+bool ASTType::mightBeRegisterPassable(llvm::SMLoc loc,
+                                      SharedState &shared) const {
+  // If this is a generic type, we treat it as register passable conservatively.
+  return ::getRegisterPassability(*this, loc, shared,
+                                  TypeConvention::RegisterPassable) !=
+         TypeConvention::MemoryOnly;
 }
 
 /// Return true if this type needs to be destroyed.  This is false for trivial

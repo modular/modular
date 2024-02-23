@@ -202,8 +202,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     // If this is a low-level !lit.ref passed by value, we can bind either to a
     // !lit.ref SBValue of the same type, or an MValue of the element type.
-    // TODO(references): If we had lifetimeof(self) and inout/borrowed
-    // overloading, we could get rid of this special case.
+    // This is used by the initializer for Reference itself but shouldn't
+    // otherwise be used directly.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       if (auto cValue = operand.ir.getIfCValue())
         if (convention == ArgConvention::BorrowedInReg &&
@@ -217,9 +217,23 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                 "cannot pass non-memory value through implicit reference");
             return {};
           }
-          // Lifetimes must be convertible, this is checked by OverloadFitness.
+
           Value refValue = cValue.getMValueReference();
           auto refValueType = cast<RefType>(refValue.getType());
+
+          // If the lifetime is an InvalidRefLifetimeAttr then this value is
+          // derived from an argument which might be bound (after elaboration)
+          // to a register value that has no lifetime.  Emit an error because
+          // you can't form a Reference to these things.
+          if (isa<InvalidRefLifetimeAttr>(refValueType.getLifetime())) {
+            emitter.emitError(
+                operand.expr->getLoc(),
+                "cannot form a reference to an argument that might "
+                "instantiate to @register_passable type");
+            return {};
+          }
+
+          // Lifetimes must be convertible, this is checked by OverloadFitness.
           // The destination may be less mutable.
           if (!refValueType.isMutableKnown(false) &&
               expectedRef.isMutableKnown(false))
@@ -274,7 +288,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       auto varType = cast<VariadicType>(expectedType);
       Type varElType = varType.getElementType();
 
-      // If dealing with a memory-only type, remove the pointer.
+      // If dealing with a memory-only type, remove the reference.
       if (SignatureType::hasAddress(convention))
         varElType = ASTType(varElType).getReferenceElementType();
       auto newVarType = VariadicType::get(varElType, varType.getConvention());

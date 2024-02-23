@@ -116,21 +116,22 @@ struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
 # CHECK-LABEL: lit.func @"generic_trait_fn{{.*}}<T: !Trait>
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
-    # CHECK: call_param[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
-    # CHECK-SAME: get_type_method(:!Trait T, "f0")]{{.*}}(%x)
+    # CHECK-NEXT: [[XI:%.*]] = kgen.rebind %x {{.*}}#lit.invalid.ref.lifetime
+    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
+    # CHECK-SAME: get_type_method(:!Trait T, "f0")]{{.*}}([[XI]])
     x.f0()
 
-    # CHECK: call_param[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x)
+    # CHECK: lit.call_param[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
+    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]])
     x.overloaded()
-    # CHECK: call_param[!lit.signature<[1]("self": {{.*}}, "x": index borrow)
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}}, "x": index borrow)
+    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(`1`)
-    # CHECK: call_param[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string borrow)
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string borrow)
+    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
-    # CHECK: call_param[!lit.signature<[1]("self": {{[^)]*}} borrow_in_mem)
+    # CHECK: lit.call_param[!lit.signature<[1]("self": {{[^)]*}} borrow_in_mem)
     # CHECK-SAME: bind_signature(:!lit.signature<[1]<"x": index>(
     # CHECK-SAME: get_type_method(:{{.*}} T, "parametric"), 1)
     x.parametric[`1`]()
@@ -232,8 +233,9 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result, |,
 # CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> borrow_in_mem)
 fn copy_me[T: Copyable](value: T) -> T:
+    # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: call_param[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
-    # CHECK-SAME: get_type_method({{.*}} T, "__copyinit__")]{{.*}}(%__result__, %value)
+    # CHECK-SAME: get_type_method({{.*}} T, "__copyinit__")]{{.*}}(%__result__, [[VI]])
     return value
 
 
@@ -242,7 +244,8 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: !Movable T, {{.*}}> byref_result
 # CHECK-SAME: !Movable T, {{.*}}> owned_in_mem
 fn move_me[T: Movable](owned value: T) -> T:
-    # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership %value
+    # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
+    # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
     # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
     return value ^
 
@@ -605,11 +608,12 @@ fn infer_grand_father[T: GrandFather](x: T):
 # CHECK-LABEL: lit.func @"pass_up_trait
 # CHECK-SAME: <T: !Father>
 fn pass_up_trait[T: Father](x: T):
+    # CHECK-NEXT: [[XI:%.*]] = kgen.rebind %x {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather
     # CHECK-SAME: [!kgen.paramref<:!Father T>, {
     # CHECK-SAME: "bar" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "bar"),
     # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "foo")
-    # CHECK-SAME: }]>(%x)
+    # CHECK-SAME: }]>([[XI]])
     infer_grand_father(x)
 
 
