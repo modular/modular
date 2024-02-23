@@ -1838,8 +1838,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
       "__del__", selfType.mlirType, convention,
-      PogsAttr::get(emitter.getContext(), selfName,
-                            PassingKind::PosOnly),
+      PogsAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
@@ -2307,7 +2306,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
         PogsAttr::get(shared.getContext(), {empty, empty},
-                              {PassingKind::PosOnly, PassingKind::PosOnly}),
+                      {PassingKind::PosOnly, PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     func = ctor;
     // In every case, the implementation is a load+store.

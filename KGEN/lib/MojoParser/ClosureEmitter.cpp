@@ -76,8 +76,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                      StringAttr::get(b.getContext()));
   // TODO: The type may contain decl references that need to be remapped.
   SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
-  auto paramListAttr =
-      PogsAttr::get(b.getContext(), paramNames, passingKinds);
+  auto paramListAttr = PogsAttr::get(b.getContext(), paramNames, passingKinds);
 
   StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), nameAttr);
   declOp.setIsSynthetic(true);
@@ -294,7 +293,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       paramValues, translateLocation(nestedFunctionOrTypeLocation));
   auto sigMetadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, dependentSignatureType.getArgNames(),
-                            dependentSignatureType.getArgPassingKinds()),
+                    dependentSignatureType.getArgPassingKinds()),
       dependentSignatureType.getNumImplicitLifetimeDecls());
   Type resultType = dependentSignatureType.getResults().front();
   FunctionType functionType =
@@ -546,8 +545,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                                                   &declOp.getFields().front());
   auto [callFunc, _] = synthesizeMethodInStruct(
       "__call__", callInputTypes, callConventions,
-      PogsAttr::get(ctx, callNames, callPassingKinds),
-      closureResultType, structDecl, SpecialFunctionKind::kNormal,
+      PogsAttr::get(ctx, callNames, callPassingKinds), closureResultType,
+      structDecl, SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
 
   // Add and register its fields as fully resolved decls.
@@ -867,10 +866,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
                                                    PassingKind::PosOnly);
-  auto paramListAttrsOfInit = PogsAttr::get(
-      ctx, getDemangledNames(initParams), paramPassingKindsOfInit);
-  auto argListAttrsOfInit =
-      PogsAttr::get(ctx, argNames, argPassingKinds);
+  auto paramListAttrsOfInit = PogsAttr::get(ctx, getDemangledNames(initParams),
+                                            paramPassingKindsOfInit);
+  auto argListAttrsOfInit = PogsAttr::get(ctx, argNames, argPassingKinds);
   FuncOp init = addVoidMethod(
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared),
@@ -931,10 +929,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   SmallVector<PassingKind> paramPassingKinds(closureImpl.getParams().size(),
                                              PassingKind::PosOnly);
-  auto paramListAttrs = PogsAttr::get(
-      ctx, getDemangledNames(topLevelParams), paramPassingKinds);
-  auto argListAttrs =
-      PogsAttr::get(ctx, otherName, PassingKind::PosOnly);
+  auto paramListAttrs =
+      PogsAttr::get(ctx, getDemangledNames(topLevelParams), paramPassingKinds);
+  auto argListAttrs = PogsAttr::get(ctx, otherName, PassingKind::PosOnly);
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(

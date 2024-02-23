@@ -391,8 +391,8 @@ TypeCheckedParamList::TypeCheckedParamList(
 
 PogsAttr TypeCheckedParamList::getParamListAttr() {
   return PogsAttr::get(shared.getContext(), names, passingKinds,
-                               defaultPosParams, defaultKwOnlyParams,
-                               variadicIndices, /*packIndices=*/{});
+                       defaultPosParams, defaultKwOnlyParams, variadicIndices,
+                       /*packIndices=*/{});
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -985,8 +985,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
 
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                            defaultKwOnlyArgs, argVariadicIndices,
-                            argPackIndices),
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
       paramList.getParamListAttr(), implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.
