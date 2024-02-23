@@ -267,8 +267,12 @@ fn testClosure(a: Bool):
 
 # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
 fn disableDtor(owned x: MoreComplexExample):
+    _ = x.mem^
+
+fn badMarkDestroyed(owned x: MoreComplexExample):
+    # expected-error @+1 {{cannot mark subobjects destroyed}}
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-        __get_ref_from_value(x.mem)
+        Reference(x.mem).value
     )
 
 

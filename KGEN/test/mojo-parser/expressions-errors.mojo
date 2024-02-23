@@ -497,6 +497,3 @@ fn getRefToBadArgument[T: AnyType](a: T) -> Reference[T,  __mlir_attr.`0: i1`, _
 
   # expected-error @+1 {{cannot get the lifetime of an argument that might instantiate to @register_passable type}}
   _ = __lifetime_of(a)
-
-  # expected-error @+1 {{cannot get a reference to an argument that might instantiate to @register_passable type}}
-  _ = __get_ref_from_value(a)
