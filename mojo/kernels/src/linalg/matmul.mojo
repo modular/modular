@@ -1795,7 +1795,9 @@ fn pack_matmul_b_shape_func_M[
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[b_type, 2, b_shape], m_override: Int) -> StaticIntTuple[2]:
+](
+    b_input: NDBuffer[b_type, 2, b_shape], kernel_type_m: Int = 0
+) -> StaticIntTuple[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
 
@@ -1804,20 +1806,11 @@ fn pack_matmul_b_shape_func_M[
 
     var output = StaticIntTuple[2]()
 
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var m = 0
-
-    @parameter
-    if a_shape.at[0]().has_value():
-        m = a_shape.at[0]().get()
-    else:
-        m = m_override
-
     var n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
     var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
 
-    if get_kernel_type(m, n, k):
+    if get_kernel_type(kernel_type_m, n, k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         tile_n_k = _get_tile_n_k[
             config,
@@ -1867,6 +1860,13 @@ fn pack_matmul_b_shape_func[
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
 ](b_input: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
+    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    var kernel_type_m = 0
+
+    @parameter
+    if a_shape.at[0]().has_value():
+        kernel_type_m = a_shape.at[0]().get()
+
     return pack_matmul_b_shape_func_M[
         a_type,
         a_shape,
@@ -1876,7 +1876,7 @@ fn pack_matmul_b_shape_func[
         c_shape,
         transpose_in_0,
         single_thread_blocking_override,
-    ](b_input, 0)
+    ](b_input, kernel_type_m)
 
 
 fn pack_b[
@@ -2010,7 +2010,7 @@ fn _pack_b_ndbuffer_impl[
 ](
     b_input: NDBuffer[b_type, 2, b_shape],
     output_buffer: NDBuffer[b_type, 2],
-    m_override: Int,
+    kernel_type_m: Int,
 ):
     """Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
@@ -2025,22 +2025,13 @@ fn _pack_b_ndbuffer_impl[
         memcpy(output_buffer.data, b_input.data, b_input.dim(0))
 
     else:
-        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-        var m = 0
-
-        @parameter
-        if a_shape.at[0]().has_value():
-            m = a_shape.at[0]().get()
-        else:
-            m = m_override
-
         var n = b_input.dim(0) if transposed else b_input.dim(1)
         var k = b_input.dim(1) if transposed else b_input.dim(0)
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
         # values used in the matmul algorithm consuming this packed b matrix
 
-        if get_kernel_type(m, n, k):
+        if get_kernel_type(kernel_type_m, n, k):
             alias config = search_mm_config[
                 a_type, b_type, c_type, True, True
             ]()
@@ -2101,7 +2092,7 @@ fn pack_b_ndbuffer_M[
 ](
     b_input: NDBuffer[b_type, 2, b_shape],
     output_buffer: NDBuffer[b_type, 2],
-    m_override: Int,
+    kernel_type_m: Int,
 ):
     """
     Perform matmul weight packing on the given input.
@@ -2130,7 +2121,7 @@ fn pack_b_ndbuffer_M[
         c_type,
         c_shape,
         transposed=False,
-    ](b_input, output_buffer, m_override)
+    ](b_input, output_buffer, kernel_type_m)
 
 
 fn pack_b_ndbuffer[
@@ -2141,6 +2132,12 @@ fn pack_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    var kernel_type_m = 0
+
+    @parameter
+    if a_shape.at[0]().has_value():
+        kernel_type_m = a_shape.at[0]().get()
     return pack_b_ndbuffer_M[
         a_type,
         a_shape,
@@ -2148,7 +2145,7 @@ fn pack_b_ndbuffer[
         b_shape,
         c_type,
         c_shape,
-    ](b_input, output_buffer, 0)
+    ](b_input, output_buffer, kernel_type_m)
 
 
 @always_inline
@@ -2162,7 +2159,7 @@ fn pack_transposed_b_ndbuffer_M[
 ](
     b_input: NDBuffer[b_type, 2, b_shape],
     output_buffer: NDBuffer[b_type, 2],
-    m_override: Int,
+    kernel_type_m: Int,
 ):
     """
     Perform matmul weight packing on a transposed input.
@@ -2191,7 +2188,7 @@ fn pack_transposed_b_ndbuffer_M[
         c_type,
         c_shape,
         transposed=True,
-    ](b_input, output_buffer, m_override)
+    ](b_input, output_buffer, kernel_type_m)
 
 
 fn pack_transposed_b_ndbuffer[
@@ -2202,6 +2199,12 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    var kernel_type_m = 0
+
+    @parameter
+    if a_shape.at[0]().has_value():
+        kernel_type_m = a_shape.at[0]().get()
     return pack_transposed_b_ndbuffer_M[
         a_type,
         a_shape,
@@ -2209,7 +2212,7 @@ fn pack_transposed_b_ndbuffer[
         b_shape,
         c_type,
         c_shape,
-    ](b_input, output_buffer, 0)
+    ](b_input, output_buffer, kernel_type_m)
 
 
 @value
@@ -3034,6 +3037,7 @@ fn _matmul_gpu[
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
+    kernel_type_m: Int,
     num_threads: Int = -1,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -3332,6 +3336,7 @@ fn _matmul_cpu[
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
+    kernel_type_m: Int,
     num_threads: Int = -1,
 ):
     @parameter
@@ -3436,7 +3441,7 @@ fn _matmul_cpu[
         fn pack_task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
-            ](m, 1, k, task_id, num_tasks)
+            ](m, 1, k, task_id, num_tasks, kernel_type_m)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm(t0, t1)
@@ -3447,7 +3452,7 @@ fn _matmul_cpu[
         fn task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
-            ](m, n, k, task_id, num_tasks)
+            ](m, n, k, task_id, num_tasks, kernel_type_m)
 
             if (
                 sub_matmul_config.shape[0] <= 0
@@ -3473,6 +3478,7 @@ fn _matmul_cpu[
                 b,
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
+                kernel_type_m,
             )
 
         # i8mm partition needs to be optimized as a function of m, n and k
@@ -3485,6 +3491,47 @@ fn _matmul_cpu[
         # to be synchronous in order to keep that state alive
         sync_parallelize[task_func](num_tasks)
         a_packed_ptr.free()
+
+
+@always_inline
+fn matmul_M[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
+    kernel_type_m: Int,
+    num_threads: Int = -1,
+):
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
+
+    func[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_lambda_fn,
+        saturated_vnni,
+        single_thread_blocking_override,
+    ](c, a, b, kernel_type_m, num_threads)
 
 
 @always_inline
@@ -3508,10 +3555,13 @@ fn matmul[
     b: NDBuffer[b_type, 2, b_shape],
     num_threads: Int = -1,
 ):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
+    var kernel_type_m = 0
 
-    func[
+    @parameter
+    if a_shape.at[0]().has_value():
+        kernel_type_m = a_shape.at[0]().get()
+
+    matmul_M[
         a_type,
         a_shape,
         b_type,
@@ -3524,7 +3574,8 @@ fn matmul[
         elementwise_lambda_fn,
         saturated_vnni,
         single_thread_blocking_override,
-    ](c, a, b, num_threads)
+        target,
+    ](c, a, b, kernel_type_m, num_threads)
 
 
 fn _submatmul_sequential_sync[
@@ -3547,13 +3598,9 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
+    kernel_type_m: Int = 0,
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
-
-    var shape = GemmShape.get[False, transpose_b](c, a, b)
-    var m = shape.M
-    var n = shape.N
-    var k = shape.K
 
     @parameter
     fn dispatch_on_kernel_type[kernel_type: Bool]():
@@ -3598,9 +3645,10 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
         )
 
-    dispatch_get_kernel_type[dispatch_on_kernel_type](
-        m if a_shape.at[0]().has_value() else 0, n, k
-    )
+    let shape = GemmShape.get[False, transpose_b](c, a, b)
+    let n = shape.N
+    let k = shape.K
+    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
 fn _submatmul_sequential_sync[
@@ -3621,6 +3669,7 @@ fn _submatmul_sequential_sync[
     b: NDBuffer[b_type, 2, b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
+    kernel_type_m: Int = 0,
 ):
     fn null_rowwise_epilogue(offset: Int, num_rows: Int):
         pass
@@ -3638,4 +3687,12 @@ fn _submatmul_sequential_sync[
         elementwise_lambda_fn,
         False,
         saturated_vnni,
-    ](c, a, b, sub_matrix_shape, sub_matrix_offset, null_rowwise_epilogue)
+    ](
+        c,
+        a,
+        b,
+        sub_matrix_shape,
+        sub_matrix_offset,
+        null_rowwise_epilogue,
+        kernel_type_m,
+    )
