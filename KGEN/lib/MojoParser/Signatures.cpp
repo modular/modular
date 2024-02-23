@@ -389,8 +389,8 @@ TypeCheckedParamList::TypeCheckedParamList(
   }
 }
 
-ArgParamListAttr TypeCheckedParamList::getParamListAttr() {
-  return ArgParamListAttr::get(shared.getContext(), names, passingKinds,
+PogsAttr TypeCheckedParamList::getParamListAttr() {
+  return PogsAttr::get(shared.getContext(), names, passingKinds,
                                defaultPosParams, defaultKwOnlyParams,
                                variadicIndices, /*packIndices=*/{});
 }
@@ -984,7 +984,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   }
 
   auto metadata = FnMetadataAttr::get(
-      ArgParamListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
+      PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                             defaultKwOnlyArgs, argVariadicIndices,
                             argPackIndices),
       paramList.getParamListAttr(), implicitLifetimeDecls.size());

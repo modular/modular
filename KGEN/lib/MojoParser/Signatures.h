@@ -137,8 +137,8 @@ public:
   TypeCheckedParamList(ArrayRef<ParsedArgument> parsedParams,
                        ASTDecl &declScope, SharedState &shared);
 
-  /// Get an ArgParamListAttr for this parameter list.
-  ArgParamListAttr getParamListAttr();
+  /// Get an PogsAttr for this parameter list.
+  PogsAttr getParamListAttr();
 
   ASTDecl &declScope;
   SharedState &shared;

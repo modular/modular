@@ -1838,7 +1838,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
       "__del__", selfType.mlirType, convention,
-      ArgParamListAttr::get(emitter.getContext(), selfName,
+      PogsAttr::get(emitter.getContext(), selfName,
                             PassingKind::PosOnly),
       shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
@@ -2114,8 +2114,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     conventions.push_back(conv);
   }
 
-  ArgParamListAttr oldArgListAttrs = traitSig.getArgListAttrs();
-  ArgParamListAttr newArgListAttrs = oldArgListAttrs.cloneWith(
+  PogsAttr oldArgListAttrs = traitSig.getArgListAttrs();
+  PogsAttr newArgListAttrs = oldArgListAttrs.cloneWith(
       oldArgListAttrs.getNames().drop_front(replacedResult),
       oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
   auto metadata = FnMetadataAttr::get(
@@ -2282,7 +2282,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // has one.
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
-        ArgParamListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
+        PogsAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     func = dtor;
   } else {
@@ -2306,7 +2306,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
-        ArgParamListAttr::get(shared.getContext(), {empty, empty},
+        PogsAttr::get(shared.getContext(), {empty, empty},
                               {PassingKind::PosOnly, PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     func = ctor;
@@ -2618,7 +2618,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   SmallVector<StringAttr> paramNames(2, StringAttr::get(getContext()));
   SmallVector<PassingKind> paramPassingKinds(2, PassingKind::Implicit);
   auto paramListAttr =
-      ArgParamListAttr::get(getContext(), paramNames, paramPassingKinds);
+      PogsAttr::get(getContext(), paramNames, paramPassingKinds);
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
                                                  params, paramListAttr);
   if (!sig)
