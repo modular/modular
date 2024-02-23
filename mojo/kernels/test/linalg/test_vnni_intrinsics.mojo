@@ -18,6 +18,7 @@ from VNNI import (
     dot_i8_to_i32_saturated_x86,
     dot_i8_to_i32_x86,
 )
+from sys.info import has_avx512f
 
 
 fn main():

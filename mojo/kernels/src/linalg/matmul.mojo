@@ -8,6 +8,7 @@ from math import align_down, align_up, div_ceil, fma, min
 from sys.info import (
     alignof,
     has_avx2,
+    has_avx512f,
     has_neon,
     has_neon_int8_dotprod,
     simdwidthof,
