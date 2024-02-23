@@ -279,15 +279,21 @@ struct FieldSensitiveMemExample:
 
  # CHECK-LABEL: lit.func @"mutate2
   fn mutate2(inout self):
-    # Disable the dtor of 'f1' before we overwrite it to show we can do this.
+    # Disable the dtor of 'self' before we overwrite it to show we can do this,
+    # both F1 and F2 need to be destroyed before being overwritten
+    # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__init__{{.*}}(%self)
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.ownership.mark_destroyed [[F1R]]
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       __get_ref_from_value(self.f1))
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
 
-    # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[F1R]])
-    self.f1 = MemExample()
+    # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract [[REF]][value]
+    # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
+    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
+       Reference(self).value)
+
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
+    self = FieldSensitiveMemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 
@@ -302,14 +308,17 @@ struct FieldSensitiveMemExample:
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: %0 = lit.ref.struct.ger %x[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
-  # CHECK-NEXT: %2 = lit.ref.struct.ger %x[f2]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%2)
-  # CHECK-NEXT: lit.ownership.mark_destroyed %x
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__init__{{.*}}(%x)
+
+  # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
+  # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract [[REF]][value]
+  # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
   # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       __get_ref_from_value(x))
+       Reference(x).value)
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):

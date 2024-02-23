@@ -990,23 +990,30 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 /// The lit.ownership.mark_destroyed op consumes the whole object bit of
 /// a value only, but not its fields.
 void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
-  auto valueRef = valueSet.getDirectValueRef(value, /*isDeref=*/true);
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForAccess(value, /*isDeref=*/true);
 
-  /// This op must be a direct reference to the underlying value (not indirected
-  /// through an opaque reference) because we don't do field sensitive tracking
-  /// of opaque references.
-  if (!valueRef) {
-    op.emitError(
-        "invalid use of 'lit.ownership.mark_destroyed' on indirect reference");
-    return;
+  auto numBitsForAccess = valueSet.typeDeclInfo.getNumFieldsInType(
+      cast<RefType>(value.getType()).getElementType());
+
+  for (auto valueRef : accesses) {
+    // Make sure only whole-values are being referenced, not subfields.
+    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+    if (info.endValueBit - info.startValueBit != numBitsForAccess) {
+      if (!info.hasErrorDiagnosed) {
+        mlir::emitError(op.getLoc(), "cannot mark subobjects destroyed");
+        info.hasErrorDiagnosed = true;
+      }
+      return;
+    }
+
+    // Check that the consumed bit is live, otherwise it cannot be destroyed.
+    valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
+
+    // If not, then there is an error which we diagnose.
+    if (!valueRef.isAllPresent(liveValues))
+      diagnoseUsageError(valueRef, op, /*isDef=*/false);
   }
-
-  // Check just that the consumed bit is live.
-  valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
-
-  // If not, then there is an error which we diagnose.
-  if (!valueRef.isAllPresent(liveValues))
-    diagnoseUsageError(valueRef, op, /*isDef=*/false);
 }
 
 /// Check any unstructured lifetimes that are accessed by the operation.
@@ -1584,10 +1591,8 @@ void DestructorInsertion::scanBlock(Block &block) {
         // a value only, but not its fields.  This ensures the sub-fields are
         // destroyed but the full object is not.  It is used in destructors
         // primarily.
-        //
-        // This only works on direct references, the uninit pass requires this.
-        if (auto valueRef =
-                valueSet.getDirectValueRef(operand, /*isDeref=*/true))
+        for (auto valueRef :
+             valueSet.getValueRefsForAccess(operand, /*isDeref=*/true))
           consumedValues.set(valueRef.endBit - 1);
         break;
       }

@@ -3018,52 +3018,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  // __get_ref_from_value(someValue) returns a !lit.ref for something with a
-  // reference representation.
-  if (kind == kGetRefFromValue) {
-    if (subExprValue.getIfPValue()) {
-      subExprValue =
-          emitter.emitMBValue({subExprValue, subExpr}, dest.getContext());
-      if (!subExprValue)
-        return {};
-    }
-    if (!subExprValue.isMValue()) {
-      emitter.emitError(getLoc(), "cannot get a reference to a register value")
-          << getRange();
-      return {};
-    }
-
-    Value refValue = subExprValue.getMValueReference();
-    // If this is a BValue, make sure the reference is non-mutable since we're
-    // exposing it to the user.
-    if (subExprValue.getIfMBValue()) {
-      auto refType = cast<RefType>(refValue.getType());
-      if (!refType.isMutableKnown(false)) {
-        if (!emitter.builder) {
-          emitter.emitErrorForDynamicValueInParameter(this);
-          return {};
-        }
-        refValue = emitter.builder->create<RefImmutOp>(
-            emitter.translateLocation(getLoc()), refValue);
-      }
-    }
-
-    // If the lifetime is an InvalidRefLifetimeAttr then this value is
-    // derived from an argument which might be bound (after elaboration)
-    // to a register value that has no lifetime.  Emit an error because
-    // you can't form a Reference to these things.
-    auto lifetime = cast<RefType>(refValue.getType()).getLifetime();
-    if (isa<InvalidRefLifetimeAttr>(lifetime)) {
-      emitter.emitError(getLoc(),
-                        "cannot get a reference to an argument that might "
-                        "instantiate to @register_passable type");
-      return {};
-    }
-
-    // Return the M[BR]Value as an SRValue since the ref itself is the result.
-    return emitter.emitResult(SRValue(refValue), this, dest);
-  }
-
   // __get_address_as_lvalue and __get_address_as_uninit_lvalue and
   // __get_address_as_owned_value all take a !kgen.pointer.
   RValue exprRVal =
