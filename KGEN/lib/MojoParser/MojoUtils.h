@@ -72,6 +72,9 @@ void emitPosOnlyPassedByKw(InflightDiag &diag,
                            SmallVectorImpl<StringRef> &&names,
                            StringRef argOrParam);
 
+/// Return a printable name for an anonymous positional-only argument/parameter.
+std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
+
 /// Certain special methods have type-specific restrictions or need special
 /// handling. This function returns true if a given method can be synthesized
 /// for a type with the given passability; if so an appropriate entry is added

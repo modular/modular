@@ -58,7 +58,7 @@ fn testTestParamStruct(a: Parameterized[4]):
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 parameters, but 3 were specified}}
 
-  var partial_var_type: Thing[1] # expected-error {{'Thing' expects 2 parameters, but 1 was specified}}
+  var partial_var_type: Thing[1] # expected-error {{missing required parameter 'b'}}
 
 
 struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
@@ -173,6 +173,10 @@ struct DefaultParams2[a: Int, b: Int = 7]: pass  # expected-note {{declared here
 fn test_default_param_struct():
     # expected-error @+1 {{expects at most 2 parameters, but 3 were specified}}
     alias S = DefaultParams2[1, 3, 4]
+
+fn missing_bound_param():
+    # expected-error @below {{missing required parameter 'a'}}
+    var value: DefaultParams2[]
 
 ##===----------------------------------------------------------------------===##
 # Function positional-only parameters

@@ -1591,8 +1591,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // unbound values.
   ParamBindings paramBindings(*this);
   for (TypedAttr binding : type.getParamBindings())
-    if (!isa<UnboundAttr>(binding))
-      paramBindings.addPrechecked(binding);
+    paramBindings.addPrechecked(binding);
 
   // Check the existing bindings against the full signature of the type.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
