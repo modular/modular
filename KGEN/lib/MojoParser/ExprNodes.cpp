@@ -1525,7 +1525,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr =
       paramBindings->verifyBindings(structOp, metaType.getSignature(), loc,
-                                    /*allowPartiallyBound=*/true);
+                                    ParamBindings::Boundness::Partial);
   if (!bindingValuesAttr)
     return {};
 

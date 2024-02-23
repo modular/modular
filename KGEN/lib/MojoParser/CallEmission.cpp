@@ -146,7 +146,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ArgParamListAttr paramListAttr,
                               ParameterInferenceHookTy parameterInferenceHook,
                               const DiagEmitter &diagEmitter,
-                              bool allowPartiallyBound) const {
+                              Boundness boundness) const {
   ArrayRef<StringAttr> paramNames = paramListAttr.getNames();
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   DefaultValueHandler defaultHandler(paramListAttr);
@@ -401,7 +401,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
       // Otherwise, we're simply missing bindings.
       fitness.lastExpectedType = expectedType;
-      if (allowPartiallyBound) {
+      if (boundness == Boundness::Partial) {
         setParamValue(UnboundAttr::get(expectedType));
         continue;
       }
@@ -542,7 +542,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ArgParamListAttr paramListAttr,
                               const Twine &baseName, llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc,
-                              bool allowPartiallyBound) const {
+                              Boundness boundness) const {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
       expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
@@ -635,8 +635,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       }};
 
   return verifyBindings(expectedParamTypes, paramListAttr,
-                        /*parameterInferenceHook=*/{}, diagEmitter,
-                        allowPartiallyBound);
+                        /*parameterInferenceHook=*/{}, diagEmitter, boundness);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
@@ -644,8 +643,7 @@ ParamBindings::verifyBindings(
     LITSignatureType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                        parameterInferenceHook, diagEmitter,
-                        /*allowPartiallyBound=*/false);
+                        parameterInferenceHook, diagEmitter);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
@@ -658,12 +656,11 @@ ParamBindings::verifyBindings(LITSignatureType sig) const {
 
 ParameterExprArrayAttr
 ParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
-                              llvm::SMLoc exprLoc,
-                              bool allowPartiallyBound) const {
+                              llvm::SMLoc exprLoc, Boundness boundness) const {
   auto [bindingValuesAttr, _] =
       verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                      Twine("'") + structOp.getName() + "'", exprLoc,
-                     structOp.getLoc(), allowPartiallyBound);
+                     structOp.getLoc(), boundness);
   return bindingValuesAttr;
 }
 
