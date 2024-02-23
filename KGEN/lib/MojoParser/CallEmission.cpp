@@ -360,8 +360,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
         if (PValue pValue =
-                parameterInferenceHook(idx, newBindings,
-                                       /*defaultParam=*/{}, evaluator)) {
+                parameterInferenceHook(idx, newBindings, evaluator)) {
           assert(pValue.getType().mlirType == requestedType &&
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
@@ -390,12 +389,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
         // Default parameter values may reference other parameter values, so we
         // need to evaluate these.
-        expectedType = evaluator.getReboundType(expectedType);
-        auto reboundAttr =
-            cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr));
-        assert(expectedType.isEqualCanon(reboundAttr.getType()));
-
-        setParamValue(reboundAttr);
+        setParamValue(
+            cast<TypedAttr>(evaluator.getReboundAttribute(defaultOr)));
         continue;
       }
 
@@ -426,11 +421,20 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
 
         Type requestedType = evaluator.getReboundType(type);
-        if (PValue pValue = parameterInferenceHook(idx, newBindings,
-                                                   defaultParam, evaluator)) {
+        if (PValue pValue =
+                parameterInferenceHook(idx, newBindings, evaluator)) {
           assert(pValue.getType().mlirType == requestedType &&
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
+          ++posBindingIdx;
+          continue;
+        }
+
+        if (defaultParam) {
+          // Default parameter values may reference other parameter values, so
+          // we need to evaluate these.
+          setParamValue(
+              cast<TypedAttr>(evaluator.getReboundAttribute(defaultParam)));
           ++posBindingIdx;
           continue;
         }
