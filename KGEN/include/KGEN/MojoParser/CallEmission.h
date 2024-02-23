@@ -116,10 +116,9 @@ public:
   /// The type of the function called when performing parameter inference. The
   /// hook will be provided the index of the parameter to be inferred, along
   /// with a list of existing bindings, and a parameter evaluator to be used to
-  /// infer types. A default parameter value is also provided, which (if not
-  /// null) can be used if the parameter cannot be inferred otherwise.
-  using ParameterInferenceHookTy = function_ref<PValue(
-      size_t, ArrayRef<TypedAttr>, TypedAttr, ParserParamEvaluator &)>;
+  /// infer types.
+  using ParameterInferenceHookTy =
+      function_ref<PValue(size_t, ArrayRef<TypedAttr>, ParserParamEvaluator &)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.

@@ -1283,15 +1283,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
   };
 
-  auto parameterInferenceHook =
-      [&](size_t index, ArrayRef<TypedAttr> bindingsSoFar,
-          TypedAttr defaultParam, ParserParamEvaluator &evaluator) -> PValue {
+  auto parameterInferenceHook = [&](size_t index,
+                                    ArrayRef<TypedAttr> bindingsSoFar,
+                                    ParserParamEvaluator &evaluator) {
     if (PValue inferred =
             ParameterInferenceState(callable.paramBindings.declScope, shared,
                                     index, evaluator, inferenceDiags)
                 .infer(signature, bindingsSoFar, callOperands))
       return inferred;
-    return PValue(defaultParam);
+    return PValue();
   };
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
       signature, bindingDiag, parameterInferenceHook);
