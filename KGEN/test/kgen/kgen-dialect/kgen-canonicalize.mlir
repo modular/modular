@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -verify-parameters -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
@@ -26,14 +26,13 @@ kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !
 
 // CHECK-LABEL: @rebind_across_scopes
 kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
-  kgen.param.declare dt1 = <dt>
-  // CHECK: rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt1>
+  kgen.param.declare dt1: dtype = <dt>
   %0 = kgen.rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt1>
   // CHECK: param.declare.region
-  kgen.param.declare.region F = <dt: dtype>() -> !pop.scalar<dt> {
-    // CHECK: rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt>
-    %1 = kgen.rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt>
-    kgen.return %1 : !pop.scalar<dt>
+  kgen.param.declare.region F = <dt2: dtype>() -> !pop.scalar<dt2> {
+    // CHECK: rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt2>
+    %1 = kgen.rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt2>
+    kgen.return %1 : !pop.scalar<dt2>
   }
   kgen.return
 }
@@ -160,7 +159,7 @@ lit.struct.decl @Struct {
 // CHECK-LABEL: @callNested
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
-  kgen.call_param[() -> (): @Struct::@Nested]()
+  kgen.call_param[!lit.signature<() -> ()>: @Struct::@Nested]()
   kgen.return
 }
 

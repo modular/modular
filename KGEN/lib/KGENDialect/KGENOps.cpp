@@ -856,11 +856,7 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
 LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
   RebindOp cur = op, parent;
   // Climb all the way to the top to avoid recursively invoking this pattern.
-  // Do not fold rebinds across parameter domains, because this can lead to
-  // collision of name-shadowed parameters #12242.
-  auto nearestDecl = cur->getParentOfType<DeclInterface>();
-  while ((parent = cur.getOperand().getDefiningOp<RebindOp>()) &&
-         parent->getParentOfType<DeclInterface>() == nearestDecl)
+  while ((parent = cur.getOperand().getDefiningOp<RebindOp>()))
     cur = parent;
 
   if (cur == op)
