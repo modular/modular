@@ -89,6 +89,9 @@ module_in_package
 
 # // -----
 
+# expected-error @below {{unable to locate module 'does_not_exist'}}
+import imported_module.does_not_exist
+
 from imported_module import *
 
 fn test_import():

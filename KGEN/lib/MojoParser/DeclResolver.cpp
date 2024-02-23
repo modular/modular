@@ -394,6 +394,9 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
   for (const auto &[name, decls] : module.declsInScope) {
+    // Ignore erroneous children, which have nothing in them.
+    if (decls.empty())
+      continue;
     if (!isFullImport && name.getValue()[0] == '_')
       continue;
     if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context)))
