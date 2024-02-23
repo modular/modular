@@ -329,7 +329,7 @@ fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
         if kernel_type:
             return MicroKernelShape(8, 3)
         else:
-            return MicroKernelShape(6, 4)
+            return MicroKernelShape(8, 3)
     else:
         return MicroKernelShape(4, 3)
 
@@ -495,10 +495,8 @@ fn partition_work(
 
 fn get_partitioned_matmul[
     a_type: DType, b_type: DType, c_type: DType, heuristic: PartitionHeuristic
-](
-    m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int, kernel_type_m: Int = 0
-) -> SubMatmulConfig:
-    if get_kernel_type(kernel_type_m, n, k):
+](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    if get_kernel_type(m, n, k):
         return get_partitioned_matmul[a_type, b_type, c_type, heuristic, True](
             m, n, k, task_id, num_tasks
         )
@@ -985,8 +983,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
         if is_neoverse_n1():
             return (k % 4096) == 0
         else:
-            return m > 0 and m <= 32
-
+            return m > 0 and m == 8
     else:
         return False
 

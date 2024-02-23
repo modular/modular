@@ -9,16 +9,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+
 from sys.info import has_avx2, has_neon_int8_matmul
 
-from Matmul import (
-    matmul,
-    matmul_M,
-    pack_b_ndbuffer,
-    pack_b_ndbuffer_M,
-    pack_matmul_b_shape_func,
-    pack_matmul_b_shape_func_M,
-)
+from Matmul import matmul, pack_b_ndbuffer_M, pack_matmul_b_shape_func_M
 from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
@@ -28,11 +22,6 @@ alias alignment = 64
 alias a_type = DType.uint8
 alias b_type = DType.int8
 alias c_type = DType.int32
-
-alias M1 = 17
-alias M2 = 123
-alias N = 143
-alias K = 71
 
 
 fn gemm_naive[
@@ -59,36 +48,23 @@ fn test_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_shape: DimList,
     saturated: Bool,
-](m: Int, n: Int, k: Int, kernel_type_m: Int) -> Int:
+](m: Int, n: Int, k: Int) -> Int:
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
     var b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
-    if kernel_type_m != 0:
-        padded_n_k = pack_matmul_b_shape_func_M[
-            a_type,
-            a_shape,
-            b_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-            transpose_b,
-            True,
-        ](b, kernel_type_m)
-    else:
-        padded_n_k = pack_matmul_b_shape_func[
-            a_type,
-            a_shape,
-            b_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-            transpose_b,
-            True,
-        ](b)
+    padded_n_k = pack_matmul_b_shape_func_M[
+        a_type,
+        DimList.create_unknown[2](),
+        b_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        transpose_b,
+        True,
+    ](b, m)
 
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
@@ -99,7 +75,7 @@ fn test_matmul[
     var c0_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
     var c1_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
 
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
 
     var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
     var c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
@@ -143,49 +119,26 @@ fn test_matmul[
             cm1[StaticIntTuple[2]((i, j))] = cm0[StaticIntTuple[2]((i, j))]
 
     if b_packed:
-        if kernel_type_m != 0:
-            pack_b_ndbuffer_M[
-                a_type,
-                a_shape,
-                b_type,
-                DimList.create_unknown[2](),
-                c_type,
-                DimList.create_unknown[2](),
-            ](b, bp, kernel_type_m)
-        else:
-            pack_b_ndbuffer[
-                a_type,
-                a_shape,
-                b_type,
-                DimList.create_unknown[2](),
-                c_type,
-                DimList.create_unknown[2](),
-            ](b, bp)
+        pack_b_ndbuffer_M[
+            a_type,
+            DimList.create_unknown[2](),
+            b_type,
+            DimList.create_unknown[2](),
+            c_type,
+            DimList.create_unknown[2](),
+        ](b, bp, m)
 
-    if kernel_type_m != 0:
-        matmul_M[
-            a_type,
-            a_shape,
-            b_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-            transpose_b,
-            b_packed=b_packed,
-            saturated_vnni=saturated,
-        ](c, a, bp, kernel_type_m)
-    else:
-        matmul[
-            a_type,
-            a_shape,
-            b_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-            transpose_b,
-            b_packed=b_packed,
-            saturated_vnni=saturated,
-        ](c, a, bp)
+    matmul[
+        a_type,
+        DimList.create_unknown[2](),
+        b_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        transpose_b,
+        b_packed=b_packed,
+        saturated_vnni=saturated,
+    ](c, a, bp)
 
     gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)
 
@@ -206,10 +159,14 @@ fn test_matmul[
     return errors
 
 
+alias M = 123
+alias N = 143
+alias K = 71
+
 alias test_range = False
 
 
-fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
+fn test_matmul[bPacked: Bool, saturated: Bool]() -> Int:
     # b_packed = False is not supported with i8mm yet
     var errors: Int = 0
 
@@ -218,148 +175,51 @@ fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
         for m in range(64):
             for n in range(64):
                 for k in range(64):
-                    let kernel_type_m = m if mixed else 0
                     errors += test_matmul[
                         False,  # transpose_b
                         bPacked,  # b_packed
                         a_type,
                         b_type,
                         c_type,
-                        DimList.create_unknown[2](),
                         saturated=saturated,
-                    ](m, n, k, kernel_type_m)
+                    ](m, n, k)
     else:
-        let kernel_type_m1 = M1 if mixed else 0
         errors += test_matmul[
             False,  # transpose_b
             bPacked,  # b_packed
             a_type,
             b_type,
             c_type,
-            DimList.create_unknown[2](),
             saturated=saturated,
-        ](M1, N, K, kernel_type_m1)
-        let kernel_type_m2 = M2 if mixed else 0
-        errors += test_matmul[
-            False,  # transpose_b
-            bPacked,  # b_packed
-            a_type,
-            b_type,
-            c_type,
-            DimList.create_unknown[2](),
-            saturated=saturated,
-        ](M2, N, K, kernel_type_m2)
-
-    return errors
-
-
-fn test_matmul_mixed_static[bPacked: Bool, saturated: Bool]() -> Int:
-    # b_packed = False is not supported with i8mm yet
-    var errors: Int = 0
-
-    errors += test_matmul[
-        False,  # transpose_b
-        bPacked,  # b_packed
-        a_type,
-        b_type,
-        c_type,
-        # Index(M1,K),
-        DimList(M1, K),
-        saturated=saturated,
-    ](M1, N, K, 0)
-    errors += test_matmul[
-        False,  # transpose_b
-        bPacked,  # b_packed
-        a_type,
-        b_type,
-        c_type,
-        DimList(M2, K),
-        saturated=saturated,
-    ](M2, N, K, 0)
+        ](M, N, K)
 
     return errors
 
 
 fn test_matmul_vnni():
     print("== test_matmul_vnni")
-    var errors = test_matmul[False, False, False]()
+    var errors = test_matmul[False, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked():
     print("== test_matmul_vnni_bpacked")
-    var errors = test_matmul[True, False, False]()
+    var errors = test_matmul[True, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_saturated():
     print("== test_matmul_vnni_saturated")
-    var errors = test_matmul[False, True, False]() if has_avx2() else 0
+    var errors = test_matmul[False, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked_saturated():
     print("== test_matmul_vnni_bpacked_saturated")
-    var errors = test_matmul[True, True, False]() if has_avx2() else 0
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_mixed_dynamic():
-    print("== test_matmul_vnni_mixed_dynamic")
-    var errors = test_matmul[False, False, True]()
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_bpacked_mixed_dynamic():
-    print("== test_matmul_vnni_bpacked_mixed_dynamic")
-    var errors = test_matmul[True, False, True]()
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_saturated_mixed_dynamic():
-    print("== test_matmul_vnni_saturated_mixed_dynamic")
-    var errors = test_matmul[False, True, True]() if has_avx2() else 0
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_bpacked_saturated_mixed_dynamic():
-    print("== test_matmul_vnni_bpacked_saturated_mixed_dynamic")
-    var errors = test_matmul[True, True, True]() if has_avx2() else 0
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_mixed_static():
-    print("== test_matmul_vnni_mixed_static")
-    var errors = test_matmul_mixed_static[False, False]()
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_bpacked_mixed_static():
-    print("== test_matmul_vnni_bpacked_mixed_static")
-    var errors = test_matmul_mixed_static[True, False]()
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_saturated_mixed_static():
-    print("== test_matmul_vnni_saturated_mixed_static")
-    var errors = test_matmul_mixed_static[False, True]() if has_avx2() else 0
-    # CHECK: 0
-    print(errors)
-
-
-fn test_matmul_vnni_bpacked_saturated_mixed_static():
-    print("== test_matmul_vnni_bpacked_saturated_mixed_static")
-    var errors = test_matmul_mixed_static[True, True]() if has_avx2() else 0
+    var errors = test_matmul[True, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 
@@ -369,13 +229,3 @@ fn main():
     test_matmul_vnni_bpacked()
     test_matmul_vnni_saturated()
     test_matmul_vnni_bpacked_saturated()
-
-    test_matmul_vnni_mixed_dynamic()
-    test_matmul_vnni_bpacked_mixed_dynamic()
-    test_matmul_vnni_saturated_mixed_dynamic()
-    test_matmul_vnni_bpacked_saturated_mixed_dynamic()
-
-    test_matmul_vnni_mixed_static()
-    test_matmul_vnni_bpacked_mixed_static()
-    test_matmul_vnni_saturated_mixed_static()
-    test_matmul_vnni_bpacked_saturated_mixed_static()
