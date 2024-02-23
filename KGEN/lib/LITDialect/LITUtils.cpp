@@ -135,12 +135,9 @@ void LIT::printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol) {
 
 ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                            Type type, bool hasAddress) {
-  if (hasAddress) {
-    if (auto ptr = dyn_cast<PointerType>(type))
-      type = ptr.getElementType();
-    else if (auto ref = dyn_cast<RefType>(type))
+  if (hasAddress)
+    if (auto ref = dyn_cast<RefType>(type))
       type = ref.getElementType();
-  }
   if (succeeded(p.parseOptionalEqual()))
     return parseParamValue(p, defaultVal, type);
   return success();
@@ -801,14 +798,9 @@ LogicalResult LIT::verifyDefaultTypes(
     Type defaultType = defaultOr.getType();
 
     // Memory-only arguments store their default values as pure values.
-    if (!convs.empty()) {
-      if (SignatureType::hasAddress(convs[idx])) {
-        if (auto ptr = ::dyn_cast<PointerType>(expectedType))
-          expectedType = ptr.getElementType();
-        else
-          expectedType = ::cast<RefType>(expectedType).getElementType();
-      }
-    }
+    if (!convs.empty())
+      if (SignatureType::hasAddress(convs[idx]))
+        expectedType = ::cast<RefType>(expectedType).getElementType();
 
     if (defaultType != expectedType &&
         !::isa<TypeCheckErrorType>(expectedType)) {
