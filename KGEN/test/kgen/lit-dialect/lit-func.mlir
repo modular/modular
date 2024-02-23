@@ -201,9 +201,9 @@ lit.func @call_default_param() {
 }
 
 // CHECK-LABEL: @address_default
-// CHECK-SAME: %p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>
-lit.func @address_default(%p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) {
-  // CHECK: ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>
-  kgen.param.declare ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>
+// CHECK-SAME: %p: !lit.ref<simd<2, si8>, mut lt> owned_in_mem = <1, 2>
+lit.func @address_default[mut lt](%p: !lit.ref<simd<2, si8>, mut lt> owned_in_mem = <1, 2>) {
+  // CHECK: ref: !lit.signature<[1]("p": !lit.ref<simd<2, si8>, mut *[0,0]> owned_in_mem = <1, 2>) -> ()> = <@address_default>
+  kgen.param.declare ref: !lit.signature<[1]("p": !lit.ref<simd<2, si8>, mut *[0,0]> owned_in_mem = <1, 2>) -> ()> = <@address_default>
   kgen.return
 }
