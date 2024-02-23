@@ -247,6 +247,10 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
   emitSortedNames(diag, std::move(names));
 }
 
+std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
+  return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
+}
+
 bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
                                  bool regPassable) {
   // Allow types that lack `__del__` to conform. A no-op destructor will be

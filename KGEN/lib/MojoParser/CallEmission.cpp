@@ -422,7 +422,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // with an UnboundAttr we might have to deduce.
     const Binding &binding = unpackedPosBindings[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
-      if (parameterInferenceHook) {
+      if (boundness == Boundness::Full) {
         if (PValue value = fulfillValue(idx, requestedType)) {
           setParamValue(value);
           ++posBindingIdx;
@@ -588,8 +588,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
-        llvm_unreachable("parameter deduction failure in a context that "
-                         "doesn't allow deduction");
+        assert(boundness == Boundness::Full &&
+               "parameter deduction failure in a context that doesn't allow "
+               "deduction");
+        InflightDiag diag = shared.emitError(exprLoc, baseName)
+                            << " missing required ";
+        if (StringAttr name = paramListAttr.getNames()[paramIdx]; !name.empty())
+          diag << "parameter " << name;
+        else
+          diag << nameForPosOnly(paramIdx, "parameter");
       },
       /*emitUnboundPackInVariadic=*/
       [&](const Binding &binding) {
@@ -624,7 +631,7 @@ ParamBindings::verifyBindings(
     LITSignatureType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
-                        parameterInferenceHook, diagEmitter);
+                        parameterInferenceHook, diagEmitter, Boundness::Full);
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>

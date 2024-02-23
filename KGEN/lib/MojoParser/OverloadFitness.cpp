@@ -1077,11 +1077,6 @@ diagnoseKeywordOperands(LITSignatureType signature,
   return std::nullopt;
 }
 
-/// Return a printable name for an anonymous positional-only argument/parameter.
-static Twine nameForPosOnly(size_t idx, const Twine &argOrParam) {
-  return "positional-only " + argOrParam + " #" + Twine(idx);
-}
-
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/operands (too many positionals, missing positionals, argument
 /// specified both by positional and keyword operands).
