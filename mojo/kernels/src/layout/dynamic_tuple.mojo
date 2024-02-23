@@ -62,51 +62,23 @@ struct DynamicTupleBase[
     var elts: DynamicVector[Self.Element]
 
     @always_inline
-    fn __init__(inout self: Self, value: T):
-        self.elts = DynamicVector[Self.Element]()
-        self.elts.append(value)
-
-    @always_inline
     fn __init__(inout self: Self):
         self.elts = DynamicVector[Self.Element]()
 
+    # FIXME: This constructor shouldn't be necessary
     @always_inline
-    fn __init__(inout self: Self, v1: Self.Element):
-        self.elts = DynamicVector[Self.Element]()
-        self.elts.append(v1)
+    fn __init__(inout self: Self, owned value: T):
+        self.elts = DynamicVector[Self.Element](capacity=1)
+        self.elts.append(value)
 
     @always_inline
-    fn __init__(inout self: Self, v1: Self.Element, v2: Self.Element):
-        self.elts = DynamicVector[Self.Element]()
+    fn __init__(inout self: Self, owned v1: Self.Element):
+        self.elts = DynamicVector[Self.Element](capacity=1)
         self.elts.append(v1)
-        self.elts.append(v2)
-
-    @always_inline
-    fn __init__(
-        inout self: Self, v1: Self.Element, v2: Self.Element, v3: Self.Element
-    ):
-        self.elts = DynamicVector[Self.Element]()
-        self.elts.append(v1)
-        self.elts.append(v2)
-        self.elts.append(v3)
-
-    @always_inline
-    fn __init__(
-        inout self: Self,
-        v1: Self.Element,
-        v2: Self.Element,
-        v3: Self.Element,
-        v4: Self.Element,
-    ):
-        self.elts = DynamicVector[Self.Element]()
-        self.elts.append(v1)
-        self.elts.append(v2)
-        self.elts.append(v3)
-        self.elts.append(v4)
 
     @always_inline
     fn __init__(inout self: Self, value: DynamicTuple[T, D]):
-        self.elts = DynamicVector[Self.Element]()
+        self.elts = DynamicVector[Self.Element](capacity=1)
         self.elts.append(value.content)
 
     @always_inline
@@ -125,6 +97,7 @@ struct DynamicTupleBase[
     fn append(
         inout self, owned v1: DynamicTuple[T, D], owned v2: DynamicTuple[T, D]
     ):
+        self.elts.reserve(2)
         self.elts.append(v1.content)
         self.elts.append(v2.content)
 
@@ -135,6 +108,7 @@ struct DynamicTupleBase[
         owned v2: DynamicTuple[T, D],
         owned v3: DynamicTuple[T, D],
     ):
+        self.elts.reserve(3)
         self.elts.append(v1.content)
         self.elts.append(v2.content)
         self.elts.append(v3.content)
@@ -147,10 +121,27 @@ struct DynamicTupleBase[
         owned v3: DynamicTuple[T, D],
         owned v4: DynamicTuple[T, D],
     ):
+        self.elts.reserve(4)
         self.elts.append(v1.content)
         self.elts.append(v2.content)
         self.elts.append(v3.content)
         self.elts.append(v4.content)
+
+    @always_inline
+    fn append(
+        inout self,
+        owned v1: DynamicTuple[T, D],
+        owned v2: DynamicTuple[T, D],
+        owned v3: DynamicTuple[T, D],
+        owned v4: DynamicTuple[T, D],
+        owned v5: DynamicTuple[T, D],
+    ):
+        self.elts.reserve(5)
+        self.elts.append(v1.content)
+        self.elts.append(v2.content)
+        self.elts.append(v3.content)
+        self.elts.append(v4.content)
+        self.elts.append(v5.content)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self.Element:
@@ -172,15 +163,10 @@ struct DynamicTupleBase[
     fn __iter__(self) -> Self.IterType:
         return Self.IterType(0, self)
 
-    @always_inline
-    @staticmethod
-    fn rewrap(v: Self.Element) -> Variant[T]:
-        return Variant[T](v.get[T]()[])
-
     @staticmethod
     fn to_string(v: Self.Element) -> String:
         if v.isa[T]():
-            return D.to_string[T](Self.rewrap(v))
+            return D.to_string[T](v.get[T]()[])
         else:
             var result = String("(")
             if v.isa[Self]():
@@ -195,7 +181,7 @@ struct DynamicTupleBase[
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:
         if a.isa[T]() and b.isa[T]():
-            return D.is_equal[T](Self.rewrap(a), Self.rewrap(b))
+            return D.is_equal[T](a.get[T]()[], b.get[T]()[])
         if a.isa[Self]() and b.isa[Self]():
             var ta = a.get[Self]()[]
             var tb = b.get[Self]()[]
@@ -256,27 +242,30 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self):
         var t = Self.BaseType()
-        t.append(v1)
-        t.append(v2)
+        t.append(v1, v2)
         self.content = t
 
     #
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self):
         var t = Self.BaseType()
-        t.append(v1)
-        t.append(v2)
-        t.append(v3)
+        t.append(v1, v2, v3)
         self.content = t
 
     #
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self):
         var t = Self.BaseType()
-        t.append(v1)
-        t.append(v2)
-        t.append(v3)
-        t.append(v4)
+        t.append(v1, v2, v3, v4)
+        self.content = t
+
+    #
+    @always_inline
+    fn __init__(
+        inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self
+    ):
+        var t = Self.BaseType()
+        t.append(v1, v2, v3, v4, v5)
         self.content = t
 
     @always_inline

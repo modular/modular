@@ -24,9 +24,9 @@ from kernel_utils.layout import (
 # CHECK: Layout((2, (3, 4)):(1, (2, 6)))
 fn test_layout_basic():
     print("== test_layout_basic")
-    var shape = IntTuple(2, IntTuple(3, IntTuple(4)))
-    var stride = IntTuple(1, IntTuple(2, IntTuple(6)))
-    var layout = Layout(shape, stride)
+    alias shape = IntTuple(2, IntTuple(3, IntTuple(4)))
+    alias stride = IntTuple(1, IntTuple(2, IntTuple(6)))
+    alias layout = Layout(shape, stride)
     print(layout)
 
 
@@ -34,10 +34,12 @@ fn test_layout_basic():
 # CHECK: Layout((2, 6):(1, 2))
 fn test_coalesce():
     print("== test_coalesce")
-    var layout = Layout(
+    alias layout = Layout(
         IntTuple(2, IntTuple(1, 6)), IntTuple(1, IntTuple(6, 2))
     )
-    print(coalesce(layout))
+    # FIXME: turning var to alias crashes the compiler
+    var c0 = coalesce(layout)
+    print(c0)
 
 
 # CHECK-LABEL: test_composition
@@ -45,7 +47,9 @@ fn test_coalesce():
 # CHECK: Layout((5, 8):(16, 80))
 fn test_composition():
     print("== test_composition")
-    print(composition(Layout(20, 2), Layout(IntTuple(5, 4), IntTuple(4, 1))))
+    # FIXME: turning var to alias crashes the compiler
+    var c0 = composition(Layout(20, 2), Layout(IntTuple(5, 4), IntTuple(4, 1)))
+    print(c0)
     print(
         composition(
             Layout(IntTuple(10, 2), IntTuple(16, 4)),
@@ -63,7 +67,9 @@ fn test_composition():
 # CHECK: Layout((3, 2):(2, 12))
 fn test_complement():
     print("== test_complement")
-    print(complement(Layout(4, 1), 24))
+    # FIXME: turning var to alias crashes the compiler
+    var c0 = complement(Layout(4, 1), 24)
+    print(c0)
     print(complement(Layout(6, 4), 24))
     print(complement(Layout(IntTuple(4, 6), IntTuple(1, 4)), 24))
     print(complement(Layout(4, 2), 24))
@@ -76,11 +82,11 @@ fn test_complement():
 # CHECK: Layout(((3, 3), (2, 4, (2, 2))):((177, 59), (13, 2, (26, 1))))
 fn test_logcial_divide():
     print("== test_logcial_divide")
-    print(
-        logical_divide(
-            Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
-        )
+    # FIXME: turning var to alias crashes the compiler
+    var ld0 = logical_divide(
+        Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
     )
+    print(ld0)
     print(
         logical_divide(
             Layout(IntTuple(9, IntTuple(4, 8)), IntTuple(59, IntTuple(13, 1))),
@@ -94,7 +100,11 @@ fn test_logcial_divide():
 # CHECK: Layout(((2, 3), (5, 4)):((5, 10), (1, 30)))
 fn test_logical_product():
     print("== test_logical_product")
-    print(logical_product(Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)))
+    # FIXME: turning var to alias crashes the compiler
+    var lp0 = logical_product(
+        Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)
+    )
+    print(lp0)
     print(
         logical_product(
             Layout(IntTuple(2, 5), IntTuple(5, 1)),
@@ -124,28 +134,28 @@ fn test_logical_product():
 # CHECK:     +----+----+----+----+
 fn test_print_layout():
     print("== test_print_layout")
-    print_layout(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-    print_layout(
-        Layout(
-            IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
-            IntTuple(IntTuple(2, 8), IntTuple(1, 4)),
-        )
+    alias l0 = Layout(IntTuple(2, 2), IntTuple(1, 2))
+    alias l1 = Layout(
+        IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
+        IntTuple(IntTuple(2, 8), IntTuple(1, 4)),
     )
+    print_layout(l0)
+    print_layout(l1)
 
 
 # CHECK-LABEL: test_zipped_divide
 fn test_zipped_divide():
     print("== test_zipped_divide")
     # CHECK: Layout((2, (2, 4)):(4, (8, 1)))
-    var layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    alias layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
     print(zipped_divide(layout_4x4_row_major, Layout(2, 1)))
     # CHECK: Layout(((2, 2), (2, 2)):((4, 1), (8, 2)))
-    print(
-        zipped_divide(
-            layout_4x4_row_major,
-            LayoutList(Layout(2, 1), Layout(2, 1)),
-        )
+    # FIXME: turning var to alias crashes the compiler
+    var zd0 = zipped_divide(
+        layout_4x4_row_major,
+        LayoutList(Layout(2, 1), Layout(2, 1)),
     )
+    print(zd0)
 
 
 fn main():

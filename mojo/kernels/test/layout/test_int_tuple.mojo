@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# TODO(30677) reenable once the compiler does not crash.
 # REQUIRES: disabled
 # RUN: %mojo %s | FileCheck %s
 
@@ -47,13 +46,20 @@ fn test_tuple_basic():
     # CHECK: (5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)
     print(tt)
     tt[1] = 8
-    tt.append(8, 3, 1)
     tt.append(81)
-    # CHECK: (5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 8, 3, 1, 81)
+    # CHECK: (5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)
     print(tt)
     tt[3][2][2] = IntTuple(5, 69, 722)
     print(tt)
-    # CHECK: (5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 8, 3, 1, 81)
+    # CHECK: (5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)
+
+    # CHECK: ((2, 2), (2, 3))
+    alias works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
+    print(works)
+
+    # CHECK: ((2, 2), (2, 2))
+    alias works_too = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    print(works_too)
 
     # CHECK: True
     # CHECK: False
@@ -79,6 +85,7 @@ fn test_tuple_basic_ops():
     print(product(IntTuple(3, 2)))
     print(product(IntTuple(IntTuple(2, 3), 4)))
 
+    # FIXME: turning var to alias generates wrong values in the print statement
     var tt = IntTuple(
         5,
         7,
@@ -87,20 +94,27 @@ fn test_tuple_basic_ops():
         42,
     )
     # CHECK: (5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)
-    print(flatten(tt))
+    # FIXME: turning var to alias crashes the compiler
+    var f = flatten(tt)
+    print(f)
 
     # CHECK: 9
     # CHECK: 6
     # CHECK: 7
     # CHECK: 15
     # CHECK: 10
-    print(sum(IntTuple(IntTuple(2, 3), 4)))
-    print(inner_product(IntTuple(2), IntTuple(3)))
-    print(inner_product(IntTuple(1, 2), IntTuple(3, 2)))
-    print(
-        inner_product(IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(2, 1), 2))
+    alias s = sum(IntTuple(IntTuple(2, 3), 4))
+    print(s)
+    alias ip1 = inner_product(IntTuple(2), IntTuple(3))
+    print(ip1)
+    alias ip2 = inner_product(IntTuple(1, 2), IntTuple(3, 2))
+    print(ip2)
+    alias ip3 = inner_product(
+        IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(2, 1), 2)
     )
-    print(max(IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10))))
+    print(ip3)
+    alias m0 = max(IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10)))
+    print(m0)
 
 
 # CHECK-LABEL: test_shape_div
@@ -111,7 +125,9 @@ fn test_shape_div():
     # CHECK: (1, 1)
     # CHECK: ((1, 1), 2)
     # CHECK: (1, (1, 2))
-    print(shape_div(IntTuple(3, 4), 6))
+    # FIXME: turning var to alias crashes the compiler
+    var sd0 = shape_div(IntTuple(3, 4), 6)
+    print(sd0)
     print(shape_div(IntTuple(3, 4), 12))
     print(shape_div(IntTuple(3, 4), 36))
     print(shape_div(IntTuple(IntTuple(3, 4), 6), 36))
@@ -129,14 +145,22 @@ fn test_crd2idx():
     # CHECK: 5
     # CHECK: 6
     # CHECK: 7
-    print(crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(1, 0), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(2, 0), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(3, 0), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(0, 1), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(1, 1), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(2, 1), IntTuple(4, 2), IntTuple(1, 4)))
-    print(crd2idx(IntTuple(3, 1), IntTuple(4, 2), IntTuple(1, 4)))
+    alias cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx1 = crd2idx(IntTuple(1, 0), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx2 = crd2idx(IntTuple(2, 0), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx3 = crd2idx(IntTuple(3, 0), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx4 = crd2idx(IntTuple(0, 1), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx5 = crd2idx(IntTuple(1, 1), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx6 = crd2idx(IntTuple(2, 1), IntTuple(4, 2), IntTuple(1, 4))
+    alias cx7 = crd2idx(IntTuple(3, 1), IntTuple(4, 2), IntTuple(1, 4))
+    print(cx0)
+    print(cx1)
+    print(cx2)
+    print(cx3)
+    print(cx4)
+    print(cx5)
+    print(cx6)
+    print(cx7)
 
 
 # CHECK-LABEL: test_idx2crd
@@ -150,14 +174,23 @@ fn test_idx2crd():
     # CHECK: (1, 1)
     # CHECK: (2, 1)
     # CHECK: (3, 1)
-    print(idx2crd(0, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(1, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(2, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(3, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(4, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(5, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(6, IntTuple(4, 2), IntTuple(1, 4)))
-    print(idx2crd(7, IntTuple(4, 2), IntTuple(1, 4)))
+    # FIXME: turning var to alias crashes the compiler
+    var xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
+    var xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
+    var xc2 = idx2crd(2, IntTuple(4, 2), IntTuple(1, 4))
+    var xc3 = idx2crd(3, IntTuple(4, 2), IntTuple(1, 4))
+    var xc4 = idx2crd(4, IntTuple(4, 2), IntTuple(1, 4))
+    var xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
+    var xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
+    var xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
+    print(xc0)
+    print(xc1)
+    print(xc2)
+    print(xc3)
+    print(xc4)
+    print(xc5)
+    print(xc6)
+    print(xc7)
 
 
 fn main():

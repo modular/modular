@@ -110,10 +110,15 @@ struct LayoutList(Sized, Stringable):
         self.elements = DynamicVector[Layout]()
 
     @always_inline
-    fn __init__(inout self, *values: Layout):
-        self.elements = DynamicVector[Layout]()
-        for v in values:
-            self.elements.append(v[])
+    fn __init__(inout self, v0: Layout):
+        self.elements = DynamicVector[Layout](capacity=1)
+        self.elements.append(v0)
+
+    @always_inline
+    fn __init__(inout self, v0: Layout, v1: Layout):
+        self.elements = DynamicVector[Layout](capacity=2)
+        self.elements.append(v0)
+        self.elements.append(v1)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Layout:

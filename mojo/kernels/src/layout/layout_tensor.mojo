@@ -70,7 +70,7 @@ struct LayoutTensor[dtype: DType, M: Int, N: Int]:
     fn view[
         M1: Int, N1: Int  # View's dimensions
     ](self, m: Int, n: Int) -> LayoutTensor[dtype, M1, N1]:
-        var tiler = LayoutList(Layout(M1, 1), Layout(N1, 1))
+        alias tiler = LayoutList(Layout(M1, 1), Layout(N1, 1))
         var tiled_layout = zipped_divide(self.layout, tiler)
         var coords = IntTuple(m, n)
         if len(coords) > 0:
