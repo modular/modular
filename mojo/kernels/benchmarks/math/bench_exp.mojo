@@ -205,11 +205,11 @@ fn exp_mojo_opt[
     var k = floor(xc.fma(inv_lg2, 0.5)).cast[im_type]()
 
     var r = k.fma(neg_ln2, xc)
-    # let r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
+    # var r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
     var taylor_result = _exp_taylor(r.cast[im_type]()).cast[type]()
     var expr = ldexp(taylor_result, k.cast[DType.int32]())
     return expr
-    # let val1 = (expr > min_val).select(expr, SIMD[type,simd_width](0))
+    # var val1 = (expr > min_val).select(expr, SIMD[type,simd_width](0))
     # return (val1 < max_val).select(val1, SIMD[type,simd_width](inf[type]()))
 
 
