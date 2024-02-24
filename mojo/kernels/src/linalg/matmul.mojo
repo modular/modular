@@ -3184,12 +3184,12 @@ fn _matmul_gpu_dispatch[
                 threads_per_block=NUM_THREADS
             )
             gpu_func(
-                stream,
                 (div_ceil(n, BN), div_ceil(m, BM)),
                 (NUM_THREADS),
                 c,
                 a,
                 b,
+                stream=stream,
             )
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
@@ -3209,7 +3209,6 @@ fn _matmul_gpu_dispatch[
                 ]
             ]()
             gpu_func(
-                stream,
                 div_ceil(m, WARPS_PER_BLOCK),
                 WARP_SIZE * WARPS_PER_BLOCK,
                 c.data,
@@ -3218,6 +3217,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
+                stream=stream,
             )
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
@@ -3239,7 +3239,6 @@ fn _matmul_gpu_dispatch[
                 ]
             ]()
             gpu_func(
-                stream,
                 div_ceil(n, WARPS_PER_BLOCK),
                 WARP_SIZE * WARPS_PER_BLOCK,
                 c.data,
@@ -3248,6 +3247,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
+                stream=stream,
             )
         else:
             # Tile size for tiling in shared memory.
@@ -3272,7 +3272,6 @@ fn _matmul_gpu_dispatch[
                     ]
                 ]()
                 gpu_func(
-                    stream,
                     (div_ceil(n, tile_size), div_ceil(m, tile_size)),
                     (tile_size, tile_size),
                     c.data,
@@ -3281,6 +3280,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
+                    stream=stream,
                 )
             else:
                 alias BLOCK_DIM = 16
@@ -3301,7 +3301,6 @@ fn _matmul_gpu_dispatch[
                     ]
                 ]()
                 gpu_func(
-                    stream,
                     (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
                     (BLOCK_DIM, BLOCK_DIM),
                     c.data,
@@ -3310,6 +3309,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
+                    stream=stream,
                 )
     except e:
         trap(e)
