@@ -89,7 +89,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
 
     # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatLiteral>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteral> @decls::@"testThing({{.*}}Int)")]()
-    let float2: IntToFloat32Type = testThing
+    var float2: IntToFloat32Type = testThing
 
     # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatLiteral]()"<:
     # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !FloatLiteral> rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteral> @decls::@"testThing{{.*}}")>()
@@ -583,11 +583,11 @@ fn usePacks(x: FloatLiteral, y: Int):
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, !FloatLiteral, !Int]>
     var b: MyTuple[Int, FloatLiteral, Int]
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
-    let c = MyTuple[Int](1)
+    var c = MyTuple[Int](1)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatLiteral, index]>
-    let d = MyTuple(3.14, Int(6).value)
+    var d = MyTuple(3.14, Int(6).value)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> []>
-    let e = MyTuple()
+    var e = MyTuple()
 
     # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
     # CHECK: %[[PACK1:.*]] = kgen.pack.create([[C1]])
@@ -718,7 +718,7 @@ struct RaisingGetterSetter:
 
 
 fn test_raising_computed_getter() raises:
-    let a = RaisingGetterSetter()[2]
+    var a = RaisingGetterSetter()[2]
 
 
 ##===----------------------------------------------------------------------===##
@@ -1058,7 +1058,7 @@ async fn throwing_coroutine() raises -> Int:
 fn call_raising_coro():
     # CHECK: %[[CORO:.*]] = lit.async.call[{{.*}}throwing_coroutine
     # CHECK-NEXT: call {{.*}}RaisingCoroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
-    let coro = throwing_coroutine()
+    var coro = throwing_coroutine()
 
 
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}({{.*}}) async -> !kgen.none
@@ -1138,7 +1138,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
-    let value = 0
+    var value = 0
 
     @__copy_capture(value)
     @parameter

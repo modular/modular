@@ -16,6 +16,6 @@ fn foo[axis: Int](i: Int) -> Int:
 
 
 fn main():
-    let x = foo[3](42)
+    var x = foo[3](42)
     # CHECK: 42
     print(x)

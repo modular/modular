@@ -27,11 +27,11 @@ fn makeClosure(x: Int) -> Coroutine[Int]:
 
 fn main():
     try:
-        let x = atol(String(argv()[1]))
-        let y = atol(String(argv()[2]))
+        var x = atol(String(argv()[1]))
+        var y = atol(String(argv()[2]))
 
-        let formatter = makeClosure(x)
-        let w = takeClosure(formatter)
+        var formatter = makeClosure(x)
+        var w = takeClosure(formatter)
         # CHECK: 4
         print(w)
     except e:

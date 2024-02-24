@@ -13,8 +13,8 @@
 
 # CHECK-LABEL: lit.func @"foo
 fn foo():
-    let w = `5`
+    var w = `5`
 
     fn bar() escaping -> int:
-        let x = __mlir_op.`index.add`(w, w)
+        var x = __mlir_op.`index.add`(w, w)
         return x

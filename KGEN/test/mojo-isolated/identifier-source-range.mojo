@@ -18,5 +18,5 @@ fn bar():
     # CHECK-NOT: unexpected character
     # CHECK: error: invalid call to 'foo'
     # CHECK-NOT: unexpected character
-    let `!` = __mlir_attr.`1 : si32`
+    var `!` = __mlir_attr.`1 : si32`
     foo(`!`)

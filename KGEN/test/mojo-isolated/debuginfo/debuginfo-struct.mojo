@@ -40,4 +40,4 @@ struct MyData[A: Int, B: MyRP[3], C: AnyRegType]:
 
 fn entry():
     alias rp = MyRP[3](4)
-    let data = MyData[7, rp, MyRP[3]](rp)
+    var data = MyData[7, rp, MyRP[3]](rp)

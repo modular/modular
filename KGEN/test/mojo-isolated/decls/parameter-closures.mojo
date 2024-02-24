@@ -60,6 +60,6 @@ fn makeClosure[p: int](x: int) -> int:
 
 
 fn foo():
-    let x = `3`
-    let y = `2`
+    var x = `3`
+    var y = `2`
     _ = makeClosure[`3`](x)

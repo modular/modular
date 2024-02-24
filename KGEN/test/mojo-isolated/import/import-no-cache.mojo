@@ -11,8 +11,8 @@ from test_package.module import *
 
 # CHECK-LABEL: lit.func @"foo
 fn foo():
-    let x = Wrapper(__mlir_attr.`33 : index`)
-    let y = x.data
+    var x = Wrapper(__mlir_attr.`33 : index`)
+    var y = x.data
 
 
 # Even though ParameterizedType is referenced in an alias in Wrapper, the alias

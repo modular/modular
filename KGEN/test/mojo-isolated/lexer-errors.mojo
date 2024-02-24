@@ -83,5 +83,5 @@ r"AB\"
 
 # Issue #12818
 fn inconsistent_indent():
-    let x = __mlir_attr.`1 : index`
+    var x = __mlir_attr.`1 : index`
    	let y = __mlir_attr.`2 : index`  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}

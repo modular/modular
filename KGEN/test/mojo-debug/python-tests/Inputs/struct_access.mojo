@@ -38,5 +38,5 @@ fn main():
     print(p.second)  # breakpoint
     use_address(__get_lvalue_as_address(p.first))
 
-    let pp = MyPairPair(5, 6, 7, 8)
+    var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint

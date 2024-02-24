@@ -144,12 +144,12 @@ def testLValuesRvalues() -> None:
   lv.normalMethod3(1.0)
 
   var nc1 = NonCopyable()
-  let nc2 = NonCopyable()
+  var nc2 = NonCopyable()
 
-  let nc3 = nc1 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
-  let nc4 = nc2 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
+  var nc3 = nc1 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
+  var nc4 = nc2 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
 
-  let mpPair = MemoryOnlyPair()
+  var mpPair = MemoryOnlyPair()
 
   # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind AnyRegType type to memory-only type 'MemoryOnlyPair'}}
   generic_on_type_bad[MemoryOnlyPair](mpPair)
@@ -191,7 +191,7 @@ fn func_with_static_param[x: Int]() -> Int:
   return x
 
 fn dynamic_used_as_param() -> Int:
-  let x = 5
+  var x = 5
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   return func_with_static_param[x]()
 
@@ -208,7 +208,7 @@ fn higher_order_int_func[func: fn (Int) escaping -> Int]() -> Int:
   return func(3)
 
 fn use_non_parameter_func() -> Int:
-  let val = 8
+  var val = 8
   fn my_nested_func(x: Int) -> Int:
     return val + x
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
@@ -274,12 +274,12 @@ fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {a: 4}
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
-  let dict = {a: 4, "b": 17}
+  var dict = {a: 4, "b": 17}
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {a: 4, **dict, "b": 17}
 
   # expected-error @+1 {{TODO: dictionary comprehension parsing}}
-  let comprehension = {key:value for (key,value) in dict.items()}
+  var comprehension = {key:value for (key,value) in dict.items()}
 
   # Dictionary subscripts.
 
@@ -359,7 +359,7 @@ struct IncompatElementTypes:
   fn __setitem__(self, x: Int, y: Float32): pass
 
 fn test_subscript_implicit_conversion(c: IncompatElementTypes):
-  let tmp : Int = c[1]
+  var tmp : Int = c[1]
   # expected-error-re @+1 {{cannot implicitly convert 'SIMD[f32, 1]' value to 'Int' in assignment}}
   c[1] = Float32(4.0)
   c[1] = tmp
@@ -373,7 +373,7 @@ struct GetAttrNotString:
         return 0
 
 fn invalid_getattr():
-    let obj = GetAttrNotString()
+    var obj = GetAttrNotString()
     # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from 'StringLiteral' to 'Int}}
     obj.attr
 
@@ -385,7 +385,7 @@ struct GetSettable:
 
 fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{expression must be mutable}}
-  let addr : __mlir_type.`!kgen.pointer<index>` = __get_lvalue_as_address(a)
+  var addr : __mlir_type.`!kgen.pointer<index>` = __get_lvalue_as_address(a)
 
   # expected-error @+1 {{cannot use a dynamic LValue}}
   _ = __get_lvalue_as_address(b[1])
@@ -393,7 +393,7 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # Get and use an lvalue from an address.
   __get_address_as_lvalue(addr) = 42
 
-  let addr2 : __mlir_type.index
+  var addr2 : __mlir_type.index
   # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'index'}}
   __get_address_as_lvalue(addr2) = 42
 
@@ -452,13 +452,13 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   # expected-error @+1 {{cannot construct 'Reference[?, ?, ?]' from 'Int' value in assignment}}
   _ = Reference(a)
 
-  let bref = Reference(b) # ok
+  var bref = Reference(b) # ok
 
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Reference[CopyAndInitMemType, 0, b]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_warnings():
-  let mem3 = CopyAndInitMemType()
+  var mem3 = CopyAndInitMemType()
 
   # Test pointless transfers from RValues and trivial values.
   # These should warn and not create IR transfers.
@@ -470,7 +470,7 @@ fn transfer_warnings():
   # Already an rvalue.
   _ = CopyAndInitMemType()^ # expected-warning {{transfer from an owned value has no effect and can be removed}}
 
-  let someInt = 4
+  var someInt = 4
   _ = someInt^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
 
   # Check lifetimes doesn't track trivial LValue's either.

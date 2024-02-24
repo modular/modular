@@ -347,7 +347,7 @@ struct MyList:
 
 # CHECK-LABEL: lit.func @"for_range_loop()"
 fn for_range_loop():
-    let my_list = MyList()
+    var my_list = MyList()
 
     # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %my_list
@@ -398,7 +398,7 @@ fn unroll_for():
 
 # CHECK-LABEL: lit.func @"unroll_while()"
 fn unroll_while():
-  let i = 1
+  var i = 1
   @unroll
   while i < 4:
       _ = i
@@ -407,7 +407,7 @@ fn unroll_while():
 fn unroll_factor_parameter():
   alias a = 1
   alias b = 1
-  let i = 1
+  var i = 1
   @unroll(a+b)
   while i < 4:
       _ = i

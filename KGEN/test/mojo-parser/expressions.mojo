@@ -80,7 +80,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v2 = lit.var.decl "v2"
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, [[IMMREF]])
-  let v2 : MemoryOnlyPair = a
+  var v2 : MemoryOnlyPair = a
 
   # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} synth
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
@@ -93,7 +93,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[AX]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[IMMREF]])
-  let regX = a.x
+  var regX = a.x
 
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
@@ -1092,11 +1092,11 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 
 fn lvalue_utilities(inout a: Int):
   # Get the address of the specified physical lvalue as a pop.pointer value.
-  let addr : __mlir_type[`!kgen.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
+  var addr : __mlir_type[`!kgen.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
 
   # Get and use an lvalue from an address.
   __get_address_as_lvalue(addr) = 42
-  let val = __get_address_as_lvalue(addr)
+  var val = __get_address_as_lvalue(addr)
 
 # CHECK-LABEL: lit.func @"ref_utilities
 fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
@@ -1160,7 +1160,7 @@ struct CallableStruct:
 fn test_call_method():
     # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"__call__{{.*}}(%{{.*}}, %[[C2]])
-    let value = CallableStruct(5)
+    var value = CallableStruct(5)
     _ = value(2)
 
 struct MemoryType:
@@ -1242,10 +1242,10 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%index3]
-    let v1 = a[3]
+    var v1 = a[3]
     # CHECK: %[[LIST:.*]] = lit.ref.load %b_0
     # CHECK: lit.call {{.*}}__getitem__{{.*}}(%[[LIST]],
-    let v2 = b[idx]
+    var v2 = b[idx]
 
 
 # CHECK-LABEL: lit.func @"variadic_memory_subscript
@@ -1259,7 +1259,7 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: [[B1REF:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
     # CHECK-NEXT: [[B1MEMREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[B1REF]])
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1MEMREF]])
-    let v0 = b[1]
+    var v0 = b[1]
     # CHECK: %v1 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B2REF:%.*]] = {{.*}}__refitem__{{.*}}([[IMMREF]],
@@ -1318,7 +1318,7 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable,
   return a if cond else b
 
 fn testTransferWarning():
-  let a = MemoryOnlyInt()
+  var a = MemoryOnlyInt()
 
   # expected-warning @+1 {{transfer from an owned value has no effect}}
   consume(a^^)
@@ -1396,7 +1396,7 @@ fn reg_passable_trivial():
   x = 42
   _ = x^  # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
 
-  let y : Int = 100
+  var y : Int = 100
   # expected-warning @+1 {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
   _ = y^  # Consume RValue / BValue is not, this isn't tracked.
 
@@ -1405,9 +1405,9 @@ fn reg_passable_trivial():
 
 fn del_warnings():
   # These copy the value before destroying it, which is pointless.
-  let m = MemoryOnlyInt()
+  var m = MemoryOnlyInt()
   m.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
-  let r = RegPassable(1)
+  var r = RegPassable(1)
   r.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
 
   # These is weird/unneeded, but at least it does what it says.
@@ -1429,7 +1429,7 @@ fn foo(x: index) -> __type_of(x):
 # CHECK-LABEL: lit.func @"bar(
 # CHECK: __mlir_type.index,__mlir_type.index)"(%x: index borrow, %y: index borrow) -> index
 fn bar(x: index, y: __type_of(x)) -> index:
-    let z : __type_of(x) = y
+    var z : __type_of(x) = y
     return z
 
 ##===----------------------------------------------------------------------===##

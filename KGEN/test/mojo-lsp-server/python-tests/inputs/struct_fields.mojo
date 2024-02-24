@@ -14,5 +14,5 @@ struct SomeStruct:
 
 
 fn main():
-    let someStruct = SomeStruct()
+    var someStruct = SomeStruct()
     _ = someStruct.a_field

@@ -86,8 +86,8 @@ fn use(y: MemType, z: Int, u: int):
 
 
 fn makes_escaping_closure(m: MemType, z: MemType, y: Bool):
-    let register_passable_var: Int = 3
-    let mlir_type_var: __mlir_type.index = register_passable_var.value
+    var register_passable_var: Int = 3
+    var mlir_type_var: __mlir_type.index = register_passable_var.value
 
     fn dummy(n: MemType) escaping:
         use(m, register_passable_var, mlir_type_var)

@@ -25,7 +25,7 @@ struct my_iter:
         self.list = list
 
     fn __next__(inout self: my_iter) -> Int:
-        let result: Int = self.start
+        var result: Int = self.start
         self.start += 1
         return self.list[result]
 
@@ -48,11 +48,11 @@ struct MyList:
         self.size = size
 
     fn __setitem__(inout self, idx: Int, val: Int):
-        let ptr = self.start + idx
+        var ptr = self.start + idx
         ptr.store(val)
 
     fn __getitem__(inout self, idx: Int) -> Int:
-        let ptr = self.start + idx
+        var ptr = self.start + idx
         return ptr.load()
 
     fn __iter__(inout self) -> my_iter:
@@ -64,11 +64,11 @@ fn printInt(x: Int):
 
 
 fn main():
-    let buffer = __mlir_op.`pop.stack_allocation`[
+    var buffer = __mlir_op.`pop.stack_allocation`[
         count = Int(3).value,
         _type = __mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
-    let my_pointer = Pointer[Int](buffer)
+    var my_pointer = Pointer[Int](buffer)
 
     var my_list = MyList(my_pointer, 3)
     my_list[0] = 25

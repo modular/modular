@@ -48,13 +48,13 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
-  let ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
+  var ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <{42}>
   alias as2 : Int = 42
 
   # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
-  let ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
+  var ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
@@ -89,8 +89,8 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
-  let aref = Reference(a).value
-  let bref = Reference(b).value
+  var aref = Reference(a).value
+  var bref = Reference(b).value
 
   # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref

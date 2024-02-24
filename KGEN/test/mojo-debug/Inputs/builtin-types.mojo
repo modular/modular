@@ -57,44 +57,44 @@ fn main():
         value = __mlir_attr.`48:index`
     ]()
 
-    let a_let_index = __mlir_op.`index.constant`[
+    var a_let_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
     ]()
 
-    let a_register_passable_struct = ARegisterPassableStruct()
+    var a_register_passable_struct = ARegisterPassableStruct()
 
-    let a_struct = AStruct()
+    var a_struct = AStruct()
 
-    let p_struct_int = ParamStruct[Int](8)
+    var p_struct_int = ParamStruct[Int](8)
 
-    let p_struct_stringref = ParamStruct[StringRef]("hello")
+    var p_struct_stringref = ParamStruct[StringRef]("hello")
 
-    let an_int: Int = 123
+    var an_int: Int = 123
 
-    let a_literal_float = 3.125
+    var a_literal_float = 3.125
 
-    let a_float = Float32(3.125)
+    var a_float = Float32(3.125)
 
-    let another_float = getFloat()
+    var another_float = getFloat()
 
-    let `^ uncommon name` = 1123123
+    var `^ uncommon name` = 1123123
 
-    let a_string_literal = "fofofo"
+    var a_string_literal = "fofofo"
 
-    let a_list = [1, 2.125, 3]
+    var a_list = [1, 2.125, 3]
 
-    let a_simd = SIMD[DType.float16, 4](1.125, 2.5, 0, -3.725)
+    var a_simd = SIMD[DType.float16, 4](1.125, 2.5, 0, -3.725)
 
     # fmt: off
-    let b_simd = SIMD[DType.int64, 32](
+    var b_simd = SIMD[DType.int64, 32](
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
         -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16,
     )
     # fmt: on
 
-    let c_simd = SIMD[DType.index, 2](5, 6)
+    var c_simd = SIMD[DType.index, 2](5, 6)
 
-    let a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
+    var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
         _type = __mlir_type[
             `!kgen.variant<`,
             Float64,
@@ -107,6 +107,6 @@ fn main():
         index = Int(2).value,
     ](c_simd)
 
-    let none = None
+    var none = None
 
     print("breakpoint")

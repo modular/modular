@@ -6,6 +6,6 @@
 
 
 fn function(foo: Int):
-    let bar: Int = foo + 420
+    var bar: Int = foo + 420
     print(foo)
     print("foo")

@@ -113,7 +113,7 @@ struct SomeType:
 fn drop_copy[T: Copyable](value: T):
     # CHECK: %0 = kgen.call {{.*}}SomeType::__copyinit__{{.*}}(%arg0)
     # CHECK: call {{.*}}SomeType::__del__{{.*}}(%0)
-    let unused = value
+    var unused = value
 
 
 @export

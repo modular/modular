@@ -26,7 +26,7 @@ fn mightThrow() raises:
 
 
 fn foo(c: Bool):
-    let s = S(len("1234"))
+    var s = S(len("1234"))
     try:
         if c:
             mightThrow()  # destruct 's' if returns
@@ -49,6 +49,6 @@ fn main():
     # CHECK-NOT: init 7
     # CHECK-NOT: destroy 7
     try:
-        let x = fail("1234567")
+        var x = fail("1234567")
     except e:
         print("exception thrown")

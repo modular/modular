@@ -29,10 +29,10 @@ fn erf_taylor_vector(x: Float32) -> Float32:
 
 
 fn main():
-    let res_exp = exp_scalar_taylor_float32(2.3)
+    var res_exp = exp_scalar_taylor_float32(2.3)
     # CHECK: 9.88
     print(res_exp)
 
-    let res_erf = erf_taylor_vector(0.8)
+    var res_erf = erf_taylor_vector(0.8)
     # CHECK: 0.71
     print(res_erf)

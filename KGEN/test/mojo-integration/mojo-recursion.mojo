@@ -28,8 +28,8 @@ fn yet_another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
 
 
 fn main():
-    let x = unsafe_factorial(3, 1)
-    let y = another_unsafe_factorial(3, 1)
+    var x = unsafe_factorial(3, 1)
+    var y = another_unsafe_factorial(3, 1)
     # CHECK: 6
     print(x)
     # CHECK: 6

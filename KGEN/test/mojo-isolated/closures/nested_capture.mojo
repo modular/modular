@@ -31,7 +31,7 @@ fn deep_runtime_capture(
         n: __mlir_type.index,
     ) escaping -> fn (o: __mlir_type.index) escaping -> __mlir_type.index:
         fn my_inner_closure(o: __mlir_type.index) escaping -> __mlir_type.index:
-            let x = __mlir_op.`index.add`(o, m)
+            var x = __mlir_op.`index.add`(o, m)
             return __mlir_op.`index.add`(x, n)
 
         return my_inner_closure
