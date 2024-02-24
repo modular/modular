@@ -848,7 +848,7 @@ fn use_error(e: Error):
 
 # expected-error @below {{cannot call function that may raise in a context that cannot raise}}
 # expected-note @below {{try surrounding the call in a 'try' block}}
-let np = top_level_func()
+var np = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
