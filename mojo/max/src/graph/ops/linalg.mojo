@@ -3,44 +3,50 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Linear algebra operations."""
 
 from math import max
 
 from max.graph.type import Dim, ElementType, MOTensor
+from max.graph.type_promotion import promote
 from max.graph.ops.casting import reshape
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
-    """Outer product of two vectors. This function does not broadcast."""
+    """Computes the outer product of two symbolic vectors.
+
+    Args:
+        lhs: The left side of the product. Whatever its shape,
+            it will be flattened to a rank-1 vector.
+        rhs: The right side of the product. Whatever its shape,
+            it will be flattened to a rank-1 vector. Must have the
+            same number of elements as `lhs`.
+
+    Returns:
+        A symbolic tensor representing the
+        [outer product](https://en.wikipedia.org/wiki/Outer_product)
+        of the two input vectors. It will have rank 2, with the dimension
+        sizes being the number of elements of `lhs` and `rhs` respectively.
+    """
     return lhs.reshape(-1, 1) * rhs.reshape(1, -1)
 
 
-def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var g = lhs.graph()
-    var broadcast_pair = matmul_broadcast(lhs, rhs)
-    var broadcast_lhs = broadcast_pair[0]
-    var broadcast_rhs = broadcast_pair[1]
-
-    var lhs_type = broadcast_lhs.tensor_type()
-    var rhs_type = broadcast_rhs.tensor_type()
-    var dims = DynamicVector[Dim]()
-    for i in range(lhs_type.rank() - 1):
-        dims.push_back(lhs_type.dims[i])
-    dims.push_back(rhs_type.dim(-1))
-    var out_type = MOTensor(lhs_type.dtype, dims)
-
-    return g.op("mo.batch_matmul", (broadcast_lhs, broadcast_rhs), out_type)
-
-
-def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
-    var rhs_type = rhs.tensor_type()
-    if rhs_type.rank() > 2:
-        return batch_matmul(lhs, rhs)
-    else:
-        return matmul_by_matrix(lhs, rhs)
-
-
 def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
+    """Computes the broadcasting of two symbolic tensors for a matmul.
+
+    Args:
+        lhs: The left side of the matmul.
+        rhs: The right side of the matmul.
+
+    Returns:
+        A pair of symbolic tensors corresponding to the `lhs` and `rhs`
+        respectively, after being broadcast to the right shapes to perform
+        a matmul between them. This is similar to an `elementwise_broadcast`
+        except in the final two dimensions of each tensor. The last dimension
+        of `lhs` is broadcast against the 2nd-to-last dimension of `rhs`, while
+        the 2nd-to-last dimension of `lhs` and the last dimension of `rhs` are
+        untouched.
+    """
     var g = lhs.graph()
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
@@ -93,7 +99,77 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     return (broadcast_lhs, broadcast_rhs)
 
 
+def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the matrix multiplication of two symbolic tensors.
+
+    The last two dimensions of each tensor are treated as matricies and multiplied,
+    and the remaining dimensions are broadcast dimensions.
+
+    Args:
+        lhs: The left-hand-side of the matmul.
+        rhs: The right-hand-side of the matmul.
+
+    Returns:
+        A symbolic tensor representing he result of broadcasting the two
+        matricies together according to `matmul_broadcast` and then performing
+        a matrix multiply along the last two dimension of each tensor.
+    """
+    var rhs_type = rhs.tensor_type()
+    if rhs_type.rank() > 2:
+        return batch_matmul(lhs, rhs)
+    else:
+        return matmul_by_matrix(lhs, rhs)
+
+
+def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the matrix multiplication of two symbolic tensors.
+
+    The last two dimensions of each tensor are treated as matricies and multiplied,
+    and the remaining dimensions are broadcast dimensions.
+
+    This supports arbitrary-rank `rhs` inputs, but may be less performant than
+    `matmul_by_matrix`.
+
+    Args:
+        lhs: The left-hand-side of the matmul.
+        rhs: The right-hand-side of the matmul.
+
+    Returns:
+        A symbolic tensor representing he result of broadcasting the two
+        matricies together according to `matmul_broadcast` and then performing
+        a matrix multiply along the last two dimension of each tensor.
+    """
+    var g = lhs.graph()
+    var broadcast_pair = matmul_broadcast(lhs, rhs)
+    var broadcast_lhs = broadcast_pair[0]
+    var broadcast_rhs = broadcast_pair[1]
+
+    var lhs_type = broadcast_lhs.tensor_type()
+    var rhs_type = broadcast_rhs.tensor_type()
+    var dims = DynamicVector[Dim]()
+    for i in range(lhs_type.rank() - 1):
+        dims.push_back(lhs_type.dims[i])
+    dims.push_back(rhs_type.dim(-1))
+    var out_type = MOTensor(lhs_type.dtype, dims)
+
+    return g.op("mo.batch_matmul", (broadcast_lhs, broadcast_rhs), out_type)
+
+
 def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
+    """Computes the matrix multiplication of two symbolic tensors.
+
+    The last two dimensions of each tensor are treated as matricies and multiplied,
+    and the remaining dimensions are broadcast dimensions.
+
+    Args:
+        lhs: The left-hand-side of the matmul.
+        rhs: The right-hand-side of the matmul. Must have rank exactly 2.
+
+    Returns:
+        A symbolic tensor representing he result of broadcasting the two
+        matricies together according to `matmul_broadcast` and then performing
+        a matrix multiply along the last two dimension of each tensor.
+    """
     var g = lhs.graph()
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
