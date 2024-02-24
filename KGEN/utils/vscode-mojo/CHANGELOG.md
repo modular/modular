@@ -35,6 +35,8 @@
   highlighted in specific contexts.
 - [#1740](https://github.com/modularml/mojo/issues/1740) - LSP shows unrelated
   info when hovering over a struct.
+- [#1696](https://github.com/modularml/mojo/issues/1696) - Fixed an issue that
+  caused syntax highlighting to occasionally fail.
 
 ## 0.7.0
 
