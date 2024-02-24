@@ -322,36 +322,8 @@ fn issue15404():
 
 
 ##===----------------------------------------------------------------------===##
-# var -> var and incorrect var warnings
+# incorrect warnings
 ##===----------------------------------------------------------------------===##
-
-
-fn use(a: Int):
-    pass
-
-
-fn testVarToLet(cond: Bool):
-    var a: Int
-    if cond:
-        a = 1
-    else:
-        a = 2
-    use(a)
-
-    var b: Int
-    if cond:
-        b = 1
-        use(b)
-
-    var c: Int
-    if cond:
-        c = 1
-    c = 2  # This is correct to be a var.
-    use(c)
-
-    var d: TwoRegs
-    d = TwoRegs()
-    var e = d ^  # Consume from var is fine.
 
 # Consumption of struct works only on definition of __del__
 # https://github.com/modularml/mojo/issues/734
@@ -385,7 +357,6 @@ fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
     for i in range(0, 1):
         w.x.y = 0
-
 
 # ===----------------------------------------------------------------------=== #
 # More complex references

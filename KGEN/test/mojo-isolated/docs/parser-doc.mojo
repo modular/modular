@@ -33,7 +33,7 @@ from docs_package import documented_method_defined_in_init
 alias AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""
 
-let value = __mlir_attr.`10 : index`
+var value = __mlir_attr.`10 : index`
 """This is a global variable doc."""
 
 struct Struct:

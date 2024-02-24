@@ -31,13 +31,13 @@ struct ConvertibleFromInt:
 # CHECK: }, {
 # CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
-let conv_from_int: ConvertibleFromInt = `2`
+var conv_from_int: ConvertibleFromInt = `2`
 
 # CHECK-LABEL: lit.globalvar.decl @conv_from_int_implicit : !ConvertibleFromInt
 # CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int_implicit : <!ConvertibleFromInt
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <3>
 # CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[REF]], %[[VAL]])
-let conv_from_int_implicit = ConvertibleFromInt(`3`)
+var conv_from_int_implicit = ConvertibleFromInt(`3`)
 
 
 @value
@@ -55,7 +55,7 @@ struct RegType:
 # CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
 # CHECK-NEXT: %[[CONSUMED:.*]] = lit.load.consume %[[REF]]
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[CONSUMED]])
-let reg_global: RegType = RegType()
+var reg_global: RegType = RegType()
 
 # CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType isVar
 # CHECK-DAG: %[[VAL:.*]] = lit.call {{.*}}@RegType::@"__init__()"()

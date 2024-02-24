@@ -43,9 +43,9 @@ struct OwnedInt:
 
 var ints = ThreeInts()
 
-let x = OwnedInt(10, ints)
-let y = OwnedInt(x.value + 20, ints)
-let z = OwnedInt(y.value + 30, ints)
+var x = OwnedInt(10, ints)
+var y = OwnedInt(x.value + 20, ints)
+var z = OwnedInt(y.value + 30, ints)
 
 
 fn main():
