@@ -28,8 +28,8 @@ def bench_unary[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
 ](inout m: MojoBench, size_range: _StridedRange, op_name: String):
-    for i in range(len(size_range)):
-        bench_unary[func, type](m, size_range[i], op_name)
+    for i in size_range:
+        bench_unary[func, type](m, i, op_name)
 
 
 def bench_unary[
