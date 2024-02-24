@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Ops which slice/index/stack/concat etc."""
 
 from collections.optional import Optional
 from tensor import TensorShape
@@ -19,6 +20,22 @@ from max.graph.symbol import SymbolTuple, SymbolicSlice
 
 
 def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
+    """Selects elements out of an input tensor by index.
+
+    See [`mo.gather`](/engine/reference/mlir/mo#mogather-mmogatherop)
+    for more details.
+
+    Args:
+        input: The input symbolic tensor to select elements from.
+        indices: A symbolic tensor of index values to use for selection.
+        axis: The dimension which `indices` indexes from `input`.
+            If negative, indexes relative to the end of the input tensor.
+            For instance `gather(input, indices, axis=-1)` will index
+            against the last dimension of `input`.
+
+    Returns:
+        A new symbolic tensor representing the result of the gather operation.
+    """
     var g = input.graph()
     var input_type = input.tensor_type()
     var indices_type = indices.tensor_type()
@@ -53,6 +70,23 @@ def slice(
     slices: DynamicVector[SymbolicSlice],
     static_shape: Optional[DynamicVector[Dim]] = None,
 ) -> Symbol:
+    """Slices a symbolic tensor along each dimension.
+
+    Args:
+        input: The symbolic tensor to slice.
+        slices: Per-dimension slice specifiers. If smaller than the
+            input rank, trivial slices (ie. ones which select the whole range)
+            will be added to the end for the remaining dimensions.
+        static_shape: An optional shape to use to hint the output type.
+
+    Returns:
+        A new symbolic tensor representing the result of slicing the
+        input along each dimension using each slice in `slices`
+        respectively. The output will have the same rank as the input,
+        but fewer values depending on the slices. If `static_shape` is
+        present it will be used as the output tensor's shape, otherwise
+        each dimension will be dynamic size.
+    """
     var g = input.graph()
     var input_type = input.tensor_type()
 
@@ -109,19 +143,46 @@ def slice(
 
 # TODO: Change to DynamicVector once Slice is a CollectionElement.
 def slice(input: Symbol, s: Slice) -> Symbol:
+    """Slices a symbolic tensor along its first dimension.
+
+    Args:
+        input: The symbolic tensor to slice.
+        s: A slice applied to the first dimension of the input.
+
+    Returns:
+        A new symbolic tensor representing the result of slicing the
+        input along its major dimension according to `s`. The output will
+        have the same rank as the input, but fewer values depending on the
+        slice.
+    """
     var t = input.tensor_type()
     var dims = DynamicVector[Dim]()
     var sym_slices = DynamicVector[SymbolicSlice]()
-    for i in range(t.rank()):
-        if i < 1:
-            dims.append(len(s))
-            sym_slices.append(SymbolicSlice(input.graph(), s))
-        else:
-            dims.append(t.dims[i])
+    # There's a lot of corner cases we're getting wrong here:
+    # - if `s` has no `end` then it uses math.limit.max_finite[DType.index]
+    #    which causes `len` to be very wrong
+    # - slices are allowed to negative-index, and for instance `len(Slice(0, -1)) is -1`
+    dims.append(len(s))
+    sym_slices.append(SymbolicSlice(input.graph(), s))
+    for i in range(1, t.rank()):
+        dims.append(t.dims[i])
     return slice(input, sym_slices, static_shape=dims)
 
 
 def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
+    """Slices out a `n-1`-d plane from the input symbolic tensor.
+
+    Args:
+        input: The symbolic tensor to slice.
+        idx: The index to select along the given axis.
+        axis: The axis to select using the index.
+
+    Returns:
+        A new symbolic tensor representing the result of selecting every
+        value having the specified `index` in the specified `axis`. The result
+        will have rank `n-1` where `n` is the rank of the input tensor,
+        with the `axis` dimension removed.
+    """
     var input_type = input.tensor_type()
     var rank = input_type.rank()
 
@@ -147,22 +208,39 @@ def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
 
 def split[
     n: Int
-](x: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> SymbolTuple:
-    var g = x.graph()
-    var x_type = x.tensor_type()
-    var norm_axis = axis + x_type.rank() if axis < 0 else axis
+](input: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> SymbolTuple:
+    """Splits a symbolic tensor into specified bucket sizes along the axis.
+
+    Parameters:
+        n: The number of symbolic tensors to split into.
+
+    Args:
+        input: The symbolic tensor to split.
+        sizes: The list of sizes for each split.
+        axis: The axis to split along.
+
+    Returns:
+        `n` symbolic tensor values. The `i`th result corresponds to the
+        `sizes[i]`. Each tensor will have the same rank as the input,
+        and will be the result of slicing the input of `sizes[i]` elements
+        along `axis`, starting at the offset of the cumulative sum of the
+        previous sizes.
+    """
+    var g = input.graph()
+    var type = input.tensor_type()
+    var norm_axis = axis + type.rank() if axis < 0 else axis
 
     var split_sizes = DynamicVector[Int64]()
     var out_types = TypeTuple()
     for i in range(n):
         split_sizes.append(sizes[i])
-        var out_dims = x_type.dims
+        var out_dims = type.dims
         out_dims[norm_axis] = Dim.static(sizes[i])
-        out_types.append(MOTensor(x_type.dtype, out_dims))
+        out_types.append(MOTensor(type.dtype, out_dims))
 
     return g.nvop(
         "mo.split",
-        (x, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))),
+        (input, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))),
         out_types,
     )
 
@@ -173,6 +251,22 @@ def split[
 
 
 def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
+    """Concatenates a list of symbolic tensors along an axis.
+
+    Args:
+        values: A list of symbolic tensor values. Each tensor must have the same
+            dtype and rank, and must have the same dimension size for each
+            dimension other than `axis`.
+        axis: The axis to concatenate along. If negative, indexes relative
+            to the end of the tensor shape. For instance, `concat(vs, -1)`
+            will concat along the last dimension.
+
+    Returns:
+        A new symbolic tensor representing the concatenation result. It will
+        have the same rank as each input tensor, and its dimenions will be the same
+        as each input tensor's for each dimension other than `axis`, which will
+        have size equal to the sum of all tensor's size for that dimension.
+    """
     if not len(values):
         raise "must concat at least 1 value"
     var v0 = values[0]
@@ -225,6 +319,27 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
 
 
 def stack(values: SymbolTuple, axis: Int = 0) -> Symbol:
+    """Stacks a list of tensors along a new axis.
+
+    Args:
+        values: A list of symbolic tensor values. Each tensor must have the same
+            dtype and rank, and must have the same dimension size for each
+            dimension.
+        axis: The axis to concatenate along. If negative, indexes relative
+            to the end of the tensor shape _plus 1_. For instance,
+            `stack(vs, -1)` will create and stack along a new axis as the
+            last dimension, aad `stack(vs, -2)` will create and stack along a new
+            dimension which is inserted immediately before the last dimension.
+
+    Returns:
+        A new symbolic tensor representing the result of the stack. It will
+        have rank `n+1` where `n` is the rank of each input tensor. Its size
+        on each dimension other than `axis` will be the same as each input tensors',
+        with the new axis inserted. Along the new dimension it will have size
+        `len(values)`.
+    """
+    if axis < 0:
+        axis += values[0].tensor_type().rank() + 1
     var unsqueezed = DynamicVector[Symbol]()
     for i in range(len(values)):
         unsqueezed.append(unsqueeze(values[i], axis))
