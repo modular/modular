@@ -3,6 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Ops working with complex types.
+
+We don't have a formal complex type yet, so we represent complex numbers
+as having a final dimension of size 2, representing the real and complex
+parts respectively.
+"""
 
 # These operations assume that all tensors have last dim == 2, representing real
 # and imaginary parts.
@@ -18,12 +24,37 @@ from max.graph.type import Dim
 
 
 def as_complex(real: Symbol, imag: Symbol) -> Symbol:
+    """Creates a complex-valued tensor from two real-valued tensors.
+
+    Args:
+        real: A symbolic tensor representing the real part of the complex value.
+        imag: A symbolic tensor representing the imaginary part of the complex value.
+            Must have the same shape and dtype as `real`.
+
+    Returns:
+        A new symbolic tensor representing the complex valued tensor comprised from
+        `real` and `imag`. Each element is paired elementwise.
+    """
+    # """Builds a complex symbolic tensor from two real-valued symbolic tensors.
     return stack((real, imag), axis=-1)
 
 
 def as_interleaved_complex(interleaved: Symbol) -> Symbol:
-    """Reshape the input tensor as complex, interpreting the last dimension
-    as being alternating (real, imag) pairs."""
+    """Reshapes the input symbolic tensor as complex from alternating (real, imag).
+
+    Args:
+        interleaved: A symbolic tensor representing complex numbers as
+            alternating pairs of (real, imag) real-valued numbers. Its last
+            dimension must have an even size.
+
+    Returns:
+        A symbolic tensor representing the complex-valued tensor, but with the
+        values pulled out as complex numbers. The result will have the same
+        dimensions for all dimensions except the last, which will be halved,
+        and then a final dimension of size 2 representing the complex value.
+    """
+    # """Reshape the input tensor as complex, interpreting the last dimension
+    # as being alternating (real, imag) pairs."""
     var g = interleaved.graph()
     var interleaved_t = interleaved.tensor_type()
     var last_d = interleaved_t.rank() - 1
@@ -43,6 +74,17 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
 
 
 def as_real(complex: Symbol) -> SymbolTuple:
+    """Splits out the real and imaginary components of a symbolic tensor.
+
+    Args:
+        complex: The input complex-valued symbolic tensor.
+
+    Returns:
+        A pair of real-valued symbolic tensors, each with the same shape and rank
+        as the input tensor, except the last dim of size 2 is removed. The first
+        represents the real part of the input tensor, and the the second represents
+        the imaginary part.
+    """
     var splits = split[2](complex, (1, 1), axis=-1)
     var real = splits[0]
     var imag = splits[1]
@@ -55,7 +97,18 @@ def as_real(complex: Symbol) -> SymbolTuple:
 
 
 def mul_complex(lhs: Symbol, rhs: Symbol) -> Symbol:
-    """Multiply complex-like real valued tensors."""
+    """Multiplies two complex-valued symbolic tensors elementwise.
+
+    Args:
+        lhs: A complex-valued symbolic tensor.
+        rhs: A complex-valued symbolic tensor.
+
+    Returns:
+        A new complex-valued symbolic tensor. Each element represents
+        the elementwize complex multiplication of the element at that location in
+        the two input tensors. Type promotion and broadcasting rules are
+        applied as described in `elementwise`.
+    """
     var lhs_pair = as_real(lhs)
     var rhs_pair = as_real(lhs)
     var l_real = lhs_pair[0]
