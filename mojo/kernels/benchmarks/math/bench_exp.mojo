@@ -6,6 +6,7 @@
 
 from math import *
 from math.math import _exp_taylor, _simd_apply
+from builtin.range import _StridedRange
 
 from algorithm.functional import vectorize
 from benchmark import keep
@@ -21,6 +22,14 @@ fn apply[
         output.simd_store(idx, func(input.simd_load[width](idx)))
 
     vectorize[_func, simdwidthof[type]()](len(input))
+
+
+def bench_unary[
+    func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
+    type: DType,
+](inout m: MojoBench, size_range: _StridedRange, op_name: String):
+    for i in range(len(size_range)):
+        bench_unary[func, type](m, size_range[i], op_name)
 
 
 def bench_unary[
@@ -215,9 +224,9 @@ fn exp_mojo_opt[
 
 def main():
     var m = MojoBench()
-    for i in range(4):
-        bench_unary[exp, DType.float32](m, 1 << (10 + i), "mojo")
-        bench_unary[exp_mojo_opt, DType.float32](m, 1 << (10 + i), "mojo_opt")
-        bench_unary[exp_libm, DType.float32](m, 1 << (10 + i), "libm")
-        bench_unary[exp_sleef, DType.float32](m, 1 << (10 + i), "sleef")
+    var problem_size = range(1 << 10, 1 << 12, 1 << 10)
+    bench_unary[exp, DType.float32](m, problem_size, "mojo")
+    bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
+    bench_unary[exp_libm, DType.float32](m, problem_size, "libm")
+    bench_unary[exp_sleef, DType.float32](m, problem_size, "sleef")
     m.dump_report()
