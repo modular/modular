@@ -6,7 +6,6 @@
 
 add_modular_library(LowerLIT
   CheckLifetimes.cpp
-  CheckRecursiveStructs.cpp
   LowerLIT.cpp
   LowerSemanticCF.cpp
   LowerLITTypes.cpp

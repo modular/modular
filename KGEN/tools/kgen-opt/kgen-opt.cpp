@@ -346,7 +346,6 @@ int main(int argc, char **argv) {
   // Register opt passes.
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
-  KGEN::registerCheckRecursiveStructs();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerExternalizePrecompiledFunctions();
   KGEN::registerFoldGlobalConstLoads();

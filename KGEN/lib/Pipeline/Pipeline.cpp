@@ -22,11 +22,6 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
   pm.addPass(createVerifyParameters());
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
-
-  // Check if a struct contains recursive nested struct fields and emit error if
-  // found.
-  pm.addPass(createCheckRecursiveStructs());
-
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
 }
