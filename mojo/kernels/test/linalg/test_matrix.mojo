@@ -67,7 +67,7 @@ fn test_matrix_dynamic():
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
     var a = Buffer[DType.int32, 16].stack_allocation()
-    # let m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
+    # var m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
     var m = NDBuffer[DType.int32, 2, DimList.create_unknown[2]()](
         a.data, Index(4, 4)
     )
