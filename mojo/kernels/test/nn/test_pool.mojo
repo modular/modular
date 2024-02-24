@@ -295,20 +295,20 @@ fn test_max_pool_pad_dilation_2d():
     alias in_shape = DimList(1, 4, 4, 1)
     alias out_shape = DimList(1, 1, 3, 1)
 
-    let input_tensor = Tensor[DType.float32](1, 4, 4, 1)
-    let output_tensor = Tensor[DType.float32](1, 1, 3, 1)
+    var input_tensor = Tensor[DType.float32](1, 4, 4, 1)
+    var output_tensor = Tensor[DType.float32](1, 1, 3, 1)
     fill_tensor[4](input_tensor)
     fill_tensor[4](output_tensor, 0.0)
 
-    let paddings = StaticIntTuple[4](0, 0, 2, 0)
-    let filter = StaticIntTuple[2](2, 2)
-    let stride = StaticIntTuple[2](1, 1)
-    let dilation = StaticIntTuple[2](3, 3)
+    var paddings = StaticIntTuple[4](0, 0, 2, 0)
+    var filter = StaticIntTuple[2](2, 2)
+    var stride = StaticIntTuple[2](1, 1)
+    var dilation = StaticIntTuple[2](3, 3)
 
-    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    let filter_tensor = _static_int_tuple_to_tensor(filter)
-    let stride_tensor = _static_int_tuple_to_tensor(stride)
-    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    var filter_tensor = _static_int_tuple_to_tensor(filter)
+    var stride_tensor = _static_int_tuple_to_tensor(stride)
+    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
 
     alias simd_width = simdwidthof[DType.float32]()
 
