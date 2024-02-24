@@ -9,8 +9,8 @@ For instance,
 
 ```mojo
 var g = Graph(...)
-let x = g.scalar[DType.int16](1)
-let y = g.scalar[DType.float32](1.)
+var x = g.scalar[DType.int16](1)
+var y = g.scalar[DType.float32](1.)
 g.output(x + y)  # what dtype does this have?!
 ```
 
@@ -176,7 +176,6 @@ fn all_greater_or_equal_elements[
     while queue:
         var next = queue.pop()
         # TODO(30973): can't inline this in the for loop
-        # TODO(30974): can't bind this with a let
         var es = semilattice[next]
         for e in es:
             if e[] not in results:

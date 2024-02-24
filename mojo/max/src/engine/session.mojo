@@ -519,7 +519,7 @@ struct InferenceSession:
     fn __del__(owned self):
         if __get_address_as_lvalue(self.ptr.value).ref_count.fetch_sub(1) != 1:
             # There are others holding reference to this session. Keep the
-            # session alive and var other reference holders deal with
+            # session alive and let other reference holders deal with
             # managing it.
             return
 
