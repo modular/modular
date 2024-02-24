@@ -41,7 +41,7 @@ struct CRuntimeConfig:
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
     fn set_device(self, borrowed lib: DLHandle, device: String):
-        let device_ref = device._strref_dangerous()
+        var device_ref = device._strref_dangerous()
         call_dylib_func(lib, Self.SetDeviceFnName, self, device_ref.data, 0)
         device._strref_keepalive()
 
@@ -145,7 +145,7 @@ struct RuntimeContext:
     alias NewRuntimeContextFnName = "M_newRuntimeContext"
 
     fn __init__(inout self, owned config: RuntimeConfig, lib: DLHandle):
-        let status = Status(lib)
+        var status = Status(lib)
         self.ptr = call_dylib_func[CRuntimeContext](
             lib,
             Self.NewRuntimeContextFnName,

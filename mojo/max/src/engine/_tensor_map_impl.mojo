@@ -30,8 +30,8 @@ struct CTensorMap:
     alias GetTensorMapSizeFnName = "M_getTensorMapSize"
 
     fn get_tensor_by_name(self, name: CString, lib: DLHandle) raises -> CTensor:
-        let status = Status(lib)
-        let tensor = call_dylib_func[CTensor](
+        var status = Status(lib)
+        var tensor = call_dylib_func[CTensor](
             lib, Self.GetTensorByNameFromFnName, self, name, status.borrow_ptr()
         )
         if status:
@@ -39,8 +39,8 @@ struct CTensorMap:
         return tensor
 
     fn get_value_by_name(self, name: CString, lib: DLHandle) raises -> CValue:
-        let status = Status(lib)
-        let value = call_dylib_func[CValue](
+        var status = Status(lib)
+        var value = call_dylib_func[CValue](
             lib, Self.GetValueByNameFromFnName, self, name, status.borrow_ptr()
         )
         if status:
@@ -53,7 +53,7 @@ struct CTensorMap:
         spec: EngineTensorSpec,
         lib: DLHandle,
     ) raises:
-        let status = Status(lib)
+        var status = Status(lib)
         call_dylib_func(
             lib,
             Self.BorrowTensorIntoFnName,
@@ -71,7 +71,7 @@ struct CTensorMap:
         ptr: DTypePointer[DType.invalid],
         lib: DLHandle,
     ) raises:
-        let status = Status(lib)
+        var status = Status(lib)
         call_dylib_func(
             lib,
             Self.BorrowValueIntoFnName,
@@ -85,8 +85,8 @@ struct CTensorMap:
             raise status.__str__()
 
     fn size(self, borrowed lib: DLHandle) raises -> Int:
-        let status = Status(lib)
-        let size = call_dylib_func[Int](
+        var status = Status(lib)
+        var size = call_dylib_func[Int](
             lib, Self.GetTensorMapSizeFnName, self, status.borrow_ptr()
         )
         if status:

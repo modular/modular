@@ -39,7 +39,7 @@ struct _InferenceSessionImpl(Movable):
         device: _Device,
     ):
         self.engine = _EngineImpl(lib_path)
-        let config = RuntimeConfig(self.engine.lib, device)
+        var config = RuntimeConfig(self.engine.lib, device)
         self.context = RuntimeContext(config ^, self.engine.lib)
         self.ref_count = 1
 
@@ -53,45 +53,45 @@ struct _InferenceSessionImpl(Movable):
         owned config: LoadOptions,
         owned session: InferenceSession,
     ) raises -> CompiledModel:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to compile model"
 
         var compile_config = CompileConfig(self.engine.lib)
 
-        let model_path = config._model_path
+        var model_path = config._model_path
         if model_path:
-            let path = model_path.value()
+            var path = model_path.value()
             compile_config.set_model_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
-        let custom_ops_path = config._custom_ops_path
+        var custom_ops_path = config._custom_ops_path
         if custom_ops_path:
-            let path = custom_ops_path.value()
+            var path = custom_ops_path.value()
             compile_config.set_replace_ops_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
-        let model_source = config._source
+        var model_source = config._source
         if model_source and model_path:
             raise "give either module source or path"
 
         if model_source:
             compile_config.set_model_source(model_source.value())
 
-        let spec_count = len(config._input_specs)
+        var spec_count = len(config._input_specs)
         for i in range(spec_count):
-            let _spec = config._input_specs[i]
+            var _spec = config._input_specs[i]
             if _spec.static:
                 compile_config.add_input_spec(_spec.static.value())
             else:
-                let dtype = _spec.dtype
+                var dtype = _spec.dtype
                 compile_config.add_input_spec(_spec.dynamic, dtype)
 
         compile_config.set_torch_input_specs()
 
-        let status = Status(self.engine.lib)
-        let compile_ptr = compile_config.borrow_ptr()
-        let compiled_model_ptr = call_dylib_func[CCompiledModel](
+        var status = Status(self.engine.lib)
+        var compile_ptr = compile_config.borrow_ptr()
+        var compiled_model_ptr = call_dylib_func[CCompiledModel](
             self.engine.lib,
             CompiledModel.CompileModelFnName,
             context,
@@ -101,7 +101,7 @@ struct _InferenceSessionImpl(Movable):
         if status:
             raise status.__str__()
 
-        let model = CompiledModel(
+        var model = CompiledModel(
             compiled_model_ptr, self.engine.lib, session ^
         )
         _ = compile_config ^
@@ -120,8 +120,8 @@ struct _InferenceSessionImpl(Movable):
         owned compiled_model: CompiledModel,
         owned session: InferenceSession,
     ) raises -> Model:
-        let status = Status(self.engine.lib)
-        let model_ptr = call_dylib_func[CModel](
+        var status = Status(self.engine.lib)
+        var model_ptr = call_dylib_func[CModel](
             self.engine.lib,
             Model._InitModelFnName,
             self.context.borrow_ptr(),
@@ -133,7 +133,7 @@ struct _InferenceSessionImpl(Movable):
 
         model_ptr.await_model(self.engine.lib)
 
-        let model = Model(
+        var model = Model(
             self.context.borrow_ptr(),
             model_ptr,
             self.engine.lib,
@@ -150,7 +150,7 @@ struct _InferenceSessionImpl(Movable):
         """
         Compiles and initializes the model.
         """
-        let compiled_model = self._compile_model_from_config(
+        var compiled_model = self._compile_model_from_config(
             config ^, session.copy()
         )
 
@@ -162,7 +162,7 @@ struct _InferenceSessionImpl(Movable):
         spec: TensorSpec,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor spec"
         return EngineTensorSpec(name, spec, self.engine.lib, session ^)
@@ -174,7 +174,7 @@ struct _InferenceSessionImpl(Movable):
         dtype: DType,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor spec"
         return EngineTensorSpec(name, shape, dtype, self.engine.lib, session ^)
@@ -182,7 +182,7 @@ struct _InferenceSessionImpl(Movable):
     fn new_tensor_map(
         self, owned session: InferenceSession
     ) raises -> TensorMap:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor map"
         return TensorMap(self.context.borrow_ptr(), self.engine.lib, session ^)
@@ -193,7 +193,7 @@ struct _InferenceSessionImpl(Movable):
         self, owned session: InferenceSession, tensor: Tensor[type]
     ) raises -> Value:
         """Create a new Value representing data borrowed from given tensor."""
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor value"
         return Value._new_borrowed_tensor[type](
@@ -203,7 +203,7 @@ struct _InferenceSessionImpl(Movable):
     fn new_bool_value(
         self, owned session: InferenceSession, value: Bool
     ) raises -> Value:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create bool value"
         return Value._new_bool(
@@ -211,7 +211,7 @@ struct _InferenceSessionImpl(Movable):
         )
 
     fn new_list_value(self, owned session: InferenceSession) raises -> Value:
-        let context = self.context.borrow_ptr()
+        var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create list value"
         return Value._new_list(
@@ -266,7 +266,7 @@ struct LoadOptions(CollectionElement):
         Args:
             module: Max Graph module.
         """
-        let mlir_module = module._module
+        var mlir_module = module._module
         self._source = ModelSource(mlir_module.c.ptr, FrameworkFormat.MAXGraph)
 
     fn _set_model_path(inout self, path: Path):
@@ -358,8 +358,8 @@ struct InferenceSession:
     var ptr: AnyPointer[_InferenceSessionImpl]
 
     fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
-        let path = _get_engine_path()
-        let self = Self._allocateAndInit(path, options._device)
+        var path = _get_engine_path()
+        var self = Self._allocateAndInit(path, options._device)
         return Self {ptr: self}
 
     @staticmethod
@@ -367,7 +367,7 @@ struct InferenceSession:
         lib_path: String,
         device: _Device,
     ) raises -> AnyPointer[_InferenceSessionImpl]:
-        let ptr = AnyPointer[_InferenceSessionImpl].alloc(1)
+        var ptr = AnyPointer[_InferenceSessionImpl].alloc(1)
         __get_address_as_uninit_lvalue(ptr.value).__init__(lib_path, device)
         return ptr
 
@@ -519,7 +519,7 @@ struct InferenceSession:
     fn __del__(owned self):
         if __get_address_as_lvalue(self.ptr.value).ref_count.fetch_sub(1) != 1:
             # There are others holding reference to this session. Keep the
-            # session alive and let other reference holders deal with
+            # session alive and var other reference holders deal with
             # managing it.
             return
 

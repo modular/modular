@@ -60,7 +60,7 @@ struct TensorMap(SizedRaising):
             key: Name of tensor in map.
             value: Tensor to be held in map.
         """
-        let spec = EngineTensorSpec(
+        var spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(
@@ -77,7 +77,7 @@ struct TensorMap(SizedRaising):
             key: Name of tensor in map.
             value: View of a tensor.
         """
-        let spec = EngineTensorSpec(
+        var spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(value.data(), spec, self.lib)
@@ -92,7 +92,7 @@ struct TensorMap(SizedRaising):
             key: Name of numpy array in map.
             value: View of a numpy array.
         """
-        let spec = EngineTensorSpec(
+        var spec = EngineTensorSpec(
             key._strref_dangerous(), value.spec(), self.lib, self.session.copy()
         )
         self.ptr.borrow_tensor_by_name(value.data(), spec, self.lib)
@@ -119,12 +119,12 @@ struct TensorMap(SizedRaising):
         Args:
             key: Name of tensor / numpy array in the map.
         """
-        let tensor_ptr = self.ptr.get_tensor_by_name(
+        var tensor_ptr = self.ptr.get_tensor_by_name(
             key._strref_dangerous().data, self.lib
         )
         key._strref_keepalive()
-        let mof_tensor = EngineTensor(tensor_ptr, self.lib, self.session.copy())
-        let tensor = mof_tensor.tensor[type]()
+        var mof_tensor = EngineTensor(tensor_ptr, self.lib, self.session.copy())
+        var tensor = mof_tensor.tensor[type]()
         return tensor ^
 
     fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
@@ -136,7 +136,7 @@ struct TensorMap(SizedRaising):
         Returns:
             Buffer of the tensor pointed by the key.
         """
-        let tensor_ptr = self.ptr.get_tensor_by_name(
+        var tensor_ptr = self.ptr.get_tensor_by_name(
             key._strref_dangerous().data, self.lib
         )
         key._strref_keepalive()
@@ -153,7 +153,7 @@ struct TensorMap(SizedRaising):
         Returns:
             Value pointed by the key.
         """
-        let value_ptr = self.ptr.get_value_by_name(
+        var value_ptr = self.ptr.get_value_by_name(
             key._strref_dangerous().data, self.lib
         )
         key._strref_keepalive()

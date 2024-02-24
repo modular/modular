@@ -15,14 +15,14 @@ from pathlib import Path
 
 
 fn _get_engine_path() raises -> String:
-    let engine_lib_path_str_ptr = external_call[
+    var engine_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
     ]("max.engine_lib")
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-    let pathlen = len(StringRef(engine_lib_path_str_ptr))
-    let engine_lib_path = String(
+    var pathlen = len(StringRef(engine_lib_path_str_ptr))
+    var engine_lib_path = String(
         engine_lib_path_str_ptr, pathlen + 1
     )  # account for the terminator
 
@@ -57,7 +57,7 @@ struct _EngineImpl:
         Returns:
             Version as string.
         """
-        let version = call_dylib_func[CString](self.lib, Self.VersionFnName)
+        var version = call_dylib_func[CString](self.lib, Self.VersionFnName)
         return version.__str__()
 
     fn __enter__(owned self) -> Self:

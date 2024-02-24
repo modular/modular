@@ -16,11 +16,11 @@ from python import Python
 fn test_numpy_view() raises:
     # CHECK: test_numpy_view
     print("====test_numpy_view")
-    let np = Python.import_module("numpy")
+    var np = Python.import_module("numpy")
 
     var n1 = np.array([1, 2, 3]).astype(np.float32)
 
-    let n1_view = EngineNumpyView(n1)
+    var n1_view = EngineNumpyView(n1)
 
     # CHECK: 3xfloat32
     print(n1_view.spec().__str__())

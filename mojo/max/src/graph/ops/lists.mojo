@@ -23,12 +23,12 @@ fn list(elements: SymbolTuple) raises -> Symbol:
     if len(elements) == 0:
         raise "`elements` cannot be empty"
 
-    let g = elements[0].graph()
-    let m = g.module()
-    let type = elements[0].tensor_type()
+    var g = elements[0].graph()
+    var m = g.module()
+    var type = elements[0].tensor_type()
 
     for i in range(1, len(elements)):
-        let elt_type = elements[i].tensor_type()
+        var elt_type = elements[i].tensor_type()
         if not elt_type == type:
             raise "elements must all have the same type " + type.to_string(
                 m

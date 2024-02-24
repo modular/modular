@@ -53,19 +53,19 @@ from max.graph.type_promotion import promote
 
 def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     var g = lhs.graph()
-    let lhs_type = lhs.tensor_type()
-    let rhs_type = rhs.tensor_type()
+    var lhs_type = lhs.tensor_type()
+    var rhs_type = rhs.tensor_type()
 
     if lhs_type == rhs_type and lhs_type.is_static():
         return (lhs, rhs)
 
-    let lhs_rank = lhs_type.rank()
-    let rhs_rank = rhs_type.rank()
-    let bcast_rank = math_max(lhs_rank, rhs_rank)
+    var lhs_rank = lhs_type.rank()
+    var rhs_rank = rhs_type.rank()
+    var bcast_rank = math_max(lhs_rank, rhs_rank)
 
-    let lhs_shape = shape_of(lhs)
-    let rhs_shape = shape_of(rhs)
-    let broadcast_shape = g.op(
+    var lhs_shape = shape_of(lhs)
+    var rhs_shape = shape_of(rhs)
+    var broadcast_shape = g.op(
         "mo.broadcast_shape",
         (lhs_shape, rhs_shape),
         MOTensor(DType.int64, bcast_rank),
@@ -76,24 +76,24 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     #   2. Dimensions are promoted by the rule 1 -> N -> dynamic
     # TODO: Raise error if static dumensions don't match and can't be promoted.
     var broadcast_dims = DynamicVector[Dim]()
-    let larger = lhs_type if lhs_rank > rhs_rank else rhs_type
-    let smaller = rhs_type if lhs_rank > rhs_rank else lhs_type
-    let offset = larger.rank() - smaller.rank()
+    var larger = lhs_type if lhs_rank > rhs_rank else rhs_type
+    var smaller = rhs_type if lhs_rank > rhs_rank else lhs_type
+    var offset = larger.rank() - smaller.rank()
     for i in range(offset):
         broadcast_dims.push_back(larger.dims[i])
     for i in range(offset, bcast_rank):
-        let d1 = larger.dims[i]
-        let d2 = smaller.dims[i - offset]
+        var d1 = larger.dims[i]
+        var d2 = smaller.dims[i - offset]
         broadcast_dims.push_back(
             d1 if d1 == d2 or d2 == 1 else (d2 if d1 == 1 else Dim.dynamic())
         )
 
-    let broadcast_lhs = g.op(
+    var broadcast_lhs = g.op(
         "mo.broadcast_to",
         (lhs, broadcast_shape),
         MOTensor(lhs_type.dtype, broadcast_dims),
     )
-    let broadcast_rhs = g.op(
+    var broadcast_rhs = g.op(
         "mo.broadcast_to",
         (rhs, broadcast_shape),
         MOTensor(rhs_type.dtype, broadcast_dims),
@@ -108,8 +108,8 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 
 
 def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
-    let broadcast_operands = elementwise_broadcast(lhs, rhs)
-    let operands = promote(broadcast_operands[0], broadcast_operands[1])
+    var broadcast_operands = elementwise_broadcast(lhs, rhs)
+    var operands = promote(broadcast_operands[0], broadcast_operands[1])
     return lhs.graph().op(op_name, operands, operands[0].tensor_type())
 
 
@@ -364,8 +364,8 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
 def _binary_comparison_op[
     op_name: StringLiteral
 ](lhs: Symbol, rhs: Symbol) -> Symbol:
-    let operands = elementwise_broadcast(lhs, rhs)
-    let result_type = operands[0].tensor_type().cast(DType.bool)
+    var operands = elementwise_broadcast(lhs, rhs)
+    var result_type = operands[0].tensor_type().cast(DType.bool)
     return lhs.graph().op(op_name, operands, result_type)
 
 
@@ -515,16 +515,16 @@ def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
 
 
 def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
-    let dtype = value.tensor_type().dtype.dtype
+    var dtype = value.tensor_type().dtype.dtype
     # This should be an arbitrary-precision float when we get around to it
     # ie. currently `2. * sqrt(2)` will compute `sqrt(2)` as a float16
     # and then promote it rather than computing in the right precision.
-    let float_v = cast(value, promote(dtype, DType.float16))
+    var float_v = cast(value, promote(dtype, DType.float16))
     return value.graph().op(op_name, float_v, float_v.tensor_type())
 
 
 def _unary_comparison_op[op_name: StringLiteral](value: Symbol) -> Symbol:
-    let result_type = value.tensor_type().cast(DType.bool)
+    var result_type = value.tensor_type().cast(DType.bool)
     return value.graph().op(op_name, value, result_type)
 
 

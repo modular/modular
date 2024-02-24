@@ -18,9 +18,9 @@ fn test_tensor_spec() raises:
     # CHECK: test_tensor_spec
     print("====test_tensor_spec")
 
-    let session = InferenceSession()
-    let spec = TensorSpec(DType.float32, 1, 2, 3)
-    let engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
+    var session = InferenceSession()
+    var spec = TensorSpec(DType.float32, 1, 2, 3)
+    var engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
 
     # CHECK: 1
     print(engine_spec[0].value())
@@ -38,7 +38,7 @@ fn test_tensor_spec() raises:
     dynamic_dim_shape.push_back(None)
     dynamic_dim_shape.push_back(Int64(1))
     dynamic_dim_shape.push_back(Int64(2))
-    let dynamic_dim_spec = session.get_as_engine_tensor_spec(
+    var dynamic_dim_spec = session.get_as_engine_tensor_spec(
         "tensor", dynamic_dim_shape, DType.float32
     )
 
@@ -54,7 +54,7 @@ fn test_tensor_spec() raises:
     # CHECK: {name=tensor, spec=-1x1x2xfloat32}
     print(str(dynamic_dim_spec))
 
-    let dynamic_rank_spec = session.get_as_engine_tensor_spec(
+    var dynamic_rank_spec = session.get_as_engine_tensor_spec(
         "tensor", None, DType.float32
     )
 

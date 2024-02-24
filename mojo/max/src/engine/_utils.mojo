@@ -35,7 +35,7 @@ fn exchange[T: AnyRegType](inout old_var: T, owned new_value: T) -> T:
     Assign `new_value` to `old_var` and returns the value previously
     contained in `old_var`.
     """
-    let old = old_var
+    var old = old_var
     old_var = new_value
     return old
 
@@ -230,7 +230,7 @@ struct OwningVector[T: Movable](Sized):
     var capacity: Int
 
     fn __init__(inout self):
-        let ptr = AnyPointer[T].alloc(Self.initial_capacity)
+        var ptr = AnyPointer[T].alloc(Self.initial_capacity)
         self.ptr = ptr
         self.size = 0
         self.capacity = Self.initial_capacity
@@ -247,7 +247,7 @@ struct OwningVector[T: Movable](Sized):
             return
 
         self.capacity = self.capacity * 2
-        let new_ptr = AnyPointer[T].alloc(self.capacity)
+        var new_ptr = AnyPointer[T].alloc(self.capacity)
         for i in range(self.size):
             (new_ptr + i).emplace_value((self.ptr + i).take_value())
         self.ptr.free()

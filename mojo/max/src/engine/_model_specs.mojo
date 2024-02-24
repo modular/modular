@@ -27,7 +27,7 @@ struct CTensorNameArray:
     fn get_name_at(self, idx: Int, lib: DLHandle) raises -> String:
         if not self.ptr:
             raise "failed to get tensor name"
-        let name = call_dylib_func[CString](
+        var name = call_dylib_func[CString](
             lib, Self.GetTensorNameAtFnName, self, idx
         )
         return name.__str__()
@@ -51,7 +51,7 @@ struct TensorNamesIterator(Sized):
         self.lib = lib
 
     fn __next__(inout self) raises -> String:
-        let next = self.ptr.get_name_at(self.current, self.lib)
+        var next = self.ptr.get_name_at(self.current, self.lib)
         self.current += 1
         return next
 
@@ -73,7 +73,7 @@ struct TensorNames(Sized):
         length: Int,
         lib: DLHandle,
     ):
-        let status = Status(lib)
+        var status = Status(lib)
         self.ptr = call_dylib_func[CTensorNameArray](
             lib, fn_name._strref_dangerous(), ptr, status.borrow_ptr()
         )

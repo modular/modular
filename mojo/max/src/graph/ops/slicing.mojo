@@ -20,8 +20,8 @@ from max.graph.symbol import SymbolTuple, SymbolicSlice
 
 def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     var g = input.graph()
-    let input_type = input.tensor_type()
-    let indices_type = indices.tensor_type()
+    var input_type = input.tensor_type()
+    var indices_type = indices.tensor_type()
 
     if axis < 0:
         axis += input_type.rank()
@@ -53,10 +53,10 @@ def slice(
     slices: DynamicVector[SymbolicSlice],
     static_shape: Optional[DynamicVector[Dim]] = None,
 ) -> Symbol:
-    let g = input.graph()
-    let input_type = input.tensor_type()
+    var g = input.graph()
+    var input_type = input.tensor_type()
 
-    let out_shape: DynamicVector[Dim]
+    var out_shape: DynamicVector[Dim]
     if static_shape:
         out_shape = static_shape.value()
     else:
@@ -68,7 +68,7 @@ def slice(
                 dims.append(input_type.dims[axis])
         out_shape = dims
 
-    let input_shape = shape_of(input)
+    var input_shape = shape_of(input)
     var starts = DynamicVector[Symbol]()
     var stops = DynamicVector[Symbol]()
     var steps = DynamicVector[Symbol]()
@@ -96,9 +96,9 @@ def slice(
         else:
             steps.append(g.scalar(Int64(1)))
 
-    let start = stack(starts, axis=0)
-    let stop = stack(stops, axis=0)
-    let step = stack(steps, axis=0)
+    var start = stack(starts, axis=0)
+    var stop = stack(stops, axis=0)
+    var step = stack(steps, axis=0)
 
     return g.op(
         "mo.slice",
@@ -109,7 +109,7 @@ def slice(
 
 # TODO: Change to DynamicVector once Slice is a CollectionElement.
 def slice(input: Symbol, s: Slice) -> Symbol:
-    let t = input.tensor_type()
+    var t = input.tensor_type()
     var dims = DynamicVector[Dim]()
     var sym_slices = DynamicVector[SymbolicSlice]()
     for i in range(t.rank()):
@@ -122,8 +122,8 @@ def slice(input: Symbol, s: Slice) -> Symbol:
 
 
 def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
-    let input_type = input.tensor_type()
-    let rank = input_type.rank()
+    var input_type = input.tensor_type()
+    var rank = input_type.rank()
 
     if axis < 0:
         axis = rank + axis
@@ -149,8 +149,8 @@ def split[
     n: Int
 ](x: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> SymbolTuple:
     var g = x.graph()
-    let x_type = x.tensor_type()
-    let norm_axis = axis + x_type.rank() if axis < 0 else axis
+    var x_type = x.tensor_type()
+    var norm_axis = axis + x_type.rank() if axis < 0 else axis
 
     var split_sizes = DynamicVector[Int64]()
     var out_types = TypeTuple()
@@ -175,12 +175,12 @@ def split[
 def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
     if not len(values):
         raise "must concat at least 1 value"
-    let v0 = values[0]
+    var v0 = values[0]
     var g = values[0].graph()
 
-    let v0_type = v0.tensor_type()
-    let rank = v0_type.rank()
-    let norm_axis = axis + v0_type.rank() if axis < 0 else axis
+    var v0_type = v0.tensor_type()
+    var rank = v0_type.rank()
+    var norm_axis = axis + v0_type.rank() if axis < 0 else axis
     if norm_axis < 0 or norm_axis >= v0_type.rank():
         raise (
             "concat axis out of bounds: axis="
@@ -191,7 +191,7 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
 
     var concat_dim: Dim = 0
     for i in range(len(values)):
-        let v_type = values[i].tensor_type()
+        var v_type = values[i].tensor_type()
         if v_type.rank() != rank:
             raise (
                 "all concat values must have same rank: rank[0]="
@@ -201,7 +201,7 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
                 + "]="
                 + String(v_type.rank())
             )
-        let dim = v_type.dims[norm_axis]
+        var dim = v_type.dims[norm_axis]
         if concat_dim.is_dynamic() or dim.is_dynamic():
             concat_dim = Dim.dynamic()
         elif dim.is_symbolic():

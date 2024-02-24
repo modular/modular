@@ -25,7 +25,7 @@ struct CModel:
     alias WaitForModelFnName = "M_waitForModel"
 
     fn await_model(self, lib: DLHandle) raises:
-        let status = Status(lib)
+        var status = Status(lib)
         call_dylib_func(
             lib, Self.WaitForModelFnName, self.ptr, status.borrow_ptr()
         )

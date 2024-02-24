@@ -49,8 +49,8 @@ struct Model:
         Args:
           inputs: A tensor map with input names as keys and inputs as values.
         """
-        let status = Status(self._lib)
-        let outputs = call_dylib_func[CTensorMap](
+        var status = Status(self._lib)
+        var outputs = call_dylib_func[CTensorMap](
             self._lib,
             Self._ExecuteFnName,
             self._ctx,
@@ -67,9 +67,9 @@ struct Model:
     ](
         self, inputs: VariadicList[Tuple[key_type, value_type]]
     ) raises -> TensorMap:
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         for i in range(len(inputs)):
-            let pair = inputs[i]
+            var pair = inputs[i]
 
             @parameter
             if _mlirtype_is_eq[key_type, StringRef]():
@@ -154,7 +154,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name, input)
         return self.execute(input_map)
 
@@ -170,7 +170,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name, EngineNumpyView(input))
         return self.execute(input_map)
 
@@ -194,7 +194,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, input1)
         input_map.borrow(name2, input2)
         return self.execute(input_map)
@@ -217,7 +217,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, EngineNumpyView(input1))
         input_map.borrow(name2, EngineNumpyView(input2))
         return self.execute(input_map)
@@ -246,7 +246,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, input1)
         input_map.borrow(name2, input2)
         input_map.borrow(name3, input3)
@@ -274,7 +274,7 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
         input_map.borrow(name1, EngineNumpyView(input1))
         input_map.borrow(name2, EngineNumpyView(input2))
         input_map.borrow(name3, EngineNumpyView(input3))

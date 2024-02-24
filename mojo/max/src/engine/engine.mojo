@@ -12,7 +12,7 @@ fn get_version() raises -> String:
     Returns:
         Version as string.
     """
-    let path = _get_engine_path()
-    let version = _EngineImpl(path._strref_dangerous()).get_version()
+    var path = _get_engine_path()
+    var version = _EngineImpl(path._strref_dangerous()).get_version()
     path._strref_keepalive()
     return version

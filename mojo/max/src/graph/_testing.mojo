@@ -34,15 +34,15 @@ fn assert_tensors_equal[
 fn execute_nullary[
     outtype: DType = DType.float32
 ](module: Module) raises -> Tensor[outtype]:
-    let result_map = execute_no_args(module)
+    var result_map = execute_no_args(module)
     return result_map.get[outtype]("output0")
 
 
 fn execute_nullary_list[
     outtype: DType = DType.float32
 ](module: Module) raises -> DynamicVector[Tensor[outtype]]:
-    let result_map = execute_no_args(module)
-    let engine_list = result_map.get_value("output0").as_list()
+    var result_map = execute_no_args(module)
+    var engine_list = result_map.get_value("output0").as_list()
     var results = DynamicVector[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
@@ -53,7 +53,7 @@ fn execute_nullary_list[
 fn execute_unary[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](module: Module, input: Tensor[intype]) raises -> Tensor[outtype]:
-    let result_map = execute_base(module, input)
+    var result_map = execute_base(module, input)
     return result_map.get[outtype]("output0")
 
 
@@ -62,8 +62,8 @@ fn execute_unary_list[
 ](module: Module, input: Tensor[intype]) raises -> DynamicVector[
     Tensor[outtype]
 ]:
-    let result_map = execute_base(module, input)
-    let engine_list = result_map.get_value("output0").as_list()
+    var result_map = execute_base(module, input)
+    var engine_list = result_map.get_value("output0").as_list()
     var results = DynamicVector[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
@@ -76,18 +76,18 @@ fn execute_binary[
 ](module: Module, x: Tensor[intype], y: Tensor[intype]) raises -> Tensor[
     outtype
 ]:
-    let result_map = execute_base(module, x, y)
+    var result_map = execute_base(module, x, y)
     return result_map.get[outtype]("output0")
 
 
 fn execute_no_args(m: Module) raises -> TensorMap:
     m.verify()
 
-    let session = InferenceSession()
-    let model = session.load_model(m)
+    var session = InferenceSession()
+    var model = session.load_model(m)
 
-    let input_map = session.new_tensor_map()
-    let result_map = model.execute(input_map)
+    var input_map = session.new_tensor_map()
+    var result_map = model.execute(input_map)
 
     return result_map ^
 
@@ -104,17 +104,17 @@ fn execute_n_args[
 ) raises -> TensorMap:
     m.verify()
 
-    let session = InferenceSession()
-    let model = session.load_model(m)
+    var session = InferenceSession()
+    var model = session.load_model(m)
 
-    let input_map = session.new_tensor_map()
+    var input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
     input_map.borrow("input1", t2)
     input_map.borrow("input2", t3)
     input_map.borrow("input3", t4)
     input_map.borrow("input4", t5)
 
-    let result_map = model.execute(input_map)
+    var result_map = model.execute(input_map)
 
     return result_map ^
 
@@ -122,13 +122,13 @@ fn execute_n_args[
 fn execute_base(m: Module, *tensors: Tensor) raises -> TensorMap:
     m.verify()
 
-    let session = InferenceSession()
-    let model = session.load_model(m)
+    var session = InferenceSession()
+    var model = session.load_model(m)
 
-    let input_map = session.new_tensor_map()
+    var input_map = session.new_tensor_map()
     for i in range(len(tensors)):
         input_map.borrow("input" + str(i), tensors[i])
 
-    let result_map = model.execute(input_map)
+    var result_map = model.execute(input_map)
 
     return result_map ^

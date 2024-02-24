@@ -21,8 +21,8 @@ fn test_tensor_map() raises:
         for j in range(3):
             t1[Index(i, j)] = 1
 
-    let session = InferenceSession()
-    let map = session.new_tensor_map()
+    var session = InferenceSession()
+    var map = session.new_tensor_map()
 
     # CHECK: 0
     print(len(map))
@@ -31,12 +31,12 @@ fn test_tensor_map() raises:
 
     # CHECK: 1
     print(len(map))
-    let t2 = map.get[DType.float32]("tensor")
+    var t2 = map.get[DType.float32]("tensor")
 
     # CHECK: 1
     print(len(map))
 
-    let t3 = map.get[DType.float32]("tensor")
+    var t3 = map.get[DType.float32]("tensor")
 
     # CHECK: True
     print(t1 == t2)
@@ -55,9 +55,9 @@ fn test_tensor_map_value() raises:
         for j in range(3):
             t1[Index(i, j)] = 1
 
-    let session = InferenceSession()
-    let map = session.new_tensor_map()
-    let t1_value = session.new_borrowed_tensor_value(t1)
+    var session = InferenceSession()
+    var map = session.new_tensor_map()
+    var t1_value = session.new_borrowed_tensor_value(t1)
 
     # CHECK: 0
     print(len(map))
@@ -67,12 +67,12 @@ fn test_tensor_map_value() raises:
     # CHECK: 1
     print(len(map))
 
-    let t2 = map.get[DType.float32]("tensor")
+    var t2 = map.get[DType.float32]("tensor")
     # CHECK: True
     print(t1 == t2)
 
-    let t3_value = map.get_value("tensor")
-    let t3 = t3_value.as_tensor_copy[DType.float32]()
+    var t3_value = map.get_value("tensor")
+    var t3 = t3_value.as_tensor_copy[DType.float32]()
     # CHECK: True
     print(t1 == t3)
 

@@ -174,7 +174,7 @@ fn all_greater_or_equal_elements[
     var results = Set[T](element)
     var queue = Set[T](element)
     while queue:
-        let next = queue.pop()
+        var next = queue.pop()
         # TODO(30973): can't inline this in the for loop
         # TODO(30974): can't bind this with a let
         var es = semilattice[next]
@@ -211,7 +211,7 @@ fn join[
     var gte = all_greater_or_equal_elements(semilattice, e0)
     for e in elts:
         gte &= all_greater_or_equal_elements(semilattice, e[])
-    let min_gte = min(semilattice, gte ^)
+    var min_gte = min(semilattice, gte ^)
     if not min_gte:
         raise "No unique join"
     return min_gte.value()
@@ -259,7 +259,7 @@ fn promote(lhs: Symbol, rhs: Symbol) raises -> SymbolTuple:
         A `SymbolTuple` containing `lhs` and `rhs`, cast to the promoted dtype
         if necessary.
     """
-    let dtype = promote(
+    var dtype = promote(
         lhs.tensor_type().dtype.dtype, rhs.tensor_type().dtype.dtype
     )
     return (cast(lhs, dtype), cast(rhs, dtype))

@@ -48,7 +48,7 @@ struct CTensor:
     fn get_tensor_spec(
         self, borrowed lib: DLHandle, owned session: InferenceSession
     ) -> EngineTensorSpec:
-        let spec = call_dylib_func[CTensorSpec](
+        var spec = call_dylib_func[CTensorSpec](
             lib, Self.GetTensorSpecFnName, self
         )
         return EngineTensorSpec(spec, lib, session ^)
@@ -89,7 +89,7 @@ struct EngineTensor(Sized):
         return self.ptr.data(self.lib)
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
-        let ptr = self.data()
+        var ptr = self.data()
         return bitcast[type](ptr)
 
     fn dtype(self) -> DType:
@@ -109,7 +109,7 @@ struct EngineTensor(Sized):
         )
 
     fn tensor[type: DType](self) raises -> Tensor[type]:
-        let tensor = Tensor[type](self.spec())
+        var tensor = Tensor[type](self.spec())
         memcpy(
             tensor.data(),
             self.data[type](),
@@ -128,7 +128,7 @@ struct _Numpy:
     var np: AnyPointer[PythonObject]
 
     fn __init__() raises -> Self:
-        let np_ptr = AnyPointer[PythonObject].alloc(1)
+        var np_ptr = AnyPointer[PythonObject].alloc(1)
         __get_address_as_uninit_lvalue(np_ptr.value) = Python.import_module(
             "numpy"
         )

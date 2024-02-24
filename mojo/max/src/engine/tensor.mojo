@@ -128,7 +128,7 @@ struct EngineNumpyView:
         Returns:
             DTypePointer of given type.
         """
-        let data_ptr = __get_address_as_lvalue(
+        var data_ptr = __get_address_as_lvalue(
             self.ptr.address
         ).ctypes.data.__index__()
         return bitcast[DType.invalid](data_ptr)
@@ -139,7 +139,7 @@ struct EngineNumpyView:
         Returns
             DataType of the array backing the view.
         """
-        let self_type = __get_address_as_lvalue(self.ptr.address).dtype
+        var self_type = __get_address_as_lvalue(self.ptr.address).dtype
         if self_type == self.np.int8:
             return DType.int8
         if self_type == self.np.int16:

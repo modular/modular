@@ -24,7 +24,7 @@ fn test_session() raises:
     # CHECK: test_session
     print("====test_session")
 
-    let session = InferenceSession()
+    var session = InferenceSession()
 
 
 fn main() raises:

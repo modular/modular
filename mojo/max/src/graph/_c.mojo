@@ -19,14 +19,14 @@ import _mlir
 
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
-    let mof_lib_path_str_ptr = external_call[
+    var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
     ]("max.graph_lib")
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-    let pathlen = len(StringRef(mof_lib_path_str_ptr))
-    let mof_lib_path = String(
+    var pathlen = len(StringRef(mof_lib_path_str_ptr))
+    var mof_lib_path = String(
         mof_lib_path_str_ptr, pathlen + 1
     )  # account for the terminator
 
@@ -36,7 +36,7 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     if not Path(mof_lib_path).exists():
         trap("cannot load graph library from " + mof_lib_path)
 
-    let ptr = Pointer[DLHandle].alloc(1)
+    var ptr = Pointer[DLHandle].alloc(1)
     ptr.store(
         DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
     )
@@ -54,7 +54,7 @@ fn cfunc[func_name: StringLiteral, T: AnyRegType]() -> T:
     var f = _get_dylib_function[
         "MOF_LIB", func_name, _init_dylib, _destroy_dylib, T
     ]()
-    let ptr = Pointer.address_of(f).bitcast[Pointer[NoneType]]().load()
+    var ptr = Pointer.address_of(f).bitcast[Pointer[NoneType]]().load()
     if not ptr:
         trap("cannot load " + String(func_name) + " from graph library")
     return f
@@ -166,7 +166,7 @@ fn tensor_type_new(
     dims: DynamicVector[_mlir.Attribute],
     ranked: Bool,
 ) -> _mlir.Type:
-    let result = cfunc[
+    var result = cfunc[
         "MAXG_tensorTypeNew",
         fn (
             _mlir.Module.c_type,
@@ -189,7 +189,7 @@ fn tensor_type_new(
 
 
 fn tensor_type_get_dtype(v: _mlir.Type) -> DType:
-    let dtype = cfunc[
+    var dtype = cfunc[
         "MAXG_tensorTypeGetDType", fn (_mlir.Type.c_type) -> UInt8
     ]()(v.c)
     return DType._from_ui8(dtype.value)

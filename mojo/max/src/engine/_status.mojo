@@ -32,7 +32,7 @@ struct CStatus:
         """
         Get Error String from Engine library.
         """
-        let error = call_dylib_func[CString](lib, Self.GetErrorFnName, self)
+        var error = call_dylib_func[CString](lib, Self.GetErrorFnName, self)
         return error.__str__()
 
     fn free(self, borrowed lib: DLHandle):

@@ -41,15 +41,15 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        let parent = self._value.parent()
-        let block: _mlir.Block
+        var parent = self._value.parent()
+        var block: _mlir.Block
         if parent.isa[_mlir.Block]():
             block = parent.get[_mlir.Block]()[]
         else:
-            let op = parent.get[_mlir.Operation]()[]
+            var op = parent.get[_mlir.Operation]()[]
             block = op.block()
 
-        let graph_op = block.parent()
+        var graph_op = block.parent()
         return Graph(graph_op)
 
     fn type(self) raises -> AnyMOType:
@@ -69,7 +69,7 @@ struct Symbol(CollectionElement, Stringable):
                 shape.append(Dim.dynamic())
                 symbols.append(dim[].get[Symbol]()[])
             else:
-                let d = dim[].get[Int]()[]
+                var d = dim[].get[Int]()[]
                 shape.append(d if d >= 0 else Dim.dynamic())
                 symbols.append(self.graph().scalar[DType.int64](d))
 
@@ -94,7 +94,7 @@ struct Symbol(CollectionElement, Stringable):
         return ops.slice(self, i, axis=axis)
 
     fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
-        let g = self.graph()
+        var g = self.graph()
         return ops.slice(self, g.scalar(Int64(i)), axis=axis)
 
     fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
@@ -114,21 +114,21 @@ struct Symbol(CollectionElement, Stringable):
         return self.list_get(self.graph().constant[DType.int64](i))
 
     fn list_get(self, i: Symbol) raises -> Symbol:
-        let g = self.graph()
-        let result_type = self.type().list().eltype
+        var g = self.graph()
+        var result_type = self.type().list().eltype
         return g.op("mo.list.get", (self, i), result_type)
 
     fn list_insert(self, i: Int, v: Symbol) raises -> Symbol:
         return self.list_insert(self.graph().constant[DType.int64](i), v)
 
     fn list_insert(self, i: Symbol, v: Symbol) raises -> Symbol:
-        let g = self.graph()
-        let result_type = self.type().list().eltype
+        var g = self.graph()
+        var result_type = self.type().list().eltype
         return g.op("mo.list.insert", (self, v, i), result_type)
 
     fn print(self, label: String = "debug_tensor") raises:
         var g = self.graph()
-        let attrs = AttrMap(g.module().string_attr("label", label))
+        var attrs = AttrMap(g.module().string_attr("label", label))
         _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
 
     fn transpose(self) raises -> Symbol:
@@ -329,7 +329,7 @@ struct Symbol(CollectionElement, Stringable):
     fn replace_all_uses_with(
         self, transform: fn (Symbol) raises -> Symbol
     ) raises:
-        let dummy = self.graph().constant[DType.float32](0)
+        var dummy = self.graph().constant[DType.float32](0)
         self.replace_all_uses_with(dummy)
         dummy.replace_all_uses_with(transform(self))
 
@@ -373,7 +373,7 @@ struct SymbolTuple(Sized):
         self.__init__()
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol)):
-        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
+        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
             __get_address_as_lvalue(
@@ -382,7 +382,7 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
-        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
+        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
             __get_address_as_lvalue(
@@ -394,7 +394,7 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
-        let ptr = Pointer.address_of(symbols).bitcast[Int8]()
+        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
             __get_address_as_lvalue(

@@ -99,7 +99,7 @@ struct Module(Stringable):
     fn tensor_attr[
         dtype: DType
     ](self, name: String, owned value: Tensor[dtype]) -> _mlir.NamedAttribute:
-        let t = MOTensor(value.spec()).to_mlir(self)
+        var t = MOTensor(value.spec()).to_mlir(self)
         return _c.attr_new_tensor(
             self._module,
             name,
@@ -141,7 +141,7 @@ struct Module(Stringable):
         return self.tensor_attr[dtype](name, Tensor(shape, value))
 
     fn string_attr(self, name: String, value: String) -> _mlir.NamedAttribute:
-        let ctx = self._module.context()
+        var ctx = self._module.context()
         return _mlir.NamedAttribute(
             name=_mlir.Identifier(ctx, name),
             attr=_mlir.builtin_attributes.StringAttr(ctx, value),
@@ -169,13 +169,13 @@ struct Module(Stringable):
         Returns:
             A new `Graph` instance inside the module.
         """
-        let ctx = self._module.context()
-        let loc = _mlir.Location.unknown(ctx)
+        var ctx = self._module.context()
+        var loc = _mlir.Location.unknown(ctx)
 
-        let function_type = _mlir.builtin_types.FunctionType(
+        var function_type = _mlir.builtin_types.FunctionType(
             ctx, in_types.to_mlir(self), out_types.to_mlir(self)
         )
-        let op = _c.graph_new(
+        var op = _c.graph_new(
             self._module, loc, name._strref_dangerous(), function_type
         )
         name._strref_keepalive()

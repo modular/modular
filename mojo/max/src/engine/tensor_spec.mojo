@@ -48,10 +48,10 @@ struct EngineTensorSpec(Stringable, Movable):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
-        let dtype = spec.dtype()
-        let rank = spec.rank()
+        var dtype = spec.dtype()
+        var rank = spec.rank()
         var shape = DynamicVector[Int64]()
-        let name_str = name._as_ptr()
+        var name_str = name._as_ptr()
         for i in range(rank):
             shape.push_back(spec[i])
         self.ptr = call_dylib_func[CTensorSpec](
@@ -75,15 +75,15 @@ struct EngineTensorSpec(Stringable, Movable):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
-        let name_str = name._as_ptr()
+        var name_str = name._as_ptr()
         if shape:
-            let inner_shape = shape.value()
-            let rank = len(inner_shape)
+            var inner_shape = shape.value()
+            var rank = len(inner_shape)
             var adjusted_shape = DynamicVector[Int64]()
             adjusted_shape.reserve(rank)
-            let dynamic_value = CTensorSpec.get_dynamic_dimension_value(lib)
+            var dynamic_value = CTensorSpec.get_dynamic_dimension_value(lib)
             for i in range(rank):
-                let dim = inner_shape[i]
+                var dim = inner_shape[i]
                 if not dim:
                     adjusted_shape.push_back(dynamic_value)
                 else:
@@ -127,7 +127,7 @@ struct EngineTensorSpec(Stringable, Movable):
         if self.ptr.is_dynamically_ranked(self.lib):
             raise "spec is dynamically ranked"
 
-        let dim = self.ptr.get_dim_at(idx, self.lib)
+        var dim = self.ptr.get_dim_at(idx, self.lib)
         if dim == CTensorSpec.get_dynamic_dimension_value(self.lib):
             return None
         return dim
@@ -159,16 +159,16 @@ struct EngineTensorSpec(Stringable, Movable):
         Raises
             Raise error if spec has dynamic rank.
         """
-        let rank_or = self.rank()
+        var rank_or = self.rank()
         if not rank_or:
             raise "tensors with dynamic rank cannot be converted to Mojo TensorSpec."
 
         var shape = DynamicVector[Int]()
-        let rank = rank_or.value()
+        var rank = rank_or.value()
         for i in range(rank):
             shape.push_back(self[i].value())
-        let dtype = self.ptr.get_dtype(self.lib)
-        let spec = TensorSpec(dtype.to_dtype(), shape)
+        var dtype = self.ptr.get_dtype(self.lib)
+        var spec = TensorSpec(dtype.to_dtype(), shape)
         return spec
 
     fn get_name(self) -> String:
@@ -188,14 +188,14 @@ struct EngineTensorSpec(Stringable, Movable):
         var _repr: String = "{name="
         _repr += self.get_name()
         _repr += ", spec="
-        let rank_or = self.rank()
+        var rank_or = self.rank()
         if not rank_or:
             _repr += "None x "
             _repr += str(self.ptr.get_dtype(self.lib).to_dtype())
         else:
-            let rank = rank_or.value()
+            var rank = rank_or.value()
             for i in range(rank):
-                let dim: Optional[Int]
+                var dim: Optional[Int]
                 try:
                     dim = self[i]
                 except err:

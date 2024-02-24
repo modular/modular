@@ -39,14 +39,14 @@ struct CTensorSpec:
         return call_dylib_func[Int](lib, Self.GetRankFnName, self)
 
     fn get_name(self, lib: DLHandle) -> String:
-        let name = call_dylib_func[CString](lib, Self.GetNameFnName, self)
+        var name = call_dylib_func[CString](lib, Self.GetNameFnName, self)
         return name.__str__()
 
     fn get_dtype(self, lib: DLHandle) -> EngineDType:
         return call_dylib_func[EngineDType](lib, Self.GetDTypeFnName, self)
 
     fn is_dynamically_ranked(self, lib: DLHandle) -> Bool:
-        let is_dynamic = call_dylib_func[Int](
+        var is_dynamic = call_dylib_func[Int](
             lib, Self.IsDynamicallyRankedFnName, self
         )
         return is_dynamic == 1

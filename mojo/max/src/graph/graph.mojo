@@ -49,7 +49,7 @@ struct Graph(CollectionElement, Stringable):
             in_types: The input types of the graph's computation.
             out_types: The output types of the graph's computation.
         """
-        let module = Module()
+        var module = Module()
         self = module.graph(name, in_types, out_types)
 
     fn __str__(self) -> String:
@@ -91,7 +91,7 @@ struct Graph(CollectionElement, Stringable):
             If `n` is not a valid argument number.
         """
         # TODO: Add an exmple.
-        let num_args = self._body().num_arguments()
+        var num_args = self._body().num_arguments()
         if (n >= num_args) or (n < 0):
             raise "index out of bounds: " + str(
                 n
@@ -133,9 +133,9 @@ struct Graph(CollectionElement, Stringable):
             The symbolic outputs of the newly-added `Node`.
         """
         # TODO: Add input verification.
-        let ctx = self._op.context()
+        var ctx = self._op.context()
 
-        let op = _mlir.Operation(
+        var op = _mlir.Operation(
             name=name,
             location=_mlir.Location.unknown(ctx),
             operands=inputs.as_values(),
@@ -143,7 +143,7 @@ struct Graph(CollectionElement, Stringable):
             attributes=attrs.attrs,
         )
 
-        let output_op = self._body().terminator()
+        var output_op = self._body().terminator()
         if output_op:
             self._body().insert_before(output_op.value(), op)
         else:

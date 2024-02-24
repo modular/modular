@@ -70,12 +70,12 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
         and whose rank is 1 less than the rank of the input tensor.
     """
     var g = v.graph()
-    let v_type = v.tensor_type()
-    let rank = v_type.rank()
+    var v_type = v.tensor_type()
+    var rank = v_type.rank()
     if axis < 0:
         axis += rank
 
-    let new_shape = g.op(
+    var new_shape = g.op(
         "mo.squeeze_shape",
         (shape_of(v), g.scalar(Int64(axis), rank=1)),
         MOTensor(DType.int64, rank - 1),
@@ -107,8 +107,8 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         shape at the `axis` dimension will be a static dimension of size 1.
     """
     var g = v.graph()
-    let type = v.tensor_type()
-    let rank = type.rank()
+    var type = v.tensor_type()
+    var rank = type.rank()
     # Negative values add an extra 1, as -1 adds a new dim at the _end_.
     if axis < 0:
         axis += rank + 1
@@ -121,7 +121,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         )
 
     # TODO: Bug - passing v_type.rank() + 1 into a variadic Int64 corrupts it.
-    let new_shape = g.op(
+    var new_shape = g.op(
         "mo.unsqueeze_shape",
         (shape_of(v), g.scalar(Int64(axis), rank=1)),
         MOTensor(DType.int64, rank + 1),
@@ -165,7 +165,7 @@ fn reshape(
         divided by the product of elements of the reshape.
     """
     var g = v.graph()
-    let dtype = shape.tensor_type().dtype.dtype
+    var dtype = shape.tensor_type().dtype.dtype
     if not (dtype == DType.int64 or dtype == DType.int32):
         raise "reshape shape must be int32 or int64"
     if shape.tensor_type().rank() != 1:
@@ -202,7 +202,7 @@ fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
     var g = v.graph()
 
     if len(shape) == 0:  # Can't `stack` an empty tuple
-        let dims = DynamicVector[Dim]()
+        var dims = DynamicVector[Dim]()
         return reshape(v, g.constant(Tensor[DType.int64](TensorShape(0))), dims)
 
     for i in range(len(shape)):
@@ -291,7 +291,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
         will be different according to the transposition.
     """
     var g = input.graph()
-    let input_type = input.tensor_type()
+    var input_type = input.tensor_type()
     if input_type.rank() < 2:
         raise "transpose input must have rank >= 2"
     if x < 0:
@@ -302,7 +302,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
         raise "transpose dim outside range"
 
     var dims = DynamicVector[Dim]()
-    let ptr = DTypePointer[DType.int64].alloc(input_type.rank())
+    var ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.push_back(input_type.dims[i])
         ptr.store(i, i)
@@ -312,7 +312,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     ptr.store(x, y)
     ptr.store(y, x)
 
-    let transpose_indices = g.constant(
+    var transpose_indices = g.constant(
         Tensor[DType.int64](ptr, TensorShape(input_type.rank()))
     )
 

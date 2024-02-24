@@ -19,7 +19,7 @@ fn test_tensor_view() raises:
     var t1 = Tensor[DType.float32](3)
     linear_fill(t1, 1.0, 2.0, 3.0)
 
-    let t1_view = EngineTensorView(t1)
+    var t1_view = EngineTensorView(t1)
 
     # CHECK: True
     print(t1.data() == t1_view.data[DType.float32]())
@@ -38,10 +38,10 @@ fn test_tensor_value() raises:
         for j in range(3):
             t1[Index(i, j)] = 1
 
-    let session = InferenceSession()
-    let value = session.new_borrowed_tensor_value(t1)
+    var session = InferenceSession()
+    var value = session.new_borrowed_tensor_value(t1)
 
-    let t2 = value.as_tensor_copy[DType.float32]()
+    var t2 = value.as_tensor_copy[DType.float32]()
 
     # CHECK: True
     print(t1 == t2)

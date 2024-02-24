@@ -48,8 +48,8 @@ struct Value:
         owned session: InferenceSession,
         tensor: Tensor[type],
     ) raises -> Self:
-        let spec = EngineTensorSpec("", tensor.spec(), lib, session.copy())
-        let ptr = call_dylib_func[CValue](
+        var spec = EngineTensorSpec("", tensor.spec(), lib, session.copy())
+        var ptr = call_dylib_func[CValue](
             lib,
             Self._NewBorrowedTensorFnName,
             tensor.data(),
@@ -60,7 +60,7 @@ struct Value:
         return Self(ptr, lib, session ^)
 
     fn _as_engine_tensor(self) raises -> EngineTensor:
-        let ptr = self.ptr.get_c_tensor(self.lib)
+        var ptr = self.ptr.get_c_tensor(self.lib)
         if not ptr.ptr:
             raise "value is not a tensor"
         return EngineTensor(ptr, self.lib, self.session.copy())
@@ -76,7 +76,7 @@ struct Value:
         owned session: InferenceSession,
         value: Bool,
     ) raises -> Self:
-        let ptr = call_dylib_func[CValue](lib, Self._NewBoolFnName, value, ctx)
+        var ptr = call_dylib_func[CValue](lib, Self._NewBoolFnName, value, ctx)
         return Self(ptr, lib, session ^)
 
     fn as_bool(self) -> Bool:
@@ -87,7 +87,7 @@ struct Value:
     fn _new_list(
         ctx: CRuntimeContext, lib: DLHandle, owned session: InferenceSession
     ) raises -> Self:
-        let ptr = call_dylib_func[CValue](lib, Self._NewListFnName, ctx)
+        var ptr = call_dylib_func[CValue](lib, Self._NewListFnName, ctx)
         return Self(ptr, lib, session ^)
 
     fn as_list(self) raises -> List:
@@ -96,7 +96,7 @@ struct Value:
         Ownership of the list is not transferred.  User must ensure the value
         outlives the list.
         """
-        let ptr = self.ptr.get_list(self.lib)
+        var ptr = self.ptr.get_list(self.lib)
         if not ptr.ptr:
             raise "value is not a list"
         return List(ptr, self.lib, self.session.copy())
@@ -130,7 +130,7 @@ struct List(Sized):
         return self.ptr.get_size(self.lib)
 
     fn __getitem__(self, index: Int) raises -> Value:
-        let c_value = self.ptr.get_value(self.lib, index)
+        var c_value = self.ptr.get_value(self.lib, index)
         if not c_value.ptr:
             raise "list index out of range"
         return Value(c_value, self.lib, self.session.copy())

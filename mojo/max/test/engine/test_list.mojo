@@ -17,15 +17,15 @@ fn test_list_value() raises:
     # CHECK-LABEL: ====test_list_value
     print("====test_list_value")
 
-    let session = InferenceSession()
-    let list_value = session.new_list_value()
-    let list = list_value.as_list()
+    var session = InferenceSession()
+    var list_value = session.new_list_value()
+    var list = list_value.as_list()
 
     # CHECK: 0
     print(len(list))
 
-    let false_value = session.new_bool_value(False)
-    let true_value = session.new_bool_value(True)
+    var false_value = session.new_bool_value(False)
+    var true_value = session.new_bool_value(True)
 
     list.append(false_value)
     # CHECK: 1

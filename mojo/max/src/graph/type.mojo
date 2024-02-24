@@ -121,7 +121,7 @@ struct Dim(CollectionElement):
 
     ```mojo
     from max.graph import Dim, MOTensor
-    let tensor_type = MOTensor(DType.int64, "batch", 10, Dim.dynamic())
+    var tensor_type = MOTensor(DType.int64, "batch", 10, Dim.dynamic())
     ```
     will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
     a static dimension of size 10, and a dynamic dimension.
@@ -130,7 +130,7 @@ struct Dim(CollectionElement):
     You can still construct dimensions explicitly via helpers, eg.
 
     ```mojo
-    let some_dims = [
+    var some_dims = [
         Dim.dynamic(),
         Dim.symbolic("batch"),
         Dim.static(5),
@@ -287,17 +287,17 @@ struct Dim(CollectionElement):
             A _mlir.Attribute in the Module's context representing the dimension.
         """
 
-        let ctx = m._module.context()
+        var ctx = m._module.context()
         if self.value.isa[DynamicDim]():
             return _c.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
-            let name = self.value.get[SymbolicDim]()[].name
-            let result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
+            var name = self.value.get[SymbolicDim]()[].name
+            var result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
             name._strref_keepalive()
             return result
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            let dim = self.value.get[StaticDim]()[].dim
+            var dim = self.value.get[StaticDim]()[].dim
             return _c.dim_new_static(ctx, dim)
 
 
@@ -508,14 +508,14 @@ struct MOTensor(MOType, CollectionElement):
         Returns:
             The tensor type represented by the _mlir Type value.
         """
-        let dtype = _c.tensor_type_get_dtype(t)
-        let ranked = _c.tensor_type_is_ranked(t)
+        var dtype = _c.tensor_type_get_dtype(t)
+        var ranked = _c.tensor_type_is_ranked(t)
         if ranked:
-            let rank = _c.tensor_type_get_rank(t)
+            var rank = _c.tensor_type_get_rank(t)
             var dims = DynamicVector[Dim](capacity=rank.to_int())
             for i in range(rank):
-                let dim_attr = _c.tensor_type_get_dim(t, i)
-                let dim: Dim
+                var dim_attr = _c.tensor_type_get_dim(t, i)
+                var dim: Dim
                 if _c.dim_is_dynamic(dim_attr):
                     dim = Dim.dynamic()
                 elif _c.dim_is_static(dim_attr):
@@ -778,7 +778,7 @@ struct AnyMOType(MOType, CollectionElement):
             The type represented by the _mlir Type value.
         """
         if _c.type_is_list(t):
-            let element_type = MOTensor.from_mlir(_c.list_type_element_type(t))
+            var element_type = MOTensor.from_mlir(_c.list_type_element_type(t))
             return Self(MOList(element_type))
         else:
             debug_assert(_c.type_is_tensor(t), "MO type variants")

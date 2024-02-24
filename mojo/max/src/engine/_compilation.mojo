@@ -69,7 +69,7 @@ struct CCompileConfig:
         path._strref_keepalive()
 
     fn replace_ops(self, path: String, borrowed lib: DLHandle) raises:
-        let status = Status(lib)
+        var status = Status(lib)
         var path_strref = path._strref_dangerous()
         call_dylib_func(
             lib, Self.ReplaceOpsFnName, self, path_strref.data, status.ptr
@@ -145,7 +145,7 @@ struct TorchInputSpec(Movable):
         var converted_shape = Self.shape_type()
         converted_shape.reserve(len(shape))
         for i in range(len(shape)):
-            let dim_or = shape[i]
+            var dim_or = shape[i]
             if dim_or:
                 converted_shape.push_back(dim_or.value())
             else:
@@ -217,14 +217,14 @@ struct CompileConfig:
     fn _get_torch_lib() -> Optional[DLHandle]:
         # Since we only need to open this library for this case we
         # can lazy load it here.
-        let torch_ext_lib_path_str_ptr = external_call[
+        var torch_ext_lib_path_str_ptr = external_call[
             "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
         ]("max.torch_ext_lib")
 
         # This transfers ownership of the underlying data buffer allocated in
         # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-        let pathlen = len(StringRef(torch_ext_lib_path_str_ptr))
-        let torch_ext_lib_path = String(
+        var pathlen = len(StringRef(torch_ext_lib_path_str_ptr))
+        var torch_ext_lib_path = String(
             torch_ext_lib_path_str_ptr, pathlen + 1
         )  # account for the terminator
 
@@ -264,7 +264,7 @@ struct CompileConfig:
 
         var inner_spec = DynamicVector[CTorchInputSpec]()
         for i in range(len(self.input_specs)):
-            let spec_ptr = self.input_specs.get(i)
+            var spec_ptr = self.input_specs.get(i)
             inner_spec.push_back(__get_address_as_lvalue(spec_ptr.value).ptr)
         __get_address_as_lvalue(self.ptr.address).set_torch_input_specs(
             self.torch_lib.value(), inner_spec
@@ -295,7 +295,7 @@ struct CompileConfig:
         return self.ptr
 
     fn take_ptr(inout self) -> Pointer[CCompileConfig]:
-        let ptr = self.ptr
+        var ptr = self.ptr
         self.ptr = Pointer[CCompileConfig]()
         return ptr
 
@@ -325,8 +325,8 @@ struct CCompiledModel:
     fn num_model_inputs(self, borrowed lib: DLHandle) raises -> Int:
         """Gets the number of inputs of the model."""
 
-        let status = Status(lib)
-        let num_inputs = call_dylib_func[Int](
+        var status = Status(lib)
+        var num_inputs = call_dylib_func[Int](
             lib, Self.GetNumInputsFnName, self, status.ptr
         )
         if status:
@@ -336,8 +336,8 @@ struct CCompiledModel:
     fn num_model_outputs(self, borrowed lib: DLHandle) raises -> Int:
         """Gets the number of outputs of the model."""
 
-        let status = Status(lib)
-        let num_outputs = call_dylib_func[Int](
+        var status = Status(lib)
+        var num_outputs = call_dylib_func[Int](
             lib, Self.GetNumOutputsFnName, self, status.ptr
         )
         if status:
@@ -375,7 +375,7 @@ struct CompiledModel:
     fn get_model_input_names(self) raises -> DynamicVector[String]:
         """Gets the names of model inputs."""
 
-        let names = InputTensorNames(
+        var names = InputTensorNames(
             self.ptr, self.num_model_inputs(), self.lib
         )
         var name_vec = DynamicVector[String]()
@@ -392,7 +392,7 @@ struct CompiledModel:
     fn get_model_output_names(self) raises -> DynamicVector[String]:
         """Gets the names of model outputs."""
 
-        let names = OutputTensorNames(
+        var names = OutputTensorNames(
             self.ptr, self.num_model_outputs(), self.lib
         )
         var name_vec = DynamicVector[String]()

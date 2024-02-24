@@ -13,13 +13,13 @@ fn test_bool_value() raises:
     # CHECK-LABEL: ====test_bool_value
     print("====test_bool_value")
 
-    let session = InferenceSession()
+    var session = InferenceSession()
 
-    let false_value = session.new_bool_value(False)
+    var false_value = session.new_bool_value(False)
     # CHECK: False
     print(false_value.as_bool())
 
-    let true_value = session.new_bool_value(True)
+    var true_value = session.new_bool_value(True)
     # CHECK: True
     print(true_value.as_bool())
 
