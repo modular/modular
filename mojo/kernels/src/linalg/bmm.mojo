@@ -520,12 +520,16 @@ fn _batched_matmul_gpu[
         ]
         var gpu_func = Function[__type_of(bmm), bmm]()
         gpu_func(
-            (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
-            (BLOCK_DIM, BLOCK_DIM, 1),
             c_buf_reshaped,
             a_buf_reshaped,
             b_buf_reshaped,
             c_buf.dynamic_shape,
+            grid_dim=(
+                div_ceil(n, BLOCK_DIM),
+                div_ceil(m, BLOCK_DIM),
+                batch_size,
+            ),
+            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
             stream=stream,
         )
     except e:
