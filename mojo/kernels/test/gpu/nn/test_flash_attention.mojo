@@ -212,10 +212,6 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
         ]()
 
         func(
-            # grid
-            (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
-            # block
-            (128, 1, 1),
             q_device_ptr,
             k_device_ptr,
             v_device_ptr,
@@ -225,6 +221,12 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             batch_size,
             seq_len,
             num_keys,
+            grid_dim=(
+                div_ceil(seq_len, q_tile_num_rows),
+                num_heads,
+                batch_size,
+            ),
+            block_dim=(128, 1, 1),
             stream=stream,
         )
 
