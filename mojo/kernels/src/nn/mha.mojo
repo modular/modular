@@ -360,14 +360,6 @@ fn flash_attention[
             ]()
 
             func(
-                # grid
-                (
-                    div_ceil(int(seq_len), 32),
-                    int(num_heads),
-                    int(batch_size),
-                ),
-                # block
-                (128, 1, 1),
                 q.data,
                 k.data,
                 v.data,
@@ -376,6 +368,12 @@ fn flash_attention[
                 scale,
                 batch_size,
                 seq_len,
+                grid_dim=(
+                    div_ceil(int(seq_len), 32),
+                    int(num_heads),
+                    int(batch_size),
+                ),
+                block_dim=(128, 1, 1),
                 stream=stream,
             )
         # Slow path for token generation for now and context encoding with
@@ -405,14 +403,6 @@ fn flash_attention[
             ]()
 
             func(
-                # grid
-                (
-                    div_ceil(int(seq_len), 32),
-                    int(num_heads),
-                    int(batch_size),
-                ),
-                # block
-                (128, 1, 1),
                 q.data,
                 k.data,
                 v.data,
@@ -422,6 +412,12 @@ fn flash_attention[
                 batch_size,
                 seq_len,
                 num_keys,
+                grid_dim=(
+                    div_ceil(int(seq_len), 32),
+                    int(num_heads),
+                    int(batch_size),
+                ),
+                block_dim=(128, 1, 1),
                 stream=stream,
             )
 

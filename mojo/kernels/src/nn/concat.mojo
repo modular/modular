@@ -1375,10 +1375,10 @@ fn _concat_gpu[
             ]()
 
             return func(
-                (output.num_elements() // block_size),
-                (block_size),
                 output,
                 inputs,
+                grid_dim=(output.num_elements() // block_size),
+                block_dim=(block_size),
                 stream=stream,
             )
 

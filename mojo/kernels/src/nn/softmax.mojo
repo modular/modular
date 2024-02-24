@@ -784,7 +784,14 @@ fn _softmax_gpu[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    func((num_blocks,), (BLOCK_SIZE,), shape, output, axis, stream=stream)
+    func(
+        shape,
+        output,
+        axis,
+        grid_dim=(num_blocks,),
+        block_dim=(BLOCK_SIZE,),
+        stream=stream,
+    )
 
 
 fn softmax[
