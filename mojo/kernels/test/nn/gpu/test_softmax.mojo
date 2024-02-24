@@ -10,7 +10,7 @@ from math import iota, isclose
 from random import rand
 from sys.info import simdwidthof
 
-from gpu.host import Context, Stream, synchronize
+from gpu.host import Context, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
