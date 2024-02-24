@@ -81,18 +81,18 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
     packed_filter_shape[spec.static_info.rank + 2] = micro_kernel_f_size
 
     var input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
-    var input_ptr = DTypePointer[input_type].aligned_alloc(
-        alignment, input_shape.flattened_length()
+    var input_ptr = DTypePointer[input_type].alloc(
+        input_shape.flattened_length(), alignment=alignment
     )
 
     var packed_filter_size = packed_filter_shape.flattened_length()
-    var filter_ptr = DTypePointer[filter_type].aligned_alloc(
-        alignment, packed_filter_size
+    var filter_ptr = DTypePointer[filter_type].alloc(
+        packed_filter_size, alignment=alignment
     )
 
     var output_shape = extend_shape(output_dims, spec.n, spec.f)
-    var output_ptr = DTypePointer[output_type].aligned_alloc(
-        alignment, output_shape.flattened_length()
+    var output_ptr = DTypePointer[output_type].alloc(
+        output_shape.flattened_length(), alignment=alignment
     )
 
     rand[input_type](input_ptr, input_shape.flattened_length())
