@@ -24,13 +24,13 @@ fn test_pytorch_model() raises:
     # CHECK: test_pytorch_model
     print("====test_pytorch_model")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
-    let session = InferenceSession()
+    var session = InferenceSession()
     var config = LoadOptions()
     config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
-    let compiled_model = session.load_model(Path(model_path), config)
+    var compiled_model = session.load_model(Path(model_path), config)
 
     # CHECK: 1
     print(compiled_model.num_model_inputs())
@@ -51,17 +51,17 @@ fn test_pytorch_model2() raises:
     # CHECK: test_pytorch_model2
     print("====test_pytorch_model2")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
-    let session = InferenceSession()
+    var session = InferenceSession()
     var config = LoadOptions()
     var shape = DynamicVector[Optional[Int64]]()
     shape.push_back(Int64(3))
     shape.push_back(Int64(100))
     shape.push_back(Int64(100))
     config.add_input_spec(shape, DType.float32)
-    let compiled_model = session.load_model(Path(model_path), config)
+    var compiled_model = session.load_model(Path(model_path), config)
 
     # CHECK: 1
     print(compiled_model.num_model_inputs())
@@ -82,17 +82,17 @@ fn test_model_execute() raises:
     # CHECK: test_pytorch_model2
     print("====test_pytorch_model2")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
-    let session = InferenceSession()
+    var session = InferenceSession()
     var config = LoadOptions()
     config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
-    let model = session.load_model(Path(model_path), config)
+    var model = session.load_model(Path(model_path), config)
     var input_tensor = Tensor[DType.float32](3, 100, 100)
     input_tensor._to_buffer().fill(-1)
-    let outputs = model.execute("x", input_tensor)
-    let output_tensor = outputs.get[DType.float32]("result0")
+    var outputs = model.execute("x", input_tensor)
+    var output_tensor = outputs.get[DType.float32]("result0")
     var expected_output = Tensor[DType.float32](3, 100, 100)
     expected_output._to_buffer().fill(0)
     assert_equal(output_tensor, expected_output)

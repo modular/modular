@@ -21,11 +21,11 @@ fn test_model_metadata() raises:
     # CHECK: test_model_metadata
     print("====test_model_metadata")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
-    let session = InferenceSession()
-    let compiled_model = session.load_model(Path(model_path))
+    var session = InferenceSession()
+    var compiled_model = session.load_model(Path(model_path))
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -53,11 +53,11 @@ fn test_model_mismatched_input_output_count() raises:
     # CHECK: test_model_mismatched_input_output_count
     print("====test_model_mismatched_input_output_count")
 
-    let args = argv()
-    let model_path = args[2]
+    var args = argv()
+    var model_path = args[2]
 
-    let session = InferenceSession()
-    let compiled_model = session.load_model(Path(model_path))
+    var session = InferenceSession()
+    var compiled_model = session.load_model(Path(model_path))
     # CHECK: 2
     print(compiled_model.num_model_inputs())
 
@@ -90,22 +90,22 @@ fn test_model() raises:
     # CHECK: test_model
     print("====test_model")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
-    let session = InferenceSession()
-    let model = session.load_model(Path(model_path))
+    var session = InferenceSession()
+    var model = session.load_model(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
         input_tensor[i] = 1.0
 
     # TODO: Hide tensor map from user
-    let input_map = session.new_tensor_map()
+    var input_map = session.new_tensor_map()
     input_map.borrow("input", input_tensor)
-    let outputs = model.execute(input_map)
+    var outputs = model.execute(input_map)
     _ = input_tensor ^  # Keep inputs alive
-    let output_tensor = outputs.get[DType.float32]("output")
+    var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
@@ -120,19 +120,19 @@ fn test_model_tuple_input() raises:
     # CHECK: test_model_tuple_input
     print("====test_model_tuple_input")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
         input_tensor[i] = 1.0
 
-    let session = InferenceSession()
-    let model = session.load_model(Path(model_path))
-    let outputs = model.execute(("input", EngineTensorView(input_tensor)))
+    var session = InferenceSession()
+    var model = session.load_model(Path(model_path))
+    var outputs = model.execute(("input", EngineTensorView(input_tensor)))
     _ = input_tensor ^
-    let output_tensor = outputs.get[DType.float32]("output")
+    var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
@@ -147,8 +147,8 @@ fn test_model_tuple_input_different_dtypes() raises:
     # CHECK: test_model_tuple_input_different_dtypes
     print("====test_model_tuple_input_different_dtypes")
 
-    let args = argv()
-    let model_path = args[3]
+    var args = argv()
+    var model_path = args[3]
 
     var input_tensor_float = Tensor[DType.float32](5)
     var input_tensor_int = Tensor[DType.int32](5)
@@ -157,14 +157,14 @@ fn test_model_tuple_input_different_dtypes() raises:
         input_tensor_float[i] = 1.0
         input_tensor_int[i] = i
 
-    let session = InferenceSession()
-    let model = session.load_model(Path(model_path))
-    let outputs = model.execute(
+    var session = InferenceSession()
+    var model = session.load_model(Path(model_path))
+    var outputs = model.execute(
         ("input0", EngineTensorView(input_tensor_float)),
         ("input1", EngineTensorView(input_tensor_int)),
     )
     _ = input_tensor_float ^
-    let output_tensor = outputs.get[DType.int32]("output")
+    var output_tensor = outputs.get[DType.int32]("output")
 
     # CHECK: 5xint32
     print(output_tensor.spec())
@@ -177,25 +177,25 @@ fn test_model_tuple_input_dynamic() raises:
     # CHECK: test_model_tuple_input_dynamic
     print("====test_model_tuple_input_dynamic")
 
-    let args = argv()
-    let model_path = args[1]
+    var args = argv()
+    var model_path = args[1]
 
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
         input_tensor[i] = 1.0
 
-    let session = InferenceSession()
-    let model = session.load_model(Path(model_path))
-    let tensor_name: String = "input"
+    var session = InferenceSession()
+    var model = session.load_model(Path(model_path))
+    var tensor_name: String = "input"
     # TODO: Remove use of StringRef from `model.execute` APIs
     # once we support std::Tuple on memory-only types.
     # See https://github.com/modularml/modular/issues/30576
-    let outputs = model.execute(
+    var outputs = model.execute(
         (tensor_name._strref_dangerous(), EngineTensorView(input_tensor))
     )
     _ = input_tensor ^
-    let output_tensor = outputs.get[DType.float32]("output")
+    var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
     print(str(output_tensor.spec()))

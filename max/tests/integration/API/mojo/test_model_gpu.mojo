@@ -24,7 +24,7 @@ fn test_model_metadata() raises:
     # CHECK: test_model_metadata
     print("====test_model_metadata")
 
-    let args = argv()
+    var args = argv()
 
     # CHECK: 2
     print(len(args))
@@ -32,11 +32,11 @@ fn test_model_metadata() raises:
     # CHECK: mo.model
     print(args[1])
 
-    let model_path = args[1]
+    var model_path = args[1]
     var options = SessionOptions()
     options._set_device(_Device.CUDA)
-    let session = InferenceSession(options)
-    let compiled_model = session.load_model(Path(model_path))
+    var session = InferenceSession(options)
+    var compiled_model = session.load_model(Path(model_path))
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -64,7 +64,7 @@ fn test_model() raises:
     # CHECK: test_model
     print("====test_model")
 
-    let args = argv()
+    var args = argv()
 
     # CHECK: 2
     print(len(args))
@@ -72,23 +72,23 @@ fn test_model() raises:
     # CHECK: mo.model
     print(args[1])
 
-    let model_path = args[1]
+    var model_path = args[1]
 
     var options = SessionOptions()
     options._set_device(_Device.CUDA)
-    let session = InferenceSession(options)
-    let model = session.load_model(Path(model_path))
+    var session = InferenceSession(options)
+    var model = session.load_model(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
         input_tensor[i] = 1.0
 
     # TODO: Hide tensor map from user
-    let input_map = session.new_tensor_map()
+    var input_map = session.new_tensor_map()
     input_map.borrow("input", input_tensor)
-    let outputs = model.execute(input_map)
+    var outputs = model.execute(input_map)
     _ = input_tensor ^  # Keep inputs alive
-    let output_tensor = outputs.get[DType.float32]("output")
+    var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())

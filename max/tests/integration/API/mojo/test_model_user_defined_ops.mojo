@@ -20,14 +20,14 @@ from pathlib import Path
 
 
 fn test_model_metadata() raises:
-    let args = argv()
-    let model_path = args[1]
-    let user_defined_ops_path = args[2]
+    var args = argv()
+    var model_path = args[1]
+    var user_defined_ops_path = args[2]
 
-    let session = InferenceSession()
+    var session = InferenceSession()
     var config = LoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
-    let compiled_model = session.load_model(Path(model_path), config)
+    var compiled_model = session.load_model(Path(model_path), config)
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -52,27 +52,27 @@ fn test_model_metadata() raises:
 
 
 fn test_model() raises:
-    let args = argv()
+    var args = argv()
     print(args[1])
 
-    let model_path = args[1]
-    let user_defined_ops_path = args[2]
+    var model_path = args[1]
+    var user_defined_ops_path = args[2]
 
-    let session = InferenceSession()
+    var session = InferenceSession()
     var config = LoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
-    let model = session.load_model(Path(model_path), config ^)
+    var model = session.load_model(Path(model_path), config ^)
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
         input_tensor[i] = 1.0
 
     # TODO: Hide tensor map from user
-    let input_map = session.new_tensor_map()
+    var input_map = session.new_tensor_map()
     input_map.borrow("input", input_tensor)
-    let outputs = model.execute(input_map)
+    var outputs = model.execute(input_map)
     _ = input_tensor ^  # Keep inputs alive
-    let output_tensor = outputs.get[DType.float32]("output")
+    var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
