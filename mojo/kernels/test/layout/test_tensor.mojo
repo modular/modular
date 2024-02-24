@@ -40,7 +40,9 @@ fn test_basic_tensor_ops():
         data_ptr[i] = i
 
     var layout_8x4 = Layout(IntTuple(8, 4), IntTuple(4, 1))  # 4 x 2
-    var row_major_tensor = LayoutTensor[DType.float32](layout_8x4, data_ptr)
+    var row_major_tensor = LayoutTensor[DType.float32, 8, 4](
+        layout_8x4, data_ptr
+    )
     # CHECK: ----original matrix----
     # CHECK: 0.0      1.0     2.0     3.0
     # CHECK: 4.0      5.0     6.0     7.0
@@ -52,8 +54,6 @@ fn test_basic_tensor_ops():
     # CHECK: 28.0     29.0    30.0    31.0
     print("----original matrix----")
     print_raw_major_tensor(row_major_tensor)
-
-    var tiler = LayoutList(Layout(2, 1), Layout(2, 1))
 
     # CHECK: ----tile[ 0 , 0 ]----
     # CHECK: 0.0     1.0
@@ -82,9 +82,7 @@ fn test_basic_tensor_ops():
     for tile_i in range(4):
         for tile_j in range(2):
             print("----tile[", tile_i, ",", tile_j, "]----")
-            var tile_2x2 = row_major_tensor.view(
-                tiler, IntTuple(tile_i, tile_j)
-            )
+            var tile_2x2 = row_major_tensor.view[2, 2](tile_i, tile_j)
             print_tile_tensor(tile_2x2)
 
 

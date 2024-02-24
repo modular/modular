@@ -81,9 +81,12 @@ fn test_tuple_basic_ops():
     # CHECK: 2
     # CHECK: 6
     # CHECK: 24
-    print(product(2))
-    print(product(IntTuple(3, 2)))
-    print(product(IntTuple(IntTuple(2, 3), 4)))
+    alias p0 = product(2)
+    print(p0)
+    alias p1 = product(IntTuple(3, 2))
+    print(p1)
+    alias p2 = product(IntTuple(IntTuple(2, 3), 4))
+    print(p2)
 
     # FIXME: turning var to alias generates wrong values in the print statement
     var tt = IntTuple(

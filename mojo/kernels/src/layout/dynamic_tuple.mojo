@@ -65,21 +65,60 @@ struct DynamicTupleBase[
     fn __init__(inout self: Self):
         self.elts = DynamicVector[Self.Element]()
 
-    # FIXME: This constructor shouldn't be necessary
-    @always_inline
-    fn __init__(inout self: Self, owned value: T):
-        self.elts = DynamicVector[Self.Element](capacity=1)
-        self.elts.append(value)
-
-    @always_inline
-    fn __init__(inout self: Self, owned v1: Self.Element):
-        self.elts = DynamicVector[Self.Element](capacity=1)
-        self.elts.append(v1)
-
     @always_inline
     fn __init__(inout self: Self, value: DynamicTuple[T, D]):
         self.elts = DynamicVector[Self.Element](capacity=1)
         self.elts.append(value.content)
+
+    @always_inline
+    fn __init__(
+        inout self, owned v1: DynamicTuple[T, D], owned v2: DynamicTuple[T, D]
+    ):
+        self.elts = DynamicVector[Self.Element](capacity=2)
+        self.elts.append(v1.content)
+        self.elts.append(v2.content)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        owned v1: DynamicTuple[T, D],
+        owned v2: DynamicTuple[T, D],
+        owned v3: DynamicTuple[T, D],
+    ):
+        self.elts = DynamicVector[Self.Element](capacity=3)
+        self.elts.append(v1.content)
+        self.elts.append(v2.content)
+        self.elts.append(v3.content)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        owned v1: DynamicTuple[T, D],
+        owned v2: DynamicTuple[T, D],
+        owned v3: DynamicTuple[T, D],
+        owned v4: DynamicTuple[T, D],
+    ):
+        self.elts = DynamicVector[Self.Element](capacity=4)
+        self.elts.append(v1.content)
+        self.elts.append(v2.content)
+        self.elts.append(v3.content)
+        self.elts.append(v4.content)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        owned v1: DynamicTuple[T, D],
+        owned v2: DynamicTuple[T, D],
+        owned v3: DynamicTuple[T, D],
+        owned v4: DynamicTuple[T, D],
+        owned v5: DynamicTuple[T, D],
+    ):
+        self.elts = DynamicVector[Self.Element](capacity=5)
+        self.elts.append(v1.content)
+        self.elts.append(v2.content)
+        self.elts.append(v3.content)
+        self.elts.append(v4.content)
+        self.elts.append(v5.content)
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
@@ -90,58 +129,8 @@ struct DynamicTupleBase[
         self.elts = existing.elts
 
     @always_inline
-    fn append(inout self, owned v1: DynamicTuple[T, D]):
-        self.elts.append(v1.content)
-
-    @always_inline
-    fn append(
-        inout self, owned v1: DynamicTuple[T, D], owned v2: DynamicTuple[T, D]
-    ):
-        self.elts.reserve(2)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-
-    @always_inline
-    fn append(
-        inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-    ):
-        self.elts.reserve(3)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
-
-    @always_inline
-    fn append(
-        inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-        owned v4: DynamicTuple[T, D],
-    ):
-        self.elts.reserve(4)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
-        self.elts.append(v4.content)
-
-    @always_inline
-    fn append(
-        inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-        owned v4: DynamicTuple[T, D],
-        owned v5: DynamicTuple[T, D],
-    ):
-        self.elts.reserve(5)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
-        self.elts.append(v4.content)
-        self.elts.append(v5.content)
+    fn append(inout self: Self, value: DynamicTuple[T, D]):
+        self.elts.append(value.content)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self.Element:
@@ -216,57 +205,34 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     var content: Self.ElementType
 
     @always_inline
-    fn __init__(inout self: Self, value: Self.ElementType):
-        self.content = value
-
-    @always_inline
-    fn __init__(inout self: Self, value: Self.BaseType):
-        self.content = value
-
-    @always_inline
     fn __init__(inout self: Self, value: T):
         self.content = value
 
     @always_inline
     fn __init__(inout self: Self):
-        var t = Self.BaseType()
-        self.content = t
+        self.content = Self.BaseType()
 
     @always_inline
     fn __init__(inout self: Self, v1: Self):
-        var t = Self.BaseType()
-        t.append(v1)
-        self.content = t
+        self.content = Self.BaseType(v1)
 
-    #
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self):
-        var t = Self.BaseType()
-        t.append(v1, v2)
-        self.content = t
+        self.content = Self.BaseType(v1, v2)
 
-    #
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self):
-        var t = Self.BaseType()
-        t.append(v1, v2, v3)
-        self.content = t
+        self.content = Self.BaseType(v1, v2, v3)
 
-    #
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self):
-        var t = Self.BaseType()
-        t.append(v1, v2, v3, v4)
-        self.content = t
+        self.content = Self.BaseType(v1, v2, v3, v4)
 
-    #
     @always_inline
     fn __init__(
         inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self
     ):
-        var t = Self.BaseType()
-        t.append(v1, v2, v3, v4, v5)
-        self.content = t
+        self.content = Self.BaseType(v1, v2, v3, v4, v5)
 
     @always_inline
     fn __len__(self) -> Int:
