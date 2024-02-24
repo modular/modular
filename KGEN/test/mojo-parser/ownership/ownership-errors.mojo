@@ -316,13 +316,13 @@ fn consume(owned x: SimpleStructNoDtor):
 
 
 fn issue15404():
-    let c = SimpleStructNoDtor()  # expected-note {{'c' declared here}}
+    var c = SimpleStructNoDtor()  # expected-note {{'c' declared here}}
     consume(c ^)
     consume(c ^)  # expected-error {{use of uninitialized value 'c'}}
 
 
 ##===----------------------------------------------------------------------===##
-# var -> let and incorrect let warnings
+# var -> var and incorrect var warnings
 ##===----------------------------------------------------------------------===##
 
 
@@ -349,9 +349,9 @@ fn testVarToLet(cond: Bool):
     c = 2  # This is correct to be a var.
     use(c)
 
-    let d: TwoRegs
+    var d: TwoRegs
     d = TwoRegs()
-    let e = d ^  # Consume from let is fine.
+    var e = d ^  # Consume from var is fine.
 
 # Consumption of struct works only on definition of __del__
 # https://github.com/modularml/mojo/issues/734
@@ -395,10 +395,10 @@ fn testConditionalImmut(cond: __mlir_type.i1):
   var a = MemExample()
   var b : MemExample # expected-note {{'b' declared here}}
 
-  let aref = Reference(a).value
+  var aref = Reference(a).value
   # expected-error @+1 {{use of uninitialized value 'b'}}
-  let bref = Reference(b).value
-  let cref = aref if cond else bref
+  var bref = Reference(b).value
+  var cref = aref if cond else bref
 
 
   Reference(cref)[].noop()
@@ -408,6 +408,6 @@ fn testConditionalMut(cond: __mlir_type.i1):
   var b : MemExample # expected-note {{'b' declared here}}
 
   # expected-error @+1 {{use of uninitialized value 'b'}}
-  let cref = Reference(a).value if cond else Reference(b).value
+  var cref = Reference(a).value if cond else Reference(b).value
 
   Reference(cref)[] = MemExample()

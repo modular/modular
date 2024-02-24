@@ -56,8 +56,8 @@ fn makeEscapingClosure[
 
 fn main():
     try:
-        let x = atol(argv()[1])
-        let y = atol(argv()[2])
+        var x = atol(argv()[1])
+        var y = atol(argv()[2])
 
         @no_inline
         @__copy_capture(x)
@@ -71,7 +71,7 @@ fn main():
         fn formatter2[x: Int](v: Int) -> Int:
             return y + formatter(v)
 
-        let f = makeEscapingClosure[formatter2](y)
+        var f = makeEscapingClosure[formatter2](y)
         takeClosure(f, y)
     except e:
         print(e)

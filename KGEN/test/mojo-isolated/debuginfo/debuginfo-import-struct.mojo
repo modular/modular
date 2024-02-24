@@ -25,4 +25,4 @@ from debuginfo_module import VeryUniqueStruct
 
 
 fn caller():
-    let y = VeryUniqueStruct.very_unique_func(__mlir_attr.`0 : index`)
+    var y = VeryUniqueStruct.very_unique_func(__mlir_attr.`0 : index`)

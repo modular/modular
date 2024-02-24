@@ -23,14 +23,14 @@ def implicitlyPropagate(cond: Bool) -> Int:
 fn main():
     # CHECK: first success
     try:
-        let a = implicitlyPropagate(False)
+        var a = implicitlyPropagate(False)
         print("first success")
     except e0:
         print("first had an error")
 
     # CHECK-NEXT: second had an error
     try:
-        let b = implicitlyPropagate(True)
+        var b = implicitlyPropagate(True)
         print("second success")
     except e1:
         print("second had an error")

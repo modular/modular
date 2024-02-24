@@ -23,7 +23,7 @@ struct Foo[A: Int]:
 
     fn get[C: Int](self) -> fn (y: Int) escaping -> Int:
         fn bar(y: Int) escaping -> Int:
-            let w = A + self.b + y
+            var w = A + self.b + y
             return w
 
         return bar

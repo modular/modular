@@ -20,9 +20,9 @@ from imported_cached_module import (
 # CHECK-LABEL: lit.func @"assign_from()"
 fn assign_from():
     # CHECK: string = <"foobar">
-    let foo = StringLiteralAlias
+    var foo = StringLiteralAlias
     # CHECK: lit.globalvar.ref {{.*}}@global_variable
-    let bar = global_variable
+    var bar = global_variable
 
 
 # CHECK-LABEL: lit.struct.decl @Struct(!Trait, !AnyType[!Trait])

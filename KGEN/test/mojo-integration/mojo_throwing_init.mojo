@@ -49,7 +49,7 @@ fn main():
     # CHECK-NOT: MemType1( 3 ) destroyed
     # CHECK: bail on init
     try:
-        let m = MemType1(42)
-        let x = PartialInitType(3, m)
+        var m = MemType1(42)
+        var x = PartialInitType(3, m)
     except e:
         print(e)

@@ -11,22 +11,22 @@ import builtin.dtype
 
 
 fn functionWithNestedType(x: dtype.DType):
-    let y: builtin.int.Int = 12
+    var y: builtin.int.Int = 12
     pass
 
 
 fn functionWithBuiltins(x: Bool) -> Bool:
-    let copy: Bool = x
+    var copy: Bool = x
     return copy
 
 
 fn functionWithParametrizedArgument(x: StaticIntTuple[2]) -> StaticIntTuple[2]:
-    let copy: StaticIntTuple[2] = x
+    var copy: StaticIntTuple[2] = x
     return copy
 
 
 fn parametrizedFunction[
     size: Int
 ](x: StaticTuple[size, Int]) -> StaticTuple[size, Int]:
-    let copy: StaticTuple[size, Int] = x
+    var copy: StaticTuple[size, Int] = x
     return copy

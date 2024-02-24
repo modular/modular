@@ -270,9 +270,9 @@ fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
 # CHECK-LABEL: lit.func @"infer_implicit_params()"
 fn infer_implicit_params():
     # CHECK: call {{.*}}implicit_params{{.*}}<:!Int {1}, :!Int {2}
-    let one = TwoParams[1, 2]()
+    var one = TwoParams[1, 2]()
     implicit_params(one)
-    let two = TwoParams[3, 4]()
+    var two = TwoParams[3, 4]()
     # CHECK: call {{.*}}implicit_params_with_others{{.*}}<:!Int {42},
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
@@ -342,7 +342,7 @@ fn callMemoryValueParam():
     # CHECK: %dynamicLet = lit.var.decl
     # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType = <[[PARAM_VALUE1]]>
     # CHECK: lit.ref.store %[[PARAM_VALUE2]], %dynamicLet
-    let dynamicLet = paramValue
+    var dynamicLet = paramValue
 
     alias nonMovable = NonMovableMemoryType(42)
     # CHECK: %dynamicVar = lit.var.decl

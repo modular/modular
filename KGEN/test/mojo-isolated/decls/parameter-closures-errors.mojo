@@ -12,7 +12,7 @@ fn bind_fat_to_thin_target[g: fn (y: int) -> int](x: int):
 
 
 fn bind_fat_to_thin_main():
-    let x = __mlir_attr.`4 : index`
+    var x = __mlir_attr.`4 : index`
 
     @__copy_capture(x)
     @parameter
@@ -34,7 +34,7 @@ fn makeClosure(x: int):
         z = __mlir_op.`index.add`(z, z)
         return z
 
-    let y = formatter()
+    var y = formatter()
 
 
 @value
@@ -68,7 +68,7 @@ fn makeClosure(x: MemType):
     fn formatter() -> int:
         return z.a
 
-    let y = formatter()
+    var y = formatter()
 
 fn bad_capture(x: Int):
     var z = x

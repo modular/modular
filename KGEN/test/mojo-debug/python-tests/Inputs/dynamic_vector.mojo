@@ -16,9 +16,9 @@ struct Point(CollectionElement):
 
 fn main():
     var point_vec = DynamicVector[Point](capacity=3)
-    let p1 = Point(1, -1)
-    let p2 = Point(2, -2)
-    let p3 = Point(3, -3)
+    var p1 = Point(1, -1)
+    var p2 = Point(2, -2)
+    var p3 = Point(3, -3)
     point_vec.push_back(p1)
     point_vec.push_back(p2)
     point_vec.push_back(p3)  # breakpoint

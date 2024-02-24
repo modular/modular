@@ -232,7 +232,7 @@ fn call_raising():
         # CHECK:   lit.raise [[VAR2]]
         # CHECK:   kgen.unreachable
         # CHECK: }
-        let x = fail("hello world")
+        var x = fail("hello world")
         # CHECK: %y = lit.var.decl "y"
         # CHECK: lit.call @{{.*}}__init__{{.*}}(%y)
         # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %y
@@ -243,7 +243,7 @@ fn call_raising():
         # CHECK:   lit.raise [[VAR2]]
         # CHECK:   kgen.unreachable
         # CHECK: }
-        let y = S()
+        var y = S()
     except e:
         pass
 

@@ -14,7 +14,7 @@ fn closure_kw(a: Int):
     var has_kw_ref = has_kw
 
     # CHECK: kgen.rebind %{{.*}} : !lit.ref<!Int2, mut {{.*}}> to !lit.ref<!Int1, mut {{.*}}>
-    let unbound: fn (Int) escaping -> Int = has_kw
+    var unbound: fn (Int) escaping -> Int = has_kw
     # CHECK: kgen.rebind %{{.*}} : !lit.ref<!Int2, mut *"[[LT:.*]]"> to
     # CHECK-SAME: !lit.ref<!Int1, mut *"[[LT]]">
-    let unbound_ref: fn (Int) escaping -> Int = has_kw_ref
+    var unbound_ref: fn (Int) escaping -> Int = has_kw_ref

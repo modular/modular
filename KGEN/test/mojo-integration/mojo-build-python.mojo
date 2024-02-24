@@ -17,5 +17,5 @@ def main():
     var python = Python()
 
     # CHECK: This was built inside of python
-    let py_string = Python.evaluate("'This was built' + ' inside of python'")
+    var py_string = Python.evaluate("'This was built' + ' inside of python'")
     print(python.__str__(py_string.__str__()))

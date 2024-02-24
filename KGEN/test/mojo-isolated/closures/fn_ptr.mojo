@@ -50,4 +50,4 @@ fn top(y: fn (Reg) escaping raises -> Mem):
     fn fn_ptr(x: Mem) -> Int:
         return 0
 
-    let x: fn (Mem) escaping -> Int = fn_ptr
+    var x: fn (Mem) escaping -> Int = fn_ptr

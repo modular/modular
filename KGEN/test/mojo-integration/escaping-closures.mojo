@@ -65,7 +65,7 @@ struct Bat[A: Int]:
 
     fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
         fn bar(y: Int) escaping -> Bar[B, A]:
-            let w = B + self.b + y
+            var w = B + self.b + y
             return Bar[B, A](w + A)
 
         return bar
@@ -103,7 +103,7 @@ fn captureCallable[
     callable: fn[A: Int] (p: Foo[A]) -> Int
 ](a: Int) -> fn (x: Int) escaping -> Int:
     fn foo(x: Int) escaping -> Int:
-        let w = callable[3](Foo[3](a))
+        var w = callable[3](Foo[3](a))
         return w + a
 
     return foo
@@ -135,7 +135,7 @@ fn deep_runtime_capture(
     m: Int, flag: Bool
 ) raises -> fn (n: Int) escaping -> fn (o: Int) escaping -> Int:
     if flag:
-        let q = m + m
+        var q = m + m
 
         fn myclosure2(
             n: Int,
@@ -143,7 +143,7 @@ fn deep_runtime_capture(
             fn my_inner_closure(
                 o: Int,
             ) escaping -> Int:
-                let x = o + q
+                var x = o + q
                 return x + n
 
             return my_inner_closure
@@ -177,12 +177,12 @@ fn makeEscapingClosureWithUselessCopyDecorator(
 
 
 fn main():
-    let x = 2
-    let c = makes_escaping_closure(x.value)
+    var x = 2
+    var c = makes_escaping_closure(x.value)
     # CHECK: 4
     print(c(x.value))
 
-    let result: MemType = makes_escaping_closure_position_only(MemType(43))(42)
+    var result: MemType = makes_escaping_closure_position_only(MemType(43))(42)
     # CHECK: 85
     print(result.member)
 
@@ -193,16 +193,16 @@ fn main():
     print(parameter_capture[43, 7](5)(43))
 
     # CHECK: 37
-    let foo = Foo[7](2)
-    let closure2 = test_captures_are_ordered_correctly[1, 23, 7, 2](5)
+    var foo = Foo[7](2)
+    var closure2 = test_captures_are_ordered_correctly[1, 23, 7, 2](5)
     print(closure2(3, foo).get())
 
     # CHECK: 30
     print(captureCallable[bar](x)(x))
 
-    let bat = Bat[3](4)
-    let bat_closure = bat.get[5]()
-    let bar = bat_closure(3)
+    var bat = Bat[3](4)
+    var bat_closure = bat.get[5]()
+    var bar = bat_closure(3)
     # CHECK: 20
     print(bar.get())
 
@@ -210,9 +210,9 @@ fn main():
     # CHECK: 3
     take_closure[a](C[a](3), make_closure[a]())
 
-    let v1 = 2
-    let v2 = 3
-    let v3 = 7
+    var v1 = 2
+    var v2 = 3
+    var v3 = 7
     try:
         # CHECK: 14
         print(deep_runtime_capture(v1, True)(v2)(v3))
@@ -220,16 +220,16 @@ fn main():
         pass
 
     try:
-        let str = argv()[1]
-        let x = atol(str)
-        let y = atol(argv()[2])
+        var str = argv()[1]
+        var x = atol(str)
+        var y = atol(argv()[2])
 
         @__copy_capture(x)
         @parameter
         fn formatter(v: Int) -> Int:
             return x + v
 
-        let f = makeEscapingClosure[formatter](y)
+        var f = makeEscapingClosure[formatter](y)
         # CHECK: 8
         takeClosure(f, y)
 
@@ -238,7 +238,7 @@ fn main():
         fn formatter2(v: Int) -> Int:
             return y + formatter(v)
 
-        let f2 = makeEscapingClosure[formatter2](y)
+        var f2 = makeEscapingClosure[formatter2](y)
         # CHECK: 11
         takeClosure(f2, y)
 

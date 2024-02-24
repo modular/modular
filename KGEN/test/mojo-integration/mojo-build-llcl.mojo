@@ -28,6 +28,6 @@ fn main():
         ) + await rt.create_task[Int](test_llcl_add[2](b))
 
     with Runtime(4) as rt:
-        let task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
+        var task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
         # CHECK: 33
         print(task.wait())

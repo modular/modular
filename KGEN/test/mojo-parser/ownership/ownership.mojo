@@ -97,7 +97,7 @@ fn destructors(owned arg0: MemExample):
 
   # CHECK-NEXT:  %mem3 = lit.var.decl "mem3"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem3)
-  let mem3 = MemExample()
+  var mem3 = MemExample()
 
   # Test pointless transfers from RValues and trivial values.
   # These should warn and not create IR transfers.
@@ -118,7 +118,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}5
   # CHECK-NEXT: lit.ref.store [[FIVE]], %someInt
   var someInt = 4
-  someInt = 5  # silence let warning.
+  someInt = 5  # silence var warning.
   # CHECK-NEXT: = lit.ref.load %someInt
   _ = someInt^
 
@@ -142,7 +142,7 @@ fn destructors(owned arg0: MemExample):
 fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK: %mem = lit.var.decl
        # CHECK-NEXT: lit.call_param{{.*}}(%mem)
-       let mem = detail_fn()
+       var mem = detail_fn()
        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem
        # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
        mem.noop()
@@ -158,7 +158,7 @@ struct Parameterized[level: Int]:
 # CHECK-LABEL: lit.func @"test_parameterized
 fn test_parameterized():
   # CHECK: %x = lit.var.decl "x"
-  let x = Parameterized[4]()
+  var x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
   # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {4}>(%x)
 
@@ -168,7 +168,7 @@ struct Complicated:
 
 # Issue #12068 - This shouldn't crash.
 fn testPointerGEP(ptr: __mlir_type[`!kgen.pointer<`, Complicated, `>`]) -> Int:
-  let addr = ptr
+  var addr = ptr
   return __get_address_as_lvalue(addr).b.x
 
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
@@ -417,7 +417,7 @@ fn consumeMem(owned x: MemExample):
 fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: %example = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example)
-  let example = MemExample()
+  var example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
   # CHECK-NEXT: %anonymous2A = lit.var.decl
@@ -433,7 +433,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
 
   # CHECK-NEXT: %example2 = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example2)
-  let example2 = MemExample()
+  var example2 = MemExample()
 
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.transfer_mem_ownership %example2
   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
@@ -672,7 +672,7 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # Variadic use keeps the memory value alive.
   # CHECK-NEXT: %c = lit.var.decl "c"
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%c, %a)
-  let c = a
+  var c = a
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat 1, [[IMMREF]]
   # CHECK-NEXT: lit.call {{.*}}variadic_mems{{.*}}[muttoimm *"c`0"]([[VAR]])
@@ -767,7 +767,7 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
   # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[ELTREF]])
   # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
-  let x : MemExample = iter.__next__()[]
+  var x : MemExample = iter.__next__()[]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
 
   # CHECK-NEXT: kgen.param.constant: none

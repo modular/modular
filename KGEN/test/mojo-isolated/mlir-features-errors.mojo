@@ -78,7 +78,7 @@ fn equal_instead_of_colon():
 
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}
-  let ptr = __mlir_op.`pop.array.gep`((((someInt))), `42`)
+  var ptr = __mlir_op.`pop.array.gep`((((someInt))), `42`)
 
 fn crash_on_invalid():
   # expected-error @+1 {{use of unregistered MLIR operation 'invalid_op'}}

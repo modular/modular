@@ -68,7 +68,7 @@ fn metatypes():
 
     # COM: Test that result types are bound correctly.
     # CHECK: call {{.*}}@"anytype_result[AnyRegType]()"<:type !Thing>
-    let v: Thing = anytype_result[Thing]()
+    var v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
     # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>

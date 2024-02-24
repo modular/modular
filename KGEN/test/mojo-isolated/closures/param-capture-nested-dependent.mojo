@@ -39,7 +39,7 @@ struct Bat[A: Int]:
 
     fn get_test[B: Int](self) -> fn (y: Int) escaping -> Foo[B, A]:
         fn bar(y: Int) escaping -> Foo[B, A]:
-            let w = B + self.b + y
+            var w = B + self.b + y
             return Foo[B, A](w + A)
 
         return bar

@@ -19,9 +19,9 @@ struct Point(CollectionElement):
 
 
 fn main():
-    let p2 = Point(2, 2)
-    let literal = "string_literal"
-    let s1 = String("let_string")
+    var p2 = Point(2, 2)
+    var literal = "string_literal"
+    var s1 = String("let_string")
     var s2 = String("")
     for i in range(0, 100):
         s2 += str(i)

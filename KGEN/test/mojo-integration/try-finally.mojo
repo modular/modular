@@ -65,7 +65,7 @@ struct MemoryType:
 
 fn chris_lifetime_example(a: Bool, b: Bool):
     print("start")
-    let x: MemoryType
+    var x: MemoryType
     try:
         try:
             if a:

@@ -15,7 +15,7 @@ from test_package.module import top_level_alias
 
 # CHECK-LABEL: lit.func @"foo
 fn foo():
-    let t = top_level_alias
+    var t = top_level_alias
 
 
 # CHECK-NOT: lit.alias.decl

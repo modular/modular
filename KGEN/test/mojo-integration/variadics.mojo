@@ -65,9 +65,9 @@ fn test_owned_varargs():
     # CHECK: -- testing owned mem varargs
     print("\n-- testing owned mem varargs")
 
-    let v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
-    let v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
-    let v3 = TalkativeMem(3)  # CHECK-NEXT: initializing 3
+    var v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
+    var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
+    var v3 = TalkativeMem(3)  # CHECK-NEXT: initializing 3
 
     fn handle_owned_mem(owned *strs: TalkativeMem):
         # owned arguments are mutable and live as long as they are used.

@@ -87,7 +87,7 @@ fn if_examples(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: %a = lit.var.decl
-  let a : MemExample
+  var a : MemExample
   # CHECK-NEXT: lit.try {
   # CHECK-NOT: %a
   try:
@@ -128,7 +128,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
 
   # CHECK-NEXT: %c = lit.var.decl
-  let c : MemExample
+  var c : MemExample
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
@@ -149,7 +149,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
   # CHECK-NEXT: %d = lit.var.decl
-  let d : MemExample
+  var d : MemExample
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT:  hlcf.if %cond {
@@ -176,7 +176,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
 
 # CHECK-LABEL: lit.func @"chris_lifetime_example
 fn chris_lifetime_example(a: Bool, b: Bool):
-    let x : MemExample
+    var x : MemExample
     # CHECK: lit.try
     try:
         # CHECK-NEXT: lit.try
@@ -213,9 +213,9 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
   # CHECK-NEXT: %a = lit.var.decl "a"
   var a : MemExample
   # CHECK-NEXT: %b = lit.var.decl "b"
-  let b : MemExample
+  var b : MemExample
   # CHECK-NEXT: %c = lit.var.decl "c"
-  let c : MemExample
+  var c : MemExample
 
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
   a = MemExample()
@@ -271,7 +271,7 @@ struct TestLoopWithWholeObjectBit:
   fn __init__(inout self, cond: __mlir_type.i1):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
-        let buf = MemExample()
+        var buf = MemExample()
 
         # CHECK-NEXT: hlcf.loop "_loop_0" {
         # CHECK-NEXT:   hlcf.if %cond {
@@ -308,7 +308,7 @@ fn testInfiniteloop():
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %localThing
     # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])
     # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
-    let localThing = MemExample()
+    var localThing = MemExample()
     localThing.noop()
   # CHECK-NEXT:    hlcf.continue
   # CHECK-NEXT:  }
@@ -333,11 +333,11 @@ struct MyStringReturningCtx:
 
 # CHECK: lit.func @"testErrorReturn
 fn testErrorReturn() raises:
-    let input: String
+    var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        let x = ctx.read()
+        var x = ctx.read()
         input = "hello"
     # CHECK: except
     print(input)

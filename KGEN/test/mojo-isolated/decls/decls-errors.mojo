@@ -63,7 +63,7 @@ fn issue14191() -> Int:
     return 1
 
 fn issue1242():
-    let decorator: Int
+    var decorator: Int
 
     @decorator # expected-error {{cannot use a dynamic value in decorator}}
     fn on_message():
@@ -173,7 +173,7 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
   parameterizedVariadic()
   # expected-error @+1 {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
-  let z = ParameterizedStruct()
+  var z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
   parameterizedVariadic(1, 2.0)
@@ -183,7 +183,7 @@ fn badCalls(arg: Int):
 
 fn badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'var' initializer}}
-  let b: ParameterizedStruct[Bool] = a
+  var b: ParameterizedStruct[Bool] = a
 
 # expected-note @below {{candidate declared here}}
 fn overloadedFunc(x: Int): pass
@@ -631,11 +631,11 @@ struct not_nested_struct[*Ts: AnyType]:
     fn __init__(inout self, *args: *Ts):
         pass
 fn function_with_struct2():
-    let s1 = not_nested_struct()  # ok
+    var s1 = not_nested_struct()  # ok
     struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
         fn __init__(inout self, *args: *Ts):
             pass
-    let s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
+    var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
 struct TypeGetItem:
     fn __getitem__(inout self, key: Int): # expected-note {{function declared here}}
@@ -664,7 +664,7 @@ trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
     fn trait_fn_has_body(self: Self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
-        let t = 1
+        var t = 1
 
     fn trait_fn_no_dot_dot_dot(self: Self): # expected-error {{expected body statements; use 'pass' if none is required}}
 
@@ -712,7 +712,7 @@ fn invalid_trait_bind():
     trait_fn[NoTraits]() # expected-error {{cannot bind type 'NoTraits' to trait 'CFMTrait'}}
 
 fn non_copyable_trait[T: CFMTrait](value: T):
-    let copy = value # expected-error {{'T' is not copyable because it has no '__copyinit__'}}
+    var copy = value # expected-error {{'T' is not copyable because it has no '__copyinit__'}}
 
 
 fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
@@ -852,7 +852,7 @@ let np = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
-    let np2 = top_level_func()
+    var np2 = top_level_func()
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
     use_error(e)

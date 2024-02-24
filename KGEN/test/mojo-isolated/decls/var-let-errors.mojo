@@ -20,7 +20,7 @@ fn var_decl_without_type():
     var y : SomeOtherStruct = SomeStruct()
 
     # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'var' initializer}}
-    let z: SomeOtherStruct = SomeStruct()
+    var z: SomeOtherStruct = SomeStruct()
 
 fn fudge_int(x: Int): pass
 
@@ -34,7 +34,7 @@ fn bad_type_error_message():
     var y : localVar  # expected-error {{cannot use a dynamic value in type specification}}
 
     var x: Int
-    let ptr: fudge_int(x)  # expected-error {{cannot use a dynamic value in type specification}}
+    var ptr: fudge_int(x)  # expected-error {{cannot use a dynamic value in type specification}}
 
 fn missing_type_on_var_decl():
     var abc :       # This line break is intentional.
@@ -55,19 +55,19 @@ fn test_var_let_type_literal_value():
 
 fn use_before_def():
     # expected-error @below {{use of unknown declaration 'x', 'fn' declarations require explicit variable declarations}}
-    let y = x
-    let x = `42`
+    var y = x
+    var x = `42`
 
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 fn self_reference():
     # expected-error @+1 {{use of unknown declaration 'num', 'fn' declarations require explicit variable declarations}}
-    let num: Int = fudge_int(num)
+    var num: Int = fudge_int(num)
 
 # Doesn't reject empty identifier name
 # https://github.com/modularml/mojo/issues/1232
 fn empty_name():
   # expected-error @+1 {{empty backtick identifier isn't allowed}}
-  let `` = `42`
+  var `` = `42`
 
 # COM: Issue #957 https://github.com/modularml/mojo/issues/957
 struct MemoryStruct:

@@ -62,6 +62,6 @@ fn test_var_let_scopes(cond: Bool):
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
 # the shadowed variable on the RHS.
 fn test_shadowing_reference_shadowed(cond: Bool):
-    let num: int = `10`
+    var num: int = `10`
     if cond:
-        let num = fudge_int(`42`)
+        var num = fudge_int(`42`)

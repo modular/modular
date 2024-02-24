@@ -82,7 +82,7 @@ fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
 struct RaisingInit:
     var stream: Int
     fn __init__(inout self, flags: Int = 0) raises:
-        let stream = 4
+        var stream = 4
         # This can raise, but 'self' doesn't need to be initialized.
         _ = somethingThatRaises()
         self.stream = stream
@@ -138,11 +138,11 @@ struct MyStringReturningCtx:
 
 # CHECK: lit.func @"testErrorReturn
 fn testErrorReturn() raises:
-    let input: String
+    var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        let x = ctx.read()
+        var x = ctx.read()
         input = "hello"
     # CHECK: except
     print(input)

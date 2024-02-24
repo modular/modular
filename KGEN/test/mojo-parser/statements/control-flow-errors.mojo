@@ -87,10 +87,10 @@ struct MyList_invalid_boxed_type:
 
 
 fn main():
-    let my_list_no_len = MyList_range_no_len()
-    let my_list_no_next = MyList_range_no_next()
-    let my_list_no_iter = MyList_no_iter()
-    let my_list_invalid_int = MyList_invalid_boxed_type()
+    var my_list_no_len = MyList_range_no_len()
+    var my_list_no_next = MyList_range_no_next()
+    var my_list_no_iter = MyList_no_iter()
+    var my_list_invalid_int = MyList_invalid_boxed_type()
 
     # expected-error @+1 {{'my_iter_no_len' does not implement the '__len__' method}}
     for item in my_list_no_len:
@@ -135,7 +135,7 @@ struct ExampleCM:
     return True # Raise
 
 def withUsingImmutableVariable(owned a: ExampleCM):
-  let x = 77
+  var x = 77
   with a^ as x:
     pass
 

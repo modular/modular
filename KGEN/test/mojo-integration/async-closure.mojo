@@ -9,8 +9,8 @@
 
 @always_inline
 async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:
-    let coro: Coroutine[Int] = func[3](2)
-    let result = await coro
+    var coro: Coroutine[Int] = func[3](2)
+    var result = await coro
     return result
 
 
@@ -19,7 +19,7 @@ fn foobar[pref: Int](a: Int):
     async fn but_async[c: Int](b: Int) -> Int:
         return a + b + c
 
-    let coro: Coroutine[Int] = just_call_it[but_async]()
+    var coro: Coroutine[Int] = just_call_it[but_async]()
     print(pref)
     print(coro())
 

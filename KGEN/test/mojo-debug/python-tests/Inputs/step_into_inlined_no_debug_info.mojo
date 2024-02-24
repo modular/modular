@@ -13,8 +13,8 @@ fn foo(x: Int) -> Int:
 
 
 fn main():
-    let x = foo(
+    var x = foo(
         123
     )  # we need this otherwise we don't stop at the breakpoint below
-    let y = abs(x)  # breakpoint
+    var y = abs(x)  # breakpoint
     print(y)  # expected after step-into
