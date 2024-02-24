@@ -10,7 +10,7 @@ from .int_tuple import flatten, int
 from .layout import *
 
 
-struct LayoutTensor[dtype: DType, M: Int, N: Int]:
+struct LayoutTensor[dtype: DType, M: Int, N: Int](CollectionElement):
     var ptr: DTypePointer[dtype]
     var is_view: Bool
     var layout: Layout
@@ -40,6 +40,12 @@ struct LayoutTensor[dtype: DType, M: Int, N: Int]:
         self.ptr = existing.ptr
         self.is_view = True
         self.layout = existing.layout
+
+    @always_inline
+    fn __moveinit__(inout self: Self, owned existing: Self):
+        self.ptr = existing.ptr
+        self.is_view = True
+        self.layout = existing.layout ^
 
     @always_inline
     fn __getitem__(self, idx: IntTuple) -> Scalar[dtype]:

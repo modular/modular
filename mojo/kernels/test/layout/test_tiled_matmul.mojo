@@ -8,7 +8,7 @@
 
 from kernel_utils.layout import Layout, LayoutList, composition
 from kernel_utils.layout_tensor import LayoutTensor
-from algorithm import vectorize, parallelize
+from algorithm import vectorize, parallelize, sync_parallelize
 
 
 @register_passable
@@ -172,24 +172,30 @@ fn gemm_l1_cache[
     alias l1_size = op_dim.subrange(L1)
     alias l2_size = L1.subrange(L2)
 
+    # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
+    # The RHS tile is also cached to minimize the transpose operatipons.
+
+    var l1_lhs_cache = DynamicVector[LayoutTensor[dtype, L1.m, L1.k]](
+        capacity=l1_size.m
+    )
+    var l1_rhs_cache = DynamicVector[LayoutTensor[dtype, L1.n, L1.k]](
+        capacity=l1_size.m
+    )
+    for m in range(l1_size.m):
+        l1_lhs_cache.append(LayoutTensor[dtype, L1.m, L1.k]())
+        l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
+
     @parameter
-    fn process_raw(m_1: Int):
-        # This GEMM implementation caches the l1_lhs_tile to reuse across the k_1 loop
-        # The l1_rhs_tile is also cached to minimize the transpose operatipons.
-
-        # TODO: Allocate this statically
-        var l1_lhs_cache = LayoutTensor[dtype, L1.m, L1.k]()
-        var l1_rhs_cache = LayoutTensor[dtype, L1.n, L1.k]()
-
+    fn process_raw(m_1: Int) capturing:
         for k_1 in range(l1_size.k):
             # Cache the current lhs tile and reuse it for all rhs tiles in the column
-            l1_lhs_cache.copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
+            l1_lhs_cache[m_1].copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
 
             for n_1 in range(l1_size.n):
                 var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
 
                 # Materialize L1 rhs transposed tile
-                l1_rhs_cache.copy_from(
+                l1_rhs_cache[m_1].copy_from(
                     rhs.view[L1.k, L1.n](k_1, n_1).transpose()
                 )
 
@@ -199,13 +205,13 @@ fn gemm_l1_cache[
                         var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = l1_lhs_cache.view[L2.m, L2.k](
-                                m_2, k_2
-                            )
+                            var lhs_l2_tile = l1_lhs_cache[m_1].view[
+                                L2.m, L2.k
+                            ](m_2, k_2)
                             # Transposed tile -> transposed indices
-                            var rhs_l2_tile = l1_rhs_cache.view[L2.n, L2.k](
-                                n_2, k_2
-                            )
+                            var rhs_l2_tile = l1_rhs_cache[m_1].view[
+                                L2.n, L2.k
+                            ](n_2, k_2)
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op[
@@ -215,7 +221,11 @@ fn gemm_l1_cache[
                                 L2.k,
                             ](dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
 
-    parallelize[process_raw](l1_size.m, l1_size.m)
+    sync_parallelize[process_raw](l1_size.m)
+
+    # Make sure Mojo won't throw away our caches
+    _ = len(l1_lhs_cache)
+    _ = len(l1_rhs_cache)
 
 
 fn test_tiled_matmul[use_l1_cache: Bool]():
