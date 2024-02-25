@@ -101,6 +101,10 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
       return true;
   }
 
+  if (inputDType->isBool() || outputDType->isBool())
+    return *inputSize == outputDTypeWidth * *outputSize ||
+           *outputSize == inputDTypeWidth * *inputSize;
+
   // If the sizes do not match, then we cannot cast.
   return inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize;
 }

@@ -264,6 +264,12 @@ kgen.func @bitcast(%a: !pop.scalar<si32>,
   // CHECK: llvm.bitcast %1 : i64 to vector<2xf32>
   %4 = pop.bitcast %b: !pop.scalar<ui64> to !pop.simd<2, f32>
 
+  // CHECK: %[[B0:.*]] = llvm.bitcast %1 : i64 to vector<64xi1>
+  %5 = pop.bitcast %b: !pop.scalar<ui64> to !pop.simd<64, bool>
+
+  // CHECK: llvm.bitcast %[[B0]] : vector<64xi1> to f64
+  %6 = pop.bitcast %5: !pop.simd<64, bool> to !pop.simd<1, f64>
+
   kgen.return
 }
 

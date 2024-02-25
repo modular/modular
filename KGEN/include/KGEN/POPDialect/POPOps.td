@@ -466,8 +466,8 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
     ```
   }];
 
-  let arguments = (ins UnboundOrArithmeticSIMD:$input);
-  let results = (outs UnboundOrArithmeticSIMD:$output);
+  let arguments = (ins UnboundOrBoolOrArithmeticSIMD:$input);
+  let results = (outs UnboundOrBoolOrArithmeticSIMD:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];

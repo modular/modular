@@ -12,7 +12,8 @@ kgen.func @scalar_bitcast(
     %f64: !pop.simd<1, f64>) -> (
       !pop.simd<1, f32>,
       !pop.simd<1, si32>,
-      !pop.simd<1, ui64>
+      !pop.simd<1, ui64>,
+      !pop.simd<32, bool>
     ) {
   // CHECK: llvm.bitcast %[[UI32]]
   %0 = pop.bitcast %ui32 : !pop.simd<1, ui32> to !pop.simd<1, f32>
@@ -20,10 +21,13 @@ kgen.func @scalar_bitcast(
   %1 = pop.bitcast %f32 : !pop.simd<1, f32> to !pop.simd<1, si32>
   // CHECK: llvm.bitcast %[[F64]]
   %2 = pop.bitcast %f64 : !pop.simd<1, f64> to !pop.simd<1, ui64>
-  kgen.return %0, %1, %2 :
+  // CHECK: llvm.bitcast %[[UI32]]
+  %3 = pop.bitcast %ui32 : !pop.simd<1, ui32> to !pop.simd<32, bool>
+  kgen.return %0, %1, %2, %3 :
       !pop.simd<1, f32>,
       !pop.simd<1, si32>,
-      !pop.simd<1, ui64>
+      !pop.simd<1, ui64>,
+      !pop.simd<32, bool>
 }
 
 // CHECK-LABEL: @simd_bitcast

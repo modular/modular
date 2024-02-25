@@ -168,6 +168,9 @@ def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
 def UnboundOrIndexOrIntegerSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, IntDType]>>,
     "whose element type is either unbound, index, or integral dtype">;
+def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[BoolDType, ArithmeticDType]>>,
+    "whose element type is either integer or float dtype">;
 def UnboundOrArithmeticSIMD : SIMDOfDType<UnboundOr<ArithmeticDType>,
     "whose element type is either integer or float dtype">;
 def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<

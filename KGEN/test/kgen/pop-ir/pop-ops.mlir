@@ -400,6 +400,8 @@ kgen.generator @simd_bitcast(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f64>)
   %3 = pop.bitcast %2 : !pop.simd<4, ui32> to !pop.simd<4, f32>
   // CHECK: %[[V4:.*]] = pop.bitcast %[[V2]] : !pop.simd<4, ui32> to !pop.simd<2, f64>
   %4 = pop.bitcast %2 : !pop.simd<4, ui32> to !pop.simd<2, f64>
+  // CHECK: %[[V5:.*]] = pop.bitcast %[[V0]] : !pop.simd<4, si32> to !pop.simd<128, bool>
+  %5 = pop.bitcast %0 : !pop.simd<4, si32> to !pop.simd<128, bool>
   // CHECK: return %[[V3]]
   kgen.return %3 : !pop.simd<4, f32>
 }
