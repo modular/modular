@@ -53,15 +53,19 @@ static GlobalTable &getGlobalTable() {
   return globalTable;
 }
 
+static std::mutex &getGlobalTableMutex() {
+  static std::mutex mu; // Serialize global table mutation.
+  return mu;
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
                                   void *(*initFn)(void *),
                                   void (*destroyFn)(void *)) {
-  static std::mutex mu; // Serialize global table mutation.
   auto &globalTable = getGlobalTable();
 
   {
-    std::lock_guard<std::mutex> l(mu);
+    std::lock_guard<std::mutex> l(getGlobalTableMutex());
     auto it = globalTable.find(name.str());
     if (it != globalTable.end()) {
       LLVM_DEBUG(llvm::dbgs()
@@ -81,7 +85,7 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
   GlobalTable::iterator itr;
   bool inserted;
   {
-    std::lock_guard<std::mutex> l(mu);
+    std::lock_guard<std::mutex> l(getGlobalTableMutex());
     std::tie(itr, inserted) = globalTable.insert({name.str(), entry});
   }
 
@@ -99,6 +103,14 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetGlobalOrNull(llvm::StringRef name) {
   return KGEN_CompilerRT_GetGlobalOrCreate(name, nullptr, nullptr, nullptr);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_InsertGlobal(llvm::StringRef name, void *value) {
+  auto &globalTable = getGlobalTable();
+
+  std::lock_guard<std::mutex> l(getGlobalTableMutex());
+  globalTable.insert({name.str(), GlobalEntry(value, nullptr)});
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -122,6 +134,8 @@ void M::KGEN::registerGlobals(
                    (void *)&KGEN_CompilerRT_GetGlobalOrCreate});
   funcs.push_back({"KGEN_CompilerRT_GetGlobalOrNull",
                    (void *)&KGEN_CompilerRT_GetGlobalOrNull});
+  funcs.push_back(
+      {"KGEN_CompilerRT_InsertGlobal", (void *)&KGEN_CompilerRT_InsertGlobal});
   funcs.push_back({"KGEN_CompilerRT_DestroyGlobals",
                    (void *)&KGEN_CompilerRT_DestroyGlobals});
 }
