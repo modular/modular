@@ -296,11 +296,10 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
           ArrayRef<Type> inputTypes = signature.getArguments();
           ArrayRef<ArgConvention> argConventions =
               signature.getArgConventions();
-          // If there's a by-ref result type, it'll be the first argument.
+          // If there's a by-ref result type, it'll be the last argument.
           if (!argConventions.empty() &&
-              argConventions.front() == ArgConvention::ByRefResult) {
-            inputTypes = inputTypes.drop_front();
-          }
+              argConventions.back() == ArgConvention::ByRefResult)
+            inputTypes = inputTypes.drop_back();
           return inputTypes;
         };
 

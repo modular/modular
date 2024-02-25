@@ -91,7 +91,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
 
   // Use of the interpreter's memory model requires a target specification,
   // which the parser does not have.
-  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfResult())
+  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfArg())
     return Error("function has memory-only result");
 
   // Make sure to fully resolve the body and everything within it.

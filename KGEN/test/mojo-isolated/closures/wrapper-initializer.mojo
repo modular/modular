@@ -12,7 +12,7 @@
 # CHECK-SAME: moveInit =
 
 # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self, %impl: !lit.ref<!escaping0_, {{.*}}> owned_in_mem, |)
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!lit.ref<!MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!kgen.pointer<none> borrow, |, "n": !lit.ref<!MemType, {{.*}}> borrow_in_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
 
@@ -50,12 +50,12 @@
 # CHECK-NEXT: %1 = lit.ref.from_pointer %0 end_uninit
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK-LABEL: lit.func @"fn{{.*}}_call_`_CI_{{.*}}[mut *"0_unnamed`", imm *"2_unnamed`"]
-# CHECK-SAME: (%[[RES:.*]][{{.*}}]: !lit.ref<!MemType, mut {{.*}}> byref_result,
-# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK-LABEL: lit.func @"fn{{.*}}_call_`_CI_{{.*}}](
+# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n: !lit.ref<!MemType, imm {{.*}}> borrow_in_mem
+# CHECK-SAME: %[[RES:.*]]: !lit.ref<!MemType, mut {{.*}}> byref_result)
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
 # CHECK-NEXT: %[[A0REF:.*]] = lit.ref.from_pointer %[[A0]]
-# CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%[[RES]], %[[A0REF]], %n)
+# CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%[[A0REF]], %n, %[[RES]])
 # CHECK-NEXT: lit.return
 
 

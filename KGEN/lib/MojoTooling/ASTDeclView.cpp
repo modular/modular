@@ -659,11 +659,11 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   // (as it needs to be passed through memory), and we don't want to include
   // it in the normal argument list.
   if (!argConventions.empty() &&
-      argConventions.front() == ArgConvention::ByRefResult) {
-    argTypes = argTypes.drop_front();
-    argNames = argNames.drop_front();
-    argConventions = argConventions.drop_front();
-    argPassingKinds = argPassingKinds.drop_front();
+      argConventions.back() == ArgConvention::ByRefResult) {
+    argTypes = argTypes.drop_back();
+    argNames = argNames.drop_back();
+    argConventions = argConventions.drop_back();
+    argPassingKinds = argPassingKinds.drop_back();
   }
 
   // If this is a method, grab the expected "Self" type.

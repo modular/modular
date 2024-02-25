@@ -225,7 +225,7 @@ struct CMWithoutExit:
 fn testCMWithoutExit():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK: %a = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
@@ -244,7 +244,7 @@ fn testCMWithoutExit():
     # CHECK: %$CONTEXTMGR_0 = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR_0)
     # CHECK: %a_1 = lit.var.decl "a"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a_1, %$CONTEXTMGR_0)
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR_0, %a_1)
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a_1
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
@@ -274,7 +274,7 @@ fn testCMWithoutExitEarlyReturn():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR)
     # CHECK: %a = lit.var.decl "a"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])

@@ -102,7 +102,7 @@ public:
   /// the result slot.
   ErrorTreeOr<TypedAttr>
   executeRegionWithResultSlot(Type resultType, Region &region,
-                              ArrayRef<Attribute> arguments);
+                              ArrayRef<Attribute> arguments, bool isInitSelf);
 
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the

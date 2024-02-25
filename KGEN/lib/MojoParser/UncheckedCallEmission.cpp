@@ -400,8 +400,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // but don't know the type until the arguments (and their lifetimes) are all
     // emitted. Just skip over it for now.
     if (convention == ArgConvention::ByRefResult && builder) {
-      assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
-      assert(passingKind == PassingKind::PosOnly);
+      assert(calleeSig.hasMemoryOnlyResult() &&
+             passingKind == PassingKind::Implicit);
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
@@ -489,11 +489,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 /// things may still be in parameter space.
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  // Drop the first argument which is the return slot.
+  // Drop the last argument which is the return slot.
   ArrayRef<ArgConvention> argConventions = calleeSig.getArgConventions();
-  assert(argConventions[0] == ArgConvention::ByRefResult);
-  argConventions = argConventions.drop_front();
-  argumentValues = argumentValues.drop_front();
+  assert(argConventions.back() == ArgConvention::ByRefResult);
+  argConventions = argConventions.drop_back();
+  argumentValues = argumentValues.drop_back();
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
@@ -710,12 +710,19 @@ TypedAttr CallEmitter::emitCallInParamContext(
         ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
   }
 
-  bool dropFirst =
-      boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
+  auto argTypes = boundSigType.getArguments();
+  auto argConventions = boundSigType.getArgConventions();
+  if (boundSigType.hasMemoryOnlyResult()) {
+    argTypes = argTypes.drop_back();
+    argConventions = argConventions.drop_back();
+  }
+  if (boundSigType.hasInitSelfArg()) {
+    argTypes = argTypes.drop_front();
+    argConventions = argConventions.drop_front();
+  }
+
   for (auto [argIdx, argValAndExpr, calleeArgType, convention] :
-       llvm::enumerate(
-           argumentValues, boundSigType.getArguments().drop_front(dropFirst),
-           boundSigType.getArgConventions().drop_front(dropFirst))) {
+       llvm::enumerate(argumentValues, argTypes, argConventions)) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
@@ -744,14 +751,19 @@ TypedAttr CallEmitter::emitCallInParamContext(
     operands.push_back(arg);
   }
 
-  bool hasResultSlot =
-      boundSigType.hasMemoryOnlyResult() || boundSigType.hasInitSelfResult();
-  Type resultType = hasResultSlot ? ASTType(boundSigType.getArguments().front())
-                                        .getReferenceElementType()
-                                  : ASTType(boundSigType.getResults().front());
-  TypedAttr result = ParamOperatorAttr::get(
-      hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
-  return result;
+  Type resultType;
+  if (boundSigType.hasMemoryOnlyResult())
+    resultType =
+        ASTType(boundSigType.getArguments().back()).getReferenceElementType();
+  else if (boundSigType.hasInitSelfArg())
+    resultType =
+        ASTType(boundSigType.getArguments().front()).getReferenceElementType();
+  else {
+    resultType = boundSigType.getResults().front();
+    return ParamOperatorAttr::get(POC::Apply, operands, resultType);
+  }
+  // ByRefResult and InitSelf use ApplyResultSlot.
+  return ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -875,8 +887,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // If this is a byref_result slot, we will have emitted a null value for
     // this.  We can't know the type of it until we emit all the operands and
     // collect their lifetimes.
-    // TODO(#30134): This should be at the end of the argument list instead of
-    // the beginning!
     if (convention == ArgConvention::ByRefResult) {
       // Don't know the right thing yet, use a placeholder.
       callArgs.push_back(Value());
@@ -926,7 +936,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // destination.
   if (calleeSig.hasMemoryOnlyResult()) {
     auto resultRValueType =
-        cast<RefType>(expectedCalleeType.getInput(0)).getElementType();
+        cast<RefType>(expectedCalleeType.getInputs().back()).getElementType();
 
     // Often the result of the call will be directly assigned into a
     // user-defined var or other location with existing storage.  In these
@@ -937,19 +947,23 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // In these cases we really do need a temporary+copy in the var slot.
     // At this point we've got enough information about the arguments to make
     // that assessment in a correct way.
+    Value resultSlotVal;
     if (callEmitter.isSafeToUseValueDestForDirectResult(resultRValueType,
                                                         argumentValues)) {
       // Use the preferred location of the destination slot.
-      callArgs[0] = dest.getMLValueForResult(
+      resultSlotVal = dest.getMLValueForResult(
           callExpr->getLoc(), resultRValueType, callEmitter.emitter);
     } else {
       // Create a temporary.
-      callArgs[0] = callEmitter.emitter.emitVarDecl("__call_result_tmp__",
-                                                    resultRValueType, loc,
-                                                    VarDeclKind::Synthesized);
+      resultSlotVal = callEmitter.emitter.emitVarDecl("__call_result_tmp__",
+                                                      resultRValueType, loc,
+                                                      VarDeclKind::Synthesized);
     }
-
-    implicitLifetimes[0] = cast<RefType>(callArgs[0].getType()).getLifetime();
+    // Now that we know the result slot, we can set it and its lifetime.
+    assert(!callArgs.back() && "byref_result slot is always last");
+    callArgs.back() = resultSlotVal;
+    implicitLifetimes.back() =
+        cast<RefType>(callArgs.back().getType()).getLifetime();
   }
 
   // Now that all of the arguments have been emitted, coerce them to the
@@ -965,7 +979,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
     // Ignore the byref result slot - we know its lifetime differs but we're ok
     // with that.
-    if (arg == callArgs[0] && calleeSig.hasMemoryOnlyResult())
+    if (&arg == &callArgs.back() && calleeSig.hasMemoryOnlyResult())
       continue;
 
     // Insert a rebind.
@@ -1024,7 +1038,9 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   callEmitter.emitAfterCallActions();
 
   SmallVector<Value, 1> byRefResults;
-  if (calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult())
+  if (calleeSig.hasMemoryOnlyResult())
+    byRefResults.push_back(callArgs.back());
+  else if (calleeSig.hasInitSelfArg())
     byRefResults.push_back(callArgs[0]);
 
   // If the callee can raise an error, it will be represented as a variant: try
@@ -1068,7 +1084,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // Re-emit the value in case a conversion was required or if the result was
     // a dynamic-lvalue.  In both case we will have emitted into a temporary
     // slot and 'dest' will have the ultimate location to write to.
-    return emitCResult(MRValue(callArgs[0]), callExpr, dest);
+    return emitCResult(MRValue(callArgs.back()), callExpr, dest);
   }
 
   // Otherwise, register-passable results are the call result which may need to

@@ -205,9 +205,10 @@ ArrayRef<Type> SignatureType::getResults() const {
 
 bool SignatureType::hasMemoryOnlyResult() {
   ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() && conventions[0] == ArgConvention::ByRefResult;
+  return !conventions.empty() &&
+         conventions.back() == ArgConvention::ByRefResult;
 }
-bool SignatureType::hasInitSelfResult() {
+bool SignatureType::hasInitSelfArg() {
   ArrayRef<ArgConvention> conventions = getArgConventions();
   return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
 }

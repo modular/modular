@@ -143,8 +143,8 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
   std::optional<PreservedAttr> sig = generator.getSourceSignature();
   if (!sig.has_value())
     return std::nullopt;
-  auto typeAttr = dyn_cast<TypeAttr>(sig.value().getValue());
-  auto litSig = dyn_cast<LIT::LITSignatureType>(typeAttr.getValue());
+  auto typeAttr = cast<TypeAttr>(sig.value().getValue());
+  auto litSig = cast<LIT::LITSignatureType>(typeAttr.getValue());
 
   Type metadata = litSig.getValues().getInputs()[index];
 
@@ -160,10 +160,8 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
     return std::nullopt;
 
   MOGG::MOGGTensorParamAccessor tensor;
-
-  for (auto [paramIdx, param] : llvm::enumerate(asDeclRef.getParamValues())) {
+  for (auto [paramIdx, param] : llvm::enumerate(asDeclRef.getParamValues()))
     tensor.assignParam(param, paramIdx);
-  }
 
   return tensor;
 }
@@ -473,7 +471,7 @@ private:
       LambdaTemplate *lambda;
 
       KGEN::ParamDeclRefAttr oldParam;
-      if (tensorFusionEnabledOn == gen.getBody()->getArgument(0)) {
+      if (tensorFusionEnabledOn == gen.getBody()->getArguments().back()) {
         newLambdaName = "output_0_fn";
         outputLambdaNames[0] = newLambdaName;
         lambda = &outLambdaTemplate;
@@ -491,9 +489,8 @@ private:
         for (auto [index, value] :
              llvm::enumerate(gen.getBody()->getArguments())) {
           if (value == tensorFusionEnabledOn) {
-            // -1 to account for the first "input" being an output.
-            newLambdaName = "input_" + std::to_string(index - 1) + "_fn";
-            inputLambdaNames[index - 1] = newLambdaName;
+            newLambdaName = "input_" + std::to_string(index) + "_fn";
+            inputLambdaNames[index] = newLambdaName;
             break;
           }
         }
@@ -1066,10 +1063,12 @@ private:
     // TODO: Readd the input culling to only add directly used arguments. They
     // are needed for their shapes at the mo level so we have to keep them
     // around until we figure that part out.
-    for (auto [idx, operand] : llvm::enumerate(funcToSlice.getArguments())) {
-      // Skip the output.
-      if (idx != 0)
-        usedInputs.insert(operand);
+    assert(funcToSlice.getSignature().getArgConventions().back() ==
+           ArgConvention::ByRefResult);
+    for (auto [idx, operand] :
+         // Skip the result argument slot.
+         llvm::enumerate(funcToSlice.getArguments().drop_back())) {
+      usedInputs.insert(operand);
     }
 
     SmallVector<Operation *> worklist;
@@ -1107,9 +1106,7 @@ private:
         funcInputs.push_back(funcTy.getInputs()[idx]);
 
         shapeTensorParams.push_back(kgenTensorParams[idx]);
-
-        // Subtract one to account for the pass by ref output.
-        usedInputsInOrder.push_back(static_cast<int32_t>(idx - 1));
+        usedInputsInOrder.push_back(static_cast<int32_t>(idx));
       }
     }
 
@@ -1225,10 +1222,8 @@ public:
       // Slice out a new compute kernel. This replaces the old kernel as the
       // entry point for the thing we are going to execute.
       KGEN::GeneratorOp slicedComputeFunction = userKernel.clone();
-
       std::string name =
           (Twine(userKernel.getSymName()) + Twine("_COMPUTE")).str();
-
       slicedComputeFunction.setSymName(name);
 
       // Search for any function which allocates a new tensor and a move from
@@ -1243,13 +1238,6 @@ public:
       // that tensor.
       SmallVector<KGEN::CallOp> enableFusionFuncs;
       SmallVector<KGEN::CallOp> deconstructors;
-
-      std::optional<MOGG::MOGGTensorParamAccessor> outTensorParameters =
-          getTensorRepFromFunctionInput(slicedComputeFunction, 0);
-      if (!outTensorParameters.has_value()) {
-        slicedComputeFunction.erase();
-        continue;
-      }
 
       // Scan the kernel and identify the callsites of annotated functions that
       // we can understand.
@@ -1295,8 +1283,10 @@ public:
                               "");
       outputLambdaNames.resize(1, "");
 
-      // Output tensor is the first argument.
-      Value outputTensor = slicedComputeFunction.getBody()->getArgument(0);
+      // Output tensor is the last argument.
+      assert(slicedComputeFunction.getSignature().hasMemoryOnlyResult());
+      Value outputTensor =
+          slicedComputeFunction.getBody()->getArguments().back();
       Value shape;
 
       SmallVector<KGENParamsOfTensor> kgenTensorParams;
@@ -1328,7 +1318,7 @@ public:
         continue;
       } else {
         // Otherwise we are dealing with a normal allocating op.
-        shape = allocationFunc.getOperand(1);
+        shape = allocationFunc.getOperand(0);
 
         // clang-format-off
         // Functions with tensor allocation will follow the rough pattern.
@@ -1369,7 +1359,6 @@ public:
       reparameterizeImpl(slicedComputeFunction, kgenTensorParams, symTab);
 
       GeneratorOp slicedShapeFunction;
-
       if (shape) {
         slicedShapeFunction =
             sliceShapeFunction(shape, slicedComputeFunction, kgenTensorParams);

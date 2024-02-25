@@ -818,37 +818,35 @@ InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
 static std::pair<size_t, size_t>
 calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   size_t numPosArgs = countNumPositional(signature.getArgPassingKinds());
-  bool hasByRefResult = numPosArgs && (signature.getArgConvention(0) ==
-                                       ArgConvention::ByRefResult);
 
-  size_t numUserPosArgs = numPosArgs - hasByRefResult;
-  if (numUserPosArgs) {
-    // If we have a variadic argument, it will consume all positional operands,
-    // but it does not require any.
-    size_t lastPosIdx = numPosArgs - 1;
-    if (signature.isVarArg(lastPosIdx))
-      return {0, std::numeric_limits<size_t>::max()};
+  // We don't require any positional operands (because this function does not
+  // check for passing kinds).
+  if (!numPosArgs)
+    return {0, numPosArgs};
 
-    // If we have a non-empty variadic pack argument, we do require a certain
-    // number of positional operands (since the value of positional packs cannot
-    // be provided by keyword operands).
-    // NOTE: in this case, it doesn't matter if there are preceding positional
-    // arguments with default values: the pack cannot have a default value and
-    // _must_ be provided positional operands explicitly, and therefore the
-    // preceding defaults won't be used anyway.
-    if (auto packType = getIfPackType(signature, lastPosIdx)) {
-      // NOTE: we adjust the number of user declared pos args since that
-      // includes the pack itself (hence the "-1").
-      if (VariadicAttr packed = packType.getVariadicAttr())
-        if (size_t packSize = packed.getValues().size())
-          return {numUserPosArgs - 1 + packSize, numUserPosArgs - 1 + packSize};
-      return {0, numUserPosArgs - 1};
-    }
+  // If we have a variadic argument, it will consume all positional operands,
+  // but it does not require any.
+  size_t lastPosIdx = numPosArgs - 1;
+  if (signature.isVarArg(lastPosIdx))
+    return {0, std::numeric_limits<size_t>::max()};
+
+  // If we have a non-empty variadic pack argument, we do require a certain
+  // number of positional operands (since the value of positional packs cannot
+  // be provided by keyword operands).
+  // NOTE: in this case, it doesn't matter if there are preceding positional
+  // arguments with default values: the pack cannot have a default value and
+  // _must_ be provided positional operands explicitly, and therefore the
+  // preceding defaults won't be used anyway.
+  if (auto packType = getIfPackType(signature, lastPosIdx)) {
+    // NOTE: we adjust the number of user declared pos args since that
+    // includes the pack itself (hence the "-1").
+    if (VariadicAttr packed = packType.getVariadicAttr())
+      if (size_t packSize = packed.getValues().size())
+        return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
+    return {0, numPosArgs - 1};
   }
 
-  // Otherwise, we don't require any positional operands (because this function
-  // does not check for passing kinds).
-  return {0, numUserPosArgs};
+  return {0, numPosArgs};
 }
 
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
@@ -1038,8 +1036,9 @@ diagnoseKeywordOperands(LITSignatureType signature,
   SmallVector<StringAttr> missingKwOnly;
 
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
-           signature.getArgNames(), signature.getArgPassingKinds())) {
+  for (auto [argIdx, argName, argPassingKind, conv] :
+       llvm::enumerate(signature.getArgNames(), signature.getArgPassingKinds(),
+                       signature.getArgConventions())) {
     if (argPassingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) &&
         !callOperands.findKwArg(argName)) {
@@ -1089,11 +1088,9 @@ diagnosePosOperands(LITSignatureType signature,
   size_t numPosOperands = callOperands.posOperands.size();
   size_t numPosArguments = countNumPositional(signature.getArgPassingKinds());
   bool hasVarArg = false;
-  bool hasByRefResult = numPosArguments && (signature.getArgConvention(0) ==
-                                            ArgConvention::ByRefResult);
 
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (size_t argIdx = hasByRefResult; argIdx < numPosArguments; ++argIdx) {
+  for (size_t argIdx = 0; argIdx != numPosArguments; ++argIdx) {
     if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
       // If the argument is variadic, it is not required. But we remember this
       // because it lifts the limit on the maximum number of arguments.
@@ -1103,11 +1100,10 @@ diagnosePosOperands(LITSignatureType signature,
 
     // If we found a positional operand, check if it was also provided by
     // keyword.
-    size_t userArgIdx = argIdx - hasByRefResult;
-    if (userArgIdx < numPosOperands) {
+    if (argIdx < numPosOperands) {
       StringAttr argName = signature.getArgName(argIdx);
       if (callOperands.findKwArg(argName))
-        return emitDiagFor.redundantArg(userArgIdx, argName);
+        return emitDiagFor.redundantArg(argIdx, argName);
       continue;
     }
 
@@ -1123,17 +1119,14 @@ diagnosePosOperands(LITSignatureType signature,
     // Otherwise, we have a missing positional argument.
     if (argName.empty()) {
       argName = StringAttr::get(argName.getContext(),
-                                "(" + nameForPosOnly(userArgIdx, "arg") + ")");
+                                "(" + nameForPosOnly(argIdx, "arg") + ")");
     }
     missingPosArgs.push_back(argName);
   }
 
   // If there are now positional variadics, we can check for too many operands.
-  if (!hasVarArg) {
-    size_t maxPosArgs = numPosArguments - hasByRefResult;
-    if (numPosOperands > maxPosArgs)
-      return emitDiagFor.tooManyPosArgs(maxPosArgs, numPosOperands);
-  }
+  if (!hasVarArg && numPosOperands > numPosArguments)
+    return emitDiagFor.tooManyPosArgs(numPosArguments, numPosOperands);
 
   if (!missingPosArgs.empty())
     return emitDiagFor.missingArgs(missingPosArgs, "positional");

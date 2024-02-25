@@ -63,7 +63,7 @@ static Type lowerPointerType(Type type) {
 /// indices (on the input signature) that needed to be changed. A flag is also
 /// returned to indicate if the result of a signature with `byref_result` was
 /// changed, in which case the new signature will no longer have that argument.
-static std::tuple<SignatureType, SmallVector<size_t>, bool>
+static std::tuple<SignatureType, SmallVector<size_t>, bool, bool>
 lowerSignature(SignatureType sig) {
   ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
   SmallVector<ArgConvention> newConvs(oldConvs);
@@ -74,7 +74,7 @@ lowerSignature(SignatureType sig) {
   ArrayRef<Type> oldResTypes = sig.getResults();
   SmallVector<Type> newResTypes(oldResTypes);
 
-  bool changedRes = false;
+  bool changedInitSelf = false, changedByRefResult = false;
   SmallVector<size_t> changedIndices;
   for (auto [idx, argTy, convention] :
        llvm::enumerate(sig.getArguments(), oldConvs)) {
@@ -91,7 +91,10 @@ lowerSignature(SignatureType sig) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;
-      changedRes = true;
+      if (convention == ArgConvention::ByRefResult)
+        changedByRefResult = true;
+      else
+        changedInitSelf = true;
 
       Type oldResType = oldResTypes[0];
       if (sig.isThrows()) {
@@ -109,16 +112,26 @@ lowerSignature(SignatureType sig) {
   }
 
   SignatureType newSig;
-  if (changedRes || !changedIndices.empty()) {
-    auto newFnType = FunctionType::get(
-        sig.getContext(), ArrayRef<Type>(newInputTypes).drop_front(changedRes),
-        newResTypes);
-    newSig = SignatureType::get(
-        newFnType, ArrayRef<ArgConvention>(newConvs).drop_front(changedRes),
-        sig.getFnEffects(), sig.getMetadata());
+  if (changedByRefResult || changedInitSelf || !changedIndices.empty()) {
+    auto newInputTypesAR = ArrayRef<Type>(newInputTypes);
+    auto newConvAR = ArrayRef<ArgConvention>(newConvs);
+    if (changedInitSelf) {
+      newInputTypesAR = newInputTypesAR.drop_front();
+      newConvAR = newConvAR.drop_front();
+    }
+    if (changedByRefResult) {
+      newInputTypesAR = newInputTypesAR.drop_back();
+      newConvAR = newConvAR.drop_back();
+    }
+
+    auto newFnType =
+        FunctionType::get(sig.getContext(), newInputTypesAR, newResTypes);
+    newSig = SignatureType::get(newFnType, newConvAR, sig.getFnEffects(),
+                                sig.getMetadata());
   }
 
-  return std::make_tuple(newSig, std::move(changedIndices), changedRes);
+  return std::make_tuple(newSig, std::move(changedIndices), changedInitSelf,
+                         changedByRefResult);
 }
 
 /// Helper to perform the bulk of the lowering for `kgen.call` and
@@ -126,18 +139,22 @@ lowerSignature(SignatureType sig) {
 static std::pair<SignatureType, SmallVector<Value>>
 lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
                 SignatureType oldSig) {
-  auto [newSig, changedIndices, changedRes] = lowerSignature(oldSig);
+  auto [newSig, changedIndices, changedInitSelf, changedByRefResult] =
+      lowerSignature(oldSig);
   if (!newSig)
     return {newSig, {}};
 
   // Calculate the new operands, accounting for a potentially promoted result.
   ImplicitLocOpBuilder b(op->getLoc(), op);
-  SmallVector<Value> newOperands(oldOperands.drop_front(changedRes));
+  SmallVector<Value> newOperands(
+      oldOperands.drop_front(changedInitSelf).drop_back(changedByRefResult));
   for (size_t idx : changedIndices)
-    newOperands[idx - changedRes] = b.create<POP::LoadOp>(oldOperands[idx]);
+    newOperands[idx - changedInitSelf] =
+        b.create<POP::LoadOp>(oldOperands[idx]);
 
   // Update the result, if needed.
-  if (changedRes) {
+  if (changedInitSelf || changedByRefResult) {
+    size_t oldOperandNo = changedInitSelf ? 0 : oldOperands.size() - 1;
     b.setInsertionPointAfter(op);
 
     OpResult res = op->getResult(0);
@@ -156,7 +173,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
       b.setInsertionPointToStart(thenBlock);
       auto resVal = b.create<VariantTakeOp>(res, 1);
-      b.create<POP::StoreOp>(resVal, oldOperands[0]);
+      b.create<POP::StoreOp>(resVal, oldOperands[oldOperandNo]);
 
       auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
       Value thenRes = b.create<VariantCreateOp>(oldVariantTy, none, 1);
@@ -177,7 +194,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
 
       // Then just store the new callee result into the old byref result.
       res.setType(newSig.getResults()[0]);
-      b.create<POP::StoreOp>(res, oldOperands[0]);
+      b.create<POP::StoreOp>(res, oldOperands[oldOperandNo]);
     }
   }
 
@@ -263,7 +280,8 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
   SignatureType oldSig = funcOp.getSignature();
-  auto [newSig, changedIndices, changedRes] = lowerSignature(oldSig);
+  auto [newSig, changedIndices, changedInitSelf, changedByRefResult] =
+      lowerSignature(oldSig);
   if (!newSig)
     return;
 
@@ -283,16 +301,17 @@ static void lowerFuncOp(FuncOp funcOp) {
     Location loc = addDI(arg.getLoc());
     auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType(), 1);
     auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
-    arg.setType(newSig.getArguments()[idx - changedRes]);
+    arg.setType(newSig.getArguments()[idx - changedInitSelf]);
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
-  if (changedRes) {
-    BlockArgument byrefResArg = body.getArgument(0);
+  if (changedInitSelf || changedByRefResult) {
+    size_t argNumber = changedInitSelf ? 0 : body.getArguments().size() - 1;
+    BlockArgument byrefResArg = body.getArgument(argNumber);
     auto newResPtr = b.create<POP::StackAllocationOp>(
         addDI(byrefResArg.getLoc()), byrefResArg.getType(), 1);
     byrefResArg.replaceAllUsesWith(newResPtr);
-    body.eraseArgument(0);
+    body.eraseArgument(argNumber);
 
     // Find all return sites in the function and rewrite them.
     body.walk([&, newSig = newSig](ReturnOp returnOp) {
@@ -333,7 +352,7 @@ static void lowerArgConventions(Operation &op) {
     // would be lowered already).
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([](SignatureType sig) {
-      auto [newSig, _, __] = lowerSignature(sig);
+      auto [newSig, _, __, ___] = lowerSignature(sig);
       return newSig ? newSig : sig;
     });
     auto anyRegTypeType = TypeType::get(op.getContext());

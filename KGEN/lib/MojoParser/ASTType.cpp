@@ -506,15 +506,15 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     for (auto [i, type, convention, name, passingKind] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
-      passingKindPrinter.printOptionalStarSlash(i);
-
-      if (i > (inMemResult ? 1 : 0))
-        os << ", ";
       if (convention == ArgConvention::ByRefResult) {
         // Print this later.
         inMemResult = type;
         continue;
       }
+      passingKindPrinter.printOptionalStarSlash(i);
+      if (i)
+        os << ", ";
+
       if (!name.empty())
         os << name.getValue() << " = ";
 

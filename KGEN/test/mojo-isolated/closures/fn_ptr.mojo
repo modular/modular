@@ -40,9 +40,9 @@ struct Reg:
 
 # CHECK-LABEL: lit.struct.decl @"fn(Reg
 # CHECK-LABEL: lit.func @"__init__
-# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, !Reg borrow, |) throws|ownedresult -> !kgen.variant<!Error, none>
-# CHECK:      lit.func call_impl[mut [[LT:.*]]]([[SLOT:%.*]][*""]: !lit.ref<!Mem, mut [[LT]]> byref_result, [[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !Reg borrow, |) throws|ownedresult
-# CHECK:        [[RES:%.*]] = lit.call_signature %{{.*}}[mut [[LT]]]([[SLOT]], [[ARG]])
+# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1]({{.*}}"__result__": !lit.ref<!Mem, mut *[0,0]> byref_result) throws|ownedresult -> !kgen.variant<!Error, none>
+# CHECK:      lit.func call_impl[mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !Reg borrow, |, ?, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws|ownedresult
+# CHECK:        [[RES:%.*]] = lit.call_signature %{{.*}}[mut [[LT]]]([[ARG]], [[SLOT]])
 # CHECK-NEXT:   lit.return [[RES]]
 
 

@@ -64,7 +64,7 @@ kgen.func @test_lower_args(%arg0: !lower_args_sig) {
 }
 
 // CHECK-LABEL: kgen.func @byref_res(%arg0: index owned) -> index {
-kgen.func @byref_res(%__result__: !kgen.pointer<index> byref_result, %arg0: index owned) -> !kgen.none {
+kgen.func @byref_res(%arg0: index owned, %__result__: !kgen.pointer<index> byref_result) -> !kgen.none {
   // CHECK-NEXT: %[[P0:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: "somehow.populate"(%[[P0]]) : (!kgen.pointer<index>) -> ()
   "somehow.populate"(%__result__) : (!kgen.pointer<index>) -> ()
@@ -75,7 +75,7 @@ kgen.func @byref_res(%__result__: !kgen.pointer<index> byref_result, %arg0: inde
 }
 
 // CHECK-LABEL: kgen.func @byref_res_reg_passable(%arg0: index owned) -> !kgen.struct<(index, index)> {
-kgen.func @byref_res_reg_passable(%__result__: !kgen.pointer<struct<(index, index)>> byref_result, %arg0: index owned) -> !kgen.none {
+kgen.func @byref_res_reg_passable(%arg0: index owned, %__result__: !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none {
   // CHECK-NEXT: %[[P0:.*]] = pop.stack_allocation 1 x struct<(index, index)>
   // CHECK-NEXT: "somehow.populate"(%[[P0]]) : (!kgen.pointer<struct<(index, index)>>) -> ()
   "somehow.populate"(%__result__) : (!kgen.pointer<struct<(index, index)>>) -> ()
@@ -87,7 +87,7 @@ kgen.func @byref_res_reg_passable(%__result__: !kgen.pointer<struct<(index, inde
 
 // CHECK-LABEL: kgen.func @byref_res_mem_only
 // CHECK-SAME: -> !kgen.none {
-kgen.func @byref_res_mem_only(%__result__: !kgen.pointer<struct<(index, index) memoryOnly>> byref_result, %arg0: index owned) -> !kgen.none {
+kgen.func @byref_res_mem_only(%arg0: index owned, %__result__: !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none {
   // CHECK-NEXT: "somehow.populate"
   "somehow.populate"(%__result__) : (!kgen.pointer<struct<(index, index) memoryOnly>>) -> ()
   %none = kgen.param.constant: !kgen.none = <#kgen.none>
@@ -95,9 +95,9 @@ kgen.func @byref_res_mem_only(%__result__: !kgen.pointer<struct<(index, index) m
   kgen.return %none : !kgen.none
 }
 
-!byref_res_sig = !kgen.signature<(!kgen.pointer<index> byref_result, index owned) -> !kgen.none>
-!byref_res_reg_passable_sig = !kgen.signature<(!kgen.pointer<struct<(index, index)>> byref_result, index owned) -> !kgen.none>
-!byref_res_mem_only_sig = !kgen.signature<(!kgen.pointer<struct<(index, index) memoryOnly>> byref_result, index owned) -> !kgen.none>
+!byref_res_sig = !kgen.signature<(index owned, !kgen.pointer<index> byref_result) -> !kgen.none>
+!byref_res_reg_passable_sig = !kgen.signature<(index owned, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none>
+!byref_res_mem_only_sig = !kgen.signature<(index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none>
 
 // CHECK-LABEL: kgen.func @test_lower_res
 kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_sig, %arg2: !byref_res_mem_only_sig, %arg3: index) {
@@ -110,23 +110,23 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
 
   // CHECK: %[[RES0:.*]] = kgen.call @byref_res(%arg3) : (index owned) -> index
   // CHECK-NEXT: pop.store %[[RES0]], %[[P0]] : !kgen.pointer<index>
-  kgen.call @byref_res(%0, %arg3) : !byref_res_sig
+  kgen.call @byref_res(%arg3, %0) : !byref_res_sig
   // CHECK: %[[RES1:.*]] = kgen.call @byref_res_reg_passable(%arg3) : (index owned) -> !kgen.struct<(index, index)>
   // CHECK-NEXT: pop.store %[[RES1]], %[[P1]] : !kgen.pointer<struct<(index, index)>>
-  kgen.call @byref_res_reg_passable(%1, %arg3) : !byref_res_reg_passable_sig
-  // CHECK: kgen.call @byref_res_mem_only(%2, %arg3) : (!kgen.pointer<struct<(index, index) memoryOnly>> byref_result, index owned) -> !kgen.none
+  kgen.call @byref_res_reg_passable(%arg3, %1) : !byref_res_reg_passable_sig
+  // CHECK: kgen.call @byref_res_mem_only(%arg3, %2) : (index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none
   // CHECK-NOT: pop.store
-  kgen.call @byref_res_mem_only(%2, %arg3) : !byref_res_mem_only_sig
+  kgen.call @byref_res_mem_only(%arg3, %2) : !byref_res_mem_only_sig
 
   // CHECK: %[[RES0:.*]] = kgen.call_signature %arg0(%arg3) : (index owned) -> index
   // CHECK-NEXT: pop.store %[[RES0]], %[[P0]] : !kgen.pointer<index>
-  kgen.call_signature %arg0(%0, %arg3) : !byref_res_sig
+  kgen.call_signature %arg0(%arg3, %0) : !byref_res_sig
   // CHECK: %[[RES1:.*]] = kgen.call_signature %arg1(%arg3) : (index owned) -> !kgen.struct<(index, index)>
   // CHECK-NEXT: pop.store %[[RES1]], %[[P1]] : !kgen.pointer<struct<(index, index)>>
-  kgen.call_signature %arg1(%1, %arg3) : !byref_res_reg_passable_sig
-  // kgen.call_signature %arg2(%[[P2]], %arg3) : (!kgen.pointer<struct<(index, index) memoryOnly>> byref_result, index owned) -> !kgen.none
+  kgen.call_signature %arg1(%arg3, %1) : !byref_res_reg_passable_sig
+  // kgen.call_signature %arg2(%[[P2]], %arg3) : (index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none
   // CHECK-NOT: pop.store
-  kgen.call_signature %arg2(%2, %arg3) : !byref_res_mem_only_sig
+  kgen.call_signature %arg2(%arg3, %2) : !byref_res_mem_only_sig
 
   kgen.return
 }
@@ -136,8 +136,8 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
 // CHECK-LABEL: kgen.func @byref_throws(%arg0: !kgen.variant<struct<(f32)>, none>
 // CHECK-SAME: ) throws -> !kgen.variant<struct<(f32)>, index>
 kgen.func @byref_throws(
-  %__result__: !kgen.pointer<index> byref_result,
-  %arg1: !kgen.variant<!Error, !kgen.none>
+  %arg1: !kgen.variant<!Error, !kgen.none>,
+  %__result__: !kgen.pointer<index> byref_result
 ) throws -> !kgen.variant<!Error, !kgen.none> {
   // CHECK-NEXT: %[[P0:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: "somehow.populate"(%[[P0]]) : (!kgen.pointer<index>) -> ()
@@ -158,7 +158,7 @@ kgen.func @byref_throws(
 }
 
 !byref_throws_sig = !kgen.signature<(
-  !kgen.pointer<index> byref_result, !kgen.variant<!Error, !kgen.none>
+  !kgen.variant<!Error, !kgen.none>, !kgen.pointer<index> byref_result
 ) throws -> !kgen.variant<!Error, !kgen.none>>
 
 // CHECK-LABEL: kgen.func @test_byref_throws(
@@ -181,8 +181,8 @@ kgen.func @test_byref_throws(
   // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %[[RES]], 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
-  %res1 = kgen.call @byref_throws(%__result__, %arg1) : (
-    !kgen.pointer<index> byref_result, !kgen.variant<!Error, !kgen.none>
+  %res1 = kgen.call @byref_throws(%arg1, %__result__) : (
+    !kgen.variant<!Error, !kgen.none>, !kgen.pointer<index> byref_result
   ) throws -> !kgen.variant<!Error, !kgen.none>
   "handle.error"(%res1) : (!kgen.variant<!Error, !kgen.none>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
@@ -200,7 +200,7 @@ kgen.func @test_byref_throws(
   // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %[[RES]], 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
-  %res2 = kgen.call_signature %arg0(%__result__, %arg1) : !byref_throws_sig
+  %res2 = kgen.call_signature %arg0(%arg1, %__result__) : !byref_throws_sig
   "handle.error"(%res2) : (!kgen.variant<!Error, !kgen.none>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
 }
@@ -221,7 +221,7 @@ kgen.func @byref_throws_optimized_normal(
 
 // CHECK-LABEL: kgen.func @byref_throws_optimized_error(%arg0: !kgen.struct<(f32)>) throws -> !kgen.variant<struct<(f32)>, index>
 kgen.func @byref_throws_optimized_error(
-  %__result__: !kgen.pointer<index> byref_result, %arg1: !Error
+  %arg1: !Error, %__result__: !kgen.pointer<index> byref_result
 ) throws -> !kgen.variant<!Error, !kgen.none> {
   %res = kgen.variant.create %arg1, 0 : <!Error, !kgen.none>
 
@@ -232,9 +232,9 @@ kgen.func @byref_throws_optimized_error(
 
 // CHECK-LABEL: @self_result_and_arg
 // CHECK-SAME: (%arg0: !kgen.struct<()>, %arg1: i8 borrow) -> !kgen.struct<()>
-kgen.func @self_result_and_arg(%arg0: !kgen.pointer<struct<()>> byref_result,
-                               %arg1: !kgen.pointer<struct<()>> borrow_in_mem,
-                               %arg2: i8 borrow) -> !kgen.none {
+kgen.func @self_result_and_arg(%arg1: !kgen.pointer<struct<()>> borrow_in_mem,
+                               %arg2: i8 borrow,
+                               %arg0: !kgen.pointer<struct<()>> byref_result) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -246,7 +246,7 @@ kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> borrow_i
   // CHECK: %[[CST:.*]] = kgen.param.constant: i8 = <4>
   %1 = kgen.param.constant: i8 = <4>
   // CHECK: call @self_result_and_arg(%{{.*}}, %[[CST]]) : (!kgen.struct<()>, i8 borrow) -> !kgen.struct<()>
-  %2 = kgen.call @self_result_and_arg(%0, %arg0, %1) : (!kgen.pointer<struct<()>> byref_result, !kgen.pointer<struct<()>> borrow_in_mem, i8 borrow) -> !kgen.none
+  %2 = kgen.call @self_result_and_arg(%arg0, %1, %0) : (!kgen.pointer<struct<()>> borrow_in_mem, i8 borrow, !kgen.pointer<struct<()>> byref_result) -> !kgen.none
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }

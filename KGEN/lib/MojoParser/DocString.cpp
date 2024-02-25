@@ -236,11 +236,11 @@ static ArrayRef<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
   ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
 
   // The compiler can insert an implicit `__result__` argument, which stores
-  // memory-only results, at the beginning of an argument list.  Because these
+  // memory-only results, at the end of an argument list.  Because these
   // arguments are hidden artifacts of the compiler, they don't need to be
   // documented.
   if (funcOp.getSignature().hasMemoryOnlyResult())
-    argNames = argNames.drop_front();
+    argNames = argNames.drop_back();
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
   if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&

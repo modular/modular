@@ -58,11 +58,16 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
     arguments.push_back(input);
-  auto ptr = dyn_cast<PointerType>(func.getArgument(0).getType());
+
+  // True if InitSelf, false if ByRefResult.
+  bool isInitSelf = func.getSignature().hasInitSelfArg();
+  auto resultArg =
+      isInitSelf ? func.getArgument(0) : func.getArguments().back();
+  auto ptr = dyn_cast<PointerType>(resultArg.getType());
   if (!ptr)
-    return ErrorTree(func.getLoc(), "first argument is not a pointer");
+    return ErrorTree(func.getLoc(), "result argument is not a pointer");
   ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-      ptr.getElementType(), func.getBodyRegion(), arguments);
+      ptr.getElementType(), func.getBodyRegion(), arguments, isInitSelf);
 
   // Report an error if evaluation fails.
   if (result.isError()) {

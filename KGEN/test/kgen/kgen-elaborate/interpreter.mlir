@@ -13,26 +13,26 @@ kgen.generator export @constexpr_fma() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @init_self(%arg0: !kgen.pointer<index>, %arg1: index) {
+kgen.generator @init_self(%arg0: !kgen.pointer<index> init_self, %arg1: index) {
   %idx1 = index.constant 1
   %0 = index.add %idx1, %arg1
   pop.store %0, %arg0 : !kgen.pointer<index>
   kgen.return
 }
 
-kgen.generator @byref_result(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>) {
-  %0 = pop.load %arg1 : !kgen.pointer<index>
+kgen.generator @byref_result(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index> byref_result) {
+  %0 = pop.load %arg0 : !kgen.pointer<index>
   %idx2 = index.constant 2
   %1 = index.mul %idx2, %0
-  pop.store %1, %arg0 : !kgen.pointer<index>
+  pop.store %1, %arg1 : !kgen.pointer<index>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant = <2048>
-  kgen.param.declare value = <apply_result_slot(:(!kgen.pointer<index>, index) -> () @init_self, 1023)>
-  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index>, !kgen.pointer<index>) -> () @byref_result, store_to_mem(value))>
+  kgen.param.declare value = <apply_result_slot(:(!kgen.pointer<index> init_self, index) -> () @init_self, 1023)>
+  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index>, !kgen.pointer<index> byref_result) -> () @byref_result, store_to_mem(value))>
   kgen.return
 }
 

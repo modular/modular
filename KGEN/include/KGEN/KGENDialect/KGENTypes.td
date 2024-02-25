@@ -198,12 +198,12 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getArguments() const;
     ArrayRef<Type> getResults() const;
 
-    /// Return true if this signature's first argument is a result from the
+    /// Return true if this signature's last argument is a result from the
     /// the function returned through memory.
     bool hasMemoryOnlyResult();
     /// Return true if this signature's first argument is an initializer result
     /// returned through memory.
-    bool hasInitSelfResult();
+    bool hasInitSelfArg();
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }

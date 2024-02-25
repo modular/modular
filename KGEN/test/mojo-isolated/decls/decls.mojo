@@ -1299,11 +1299,11 @@ struct MyStruct:
 
 
 # CHECK-LABEL: lit.func @"getThing()"
-# CHECK-SAME: [mut *"__result__`"](%__result__:
+# CHECK-SAME: [mut *"__result__`"](?, %__result__:
 fn getThing() -> MyStruct:
     # result slot parameter should get a different name to avoid conflict.
     # CHECK: lit.func *"localTest()"
-    # CHECK-SAME: [mut *"__result__`0"](%__result___0[__result__]:
+    # CHECK-SAME: [mut *"__result__`0"](?, %__result___0[__result__]:
     fn localTest() -> MyStruct:
         return MyStruct()
 
@@ -1311,7 +1311,7 @@ fn getThing() -> MyStruct:
 
 
 # CHECK-LABEL: lit.func @"callThing()"
-# CHECK-SAME: [mut *"__result__`"](%__result__:
+# CHECK-SAME: [mut *"__result__`"](?, %__result__:
 fn callThing() -> MyStruct:
     return getThing()
 

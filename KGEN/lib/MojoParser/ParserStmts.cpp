@@ -696,10 +696,10 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   SignatureType declSig = decl.getSignature();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(MLValue(decl.getArgument(0)), EC_ReturnValue);
+    ValueDest resultDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
     if (!emitter.emitExpr(operandExpr, resultDest))
       return success();
-
+    // The register result is a None value.
     resultValue = emitter.emitSRValue(
         {PValue(shared.getNoneAttr()), operandExpr}, EC_ReturnValue);
 

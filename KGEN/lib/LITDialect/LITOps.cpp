@@ -82,7 +82,7 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function is a memory only type, return the by-ref result.
   if (sigType.hasMemoryOnlyResult())
-    return cast<RefType>(argTypes.front()).getElementType();
+    return cast<RefType>(argTypes.back()).getElementType();
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())

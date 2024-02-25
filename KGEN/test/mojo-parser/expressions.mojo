@@ -127,7 +127,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   var mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}(%anonymous2A
+  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}({{.*}}, [[TMP]])
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
@@ -934,13 +934,13 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi28transfer29)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%anonymous2A, %arr, %x)
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, %anonymous2A)
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %anonymous2A)
   arr[x] = arr[x]
 
   # CHECK: [[ANON:%.*]] = lit.var.decl "__store_tmp__"
   # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"__store_tmp__`
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[ANON]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
   # CHECK: %[[C1:.*]] = {{.*}}constant: !Int = <{1}>
   # CHECK: lit.ref.store %[[C1:.*]], [[XP]]
@@ -955,7 +955,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
 
   # CHECK: [[STORETMP:%.*]] = lit.var.decl "__store_tmp__"
   # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"__store_tmp__`
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[STORETMP]], %arr, %x)
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[STORETMP]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.store {{.*}}, [[XP]]
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, [[STORETMP]])
@@ -1189,7 +1189,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
   float0: fn(Int) -> Int,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}("__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result, !lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem, |) -> !kgen.none
+  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
   float1: fn(MemoryType) -> MemoryType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!RegType, |) ownedresult -> !RegType
@@ -1378,7 +1378,7 @@ fn getUnmovable(a: Unmovable) -> Unmovable:
 # CHECK-LABEL: lit.func @"testUnmovable
 fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: %x = lit.var.decl "x"
-   # CHECK-NEXT: lit.call {{.*}}(%x, %a)
+   # CHECK-NEXT: lit.call {{.*}}(%a, %x)
    var x : Unmovable = getUnmovable(a)
 
 # Issue 23233 https://github.com/modularml/modular/issues/23233

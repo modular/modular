@@ -55,7 +55,7 @@ fn first_mem(pair: MemIntPair) -> Int:
     return pair.first
 
 
-# CHECK: extern void make_mem_pair(void *, ssize_t, ssize_t);
+# CHECK: extern void make_mem_pair(ssize_t, ssize_t, void *);
 @export(ABI="C")
 fn make_mem_pair(first: Int, second: Int) -> MemIntPair:
     return MemIntPair(first, second)

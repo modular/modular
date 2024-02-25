@@ -886,7 +886,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
       return {}; // Getter invalid.
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
-    size_t setValueIdx = posOperands.size() + sigType.hasMemoryOnlyResult();
+    size_t setValueIdx = posOperands.size();
     if (sigType.getNumArguments() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
