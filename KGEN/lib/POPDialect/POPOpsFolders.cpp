@@ -521,6 +521,8 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   if (!dtype || !getType().getResolvedSize() ||
       getInput().getType().getResolvedSize() != getType().getResolvedSize())
     return {};
+  if (dtype->isBool()) // Modeling bool bitcast requires packing.
+    return {};
   if (dtype->isInt()) {
     return foldSIMDOpResult<::detail::kNoIndex>(
         adaptor.getOperands(), *dtype,
