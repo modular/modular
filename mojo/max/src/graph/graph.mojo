@@ -135,10 +135,14 @@ struct Graph(CollectionElement, Stringable):
         # TODO: Add input verification.
         var ctx = self._op.context()
 
+        var operands = DynamicVector[_mlir.Value]()
+        for i in range(len(inputs)):
+            operands.append(inputs[i].handle)
+
         var op = _mlir.Operation(
             name=name,
             location=_mlir.Location.unknown(ctx),
-            operands=inputs.as_values(),
+            operands=operands,
             results=out_types.to_mlir(self.module()),
             attributes=attrs.attrs,
         )
@@ -149,10 +153,10 @@ struct Graph(CollectionElement, Stringable):
         else:
             self._body().append(op)
 
-        var tup = SymbolTuple()
+        var results = DynamicVector[Symbol]()
         for i in range(op.num_results()):
-            tup.append(op.result(i))
-        return tup
+            results.append(op.result(i))
+        return results
 
     # ===------------------------------------------------------------------=== #
     # op - shorthands for single-result ops
@@ -231,7 +235,7 @@ struct Graph(CollectionElement, Stringable):
     ](self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type `MOTensor` with 1D shape,
+        The value of this constant will have the type `MOTensor` with 1-D shape,
         consistent with the size of `values`.
 
         Params:
@@ -255,7 +259,7 @@ struct Graph(CollectionElement, Stringable):
         """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type scalar `MOTensor`
-        (0D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
+        (0-D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
         element.
 
         Params:
@@ -272,6 +276,56 @@ struct Graph(CollectionElement, Stringable):
         for i in range(rank):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))
+
+    fn scalar(self, value: Int, dtype: ElementType) raises -> Symbol:
+        """Adds a node representing a `mo.constant` operation.
+
+        The value of this constant will have the type `MOTensor` of the same
+        element type as `dtype`, and scalar (0-D) shape.
+
+        Args:
+            value: The scalar value.
+            dtype: The constant's element type.
+
+        Returns:
+            The symbolic output of this node.
+
+        Raises:
+            If `value` cannot be instantiated as a tensor of element `dtype`.
+        """
+        if dtype.dtype == DType.int32:
+            return self.scalar(Int32(value))
+        elif dtype.dtype == DType.int64:
+            return self.scalar(Int64(value))
+        elif dtype.dtype == DType.float32:
+            return self.scalar(Int32(value))
+        elif dtype.dtype == DType.float64:
+            return self.scalar(Int64(value))
+        # TODO: No particular reason not to implement everything else.
+        raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
+
+    fn scalar(self, value: FloatLiteral, dtype: ElementType) raises -> Symbol:
+        """Adds a node representing a `mo.constant` operation.
+
+        The value of this constant will have the type `MOTensor` of the same
+        element type as `dtype`, and scalar (0-D) shape.
+
+        Args:
+            value: The scalar value.
+            dtype: The constant's element type.
+
+        Returns:
+            The symbolic output of this node.
+
+        Raises:
+            If `value` cannot be instantiated as a tensor of element `dtype`.
+        """
+        if dtype.dtype == DType.float32:
+            return self.scalar(Int32(value))
+        elif dtype.dtype == DType.float64:
+            return self.scalar(Int64(value))
+        # TODO: No particular reason not to implement everything else.
+        raise "unimplemented FloatLiteral conversion dtype: " + str(dtype.dtype)
 
     fn range[
         dtype: DType = DType.int64

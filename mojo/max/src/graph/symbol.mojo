@@ -3,6 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Symbolic value primitives.
+
+A `Symbol` can represent the output of a `Node`, the arguments of a `Graph` (as
+seen from within its body), and more generally any symbolic value available
+within the `Graph`. Other `Node`s receive `Symbol`s as inputs to form a
+computation graph.
+
+`Symbol`s may also be used to refer to an existing input or output of a `Node`,
+and one may change these, for instance by swapping a new `Symbol`.
+
+Conceptually, `Symbol`s are the equivalent of variables in Mojo. A `Symbol` can
+also be thought of as the end of an edge in the dataflow graph (the other end
+being one use of that symbol).
+
+Similar to regular variables, `Symbol`s have a data type.
+
+Note: All the helpers in this module are documented as "Creates foo". This is
+a shorthand notation for "Adds a node representing an op that returns foo".
+"""
 
 from collections.optional import Optional
 from memory.unsafe import _LITRef
@@ -34,14 +53,18 @@ from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 @value
 struct Symbol(CollectionElement, Stringable):
-    var _value: _mlir.Value
+    """Represents a symbolic value within a `Graph`."""
+
+    var handle: _mlir.Value
+    """An handle to this `Symbol`'s internal representation."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        var parent = self._value.parent()
+        """Returns the `Graph` owning this `Symbol`."""
+        var parent = self.handle.parent()
         var block: _mlir.Block
         if parent.isa[_mlir.Block]():
             block = parent.get[_mlir.Block]()[]
@@ -53,294 +76,357 @@ struct Symbol(CollectionElement, Stringable):
         return Graph(graph_op)
 
     fn type(self) raises -> AnyMOType:
-        return AnyMOType.from_mlir(self._value.type())
+        """Returns this `Symbol`'s type."""
+        return AnyMOType.from_mlir(self.handle.type())
 
     fn tensor_type(self) raises -> MOTensor:
+        """Returns this `Symbol`'s type, as `MOTensor`.
+
+        Implicitly asserts that the type is indeed `MOTensor`, and raises an
+        error otherwise.
+
+        Returns:
+            The tensor type of this `Symbol`.
+        """
         return self.type().tensor()
 
     fn __str__(self) -> String:
-        return str(self._value)
+        """Returns a `String` representation of this `Symbol`.
 
-    fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
-        var shape = DynamicVector[Dim]()
-        var symbols = DynamicVector[Symbol]()
-        for dim in dims:
-            if dim[].isa[Symbol]():
-                shape.append(Dim.dynamic())
-                symbols.append(dim[].get[Symbol]()[])
-            else:
-                var d = dim[].get[Int]()[]
-                shape.append(d if d >= 0 else Dim.dynamic())
-                symbols.append(self.graph().scalar[DType.int64](d))
+        The representation uses an internal MLIR Assembly format, and typically
+        shows the `Node` that outputs this `Symbol`. Its structure
+        is subject to change without notice, and should not be used for
+        serialization. For debugging purposes only.
 
-        return reshape(self, symbols).hint_shape(shape)
-
-    fn hint_shape(owned self, shape: DynamicVector[Dim]) raises -> Self:
-        return self.hint_type(MOTensor(self.tensor_type().dtype, shape, True))
-
-    fn hint_type(owned self, type: AnyMOType) raises -> Self:
-        # TODO(32611): bottom out to a `rebind`-like op instead.
-        self._value.set_type(type.to_mlir(self.graph().module()))
-        return self
-
-    fn hint_type(owned self, like: Symbol) raises -> Self:
-        return self.hint_type(like.type())
+        Returns:
+            A textual representation of this `Symbol`.
+        """
+        return str(self.handle)
 
     # ===------------------------------------------------------------------=== #
-    # Overloaded operators
+    # Casting and reshaping operators.
+    # ===------------------------------------------------------------------=== #
+
+    fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
+        """Reshapes this `Symbol`.
+
+        Uses the `mo.reshape` op. Requires the symbol to be a `MOTensor`.
+
+        Args:
+            dims: The new dimensions.
+
+        Returns:
+            A new `Symbol` that has the given shape.
+        """
+        var static_shape = DynamicVector[Dim]()
+        var symbolic_dims = DynamicVector[Symbol]()
+
+        if len(dims) == 0:
+            return ops.reshape(
+                self,
+                self.graph().vector[DType.int64](DynamicVector[Int64]()),
+                static_shape,
+            )
+
+        for dim in dims:
+            if dim[].isa[Symbol]():
+                static_shape.append(Dim.dynamic())
+                symbolic_dims.append(dim[].get[Symbol]()[])
+            else:
+                var d = dim[].get[Int]()[]
+                static_shape.append(d if d >= 0 else Dim.dynamic())
+                symbolic_dims.append(self.graph().scalar[DType.int64](d))
+
+        return ops.reshape(self, ops.stack(symbolic_dims), static_shape)
+
+    fn swap_axes(self, axis1: Int, axis2: Int) raises -> Symbol:
+        """Interchanges two axes of this `Symbol`.
+
+        Uses the `mo.transpose` op. Negative values are allowed, and represent
+        the axis number counting from the last.
+
+        Args:
+            axis1: One of the axes to swap.
+            axis2: The other axis.
+
+        Returns:
+            A new transposed `Symbol`.
+        """
+        return transpose(self, axis1, axis2)
+
+    # ===------------------------------------------------------------------=== #
+    # Slicing operators
     # ===------------------------------------------------------------------=== #
 
     fn __getitem__(self, i: Symbol, axis: Int = 0) raises -> Symbol:
+        """Symbolic slicing - indexes a value by a single index.
+
+        Uses the `mo.slice` op.
+
+        Args:
+            i: The index value.
+            axis: The axis to index at.
+
+        Returns:
+            The slicing result.
+        """
         return ops.slice(self, i, axis=axis)
 
     fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
-        var g = self.graph()
-        return ops.slice(self, g.scalar(Int64(i)), axis=axis)
+        """Symbolic slicing - indexes a value by a single constant index.
+
+        Uses the `mo.slice` op and automatically wraps `i` inside a
+        `mo.constant`.
+
+        Args:
+            i: The index value.
+            axis: The axis to index at.
+
+        Returns:
+            The slicing result.
+        """
+        return ops.slice(self, self.graph().scalar(Int64(i)), axis=axis)
 
     fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
+        """Range-based slicing.
+
+        Uses the `mo.slice` op. Slicing along multiple dimensions is
+        supported.
+
+        Args:
+            s: The slice values. The `i`th `SymbolicSlice` in the variadic list
+                represents the begin:end:step triple for axis `i`.
+
+        Returns:
+            The slicing result.
+        """
         var slices = DynamicVector[SymbolicSlice]()
         for sval in s:
             slices.append(sval[])
         return ops.slice(self, slices)
 
     fn __getitem__(self, s: Slice) raises -> Symbol:
+        """Shorthand for symbolic slicing with an `Int` range.
+
+        This overload only supports slicing along the first axis.
+
+        Args:
+            s: The slice value.
+
+        Returns:
+            The slicing result.
+        """
         return ops.slice(self, s)
 
     # ===------------------------------------------------------------------=== #
-    # ... to tidy up ...
+    # Arithmetic operators
     # ===------------------------------------------------------------------=== #
 
-    fn list_get(self, i: Int) raises -> Symbol:
-        return self.list_get(self.graph().constant[DType.int64](i))
+    # Note: Keep in alphabetic order.
 
-    fn list_get(self, i: Symbol) raises -> Symbol:
-        var g = self.graph()
-        var result_type = self.type().list().eltype
-        return g.op("mo.list.get", (self, i), result_type)
+    fn _consistent_scalar(self, value: Int) raises -> Symbol:
+        return self.graph().scalar(value, self.type().tensor().dtype)
 
-    fn list_insert(self, i: Int, v: Symbol) raises -> Symbol:
-        return self.list_insert(self.graph().constant[DType.int64](i), v)
+    fn _consistent_scalar(self, value: FloatLiteral) raises -> Symbol:
+        return self.graph().scalar(value, self.type().tensor().dtype)
 
-    fn list_insert(self, i: Symbol, v: Symbol) raises -> Symbol:
-        var g = self.graph()
-        var result_type = self.type().list().eltype
-        return g.op("mo.list.insert", (self, v, i), result_type)
+    fn __add__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise addition."""
+        return add(self, rhs)
+
+    fn __add__(self, rhs: Int) raises -> Symbol:
+        """Element-wise addition by an `Int` literal."""
+        return add(self, self._consistent_scalar(rhs))
+
+    fn __add__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise addition by a `FloatLiteral`."""
+        return add(self, self._consistent_scalar(rhs))
+
+    fn __matmul__(self, rhs: Symbol) raises -> Symbol:
+        """Matrix multiplication."""
+        return matmul(self, rhs)
+
+    fn __mul__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise multiplication."""
+        return mul(self, rhs)
+
+    fn __mul__(self, rhs: Int) raises -> Symbol:
+        """Element-wise multiplication by an `Int` literal."""
+        return mul(self, self._consistent_scalar(rhs))
+
+    fn __mul__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise multiplication by a `FloatLiteral`."""
+        return mul(self, self._consistent_scalar(rhs))
+
+    fn __neg__(self) raises -> Symbol:
+        """Numerical negative, element-wise."""
+        return self.graph().op("mo.negative", self, self.tensor_type())
+
+    fn __pow__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise raise to power."""
+        return pow(self, rhs)
+
+    fn __pow__(self, rhs: Int) raises -> Symbol:
+        """Element-wise raise to power by an `Int` literal."""
+        return pow(self, self._consistent_scalar(rhs))
+
+    fn __pow__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise raise to power by a `FloatLiteral`."""
+        return pow(self, self._consistent_scalar(rhs))
+
+    fn __radd__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise addition."""
+        return add(rhs, self)
+
+    fn __radd__(self, rhs: Int) raises -> Symbol:
+        """Element-wise addition by an `Int` literal."""
+        return add(self._consistent_scalar(rhs), self)
+
+    fn __radd__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise addition by a `FloatLiteral`."""
+        return add(self._consistent_scalar(rhs), self)
+
+    fn __rmul__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise multiplication."""
+        return mul(rhs, self)
+
+    fn __rmul__(self, rhs: Int) raises -> Symbol:
+        """Element-wise multiplication by an `Int` literal."""
+        return mul(self._consistent_scalar(rhs), self)
+
+    fn __rmul__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise multiplication by a `FloatLiteral`."""
+        return mul(self._consistent_scalar(rhs), self)
+
+    fn __rpow__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise raise to power."""
+        return pow(rhs, self)
+
+    fn __rpow__(self, rhs: Int) raises -> Symbol:
+        """Element-wise raise to power by an `Int` literal."""
+        return pow(self._consistent_scalar(rhs), self)
+
+    fn __rpow__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise raise to power by a `FloatLiteral`."""
+        return pow(self._consistent_scalar(rhs), self)
+
+    fn __rsub__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise subtraction."""
+        return sub(rhs, self)
+
+    fn __rsub__(self, rhs: Int) raises -> Symbol:
+        """Element-wise subtraction by an `Int` literal."""
+        return sub(self._consistent_scalar(rhs), self)
+
+    fn __rsub__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise subtraction by a `FloatLiteral`."""
+        return sub(self._consistent_scalar(rhs), self)
+
+    fn __rtruediv__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise division."""
+        return div(rhs, self)
+
+    fn __rtruediv__(self, rhs: Int) raises -> Symbol:
+        """Element-wise division by an `Int` literal."""
+        return div(self._consistent_scalar(rhs), self)
+
+    fn __rtruediv__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise division by a `FloatLiteral`."""
+        return div(self._consistent_scalar(rhs), self)
+
+    fn __sub__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise subtraction."""
+        return sub(self, rhs)
+
+    fn __sub__(self, rhs: Int) raises -> Symbol:
+        """Element-wise subtraction by an `Int` literal."""
+        return sub(self, self._consistent_scalar(rhs))
+
+    fn __sub__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise subtraction by a `FloatLiteral`."""
+        return sub(self, self._consistent_scalar(rhs))
+
+    fn __truediv__(self, rhs: Symbol) raises -> Symbol:
+        """Element-wise division."""
+        return div(self, rhs)
+
+    fn __truediv__(self, rhs: Int) raises -> Symbol:
+        """Element-wise division by an `Int` literal."""
+        return div(self, self._consistent_scalar(rhs))
+
+    fn __truediv__(self, rhs: FloatLiteral) raises -> Symbol:
+        """Element-wise division by a `FloatLiteral`."""
+        return div(self, self._consistent_scalar(rhs))
+
+    # ===------------------------------------------------------------------=== #
+    # Other ops
+    # ===------------------------------------------------------------------=== #
 
     fn print(self, label: String = "debug_tensor") raises:
+        """Prints this `Symbol`'s value at runtime.
+
+        This uses `mo.debug.tensor.print` to enable printing the runtime value
+        that this `Symbol` represents, at grpah execution time.
+
+        Args:
+            label: A label to accompany the printout.
+        """
         var g = self.graph()
         var attrs = AttrMap(g.module().string_attr("label", label))
         _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
-
-    fn transpose(self) raises -> Symbol:
-        return transpose(self, -1, -2)
-
-    fn transpose(self, dim1: Int, dim2: Int) raises -> Symbol:
-        return transpose(self, dim1, dim2)
-
-    fn __neg__(self) raises -> Symbol:
-        var g = self.graph()
-        return g.op("mo.negative", self, self.tensor_type())
-
-    fn __matmul__(self, rhs: Symbol) raises -> Symbol:
-        return matmul(self, rhs)
-
-    fn __add__(self, rhs: Symbol) raises -> Symbol:
-        return add(self, rhs)
-
-    fn __add__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self + g.constant(rhs)
-
-    fn __add__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self + g.scalar(rhs)
-
-    fn __add__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return self + g.scalar(Int64(rhs))
-
-    fn __add__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return self + g.scalar(Float32(rhs))
-
-    fn __sub__(self, rhs: Symbol) raises -> Symbol:
-        return sub(self, rhs)
-
-    fn __sub__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self - g.constant(rhs)
-
-    fn __sub__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self - g.scalar(rhs)
-
-    fn __sub__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return self - g.scalar(Int64(rhs))
-
-    fn __sub__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return self - g.scalar(Float32(rhs))
-
-    fn __mul__(self, rhs: Symbol) raises -> Symbol:
-        return mul(self, rhs)
-
-    fn __mul__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self * g.constant(rhs)
-
-    fn __mul__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self * g.scalar(rhs)
-
-    fn __mul__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return self * g.scalar(Int64(rhs))
-
-    fn __mul__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return self * g.scalar(Float32(rhs))
-
-    fn __truediv__(self, rhs: Symbol) raises -> Symbol:
-        return div(self, rhs)
-
-    fn __truediv__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self / g.constant(rhs)
-
-    fn __truediv__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self / g.scalar(rhs)
-
-    fn __truediv__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return self / g.scalar(Int64(rhs))
-
-    fn __truediv__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return self / g.scalar(Float32(rhs))
-
-    fn __pow__(self, rhs: Symbol) raises -> Symbol:
-        return pow(self, rhs)
-
-    fn __pow__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self ** g.constant(rhs)
-
-    fn __pow__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return self ** g.scalar(rhs)
-
-    fn __pow__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return self ** g.scalar(Int64(rhs))
-
-    fn __pow__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return self ** g.scalar(Float32(rhs))
-
-    fn __radd__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.constant(rhs) + self
-
-    fn __radd__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(rhs) + self
-
-    fn __radd__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Int64(rhs)) + self
-
-    fn __radd__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Float32(rhs)) + self
-
-    fn __rsub__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.constant(rhs) - self
-
-    fn __rsub__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(rhs) - self
-
-    fn __rsub__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Int64(rhs)) - self
-
-    fn __rsub__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Float32(rhs)) - self
-
-    fn __rmul__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.constant(rhs) * self
-
-    fn __rmul__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(rhs) * self
-
-    fn __rmul__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Int64(rhs)) * self
-
-    fn __rmul__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Float32(rhs)) * self
-
-    fn __rtruediv__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.constant(rhs) / self
-
-    fn __rtruediv__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(rhs) / self
-
-    fn __rtruediv__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Int64(rhs)) / self
-
-    fn __rtruediv__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Float32(rhs)) / self
-
-    fn __rpow__[dtype: DType](self, rhs: Tensor[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.constant(rhs) ** self
-
-    fn __rpow__[dtype: DType](self, rhs: Scalar[dtype]) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(rhs) ** self
-
-    fn __rpow__(self, rhs: Int) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Int64(rhs)) ** self
-
-    fn __rpow__(self, rhs: FloatLiteral) raises -> Symbol:
-        var g = self.graph()
-        return g.scalar(Float32(rhs)) ** self
 
     # ===------------------------------------------------------------------=== #
     # Graph manipulation
     # ===------------------------------------------------------------------=== #
 
-    fn replace_all_uses_with(self, other: Symbol):
-        self._value.replace_all_uses_with(other._value)
-
-    fn replace_all_uses_with(
+    fn insert_transformation(
         self, transform: fn (Symbol) raises -> Symbol
     ) raises:
+        """Inserts nodes in between this `Symbol` and all its current uses.
+
+        This enables inserting ops in between this `Symbol` and all its uses,
+        for example to modify an existing `Graph`.
+
+        Note: The function is called exactly once, even if `self` has no uses.
+
+        Args:
+            transform: A function that creates a unary subgraph (single input,
+                single output) and returns the result of the final node. The
+                function will be called with `self`, and its return value will
+                replace all uses of `self`.
+        """
         var dummy = self.graph().constant[DType.float32](0)
-        self.replace_all_uses_with(dummy)
-        dummy.replace_all_uses_with(transform(self))
+        self.handle.replace_all_uses_with(dummy.handle)
+        var replacement = transform(self)
+        dummy.handle.replace_all_uses_with(replacement.handle)
 
 
 @value
 struct SymbolicSlice(CollectionElement):
+    """`Slice`-like struct with `Symbol` fields.
+
+    This struct enables the range slice (`start:stop:end`) operator with
+    `Symbol` indices.
+    """
+
     var start: Optional[Symbol]
+    """The slice's start index."""
+
     var stop: Optional[Symbol]
+    """The slice's start index, exclusive."""
+
     var step: Optional[Symbol]
+    """The slice's step."""
 
     def __init__(inout self, g: Graph, s: Slice):
+        """Convenience constructor from a `Slice`.
+
+        This wraps any indices in `s` into constant nodes (using `mo.constant`).
+
+        Args:
+            g: The `Graph` into which the constant nodes are created.
+            s: The `Slice` to turn into `SymbolicSlice`.
+        """
         self.start = Optional[Symbol]()
         self.stop = Optional[Symbol]()
         self.step = Optional[Symbol]()
@@ -354,25 +440,34 @@ struct SymbolicSlice(CollectionElement):
 
 @value
 struct SymbolTuple(Sized):
+    """A tuple of `Symbol`s.
+
+    This struct mainly offers the convenience of building a tuple of `Symbol`s
+    using the tuple literal (`(a, b, c)`) notation. It is largely equivalent
+    to a `DynamicVector[Symbol]`.
+    """
+
+    # TODO: Drop this once DynamicVector can do this.
+
     var symbols: DynamicVector[Symbol]
+    """The actual list of symbols."""
 
     # ===------------------------------------------------------------------=== #
-    # Basic constructors
+    # Constructors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *symbols: Symbol):
+        """Constructor from a variadic list of `Symbol`s."""
         self.symbols = DynamicVector[Symbol]()
         for symbol in symbols:
             self.symbols.append(symbol[])
 
-    # ===------------------------------------------------------------------=== #
-    # Convenience tuple adapters
-    # ===------------------------------------------------------------------=== #
-
     fn __init__(inout self, owned symbols: ()):
+        """Convenience constructor for an empty tuple."""
         self.__init__()
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol)):
+        """Convenience constructor from a 2-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
@@ -382,6 +477,7 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
+        """Convenience constructor from a 3-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
@@ -394,6 +490,7 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
+        """Convenience constructor from a 4-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
@@ -411,22 +508,10 @@ struct SymbolTuple(Sized):
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
-
     fn __len__(self) -> Int:
+        """Returns the length of this `SymbolTuple`."""
         return len(self.symbols)
 
-    fn __getitem__(self, idx: Int) -> Symbol:
-        return self.symbols[idx]
-
-    fn as_values(self) -> DynamicVector[_mlir.Value]:
-        var values = DynamicVector[_mlir.Value]()
-        for i in range(len(self.symbols)):
-            values.append(self.symbols[i]._value)
-        return values
-
-    # ===------------------------------------------------------------------=== #
-    # Mutators
-    # ===------------------------------------------------------------------=== #
-
-    fn append(inout self, symbol: Symbol):
-        self.symbols.append(symbol)
+    fn __getitem__(self, i: Int) -> Symbol:
+        """Returns the `Symbol` at the specified index."""
+        return self.symbols[i]
