@@ -21,7 +21,7 @@ fn assert_tensors_almost_equal[
 ) raises:
     assert_equal(a.spec(), b.spec())
     for i in range(a.num_elements()):
-        assert_almost_equal[dtype](a[i], b[i], atol, rtol)
+        assert_almost_equal[dtype](a[i], b[i], atol=atol, rtol=rtol)
 
 
 fn assert_tensors_equal[
