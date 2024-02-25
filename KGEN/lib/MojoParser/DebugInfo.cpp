@@ -55,9 +55,10 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     LITSignatureType sig = func.getSignature();
     for (Type type : sig.getInputParamTypes())
       paramTypes.push_back(getSourceName(type));
-    for (auto [i, t, conv] : llvm::drop_begin(
-             llvm::enumerate(sig.getArguments(), sig.getArgConventions()),
-             sig.hasMemoryOnlyResult())) {
+    for (auto [i, t, conv] :
+         llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
+      if (conv == ArgConvention::ByRefResult)
+        continue;
       Type type = t;
       // Unwrap variadics pointers if necessary.
       if (sig.isVarArg(i))

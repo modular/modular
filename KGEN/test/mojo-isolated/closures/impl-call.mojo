@@ -49,11 +49,11 @@ struct MemType:
 # CHECK-NEXT: %[[W5:.*]] = index.mul %[[W1]], %[[W4]]
 # CHECK-NEXT: lit.return %[[W5]] : index
 
-# CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}(%0[{{.*}}]: !lit.ref<!MemType,{{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %y: !lit.ref<{{.*}}> borrow_in_mem) -> !kgen.none
+# CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %y: !lit.ref<{{.*}}> borrow_in_mem, ?, [[RESULT:%.*]]: !lit.ref<!MemType,{{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: kgen.param.declare *"m`"
 # CHECK-NEXT: %[[W0REF:.*]] = kgen.rebind %[[W0]]
-# CHECK-NEXT: lit.call @{{.*}}__add__{{.*}}(%0, %[[W0REF]], %y)
+# CHECK-NEXT: lit.call @{{.*}}__add__{{.*}}(%[[W0REF]], %y, [[RESULT]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 

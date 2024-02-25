@@ -293,9 +293,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
   // If the argument list has a byref result, ignore it for type checking
   // purposes.
   if (!parsedArgs.empty() &&
-      parsedArgs[0].convention == ParsedArgument::kConventionInOutResult) {
-    parsedArgs = parsedArgs.drop_front();
-    argTypes = argTypes.drop_front();
+      parsedArgs.back().convention == ParsedArgument::kConventionByRefResult) {
+    parsedArgs = parsedArgs.drop_back();
+    argTypes = argTypes.drop_back();
   }
 
   // If this definition is a struct/class member, compute the self type.
@@ -809,6 +809,8 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 }
 
 PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
+  if (kgenConvention == ArgConvention::ByRefResult)
+    return PassingKind::Implicit;
   switch (kwArgHandling) {
   case KWArgHandling::kPositionalOnly:
     return PassingKind::PosOnly;
@@ -1128,13 +1130,13 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
     // If this `def` returns an object but is missing a return, insert one
     // automatically.
     auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
-    if (objType &&
-        objType.isEqualCanon(
-            cast<RefType>(func.getArgument(0).getType()).getElementType())) {
+    auto resultArg = func.getArguments().back();
+    if (objType && objType.isEqualCanon(
+                       cast<RefType>(resultArg.getType()).getElementType())) {
       // Emit `object()` into the memory type return slot.
       ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
-      ValueDest resultDest(MLValue(func.getArgument(0)), EC_ReturnValue);
+      ValueDest resultDest(MLValue(resultArg), EC_ReturnValue);
       // Create a dummy node to pass down.
       SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
@@ -2060,6 +2062,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
        llvm::zip(traitSig.getArguments(), traitSig.getArgConventions())) {
     // Check for a `Self`-type result.
     if (conv == ArgConvention::ByRefResult || conv == ArgConvention::InitSelf) {
+      // Don't modify a byref result of an unrelated type.
       if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
@@ -2114,9 +2117,20 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   }
 
   PogsAttr oldArgListAttrs = traitSig.getArgListAttrs();
-  PogsAttr newArgListAttrs = oldArgListAttrs.cloneWith(
-      oldArgListAttrs.getNames().drop_front(replacedResult),
-      oldArgListAttrs.getPassingKinds().drop_front(replacedResult));
+  auto oldArgNames = oldArgListAttrs.getNames();
+  auto oldPassingKinds = oldArgListAttrs.getPassingKinds();
+  if (replacedResult) {
+    if (traitSig.hasInitSelfArg()) {
+      oldArgNames = oldArgNames.drop_front();
+      oldPassingKinds = oldPassingKinds.drop_front();
+    } else if (traitSig.hasMemoryOnlyResult()) {
+      oldArgNames = oldArgNames.drop_back();
+      oldPassingKinds = oldPassingKinds.drop_back();
+    }
+  }
+
+  PogsAttr newArgListAttrs =
+      oldArgListAttrs.cloneWith(oldArgNames, oldPassingKinds);
   auto metadata = FnMetadataAttr::get(
       newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls);
   return SignatureType::get(
@@ -2169,21 +2183,21 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     bindSigInputs.push_back(ParamDeclRefAttr::get(param));
   callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
 
-  // Treat the `init_self` argument like a result slot.
-  bool hasResultSlot =
-      memSig.hasMemoryOnlyResult() || memSig.hasInitSelfResult();
-
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
   SmallVector<FuncOperand> posOperands;
   SmallDenseMap<StringAttr, FuncOperand> kwOperands;
-  for (auto [arg, kind, conv, name] : llvm::drop_begin(
-           llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
-                     memSig.getArgConventions(), memSig.getArgNames()),
-           hasResultSlot)) {
+  for (auto [arg, kind, conv, name] :
+       llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
+                 memSig.getArgConventions(), memSig.getArgNames())) {
     AnyValue value;
     switch (conv) {
+    case ArgConvention::ByRefResult:
+    case ArgConvention::InitSelf:
+      // Ignore these.
+      continue;
+
     case ArgConvention::ByRef:
       value = MLValue(arg);
       break;
@@ -2211,8 +2225,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
-  if (hasResultSlot)
+  bool hasRegisterResult = false;
+  if (memSig.hasMemoryOnlyResult())
+    dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
+  else if (memSig.hasInitSelfArg())
     dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
+  else
+    hasRegisterResult = true;
 
   CValue callResult = emitter.emitCallUnchecked(
       PValue(callee), CallOperands(posOperands, &kwOperands), dest, node);
@@ -2235,11 +2254,11 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
                                *emitter.builder);
   Value retVal;
-  if (hasResultSlot) {
+  if (hasRegisterResult) {
+    retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
+  } else {
     retVal =
         builder.create<ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
-  } else {
-    retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
   }
   if (memSig.isThrows()) {
     retVal = builder.create<VariantCreateOp>(memSig.getResultType(), retVal,

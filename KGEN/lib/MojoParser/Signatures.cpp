@@ -363,8 +363,9 @@ TypeCheckedParamList::TypeCheckedParamList(
       if ((!defaultPosParams.empty() &&
            arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
           !defaultKwOnlyParams.empty()) {
-        emitOptionalAfterRequired(emitter, arg, "parameter")
-            << arg.typeExpr->getRange();
+        if (arg.kgenConvention != ArgConvention::ByRefResult)
+          emitOptionalAfterRequired(emitter, arg, "parameter")
+              << arg.typeExpr->getRange();
       }
     }
 
@@ -643,7 +644,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   switch (arg.convention) {
   case ParsedArgument::kConventionUnspec:
     llvm_unreachable("should be resolved by now");
-  case ParsedArgument::kConventionInOutResult:
+  case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionOwned:
     // Memory-only owned argument are passed with a layer of indirection and
@@ -801,7 +802,7 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
   // result, which can can be different when memory only, when throwing, etc.
   ASTType fullResultType = resultType;
 
-  // If it is memory-only, pass it indirectly as the first argument to the
+  // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
   if (rp == TypeConvention::MemoryOnly) {
@@ -812,28 +813,22 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
       tcSignature.argList.effects.setAsync(false);
     }
 
-    // Synthesize a result argument for this, and use None as the actual
-    // function result.
+    // Synthesize a ByRefResult argument for the result.
     ParsedArgument resultArg;
     resultArg.loc = resultLoc;
     resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-    resultArg.convention = ParsedArgument::kConventionInOutResult;
+    resultArg.convention = ParsedArgument::kConventionByRefResult;
     resultArg.kgenConvention = ArgConvention::ByRefResult;
-    resultArg.kwArgHandling = KWArgHandling::kPositionalOnly;
+    resultArg.kwArgHandling = KWArgHandling::kKeywordOnly;
     resultArg.typeExpr = resultTypeExpr;
-
-    // Insert this into the FRONT of the argument list.
-    // TODO(#30134): pass byref result at the end of the list.
-    tcSignature.argList.parsedArgs.insert(
-        tcSignature.argList.parsedArgs.begin(), resultArg);
-    tcSignature.argTypes.insert(tcSignature.argTypes.begin(), resultType);
+    tcSignature.argList.parsedArgs.push_back(resultArg);
+    tcSignature.argTypes.push_back(resultType);
 
     // Compute the full type for this new argument and a lifetime for it.
     auto [lifetimeDecl, refType] = getRefAndLifetimeForAddressArgument(
         resultArg, 0, resultType, declScope);
-    tcSignature.implicitLifetimeDecls.insert(
-        tcSignature.implicitLifetimeDecls.begin(), lifetimeDecl);
-    tcSignature.fullArgTypes.insert(tcSignature.fullArgTypes.begin(), refType);
+    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+    tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.func declaration (as opposed to a function type),
     // add a block argument for this.  We don't register this for name lookup
@@ -841,11 +836,10 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     // never looked up directly.
     if (fnDecl) {
       Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
-      (void)body.insertArgument(0U, refType,
-                                shared.translateLocation(resultLoc));
+      (void)body.addArgument(refType, shared.translateLocation(resultLoc));
     }
 
-    // We know the ABI result will be None now, which is trivial.
+    // We know the ABI register result will be None now, which is trivial.
     fullResultType = shared.getNoneType();
     rp = TypeConvention::RegisterPassableTrivial;
   }

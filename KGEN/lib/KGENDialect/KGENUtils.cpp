@@ -656,7 +656,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
           p.getCurrentLocation(),
           "'apply_result_slot' callee must have at least one result");
     // Parse each operand besides the result slot.
-    for (Type type : llvm::drop_begin(sig.getArguments()))
+    auto argTypes = sig.getArguments()
+                        .drop_front(sig.hasInitSelfArg())
+                        .drop_back(sig.hasMemoryOnlyResult());
+    for (Type type : argTypes)
       if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
         return failure();
     return success();

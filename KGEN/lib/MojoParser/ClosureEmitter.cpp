@@ -95,8 +95,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
 }
 
 /// Given a signature of a function, create a new signature by inserting a
-/// closure argument at index 0 or 1 (depending on the result type) with the
-/// given convention.
+/// closure argument at index 0 with the given convention.
 static LITSignatureType
 addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
                                      LITSignatureType sig) {
@@ -112,28 +111,16 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   SmallVector<PassingKind> callMemberArgPassingKinds;
   callMemberArgPassingKinds.reserve(callArgCount);
 
-  // Add result slot if necessary.
-  bool hasResultSlot = sig.hasMemoryOnlyResult();
-  if (hasResultSlot) {
-    callMemberSignatureInputs.push_back(sig.getArguments()[0]);
-    callMemberArgConventions.push_back(ArgConvention::ByRefResult);
-    callMemberArgNames.push_back(StringAttr::get(ctx));
-    callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
-  }
   // Add self.
   callMemberSignatureInputs.push_back(closureType);
   callMemberArgConventions.push_back(convention);
   callMemberArgNames.push_back(StringAttr::get(ctx));
   callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
   // Add the rest of the arguments.
-  llvm::append_range(callMemberSignatureInputs,
-                     sig.getArguments().drop_front(hasResultSlot));
-  llvm::append_range(callMemberArgConventions,
-                     sig.getArgConventions().drop_front(hasResultSlot));
-  llvm::append_range(callMemberArgNames,
-                     sig.getArgNames().drop_front(hasResultSlot));
-  llvm::append_range(callMemberArgPassingKinds,
-                     sig.getArgPassingKinds().drop_front(hasResultSlot));
+  llvm::append_range(callMemberSignatureInputs, sig.getArguments());
+  llvm::append_range(callMemberArgConventions, sig.getArgConventions());
+  llvm::append_range(callMemberArgNames, sig.getArgNames());
+  llvm::append_range(callMemberArgPassingKinds, sig.getArgPassingKinds());
 
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
@@ -226,15 +213,13 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 
   // Populate the lambda.
   b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
-  Value fnPtr = b.create<POP::PointerBitcastOp>(
-      fnPtrType, callImpl.getArgument(fnPtrType.hasMemoryOnlyResult()));
+  Value fnPtr =
+      b.create<POP::PointerBitcastOp>(fnPtrType, callImpl.getArgument(0));
   SmallVector<TypedAttr> lifetimes;
   for (ParamDeclAttr lifetimeDecl : callImpl.getParams())
     lifetimes.push_back(ParamDeclRefAttr::get(lifetimeDecl));
   SmallVector<Value> callArgs;
   llvm::append_range(callArgs, callImpl.getArguments());
-  if (fnPtrType.hasMemoryOnlyResult())
-    std::swap(callArgs[0], callArgs[1]);
   auto callIndirect =
       b.create<CallSignatureOp>(fnPtrType.getResultType(), fnPtr, lifetimes,
                                 ArrayRef(callArgs).drop_front());
@@ -303,7 +288,6 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       dependentSignatureType.getFnEffects(), sigMetadata);
 
   // Add the call member
-  bool hasResultSlot = dependentSignatureType.hasMemoryOnlyResult();
   LITSignatureType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(
           opaquePtrType, ArgConvention::BorrowedInReg, signatureType);
@@ -413,20 +397,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Location translatedLocation = shared.translateLocation(callDecl.getLoc());
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, callMethod.getBody());
-    Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
-                                   : callMethod.getBody()->getArgument(0);
+    Value callSelf = callMethod.getBody()->getArgument(0);
+
+    // Load self, but pass the rest unmodified.
     SmallVector<Value> arguments;
-    if (hasResultSlot) {
-      Value destArg = callMethod.getBody()->getArgument(0);
-      arguments.push_back(destArg);
-    }
-
     arguments.push_back(loadField(builder, callSelf, impl));
-
-    for (unsigned i = 1 + hasResultSlot, e = callMethod.getNumArguments();
-         i < e; i++)
-      arguments.push_back(callMethod.getBody()->getArgument(i));
-
+    llvm::append_range(arguments,
+                       callMethod.getBody()->getArguments().drop_front());
     Value callMemberPtr = loadField(builder, callSelf, callMember);
 
     SmallVector<TypedAttr> implicitLifetimes;
@@ -510,16 +487,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SmallVector<PassingKind> callPassingKinds;
   callPassingKinds.reserve(callArgCount);
 
-  // Move by ref result argument to front before self argument.
-  bool hasByRefReturn = wrapperSig.hasMemoryOnlyResult();
-  if (hasByRefReturn) {
-    assert(wrapperSig.getArgConvention(0) == ArgConvention::ByRefResult);
-    callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
-    callConventions.push_back(ArgConvention::ByRefResult);
-    callNames.push_back(StringAttr::get(ctx));
-    callPassingKinds.push_back(PassingKind::PosOnly);
-  }
-
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
   auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
@@ -529,16 +496,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callNames.push_back(StringAttr::get(ctx));
   callPassingKinds.push_back(PassingKind::PosOnly);
 
-  llvm::append_range(
-      callInputTypes,
-      nestedFn.getFunctionType().getInputs().drop_front(hasByRefReturn));
-  llvm::append_range(callConventions,
-                     wrapperSig.getArgConventions().drop_front(hasByRefReturn));
-  llvm::append_range(callNames,
-                     wrapperSig.getArgNames().drop_front(hasByRefReturn));
-  llvm::append_range(
-      callPassingKinds,
-      wrapperSig.getArgPassingKinds().drop_front(hasByRefReturn));
+  llvm::append_range(callInputTypes, nestedFn.getFunctionType().getInputs());
+  llvm::append_range(callConventions, wrapperSig.getArgConventions());
+  llvm::append_range(callNames, wrapperSig.getArgNames());
+  llvm::append_range(callPassingKinds, wrapperSig.getArgPassingKinds());
 
   Type closureResultType = wrapperSig.getResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
@@ -691,8 +652,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   builder =
       ImplicitLocOpBuilder::atBlockBegin(callFunc.getLoc(), callFunc.getBody());
   Value selfArg = callFunc.getBodyRegion().insertArgument(
-      hasByRefReturn, callFunc.getFunctionType().getInput(hasByRefReturn),
-      callFuncLocation);
+      0U, callFunc.getFunctionType().getInput(0), callFuncLocation);
 
   if (paramField) {
     // Emit the `kgen.capture_list.expand` into the call if required.
@@ -1060,8 +1020,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
     // Cast the opaque pointer back to the closure impl type.
-    bool hasMemoryOnlyResult = closureSignature.hasMemoryOnlyResult();
-    Value closureArg = body->getArgument(hasMemoryOnlyResult);
+    Value closureArg = body->getArgument(0);
     Value implPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelPtrType, closureArg);
 
@@ -1079,12 +1038,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     SymbolConstantAttr symbol =
         closureImpl->getAttrOfType<SymbolConstantAttr>(callMethodAttr);
     SmallVector<Value> args;
-    if (hasMemoryOnlyResult)
-      args.push_back(topLevelCall.getArgument(0));
     args.push_back(implRef);
-    for (unsigned i = hasMemoryOnlyResult + 1 /*implPtr*/,
-                  e = closureSignature.getNumArguments();
-         i < e; ++i)
+    for (unsigned i = 1 /*implPtr*/, e = closureSignature.getNumArguments();
+         i != e; ++i)
       args.push_back(topLevelCall.getArgument(i));
 
     SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, topLevelParams);

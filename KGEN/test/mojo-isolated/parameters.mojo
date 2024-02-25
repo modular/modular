@@ -357,7 +357,7 @@ fn callMemoryValueParam():
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[MVALUE]]
     # CHECK: lit.var.decl
-    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, [[IMMREF]])
+    # CHECK: call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
     # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType apply_result_slot({{.*}}__init__{{.*}}{22}

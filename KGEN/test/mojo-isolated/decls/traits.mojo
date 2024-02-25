@@ -24,12 +24,12 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3(,$1)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> owned_in_mem)
+    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> owned_in_mem, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4(,$1&)"[{{.*}}](%__result__: !lit.ref<!object, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref)
+    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -55,21 +55,21 @@ trait EmptyTrait:
 
 # CHECK-LABEL: lit.trait.decl @Trait1<?, MT: type, T: !kgen.paramref<MT>>
 trait Trait1:
-    # CHECK: lit.func @"f{{.*}}(%__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @Trait2<?, MT: type, T: !kgen.paramref<MT>>
 trait Trait2:
-    # CHECK: lit.func @"f{{.*}}(%__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result, |, %self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1_, {{.*}}, !Trait2_)
 struct StructWithTraits(Trait1, Trait2):
-    # CHECK: lit.func @"f{{.*}}(%{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result, |, %self: !lit.ref<!StructWithTraits, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> borrow_in_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 
@@ -230,8 +230,8 @@ fn trait_static_method[T: StaticMethodTrait]():
 
 # CHECK-LABEL: lit.func @"copy_me
 # CHECK-SAME: <T: !Copyable
-# CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result, |,
-# CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> borrow_in_mem)
+# CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> borrow_in_mem, ?,
+# CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
 fn copy_me[T: Copyable](value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: call_param[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
@@ -241,8 +241,8 @@ fn copy_me[T: Copyable](value: T) -> T:
 
 # CHECK-LABEL: lit.func @"move_me
 # CHECK-SAME: <T: !Movable
-# CHECK-SAME: !Movable T, {{.*}}> byref_result
 # CHECK-SAME: !Movable T, {{.*}}> owned_in_mem
+# CHECK-SAME: !Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
@@ -306,9 +306,9 @@ struct CrazyRegisterPassable[a: int](CrazyTrait):
     pass
 
     # CHECK-LABEL: lit.func @"foo{{.*}}_thunk"
-    # CHECK-SAME: <b>(%__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result, |,
-    # CHECK-SAME: %self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
-    # CHECK-SAME: %c: index borrow) -> !kgen.none
+    # CHECK-SAME: <b>(%self: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} borrow_in_mem
+    # CHECK-SAME: %c: index borrow,
+    # CHECK-SAME: %__result__: !lit.ref<{{.*}}@CrazyRegisterPassable<a>{{.*}} byref_result
     fn foo[b: int](self, c: int) -> Self:
         # CHECK: %0 = lit.ref.load %self
         # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<a, b>(%0, %c)

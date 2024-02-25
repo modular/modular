@@ -126,5 +126,5 @@ struct MyContainer[T: Copyable]:
 
 # CHECK-LABEL: lit.func @"test_impl
 fn test_impl(a: MyContainer[MyElement], b: int):
-    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index borrow) -> !kgen.none
+    # CHECK: lit.call @{{.*}}@MyContainer::@"foo{{.*}}, "index": index borrow
     _ = a.foo(b)

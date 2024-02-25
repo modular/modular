@@ -85,7 +85,7 @@ struct ParsedArgument {
     kConventionInOut = 1,          // inout x
     kConventionOwned = 2,          // owned x
     kConventionBorrowed = 3,       // borrowed x
-    kConventionInOutResult = 4,    // No syntax: result slot
+    kConventionByRefResult = 4,    // No syntax: result slot
     kConventionInitSelfResult = 5, // No syntax: __init__(inout self) argument
   } convention = kConventionUnspec;
 

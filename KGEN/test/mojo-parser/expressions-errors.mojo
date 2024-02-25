@@ -44,7 +44,7 @@ fn test_func_type():
     alias float1: async fn() -> None = test_func_type
     # expected-error @below {{fn[Int]() -> MemType}}
     alias float2: fn[a: Int]() -> MemType = test_func_type
-    # expected-error @below {{fn[Int](owned Int, /) -> MemType}}
+    # expected-error @below {{fn[Int](owned Int) -> MemType}}
     alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
     # expected-error @below {{fn[Int](*Int) -> None}}
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type

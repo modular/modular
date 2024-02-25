@@ -351,7 +351,7 @@ fn for_range_loop():
 
     # CHECK: %$RANGE = lit.var.decl "$RANGE" synth
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %my_list
-    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%$RANGE, [[IMMREF]])
+    # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}([[IMMREF]], %$RANGE)
     for item in my_list:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE

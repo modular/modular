@@ -126,7 +126,7 @@ fn test_writebacks[
     # CHECK: %[[LT1:.*]] = lit.var.decl
     # CHECK: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
-    # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%[[LT2]], %b, %[[C1]])
+    # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT2]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT2]], %[[C2]])
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
@@ -136,7 +136,7 @@ fn test_writebacks[
     # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
     # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
-    # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT3]], %b, %[[C1]])
+    # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT3]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1]]
     # CHECK-NEXT: %[[V10:.*]] = lit.call {{.*}}__setitem__{{.*}}(%[[LT3]], %[[C2]], %[[V9]])
