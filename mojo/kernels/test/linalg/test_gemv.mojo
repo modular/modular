@@ -70,8 +70,8 @@ fn test_gemv():
     for i in range(out.__len__()):
         var expect = ref_out[i]
         var actual = out[i]
-        if not isclose[type, 1](
-            expect, actual, absolute_tolerance, relative_tolerance
+        if not isclose(
+            expect, actual, atol=absolute_tolerance, rtol=relative_tolerance
         ):
             print(out[i], "!=", ref_out[i], "@", i)
             print("Serial Error")
@@ -86,8 +86,8 @@ fn test_gemv():
     for i in range(out.__len__()):
         var expect = ref_out[i]
         var actual = out[i]
-        if not isclose[type, 1](
-            expect, actual, absolute_tolerance, relative_tolerance
+        if not isclose(
+            expect, actual, atol=absolute_tolerance, rtol=relative_tolerance
         ):
             print(out[i], "!=", ref_out[i], "@", i)
             print("Parallel Error")
