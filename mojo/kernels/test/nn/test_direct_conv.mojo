@@ -186,8 +186,8 @@ fn test[
                     if not isclose(
                         output_ref[n, ho, wo, f],
                         output[n, ho, wo, f],
-                        1e-4,  # absolute error tolerance
-                        1e-4,  # relative error tolerance
+                        atol=1e-4,  # absolute error tolerance
+                        rtol=1e-4,  # relative error tolerance
                     ):
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))

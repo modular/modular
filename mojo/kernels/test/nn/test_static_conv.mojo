@@ -196,8 +196,8 @@ fn test[
                     if not isclose(
                         output_dynamic[n, ho, wo, f],
                         output_static[n, ho, wo, f],
-                        1e-4,  # absolute error tolerance
-                        1e-5,  # relative error tolerance
+                        atol=1e-4,  # absolute error tolerance
+                        rtol=1e-5,  # relative error tolerance
                     ):
                         var expected = output_dynamic[n, ho, wo, f]
                         var actual = output_static[n, ho, wo, f]

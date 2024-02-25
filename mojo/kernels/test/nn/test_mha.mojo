@@ -52,7 +52,7 @@ fn is_ndbuffer_close[
         var nd_idx = _compute_nd_index(a, i)
         var expect = a.simd_load[1](nd_idx)
         var actual = b.simd_load[1](nd_idx)
-        if not isclose(expect, actual, abs_tol, rel_tol):
+        if not isclose(expect, actual, atol=abs_tol, rtol=rel_tol):
             is_close = False
             if print_wrong_value and num_errs < max_num_print:
                 print("At ", nd_idx, "expect", expect, "but get", actual)

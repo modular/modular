@@ -46,7 +46,10 @@ fn test_case_linear[
 
     for i in range(output.num_elements()):
         assert_almost_equal(
-            output._to_buffer()[i], reference._to_buffer()[i], 1e-5, 1e-4
+            output._to_buffer()[i],
+            reference._to_buffer()[i],
+            atol=1e-5,
+            rtol=1e-4,
         )
 
 

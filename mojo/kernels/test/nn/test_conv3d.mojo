@@ -184,8 +184,8 @@ fn test[
                         if not isclose(
                             output_ref_ptr[idx],
                             output_ptr[idx],
-                            1e-4,  # absolute error tolerance
-                            1e-4,  # relative error tolerance
+                            atol=1e-4,  # absolute error tolerance
+                            rtol=1e-4,  # relative error tolerance
                         ):
                             print("Input shape: ", Index(N, D, H, W, C))
                             print("filter shape: ", Index(Q, R, S, C, F))
