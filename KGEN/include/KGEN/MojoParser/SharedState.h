@@ -114,9 +114,6 @@ public:
   /// Returns if we should emitting warnings for missing doc strings.
   bool shouldWarnMissingDocStrings() const;
 
-  /// Returns if we should generate lifetimes using !lit.ref<>.
-  bool useExperimentalLifetimes() const;
-
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
 

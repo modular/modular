@@ -49,11 +49,6 @@ int main(int argc, char *argv[]) {
       cl::desc("Emit warnings for partial or missing doc strings."),
       cl::init(false)};
 
-  M::cl::MOpt<bool> experimentalLifetimes{
-      "mojo-experimental-lifetimes",
-      cl::desc("Enable experimental new lifetimes generation."),
-      cl::init(false)};
-
   M::cl::MOpt<unsigned> maxNotesPerDiagnostic{
       "max-notes-per-diagnostic",
       cl::desc("Maximum number of notes emitted per diagnostic."),
@@ -97,7 +92,6 @@ int main(int argc, char *argv[]) {
         LIT::ParserConfig config(context, *runtime, options);
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
-        config.experimentalLifetimes = experimentalLifetimes;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
