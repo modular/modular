@@ -15,14 +15,6 @@ Just run the `vscode-init` command on your terminal and the **Mojo LSP VSCode**
 extension will be built and installed on VSCode. It will be automatically
 launched whenever a `.mojo` or `.🔥` file is opened.
 
-### Jumping to definition within packages
-
-Currently the LSP won't jump to symbols defined in sources backed by a package,
-but it will still show you docstrings. However, a workaround for this is to set
-the `mojo.lsp.parseStdlib` configuration to `true` in the `.vscode/settings.json`
-file, which will enable full indexing of packages, at the expense of performance
-cost. Use this only when needed.
-
 ## Development
 
 ### Testing mojo-lsp-server
