@@ -48,15 +48,6 @@ int main(int argc, char **argv) {
           "Intended to simplify mojo tests"),
       llvm::cl::init(false),
   };
-  // FIXME(23386): delete this when proper package decls support is added.
-  llvm::cl::opt<bool> parseStdlib{
-      "parse-stdlib",
-      llvm::cl::desc(
-          "Parses the input file(s) as the Mojo standard library, which allows "
-          "jumping to definitions in files in the sdlib"),
-      llvm::cl::init(false),
-      llvm::cl::Hidden,
-  };
   llvm::cl::opt<Logger::Level> logLevel{
       "log",
       llvm::cl::desc("Verbosity of log messages written to stderr"),
@@ -121,6 +112,6 @@ int main(int argc, char **argv) {
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
-  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
-                                 waitOnShutdown, parseStdlib));
+  return failed(
+      runMojoLSPServer(transport, /*singleThreaded=*/mojoTest, waitOnShutdown));
 }

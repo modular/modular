@@ -176,9 +176,6 @@ export class MOJOContext extends DisposableContext {
     if (launchLanguageServerSuspended)
       args.push("--suspended");
 
-    if (config.get<boolean>("lsp.parseStdlib", workspaceFolder, false))
-      args.push("--parse-stdlib");
-
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
       command : mojoConfig.mojoLanguageServerPath,

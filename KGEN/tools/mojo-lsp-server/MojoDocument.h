@@ -251,7 +251,7 @@ public:
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
-               LLCL::AnyAsyncValueRef chain, bool parseStdlib);
+               LLCL::AnyAsyncValueRef chain);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -371,10 +371,6 @@ private:
 
   /// The source manager used to parse the document.
   llvm::SourceMgr sourceMgr;
-
-  /// Mojo parser flag that indicates parsing the input files as the Mojo
-  /// standard library.
-  bool parseStdlib = false;
 
   //===--------------------------------------------------------------------===//
   // Parsed Fields
@@ -501,8 +497,7 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
-                   bool parseStdlib);
+                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 

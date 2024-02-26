@@ -545,12 +545,11 @@ private:
 /// Its lifetime is tied to that of the AST objects gotten from the parser.
 /// It also sets up a SourceMgr with the given MojoDocument as its main file.
 struct MojoDocument::Context {
-  Context(MojoDocument &mainDoc, bool parseStdlib)
+  Context(MojoDocument &mainDoc)
       : mlirContext(MLIRContext::Threading::DISABLED),
         parserConfig(&mlirContext, mainDoc.getRuntime(), compilationOptions),
         symbolIndex(mainDoc), parserListener(mainDoc, symbolIndex) {
     parserConfig.parserListener = &parserListener;
-    parserConfig.parsingStandardLibrary = parseStdlib;
 
     DialectRegistry registry;
     registerAllKGENDialects(registry);
@@ -575,11 +574,9 @@ struct MojoDocument::Context {
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
-                           bool parseStdlib)
+                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
-      parseStdlib(parseStdlib),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
   // Add the parent directory of the main uri as an available include directory.
   std::string parentDir =
@@ -629,7 +626,7 @@ void MojoDocument::parseDocument() {
   llvm::CrashRecoveryContext crc;
   crc.DumpStackAndCleanupOnFailure = true;
 
-  context = std::make_unique<Context>(*this, parseStdlib);
+  context = std::make_unique<Context>(*this);
   if (!crc.RunSafely([&]() { parseDocumentImpl(); })) {
     lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
                        "POSIX: signal number + 128) = {0}",
@@ -1565,10 +1562,9 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
                                    LLCL::Runtime &runtime,
-                                   LLCL::AnyAsyncValueRef chain,
-                                   bool parseStdlib)
+                                   LLCL::AnyAsyncValueRef chain)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
-                   runtime, std::move(chain), parseStdlib),
+                   runtime, std::move(chain)),
       contents(std::move(contents)) {
   // We add the main doc to the SourceMgr here to ensure it's considered the
   // "main" file.
@@ -1693,8 +1689,7 @@ MojoNotebookDocument::MojoNotebookDocument(
     SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
     LLCL::AnyAsyncValueRef chain)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
-                   sendDiagnosticsFn, runtime, std::move(chain),
-                   /*parseStdlib=*/false) {
+                   sendDiagnosticsFn, runtime, std::move(chain)) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
     if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
       continue;
@@ -1883,14 +1878,13 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
 struct MojoServer::Impl {
   Impl(bool singleThreaded, bool waitOnShutdown,
-       SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib)
+       SendDiagnosticsFn sendDiagnosticsFn)
       : runtime(
             LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
                                           .withSingleThreaded(singleThreaded)
                                           .withMainWillNotDonate())),
         waitOnShutdown(waitOnShutdown),
-        sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
-        parseStdlib(parseStdlib) {}
+        sendDiagnosticsFn(std::move(sendDiagnosticsFn)) {}
 
   /// Begin the shutdown process for the server.
   void shutdown() {
@@ -1942,10 +1936,6 @@ struct MojoServer::Impl {
   /// A mapping from file to the last set of semantic tokens sent to the client.
   llvm::StringMap<lsp::SemanticTokens> prevSemanticTokensForFile;
   std::mutex lastSemanticTokensMutex;
-
-  /// Mojo parser flag that indicates parsing the input files as the Mojo
-  /// standard library.
-  bool parseStdlib = false;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1953,9 +1943,9 @@ struct MojoServer::Impl {
 //===----------------------------------------------------------------------===//
 
 MojoServer::MojoServer(bool singleThreaded, bool waitOnShutdown,
-                       SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib)
+                       SendDiagnosticsFn sendDiagnosticsFn)
     : impl(std::make_unique<Impl>(singleThreaded, waitOnShutdown,
-                                  std::move(sendDiagnosticsFn), parseStdlib)) {}
+                                  std::move(sendDiagnosticsFn))) {}
 MojoServer::~MojoServer() { shutdown(); }
 
 void MojoServer::shutdown() { impl->shutdown(); }
@@ -1980,9 +1970,9 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   }
 
   // Create a new document.
-  it->second = MojoTextDocumentRef::create(
-      uri, std::move(contents), version, impl->sendDiagnosticsFn,
-      *impl->runtime, std::move(chain), impl->parseStdlib);
+  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
+                                           impl->sendDiagnosticsFn,
+                                           *impl->runtime, std::move(chain));
 }
 
 void MojoServer::updateDocument(
