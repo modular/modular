@@ -1115,6 +1115,10 @@ LogicalResult ParamOperatorAttr::verify(
     }
     break;
   case POC::CompileAssembly: {
+#ifdef MODULAR_PRODUCTION
+    return emitError() << "'compile_assembly' is not enabled in this release "
+                          "of the Mojo compiler.";
+#else  // MODULAR_PRODUCTION
     if (operands.size() != 3)
       return emitError() << "'compile_assembly' requires 3 operands";
     if (!::isa<TargetType>(operands.front().getType()))
@@ -1123,6 +1127,7 @@ LogicalResult ParamOperatorAttr::verify(
     if (!::isa<IndexType>(operands[1].getType()))
       return emitError() << "'compile_assembly' second operand should be "
                             "either asm or llvm keyword";
+#endif // MODULAR_PRODUCTION
     break;
   }
   case POC::GetLinkageName:
