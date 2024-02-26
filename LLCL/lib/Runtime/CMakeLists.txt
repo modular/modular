@@ -5,6 +5,10 @@
 ##===----------------------------------------------------------------------===##
 
 find_package(Threads)
+option(LLCL_WORKER_STATS "Enable collection and print of WorkQueue stats." OFF)
+if(LLCL_WORKER_STATS)
+  add_compile_definitions(LLCL_WORKER_STATS=1)
+endif()
 include(AddTCMalloc)
 
 add_modular_library(LLCLRuntime
