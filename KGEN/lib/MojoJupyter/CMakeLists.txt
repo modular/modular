@@ -31,3 +31,7 @@ add_modular_library(MojoJupyter SHARED
   MLIRIR
   liblldb
 )
+
+# Ensure symbols from the plugin library are visible.
+set_target_properties(MojoJupyter PROPERTIES CXX_VISIBILITY_PRESET default)
+target_compile_definitions(MojoJupyter PRIVATE MODULAR_BUILDING_JUPYTER_LIBRARY)
