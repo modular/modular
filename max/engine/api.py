@@ -383,21 +383,16 @@ class InferenceSession:
     num_threads: Optional[int]
         Number of threads to use for the inference session. This parameter
         defaults to the number of physical cores on your machine.
-    device: str
-        The name of the secondary device on which to compile and execute the
-        model (such as a GPU, instead of the host CPU).
-        (This feature is coming soon.)
     """
 
     _impl: _InferenceSession
 
-    def __init__(
-        self, num_threads: Optional[int] = None, device: Optional[str] = None
-    ):
+    def __init__(self, num_threads: Optional[int] = None, **kwargs):
         config = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
+        device = kwargs["device"] if kwargs and "device" in kwargs else None
         if device:
             config["device"] = device
         self._impl = _InferenceSession(config)
