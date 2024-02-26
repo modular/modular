@@ -208,15 +208,22 @@ int main(int argc, char *argv[]) {
   }
   StringRef exePath = config->getREPLEntryPoint();
 
+  // If this is a notebook, add the working directory to the kernel.
+  std::string workingDirectory;
+  if (notebookPath.getNumOccurrences() != 0) {
+    workingDirectory =
+        std::filesystem::path(notebookPath.getValue()).parent_path().string();
+  }
+
   // Initialize the kernel.
   MojoKernel kernel([](StringRef kind, StringRef msg) {
     llvm::outs() << "[" << kind << "] " << msg << "\n";
   });
-  if (failed(kernel.initialize(exePath, lldbInitFile)))
+  if (failed(kernel.initialize(exePath, workingDirectory, lldbInitFile)))
     return 1;
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
-  if (notebookPath.getNumOccurrences()) {
+  if (notebookPath.getNumOccurrences() != 0) {
     if (failed(executeNotebook(kernel, notebookPath, debugOnFailure)))
       return 1;
   } else {

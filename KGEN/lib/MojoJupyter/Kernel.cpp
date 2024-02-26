@@ -157,7 +157,8 @@ struct MojoKernel::Impl {
   ///
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
-  LogicalResult initialize(StringRef mojoReplExe, StringRef lldbInitFile);
+  LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                           StringRef lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.
   /// `storeHistory` indicates if variables and state from this expression
@@ -183,7 +184,7 @@ private:
   LogicalResult initializeTarget(StringRef mojoReplExe);
 
   /// Launch the mojo-repl-entry-point process.
-  LogicalResult launchReplProcess();
+  LogicalResult launchReplProcess(StringRef workingDirectory);
 
   /// Initialize the inline matplotlib backend within the python interop.
   LogicalResult initializeMatplotlib();
@@ -250,8 +251,9 @@ MojoKernel::MojoKernel(OutputFn outputFn)
 MojoKernel::~MojoKernel() = default;
 
 LogicalResult MojoKernel::initialize(StringRef mojoReplExe,
+                                     StringRef workingDirectory,
                                      StringRef lldbInitFile) {
-  return impl->initialize(mojoReplExe, lldbInitFile);
+  return impl->initialize(mojoReplExe, workingDirectory, lldbInitFile);
 }
 
 ExecutionFinishedState MojoKernel::startExecution(StringRef cellId,
@@ -276,12 +278,13 @@ void MojoKernel::codeComplete(StringRef code, int completionPos,
 //===----------------------------------------------------------------------===//
 
 EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
+                                  const char *workingDirectory,
                                   const char *lldbInitFile) {
   std::unique_ptr<MojoKernel> kernel =
       std::make_unique<MojoKernel>([=](StringRef type, StringRef output) {
         outputFn(type.data(), output.data());
       });
-  if (failed(kernel->initialize(mojoReplExe, lldbInitFile)))
+  if (failed(kernel->initialize(mojoReplExe, workingDirectory, lldbInitFile)))
     return nullptr;
   return kernel.release();
 }
@@ -369,6 +372,7 @@ static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
 }
 
 LogicalResult MojoKernel::Impl::initialize(StringRef mojoReplExe,
+                                           StringRef workingDirectory,
                                            StringRef lldbInitFile) {
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
@@ -406,7 +410,7 @@ LogicalResult MojoKernel::Impl::initialize(StringRef mojoReplExe,
     return failure();
 
   // Launch the mojo-repl-entry-point process.
-  if (failed(launchReplProcess()))
+  if (failed(launchReplProcess(workingDirectory)))
     return failure();
   process = target->GetProcessSP();
 
@@ -447,8 +451,9 @@ LogicalResult MojoKernel::Impl::initializeTarget(StringRef mojoReplExe) {
   return success();
 }
 
-LogicalResult MojoKernel::Impl::launchReplProcess() {
-  if (llvm::Error err = MojoREPL::launchEntryPointProcess(*target, *debugger)) {
+LogicalResult MojoKernel::Impl::launchReplProcess(StringRef workingDirectory) {
+  if (llvm::Error err = MojoREPL::launchEntryPointProcess(*target, *debugger,
+                                                          workingDirectory)) {
     return reportKernelError(
         "Failed to launch `mojo-repl-entry-point` process: " +
         llvm::toString(std::move(err)));

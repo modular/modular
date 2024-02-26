@@ -56,7 +56,8 @@ public:
   ///
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
-  LogicalResult initialize(StringRef mojoReplExe, StringRef lldbInitFile);
+  LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                           StringRef lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.
   /// `storeHistory` indicates if variables and state from this expression
