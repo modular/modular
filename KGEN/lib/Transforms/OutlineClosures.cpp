@@ -42,6 +42,26 @@ struct OutlineClosuresPass
 };
 } // namespace
 
+/// Reconstruct the signature using a list of named input parameters and indices
+/// indicating which one of them are variadic. These parameters are prepended to
+/// the current signature and references are remapped to index references.
+static SignatureType prependParams(SignatureType sig,
+                                   ArrayRef<ParamDeclAttr> parentParams) {
+  assert(!sig.getMetadata() && "unlowered lit signature");
+
+  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
+                            parentParams.size());
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : parentParams)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+  for (Type type : sig.getInputParamTypes())
+    inputParamTypes.push_back(remapper.replace(type));
+
+  return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
+                            remapper.replace(sig.getResultParamTypes()),
+                            sig.getArgConventions(), sig.getFnEffects());
+}
+
 void OutlineClosuresPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   SymbolTable &symtab =
@@ -164,7 +184,7 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamDecls.getArrayRef());
       llvm::append_range(inputParamDecls, regionDecl.getInputParams());
 
-      SignatureType wrapperSignature = SignatureType::prependParams(
+      SignatureType wrapperSignature = prependParams(
           regionDecl.getSignature(), capturedParamDecls.getArrayRef());
 
       b.setInsertionPoint(generator);
