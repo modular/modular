@@ -268,7 +268,8 @@ static llvm::Error createReplBreakpoint(Target &target) {
 /// Launch the repl executable process within the target, and wait for the repl
 /// breakpoint to be hit.
 llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
-                                              Debugger &debugger) {
+                                              Debugger &debugger,
+                                              StringRef workingDirectory) {
   // Create a breakpoint in the target to anchor the REPL.
   if (llvm::Error error = createReplBreakpoint(target))
     return error;
@@ -285,6 +286,10 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
   ProcessLaunchInfo launchInfo;
   if (target.GetDisableSTDIO())
     launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
+  if (!workingDirectory.empty()) {
+    launchInfo.SetWorkingDirectory(FileSpec(workingDirectory));
+    getMojoTypeSystem(target).pushWorkingDirectory(workingDirectory);
+  }
 
   lldb::ModuleSP exeModule = target.GetExecutableModule();
 

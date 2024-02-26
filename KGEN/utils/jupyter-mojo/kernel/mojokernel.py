@@ -208,6 +208,7 @@ class MojoKernel(Kernel):
             self.lib_mojo_jupyter.initMojoKernel(
                 self.output_callback,
                 ctypes.c_char_p(self.mojoReplExe.encode("utf-8")),
+                ctypes.c_char_p(os.getcwd().encode("utf-8")),
                 ctypes.c_char_p(None),  # lldbInitFile
             )
         )

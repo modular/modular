@@ -581,6 +581,11 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
       parseStdlib(parseStdlib),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
+  // Add the parent directory of the main uri as an available include directory.
+  std::string parentDir =
+      std::filesystem::path(uris[0].file().str()).parent_path().string();
+  getSourceMgr().setIncludeDirs({parentDir});
+
   // Start a task to resolve the document.
   chain.andThenAsync(
       [doc = MojoDocumentRef::copy(this)] { doc->parseDocument(); });
@@ -1960,7 +1965,8 @@ void MojoServer::shutdown() { impl->shutdown(); }
 
 void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
-  if (impl->isShuttingDown())
+  if (impl->isShuttingDown() ||
+      !llvm::is_contained({"file", "test"}, uri.scheme()))
     return;
   auto [it, _] = impl->files.try_emplace(uri.file(), MojoDocumentRef());
 

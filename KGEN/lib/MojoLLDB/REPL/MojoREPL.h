@@ -39,7 +39,8 @@ public:
   /// Launch the entry point process that is used to JIT Mojo expressions.
   MODULAR_VISIBILITY_EXPORT static llvm::Error
   launchEntryPointProcess(lldb_private::Target &target,
-                          lldb_private::Debugger &debugger);
+                          lldb_private::Debugger &debugger,
+                          StringRef workingDirectory = {});
 
   /// Return the common help message to show in commands like `:help` or `:mojo
   /// help`.
