@@ -57,7 +57,7 @@ struct RegType:
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[CONSUMED]])
 var reg_global: RegType = RegType()
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType isVar
+# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType
 # CHECK-DAG: %[[VAL:.*]] = lit.call {{.*}}@RegType::@"__init__()"()
 # CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global_implicit
 # CHECK-NEXT: lit.ref.store %[[VAL]], %[[REF]]

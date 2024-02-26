@@ -57,10 +57,6 @@ fn main():
         value = __mlir_attr.`48:index`
     ]()
 
-    var a_let_index = __mlir_op.`index.constant`[
-        value = __mlir_attr.`48:index`
-    ]()
-
     var a_register_passable_struct = ARegisterPassableStruct()
 
     var a_struct = AStruct()

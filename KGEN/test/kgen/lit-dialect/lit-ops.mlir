@@ -471,8 +471,8 @@ lit.globalvar.decl @global_var : !lit.declref<@Error> {
 // CHECK-NEXT: }
 }
 
-// CHECK: lit.globalvar.decl @global_let : !lit.declref<@Error> isVar
-lit.globalvar.decl @global_let : !lit.declref<@Error> isVar {
+// CHECK: lit.globalvar.decl @global_let : !lit.declref<@Error>
+lit.globalvar.decl @global_let : !lit.declref<@Error> {
 }, {
   %0 = lit.globalvar.ref @global_let : <@Error, mut #lit.lifetime>
 }

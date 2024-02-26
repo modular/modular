@@ -866,15 +866,11 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
       kgen.call @String::@__del__(%0)
     }
     ```
-
-    `isVar` should be set if the global was declared with a `var` declaration
-    and is mutable.
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     TypeAttr:$type,
-    UnitAttr:$isVar,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_DecoratorsAttr:$decorators,
     OptionalAttr<StrAttr>:$linkageName,
@@ -885,7 +881,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name `:` $type
     attr-dict-with-keyword custom<OptionalDecorators>($decorators)
-    (`isVar` $isVar^)?  custom<NoArgRegion>($ctor) `,`
+    custom<NoArgRegion>($ctor) `,`
     custom<NoArgRegion>($dtor)
   }];
 
@@ -895,8 +891,8 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isVar), [{
-      build($_builder, $_state, sym_name, type, isVar, ExportKind::NotExported,
+    OpBuilder<(ins "StringRef":$sym_name, "Type":$type), [{
+      build($_builder, $_state, sym_name, type, ExportKind::NotExported,
             DecoratorsAttr::get(type.getContext(), {}), {}, {});
     }]>
   ];

@@ -1748,7 +1748,7 @@ void MojoNotebookDocument::parseDocumentImpl() {
     llvm::raw_string_ostream os(pythonCell);
     os << "from python.object import PythonObject\n\n";
     for (auto &symbol : *symbolsOr)
-      os << "let " << symbol->getName() << ": PythonObject\n";
+      os << "var " << symbol->getName() << ": PythonObject\n";
     int pythonCellId = getSourceMgr().AddNewSourceBuffer(
         llvm::MemoryBuffer::getMemBuffer(pythonCell,
                                          (cell.uri.file() + "_py").str()),

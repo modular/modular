@@ -432,7 +432,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
   kgen.return %1 : !kgen.none
 }
 
-lit.globalvar.decl @x : !lit.declref<@MyStruct> isVar {}, {}
+lit.globalvar.decl @x : !lit.declref<@MyStruct> {}, {}
 
 // CHECK-LABEL: lit.func @byref_result_global_ref
 lit.func @byref_result_global_ref() {
@@ -457,7 +457,7 @@ lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyR
   lit.struct.field a : index
 }
 
-lit.globalvar.decl @y : !lit.declref<@MyRegStruct> isVar {}, {}
+lit.globalvar.decl @y : !lit.declref<@MyRegStruct> {}, {}
 
 // CHECK-LABEL: lit.func @global_ref_reg_store
 lit.func @global_ref_reg_store(%x: !lit.declref<@MyRegStruct> owned) {

@@ -10,11 +10,11 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # Test a simple parser error.
-let var = 10
-# CHECK-STDERR: Expression [3]:2:5: expected name for 'let' declaration
+var var = 10
+# CHECK-STDERR: Expression [3]:2:5: expected name for 'var' declaration
 
 # Check that we can fix this in a following expression.
-let value = 25
+var value = 25
 print(value)
 # CHECK: 25
 

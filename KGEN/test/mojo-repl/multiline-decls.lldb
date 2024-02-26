@@ -39,7 +39,7 @@ struct \
     print("called bar")
 
 # Wil test variable persistence by using `bar` in a later expression
-let bar = Bar()
+var bar = Bar()
 
 # CHECK: called bar
 bar.bar()

@@ -9,7 +9,7 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # Check that we can properly define variables with large alignments.
-let bigValue = SIMD[DType.float32, 64]()
+var bigValue = SIMD[DType.float32, 64]()
 
 # CHECK: (SIMD[f32, 64]) bigValue = {
 # CHECK:   (f32) [0] = 0
@@ -19,6 +19,6 @@ let bigValue = SIMD[DType.float32, 64]()
 # CHECK: }
 
 # Check that we can define variables with weird names.
-let `^ weird name` = 12
+var `^ weird name` = 12
 
 # CHECK: (Int) ^ weird name = 12

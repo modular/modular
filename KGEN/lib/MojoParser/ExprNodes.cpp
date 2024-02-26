@@ -588,10 +588,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Return a mutable value only if the global variable is mutable.
     auto ref =
         emitter.builder->create<GlobalVarRefOp>(getLocation(emitter), globalOp);
-    if (globalOp.getIsVar())
-      value = MLValue(ref);
-    else
-      value = MBValue(ref);
+    value = MLValue(ref);
   } else if (auto rvalue = decl.getIfRValue()) {
     value = rvalue;
   } else if (auto bvalue = decl.getIfBValue()) {
