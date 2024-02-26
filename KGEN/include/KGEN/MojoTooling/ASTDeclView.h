@@ -89,12 +89,9 @@ private:
   StringRef name;
 };
 
-/// View for `let` or `var` variables.
+/// View for `var` declarations.
 class VariableDeclView : public DeclView {
 public:
-  /// Return true if this variable was declared with `var` instead of `let`.
-  bool isVar() const { return flagIsVar; }
-
   /// Return if this variable is global.
   bool isGlobal() const { return isGlobalVariable; }
 
@@ -108,7 +105,6 @@ public:
   ///  {
   ///    "kind": "variable",
   ///    "name": string,
-  ///    "isVar": boolean,
   ///    "type": string
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
@@ -127,7 +123,6 @@ private:
   VariableDeclView(MojoASTDeclRef declRef);
 
   std::string type;
-  bool flagIsVar;
   bool isGlobalVariable;
 };
 

@@ -9,11 +9,11 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # Initially define an integer value of 10.
-let value = 10
+var value = 10
 # CHECK: (Int) value
 
 # Check that we can redefine this in a followup expression.
-let value = True
+var value = True
 # CHECK: (Bool) value
 
 # Check that we can redefine a function that has a return type defined in the
@@ -23,7 +23,7 @@ struct Struct:
         pass
 fn xoo() -> Struct:
     return Struct()
-let abc = xoo()
+var abc = xoo()
 # CHECK: (Struct) abc =
 
 struct Struct:
@@ -31,5 +31,5 @@ struct Struct:
         pass
 fn xoo() -> Struct:
     return Struct()
-let abc = xoo()
+var abc = xoo()
 # CHECK: (Struct) abc =

@@ -1973,14 +1973,19 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                 << "' statement does not allow decorators";
   };
 
-  bool isVar = getToken().is(Token::kw_var);
+  // TODO: let is still supported for now, but should be removed entirely in
+  // the future.
+  if (getToken().is(Token::kw_let)) {
+    auto loc = getToken().getLoc();
+    emitWarning(loc, "'let' is being removed, please use 'var' instead")
+        << FixIt::replaceToken(loc, "var");
+  }
+
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
   SMLoc identifierLoc;
   StringAttr name;
-  if (parseIdentifier(name,
-                      isVar ? "expected name for 'var' declaration"
-                            : "expected name for 'let' declaration",
+  if (parseIdentifier(name, "expected name for 'var' declaration",
                       &identifierLoc))
     return failure();
 
@@ -1990,10 +1995,6 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   Operation *declOp;
   if (isa<StructDeclOp>(getParentDecl())) {
     rejectDecorator();
-    // TODO: implement support for constant struct fields when we have a
-    // stronger init model with Definitive Initialization.
-    if (!isVar)
-      emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
@@ -2015,7 +2016,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
-    declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType, isVar);
+    declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType);
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   }
 

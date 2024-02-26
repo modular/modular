@@ -78,3 +78,7 @@ fn take_variadic(*elements: MemoryStruct): pass
 fn test_var_let_type_variadic_func():
   # expected-error @below {{expected a type, not a value}}
   var a: take_variadic(42)
+
+fn let_dead():
+  # expected-warning @below {{'let' is being removed, please use 'var' instead}}
+  let a = 42

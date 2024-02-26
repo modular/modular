@@ -9,14 +9,14 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # CHECK: (Int) x = 12
-let x = 12
+var x = 12
 
 # CHECK: (FloatLiteral) x = {
 # CHECK:   (scalar<f64>) value = {
 # CHECK:     (f64) [0] = 4.2{{.*}}
 # CHECK:   }
 # CHECK: }
-let x = 4.2
+var x = 4.2
 
 # CHECK:  (SIMD[si32, 8]) x = {
 # CHECK:    (si32) [0] = 5
@@ -28,7 +28,7 @@ let x = 4.2
 # CHECK:    (si32) [6] = 11
 # CHECK:    (si32) [7] = 12
 # CHECK:  }
-let x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
+var x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 
 # CHECK:  (SIMD[si64, 4]) x = {
 # CHECK:    (si64) [0] = 1
@@ -36,16 +36,16 @@ let x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 # CHECK:    (si64) [2] = 3
 # CHECK:    (si64) [3] = 4
 # CHECK:  }
-let x = SIMD[DType.int64, 4](1, 2, 3, 4)
+var x = SIMD[DType.int64, 4](1, 2, 3, 4)
 
 # CHECK: (Int) v = -101
-let v = -101
+var v = -101
 
 # CHECK: (SIMD[si8, 2]) w = {
 # CHECK:   (si8) [0] = -50
 # CHECK:   (si8) [1] = 31
 # CHECK: }
-let w = SIMD[DType.int8, 2](-50, 31)
+var w = SIMD[DType.int8, 2](-50, 31)
 
 
 # CHECK: (Foo) f = {
@@ -79,20 +79,20 @@ struct Foo:
       y: "fofofo",
       z:  SIMD[DType.float32, 4](1, 2, 3, 4)
     }
-let f = Foo()
+var f = Foo()
 
 # CHECK: (StringLiteral) empty =
 # CHECK: (StringLiteral) long = "abcdefghijklmnopqrstuvwxyz1234567890"
 # CHECK: (StringLiteral) short = "123"
-let empty = ""
-let long = "abcdefghijklmnopqrstuvwxyz1234567890"
-let short = "123"
+var empty = ""
+var long = "abcdefghijklmnopqrstuvwxyz1234567890"
+var short = "123"
 
 
 # CHECK: (Bool) a_bool = True
 # CHECK-NEXT: (Bool) another_bool = False
-let a_bool = True
-let another_bool = False
+var a_bool = True
+var another_bool = False
 
 
 # CHECK: (DynamicVector[Int]) z = (size 3) {
@@ -118,10 +118,10 @@ z.push_back(3)
 # CHECK: }
 a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
 
-# CHECK: (String) s1 = "let_string"
+# CHECK: (String) s1 = "var_string"
 # CHECK: (String) s2 = "012345678910111213141
 # CHECK: (String) s3 = ""
-let s1 = String("let_string")
+var s1 = String("var_string")
 var s2 = String()
 for i in range(0, 100):
     s2 += str(i)

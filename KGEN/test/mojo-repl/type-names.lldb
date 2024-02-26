@@ -9,17 +9,17 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # CHECK: (Int) x =
-let x = 12
+var x = 12
 
 # CHECK: (StringLiteral) y =
-let y = "foo"
+var y = "foo"
 
 struct Bar:
   fn __init__(inout self):
     pass
 
 # CHECK: (Bar) z =
-let z = Bar()
+var z = Bar()
 
 # CHECK: (DType) dtype =
 # CHECK: (dtype) dtype_value =

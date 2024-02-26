@@ -357,13 +357,14 @@ std::string DeclView::getFullMarkdownString() const {
 std::string VariableDeclView::getDeclarationSnippet() const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
-  os << (isVar() ? "var" : "let") << " ";
+  os << "var ";
   dumpIdentifierWithType(os, getName(), type);
   return snippet;
 }
 
 llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{{"isVar", isVar()},
+  // TODO: Remove "isVar" from the schema.
+  return llvm::json::Object{{"isVar", true},
                             {"kind", getKindAsString()},
                             {"name", getName().str()},
                             {"type", type}};
@@ -375,11 +376,9 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
       isGlobalVariable(false) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarDeclOp op) {
-        flagIsVar = true;
         type = declRef.getType().getReferenceElementType().getAsString();
       })
       .Case([&](GlobalVarDeclOp op) {
-        flagIsVar = op.getIsVar();
         type = declRef.getType().getAsString();
         isGlobalVariable = true;
       });

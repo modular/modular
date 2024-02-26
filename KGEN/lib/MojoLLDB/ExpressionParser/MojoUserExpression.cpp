@@ -461,11 +461,11 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
   // symbol to extract.
   for (auto &symbol : llvm::make_pointee_range(*extractedSymbolsOr)) {
     if (auto *decl = dyn_cast<ExtractedPythonDecl>(&symbol)) {
-      mojoExprOS << llvm::formatv("let {0} = {1}.{0}\n", decl->getName(),
+      mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", decl->getName(),
                                   moduleName);
     } else if (auto *import = dyn_cast<ExtractedPythonImport>(&symbol)) {
       mojoExprOS << llvm::formatv(
-          "let {0} = __mojo_repl_Python.import_module(\"{1}\")\n",
+          "var {0} = __mojo_repl_Python.import_module(\"{1}\")\n",
           import->getName(), import->getModule());
     }
   }
@@ -532,7 +532,7 @@ sys.modules['{1}'] = expr_module
   // the python module into the mojo context.
   if (!m_options.GetSuppressPersistentResult()) {
     mojoExprOS << llvm::formatv(
-        "let {0} = __mojo_repl_Python.import_module(\"{0}\")\n\n", moduleName);
+        "var {0} = __mojo_repl_Python.import_module(\"{0}\")\n\n", moduleName);
 
     // Import the interesting top-level symbols from the python module into the
     // mojo context.
