@@ -281,6 +281,31 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
     pass
 
 
+# CHECK:  "name": "keyword_only_prod",
+# CHECK:  "overloads":
+# CHECK:      "args":
+# CHECK:          "name": "a"
+# CHECK:          "passingKind": "pos",
+
+# CHECK:          "name": "b"
+# CHECK:          "passingKind": "pos",
+
+# CHECK:          "name": "offset"
+# CHECK:          "passingKind": "kw",
+# CHECK:      "signature": "keyword_only_prod(a: Int, b: Int, /, *, offset: Int)",
+
+
+fn keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
+    """Multiply and add an offset.
+
+    Args:
+        a: First factor.
+        b: Second factor.
+        offset: The offset to be added.
+    """
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 
