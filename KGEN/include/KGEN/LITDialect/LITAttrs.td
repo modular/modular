@@ -211,6 +211,13 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     bool isVarArg(size_t idx) const;
     /// Return true if the argument at `idx` is a variadic pack argument.
     bool isPackVarArg(size_t idx) const;
+
+    /// Get a new metadata attribute for a signature with the given number of
+    /// positional input parameters prepended to the signature. An additional
+    /// array of indices corresponding to variadic parameters of the prepended
+    /// parameters is also required.
+    FnMetadataAttr prependPosParams(size_t numNewParams,
+                                    ArrayRef<size_t> variadicIndices) const;
   }];
 }
 

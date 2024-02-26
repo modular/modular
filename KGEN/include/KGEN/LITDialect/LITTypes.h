@@ -126,6 +126,15 @@ public:
   static LITSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
                               ArrayRef<ArgConvention> convs, FnEffects effects,
                               FnMetadataAttr metadata);
+
+  /// Reconstruct the signature using a list of named input parameters and
+  /// indices indicating which one of them are variadic. These parameters are
+  /// prepended to the current signature and references are remapped to index
+  /// references. An additional array of indices corresponding to variadic
+  /// parameters of the prepended parameters is also required.
+  static LITSignatureType
+  prependParams(LITSignatureType sig, ArrayRef<ParamDeclAttr> parentParams,
+                ArrayRef<size_t> parentVariadicIndices = {});
 };
 } // namespace M::KGEN::LIT
 

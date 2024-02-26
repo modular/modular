@@ -212,7 +212,7 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
-FnMetadataAttrInterface
+FnMetadataAttr
 FnMetadataAttr::prependPosParams(size_t numNewParams,
                                  ArrayRef<size_t> variadicIndices) const {
   if (numNewParams == 0)

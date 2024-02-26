@@ -394,30 +394,6 @@ SignatureType SignatureType::remapToSignature(
       metadata ? remapper.replace(metadata) : nullptr);
 }
 
-SignatureType
-SignatureType::prependParams(SignatureType sig,
-                             ArrayRef<ParamDeclAttr> parentParams,
-                             ArrayRef<size_t> parentVariadicIndices) {
-  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
-                            parentParams.size());
-  SmallVector<Type> inputParamTypes;
-  for (ParamDeclAttr param : parentParams)
-    inputParamTypes.push_back(remapper.replace(param.getType()));
-  for (Type type : sig.getInputParamTypes())
-    inputParamTypes.push_back(remapper.replace(type));
-
-  FnMetadataAttrInterface metadata = sig.getMetadata();
-  if (metadata) {
-    metadata = remapper.replace(
-        metadata.prependPosParams(parentParams.size(), parentVariadicIndices));
-  }
-
-  return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
-                            remapper.replace(sig.getResultParamTypes()),
-                            sig.getArgConventions(), sig.getFnEffects(),
-                            metadata);
-}
-
 OptionalParseResult SignatureType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
   // Parse a keyword or string as an MLIR operation attribute.
