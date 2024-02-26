@@ -148,9 +148,6 @@ struct SharedState::Impl {
   /// Flag indicating if we should warn on missing doc strings while parsing.
   bool warnMissingDocStrings = false;
 
-  /// If true, use !lit.ref representation for full lifetimes support in Mojo.
-  bool experimentalLifetimes = false;
-
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -194,7 +191,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     collectDefaultImportPaths(impl->autoImportDirs);
   }
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
-  impl->experimentalLifetimes = config.experimentalLifetimes;
 
   preloadAllKGENDialects(config.context);
 
@@ -228,10 +224,6 @@ SharedState::~SharedState() { declResolver.reset(); }
 
 bool SharedState::shouldWarnMissingDocStrings() const {
   return impl->warnMissingDocStrings;
-}
-
-bool SharedState::useExperimentalLifetimes() const {
-  return impl->experimentalLifetimes;
 }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {

@@ -59,9 +59,6 @@ struct ParserConfig {
   /// If true, this will warn on missing pieces of documentation strings.
   bool warnMissingDocStrings = false;
 
-  /// If true, use !lit.ref representation for full lifetimes support in Mojo.
-  bool experimentalLifetimes = false;
-
   /// If true, the inputs are parsed as if they belong to the Mojo standard
   /// library.
   ///

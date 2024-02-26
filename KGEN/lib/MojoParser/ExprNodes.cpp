@@ -2572,56 +2572,6 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
                                      dest, CallSyntax::kOperator, expr);
 }
 
-AnyValue RefTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Complain if lifetimes are not enabled.
-  if (!emitter.shared.useExperimentalLifetimes())
-    emitter.emitError(getLoc(), "lifetimes are not enabled yet") << getRange();
-
-  // Get the mutability spec.
-  TypedAttr isMutablePVal;
-  if (mutableExpr) {
-    // If specified explicitly, convert it to an i1 parameter expression.
-    RValue mutSpec = emitter.getParamEmitter(EC_MutabilitySpec)
-                         .emitExprI1(mutableExpr, EC_MutabilitySpec);
-    if (!mutSpec)
-      return {};
-    isMutablePVal = mutSpec.getIfPValue().get();
-    assert(isMutablePVal && "Param context emission should provide PValue");
-  } else {
-    // Otherwise, mutability is determined by 'mutref' vs 'ref' keywords.
-    isMutablePVal = BoolAttr::get(emitter.getContext(), kind == kMutRef);
-  }
-
-  // Get the base type and lifetime specifier.
-  PValue lifetimePVal = emitter.emitExprPValue(
-      lifetime, EC_LifetimeSpec, LifetimeType::get(isMutablePVal));
-  if (!lifetimePVal)
-    return {};
-
-  // If an explicit address space was specified, emit its expression as a
-  // parameter value.
-  PValue addrSpacePVal;
-  auto indexType = IndexType::get(emitter.getContext());
-  if (addrSpace) {
-    CValue mlirIndex = emitter.emitMLIRIndex(addrSpace, EC_LifetimeSpec);
-    if (!mlirIndex)
-      return {};
-    addrSpacePVal =
-        emitter.emitPValue({mlirIndex, addrSpace}, EC_LifetimeSpec, indexType);
-  } else {
-    addrSpacePVal = PValue(IntegerAttr::get(indexType, 0));
-  }
-  if (!addrSpacePVal)
-    return {};
-
-  auto subType = emitter.emitExprType(subExpr);
-  if (!subType)
-    return {};
-
-  auto result = RefType::get(subType, lifetimePVal.get(), addrSpacePVal.get());
-  return emitter.emitResult(result, this, dest);
-}
-
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
 

@@ -117,7 +117,6 @@ private:
                                   ExprNode::Kind kind, SMLoc loc);
   ParseResult parseFunctionType(ExprNode *&result);
   ParseResult parseLambda(ExprNode *&result);
-  ParseResult parseReferenceType(ExprNode *&result);
   ParseResult parseMagicFunction(ExprNode *&result);
 
   /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
@@ -404,8 +403,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_def:
   case Token::kw_lambda:
   case Token::kw_fn:
-  case Token::kw_ref:
-  case Token::kw_mutref:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
   case Token::kw___get_address_as_owned_value:
@@ -555,12 +552,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     // not / will not consume any postfix attachments - the expression suffix
     // will have handled that, so we can return here.
     return parseLambda(result);
-
-  case Token::kw_ref:    // ref [lifetime] type
-  case Token::kw_mutref: // mutref [lifetime] type
-    if (failed(parseReferenceType(result)))
-      return failure();
-    break;
 
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
@@ -1044,43 +1035,6 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   // them yet.
   emitError(lambdaLoc, "Mojo doesn't support lambda expressions yet");
   return failure();
-}
-
-/// "mutref" "[" lifetime "," ["," addrspace] "]" type
-/// "ref"    "[" ["mut" "=" mutability] lifetime "," ["," addrspace] "]" type
-ParseResult ExprParser::parseReferenceType(ExprNode *&result) {
-  bool isMutRef = getToken().is(Token::kw_mutref);
-  auto loc = consumeToken().getLoc();
-
-  if (parseToken(Token::l_square, "expected '[' in reference"))
-    return failure();
-
-  // Check for "mut=" if this is 'ref'.
-  ExprNode *mutableExpr = nullptr;
-  if (!isMutRef && getToken().getSpelling() == "mut") {
-    (void)consumeIdentifier(); // The mut token.
-    if (parseToken(Token::equal, "expected '=' after 'mut' keyword") ||
-        parseExpression(mutableExpr, Precedence::kAssignExpr) ||
-        parseToken(Token::comma, "expected ',' after mutability specification"))
-      return failure();
-  }
-
-  // Parse the lifetime specifier.
-  ExprNode *lifetime = nullptr, *expr = nullptr, *addrSpace = nullptr;
-  if (parseExpression(lifetime, Precedence::kAssignExpr))
-    return failure();
-  // Parse the address space if present.
-  if (consumeIf(Token::comma)) {
-    if (parseExpression(addrSpace, Precedence::kAssignExpr))
-      return failure();
-  }
-
-  if (parseToken(Token::r_square, "expected ']' after lifetime") ||
-      parsePrimaryExpr(expr))
-    return failure();
-  result = alloc<RefTypeNode>(isMutRef ? ExprNode::kMutRef : ExprNode::kRef,
-                              loc, mutableExpr, lifetime, addrSpace, expr);
-  return success();
 }
 
 ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
