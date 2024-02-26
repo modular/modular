@@ -1336,3 +1336,37 @@ struct BarSelf(BarTrait):
         # CHECK: [[V0:%.*]] = lit.ref.struct.ger %self
         # CHECK: lit.call{{.*}}__init__{{.*}}([[V0]])
         self.bar = Bar[Self]()
+
+
+# CHECK-LABEL: lit.struct.decl @RegPassableInitSelfInit
+@register_passable
+struct RegPassableInitSelfInit:
+  var a: Int
+
+  # CHECK: lit.func @"__init__
+  # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+  fn __init__(inout self):
+    self.a = 42
+
+  # CHECK: lit.func @"__copyinit__
+  # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+  fn __copyinit__(inout self, existing: Self):
+    self.a = existing.a
+
+# CHECK-LABEL: testRegPassableInitSelf
+fn testRegPassableInitSelf():
+  # CHECK-NEXT: %x = lit.var.decl
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
+  var x = RegPassableInitSelfInit()
+  # CHECK-NEXT: %x2 = lit.var.decl
+  # CHECK-NEXT: %anonymous2A = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[TMP]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %anonymous2A
+  # CHECK-NEXT: lit.ref.store [[TMP]], %x2
+  var x2 = x
+
+  # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]
+  # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
+  # CHECK-NEXT: lit.ref.store [[ONE:%.*]], [[AP]]
+  x.a = 1

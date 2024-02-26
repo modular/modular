@@ -890,10 +890,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // If this is a well-known function like `__init__`, perform early semantic
   // checks and clarify what special function it really is.
 
-  // __*init__ methods are weird - for memory-only results we define
-  // init in convention Python style, but for @register_passable values, we
-  // return it.  We handle this by mapping them to different enumerators so
-  // things downstream have stronger invariants.
+  // __*init__ methods are weird for @register_passable values: we allow self to
+  // be constructed inline and then return it as a register value.  We handle
+  // this by mapping them to different enumerators so things downstream have
+  // stronger invariants.
   //
   // This logic happens before type checking, so we need to be very careful
   // to only process it if defined correctly.  We let downstream checks diagnose
@@ -902,31 +902,35 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
        fnInfo.kind == SpecialFunctionKind::kCopyInit ||
        fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
       selfType) {
-    // If this is a memory-only type, then the self argument is actually passed
-    // with a special thing, it is written inout, but it isn't really.
-    if (!selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
-      if (!argList.parsedArgs.empty() && argList.parsedArgs[0].convention ==
-                                             ParsedArgument::kConventionInOut) {
-        auto &selfArg = argList.parsedArgs[0];
-        selfArg.convention = ParsedArgument::kConventionInitSelfResult;
-        // We also force the passing kind of self to positional-only.
-        if (selfArg.kwArgHandling == KWArgHandling::kPositionalOrKeyword)
-          selfArg.kwArgHandling = KWArgHandling::kPositionalOnly;
-      }
-    } else {
+    bool selfIsRegPassable =
+        selfType.isRegisterPassable(fnDecl->getLoc(), shared);
+    if (selfIsRegPassable && resultTypeExpr) {
       if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
       else if (fnInfo.kind == SpecialFunctionKind::kInit)
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
-      else {
-        assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
-        fnDecl->setErroneous();
-        paramList.shared.emitError(fnDecl->getLoc(), "'")
-            << fnInfo.name
-            << "' is not supported for @register_passable types, they "
-               "are always movable by copying a register";
-        fnInfo = SpecialFunctionInfo();
-      }
+    } else if (!argList.parsedArgs.empty() &&
+               argList.parsedArgs[0].convention ==
+                   ParsedArgument::kConventionInOut) {
+      // If this is a memory-only type, then the self argument is actually
+      // passed with a special thing, it is written inout, but it isn't
+      // really.
+      auto &selfArg = argList.parsedArgs[0];
+      selfArg.convention = ParsedArgument::kConventionInitSelfResult;
+      // We also force the passing kind of self to positional-only.
+      if (selfArg.kwArgHandling == KWArgHandling::kPositionalOrKeyword)
+        selfArg.kwArgHandling = KWArgHandling::kPositionalOnly;
+    }
+
+    // @register_passable values are movable by passing the register around, so
+    // they can't define a moveinit.
+    if (selfIsRegPassable && fnInfo.kind == SpecialFunctionKind::kMoveInit) {
+      fnDecl->setErroneous();
+      paramList.shared.emitError(fnDecl->getLoc(), "'")
+          << fnInfo.name
+          << "' is not supported for @register_passable types, they "
+             "are always movable by copying a register";
+      fnInfo = SpecialFunctionInfo();
     }
   }
 

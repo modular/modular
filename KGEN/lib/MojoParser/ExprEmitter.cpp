@@ -837,20 +837,29 @@ PValue ExprEmitter::canConstructType(ASTType requiredType,
   if (!callee)
     return {};
 
-  // If this is a memory-only type, then we'll pass a self argument with the
+  // Initializers take 'inout self' as the first argument.
+  // Register passable types have a funny exception that allow them to be
+  // called without this.  Check to see if we're doing that.
+  bool hasInitSelf = true;
+  if (requiredType.isRegisterPassable(expr->getLoc(), shared)) {
+    if (!callee.fnDecls.empty() &&
+        cast<FuncOp>(callee.fnDecls[0]).getSpecialFunctionKind() ==
+            SpecialFunctionKind::kInitReg)
+      hasInitSelf = false; // Using the register return convention.
+  }
+
+  // If this is InitSelf then we'll pass a self argument with the
   // destination when invoking the method, use a temporary so we can
   // conveniently type check this.
   SmallVector<ASTExprAnd<AnyValue>> posOperands(operands.posOperands.begin(),
                                                 operands.posOperands.end());
-  bool hasSelfOperand = false;
-  if (!requiredType.isRegisterPassable(expr->getLoc(), shared)) {
+  if (hasInitSelf) {
     auto attr = UnknownAttr::get(PointerType::get(requiredType));
     posOperands.insert(posOperands.begin(), {PValue(attr), expr});
-    hasSelfOperand = true;
   }
 
   CallOperands adjOperands(posOperands, operands.kwOperands);
-  adjOperands.hasSelfOperand = hasSelfOperand;
+  adjOperands.hasSelfOperand = hasInitSelf;
 
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
@@ -1365,6 +1374,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     }
     break;
   case TypeConvention::RegisterPassable:
+    // Materialize parameters into a register if we have them.
     if (auto pValue = value.ir.getIfPValue()) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
       if (!value.ir)
@@ -1372,12 +1382,29 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       break;
     }
 
-    // Register passable __copyinit__ has signature `(self)->Self`.
-    return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
-                               CallSyntax::kImplicitConvert, value.expr);
-
+    // As a special extension, the __copyinit__ of a register-only types are
+    // allowed to return their new self directly as a register value instead of
+    // taking a memory value in. Check to see if the copyinit members in the
+    // overload set have a kCopyInitReg form and use it if present
+    // TODO: Eliminate special register form and eliminate this extra check.
+    {
+      auto callee =
+          OverloadSet::lookup(declScope, shared, valueType, "__copyinit__",
+                              value.expr, CallSyntax::kTypeCall);
+      bool hasInitSelfResult = true;
+      for (auto fnDecl : callee.fnDecls) {
+        if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
+            SpecialFunctionKind::kCopyInitReg)
+          hasInitSelfResult = false;
+      }
+      // Register passable __copyinit__ has signature `(self)->Self`.
+      if (!hasInitSelfResult)
+        return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
+                                   CallSyntax::kImplicitConvert, value.expr);
+    }
+    [[fallthrough]];
   case TypeConvention::MemoryOnly:
-    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
+    // __copyinit__ has signature: `(inout self, existing: Self)`.
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};
@@ -1387,7 +1414,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                                  dest.context);
 
     if (!valueType.isCopyable(exprLoc, shared)) {
-      if (valueType.isMovableFrom(value, shared)) {
+      if (valueType.isMovableFrom(value, shared) &&
+          !valueType.isRegisterPassable(exprLoc, shared)) {
         emitError(exprLoc, "value of type ")
             << valueType
             << " can only be moved, but source value can only be copied"
@@ -1700,25 +1728,38 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                    LIT::FuncOp func) {
+  bool markLastArgDestroyed = false;
   switch (func.getSpecialFunctionKind()) {
   default:
     break;
-
   /// In the __del__ method for a struct, we need to mark 'self' as being
   /// destroyed before any return operation.
-  case SpecialFunctionKind::kDel: {
+  case SpecialFunctionKind::kDel:
     assert(func.getBody()->getNumArguments() == 1 &&
            "__del__ should have one argument");
-    Value selfArg = func.getBody()->getArgument(0);
+    markLastArgDestroyed = true; // Mark 'self' destroyed.
+    break;
 
+  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
+  /// being destroyed before any return operation if it is owned convention.
+  case SpecialFunctionKind::kMoveInit:
+    assert(func.getBody()->getNumArguments() == 2 &&
+           "__moveinit__ should have two arguments");
+    markLastArgDestroyed = true; // Mark 'existing' destroyed.
+    break;
+  }
+
+  if (markLastArgDestroyed) {
+    Value argToDestroy = func.getBody()->getArguments().back();
     // If this is a @register_passable type, the value must be stored
     // in a box and we want to treat the box as the thing that we track.
     // CheckLifetimes doesn't track register values field sensitively, so there
     // is no way to say that the full object bit is dead in a SRValue.
-    if (func.getSignature().getArgConvention(0) == ArgConvention::OwnedInReg) {
+    if (func.getSignature().getArgConventions().back() ==
+        ArgConvention::OwnedInReg) {
       // Find the single thing that got stored to, ignoring debug.value ops.
       Value storedMem;
-      for (auto user : selfArg.getUsers()) {
+      for (auto user : argToDestroy.getUsers()) {
         if (isa<DebugInfo::ValueOp>(user))
           continue;
         assert(!storedMem && "Should only have a single store");
@@ -1727,21 +1768,9 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
       // If we found it, then ownership has already transfered to the memory
       // object, so track it instead of the argument.
       assert(storedMem && "local value box for OwnedInReg self not found");
-      selfArg = storedMem;
+      argToDestroy = storedMem;
     }
-    builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
-    break;
-  }
-
-  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
-  /// being destroyed before any return operation if it is owned convention.
-  case SpecialFunctionKind::kMoveInit: {
-    assert(func.getBody()->getNumArguments() == 2 &&
-           "__moveinit__ should have two arguments");
-    Value existingArg = func.getBody()->getArgument(1);
-    builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
-    break;
-  }
+    builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }
 
   // Finally we emit a normal return with lit.return.
@@ -1949,4 +1978,21 @@ VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
                                    VarDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
   return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
+}
+
+/// Create a mutable VarDecl for a function argument that captures its value.
+/// argValue specifies the argument with the correct valuetype.
+VarDeclOp ExprEmitter::makeArgLValueVarSlot(SRValue argValue,
+                                            StringAttr argName, SMLoc loc) {
+  // Emit the initializer expression into the slot.
+  VarDeclOp varDecl =
+      emitVarDecl(argName, argValue.getType(), translateLocation(loc),
+                  VarDeclKind::Implicit);
+
+  // Expr to provide location information.
+  ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
+  if (!emitBValue({argValue, SyntheticNode(loc)}, dest))
+    dest.resetForError();
+
+  return varDecl;
 }

@@ -62,7 +62,7 @@ fn makeClosure(x: MemType):
     var rp: NoCopyType = NoCopyType(x.a)
 
     # expected-error @below {{cannot capture 'z' because capturing instances of memory only types in parametric functions is not supported}}
-    # expected-error @below {{'NoCopyType' does not implement the '__copyinit__' method}}
+    # expected-error @below {{'NoCopyType' is not copyable because it has no '__copyinit__'}}
     @__copy_capture(z, rp)
     @parameter
     fn formatter() -> int:
