@@ -119,7 +119,7 @@ public:
 
   /// Return the blob referenced by this handle if the underlying resource has
   /// been initialized. Returns nullptr otherwise.
-  mlir::AsmResourceBlob *getBlob() { return getResource()->getBlob(); }
+  mlir::AsmResourceBlob *getBlob();
   const mlir::AsmResourceBlob *getBlob() const {
     return getResource()->getBlob();
   }

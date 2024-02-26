@@ -112,6 +112,10 @@ MemoryHandle DialectResourceManager::getOrAddResource(ArrayRef<char> data,
         }
         return &it.first->second;
       });
+  if (!entry->getBlob()) {
+    llvm::report_fatal_error("failed to emplace interpreter blob for: " +
+                             Twine(key));
+  }
   return createHandle(entry);
 }
 
@@ -123,6 +127,17 @@ DialectResourceManager &MemoryHandle::getManagerInterface(MLIRContext *ctx) {
   auto *dialect = ctx->getOrLoadDialect<InterpreterDialect>();
   assert(dialect && "InterpreterDialect is not registered");
   return *dialect->getRegisteredInterface<DialectResourceManager>();
+}
+
+mlir::AsmResourceBlob *MemoryHandle::getBlob() {
+  // A missing resource blob is always a bug.
+  mlir::AsmResourceBlob *blob = getResource()->getBlob();
+  if (!blob) {
+    // FIXME(#32656): There have been flakes with missing resources.
+    llvm::report_fatal_error("missing blob for interpreter resource: " +
+                             getKey());
+  }
+  return blob;
 }
 
 //===----------------------------------------------------------------------===//
