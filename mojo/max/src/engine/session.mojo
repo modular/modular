@@ -3,7 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+"""
+The entry point to Max Engine and can be used to load models
+for inference.
+"""
 from collections.optional import Optional
 from collections.vector import InlinedFixedVector, DynamicVector
 from memory.anypointer import AnyPointer
@@ -355,6 +358,11 @@ struct SessionOptions:
 @value
 @register_passable
 struct InferenceSession:
+    """
+    Holds the context of Max Engine and can be used for
+    loading models.
+    """
+
     var _ptr: AnyPointer[_InferenceSessionImpl]
 
     fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:

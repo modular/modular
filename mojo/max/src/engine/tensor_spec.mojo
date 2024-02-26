@@ -3,7 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+"""
+Holds a description of the input/output tensor, given or produced by Max Engine.
+This is similar to `TensorSpec` in the Mojo standard library, but is specific
+to Max Engine.
+"""
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from ._utils import call_dylib_func
@@ -16,6 +20,10 @@ from ._tensor_spec_impl import CTensorSpec
 
 
 struct EngineTensorSpec(Stringable, Movable):
+    """
+    Describes input/output of a Max Engine Model.
+    """
+
     var _ptr: CTensorSpec
     var _lib: DLHandle
     var _session: InferenceSession

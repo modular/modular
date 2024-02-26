@@ -3,7 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+"""
+Implements functionalities useful for giving input to Max Engine
+model for execution.
+"""
 from collections.vector import DynamicVector
 from memory.unsafe import bitcast, DTypePointer, Pointer
 from utils.list import Dim

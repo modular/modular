@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Mojo inference engine APIs."""
+"""APIs for performing inference with Max Engine."""
 
 from .engine import get_version
 from .session import InferenceSession, LoadOptions, SessionOptions

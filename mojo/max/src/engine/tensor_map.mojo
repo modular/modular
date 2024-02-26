@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Holds the input and output tensors for a model.
+"""
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from memory.unsafe import bitcast
@@ -16,6 +19,11 @@ from .value import Value
 
 
 struct TensorMap(SizedRaising):
+    """
+    Maps inputs and outputs to their respective names and can
+    be used to supply and receive data to Max Engine model.
+    """
+
     var _ptr: CTensorMap
     var _lib: DLHandle
     var _session: InferenceSession

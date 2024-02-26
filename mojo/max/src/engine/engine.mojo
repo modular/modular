@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Information about Max Engine, such as version.
+"""
 from ._engine_impl import _get_engine_path, _EngineImpl
 
 

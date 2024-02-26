@@ -3,6 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+An abstracted instance of model from any framework loaded with Max
+Engine InferenceSession and is ready for execution.
+"""
+
 from ._model_impl import CModel
 from ._compilation import CompiledModel
 from ._context import CRuntimeContext
