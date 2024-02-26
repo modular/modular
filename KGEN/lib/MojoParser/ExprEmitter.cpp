@@ -1501,7 +1501,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
   // has no __moveinit__, then copy it into the destination.
-  if (!valueType.isMovableFrom(value, shared)) {
+  if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared)) {
     // If the value isn't either copy or movable from the source, but the source
     // value is an RValue, then this is because the type isn't implementing
     // either the copy or move init.  Complain precisely, instead of just
@@ -1523,7 +1523,10 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return result.getIfBValue();
   }
 
-  // Otherwise this is a movable RValue that we own.
+  // Otherwise this is a movable RValue that we own and we have an MLValue
+  // destination.
+  MLValue destRef = destLV.getIfMLValue();
+  assert(destRef && "No other known LValue");
 
   // If it is a register passable, assign with a store.
   if (valueType.isRegisterPassable(exprLoc, shared)) {
@@ -1536,23 +1539,14 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
     }
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    MLValue destPtr = destLV.getIfMLValue();
-    assert(destPtr);
     builder->create<LIT::RefStoreOp>(translateLocation(value.expr->getLoc()),
-                                     val, destPtr);
+                                     val, destRef);
 
     return SBValue(val);
   }
 
-  if (auto pvalue = value.ir.getIfPValue()) {
-    auto valRef = destLV.getIfMLValue();
-    assert(valRef && "Unknown LValue");
-    return emitPValueToMLValue({pvalue, value.expr}, valRef, context);
-  }
-
-  // Otherwise we have an MLValue destination.
-  MLValue destRef = destLV.getIfMLValue();
-  assert(destRef && "No other known LValue");
+  if (auto pvalue = value.ir.getIfPValue())
+    return emitPValueToMLValue({pvalue, value.expr}, destRef, context);
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.

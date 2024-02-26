@@ -1359,11 +1359,8 @@ fn testRegPassableInitSelf():
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
   var x = RegPassableInitSelfInit()
   # CHECK-NEXT: %x2 = lit.var.decl
-  # CHECK-NEXT: %anonymous2A = lit.var.decl
   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[TMP]])
-  # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %anonymous2A
-  # CHECK-NEXT: lit.ref.store [[TMP]], %x2
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x2, [[TMP]])
   var x2 = x
 
   # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]
