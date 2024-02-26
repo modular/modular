@@ -62,10 +62,14 @@ constexpr size_t kMaxWorkers = 1024;
 //===----------------------------------------------------------------------===//
 
 namespace {
-
+#if LLCL_WORKER_STATS
+#define LLCL_PRINT_WORKER_STATS(X) X;
+#else
+#define LLCL_PRINT_WORKER_STATS(X)
+#endif
 /// Tracks the overall shutdown progress for the work queue.
 enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
-
+enum WorkType : uint8_t { kLocal = 0, kAffinity = 1, kGlobal = 2 };
 #if MODULAR_PARANOID
 /// Sleep for a random period to try to tickle data races.
 static void randomSleep() {
@@ -302,7 +306,32 @@ struct WorkQueueThread {
 #endif
   // The thread identifier prefix used to name the threads
   std::string_view poolName;
-
+#if LLCL_WORKER_STATS
+  uint64_t affinityAccessCount = 0;
+  uint64_t globalAccessCount = 0;
+  std::chrono::duration<double, std::micro> affinityListAccessTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> localListAccessTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> taskListAccessTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> affinityWorkTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> localWorkTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> taskListWorkTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> spinAffinityListAccessTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> spinAffinityWorkTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> spinTaskListAccessTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> spinTaskListWorkTime =
+      std::chrono::microseconds(0);
+  std::chrono::duration<double, std::micro> sleepTime =
+      std::chrono::microseconds(0);
+#endif
   /// Create a WorkQueueThread representing the worker with workerID. If
   /// necessary, the underlying worker thread will be created and it will
   /// enter its runItems loop.
@@ -329,6 +358,23 @@ struct WorkQueueThread {
   }
 
   ~WorkQueueThread() {
+    if (workerID == 0)
+      LLCL_PRINT_WORKER_STATS(
+          llvm::dbgs() << "WorkerID,schedulerTasks(us),affinityQueueAccess(us),"
+                          "affinityQueueWork(us),affinityAccessCount,"
+                          "globalAccess(us),globalWork("
+                          "us),globalAccessCount,sleep+wakeup(us)\n");
+    LLCL_PRINT_WORKER_STATS(
+        llvm::dbgs()
+        << "Thread" << workerID << "," << (localWorkTime).count() << ","
+        << (affinityListAccessTime - affinityWorkTime).count() +
+               (spinAffinityListAccessTime - spinAffinityWorkTime).count()
+        << "," << (affinityWorkTime).count() + (spinAffinityWorkTime).count()
+        << "," << affinityAccessCount << ","
+        << (taskListAccessTime - taskListWorkTime).count() +
+               (spinTaskListAccessTime - spinTaskListWorkTime).count()
+        << "," << (taskListWorkTime).count() + (spinTaskListWorkTime).count()
+        << "," << globalAccessCount << "," << sleepTime.count() << "\n");
     assert(localTaskList.empty() &&
            "destroying workqueuethread with pending local work items");
     std::lock_guard<std::mutex> guard(localSpillQueueMutex);
@@ -364,7 +410,10 @@ struct WorkQueueThread {
   // Execute a single work item, which may have come from either addTask
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
-  void doWork(WorkItem &&workItem) {
+  void doWork(WorkItem &&workItem, WorkType type) {
+#if LLCL_WORKER_STATS
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
 #if MODULAR_PARANOID
     // Tickle race conditions.
     if (sharedState.paranoid)
@@ -373,14 +422,29 @@ struct WorkQueueThread {
     // Propagate use.
     useStack.emplace_back(std::move(workItem.use));
 #endif
-
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
           IsWaiter ? "llcl.waiter" : "llcl.doWork"));
       workItem.task();
     }
+#if LLCL_WORKER_STATS
+    auto end = std::chrono::high_resolution_clock::now();
 
+    if (type == kLocal)
+      localWorkTime += end - start;
+    if (!IsWaiter) {
+      if (type == kAffinity)
+        affinityWorkTime += end - start;
+      else if (type == kGlobal)
+        taskListWorkTime += end - start;
+    } else {
+      if (type == kAffinity)
+        spinAffinityWorkTime += end - start;
+      else if (type == kGlobal)
+        spinTaskListWorkTime += end - start;
+    }
+#endif
 #if MODULAR_PARANOID
     // Pop use stack. The top may already have been reset.
     assert(!useStack.empty() &&
@@ -477,7 +541,6 @@ void WorkQueueThread::runItemsOnOwningThread(
         sleepingLabel);
   }
 }
-
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
 void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    LateStopPredicateFn lateStopPredicate,
@@ -493,6 +556,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // Prefer to run local work items as soon as they are available.
     // CAUTION: A work function may append to this list, and may even
     //          invoke runItems recursively.
+    auto start = std::chrono::high_resolution_clock::now();
     while (nextLocalTaskListIndex < localTaskList.size()) {
 #if MODULAR_PARANOID
       // Try to tickle bugs by working through work items in random order.
@@ -502,23 +566,49 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #else
       WorkItem workItem = std::move(localTaskList[nextLocalTaskListIndex++]);
 #endif
+
       // May append to localTaskList.
       // May re-enter this loop.
-      doWork</*IsWaiter=*/true>(std::move(workItem));
+      doWork</*IsWaiter=*/true>(std::move(workItem), kLocal);
     }
     localTaskList.clear();
     nextLocalTaskListIndex = 0;
-
+#if LLCL_WORKER_STATS
+    auto end = std::chrono::high_resolution_clock::now();
+    localListAccessTime +=
+        std::chrono::duration<double, std::micro>(end - start);
+    start = std::chrono::high_resolution_clock::now();
+#endif
     // Check for tasks in local taskId affinitized queue.
     if (auto workItem = affinityTaskList.dequeue()) {
-      doWork</*IsWaiter=*/false>(std::move(workItem));
+      doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
+#if LLCL_WORKER_STATS
+      auto end = std::chrono::high_resolution_clock::now();
+      affinityListAccessTime += (end - start);
+      affinityAccessCount++;
+#endif
       goto KeepRunning;
     }
+#if LLCL_WORKER_STATS
+    end = std::chrono::high_resolution_clock::now();
+    affinityListAccessTime += (end - start);
+    start = std::chrono::high_resolution_clock::now();
+#endif
     // In the normal case we happily pick up and do work.
+
     if (WorkItem workItem = taskList.dequeue()) {
-      doWork</*IsWaiter=*/false>(std::move(workItem));
+      doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
+#if LLCL_WORKER_STATS
+      auto end = std::chrono::high_resolution_clock::now();
+      taskListAccessTime += (end - start);
+      globalAccessCount++;
+#endif
       goto KeepRunning;
     }
+#if LLCL_WORKER_STATS
+    end = std::chrono::high_resolution_clock::now();
+    taskListAccessTime += (end - start);
+#endif
 
     if (!waitForTasks)
       return;
@@ -535,21 +625,40 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       // such, we use a BusyWaitSpinWaiter.
       BusyWaitSpinWaiter spinWaiter(busyWaitTime);
 
+      start = std::chrono::high_resolution_clock::now();
       // Spin until we find some work to do.
       while (!spinWaiter.wait()) {
         // If we ever succeed in finding work to do, go back to running like
         // normal.
-        if (auto work = affinityTaskList.dequeue()) {
-          std::move(spinning).record();
-          doWork</*IsWaiter=*/false>(std::move(work));
-          goto KeepRunning;
-        }
-        if (WorkItem workItem = taskList.dequeue()) {
-          std::move(spinning).record();
-          doWork</*IsWaiter=*/false>(std::move(workItem));
-          goto KeepRunning;
-        }
 
+        if (auto workItem = affinityTaskList.dequeue()) {
+          doWork</*IsWaiter=*/true>(std::move(workItem), kAffinity);
+#if LLCL_WORKER_STATS
+          auto end = std::chrono::high_resolution_clock::now();
+          spinAffinityListAccessTime += (end - start);
+          affinityAccessCount++;
+#endif
+          goto KeepRunning;
+        }
+#if LLCL_WORKER_STATS
+        end = std::chrono::high_resolution_clock::now();
+        spinAffinityListAccessTime += (end - start);
+        start = std::chrono::high_resolution_clock::now();
+#endif
+
+        if (WorkItem workItem = taskList.dequeue()) {
+          doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
+#if LLCL_WORKER_STATS
+          auto end = std::chrono::high_resolution_clock::now();
+          globalAccessCount++;
+          spinTaskListAccessTime += (end - start);
+#endif
+          goto KeepRunning;
+        }
+#if LLCL_WORKER_STATS
+        end = std::chrono::high_resolution_clock::now();
+        spinTaskListAccessTime += (end - start);
+#endif
         // If we're spinning and the early or the late stop condition happens,
         // then we're done.  Checking the late stop condition here make sure
         // our threads shut down promptly when a runtime is torn down.
@@ -611,10 +720,21 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // T0 is not going to post semaphore, but the task is already
     // enqueued. Run it now, unMark and go back to KeepRunning.
 
+    start = std::chrono::high_resolution_clock::now();
     if (auto labelledTask = affinityTaskList.dequeue()) {
-      doWork</*IsWaiter=*/false>(std::move(labelledTask));
+      doWork</*IsWaiter=*/false>(std::move(labelledTask), kAffinity);
+#if LLCL_WORKER_STATS
+      auto end = std::chrono::high_resolution_clock::now();
+      affinityAccessCount++;
+      affinityListAccessTime += (end - start);
+#endif
       goto KeepRunning;
     }
+#if LLCL_WORKER_STATS
+    end = std::chrono::high_resolution_clock::now();
+    affinityListAccessTime += (end - start);
+    start = std::chrono::high_resolution_clock::now();
+#endif
     // The same ordering explanation as above holds for the taskList too.
     // Let's say there are 2 threads in the pool with both threads busy waiting
     // on their way to sleep. The addTask() sees them as busy and does not post
@@ -624,19 +744,33 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // unlikely for numThreads > 1.
 
     if (auto labelledTask = taskList.dequeue()) {
-      doWork</*IsWaiter=*/false>(std::move(labelledTask));
+      doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
+#if LLCL_WORKER_STATS
+      auto end = std::chrono::high_resolution_clock::now();
+      globalAccessCount++;
+      taskListAccessTime += (end - start);
+#endif
       goto KeepRunning;
     }
+#if LLCL_WORKER_STATS
+    end = std::chrono::high_resolution_clock::now();
+    taskListAccessTime += (end - start);
+#endif
 
     if (earlyStopPredicate()) {
       return;
     }
 
     {
+      start = std::chrono::high_resolution_clock::now();
       // Ok, finally block.
       TimeTraceScope scope(
           InternalProfilerEntry::create(sleepingLabel, (uint64_t)workerID));
       sema.wait();
+#if LLCL_WORKER_STATS
+      auto end = std::chrono::high_resolution_clock::now();
+      sleepTime += (end - start);
+#endif
     }
 
     // On wakeup, check the 'slow' predicate to see if we should stop (this is
@@ -762,6 +896,12 @@ private:
   /// Log2(number of threads per bit of SuspendedThreadsBitvec)
   size_t multicastFactor = 0;
   std::string poolName;
+#ifdef LLCL_WORKER_STATS
+  AlignedAtomic<double> affinityEnqueueTime = 0.0f;
+  AlignedAtomic<double> taskListEnqueueTime = 0.0f;
+  AlignedAtomic<uint64_t> taskListEnqueCount = 0;
+  AlignedAtomic<uint64_t> affinityEnqueCount = 0;
+#endif
 };
 } // namespace
 
@@ -800,8 +940,14 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
-  // Note we can't assert state == kShutdown since queue may be created
-  // and destroyed without ever being included in a runtime.
+// Note we can't assert state == kShutdown since queue may be created
+// and destroyed without ever being included in a runtime.
+#if LLCL_WORKER_STATS
+  llvm::dbgs() << "affinityEnqueueTime,affinityEnqueCount,taskListEnqueueTime,"
+                  "taskListEnqueCount\n";
+  llvm::dbgs() << affinityEnqueueTime << "," << affinityEnqueCount << ","
+               << taskListEnqueueTime << "," << taskListEnqueCount << "\n";
+#endif
   assert(!taskList.dequeue() &&
          "destroying ThreadPoolWorkQueue with pending work items");
 
@@ -887,6 +1033,9 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     workItem.use = callerWorker->useStack.back().copy();
   }
 #endif
+#if LLCL_WORKER_STATS
+  auto start = std::chrono::high_resolution_clock::now();
+#endif
   if (taskId >= 0) {
     auto workThread = getWorkQueueThread(taskId);
     // Either add to thread local lock-free queues or to its spill queue.
@@ -906,6 +1055,12 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
       // Nevertheless profile and check.
       workThread->sema.post();
     }
+#if LLCL_WORKER_STATS
+    auto end = std::chrono::high_resolution_clock::now();
+    atomicAdd(affinityEnqueCount, (uint64_t)1);
+    atomicAdd(affinityEnqueueTime,
+              std::chrono::duration<double, std::micro>(end - start).count());
+#endif
     return;
   }
   // Try to add this work to the lock-free queue.
@@ -925,6 +1080,12 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
         }
       }
     }
+#if LLCL_WORKER_STATS
+    auto end = std::chrono::high_resolution_clock::now();
+    atomicAdd(taskListEnqueCount, (uint64_t)1);
+    atomicAdd(taskListEnqueueTime,
+              std::chrono::duration<double, std::micro>(end - start).count());
+#endif
     return;
   }
 
