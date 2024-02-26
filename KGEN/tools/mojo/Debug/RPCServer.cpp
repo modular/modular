@@ -9,6 +9,8 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include <filesystem>
+#include <future>
+#include <thread>
 
 #if defined(_WIN32)
 #include <io.h>
@@ -58,13 +60,64 @@ createBasicRPCPayload(const std::optional<StringRef> &secret) {
   return payload;
 }
 
+namespace {
+struct RPCResponse {
+  bool success;
+  std::optional<std::string> message;
+};
+} // namespace
+
+namespace llvm::json {
+bool fromJSON(const json::Value &value, RPCResponse &response, Path path) {
+  ObjectMapper o(value, path);
+  return o && o.map("success", response.success) &&
+         o.mapOptional("message", response.message);
+}
+} // namespace llvm::json
+
+static ErrorOrSuccess doSendRequest(SOCKET sockfd, StringRef payloadStr) {
+  ssize_t sentBytes = send(sockfd, payloadStr.data(), payloadStr.size(), 0);
+  if (sentBytes < 0)
+    return Error(Twine("can't send data to the RPC debug server: ") +
+                 strerror(errno));
+
+  std::string rawResponse;
+  while (true) {
+    char buff[256];
+    ssize_t recvBytes = 0;
+    recvBytes = recv(sockfd, buff, sizeof(buff) - 1, 0);
+    if (recvBytes < 0)
+      return Error(Twine("can't receive response from the RPC debug server: ") +
+                   strerror(errno));
+
+    if (recvBytes == 0)
+      break;
+
+    rawResponse.append(buff, recvBytes);
+  }
+
+  llvm::Expected<RPCResponse> response =
+      llvm::json::parse<RPCResponse>(rawResponse);
+  if (!response) {
+    llvm::consumeError(response.takeError());
+    return Error(Twine("can't parse response from the RPC debug server: ") +
+                 rawResponse);
+  }
+  if (response->success)
+    return success();
+  if (response->message)
+    return Error(*response->message);
+  return Error("couldn't initialize the debug session");
+}
+
 /// Send the given payload to the RPC server at the specified port. If `dryRun`
 /// is specified, then the payload is printed to the standard output instead.
 static ErrorOrSuccess invokeRPC(bool dryRun, int port, json::Object payload) {
   std::string payloadStr =
       llvm::formatv("{0:2}", json::Value(std::move(payload)));
   if (dryRun) {
-    llvm::outs() << payloadStr << "\n";
+    llvm::outs() << "port: " << port << "\n";
+    llvm::outs() << "payload: " << payloadStr << "\n";
     return success();
   }
 
@@ -87,11 +140,16 @@ static ErrorOrSuccess invokeRPC(bool dryRun, int port, json::Object payload) {
     status = Error(Twine("can't connect to the RPC debug server socket: ") +
                    strerror(errno));
   } else {
-    ssize_t sentBytes =
-        send(sockfd, payloadStr.c_str(), payloadStr.length(), 0);
-    if (sentBytes < 0) {
-      status = Error(Twine("can't send data to the RPC debug server: ") +
-                     strerror(errno));
+    // We create a dangling thread to easily handle timeouts. The thread will
+    // die anyway as soon as we close the socket.
+    auto future = new std::future<ErrorOrSuccess>(
+        std::async(doSendRequest, sockfd, payloadStr));
+    auto timeout = std::chrono::seconds(5);
+    if (future->wait_for(timeout) == std::future_status::timeout) {
+      status = Error("timeout when communicating with the RPC debug server");
+    } else {
+      status = future->get();
+      delete future;
     }
   }
 
