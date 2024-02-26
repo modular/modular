@@ -360,10 +360,9 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     // a base type using its encoding, which might fail anyway. We follow that
     // approach.
 
-    if (attrs.name ==
-        DebugInfoEncoding::getKGENDTypeAsString(DType::invalid).c_str()) {
+    if (attrs.name == "void" || attrs.name == "opaque") {
       CompilerType mojoType =
-          typeSystem.createCompilerTypeFromDType(attrs.name);
+          typeSystem.getBuiltinTypeFromMLIRTypeName("!kgen.none");
 
       type = dwarf->MakeType(
           die.GetID(), attrs.name, attrs.byteSize.value_or(0), nullptr,
