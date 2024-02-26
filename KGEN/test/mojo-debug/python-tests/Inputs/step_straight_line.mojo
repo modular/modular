@@ -8,7 +8,8 @@
 fn main():
     alias length = 3
 
-    var vector = DynamicVector[Int]()  # breakpoint
+    breakpoint()
+    var vector = DynamicVector[Int]()
 
     vector.push_back(9)
     vector.push_back(1)

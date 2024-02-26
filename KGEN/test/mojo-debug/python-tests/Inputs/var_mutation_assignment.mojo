@@ -8,13 +8,17 @@
 fn main():
     var i = 5
     var j = 7
-    print(i)  # breakpoint
+    breakpoint()
+    print(i)
 
     i *= 3
-    print(i)  # breakpoint
+    breakpoint()
+    print(i)
 
     j += 6
-    print(j)  # breakpoint
+    breakpoint()
+    print(j)
 
     i -= j
-    print(i)  # breakpoint
+    breakpoint()
+    print(i)
