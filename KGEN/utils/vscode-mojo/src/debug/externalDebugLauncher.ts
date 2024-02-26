@@ -11,7 +11,6 @@
 import * as net from 'net';
 import * as querystring from 'querystring';
 import stringArgv from 'string-argv';
-import * as vscode from 'vscode';
 import {
   debug,
   DebugConfiguration,
@@ -25,6 +24,13 @@ import * as YAML from 'yaml';
 
 import {LoggingService} from '../logging';
 import {DisposableContext} from '../utils/disposableContext';
+
+type RPCServerResponse = {
+  success: true
+}|{
+  success: false
+  message?: string
+}
 
 /**
  * URI-based debug launcher.
@@ -149,14 +155,41 @@ export class RpcLaunchServer extends DisposableContext {
     this.inner.on('error', err => { this.errorEmitter.fire(err); });
     this.inner.on('connection', socket => {
       let request = '';
-      socket.on('data', chunk => request += chunk);
-      socket.on('end', () => {
-        let response = this.processRequest(request);
-        if (response instanceof Promise) {
-          response.then(value => socket.end(value));
-        } else {
-          socket.end(response);
+      socket.on('data', chunk => {
+        request += chunk;
+        let parsedRequest: Object|undefined = undefined;
+        try {
+          parsedRequest = JSON.parse(request);
+        } catch (err) {
+          parsedRequest = undefined;
+          // If we get an exception, parsedRequest will be undefined,
+          // which is a case we'll handle below.
         }
+
+        if (typeof parsedRequest === 'object') {
+          this.processRequest(parsedRequest)
+              .then(value => socket.end(JSON.stringify(value)));
+        } else if (parsedRequest !== undefined) {
+          const response: RPCServerResponse = {
+            success : false,
+            message : "the debug session request is not a JSON object."
+          };
+          socket.end(JSON.stringify(response))
+        }
+        // In we couldn't parse, i.e. parsedRequest is undefined, it might be
+        // because the data is incomplete, so we keep reading.
+      });
+      socket.on('end', () => {
+        // If we got here, we check if we had an syntax error and return it as a
+        // message.
+        try {
+          const _ = JSON.parse(request);
+        } catch (err) {
+          const response:
+              RPCServerResponse = {"success" : false, "message" : `${err}`};
+          socket.end(JSON.stringify(response));
+        }
+        socket.end();
       });
     });
   }
@@ -171,30 +204,31 @@ export class RpcLaunchServer extends DisposableContext {
    * Process a JSON debug configuration. It should contain a secret field with
    * the same value as the one defined to create the RPC server.
    */
-  async processRequest(request: string) {
+  async processRequest(request: Object): Promise<RPCServerResponse> {
     this.loggingService.logInfo("Received RPC debug request", request);
     let debugConfig: DebugConfiguration = {
       type : 'mojo-lldb',
       request : 'launch',
       name : '',
     };
-    Object.assign(debugConfig, YAML.parse(request));
+    Object.assign(debugConfig, request);
     debugConfig.name = debugConfig.name || debugConfig.program;
     if (!this.secrets.has(debugConfig.secret || '')) {
-      const message =
-          'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.';
-      vscode.window.showErrorMessage(message);
-      return message;
+      return {
+        success : false,
+        message :
+            'Debugger error: invalid secret. The Mojo RPC debug server expects a different `secret` attribute for the debug configuration.'
+      };
     }
     delete debugConfig.secret;
     try {
       let success = await debug.startDebugging(/*workspaceFolder=*/ undefined,
                                                debugConfig);
-      return JSON.stringify({success : success});
+      return {success : success};
     } catch (err) {
-      return JSON.stringify({success : false, message : `${err}`});
+      return {success : false, message : `${err}`};
     }
-  };
+  }
 
   /**
    * Listens to messages using the provided network options.
