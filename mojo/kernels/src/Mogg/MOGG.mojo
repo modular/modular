@@ -73,6 +73,8 @@ from MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer, bitcast
+from MOGGTensor import Tensor
+from MOGGIntList import IntList
 from NN.Activations import gelu, relu, sigmoid
 from NN.Arange import arange, arange_shape
 from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
@@ -136,7 +138,6 @@ from runtime.llcl import (
     Runtime,
 )
 from runtime.tracing import Trace, TraceLevel
-
 from utils._annotations import *
 from utils._optional import Optional
 from utils._optional_param import OptionalParamInt
@@ -590,6 +591,67 @@ fn elementwise_wrapper[
             )
             var task = MojoCallTask(coro ^, ctx)
             (task ^)()
+
+
+# ===----------------------------------------------------------------------===#
+# Tensor API intrinsics
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("to_tensor")
+@export
+@always_inline
+fn to_tensor[
+    type: DType,
+    static_shape: DimList = DimList(),
+    static_strides: DimList = DimList(),
+](
+    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
+    raw_shape_ptr: __mlir_type.`!kgen.pointer<index>`,
+    length: Int,
+) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
+    var shape_ptr = Pointer(raw_shape_ptr)
+
+    var shape = IntList[static_shape].empty(length)
+    var strides = IntList[static_strides].empty(length)
+
+    var stride: Int = 1
+
+    @parameter
+    if shape.has_static_length():
+        alias rank = len(static_shape)
+
+        @always_inline
+        @__copy_capture(shape_ptr)
+        @parameter
+        fn body[idx: Int]():
+            # Start from the back so we can accumulate the strides.
+            var i = rank - 1 - idx
+            shape[i] = shape_ptr.load(i)
+            strides[i] = stride
+            stride *= shape[i]
+
+        unroll[body, rank]()
+    else:
+        # Start from the back so we can accumulate the strides.
+        for i in range(length - 1, -1, -1):
+            shape[i] = shape_ptr.load(i)
+            strides[i] = stride
+            stride *= shape[i]
+
+    return Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False](
+        DTypePointer[type](data),
+        shape,
+        strides,
+        Pointer[Scalar[DType.index]](),
+    )
+
+
+@mogg_register("mogg.shape_from_kgen")
+@always_inline
+@export
+fn get_static_shape(shape: IntList) -> StaticIntTuple[shape._safe_len]:
+    return shape.stack_alloc_data
 
 
 # ===----------------------------------------------------------------------===#
