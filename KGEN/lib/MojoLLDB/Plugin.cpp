@@ -48,7 +48,8 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
 
   // We need to create a global runtime for the bits to work with. This is a
   // bit strange, but there's no better place for it.
-  static auto runtime = LLCL::createUniqueRuntime();
+  static auto runtime =
+      LLCL::createUniqueRuntime(LLCL::RuntimeOptions().withMainWillNotDonate());
 
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
