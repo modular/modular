@@ -33,7 +33,6 @@ struct IntDelegate(ElementDelegate):
 
 
 alias IntTupleBase = DynamicTupleBase[Int, IntDelegate]
-alias IntElement = IntTupleBase.Element
 alias IntTuple = DynamicTuple[Int, IntDelegate]
 
 
@@ -54,7 +53,7 @@ fn tuple(owned tv: IntTuple) -> IntTupleBase:
 
 @always_inline
 fn is_int(t: IntTuple) -> Bool:
-    return t.content.isa[Int]()
+    return t._value.isa[Int]()
 
 
 @always_inline

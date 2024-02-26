@@ -33,13 +33,13 @@ struct _DynamicTupleIter[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
 ]:
     alias BaseType = DynamicTupleBase[T, D]
-    alias ElementType = Self.BaseType.Element
+    alias Element = Self.BaseType.Element
 
     var index: Int
-    var src: Self.ElementType
+    var src: Self.Element
 
     @always_inline
-    fn __next__(inout self) -> Self.ElementType:
+    fn __next__(inout self) -> Self.Element:
         self.index += 1
         if self.src.isa[T]():
             return self.src.get[T]()[]
@@ -59,94 +59,92 @@ struct DynamicTupleBase[
     alias Element = Variant[T, Self]
     alias IterType = _DynamicTupleIter[T, D]
 
-    var elts: DynamicVector[Self.Element]
+    var _elements: DynamicVector[Self.Element]
 
     @always_inline
     fn __init__(inout self: Self):
-        self.elts = DynamicVector[Self.Element]()
+        self._elements = DynamicVector[Self.Element]()
 
     @always_inline
-    fn __init__(inout self: Self, value: DynamicTuple[T, D]):
-        self.elts = DynamicVector[Self.Element](capacity=1)
-        self.elts.append(value.content)
+    fn __init__(inout self: Self, v: Self.Element):
+        self._elements = DynamicVector[Self.Element](capacity=1)
+        self._elements.append(v)
 
     @always_inline
-    fn __init__(
-        inout self, owned v1: DynamicTuple[T, D], owned v2: DynamicTuple[T, D]
-    ):
-        self.elts = DynamicVector[Self.Element](capacity=2)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-
-    @always_inline
-    fn __init__(
-        inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-    ):
-        self.elts = DynamicVector[Self.Element](capacity=3)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
+    fn __init__(inout self, owned v1: Self.Element, owned v2: Self.Element):
+        self._elements = DynamicVector[Self.Element](capacity=2)
+        self._elements.append(v1)
+        self._elements.append(v2)
 
     @always_inline
     fn __init__(
         inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-        owned v4: DynamicTuple[T, D],
+        owned v1: Self.Element,
+        owned v2: Self.Element,
+        owned v3: Self.Element,
     ):
-        self.elts = DynamicVector[Self.Element](capacity=4)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
-        self.elts.append(v4.content)
+        self._elements = DynamicVector[Self.Element](capacity=3)
+        self._elements.append(v1)
+        self._elements.append(v2)
+        self._elements.append(v3)
 
     @always_inline
     fn __init__(
         inout self,
-        owned v1: DynamicTuple[T, D],
-        owned v2: DynamicTuple[T, D],
-        owned v3: DynamicTuple[T, D],
-        owned v4: DynamicTuple[T, D],
-        owned v5: DynamicTuple[T, D],
+        owned v1: Self.Element,
+        owned v2: Self.Element,
+        owned v3: Self.Element,
+        owned v4: Self.Element,
     ):
-        self.elts = DynamicVector[Self.Element](capacity=5)
-        self.elts.append(v1.content)
-        self.elts.append(v2.content)
-        self.elts.append(v3.content)
-        self.elts.append(v4.content)
-        self.elts.append(v5.content)
+        self._elements = DynamicVector[Self.Element](capacity=4)
+        self._elements.append(v1)
+        self._elements.append(v2)
+        self._elements.append(v3)
+        self._elements.append(v4)
+
+    @always_inline
+    fn __init__(
+        inout self,
+        owned v1: Self.Element,
+        owned v2: Self.Element,
+        owned v3: Self.Element,
+        owned v4: Self.Element,
+        owned v5: Self.Element,
+    ):
+        self._elements = DynamicVector[Self.Element](capacity=5)
+        self._elements.append(v1)
+        self._elements.append(v2)
+        self._elements.append(v3)
+        self._elements.append(v4)
+        self._elements.append(v5)
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self.elts = existing.elts ^
+        self._elements = existing._elements ^
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
-        self.elts = existing.elts
+        self._elements = existing._elements
 
     @always_inline
-    fn append(inout self: Self, value: DynamicTuple[T, D]):
-        self.elts.append(value.content)
+    fn append(inout self: Self, value: Self.Element):
+        self._elements.append(value)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self.Element:
-        if index < 0 or index > len(self.elts):
+        if index < 0 or index > len(self._elements):
             trap("Index out of bounds.")
-        return self.elts[index]
+        return self._elements[index]
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Self.Element):
-        if index < 0 or index > len(self.elts):
+        if index < 0 or index > len(self._elements):
             trap("Index out of bounds.")
-        self.elts[index] = val
+        self._elements[index] = val
 
     @always_inline
     fn __len__(self) -> Int:
-        return len(self.elts)
+        return len(self._elements)
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
@@ -159,11 +157,11 @@ struct DynamicTupleBase[
         else:
             var result = String("(")
             if v.isa[Self]():
-                var elts = v.get[Self]()[].elts
-                for i in range(len(elts)):
-                    var e: Self.Element = elts[i]
+                var _elements = v.get[Self]()[]._elements
+                for i in range(len(_elements)):
+                    var e: Self.Element = _elements[i]
                     result += Self.to_string(e)
-                    if i < len(elts) - 1:
+                    if i < len(_elements) - 1:
                         result += ", "
             return result + ")"
 
@@ -199,40 +197,56 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     CollectionElement, Sized, Stringable, EqualityComparable
 ):
     alias BaseType = DynamicTupleBase[T, D]
-    alias ElementType = Self.BaseType.Element
+    alias Element = Self.BaseType.Element
     alias IterType = _DynamicTupleIter[T, D]
 
-    var content: Self.ElementType
-
-    @always_inline
-    fn __init__(inout self: Self, value: T):
-        self.content = value
+    var _value: Self.Element
 
     @always_inline
     fn __init__(inout self: Self):
-        self.content = Self.BaseType()
+        self._value = Self.BaseType()
+
+    # FIXME: This constructor shouldn't be necessary
+    @always_inline
+    fn __init__(inout self: Self, value: T):
+        self._value = value
+
+    # FIXME: This constructor is never called
+    @always_inline
+    fn __init__(inout self: Self, value: Self.Element):
+        self._value = value
+
+    @always_inline
+    fn __copyinit__(inout self: Self, value: Self):
+        self._value = value._value
+
+    @always_inline
+    fn __moveinit__(inout self: Self, owned value: Self):
+        self._value = value._value ^
 
     @always_inline
     fn __init__(inout self: Self, v1: Self):
-        self.content = Self.BaseType(v1)
+        self._value = Self.BaseType(v1._value)
 
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self):
-        self.content = Self.BaseType(v1, v2)
+        self._value = Self.BaseType(v1._value, v2._value)
 
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self):
-        self.content = Self.BaseType(v1, v2, v3)
+        self._value = Self.BaseType(v1._value, v2._value, v3._value)
 
     @always_inline
     fn __init__(inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self):
-        self.content = Self.BaseType(v1, v2, v3, v4)
+        self._value = Self.BaseType(v1._value, v2._value, v3._value, v4._value)
 
     @always_inline
     fn __init__(
         inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self
     ):
-        self.content = Self.BaseType(v1, v2, v3, v4, v5)
+        self._value = Self.BaseType(
+            v1._value, v2._value, v3._value, v4._value, v5._value
+        )
 
     @always_inline
     fn __len__(self) -> Int:
@@ -243,23 +257,23 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
-        return Self.IterType(0, self.content)
+        return Self.IterType(0, self._value)
 
     @always_inline
     fn is_tuple(self) -> Bool:
-        return self.content.isa[Self.BaseType]()
+        return self._value.isa[Self.BaseType]()
 
     @always_inline
     fn tuple(self) -> Self.BaseType:
-        return self.content.get[Self.BaseType]()[]
+        return self._value.get[Self.BaseType]()[]
 
     @always_inline
     fn is_value(self) -> Bool:
-        return self.content.isa[T]()
+        return self._value.isa[T]()
 
     @always_inline
     fn value(self) -> T:
-        return self.content.get[T]()[]
+        return self._value.get[T]()[]
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
@@ -268,8 +282,9 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
                 trap("Index should be 0 for value items.")
             return self.value()
         else:
+            # FIXME: we should be able to return Self(self.tuple()[index])
             var r = Self()
-            r.content = self.tuple()[index]
+            r._value = self.tuple()[index]
             return r
 
     @always_inline
@@ -277,24 +292,24 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         if self.is_value() and val.is_value():
             if index != 0:
                 trap("Index should be 0 for value items.")
-            self.content = val.value()
+            self._value = val.value()
         else:
-            var new_content: Self.BaseType = self.tuple()
+            var new_value: Self.BaseType = self.tuple()
             if val.is_value():
-                new_content[index] = val.value()
+                new_value[index] = val.value()
             else:
-                new_content[index] = val.tuple()
-            self.content = new_content
+                new_value[index] = val.tuple()
+            self._value = new_value
 
     @always_inline
     fn append(inout self, owned v1: Self):
-        var new_content: Self.BaseType
+        var new_value: Self.BaseType
         if self.is_tuple():
-            new_content = self.tuple()
+            new_value = self.tuple()
         else:
-            new_content = Self.BaseType(self.value())
-        new_content.append(v1)
-        self.content = new_content
+            new_value = Self.BaseType(self.value())
+        new_value.append(v1._value)
+        self._value = new_value
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -310,4 +325,4 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __str__(self) -> String:
-        return Self.BaseType.to_string(self.content)
+        return Self.BaseType.to_string(self._value)
