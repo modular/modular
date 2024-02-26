@@ -75,6 +75,37 @@ fn test_tuple_basic():
     print(IntTuple(1, 2, IntTuple(3, 5)) == IntTuple(1, 2, IntTuple(3, 4)))
 
 
+# CHECK-LABEL: test_tuple_slicing
+fn test_tuple_slicing():
+    print("== test_tuple_slicing")
+    # CHECK: 4
+    # CHECK: 3
+    # CHECK: (1, 2, 3)
+    # CHECK: (1, 3)
+    # CHECK: (0, 1, 2, 3, 4)
+    # CHECK: (0, 2, 4)
+    # CHECK: (2, 3, 4)
+    # CHECK: (2, 3)
+    alias tr = IntTuple(0, 1, 2, 3, 4)
+    alias sl0 = tr[-1]
+    alias sl1 = tr[-2]
+    alias sl2 = tr[1:4]
+    alias sl3 = tr[1:5:2]
+    alias sl4 = tr[:]
+    alias sl5 = tr[:5:2]
+    alias sl6 = tr[-3:]
+    # FIXME: turning var to alias crashes the compiler
+    var sl7 = tr[-3:-1]
+    print(sl0)
+    print(sl1)
+    print(sl2)
+    print(sl3)
+    print(sl4)
+    print(sl5)
+    print(sl6)
+    print(sl7)
+
+
 # CHECK-LABEL: test_tuple_basic_ops
 fn test_tuple_basic_ops():
     print("== test_tuple_basic_ops")
@@ -198,6 +229,7 @@ fn test_idx2crd():
 
 fn main():
     test_tuple_basic()
+    test_tuple_slicing()
     test_tuple_basic_ops()
     test_shape_div()
     test_crd2idx()

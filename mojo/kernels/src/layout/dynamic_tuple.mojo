@@ -35,22 +35,22 @@ struct _DynamicTupleIter[
     alias BaseType = DynamicTupleBase[T, D]
     alias Element = Self.BaseType.Element
 
-    var index: Int
+    var idx: Int
     var src: Self.Element
 
     @always_inline
     fn __next__(inout self) -> Self.Element:
-        self.index += 1
+        self.idx += 1
         if self.src.isa[T]():
             return self.src.get[T]()[]
         else:
-            return self.src.get[Self.BaseType]()[][self.index - 1]
+            return self.src.get[Self.BaseType]()[][self.idx - 1]
 
     @always_inline
     fn __len__(self) -> Int:
         return (
             1 if self.src.isa[T]() else len(self.src.get[Self.BaseType]()[])
-        ) - self.index
+        ) - self.idx
 
 
 struct DynamicTupleBase[
@@ -64,6 +64,8 @@ struct DynamicTupleBase[
     @always_inline
     fn __init__(inout self: Self):
         self._elements = DynamicVector[Self.Element]()
+
+    # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
 
     @always_inline
     fn __init__(inout self: Self, v: Self.Element):
@@ -131,16 +133,40 @@ struct DynamicTupleBase[
         self._elements.append(value)
 
     @always_inline
-    fn __getitem__(self, index: Int) -> Self.Element:
-        if index < 0 or index > len(self._elements):
+    fn __getitem__(self, owned idx: Int) -> Self.Element:
+        if idx < 0:
+            idx = len(self) + idx
+
+        if idx < 0 or idx > len(self._elements):
             trap("Index out of bounds.")
-        return self._elements[index]
+        return self._elements[idx]
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Self.Element):
-        if index < 0 or index > len(self._elements):
+    fn _adjust_span(self, owned span: Slice) -> Slice:
+        if span.start < 0:
+            span.start = len(self) + span.start
+
+        if not span._has_end():
+            span.end = len(self)
+        elif span.end < 0:
+            span.end = len(self) + span.end
+
+        return span
+
+    @always_inline
+    fn __getitem__(self, owned span: Slice) -> Self:
+        span = self._adjust_span(span)
+        var result = Self()
+        result._elements.reserve(len(span))
+        for i in range(span.start, span.end, span.step):
+            result._elements.append(self[i])
+        return result
+
+    @always_inline
+    fn __setitem__(inout self, idx: Int, val: Self.Element):
+        if idx < 0 or idx > len(self._elements):
             trap("Index out of bounds.")
-        self._elements[index] = val
+        self._elements[idx] = val
 
     @always_inline
     fn __len__(self) -> Int:
@@ -224,6 +250,8 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     fn __moveinit__(inout self: Self, owned value: Self):
         self._value = value._value ^
 
+    # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
+
     @always_inline
     fn __init__(inout self: Self, v1: Self):
         self._value = Self.BaseType(v1._value)
@@ -276,29 +304,39 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         return self._value.get[T]()[]
 
     @always_inline
-    fn __getitem__(self, index: Int) -> Self:
+    fn __getitem__(self, idx: Int) -> Self:
         if self.is_value():
-            if index != 0:
+            if idx != 0:
                 trap("Index should be 0 for value items.")
             return self.value()
-        else:
-            # FIXME: we should be able to return Self(self.tuple()[index])
-            var r = Self()
-            r._value = self.tuple()[index]
-            return r
+
+        # FIXME: we should be able to return Self(self.tuple()[idx])
+        var r = Self()
+        r._value = self.tuple()[idx]
+        return r
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Self):
+    fn __getitem__(self, span: Slice) -> Self:
+        if self.is_value():
+            trap("Can't slice a value.")
+
+        var r = Self()
+        r._value = self.tuple()[span]
+        return r
+
+    @always_inline
+    fn __setitem__(inout self, idx: Int, val: Self):
         if self.is_value() and val.is_value():
-            if index != 0:
+            if idx != 0:
                 trap("Index should be 0 for value items.")
+
             self._value = val.value()
         else:
             var new_value: Self.BaseType = self.tuple()
             if val.is_value():
-                new_value[index] = val.value()
+                new_value[idx] = val.value()
             else:
-                new_value[index] = val.tuple()
+                new_value[idx] = val.tuple()
             self._value = new_value
 
     @always_inline
