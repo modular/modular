@@ -15,6 +15,7 @@
 #include "../MojoLLDB/ScriptingBridge/SBClassUtils.h"
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
+#include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -46,13 +47,14 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace M;
 using namespace M::KGEN::Mojo;
+using namespace M::Mojo::Jupyter;
 
 /// An output function used to send output to the Jupyter kernel. The first
 /// argument is the output type, and the second is the output string.
-using OutputFn = void (*)(const char *, const char *);
+using RawOutputFn = void (*)(const char *, const char *);
 
 /// A function used to send code completion results to the Jupyter kernel.
-using CompletionFn = void (*)(const char *);
+using RawCompletionFn = void (*)(const char *);
 
 /// Return the persistent expression state for Mojo.
 static MojoPersistentExpressionState *
@@ -61,27 +63,11 @@ getPersistentExpressionState(const TargetSP &target) {
       target->GetPersistentExpressionStateForLanguage(lldb::eLanguageTypeMojo));
 }
 
-/// These values were chosen because both `finished` and `error` are 'truthy',
-/// and indicate that the execution has finished. Therefore, only clients that
-/// care if there was an error have to do anything with it.
-///
-/// When updating this enum, please take care to also update the enums in
-/// mojo-jupyter-executor/main.cpp and mojokernel.py.
-enum ExecutionFinishedState : int {
-  kNotFinished = 0,
-  kFinishedSuccessfully = 1,
-  kFinishedError = 2,
-};
-
 //===----------------------------------------------------------------------===//
 // Symbol Visibility
 //===----------------------------------------------------------------------===//
 
-#if (defined(_WIN32) || defined(__CYGWIN__))
-#define EXPORT extern "C" __declspec(dllexport)
-#else
-#define EXPORT extern "C" __attribute__((visibility("default")))
-#endif
+#define EXPORT extern "C" MODULAR_JUPYTER_VISIBILITY_EXPORT
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
@@ -100,6 +86,7 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     ref().SetColorizeErrors(true);
   }
 };
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoKernel
@@ -107,8 +94,7 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
 
 /// This class contains all of the various state needed to run the Mojo Jupyter
 /// kernel.
-class MojoKernel {
-public:
+struct MojoKernel::Impl {
   /// Information related to a specific kernel cell.
   struct KernelCellState {
     KernelCellState(StringRef id) : id(id) {}
@@ -133,9 +119,10 @@ public:
     KernelCellState &cellState;
   };
 
-  MojoKernel(OutputFn outputFn)
-      : outputFn(outputFn), mojoExpressionListener(Listener::MakeListener(
-                                "mojo-type-system.listener")) {
+  Impl(OutputFn outputFn)
+      : outputFn(std::move(outputFn)),
+        mojoExpressionListener(
+            Listener::MakeListener("mojo-type-system.listener")) {
     // Check for an environment variable we'll use to specify the log file path.
     std::optional<std::string> logFilePath =
         llvm::sys::Process::GetEnv("MOJO_JUPYTER_LOG_FILE");
@@ -158,7 +145,7 @@ public:
                                " for logging: " + ec.message());
   }
 
-  ~MojoKernel() {
+  ~Impl() {
     if (process->IsValid())
       process->Destroy(/*force_kill=*/true);
     SBDebugger sbdebugger = SBDebuggerUtils::create(debugger);
@@ -168,15 +155,15 @@ public:
 
   /// Initialize the kernel.
   ///
-  /// If `lldbInitFile` is not null, LLDB will silently execute all the commands
-  /// in this file upon initialization of the kernel.
-  LogicalResult initialize(const char *mojoReplExe, const char *lldbInitFile);
+  /// If `lldbInitFile` is not empty, LLDB will silently execute all the
+  /// commands in this file upon initialization of the kernel.
+  LogicalResult initialize(StringRef mojoReplExe, StringRef lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.
   /// `storeHistory` indicates if variables and state from this expression
   /// should be persisted. Returns the state of the expression execution.
-  LogicalResult startExecution(StringRef cellId, const char *expr,
-                               int storeHistory = 0);
+  ExecutionFinishedState startExecution(StringRef cellId, StringRef expr,
+                                        bool storeHistory);
 
   /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
@@ -193,7 +180,7 @@ public:
 
 private:
   /// Initialize the target.
-  LogicalResult initializeTarget(const char *mojoReplExe);
+  LogicalResult initializeTarget(StringRef mojoReplExe);
 
   /// Launch the mojo-repl-entry-point process.
   LogicalResult launchReplProcess();
@@ -257,15 +244,43 @@ private:
   /// A bool indicating if matplotlib has been initialized.
   bool matplotlibInitialized = false;
 };
-} // namespace
+
+MojoKernel::MojoKernel(OutputFn outputFn)
+    : impl(new Impl(std::move(outputFn))) {}
+MojoKernel::~MojoKernel() = default;
+
+LogicalResult MojoKernel::initialize(StringRef mojoReplExe,
+                                     StringRef lldbInitFile) {
+  return impl->initialize(mojoReplExe, lldbInitFile);
+}
+
+ExecutionFinishedState MojoKernel::startExecution(StringRef cellId,
+                                                  StringRef expr,
+                                                  bool storeHistory) {
+  return impl->startExecution(cellId, expr, storeHistory);
+}
+
+ExecutionFinishedState MojoKernel::checkExecutionFinished() {
+  return impl->checkExecutionFinished();
+}
+
+void MojoKernel::interruptExecution() { impl->interruptExecution(); }
+
+void MojoKernel::codeComplete(StringRef code, int completionPos,
+                              CompletionFn completionFn) {
+  impl->codeComplete(code, completionPos, completionFn);
+}
 
 //===----------------------------------------------------------------------===//
 // EntryPoint API
 //===----------------------------------------------------------------------===//
 
-EXPORT MojoKernel *initMojoKernel(OutputFn outputFn, const char *mojoReplExe,
+EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
                                   const char *lldbInitFile) {
-  std::unique_ptr<MojoKernel> kernel = std::make_unique<MojoKernel>(outputFn);
+  std::unique_ptr<MojoKernel> kernel =
+      std::make_unique<MojoKernel>([=](StringRef type, StringRef output) {
+        outputFn(type.data(), output.data());
+      });
   if (failed(kernel->initialize(mojoReplExe, lldbInitFile)))
     return nullptr;
   return kernel.release();
@@ -273,9 +288,7 @@ EXPORT MojoKernel *initMojoKernel(OutputFn outputFn, const char *mojoReplExe,
 
 EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
                               const char *code, int storeHistory) {
-  if (failed(kernel->startExecution(cellId, code, storeHistory)))
-    return ExecutionFinishedState::kFinishedError;
-  return ExecutionFinishedState::kNotFinished;
+  return kernel->startExecution(cellId, code, storeHistory);
 }
 
 EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
@@ -288,8 +301,10 @@ EXPORT void interruptMojoExecution(MojoKernel *kernel) {
 
 EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
                                   int completionPos,
-                                  CompletionFn completionFn) {
-  kernel->codeComplete(code, completionPos, completionFn);
+                                  RawCompletionFn completionFn) {
+  kernel->codeComplete(code, completionPos, [=](StringRef completion) {
+    completionFn(completion.data());
+  });
 }
 
 EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
@@ -353,8 +368,8 @@ static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
   }
 }
 
-LogicalResult MojoKernel::initialize(const char *mojoReplExe,
-                                     const char *lldbInitFile) {
+LogicalResult MojoKernel::Impl::initialize(StringRef mojoReplExe,
+                                           StringRef lldbInitFile) {
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
   // support loading public plugins like MojoLLDB.
@@ -365,7 +380,7 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   debugger->SetAsyncExecution(false);
 
   // If we got an LLDB init file, we execute it before anything else.
-  if (lldbInitFile)
+  if (!lldbInitFile.empty())
     runLLDBInitFile(*debugger, FileSpec(lldbInitFile));
 
   // For security reasons on public Jupyter notebooks, we want to remove some
@@ -403,7 +418,7 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   return success();
 }
 
-LogicalResult MojoKernel::initializeTarget(const char *mojoReplExe) {
+LogicalResult MojoKernel::Impl::initializeTarget(StringRef mojoReplExe) {
   // Compute a generic triple for the REPL target.
   llvm::Triple targetTriple = HostInfo::GetArchitecture().GetTriple();
   llvm::SmallString<16> osName;
@@ -432,7 +447,7 @@ LogicalResult MojoKernel::initializeTarget(const char *mojoReplExe) {
   return success();
 }
 
-LogicalResult MojoKernel::launchReplProcess() {
+LogicalResult MojoKernel::Impl::launchReplProcess() {
   if (llvm::Error err = MojoREPL::launchEntryPointProcess(*target, *debugger)) {
     return reportKernelError(
         "Failed to launch `mojo-repl-entry-point` process: " +
@@ -448,10 +463,11 @@ LogicalResult MojoKernel::launchReplProcess() {
 // Matplotlib
 //===----------------------------------------------------------------------===//
 
-LogicalResult MojoKernel::initializeMatplotlib() {
+LogicalResult MojoKernel::Impl::initializeMatplotlib() {
   // Initialize the matplotlib backend by running the initialization code with
   // the REPL.
-  if (failed(startExecution("matplotlib", kInitMatplotlibStr)))
+  if (startExecution("matplotlib", kInitMatplotlibStr,
+                     /*storeHistory=*/false) == kFinishedError)
     return failure();
 
   // Wait for the execution to finish.
@@ -466,12 +482,13 @@ LogicalResult MojoKernel::initializeMatplotlib() {
 // Execution
 //===----------------------------------------------------------------------===//
 
-LogicalResult MojoKernel::startExecution(StringRef cellId, const char *expr,
-                                         int storeHistory) {
+ExecutionFinishedState MojoKernel::Impl::startExecution(StringRef cellId,
+                                                        StringRef expr,
+                                                        bool storeHistory) {
   // Before we start executing, check to see if we need to initialize anything.
   if (!std::exchange(matplotlibInitialized, true)) {
     if (failed(initializeMatplotlib()))
-      return failure();
+      return kFinishedError;
   }
   executionState.emplace(initializeCellForExecution(cellId));
 
@@ -507,10 +524,10 @@ LogicalResult MojoKernel::startExecution(StringRef cellId, const char *expr,
         // Mark the execution as finished.
         executionState->finished = true;
       });
-  return success();
+  return kNotFinished;
 }
 
-void MojoKernel::flushLLDBStreams() {
+void MojoKernel::Impl::flushLLDBStreams() {
   // Reading the following streams from LLDB is thread safe becaause each reader
   // has its own mutex.
 
@@ -561,7 +578,7 @@ void MojoKernel::flushLLDBStreams() {
   }
 }
 
-ExecutionFinishedState MojoKernel::checkExecutionFinished() {
+ExecutionFinishedState MojoKernel::Impl::checkExecutionFinished() {
   if (!executionState)
     return kFinishedSuccessfully;
 
@@ -610,14 +627,14 @@ ExecutionFinishedState MojoKernel::checkExecutionFinished() {
   return finishState;
 }
 
-void MojoKernel::interruptExecution() { process->SendAsyncInterrupt(); }
+void MojoKernel::Impl::interruptExecution() { process->SendAsyncInterrupt(); }
 
 //===----------------------------------------------------------------------===//
 // Code Completion
 //===----------------------------------------------------------------------===//
 
-void MojoKernel::codeComplete(StringRef code, int completionPos,
-                              CompletionFn completionFn) {
+void MojoKernel::Impl::codeComplete(StringRef code, int completionPos,
+                                    CompletionFn completionFn) {
   std::vector<CodeCompletionResult> results =
       MojoREPL::handleREPLCodeComplete(*target, code, completionPos);
   for (const CodeCompletionResult &result : results)

@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT/Registration.h"
+#include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/Support/Configuration.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -19,91 +19,14 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
-#include <filesystem>
 #include <iostream>
 
 using namespace M;
+using namespace M::Mojo::Jupyter;
 
 /// The leak sanitizer shows errors because we load libpython through this
 /// plugin.
 extern "C" const char *__asan_default_options() { return "detect_leaks=0"; }
-
-//===----------------------------------------------------------------------===//
-// Kernel C-API
-//===----------------------------------------------------------------------===//
-
-/// This is copied from Kernel.cpp so we have symbolic names for the possible
-/// output states.
-enum ExecutionFinishedState : int {
-  kNotFinished = 0,
-  kFinishedSuccessfully = 1,
-  kFinishedError = 2,
-};
-
-using CompletionFn = void (*)(const char *);
-using OutputFn = void (*)(const char *, const char *);
-
-using OpaqueMojoKernel = void *;
-
-MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
-                                               const char *mojoReplExe,
-                                               const char *lldbInitFile);
-MODULAR_EXPORT int startMojoExecution(OpaqueMojoKernel kernel,
-                                      const char *cellId, const char *code,
-                                      int storeHistory);
-MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel);
-MODULAR_EXPORT void checkMojoCodeComplete(OpaqueMojoKernel kernel,
-                                          const char *code, int completionPos,
-                                          CompletionFn completionFn);
-MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
-
-//===----------------------------------------------------------------------===//
-// MojoKernel
-//===----------------------------------------------------------------------===//
-
-namespace {
-class MojoKernel {
-public:
-  MojoKernel(OutputFn outputFn, const char *mojoReplExe,
-             const char *lldbInitFile)
-      : kernel(initMojoKernel(outputFn, mojoReplExe, lldbInitFile)) {}
-  ~MojoKernel() {
-    if (kernel)
-      destroyMojoKernel(kernel);
-  }
-
-  /// The kernel is valid if it is non-null.
-  operator bool() const { return kernel; }
-
-  //===--------------------------------------------------------------------===//
-  // Execution
-  //===--------------------------------------------------------------------===//
-
-  /// Start a new cell execution.
-  int startExecution(const char *cellId, const char *code) {
-    return startMojoExecution(kernel, cellId, code, /*storeHistory=*/true);
-  }
-
-  /// Check if the current execution has finished.
-  int hasExecutionFinished() const {
-    return checkMojoExecutionFinished(kernel);
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Code Completion
-  //===--------------------------------------------------------------------===//
-
-  /// Perform code completion at the given position in the code.
-  void codeComplete(const char *code, int completionPos,
-                    CompletionFn completionFn) {
-    checkMojoCodeComplete(kernel, code, completionPos, completionFn);
-  }
-
-private:
-  /// The internal kernel object returned from the jupyter kernel.
-  OpaqueMojoKernel kernel;
-};
-} // namespace
 
 /// Forward declaration so that the REPL mode can call into the notebook mode.
 static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
@@ -158,8 +81,8 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
     if (!StringRef(line).rtrim().empty())
       continue;
 
-    if (!kernel.startExecution(cellPrefix.c_str(), expression.c_str())) {
-      while (!kernel.hasExecutionFinished())
+    if (!kernel.startExecution(cellPrefix, expression)) {
+      while (!kernel.checkExecutionFinished())
         continue;
     }
     expression.clear();
@@ -173,7 +96,7 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
 /// Check the code completion results for the end position of the given code
 /// cell. The computed completion results are printed to outs.
 static void checkCodeCompletion(MojoKernel &kernel, StringRef code) {
-  kernel.codeComplete(code.data(), code.size(), [](const char *completion) {
+  kernel.codeComplete(code, code.size(), [](StringRef completion) {
     llvm::outs() << "completion: " << completion << "\n";
   });
 }
@@ -238,7 +161,7 @@ static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
 
     // Otherwise, execute the cell code.
     std::string cellName = ("notebook_cell_" + Twine(index)).str();
-    int finishState = kernel.startExecution(cellName.c_str(), code.data());
+    int finishState = kernel.startExecution(cellName, code);
 
     // If we finish with an error and we're in debug mode, drop into REPL mode
     // in the current cell.
@@ -252,7 +175,7 @@ static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
         return failure();
       }
 
-      finishState = kernel.hasExecutionFinished();
+      finishState = kernel.checkExecutionFinished();
     }
   }
   return success();
@@ -286,11 +209,11 @@ int main(int argc, char *argv[]) {
   StringRef exePath = config->getREPLEntryPoint();
 
   // Initialize the kernel.
-  MojoKernel kernel(
-      [](const char *kind, const char *msg) {
-        llvm::outs() << "[" << kind << "] " << msg << "\n";
-      },
-      exePath.data(), !lldbInitFile.empty() ? lldbInitFile.c_str() : nullptr);
+  MojoKernel kernel([](StringRef kind, StringRef msg) {
+    llvm::outs() << "[" << kind << "] " << msg << "\n";
+  });
+  if (failed(kernel.initialize(exePath, lldbInitFile)))
+    return 1;
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
   if (notebookPath.getNumOccurrences()) {
