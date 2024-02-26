@@ -1288,6 +1288,103 @@ OpFoldResult IntLiteralToFloatLiteralOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralCmp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
+  FloatLiteralAttr lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
+  FloatLiteralAttr rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
+  if (!lAttr || !rAttr)
+    return {};
+  FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
+  FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
+  IPRational l;
+  IPRational r;
+  if (lSpecial == FloatLiteralSpecialValues::Normal) {
+    assert(lAttr.getRational().has_value() &&
+           "rational does not have a value when special value is normal");
+    l = lAttr.getRational().value();
+  }
+  if (rSpecial == FloatLiteralSpecialValues::Normal) {
+    assert(rAttr.getRational().has_value() &&
+           "rational does not have a value when special value is normal");
+    r = rAttr.getRational().value();
+  }
+
+  std::function<bool(FloatLiteralCmpPred, FloatLiteralSpecialValues,
+                     FloatLiteralSpecialValues, IPRational, IPRational)>
+      getResult = [&](const FloatLiteralCmpPred &pred,
+                      const FloatLiteralSpecialValues &lSpecial,
+                      const FloatLiteralSpecialValues &rSpecial,
+                      const IPRational &l, const IPRational &r) -> bool {
+    switch (pred) {
+    case FloatLiteralCmpPred::Eq:
+      if (lSpecial == rSpecial) {
+        if (lSpecial == FloatLiteralSpecialValues::Normal)
+          return l == r;
+        return lSpecial != FloatLiteralSpecialValues::Nan;
+      }
+      // Python treats -0 and 0 as equal.
+      if (lSpecial == FloatLiteralSpecialValues::NegZero &&
+          rSpecial == FloatLiteralSpecialValues::Normal && r == 0)
+        return true;
+      if (rSpecial == FloatLiteralSpecialValues::NegZero &&
+          lSpecial == FloatLiteralSpecialValues::Normal && l == 0)
+        return true;
+      return false;
+    case FloatLiteralCmpPred::Ne:
+      return !getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
+    case FloatLiteralCmpPred::Lt:
+      switch (lSpecial) {
+      case FloatLiteralSpecialValues::Normal:
+        switch (rSpecial) {
+        case FloatLiteralSpecialValues::Normal:
+          return l < r;
+        case FloatLiteralSpecialValues::Inf:
+          return true;
+        case FloatLiteralSpecialValues::NegZero:
+          return l < 0;
+        default:
+          return false;
+        }
+      case FloatLiteralSpecialValues::NegZero:
+        switch (rSpecial) {
+        case FloatLiteralSpecialValues::Normal:
+          // This would be <=, but Python treats -0 as equal to 0, so the RHS
+          // needs to be strictly greater than positive zero.
+          return IPRational(0) < r;
+        case FloatLiteralSpecialValues::Inf:
+          return true;
+        default:
+          return false;
+        }
+      case FloatLiteralSpecialValues::Inf:
+        return false;
+      case FloatLiteralSpecialValues::NegInf:
+        return (rSpecial == FloatLiteralSpecialValues::NegInf) ? false : true;
+      case FloatLiteralSpecialValues::Nan:
+        return false;
+      }
+    case FloatLiteralCmpPred::Le:
+      return getResult(FloatLiteralCmpPred::Lt, lSpecial, rSpecial, l, r) ||
+             getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
+    case FloatLiteralCmpPred::Gt:
+      if (lSpecial == FloatLiteralSpecialValues::Nan ||
+          rSpecial == FloatLiteralSpecialValues::Nan)
+        return false;
+      return !getResult(FloatLiteralCmpPred::Le, lSpecial, rSpecial, l, r);
+    case FloatLiteralCmpPred::Ge:
+      return getResult(FloatLiteralCmpPred::Gt, lSpecial, rSpecial, l, r) ||
+             getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
+    }
+    llvm_unreachable("invalid cmp predicate");
+  };
+
+  return BoolAttr::get(lAttr.getContext(),
+                       getResult(adaptor.getPred(), lSpecial, rSpecial, l, r));
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 
