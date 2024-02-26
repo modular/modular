@@ -1372,6 +1372,34 @@ def KGEN_IntLiteralToFloatLiteralOp : KGENOp<"int_literal.to_float_literal",
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralCmp
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralCmp : KGENOp<"float_literal.cmp", [Pure]> {
+  let summary = "Comparison operator for float_literals.";
+  let description = [{
+    The `kgen.float_literal.cmp` operator does equality/inequality testing
+    for `!kgen.float_literal` values and returns a bool.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.float_literal.cmp lt(%arg0, %arg1)
+    ```
+  }];
+
+  let arguments = (ins
+    KGEN_FloatLiteralCmpPredAttr:$pred,
+    KGEN_FloatLiteralType:$lhs,
+    KGEN_FloatLiteralType:$rhs
+    );
+  let results = (outs I1:$result);
+
+  let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 

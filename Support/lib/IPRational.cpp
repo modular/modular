@@ -63,9 +63,9 @@ static bool cmp(const IPRational &lhs, const IPRational &rhs, CmpOp whichOp) {
   case CmpOp::kSge:
     return lhs == rhs || cmp(lhs, rhs, CmpOp::kSgt);
   case CmpOp::kSlt:
-    return cmp(rhs, lhs, CmpOp::kSge);
+    return !cmp(lhs, rhs, CmpOp::kSgt) && lhs != rhs;
   case CmpOp::kSle:
-    return cmp(rhs, lhs, CmpOp::kSgt);
+    return lhs == rhs || cmp(lhs, rhs, CmpOp::kSlt);
   }
   llvm_unreachable("Unknown compare operation.");
 }

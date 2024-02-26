@@ -41,6 +41,8 @@ TEST(IPRational, comparison) {
     EXPECT_TRUE(IPRational(i, i) > IPRational(i, i + 1));
     EXPECT_TRUE(IPRational(i + 1, i) == IPRational((i + 1) * 2, i * 2));
   }
+  EXPECT_FALSE(IPRational(1, 2) > IPRational(1, 2));
+  EXPECT_FALSE(IPRational(1, 2) < IPRational(1, 2));
 }
 
 TEST(IPRational, arithmetic) {

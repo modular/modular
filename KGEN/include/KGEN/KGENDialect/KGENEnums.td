@@ -253,4 +253,23 @@ def KGEN_FloatLiteralSpecialValuesAttr :
   EnumAttr<KGENDialect, KGEN_FloatLiteralSpecialValues,
            "float_literal.special_values">;
 
+/// This encodes which specific comparison operation is to be performed
+/// for `kgen.float_literal.cmp` ops.
+def KGEN_FloatLiteralCmpPred : I32EnumAttr<"FloatLiteralCmpPred",
+  "operation specification for FloatLiteral comparison", [
+  I32EnumAttrCase<"Eq", 0, "eq">,
+  I32EnumAttrCase<"Ne", 1, "ne">,
+  I32EnumAttrCase<"Lt", 2, "lt">,
+  I32EnumAttrCase<"Le", 3, "le">,
+  I32EnumAttrCase<"Gt", 4, "gt">,
+  I32EnumAttrCase<"Ge", 5, "ge">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_FloatLiteralCmpPredAttr : EnumAttr<KGENDialect,
+                                            KGEN_FloatLiteralCmpPred,
+                                            "float_literal.cmp_pred">;
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD
