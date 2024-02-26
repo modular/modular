@@ -355,12 +355,12 @@ struct SessionOptions:
 @value
 @register_passable
 struct InferenceSession:
-    var ptr: AnyPointer[_InferenceSessionImpl]
+    var _ptr: AnyPointer[_InferenceSessionImpl]
 
     fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
         var path = _get_engine_path()
         var self = Self._allocateAndInit(path, options._device)
-        return Self {ptr: self}
+        return Self {_ptr: self}
 
     @staticmethod
     fn _allocateAndInit(
@@ -377,8 +377,8 @@ struct InferenceSession:
         Returns:
             An instance of inference session with incremented reference count.
         """
-        _ = __get_address_as_lvalue(self.ptr.value).ref_count.fetch_add(1)
-        return Self {ptr: self.ptr}
+        _ = __get_address_as_lvalue(self._ptr.value).ref_count.fetch_add(1)
+        return Self {_ptr: self._ptr}
 
     fn load_model(
         self, path: Path, config: Optional[LoadOptions] = None
@@ -403,7 +403,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_path(path)
-        return __get_address_as_lvalue(self.ptr.value).load_model(
+        return __get_address_as_lvalue(self._ptr.value).load_model(
             load_config ^, self.copy()
         )
 
@@ -443,7 +443,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_source(module)
-        return __get_address_as_lvalue(self.ptr.value).load_model(
+        return __get_address_as_lvalue(self._ptr.value).load_model(
             load_config ^, self.copy()
         )
 
@@ -461,7 +461,7 @@ struct InferenceSession:
 
         """
         return __get_address_as_lvalue(
-            self.ptr.value
+            self._ptr.value
         ).get_as_engine_tensor_spec(name, spec, self.copy())
 
     fn get_as_engine_tensor_spec(
@@ -483,7 +483,7 @@ struct InferenceSession:
             EngineTensorSpec to be used with Max Engine APIs.
         """
         return __get_address_as_lvalue(
-            self.ptr.value
+            self._ptr.value
         ).get_as_engine_tensor_spec(name, shape, dtype, self.copy())
 
     fn new_tensor_map(self) raises -> TensorMap:
@@ -492,7 +492,7 @@ struct InferenceSession:
         Returns:
             A new instance of TensorMap.
         """
-        return __get_address_as_lvalue(self.ptr.value).new_tensor_map(
+        return __get_address_as_lvalue(self._ptr.value).new_tensor_map(
             self.copy()
         )
 
@@ -501,23 +501,23 @@ struct InferenceSession:
     ](self, tensor: Tensor[type]) raises -> Value:
         """Create a new Value representing data borrowed from given tensor."""
         return __get_address_as_lvalue(
-            self.ptr.value
+            self._ptr.value
         ).new_borrowed_tensor_value(self.copy(), tensor)
 
     fn new_bool_value(self, value: Bool) raises -> Value:
         """Create a new Value representing a Bool."""
-        return __get_address_as_lvalue(self.ptr.value).new_bool_value(
+        return __get_address_as_lvalue(self._ptr.value).new_bool_value(
             self.copy(), value
         )
 
     fn new_list_value(self) raises -> Value:
         """Create a new Value representing an empty list."""
-        return __get_address_as_lvalue(self.ptr.value).new_list_value(
+        return __get_address_as_lvalue(self._ptr.value).new_list_value(
             self.copy()
         )
 
     fn __del__(owned self):
-        if __get_address_as_lvalue(self.ptr.value).ref_count.fetch_sub(1) != 1:
+        if __get_address_as_lvalue(self._ptr.value).ref_count.fetch_sub(1) != 1:
             # There are others holding reference to this session. Keep the
             # session alive and let other reference holders deal with
             # managing it.
@@ -525,5 +525,5 @@ struct InferenceSession:
 
         # Now we know that there is only active reference to this session
         # and that is held by us. So go ahead and call destructor on it.
-        _ = __get_address_as_owned_value(self.ptr.value)
-        self.ptr.free()
+        _ = __get_address_as_owned_value(self._ptr.value)
+        self._ptr.free()

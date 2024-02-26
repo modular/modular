@@ -16,16 +16,16 @@ from ._tensor_spec_impl import CTensorSpec
 
 
 struct EngineTensorSpec(Stringable, Movable):
-    var ptr: CTensorSpec
-    var lib: DLHandle
-    var session: InferenceSession
+    var _ptr: CTensorSpec
+    var _lib: DLHandle
+    var _session: InferenceSession
 
-    alias NewTensorSpecFnName = "M_newTensorSpec"
+    alias _NewTensorSpecFnName = "M_newTensorSpec"
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.ptr = existing.ptr
-        self.lib = existing.lib
-        self.session = existing.session ^
+        self._ptr = existing._ptr
+        self._lib = existing._lib
+        self._session = existing._session ^
 
     fn __init__(
         inout self,
@@ -37,9 +37,9 @@ struct EngineTensorSpec(Stringable, Movable):
         Do not use this function directly.
         Use functions from InferenceSession to create EngineTensorSpec.
         """
-        self.ptr = ptr
-        self.lib = lib
-        self.session = session ^
+        self._ptr = ptr
+        self._lib = lib
+        self._session = session ^
 
     fn __init__(
         inout self,
@@ -54,9 +54,9 @@ struct EngineTensorSpec(Stringable, Movable):
         var name_str = name._as_ptr()
         for i in range(rank):
             shape.push_back(spec[i])
-        self.ptr = call_dylib_func[CTensorSpec](
+        self._ptr = call_dylib_func[CTensorSpec](
             lib,
-            Self.NewTensorSpecFnName,
+            Self._NewTensorSpecFnName,
             shape.data,
             rank,
             EngineDType(dtype),
@@ -64,8 +64,8 @@ struct EngineTensorSpec(Stringable, Movable):
         )
         _ = name
         _ = shape
-        self.lib = lib
-        self.session = session ^
+        self._lib = lib
+        self._session = session ^
 
     fn __init__(
         inout self,
@@ -88,9 +88,9 @@ struct EngineTensorSpec(Stringable, Movable):
                     adjusted_shape.push_back(dynamic_value)
                 else:
                     adjusted_shape.push_back(dim.value())
-            self.ptr = call_dylib_func[CTensorSpec](
+            self._ptr = call_dylib_func[CTensorSpec](
                 lib,
-                Self.NewTensorSpecFnName,
+                Self._NewTensorSpecFnName,
                 adjusted_shape.data,
                 rank,
                 EngineDType(dtype),
@@ -98,9 +98,9 @@ struct EngineTensorSpec(Stringable, Movable):
             )
             _ = adjusted_shape ^
         else:
-            self.ptr = call_dylib_func[CTensorSpec](
+            self._ptr = call_dylib_func[CTensorSpec](
                 lib,
-                Self.NewTensorSpecFnName,
+                Self._NewTensorSpecFnName,
                 CTensorSpec.ptr_type(),
                 CTensorSpec.get_dynamic_rank_value(lib),
                 EngineDType(dtype),
@@ -108,8 +108,8 @@ struct EngineTensorSpec(Stringable, Movable):
             )
         _ = name
         _ = shape
-        self.lib = lib
-        self.session = session ^
+        self._lib = lib
+        self._session = session ^
 
     fn __getitem__(self, idx: Int) raises -> Optional[Int]:
         """Get the dimension at the given index.
@@ -124,11 +124,11 @@ struct EngineTensorSpec(Stringable, Movable):
             Raise error if spec has no static rank.
         """
 
-        if self.ptr.is_dynamically_ranked(self.lib):
+        if self._ptr.is_dynamically_ranked(self._lib):
             raise "spec is dynamically ranked"
 
-        var dim = self.ptr.get_dim_at(idx, self.lib)
-        if dim == CTensorSpec.get_dynamic_dimension_value(self.lib):
+        var dim = self._ptr.get_dim_at(idx, self._lib)
+        if dim == CTensorSpec.get_dynamic_dimension_value(self._lib):
             return None
         return dim
 
@@ -140,7 +140,7 @@ struct EngineTensorSpec(Stringable, Movable):
         """
         if not self.has_rank():
             return None
-        return self.ptr.get_rank(self.lib)
+        return self._ptr.get_rank(self._lib)
 
     fn has_rank(self) -> Bool:
         """Check if the spec has static rank.
@@ -148,7 +148,7 @@ struct EngineTensorSpec(Stringable, Movable):
         Returns:
             True if spec has static rank, else False.
         """
-        return not self.ptr.is_dynamically_ranked(self.lib)
+        return not self._ptr.is_dynamically_ranked(self._lib)
 
     fn get_as_tensor_spec(self) raises -> TensorSpec:
         """Get the Mojo TensorSpec equivalent of Engine TensorSpec.
@@ -167,7 +167,7 @@ struct EngineTensorSpec(Stringable, Movable):
         var rank = rank_or.value()
         for i in range(rank):
             shape.push_back(self[i].value())
-        var dtype = self.ptr.get_dtype(self.lib)
+        var dtype = self._ptr.get_dtype(self._lib)
         var spec = TensorSpec(dtype.to_dtype(), shape)
         return spec
 
@@ -177,7 +177,7 @@ struct EngineTensorSpec(Stringable, Movable):
         Returns:
             Name of the Tensor as String.
         """
-        return self.ptr.get_name(self.lib)
+        return self._ptr.get_name(self._lib)
 
     fn __str__(self) -> String:
         """Gets the String representation of Spec.
@@ -191,7 +191,7 @@ struct EngineTensorSpec(Stringable, Movable):
         var rank_or = self.rank()
         if not rank_or:
             _repr += "None x "
-            _repr += str(self.ptr.get_dtype(self.lib).to_dtype())
+            _repr += str(self._ptr.get_dtype(self._lib).to_dtype())
         else:
             var rank = rank_or.value()
             for i in range(rank):
@@ -205,13 +205,13 @@ struct EngineTensorSpec(Stringable, Movable):
                     _repr += "-1x"
                 else:
                     _repr += str(dim.value()) + "x"
-            _repr += str(self.ptr.get_dtype(self.lib).to_dtype())
+            _repr += str(self._ptr.get_dtype(self._lib).to_dtype())
         _repr += "}"
         return _repr
 
     fn _borrow_ptr(self) -> CTensorSpec:
-        return self.ptr
+        return self._ptr
 
     fn __del__(owned self):
-        self.ptr.free(self.lib)
-        _ = self.session ^
+        self._ptr.free(self._lib)
+        _ = self._session ^
