@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Types for values that can be passed in and out of engine models."""
+
 
 from sys.ffi import DLHandle
 from ._context import CRuntimeContext
@@ -12,6 +14,8 @@ from ._value_impl import CValue, CList
 
 
 struct Value:
+    """Owns a single reference to a value passed in or out of a model."""
+
     var _ptr: CValue
     var _lib: DLHandle
     var _session: InferenceSession
@@ -26,11 +30,26 @@ struct Value:
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Internal use only.
+
+        To create values yourself, use `new_*_value` methods on
+        `InferenceSession`.
+
+        Args:
+            ptr: Internal use only.
+            lib: Internal use only.
+            session: Internal use only.
+        """
         self._ptr = ptr
         self._lib = lib
         self._session = session ^
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Take ownership of the value contained in another `Value`.
+
+        Args:
+            existing: The value to take ownership of.
+        """
         self._ptr = exchange[CValue](
             existing._ptr, DTypePointer[DType.invalid]()
         )
@@ -38,6 +57,7 @@ struct Value:
         self._session = existing._session ^
 
     fn __del__(owned self):
+        """Dispose of this reference to this value."""
         self._ptr.free(self._lib)
         _ = self._session ^
 
@@ -68,7 +88,17 @@ struct Value:
         return EngineTensor(ptr, self._lib, self._session.copy())
 
     fn as_tensor_copy[type: DType](self) raises -> Tensor[type]:
-        """Return a copy of the tensor contained in this value."""
+        """Return a copy of the tensor contained in this value.
+
+        Params:
+            type: The expected DType of the tensor.
+
+        Returns: A copy of the tensor contained in this value.
+
+        Raises:
+            If the value is not a tensor, or the dtype of the tensor value is
+            mismatched with the provided type.
+        """
         return self._as_engine_tensor().tensor[type]()
 
     @staticmethod
@@ -82,7 +112,12 @@ struct Value:
         return Self(ptr, lib, session ^)
 
     fn as_bool(self) -> Bool:
-        """Get the boolean contained in this value."""
+        """Get the boolean contained in this value.
+
+        The result is undefined if this value is not a boolean.
+
+        Returns: Boolean contained in this value.
+        """
         return self._ptr.get_bool(self._lib)
 
     @staticmethod
@@ -97,6 +132,8 @@ struct Value:
 
         Ownership of the list is not transferred.  User must ensure the value
         outlives the list.
+
+        Returns: A `List` borrowing the internal storage of this value.
         """
         var ptr = self._ptr.get_list(self._lib)
         if not ptr.ptr:
@@ -105,6 +142,17 @@ struct Value:
 
 
 struct List(Sized):
+    """Uncounted reference to underlying storage of a list `Value`.
+
+    The user must take special care not to allow the underlying `Value` from
+    which this list was obtained to be destroyed prior to being done with the
+    `List`.  However, items within the list are separately reference-counted,
+    so it is safe to use an item retrieved from the list after the list itself
+    has been destroyed, or to destroy an item that was appended to a list
+    (provided, however, that if the item itself is borrowing data (e.g. a
+    tensor), that that underlying data must remain present).
+    """
+
     var _ptr: CList
     var _lib: DLHandle
     var _session: InferenceSession
@@ -115,11 +163,31 @@ struct List(Sized):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Internal use only.
+
+        To create lists yourself, use `InferenceSession.new_list_value` and
+        then use `Value.as_list` on the resulting value.
+
+        Args:
+            ptr: Internal use only.
+            lib: Internal use only.
+            session: Internal use only.
+        """
         self._ptr = ptr
         self._lib = lib
         self._session = session ^
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Create a new List pointing at the internals of another List.
+
+        Lists do not own anything and are borrowed from the internal storage of
+        a `Value`, so the user must continue to take care to ensure that the
+        `Value` the original `List` was sourced from continues to outlive this
+        new `List` object.
+
+        Args:
+            existing: The List to represent.
+        """
         self._ptr = exchange[CList](
             existing._ptr, DTypePointer[DType.invalid]()
         )
@@ -127,17 +195,47 @@ struct List(Sized):
         self._session = existing._session ^
 
     fn __del__(owned self):
+        """Release the handle to this list.
+
+        The underlying storage remains owned by the `Value` from which this
+        List was obtained.
+        """
         self._ptr.free(self._lib)
         _ = self._session ^
 
     fn __len__(self) -> Int:
+        """Get the length of the list.
+
+        Returns: The length of the list.
+        """
         return self._ptr.get_size(self._lib)
 
     fn __getitem__(self, index: Int) raises -> Value:
+        """Get the value at an index of the list.
+
+        The returned `Value` owns a new reference to the underlying storage of
+        the value, and so the returned item `Value` may be safely used even
+        after the list (and value containing the list) are destroyed.
+
+        Args:
+            index: The index of the item to retrieve within the list.
+
+        Returns: A new reference to an existing value within the list.
+
+        Raises: If the index is out of bounds.
+        """
         var c_value = self._ptr.get_value(self._lib, index)
         if not c_value.ptr:
             raise "list index out of range"
         return Value(c_value, self._lib, self._session.copy())
 
     fn append(self, value: Value):
+        """Append a Value to the list.
+
+        The list will own a new reference to the value, so it is safe to allow
+        `value` to be destroyed after this operation.
+
+        Args:
+            value: The value to append to the list.
+        """
         self._ptr.append(self._lib, value._ptr)
