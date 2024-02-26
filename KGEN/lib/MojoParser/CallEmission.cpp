@@ -557,7 +557,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       /*emitKwType=*/
       [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
         auto diag = shared.emitError(binding.expr->getLoc(), baseName)
-                    << " parameter '" << paramName << "' has " << expectedType
+                    << " parameter " << paramName << " has " << expectedType
                     << " type, but value has type "
                     << ASTType(binding.getValue().getType())
                     << binding.expr->getRange();
@@ -1445,16 +1445,28 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
                                         const ExprNode *expr, CallSyntax syntax,
                                         ValueDest &dest,
                                         bool allowImplicitConversion) {
-  // Init for memory-only types get their self argument implicitly initialized
-  // and passed in as the first argument.
+  // Init gets a self argument passed in as the first argument by-ref.
   ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = origPosOperands;
   CallOperands operands = callOperands;
-  bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
+
+  // As a special extension, register-only types are allowed to return their
+  // self directly as a register value instead of taking a memory value in.
+  // Check to see if the init members in the overload set are the kInitReg form.
+  // TODO: Eliminate special register form.
+  bool hasInitSelfArg = true;
+  if (type.isRegisterPassable(expr->getLoc(), shared)) {
+    for (auto fnDecl : callee.fnDecls) {
+      if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
+          SpecialFunctionKind::kInitReg)
+        hasInitSelfArg = false;
+    }
+  }
+
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
   auto argsAddSelf = [&]() {
     posOperandsWithSelf.clear();
-    if (isMemoryOnly) {
+    if (hasInitSelfArg) {
       posOperandsWithSelf.reserve(posOperands.size() + 1);
 
       // Unfortunately, we can't just use 'type' or the dest LValue as the
@@ -1506,6 +1518,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   }
 
   if (!calleeFn) {
+    dest.resetForError();
+
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).
@@ -1578,7 +1592,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   // If we successfully resolve the overload set, we know the call will succeed,
   // do it. Register-passable and parameter constructor calls do not require
   // result slot allocation.
-  if (!isMemoryOnly)
+  if (!hasInitSelfArg)
     return emitCallUnchecked(calleeFn, operands, dest, expr);
   if (!builder) {
     operands = callOperands;
@@ -1596,14 +1610,18 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   MLValue destMLValue =
       dest.getMLValueForResult(expr->getLoc(), firstArgRVType, *this);
   posOperandsWithSelf[0].ir = destMLValue;
-  if (!destMLValue)
+  if (!destMLValue) {
+    dest.resetForError();
     return {};
+  }
 
   // Emit the call, but not into 'dest', typically init will return None.
   ValueDest indirectDest(dest.getContext());
   CValue result = emitIndirectCall(calleeFn, operands, indirectDest, expr);
-  if (!result)
+  if (!result) {
+    dest.resetForError();
     return {};
+  }
 
   // Now that we've emitted the result into the result buffer, emit a conversion
   // if the expected type and the actual type differ.  This can happen when the

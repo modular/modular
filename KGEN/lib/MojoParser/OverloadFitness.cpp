@@ -1187,7 +1187,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       /*emitKwType=*/
       [&](StringAttr paramName, const ParamBindings::Binding &binding,
           ASTType expectedType) {
-        diag << "callee parameter '" << paramName << "' has "
+        diag << "callee parameter " << paramName << " has "
              << ASTType(expectedType) << " type, but value has type "
              << ASTType(binding.getType()) << binding.expr->getRange();
       },

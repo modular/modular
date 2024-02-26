@@ -202,13 +202,17 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
-  bool isMemoryOnly = !structOp.isRegisterPassable();
+
+  // Are we initializing a mutable 'self' or returning legacy register style.
+  // TODO: Remove legacy initializer support and always generate InitSelf.
+  bool isInitSelf = !argConventions.empty() &&
+                    argConventions.front() == ArgConvention::InitSelf;
 
   // Figure out the type of the 'self' argument/result.
-  Type resultType = isMemoryOnly ? shared.getNoneType() : selfType;
+  Type resultType = isInitSelf ? shared.getNoneType() : selfType;
 
   auto specialFnId =
-      isMemoryOnly ? SpecialFunctionKind::kInit : SpecialFunctionKind::kInitReg;
+      isInitSelf ? SpecialFunctionKind::kInit : SpecialFunctionKind::kInitReg;
 
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
@@ -231,7 +235,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
   // For a memory-only initializer, we emit a bunch of stores to fields indexing
   // self.
-  if (isMemoryOnly) {
+  if (isInitSelf) {
     BlockArgument selfArg = body->getArgument(0);
     assert(selfArg.getType().isa<RefType>());
     for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
@@ -460,7 +464,8 @@ struct ValueInfo {
       auto signature = func.getSignature();
       ArrayRef<Type> inputTypes = signature.getArguments();
       ArrayRef<ArgConvention> convs = signature.getArgConventions();
-      if (isMemoryOnly) {
+      // Drop the 'inout self' argument.
+      if (!convs.empty() && convs.front() == ArgConvention::InitSelf) {
         inputTypes = inputTypes.drop_front();
         convs = convs.drop_front();
       }
@@ -524,11 +529,26 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   LIT::FuncOp destructorFunc;
   LIT::FuncOp init;
   if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {
+    bool isInitSelf = isMemoryOnly;
+    // If we have a register type that is using all InitSelf initializers, then
+    // synthesize this one as InitSelf, otherwise synthesize it as kInitReg.
+    // TODO: Remove legacy initializer support and always generate InitSelf.
+    if (!isMemoryOnly) {
+      auto existingInits =
+          shared.lookupAndResolveDecl("__init__", structDecl.getLoc(), selfType,
+                                      /*searchParentScopes=*/false);
+      for (auto fnDecl : existingInits.getIfSuccess()) {
+        if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
+            SpecialFunctionKind::kInit)
+          isInitSelf = true;
+      }
+    }
+
     SmallVector<Type> argTypes;
     SmallVector<ArgConvention> argConventions;
     SmallVector<StringAttr> argNames;
     SmallVector<PassingKind> argPassingKinds;
-    if (isMemoryOnly) {
+    if (isInitSelf) {
       argTypes.push_back(refToSelf);
       argConventions.push_back(ArgConvention::InitSelf);
       argNames.push_back(StringAttr::get(shared.getContext()));

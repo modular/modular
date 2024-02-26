@@ -489,13 +489,13 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
+  # expected-error @+1 {{'self' in struct '__init__' must be passed 'inout'}}
   def __init__(self): pass
 
   # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
   def __init__() -> Int: pass
 
-  # expected-error @+1 {{'__copyinit__' requires 1 operand}}
+  # expected-error @+1 {{existing value argument must be passed as borrowed}}
   fn __copyinit__(inout self, inout existing: Int): pass
 
   # expected-error @+1 {{self argument cannot be passed by reference}}

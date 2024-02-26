@@ -1085,24 +1085,6 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
   return varDecl;
 }
 
-/// Create a mutable VarDecl for a function argument that captures its value.
-/// argValue specifies the argument with the correct valuetype.
-static VarDeclOp makeArgLValueVarSlot(const CValue &argValue,
-                                      StringAttr argName, ExprEmitter &emitter,
-                                      SMLoc loc) {
-  // Emit the initializer expression into the slot.
-  VarDeclOp varDecl = emitter.emitVarDecl(argName, argValue.getRValueType(),
-                                          emitter.translateLocation(loc),
-                                          VarDeclKind::Implicit);
-
-  // Expr to provide location information.
-  ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
-  if (!emitter.emitBValue({argValue, SyntheticNode(loc)}, dest))
-    dest.resetForError();
-
-  return varDecl;
-};
-
 /// This adds a default return (lit.return of None, potentially converted
 /// to a variant) and emits a EndFuncOp.
 static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
@@ -1215,9 +1197,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // If this is an owned argument in a register, we project it into a vardecl
     // so that it is mutable in the callee.
     if (convention == ArgConvention::OwnedInReg) {
-      setDecl(makeArgLValueVarSlot(SRValue(bbArg), argName, emitter,
-                                   argDecl.getLoc())
-                  .getOperation());
+      setDecl(
+          emitter
+              .makeArgLValueVarSlot(SRValue(bbArg), argName, argDecl.getLoc())
+              .getOperation());
       continue;
     }
 
@@ -1858,8 +1841,8 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   if (convention == ArgConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);
     ExprEmitter emitter(shared, funcDecl, builder);
-    (void)makeArgLValueVarSlot(SRValue(arg), selfName, emitter,
-                               structDecl.getLoc());
+    (void)emitter.makeArgLValueVarSlot(SRValue(arg), selfName,
+                                       structDecl.getLoc());
   }
 
   // Finish off the function with a return + lit.endfunc.
@@ -2045,9 +2028,15 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 /// Given the signature of a trait function, which assumes that the self type is
 /// memory-only, compute the equivalent signature as if the self type is
 /// register-passable.
+///
+/// If isRegInit is true, then we need to transform the expected InitSelf to
+/// a register result form.  This is to support the deprecated register-result
+/// forms of __init__/__copyinit__.
+/// TODO: Remove these special initializer forms.
 static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
                                                      ASTType selfType,
-                                                     bool trivial) {
+                                                     bool trivial,
+                                                     bool isRegInit) {
   // This function does two things: if the self type is in the result slot, it
   // moves it to the return, mindful of error handling, and if it is found in
   // any arguments, it is taken out of memory as appropriate.
@@ -2061,7 +2050,10 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   for (auto [type, conv] :
        llvm::zip(traitSig.getArguments(), traitSig.getArgConventions())) {
     // Check for a `Self`-type result.
-    if (conv == ArgConvention::ByRefResult || conv == ArgConvention::InitSelf) {
+    if (conv == ArgConvention::ByRefResult ||
+        // Rewrite InitSelf if  the type implements init in the deprecated way.
+        // TODO: Remove this support.
+        (conv == ArgConvention::InitSelf && isRegInit)) {
       // Don't modify a byref result of an unrelated type.
       if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
@@ -2183,20 +2175,32 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     bindSigInputs.push_back(ParamDeclRefAttr::get(param));
   callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
 
+  SignatureType calleeSig = cast<LITSignatureType>(callee.getType());
+
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
   SmallVector<FuncOperand> posOperands;
   SmallDenseMap<StringAttr, FuncOperand> kwOperands;
+  bool hasLegacyInitSelfArg = false;
   for (auto [arg, kind, conv, name] :
        llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
                  memSig.getArgConventions(), memSig.getArgNames())) {
     AnyValue value;
     switch (conv) {
-    case ArgConvention::ByRefResult:
     case ArgConvention::InitSelf:
-      // Ignore these.
+      // If the implementation takes the same InitSelf argument then pass it.
+      // If not, this must be the deprecated '-> Self' forms of init/copyinit.
+      if (calleeSig.hasInitSelfArg()) {
+        value = MLValue(arg);
+        break;
+      }
+      // TODO: remove this old forms.
+      hasLegacyInitSelfArg = true;
       continue;
+
+    case ArgConvention::ByRefResult:
+      continue; // Ignore this, it will be assigned to later.
 
     case ArgConvention::ByRef:
       value = MLValue(arg);
@@ -2228,7 +2232,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   bool hasRegisterResult = false;
   if (memSig.hasMemoryOnlyResult())
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
-  else if (memSig.hasInitSelfArg())
+  else if (memSig.hasInitSelfArg() && hasLegacyInitSelfArg)
     dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
   else
     hasRegisterResult = true;
@@ -2405,10 +2409,26 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         }
 
         // Signature resolve the found decls first, so they can be checked.
+        bool isRegInit = false;
         for (ASTDecl *decl : decls) {
           if (failed(shared.declResolver->resolve(
-                  *decl, DeclResolvedness::signature, structDecl.getLoc())))
+                  *decl, DeclResolvedness::signature, structDecl.getLoc()))) {
             hadErrors = true;
+            continue;
+          }
+
+          // If this type implements with the deprecated kInitReg or
+          // kCopyInitReg convention then we'll have to transform the InitSelf
+          // argument for a match.
+          // TODO: Remove these special initializer forms.
+          if (regPassable) {
+            auto specialKind =
+                cast<LIT::FuncOp>(*decl).getSpecialFunctionKind();
+            if (specialKind == SpecialFunctionKind::kInitReg ||
+                specialKind == SpecialFunctionKind::kCopyInitReg ||
+                specialKind == SpecialFunctionKind::kMoveInitReg)
+              isRegInit = true;
+          }
         }
 
         auto [newSignature, bindings] =
@@ -2417,8 +2437,8 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         // register-passable.
         LITSignatureType traitSignature = newSignature;
         if (regPassable) {
-          newSignature =
-              getRegisterPassableSignature(newSignature, selfType, rpTrivial);
+          newSignature = getRegisterPassableSignature(newSignature, selfType,
+                                                      rpTrivial, isRegInit);
         }
 
         // Omit errors for certain special functions where the parser will
@@ -2439,7 +2459,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
                               : nullptr);
         if (!result && emitError)
           allMatchFound = false;
-        if (regPassable)
+        if (regPassable && result)
           regStubs.insert({{name, result.get()}, traitSignature});
       }
     }

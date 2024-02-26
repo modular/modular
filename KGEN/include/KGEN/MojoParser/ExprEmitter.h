@@ -532,6 +532,10 @@ public:
                         VarDeclKind kind);
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
                         VarDeclKind kind);
+
+  // Emit the vardecl shadow for an OwnedInReg argument.
+  VarDeclOp makeArgLValueVarSlot(SRValue argValue, StringAttr argName,
+                                 SMLoc loc);
 };
 
 } // namespace M::KGEN::LIT
