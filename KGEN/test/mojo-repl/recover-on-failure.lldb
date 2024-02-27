@@ -21,7 +21,7 @@ print(value)
 # Test an error diagnosed in the MLIR pass pipeline, not during the parser.
 fn foo() -> Int:
     pass
-# CHECK-STDERR: Expression [5]:2:1: return expected at end of function with results
+# CHECK-STDERR: Expression [5]:2:4: return expected at end of function with results
 
 # Test an error diagnosed in the MLIR pass pipeline, not during the parser.
 fn foo() -> Int:
