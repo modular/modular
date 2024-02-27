@@ -23,15 +23,12 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
         "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
     ]("max.graph_lib")
 
+    if not mof_lib_path_str_ptr:
+        trap("cannot get graph library location from modular.cfg")
+
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-    var pathlen = len(StringRef(mof_lib_path_str_ptr))
-    var mof_lib_path = String(
-        mof_lib_path_str_ptr, pathlen + 1
-    )  # account for the terminator
-
-    if not mof_lib_path:
-        trap("cannot get graph library location from modular.cfg")
+    var mof_lib_path = String._from_bytes(mof_lib_path_str_ptr)
 
     if not Path(mof_lib_path).exists():
         trap("cannot load graph library from " + mof_lib_path)

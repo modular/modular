@@ -221,15 +221,12 @@ struct CompileConfig:
             "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
         ]("max.torch_ext_lib")
 
+        if not torch_ext_lib_path_str_ptr:
+            return None
+
         # This transfers ownership of the underlying data buffer allocated in
         # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-        var pathlen = len(StringRef(torch_ext_lib_path_str_ptr))
-        var torch_ext_lib_path = String(
-            torch_ext_lib_path_str_ptr, pathlen + 1
-        )  # account for the terminator
-
-        if not torch_ext_lib_path:
-            return None
+        var torch_ext_lib_path = String._from_bytes(torch_ext_lib_path_str_ptr)
 
         if not Path(torch_ext_lib_path).exists():
             return None

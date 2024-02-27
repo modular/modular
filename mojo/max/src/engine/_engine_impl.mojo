@@ -19,15 +19,12 @@ fn _get_engine_path() raises -> String:
         "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
     ]("max.engine_lib")
 
+    if not engine_lib_path_str_ptr:
+        raise "cannot get the location of AI engine library from modular.cfg"
+
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
-    var pathlen = len(StringRef(engine_lib_path_str_ptr))
-    var engine_lib_path = String(
-        engine_lib_path_str_ptr, pathlen + 1
-    )  # account for the terminator
-
-    if not engine_lib_path:
-        raise "cannot get the location of AI engine library from modular.cfg"
+    var engine_lib_path = String._from_bytes(engine_lib_path_str_ptr)
 
     if not Path(engine_lib_path).exists():
         raise "AI engine library not found at " + engine_lib_path
