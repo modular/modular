@@ -363,11 +363,8 @@ std::string VariableDeclView::getDeclarationSnippet() const {
 }
 
 llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
-  // TODO: Remove "isVar" from the schema.
-  return llvm::json::Object{{"isVar", true},
-                            {"kind", getKindAsString()},
-                            {"name", getName().str()},
-                            {"type", type}};
+  return llvm::json::Object{
+      {"kind", getKindAsString()}, {"name", getName().str()}, {"type", type}};
 }
 
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
