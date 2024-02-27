@@ -1356,11 +1356,10 @@ static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
         return false;
       }
     case FloatLiteralSpecialValues::Inf:
+    case FloatLiteralSpecialValues::Nan:
       return false;
     case FloatLiteralSpecialValues::NegInf:
       return !isNan(rSpecial) && !isNegInf(rSpecial);
-    case FloatLiteralSpecialValues::Nan:
-      return false;
     }
   case FloatLiteralCmpPred::Le:
     return floatLiteralCmpHelper(FloatLiteralCmpPred::Lt, lSpecial, rSpecial,
@@ -1410,7 +1409,7 @@ OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
-FloatLiteralAdd(FloatLiteralSpecialValues lSpecial,
+floatLiteralAdd(FloatLiteralSpecialValues lSpecial,
                 FloatLiteralSpecialValues rSpecial, IPRational lhs,
                 IPRational rhs) {
   switch (lSpecial) {
@@ -1431,13 +1430,13 @@ FloatLiteralAdd(FloatLiteralSpecialValues lSpecial,
   case FloatLiteralSpecialValues::Normal:
     if (isNormal(rSpecial))
       return {FloatLiteralSpecialValues::Normal, lhs + rhs};
-    return FloatLiteralAdd(rSpecial, lSpecial, rhs, lhs);
+    return floatLiteralAdd(rSpecial, lSpecial, rhs, lhs);
   }
   llvm_unreachable("unknown FloatLiteral special type");
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
-FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
+floatLiteralSub(FloatLiteralSpecialValues lSpecial,
                 FloatLiteralSpecialValues rSpecial, IPRational lhs,
                 IPRational rhs) {
   switch (lSpecial) {
@@ -1446,7 +1445,7 @@ FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
     // multiplication.
     if (isNegZero(rSpecial))
       return {FloatLiteralSpecialValues::Normal, 0};
-    return FloatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, rhs);
+    return floatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, rhs);
   case FloatLiteralSpecialValues::Inf:
     if (isInf(rSpecial) || isNan(rSpecial))
       return {FloatLiteralSpecialValues::Nan, 0};
@@ -1538,7 +1537,7 @@ floatLiteralMulSpecialCases(const FloatLiteralSpecialValues &lSpecial,
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
-FloatLiteralMul(FloatLiteralSpecialValues lSpecial,
+floatLiteralMul(FloatLiteralSpecialValues lSpecial,
                 FloatLiteralSpecialValues rSpecial, IPRational lhs,
                 IPRational rhs) {
   if (isNormal(lSpecial) && isNormal(rSpecial)) {
@@ -1626,7 +1625,7 @@ floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
-FloatLiteralDiv(FloatLiteralSpecialValues lSpecial,
+floatLiteralDiv(FloatLiteralSpecialValues lSpecial,
                 FloatLiteralSpecialValues rSpecial, IPRational lhs,
                 IPRational rhs) {
   if (isNormal(lSpecial) && isNormal(rSpecial)) {
@@ -1672,22 +1671,22 @@ OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
   switch (oper) {
   case FloatLiteralBinopKind::Add: {
     auto [resultSpecial, rational] =
-        FloatLiteralAdd(lSpecial, rSpecial, lhs, rhs);
+        floatLiteralAdd(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::Sub: {
     auto [resultSpecial, rational] =
-        FloatLiteralSub(lSpecial, rSpecial, lhs, rhs);
+        floatLiteralSub(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::Mul: {
     auto [resultSpecial, rational] =
-        FloatLiteralMul(lSpecial, rSpecial, lhs, rhs);
+        floatLiteralMul(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::TrueDiv: {
     auto [resultSpecial, rational] =
-        FloatLiteralDiv(lSpecial, rSpecial, lhs, rhs);
+        floatLiteralDiv(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   }
@@ -2003,8 +2002,8 @@ static IntLiteralAttr FloatLiteralToIntLiteralOpHelper(FloatLiteralAttr fattr) {
   case FloatLiteralSpecialValues::Normal:
     assert(fattr.getRational().has_value() &&
            "normal FloatLiterals have rational");
-    result = fattr.getRational().value().getNumerator() /
-             fattr.getRational().value().getDenominator();
+    result = fattr.getRational()->getNumerator() /
+             fattr.getRational()->getDenominator();
     break;
   }
   return IntLiteralAttr::get(fattr.getContext(), result);

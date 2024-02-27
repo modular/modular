@@ -690,19 +690,18 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
   std::string digits = filterUnderscores(spelling);
   spelling = StringRef(digits);
   IPInt numerator(0);
-  IPInt denominator(1);
 
   size_t digitsIndex = 0;
   bool pastDecimal = false;
   bool foundE = false;
+  size_t denominatorCounter = 0;
   while (digitsIndex < digits.size()) {
     char digit = digits[digitsIndex];
     if (digit >= '0' && digit <= '9') {
       char decimalValue = digit - '0';
-      numerator = numerator * IPInt(10);
-      numerator = numerator + IPInt(decimalValue);
+      numerator = numerator * IPInt(10) + IPInt(decimalValue);
       if (pastDecimal)
-        denominator = denominator * IPInt(10);
+        ++denominatorCounter;
     } else if (digit == '.' && !pastDecimal) {
       pastDecimal = true;
     } else if (digit == 'e' || digit == 'E') {
@@ -714,6 +713,7 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
     }
     ++digitsIndex;
   }
+  IPInt denominator(IPInt(10).exponentiate(denominatorCounter));
 
   if (foundE) {
     IPInt exponent = 0;
@@ -734,11 +734,10 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
       ++digitsIndex;
     }
     IPInt exponentMulValue = IPInt(10).exponentiate(exponent);
-    if (negativeSign) {
+    if (negativeSign)
       denominator = denominator * exponentMulValue;
-    } else {
+    else
       numerator = numerator * exponentMulValue;
-    }
   }
 
   return IPRational(numerator, denominator);

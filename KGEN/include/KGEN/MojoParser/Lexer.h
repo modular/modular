@@ -12,7 +12,6 @@
 #define KGEN_MOJOPARSER_LEXER_H
 
 #include "Support/Compiler/Diags.h"
-#include "Support/IPInt.h"
 #include "Support/IPRational.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"

@@ -273,11 +273,7 @@ kgen.func @float_literal_to_int_literal() ->
   %fna = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-5|3)>>
   %fb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (8|3)>>
   %fnb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-8|3)>>
-  %f0 = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (0|1)>>
   %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
-  %inf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<inf>>
-  %ninf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_inf>>
-  %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
 
   // CHECK: kgen.param.constant: !kgen.int_literal = <1>
   %r1 = kgen.float_literal.to_int_literal %fa
