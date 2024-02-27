@@ -13,11 +13,43 @@ from utils.list import Dim
 from sys.ffi import DLHandle
 
 from tensor import Tensor
+from memory._arc import Arc
 from python import Python, PythonObject
 
 from .session import InferenceSession
 from .tensor_spec import TensorSpec
 from ._tensor_impl import _Numpy, CTensor
+
+
+@value
+struct NamedTensor:
+    """A named input tensor."""
+
+    var name: String
+    var _tensor: Arc[Tensor[DType.invalid]]
+    """Reference-counted pointer keeping the original tensor alive."""
+    var _view: EngineTensorView
+
+    # Constructs a new `NamedTensor` that owns its argument via a
+    # reference-counted pointer.
+    fn __init__[
+        dtype: DType
+    ](inout self, owned name: String, owned tensor: Tensor[dtype]):
+        self.name = name ^
+
+        let tensor_arc = Arc(tensor ^)
+
+        # Get an lvalue reference to the heap-allocated Tensor data, and
+        # construct an EngineTensorView from that.
+        # This is valid because the data owned by an `Arc` in memory does
+        # not move memory location.
+        self._view = EngineTensorView(
+            __get_address_as_lvalue(tensor_arc._data_ptr().value)
+        )
+
+        # Store a type-erased owned copy of the tensor. Erase the type so that
+        # `NamedTensor` does not have to be generic.
+        self._tensor = tensor_arc._bitcast[Tensor[DType.invalid]]()
 
 
 @value

@@ -76,6 +76,8 @@ struct Model:
         for i in range(len(inputs)):
             var pair = inputs[i]
 
+            # TODO: This is likely dead code with the removal of the
+            #       StringRef-based API using NamedTensor.
             @parameter
             if _mlirtype_is_eq[key_type, StringRef]():
 
@@ -105,33 +107,23 @@ struct Model:
                     )
         return self.execute(input_map)
 
-    fn execute(
-        self, *inputs: Tuple[StringRef, EngineTensorView]
-    ) raises -> TensorMap:
+    fn execute(self, *inputs: NamedTensor) raises -> TensorMap:
         """Execute model with given inputs.
 
         Args:
-          inputs: A variadic list of tuples with first element of tuple is
-                  input name and second element is non owning view of a Tensor.
+          inputs: A variadic list of NamedTensor values.
 
         Returns:
             A TensorMap with output names as keys.
         """
-        return self._execute_view[StringRef, EngineTensorView](inputs)
+        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
 
-    fn execute(
-        self, *inputs: Tuple[StringLiteral, EngineTensorView]
-    ) raises -> TensorMap:
-        """Execute model with given inputs.
+        for named_tensor in inputs:
+            input_map.borrow(named_tensor[].name, named_tensor[]._view)
 
-        Args:
-          inputs: A variadic list of tuples with first element of tuple is
-                  input name and second element is non owning view of a Tensor.
+        let result = self.execute(input_map)
 
-        Returns:
-            A TensorMap with output names as keys.
-        """
-        return self._execute_view[StringLiteral, EngineTensorView](inputs)
+        return result ^
 
     fn execute(
         self, *inputs: Tuple[StringLiteral, EngineNumpyView]
