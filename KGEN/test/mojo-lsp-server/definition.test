@@ -85,6 +85,25 @@
 // CHECK:                "line": 0
 // CHECK:          "uri": "{{.*}}vector.mojo"
 // -----
+{"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
+  "textDocument":{"uri":"test:///foo.mojo"},
+  "position":{
+    "line": 0,
+    "character": 12
+  }
+}}
+// CHECK-LABEL: "id": 3
+// CHECK-NEXT: "jsonrpc": "2.0"
+// CHECK-NEXT:   "result":
+// CHECK:          "range":
+// CHECK:            "end":
+// CHECK:                "character": 0,
+// CHECK:                "line": 0
+// CHECK:            "start":
+// CHECK:                "character": 0,
+// CHECK:                "line": 0
+// CHECK:          "uri": "{{.*}}collections/__init__.mojo"
+// -----
 {"jsonrpc":"2.0","id":4,"method":"shutdown"}
 // -----
 {"jsonrpc":"2.0","method":"exit"}

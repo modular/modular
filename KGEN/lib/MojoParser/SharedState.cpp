@@ -712,6 +712,16 @@ resolveModulePath(SharedState &sharedState, StringRef moduleName,
   return result;
 }
 
+/// Given a path to a mojo source package, return the path of its __init__ file.
+static std::string
+getPackageInitPath(const std::filesystem::path &packagePathStr) {
+  std::filesystem::path initPath = packagePathStr / "__init__.🔥";
+  std::error_code ec;
+  if (std::filesystem::exists(initPath, ec))
+    return initPath.string();
+  return (packagePathStr / "__init__.mojo").string();
+}
+
 ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
                                    llvm::SMLoc loc) {
   ModuleState *moduleState = impl->packageStates[currentPackage];
@@ -794,7 +804,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   // If the path was a directory, we're importing a source package.
   if (std::filesystem::is_directory(*modulePath)) {
     auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
-        *modulePath, /*line=*/1, /*column=*/1);
+        getPackageInitPath(*modulePath), /*line=*/1, /*column=*/1);
     return createPackageState(declName, *modulePath, *parentState, fileLoc);
   }
 
@@ -1105,7 +1115,8 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc =
-      FileLineColLoc::get(getContext(), path, /*line=*/1, /*column=*/1);
+      FileLineColLoc::get(getContext(), getPackageInitPath(path.str()),
+                          /*line=*/1, /*column=*/1);
   ModuleState &state =
       createPackageState(StringAttr::get(getContext(), name), path,
                          *impl->topLevelModuleState, fileLoc);
@@ -1166,8 +1177,9 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   auto packageOp = moduleBuilder.create<PackageOp>(loc, declName);
+  SMLoc declLoc = declResolver->shared.diags.convertLocToSMLoc(loc);
   ASTDecl &decl =
-      declResolver->addDecl(packageOp, SMLoc(), declName, parentState.decl,
+      declResolver->addDecl(packageOp, declLoc, declName, parentState.decl,
                             parentState.decl->getCursor(),
                             parentState.decl->getCursor(), /*indentation=*/-1);
 
@@ -1217,8 +1229,11 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   }
 
   // Insert a new module decl.
+  Operation *packageOp = &block->back();
+  SMLoc declLoc =
+      declResolver->shared.diags.convertLocToSMLoc(packageOp->getLoc());
   ASTDecl &decl =
-      declResolver->addDecl(&block->back(), SMLoc(), declName, parentState.decl,
+      declResolver->addDecl(packageOp, declLoc, declName, parentState.decl,
                             parentState.decl->getCursor(),
                             parentState.decl->getCursor(), /*indentation=*/-1);
   decl.loadedFromBytecode = true;
