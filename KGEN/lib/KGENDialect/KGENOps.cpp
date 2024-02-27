@@ -22,6 +22,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -1674,6 +1675,299 @@ OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
   } break;
   }
   llvm_unreachable("unknown FloatLiteralBinop type");
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralConvertOp
+//===----------------------------------------------------------------------===//
+
+/// Take an IPRational along with a specification for an output float type and
+/// return the IEEE-style float bit string as an APInt.
+static APInt floatLiteralConvertGetBitstring(IPRational input,
+                                             unsigned totalLength,
+                                             unsigned exponentLength,
+                                             unsigned bias) {
+  // Throughout this function I use “significand” to mean the float value
+  // including the digit before the decimal, and “mantissa” to mean just the
+  // part after the decimal, IE the bit pattern that is actually present in the
+  // float value.  That's not technically correct, but it was helpful for me to
+  // distinguish the two.
+
+  unsigned mantissaLength = totalLength - exponentLength - 1;
+  IPInt maxExponentZeroBias = (IPInt(1) << exponentLength) - 1;
+  IPInt maxExponent = maxExponentZeroBias - bias;
+  IPInt minExponent = IPInt(-1) * IPInt(bias - 1);
+
+  // The maxSignificandIPIntLength is longer than the float mantissa bit width
+  // to allow for:
+  // * leading 0 in IPInt format
+  // * most significant 1 bit that is removed in final encoding
+  // * extra precision bits to ensure correct rounding
+  unsigned maxSignificandIPIntRoundedLength = mantissaLength + 2;
+  static const unsigned significandRoundingLength = 3;
+  unsigned maxSignificandIPIntLength =
+      maxSignificandIPIntRoundedLength + significandRoundingLength;
+
+  // To support subnormal numbers (IE numbers with minimum exponent that have an
+  // implicit leading 0 instead of implicit leading 1), we need to support lower
+  // exponents during calculation.
+  IPInt minCalculationExponent = minExponent - mantissaLength;
+
+  if (input.getNumerator() == 0)
+    return APInt(totalLength, 0);
+
+  bool negativeSign = input.getNumerator() < 0;
+  APInt signBits = APInt(totalLength, negativeSign ? 1 : 0);
+  signBits = signBits << (totalLength - 1);
+
+  IPInt initialNumerator = input.getNumerator().abs();
+  const IPInt &denominator = input.getDenominator();
+  IPInt significand = initialNumerator / denominator;
+  IPInt remainder = initialNumerator % denominator;
+  IPInt exponent = 0;
+  bool exponentFinalized = false;
+  if (significand > 0) {
+    // The IPInt encoding of the number will have a leading 0 bit (because it is
+    // positive), and the exponent when treating the most significant one bit is
+    // one less than the number of bits representing the number with no leading
+    // zeroes.
+    exponent = significand.getAPInt().getBitWidth() - 2;
+    exponentFinalized = true;
+  }
+
+  auto keepDoingLongDivision = [&]() -> bool {
+    if (remainder == 0)
+      return false;
+    if (exponent < minCalculationExponent || exponent > maxExponent)
+      return false;
+    if (significand.getAPInt().getBitWidth() > maxSignificandIPIntLength)
+      return false;
+    return true;
+  };
+
+  // Do long division loop.
+  while (keepDoingLongDivision()) {
+    unsigned nBitsToShift = denominator.getAPInt().getBitWidth() -
+                            remainder.getAPInt().getBitWidth();
+    if (nBitsToShift == 0)
+      nBitsToShift = 1;
+    IPInt nCur = remainder << nBitsToShift;
+    if (!exponentFinalized) {
+      exponent = exponent - nBitsToShift;
+    }
+    IPInt quotient = nCur / denominator;
+    remainder = nCur % denominator;
+    if (quotient > 0)
+      exponentFinalized = true;
+    significand = (significand << nBitsToShift) + quotient;
+  }
+
+  // Early return for obvious zero case because our later logic requires a
+  // non-zero significand.
+  if (significand == 0)
+    return signBits;
+
+  // Pad to mantissa length before performing rounding, etc.
+  if (significand.getAPInt().getBitWidth() < maxSignificandIPIntLength) {
+    significand = significand << (maxSignificandIPIntLength -
+                                  significand.getAPInt().getBitWidth());
+  }
+
+  auto performRounding = [](IPInt &significand, IPInt &exponent,
+                            unsigned maxSignificandIPIntRoundedLength) {
+    APInt roundingBits = significand.getAPInt().extractBits(
+        /*numBits=*/significand.getAPInt().getBitWidth() -
+            maxSignificandIPIntRoundedLength,
+        /*bitPosition=*/0);
+    unsigned roundingBitsActualLength = roundingBits.getBitWidth();
+    APInt roundingMidpoint = APInt(roundingBitsActualLength, 1)
+                             << (roundingBitsActualLength - 1);
+    // Truncate bits first.
+    significand = significand >> roundingBitsActualLength;
+    // Now that we've truncated, rounding either means doing nothing (for
+    // round toward zero) or adding one to the significand representation
+    // (for rounding away from zero). The default rounding mode for IEEE
+    // floats is “round to nearest, ties to even”. It might be good to take
+    // an option to do other rounding modes, but for now we just support the
+    // default.
+    if (roundingBits.ugt(roundingMidpoint))
+      significand = significand + 1;
+    else if (roundingBits == roundingMidpoint && significand % 2 == 1)
+      significand = significand + 1;
+    // If rounding up increased digit count, we need to convert that into a
+    // larger exponent and re-truncate.
+    if (significand.getAPInt().getBitWidth() >
+        maxSignificandIPIntRoundedLength) {
+      exponent = exponent + 1;
+      significand = significand >> 1;
+    }
+  };
+
+  // Do rounding now unless we are dealing with a subnormal number, which needs
+  // some extra handling before rounding.
+  if (exponent >= minExponent)
+    performRounding(significand, exponent, maxSignificandIPIntRoundedLength);
+
+  if (exponent > maxExponent) {
+    // Return +/- infinity.
+    APInt exponentOnes = APInt::getAllOnes(exponentLength);
+    APInt exponentBits = APInt(totalLength, 0);
+    exponentBits.insertBits(exponentOnes, mantissaLength);
+    // Mantissa for infinity is zero.
+    return signBits | exponentBits;
+  }
+
+  // Handle subnormal numbers, including zero valuess.  (I'm not sure whether
+  // zero counts technically as a subnormal number, but it fits the subnormal
+  // encoding.)
+  if (exponent < minExponent) {
+    // Below the minExponent we can still convert to subnormal numbers.
+    // The subnormal range is tagged with minExponent - 1, but the exponent
+    // value is effectively the same as minExponent. However, instead of an
+    // implicit leading 1 before the decimal, there is a leading 0. So subnormal
+    // numbers cover down to minExponent - (mantissaWidth - 1) exponent, but
+    // losing one bit of mantissa precision for each exponent lowering.
+    IPInt minSubnormalExponent = minExponent - (mantissaLength - 1);
+    if (exponent < minSubnormalExponent) {
+      // We could let this fall through and be handled by the shifting and bit
+      // mangling, but at this point we know that every bit is zero except
+      // (maybe) the sign.
+      return signBits;
+    }
+    IPInt shiftBits = minExponent - exponent;
+    IPInt shiftTag = IPInt(1) << (IPInt(significand.getAPInt().getBitWidth()) -
+                                  IPInt(2) + shiftBits);
+    // The significand is now
+    // `01<correct-bit-pattern><at-least-one-extra-bit>`.
+    significand = shiftTag + significand;
+    exponent = minExponent - 1;
+    // If rounding increases the exponent and carries to a new high bit, then we
+    // end up at 1000... for the significand with minExponent, and thus the
+    // right number.  Cool.
+    performRounding(significand, exponent, maxSignificandIPIntRoundedLength);
+  }
+
+  // Whether or not the value was subnormal, the significand now has the bit
+  // pattern `01<correct-bit-pattern><maybe-extra-bit-due-to-rounding>`.  So we
+  // drop the leading 2 bits and the trailing extra bits to arrive at the final
+  // bit pattern for the mantissa.
+
+  unsigned extraSignificandBits =
+      significand.getAPInt().getBitWidth() - (mantissaLength + 2);
+  significand = significand >> extraSignificandBits;
+  assert(significand.getAPInt().getBitWidth() == mantissaLength + 2 &&
+         "proper mantissa bit length");
+  APInt mantissaLowBits = significand.getAPInt().extractBits(
+      /*numBits=*/mantissaLength,
+      /*bitPosition=*/0);
+  APInt mantissaBits = APInt(totalLength, 0);
+  mantissaBits.insertBits(mantissaLowBits, /*bitPosition=*/0);
+
+  // Floating point numbers encode the exponent as `bias + exponent`, so that
+  // the result is always a natural number, where `bias + exponent = 0`
+  // signifies subnormal (including zero) numbers, and all ones is the
+  // exponent for infinity and the NAN values.
+  exponent = exponent + bias;
+  // Place the bits into an APInt at the appropriate place.
+  APInt exponentBits = APInt(totalLength, 0);
+  exponentBits.insertBits(exponent.getAPInt(), mantissaLength);
+
+  // Combine pieces to get final bit string: <sign><exponent><mantissa>.
+  return signBits | exponentBits | mantissaBits;
+}
+
+static ErrorTreeOr<FloatAttr>
+floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
+                            std::optional<IPRational> inRat, Type outType,
+                            Location loc) {
+  unsigned totalLength = 0;
+  unsigned exponentLength = 0;
+  unsigned bias = 0;
+  llvm::APFloatBase::Semantics semantics = llvm::APFloatBase::S_IEEEhalf;
+
+  if (outType.isF16()) {
+    totalLength = 16;
+    exponentLength = 5;
+    bias = 15;
+    semantics = llvm::APFloatBase::S_IEEEhalf;
+  } else if (outType.isF32()) {
+    totalLength = 32;
+    exponentLength = 8;
+    bias = 127;
+    semantics = llvm::APFloatBase::S_IEEEsingle;
+  } else if (outType.isF64()) {
+    totalLength = 64;
+    exponentLength = 11;
+    bias = 1023;
+    semantics = llvm::APFloatBase::S_IEEEdouble;
+  } else if (outType.isF80()) {
+    totalLength = 80;
+    exponentLength = 15;
+    bias = 16383;
+    semantics = llvm::APFloatBase::S_x87DoubleExtended;
+  } else if (outType.isF128()) {
+    totalLength = 128;
+    exponentLength = 15;
+    bias = 16383;
+    semantics = llvm::APFloatBase::S_IEEEquad;
+  } else {
+    return ErrorTree(
+        loc, Error("float literal conversion: unsupported output type"));
+  }
+
+  APFloat resultValue =
+      APFloat::getNaN(llvm::APFloatBase::EnumToSemantics(semantics));
+  switch (special) {
+  case FloatLiteralSpecialValues::Nan:
+    resultValue =
+        APFloat::getNaN(llvm::APFloatBase::EnumToSemantics(semantics));
+    break;
+  case FloatLiteralSpecialValues::Inf:
+    resultValue = APFloat::getInf(llvm::APFloatBase::EnumToSemantics(semantics),
+                                  /*negative=*/false);
+    break;
+  case FloatLiteralSpecialValues::NegInf:
+    resultValue = APFloat::getInf(llvm::APFloatBase::EnumToSemantics(semantics),
+                                  /*negative=*/true);
+    break;
+  case FloatLiteralSpecialValues::NegZero:
+    resultValue = APFloat::getZero(
+        llvm::APFloatBase::EnumToSemantics(semantics), /*negative=*/true);
+    break;
+  case FloatLiteralSpecialValues::Normal: {
+    assert(inRat.has_value() && "normal FloatLiteral values have a rational");
+    APInt floatBits = floatLiteralConvertGetBitstring(
+        inRat.value(), totalLength, exponentLength, bias);
+    resultValue =
+        APFloat(llvm::APFloatBase::EnumToSemantics(semantics), floatBits);
+  } break;
+  }
+  return FloatAttr::get(outType, resultValue);
+}
+
+ErrorTreeOrSuccess
+FloatLiteralConvertOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  assert(!operands.empty() && "FloatLiteralConvertOp must have an operand");
+  auto inval = ::dyn_cast<FloatLiteralAttr>(operands[0]);
+  ErrorTreeOr<FloatAttr> errOrAttr = floatLiteralConvertOpHelper(
+      inval.getSpecial().getValue(), inval.getRational(), getType(), getLoc());
+  if (errOrAttr.hasValue())
+    state.mapResults(errOrAttr.getValue());
+  else
+    return errOrAttr.takeError();
+  return success();
+}
+
+OpFoldResult FloatLiteralConvertOp::fold(FoldAdaptor adaptor) {
+  auto in = dyn_cast_if_present<FloatLiteralAttr>(adaptor.getInput());
+  if (!in)
+    return {};
+  ErrorTreeOr<FloatAttr> errOrAttr = floatLiteralConvertOpHelper(
+      in.getSpecial().getValue(), in.getRational(), getType(), getLoc());
+  if (errOrAttr.hasValue())
+    return errOrAttr.getValue();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

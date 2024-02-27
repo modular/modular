@@ -228,3 +228,37 @@ kgen.func @float_literal_binop_uniques() ->
     !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
     !kgen.float_literal
 }
+
+// -----
+
+// CHECK-LABEL: @float_literal_convert
+kgen.func @float_literal_convert()
+  -> (f64, f64, f64, f64, f64, f64, f64) {
+  %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (5|3)>>
+  %fna = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-5|3)>>
+  %fb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (8|3)>>
+  %fnb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-8|3)>>
+  %f0 = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (0|1)>>
+  %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
+  %inf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<inf>>
+  %ninf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_inf>>
+  %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
+
+  // CHECK: kgen.param.constant: f64 = <1.666666{{.*}}>
+  %r1 = kgen.float_literal.convert %fa : to f64
+  // CHECK: kgen.param.constant: f64 = <-1.666666{{.*}}>
+  %r2 = kgen.float_literal.convert %fna : to f64
+  // CHECK: kgen.param.constant: f64 = <0.000{{.*}}>
+  %r3 = kgen.float_literal.convert %f0 : to f64
+  // CHECK: kgen.param.constant: f64 = <-0.000{{.*}}>
+  %r4 = kgen.float_literal.convert %nz : to f64
+  // CHECK: kgen.param.constant: f64 = <0x7FF0000000000000>
+  %r5 = kgen.float_literal.convert %inf : to f64
+  // CHECK: kgen.param.constant: f64 = <0xFFF0000000000000>
+  %r6 = kgen.float_literal.convert %ninf : to f64
+  // CHECK: kgen.param.constant: f64 = <0x7FF8000000000000>
+  %r7 = kgen.float_literal.convert %nan : to f64
+
+  kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7
+    : f64, f64, f64, f64, f64, f64, f64
+}
