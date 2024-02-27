@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from kernel_utils import *
 from math import *
 from math.math import _exp_taylor, _simd_apply
 from builtin.range import _StridedRange
@@ -263,6 +264,36 @@ fn exp_mlas[
     return max(ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
+@always_inline
+fn llvm_ldexp[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return llvm_intrinsic["llvm.ldexp", __type_of(x)](x, exp)
+
+
+@always_inline
+fn mlas_llvm_ldexp[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    constrained[type.is_floating_point(), "must be a floating point value"]()
+    alias neg_ln2 = -0.69314718055966295651160180568695068359375
+    alias inv_lg2 = 1.442695040888963407359924681001892137426646
+
+    alias neg_ln2_hi = -6.93145752e-1
+    alias neg_ln2_lo = -1.42860677e-6
+
+    var min_val = -88.3762626647949
+    var max_val = 88.3762626647950
+
+    var xc = clamp(x, min_val, max_val)
+    var k = floor(xc.fma(inv_lg2, 0.5))
+    var r = k.fma(neg_ln2_hi, xc)
+    var rr = k.fma(neg_ln2_lo, r)
+    return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
+
+
 def accuracy_test():
     alias delta_min = -16
     alias delta_max = 15
@@ -296,6 +327,15 @@ def main():
         if args[i] == "-t":
             accuracy_test()
             return
+    for i in range(len(args)):
+        if args[i] == "-c":
+            print(
+                compile_code[
+                    __type_of(llvm_ldexp[DType.float32, 4]),
+                    llvm_ldexp[DType.float32, 4],
+                ]()
+            )
+            return
 
     var m = MojoBench()
     var problem_size = range(1 << 10, 1 << 12, 1 << 10)
@@ -304,4 +344,7 @@ def main():
     bench_unary[exp_libm, DType.float32](m, problem_size, "libm")
     bench_unary[exp_sleef, DType.float32](m, problem_size, "sleef")
     bench_unary[exp_mlas, DType.float32](m, problem_size, "mlas")
+    bench_unary[mlas_llvm_ldexp, DType.float32](
+        m, problem_size, "mlas_llvm_ldexp"
+    )
     m.dump_report()
