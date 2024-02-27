@@ -159,8 +159,8 @@
     "commands": [
       {
         "category": "Developer",
-        "command": "mojo.restart-suspended",
-        "title": "Restart the Mojo Extension and Launch the LSP Server Suspended"
+        "command": "mojo.restart-and-debug-lsp",
+        "title": "Restart the Mojo LSP Server and Attach the Debugger to it"
       },
       {
         "category": "Mojo",
