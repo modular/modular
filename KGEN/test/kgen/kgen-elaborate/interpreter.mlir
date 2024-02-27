@@ -318,3 +318,19 @@ kgen.generator export @interp_nested_pointer() {
   kgen.param.constant = <apply(:(!kgen.variadic<pointer<index>>) -> index @variadic_of_pointers, [store_to_mem(1)])>
   kgen.return
 }
+
+// -----
+
+kgen.generator @size_zero_alloc() -> !kgen.pointer<index> {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %0 = pop.aligned_alloc %idx1, %idx0 : <index>
+  kgen.return %0 : !kgen.pointer<index>
+}
+
+// CHECK-LABEL: kgen.func export @malloc_nullptr
+kgen.generator export @malloc_nullptr() {
+  // CHECK-NEXT: pointer<index> = <0>
+  %0 = kgen.param.constant: pointer<index> = <apply(:() -> !kgen.pointer<index> @size_zero_alloc)>
+  kgen.return
+}
