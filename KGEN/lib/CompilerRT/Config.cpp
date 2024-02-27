@@ -13,18 +13,14 @@ using namespace M;
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
 KGEN_CompilerRT_getConfigValue(const char *key) {
-  StringRef value;
   ErrorOr<Config> configOr = Config::open();
   if (configOr.isError())
-    value = "";
+    return nullptr;
 
-  Config cfg = std::move(*configOr);
-
-  // getValue may return empty string if key does not exist,
-  // in which case we finally return an empty string.
-  value = cfg.getValue(key);
-  char *cvalue = (char *)KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment,
-                                                      value.size() + 1);
-  strcpy(cvalue, value.str().c_str());
-  return cvalue;
+  StringRef value = configOr->getValue(key);
+  char *res = (char *)KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment,
+                                                   value.size() + 1);
+  strncpy(res, value.str().c_str(), value.size());
+  res[value.size()] = 0;
+  return res;
 }
