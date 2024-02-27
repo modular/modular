@@ -21,16 +21,13 @@ fn main():
     var p3 = Point(3, -3)
     point_vec.push_back(p1)
     point_vec.push_back(p2)
-    breakpoint()
-    point_vec.push_back(p3)
+    point_vec.push_back(p3)  # breakpoint
 
     var int_vec = DynamicVector[Int](capacity=3)
     int_vec.push_back(1)
     int_vec.push_back(2)
-    breakpoint()
-    int_vec.push_back(3)
+    int_vec.push_back(3)  # breakpoint
 
     for i in range(0, 100):
         int_vec.push_back(i)
-    breakpoint()
-    print(int_vec[0])
+    print(int_vec[0])  # breakpoint

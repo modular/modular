@@ -12,8 +12,7 @@ struct Foo[X: AnyRegType, Y: AnyRegType]:
     fn getParametrized[T: AnyRegType](self, val: T) -> T:
         @parameter
         fn nested_function(z: T) -> T:
-            breakpoint()
-            return z
+            return z  # breakpoint
 
         return nested_function(val)
 

@@ -9,7 +9,7 @@ from collections import Dict
 
 fn test_key_element() raises:
     var dict = Dict[DType, NoneType]()
-    breakpoint()
+    print("bp")  # breakpoint
 
 
 fn main() raises:

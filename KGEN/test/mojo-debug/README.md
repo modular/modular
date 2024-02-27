@@ -45,8 +45,8 @@ class TestSample(LLDBTestBase):
     def test_sample(self):
         # build_and_launch builds the given file located in the Inputs/
         # directory, then creates a target with the resultant binary, places
-        # breakpoints on all the locations with the `# breakpoint` comment or
-        # the `breakpoint()` intrinsic, and yields at the first stop.
+        # breakpoints on all the locations with the `# breakpoint` comment, and
+        # yields at the first stop.
         with self.build_and_launch("input_file.mojo") as ctx:
             # The ctx variable contains the process, thread, and frame at the
             # stop point, which can be used to query information.

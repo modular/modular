@@ -7,4 +7,4 @@
 
 fn main():
     var ptr = DTypePointer[DType.invalid]()
-    breakpoint()
+    print("end")  # breakpoint

@@ -13,5 +13,4 @@ struct MyPair:
 
 fn main():
     var p = MyPair(42, 3735928559)
-    breakpoint()
-    print(p.first)
+    print(p.first)  # breakpoint

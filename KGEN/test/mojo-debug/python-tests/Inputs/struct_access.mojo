@@ -32,12 +32,11 @@ fn use_address(ptr: Pointer[Int]):
 
 fn main():
     var p = MyPair(1, 2)
-    breakpoint()
+    print(p.first)  # breakpoint
     p.first = 3
     p.second = 4
-    breakpoint()
+    print(p.second)  # breakpoint
     use_address(__get_lvalue_as_address(p.first))
 
     var pp = MyPairPair(5, 6, 7, 8)
-    breakpoint()
-    print(pp.second.first)
+    print(pp.second.first)  # breakpoint

@@ -7,10 +7,10 @@
 
 fn foo() -> None:
     var another_int = 420
-    breakpoint()
+    print("foo")  # breakpoint
 
 
 fn main():
     var an_int = -420
-    breakpoint()
+    print("main")  # breakpoint
     foo()

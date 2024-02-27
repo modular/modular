@@ -6,7 +6,7 @@
 
 
 fn test(st: String):
-    breakpoint()
+    print(st)  # breakpoint
 
 
 @register_passable("trivial")
@@ -28,6 +28,4 @@ fn main():
     var s3 = String()
     test(s2)
     var s4 = Pointer[String].address_of(s2)
-    breakpoint()
-    # we need this print here to prevent the strings from dying too early.
-    print(literal, s1, s2, s3, s4)
+    print(literal, s1, s2, s3, s4)  # breakpoint
