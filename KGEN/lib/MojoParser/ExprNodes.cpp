@@ -349,17 +349,18 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // TODO: this assumes float literal are always doubles
-  APFloat value = Lexer::getFloatLiteralValue(spelling);
-  auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
-                             APFloat(value.convertToDouble()));
-
-  // Convert this to an instance of Double.
+  IPRational value = Lexer::getFloatLiteralValue(spelling);
+  auto attr = FloatLiteralAttr::get(
+      emitter.getContext(),
+      FloatLiteralSpecialValuesAttr::get(emitter.getContext(),
+                                         FloatLiteralSpecialValues::Normal),
+      value);
   ASTType type =
-      emitter.shared.getBuiltinDoubleType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+      emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
+  auto ret =
+      emitter.emitConstructorCall(type, CallOperands({{AnyValue(attr), this}}),
+                                  this, CallSyntax::kImplicitConvert, dest);
+  return ret;
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

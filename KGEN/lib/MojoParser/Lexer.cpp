@@ -686,18 +686,62 @@ static std::string filterUnderscores(StringRef spelling) {
 
 /// Return the a value for the specified string, which is known to have been
 /// lexed as a float literal token.
-APFloat Lexer::getFloatLiteralValue(StringRef spelling) {
+IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
   std::string digits = filterUnderscores(spelling);
   spelling = StringRef(digits);
-  APFloat num(0.0);
-  auto StatusOrErr =
-      num.convertFromString(spelling, APFloat::rmNearestTiesToEven);
-  assert(!errorToBool(StatusOrErr.takeError()) &&
-         "Invalid floating point literal");
-  APFloat::opStatus Status = *StatusOrErr;
-  assert((Status == APFloat::opOK || Status & APFloat::opInexact) &&
-         "Invalid floating point literal");
-  return num;
+  IPInt numerator(0);
+  IPInt denominator(1);
+
+  size_t digitsIndex = 0;
+  bool pastDecimal = false;
+  bool foundE = false;
+  while (digitsIndex < digits.size()) {
+    char digit = digits[digitsIndex];
+    if (digit >= '0' && digit <= '9') {
+      char decimalValue = digit - '0';
+      numerator = numerator * IPInt(10);
+      numerator = numerator + IPInt(decimalValue);
+      if (pastDecimal)
+        denominator = denominator * IPInt(10);
+    } else if (digit == '.' && !pastDecimal) {
+      pastDecimal = true;
+    } else if (digit == 'e' || digit == 'E') {
+      foundE = true;
+      ++digitsIndex;
+      break;
+    } else {
+      assert(false && "bad float literal");
+    }
+    ++digitsIndex;
+  }
+
+  if (foundE) {
+    IPInt exponent = 0;
+    bool negativeSign = false;
+    if (digits[digitsIndex] == '-') {
+      negativeSign = true;
+      ++digitsIndex;
+    } else if (digits[digitsIndex] == '+') {
+      ++digitsIndex;
+    }
+    while (digitsIndex < digits.size()) {
+      char digit = digits[digitsIndex];
+      if (digit >= '0' && digit <= '9') {
+        char decimalValue = digit - '0';
+        exponent = exponent * 10;
+        exponent = exponent + IPInt(decimalValue);
+      }
+      ++digitsIndex;
+    }
+    IPInt exponentMulValue = IPInt(10).exponentiate(exponent);
+    if (negativeSign) {
+      denominator = denominator * exponentMulValue;
+    } else {
+      numerator = numerator * exponentMulValue;
+    }
+  }
+
+  return IPRational(numerator, denominator);
 }
 
 /// Return the a string value of `spelling` after the escape sequences are

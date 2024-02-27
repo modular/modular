@@ -375,6 +375,8 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 static void failLiteralMaterialization(Type t, ImplicitLocOpBuilder b) {
   if (isa<KGEN::IntLiteralType>(t))
     b.emitError("can't materialize IntLiteral in dynamic context");
+  else if (isa<KGEN::FloatLiteralType>(t))
+    b.emitError("can't materialize FloatLiteral in dynamic context");
   return;
 }
 

@@ -54,9 +54,24 @@ struct IntLiteral:
 
 
 @value
+@nonmaterializable(FloatLiteralOld)
+@register_passable("trivial")
+struct FloatLiteral:
+    var value: __mlir_type.`!kgen.float_literal`
+
+
+@value
 @register_passable("trivial")
 struct FloatLiteralOld:
     var value: __mlir_type.f64
+
+    @always_inline("nodebug")
+    fn __init__(value: FloatLiteral) -> Self:
+        return Self(
+            __mlir_op.`kgen.float_literal.convert`[_type = __mlir_type.f64](
+                value.value
+            )
+        )
 
 
 @value

@@ -948,6 +948,11 @@ ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
   return resolveBuiltinModuleType(context, loc, "IntLiteral", *this);
 }
 
+ASTType SharedState::getBuiltinFloatLiteralType(ASTDecl &context,
+                                                llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
+}
+
 ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
                                                  llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "StringLiteral", *this);
@@ -965,7 +970,7 @@ ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
 }
 
 ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "FloatLiteralOld", *this);
+  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
 }
 
 ASTType SharedState::getBuiltinCoroutineType(ASTDecl &context,
