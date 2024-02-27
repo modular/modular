@@ -12,7 +12,7 @@ from memory.buffer import NDBuffer
 from quantization import Q4sym
 
 
-fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
+fn _run_test_quant[group_size: Int, tolerance: FloatLiteralOld]() -> Bool:
     var uniform = SIMD[DType.float32, group_size]()
     for i in range(group_size):
         uniform[i] = i
@@ -56,7 +56,7 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
     return allPass
 
 
-fn test_fake_quant_error[l2_tolerance: FloatLiteral]():
+fn test_fake_quant_error[l2_tolerance: FloatLiteralOld]():
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
@@ -121,8 +121,8 @@ fn test_alignment_and_size():
 
 fn _read_write_to_tensors[
     group_size: Int,
-    rtol: FloatLiteral,
-    atol: FloatLiteral,
+    rtol: FloatLiteralOld,
+    atol: FloatLiteralOld,
     num_elements: Int = 64,
     rank: Int = 1,
 ]() -> Bool:
@@ -193,7 +193,7 @@ fn _read_write_to_tensors[
     return allClose
 
 
-fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
+fn test_read_write_to_tensors[rtol: FloatLiteralOld, atol: FloatLiteralOld]():
     print("------------test_fake_quant_error------------")
 
     print("********** GROUP SIZE 08 **********")
@@ -216,7 +216,7 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
 
 
 fn main():
-    alias l2_tolerance: FloatLiteral = 0.1
+    alias l2_tolerance: FloatLiteralOld = 0.1
 
     # CHECK-LABEL: G08 PASS
     # CHECK-LABEL: G16 PASS
@@ -226,8 +226,8 @@ fn main():
     # CHECK-LABEL: G08 PASS
     # CHECK-LABEL: G16 PASS
     # CHECK-LABEL: G32 PASS
-    alias rtol: FloatLiteral = 0.1
-    alias atol: FloatLiteral = 1.0
+    alias rtol: FloatLiteralOld = 0.1
+    alias atol: FloatLiteralOld = 1.0
     test_read_write_to_tensors[rtol, atol]()
 
     # Tests via compile-time constraints on sizeof(Q4Sym)
