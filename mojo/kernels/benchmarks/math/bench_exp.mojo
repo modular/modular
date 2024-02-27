@@ -7,6 +7,7 @@
 from math import *
 from math.math import _exp_taylor, _simd_apply
 from builtin.range import _StridedRange
+from sys.arg import argv
 
 from algorithm.functional import vectorize
 from benchmark import keep
@@ -262,7 +263,40 @@ fn exp_mlas[
     return max(ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
+def accuracy_test():
+    alias delta_min = -16
+    alias delta_max = 15
+    alias delta_range = delta_max - delta_min + 1
+
+    var deltas = Buffer[DType.int32, delta_range].stack_allocation()
+    deltas.zero()
+
+    for i in range(0x3000_0000, 0x42B0_0000, 1):
+        var f = bitcast[DType.float32, 1](SIMD[DType.uint32, 1](i))
+
+        var r1 = exp_mlas(f)
+        var r2 = exp_libm(f)
+
+        var i1 = bitcast[DType.int32, 1](r1)
+        var i2 = bitcast[DType.int32, 1](r2)
+
+        var id = int(clamp(i1 - i2, delta_min, delta_max))
+        deltas[id - delta_min] = deltas[id - delta_min] + 1
+
+        if id == delta_max:
+            print(f, r1, r2, i1 - i2)
+
+    for i in range(delta_range):
+        print("deltas", i + delta_min, deltas[i])
+
+
 def main():
+    var args = argv()
+    for i in range(len(args)):
+        if args[i] == "-t":
+            accuracy_test()
+            return
+
     var m = MojoBench()
     var problem_size = range(1 << 10, 1 << 12, 1 << 10)
     bench_unary[exp, DType.float32](m, problem_size, "mojo")
