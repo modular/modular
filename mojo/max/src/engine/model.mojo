@@ -119,12 +119,12 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        let input_map = TensorMap(self._ctx, self._lib, self._session.copy())
+        var input_map = TensorMap(self._ctx, self._lib, self._session.copy())
 
         for named_tensor in inputs:
             input_map.borrow(named_tensor[].name, named_tensor[]._view)
 
-        let result = self.execute(input_map)
+        var result = self.execute(input_map)
 
         return result ^
 

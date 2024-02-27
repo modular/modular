@@ -37,7 +37,7 @@ struct NamedTensor:
     ](inout self, owned name: String, owned tensor: Tensor[dtype]):
         self.name = name ^
 
-        let tensor_arc = Arc(tensor ^)
+        var tensor_arc = Arc(tensor ^)
 
         # Get an lvalue reference to the heap-allocated Tensor data, and
         # construct an EngineTensorView from that.
