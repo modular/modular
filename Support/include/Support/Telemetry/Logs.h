@@ -7,6 +7,7 @@
 #ifndef SUPPORT_TELEMETRY_LOGS_H
 #define SUPPORT_TELEMETRY_LOGS_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/ForwardDecls.h"
@@ -73,6 +74,19 @@ public:
                    const llvm::StringMap<AttributeValue> &attributes = {}) {
     return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L2,
                      attributes);
+  }
+  void emitL0Error(StringRef eventName, const CodedErrorOrSuccess &codedError,
+                   const llvm::StringMap<AttributeValue> &attributes = {}) {
+
+    if (codedError.isError()) {
+      llvm::StringMap<AttributeValue> attributesWithError{attributes};
+      attributesWithError["error_component"] =
+          codedError.getComponentAsString();
+      attributesWithError["error_id"] = codedError.getIdAsString();
+      attributesWithError["error"] = codedError.getErrorAsString();
+      return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L0,
+                       attributesWithError);
+    }
   }
 
   /// Returns true if an event will be emitted based on its level and the
