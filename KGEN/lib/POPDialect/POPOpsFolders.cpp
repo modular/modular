@@ -1350,7 +1350,7 @@ OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
 }
 
 /// Canonicalize `pop.variadic.create(x,x,x) -> `pop.variadic.splat(x)`. This
-/// notablly turns all 1 element creates into a splat.
+/// notably turns all 1 element creates into a splat.
 LogicalResult VariadicCreateOp::canonicalize(VariadicCreateOp op,
                                              PatternRewriter &b) {
   // Canonicalize a 1+ operand create into a splat if we can.
@@ -1431,6 +1431,9 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 
   if (auto create = getOperand().getDefiningOp<VariadicCreateOp>())
     return IntegerAttr::get(indexType, create.getOperands().size());
+
+  if (auto splat = getOperand().getDefiningOp<VariadicSplatOp>())
+    return splat.getNumElements();
 
   return {};
 }
