@@ -537,7 +537,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteralOld = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:scalar<f64> "2"}, {:scalar<f64> "3"})>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.float_literal #kgen.float_literal<normal (2|1)>}, {:!kgen.float_literal #kgen.float_literal<normal (3|1)>})>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
@@ -759,28 +759,37 @@ def literals():
     a = 0B10101       # CHECK: 21
     a = 0o711         # CHECK: 457
     a = 0O711         # CHECK: 457
-    b = 1.1           # CHECK: "1.10000{{.*}}"
-    b = .1            # CHECK: "0.10000{{.*}}"
-    b = 1.            # CHECK: "1"
-    b = 1e2           # CHECK: "100"
-    b = 1.1e2         # CHECK: "110"
-    b = .1e2          # CHECK: "10"
-    b = 1.e2          # CHECK: "100"
-    b = 1e+2          # CHECK: "100"
-    b = 1.1e-2        # CHECK: "0.01099{{.*}}"
-    b = .1e+2         # CHECK: "10"
-    b = 1.e-2         # CHECK: "0.01"
-    b = 0.1           # CHECK: "0.100000{{.*}}"
-    b = 0.            # CHECK: "0"
-    b = 0e2           # CHECK: "0"
-    b = 0.1e2         # CHECK: "10"
-    b = 0.e2          # CHECK: "0"
-    b = 0e+2          # CHECK: "0"
-    b = 0.1e-2        # CHECK: "0.001"
-    b = 0.e-2         # CHECK: "0"
-    b = 12.31e+11     # CHECK: "1.231E+12"
-    b = 1_2.3__1e+1_1 # CHECK: "1.231E+12"
-    b = 12.31E-3      # CHECK: "0.01231"
+    b = FloatLiteralOld(1.1)           # CHECK: "1.10000{{.*}}"
+    b = FloatLiteralOld(.1)            # CHECK: "0.10000{{.*}}"
+    b = FloatLiteralOld(1.)            # CHECK: "1"
+    b = FloatLiteralOld(1e2)           # CHECK: "100"
+    b = FloatLiteralOld(1.1e2)         # CHECK: "110"
+    b = FloatLiteralOld(.1e2)          # CHECK: "10"
+    b = FloatLiteralOld(1.e2)          # CHECK: "100"
+    b = FloatLiteralOld(1e+2)          # CHECK: "100"
+    b = FloatLiteralOld(1.1e-2)        # CHECK: "0.01099{{.*}}"
+    b = FloatLiteralOld(.1e+2)         # CHECK: "10"
+    b = FloatLiteralOld(1.e-2)         # CHECK: "0.01"
+    b = FloatLiteralOld(0.1)           # CHECK: "0.100000{{.*}}"
+    b = FloatLiteralOld(0.)            # CHECK: "0"
+    b = FloatLiteralOld(0e2)           # CHECK: "0"
+    b = FloatLiteralOld(0.1e2)         # CHECK: "10"
+    b = FloatLiteralOld(0.e2)          # CHECK: "0"
+    b = FloatLiteralOld(0e+2)          # CHECK: "0"
+    b = FloatLiteralOld(0.1e-2)        # CHECK: "0.001"
+    b = FloatLiteralOld(0.e-2)         # CHECK: "0"
+    b = FloatLiteralOld(12.31e+11)     # CHECK: "1.231E+12"
+    b = FloatLiteralOld(1_2.3__1e+1_1) # CHECK: "1.231E+12"
+    b = FloatLiteralOld(12.31E-3)      # CHECK: "0.01231"
+    # Check gradual loss of precision for subnormal numbers when
+    # converting from infinite precision literal to Float64.
+    b = FloatLiteralOld(1.1234567e-305)      # CHECK: "1.1234567E-305"
+    b = FloatLiteralOld(1.1234567e-310)      # CHECK: "1.1234567000000234E-310"
+    b = FloatLiteralOld(1.1234567e-315)      # CHECK: "1.1234567021086955E-315"
+    b = FloatLiteralOld(1.1234567e-320)      # CHECK: "1.1235052786429946E-320"
+    b = FloatLiteralOld(1.1234567e-322)      # CHECK: "1.1363509854348671E-322"
+    b = FloatLiteralOld(1.1234567e-323)      # CHECK: "9.8813129168249309E-324"
+    b = FloatLiteralOld(1.1234567e-324)      # CHECK: "0"
     c = False         # CHECK: !Bool = <{:scalar<bool> false}>
     c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 

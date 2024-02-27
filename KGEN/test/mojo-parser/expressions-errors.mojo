@@ -299,7 +299,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteralOld' value to 'Int' in field initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 

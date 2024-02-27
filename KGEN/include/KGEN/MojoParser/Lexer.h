@@ -12,6 +12,8 @@
 #define KGEN_MOJOPARSER_LEXER_H
 
 #include "Support/Compiler/Diags.h"
+#include "Support/IPInt.h"
+#include "Support/IPRational.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -131,7 +133,7 @@ public:
   static APInt getIntegerLiteralValue(StringRef spelling);
   /// Return the a value for the specified string, which is known to have been
   /// lexed as a float literal token.
-  static APFloat getFloatLiteralValue(StringRef spelling);
+  static IPRational getFloatLiteralValue(StringRef spelling);
   /// Return the a string value of `spelling` after the escape sequences are
   /// handled. `spelling` is known to have been lexed as a string literal token.
   static std::string getStringLiteralValue(StringRef spelling);
