@@ -310,3 +310,20 @@ fn invalid_params[f: fn(ParamType) -> None]():
 
   # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
   f(1)
+
+trait CollectionType(Copyable, Movable):
+  pass
+
+struct Container[T: CollectionType]:
+    var x : T
+
+    fn __setitem__(inout self, i: Int, owned value: T):
+        self.x = value
+
+    fn __getitem__(self, i: Int) -> T:
+        return self.x
+
+
+fn swap(inout v: Container):
+  # expected-error @below {{tuples can only be constructed from register passable types}}
+  v[0], v[1] = v[1], v[0]

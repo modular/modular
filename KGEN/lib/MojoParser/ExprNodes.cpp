@@ -3104,7 +3104,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
     auto concretizedTupleType = emitter.shared.getBuiltinTupleInstantiation(
         emitter.declScope, getLoc(), typeElts);
-    if (concretizedTupleType.isTypeCheckErrorType())
+    if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
       return {};
     DLValue result(
         RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
