@@ -16,6 +16,5 @@ fn main():
     var x = foo(
         123
     )  # we need this otherwise we don't stop at the breakpoint below
-    breakpoint()
-    var y = abs(x)
+    var y = abs(x)  # breakpoint
     print(y)  # expected after step-into

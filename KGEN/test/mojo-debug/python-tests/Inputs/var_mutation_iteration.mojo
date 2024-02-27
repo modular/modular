@@ -7,5 +7,4 @@
 
 fn main():
     for i in range(3):
-        breakpoint()
-        print(i)
+        print(i)  # breakpoint
