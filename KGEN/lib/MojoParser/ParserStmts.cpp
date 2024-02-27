@@ -1931,13 +1931,13 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   consumeIf(Token::kw_async);
-  SMLoc loc = getToken().getLoc();
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(Token::kw_def);
   consumeToken(); // Consume either 'def' or 'fn'.
 
+  SMLoc loc;
   StringAttr baseName;
-  if (parseIdentifier(baseName, "expected function name"))
+  if (parseIdentifier(baseName, "expected function name", &loc))
     return failure();
 
   auto funcOp = builder.create<LIT::FuncOp>(translateLocation(loc));
@@ -2166,13 +2166,13 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
     emitTokenError("struct inside a function not supported here");
     nestFailure = true;
   }
+  consumeToken(Token::kw_struct);
 
-  auto smLoc = consumeToken(Token::kw_struct).getLoc();
-  auto loc = translateLocation(smLoc);
-
+  SMLoc smLoc;
   StringAttr nameAttr;
-  if (parseIdentifier(nameAttr, "expected struct name"))
+  if (parseIdentifier(nameAttr, "expected struct name", &smLoc))
     return failure();
+  auto loc = translateLocation(smLoc);
 
   auto newStruct = builder.create<StructDeclOp>(loc, nameAttr);
 
@@ -2198,12 +2198,13 @@ ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
   if (!isa<FileModuleOp>(getParentDecl()))
     emitTokenError("nested trait not supported here");
 
-  auto smLoc = consumeToken(Token::kw_trait).getLoc();
-  auto loc = translateLocation(smLoc);
+  consumeToken(Token::kw_trait);
 
+  SMLoc smLoc;
   StringAttr nameAttr;
-  if (parseIdentifier(nameAttr, "expected trait name"))
+  if (parseIdentifier(nameAttr, "expected trait name", &smLoc))
     return failure();
+  auto loc = translateLocation(smLoc);
 
   auto newTrait = builder.create<TraitDeclOp>(loc, nameAttr);
 
