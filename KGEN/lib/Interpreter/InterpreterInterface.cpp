@@ -366,8 +366,6 @@ InterpreterState::externalizeMemory(Region &entry,
             // If the address is garbage, just ignore it and let it live.
             if (mem.isError())
               continue;
-            // Otherwise, "canonicalize" the pointer value to zero.
-            memset(blob.getOwned(), 0, target.getDataLayout().getPointerSize());
             auto [memBlob, offset] = mem.takeValue();
             pointerRegions.push_back(M::MemoryBlob::PointerRegion{
                 index, blobIndices.at(&memBlob), offset});
