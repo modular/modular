@@ -7,6 +7,7 @@
 add_modular_library(KGENSupport
   Configuration.cpp
   DebugInfoEncoding.cpp
+  Debugging.cpp
   NameMangling.cpp
 
   LINK_LIBS PUBLIC
