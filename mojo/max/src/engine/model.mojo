@@ -168,7 +168,7 @@ struct Model:
 
         Args:
           name: Name of the input tensor.
-          input: Inpu to the model as numpy array.
+          input: Input to the model as numpy array.
 
         Returns:
             A TensorMap with output names as keys.
