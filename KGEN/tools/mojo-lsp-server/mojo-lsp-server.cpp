@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Support/Debugging.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LSPServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -12,11 +13,6 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
-#include <csignal>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 using namespace M;
 using namespace M::KGEN::LIT;
@@ -66,10 +62,10 @@ int main(int argc, char **argv) {
       llvm::cl::desc("Pretty-print JSON output"),
       llvm::cl::init(false),
   };
-  llvm::cl::opt<bool> suspended{
-      "suspended",
-      llvm::cl::desc("Launch the server in a suspended state waiting for a "
-                     "debugger to attach"),
+  llvm::cl::opt<bool> attach{
+      "attach-debugger-on-startup",
+      llvm::cl::desc("Launch the server and start a debug session attached to "
+                     "it on VS Code"),
       llvm::cl::init(false),
   };
 
@@ -96,19 +92,8 @@ int main(int argc, char **argv) {
   // Register the additionally supported URI schemes for the server.
   URIForFile::registerSupportedScheme("vscode-notebook-cell");
 
-  if (suspended) {
-    Logger::info(
-        "The server has been launched in a suspended state. It's pid "
-        "is {0} and you can use a debugger to attach to it with, for example, "
-        "`lldb -p {0}`.",
-        llvm::sys::Process::getProcessId());
-#ifdef _WIN32
-    while (!IsDebuggerPresent())
-      Sleep(1000);
-#else
-    std::raise(SIGSTOP);
-#endif
-  }
+  if (attach)
+    attachToRemoteDebugger();
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.

@@ -38,7 +38,7 @@ export class MOJOContext extends DisposableContext {
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(launchLanguageServerSuspended: boolean = false) {
+  async activate(launchAndDebugLanguageServer: boolean = false) {
     this.loggingService
         .logInfo("Activating the Mojo Context.")
 
@@ -49,11 +49,11 @@ export class MOJOContext extends DisposableContext {
               this.dispose();
               await this.activate();
             }));
-    this.pushSubscription(
-        vscode.commands.registerCommand('mojo.restart-suspended', async () => {
+    this.pushSubscription(vscode.commands.registerCommand(
+        'mojo.restart-and-debug-lsp', async () => {
           // Dispose and reactivate the context.
           this.dispose();
-          await this.activate(/*launchLanguageServerSuspended=*/ true);
+          await this.activate(/*launchAndDebugLanguageServer=*/ true);
         }));
 
     // This lambda is used to lazily start language clients for the given
@@ -61,7 +61,7 @@ export class MOJOContext extends DisposableContext {
     // every folder within the workspace.
     const startClientOnOpenDocument = async (document: vscode.TextDocument) => {
       await this.getOrActivateLanguageClient(document.uri,
-                                             launchLanguageServerSuspended);
+                                             launchAndDebugLanguageServer);
     };
     // Process any existing documents.
     for (const textDoc of vscode.workspace.textDocuments) {
@@ -101,7 +101,7 @@ export class MOJOContext extends DisposableContext {
    * Open or return a language server for the given uri and language.
    */
   async getOrActivateLanguageClient(uri: vscode.Uri,
-                                    launchLanguageServerSuspended: boolean):
+                                    launchAndDebugLanguageServer: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
     if (!uri.fsPath.endsWith(".mojo") && !uri.fsPath.endsWith('🔥') &&
         !uri.fsPath.endsWith(".ipynb"))
@@ -125,7 +125,7 @@ export class MOJOContext extends DisposableContext {
     let client = this.workspaceClients.get(workspaceFolderStr);
     if (!client) {
       client = await this.activateWorkspaceFolder(
-          workspaceFolder, this.loggingService, launchLanguageServerSuspended);
+          workspaceFolder, this.loggingService, launchAndDebugLanguageServer);
       if (client) {
         this.workspaceClients.set(workspaceFolderStr, client);
       }
@@ -140,11 +140,11 @@ export class MOJOContext extends DisposableContext {
   async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder|
                                 undefined,
                                 loggingService: LoggingService,
-                                launchLanguageServerSuspended: boolean):
+                                launchAndDebugLanguageServer: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
     // Try to activate the language client.
     const [server, serverPath] = await this.startLanguageClient(
-        workspaceFolder, loggingService, launchLanguageServerSuspended);
+        workspaceFolder, loggingService, launchAndDebugLanguageServer);
 
     // Watch for configuration changes on this folder.
     if (workspaceFolder)
@@ -160,7 +160,7 @@ export class MOJOContext extends DisposableContext {
    */
   async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder|undefined,
                             loggingService: LoggingService,
-                            launchLanguageServerSuspended: boolean):
+                            launchAndDebugLanguageServer: boolean):
       Promise<[ vscodelc.LanguageClient | undefined, string ]> {
     loggingService.logInfo("Starting language client for workspace",
                            workspaceFolder);
@@ -173,8 +173,8 @@ export class MOJOContext extends DisposableContext {
       return [ undefined, "" ];
 
     let args = [];
-    if (launchLanguageServerSuspended)
-      args.push("--suspended");
+    if (launchAndDebugLanguageServer)
+      args.push("--attach-debugger-on-startup");
 
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
