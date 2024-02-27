@@ -1042,8 +1042,19 @@ ASTType SharedState::getBuiltinTupleInstantiation(ASTDecl &context,
   // Bind the correct element types for the tuple to the tuple type.
   SmallVector<TypedAttr> eltTypes;
   auto anyRegTypeType = TypeType::get(tupleLiteralStruct.getContext());
-  for (auto elt : elements)
+  for (auto elt : elements) {
+    // If the element type is referencing a parameter, ensure that the parameter
+    // type is `!kgen.type`. Otherwise, VariadicAttr cannot be constructed
+    // because values will conflict with the tuple element type constraint.
+    if (auto paramRefType = dyn_cast<KGEN::ParamRefType>(elt)) {
+      if (paramRefType.getParam().getType() != anyRegTypeType) {
+        emitError(
+            loc, "tuples can only be constructed from register passable types");
+        return {};
+      }
+    }
     eltTypes.push_back(TypeConstantAttr::get(elt, anyRegTypeType));
+  }
 
   // Bind it to a VariadicAttr of the right elements.
   TypedAttr packAttr =
