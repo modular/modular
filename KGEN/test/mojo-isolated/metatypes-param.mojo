@@ -6,23 +6,13 @@
 # RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
-# Stubs to allow testing without builtins
-# ===----------------------------------------------------------------------=== #
-
-alias Int = __mlir_type.index
-
-alias `1` = __mlir_attr.`1 : index`
-alias `2` = __mlir_attr.`2 : index`
-
-# ===----------------------------------------------------------------------=== #
 # Actual tests
 # ===----------------------------------------------------------------------=== #
-
 
 # CHECK-LABEL: lit.struct.decl @Param
 @value
 @register_passable("trivial")
-struct Param[x: Int]:
+struct Param[x: int]:
     alias value = x
 
     @staticmethod
@@ -40,7 +30,7 @@ struct Param[x: Int]:
 # CHECK-LABEL: lit.struct.decl @TwoParam
 @value
 @register_passable("trivial")
-struct TwoParam[x: Int, y: Int]:
+struct TwoParam[x: int, y: int]:
     alias first = x
     alias second = y
 
@@ -127,7 +117,7 @@ fn partial_autoparam(value: TwoParam[y=`1`]):
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> var>
 @value
 @register_passable("trivial")
-struct ParamVarArg[F: Int, *I: Int]:
+struct ParamVarArg[F: int, *I: int]:
     # CHECK-LABEL: lit.func @"self_type
     # CHECK-SAME: #ParamVarArg <F, :variadic<index> I>
     @staticmethod
