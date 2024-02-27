@@ -4,7 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import abs, ceil, erf, exp, sqrt, max, min, isnan, tanh, log, iota
+from math import (
+    abs,
+    ceil,
+    erf,
+    exp,
+    floor,
+    iota,
+    log,
+    log1p,
+    max,
+    min,
+    isnan,
+    rsqrt,
+    sqrt,
+    tanh,
+)
 from math.limit import isinf
 
 from MOGGIntList import IntList
@@ -354,6 +369,25 @@ fn mo_abs(
     return out
 
 
+@mogg_register_override("mo.ceil", MAX_BENEFIT)
+@export
+fn my_ceil(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return ceil(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
 @mogg_register_override("mo.erf", MAX_BENEFIT)
 @export
 fn mo_erf(
@@ -387,6 +421,25 @@ fn mo_exp(
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return exp(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.floor", MAX_BENEFIT)
+@export
+fn my_floor(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return floor(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
     out.for_each[1, func]()
     return out
@@ -449,6 +502,25 @@ fn mo_log(
     return out
 
 
+@mogg_register_override("mo.log1p", MAX_BENEFIT)
+@export
+fn mo_log1p(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rebind[SIMD[_t, width]](log1p(x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
 @mogg_register_override("mo.relu", MAX_BENEFIT)
 @export
 fn my_relu(
@@ -463,6 +535,25 @@ fn my_relu(
     @always_inline
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out
+
+
+@mogg_register_override("mo.rsqrt", MAX_BENEFIT)
+@export
+fn my_rsqrt(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return rsqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
     out.for_each[1, func]()
     return out
