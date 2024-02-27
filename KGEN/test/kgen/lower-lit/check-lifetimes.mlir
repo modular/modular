@@ -64,22 +64,23 @@ lit.func @useDtor(
 lit.func @indirectCall(%a: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) {
   // @noncapturing fn byrefResultFn(x: Struct) -> Struct:
   lit.func byrefResultFn(
-      %result: !lit.ref<@Struct, mut *"life"> byref_result,
-      %x: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) {
+      %x: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem,
+      %result: !lit.ref<@Struct, mut *"life"> byref_result) {
     lit.call @Struct::@__copyinit__(%result, %x)
-        : !lit.signature<(!lit.ref<@Struct, mut *"life"> byref_result,
+        : !lit.signature<(!lit.ref<@Struct, mut *"life"> init_self,
                           !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) -> !kgen.none>
     kgen.return
   }
 
   // var c = byrefResultFn(x)
   %callee = kgen.create_closure[!lit.signature<(
-      !lit.ref<@Struct, mut *"life"> byref_result,
-      !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) -> !kgen.none>: byrefResultFn]()
+      !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem,
+      !lit.ref<@Struct, mut *"life"> byref_result) -> !kgen.none>: byrefResultFn]()
   %c = lit.var.decl "c" var : !lit.ref<@Struct, mut *"life">
-  lit.call_signature %callee(%c, %a) :
-      !lit.signature<(!lit.ref<@Struct, mut *"life"> byref_result,
-        !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) -> !kgen.none>
+  lit.call_signature %callee(%a, %c) :
+      !lit.signature<(
+        !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem,
+        !lit.ref<@Struct, mut *"life"> byref_result) -> !kgen.none>
 
   %0 = lit.ref.struct.ger %c[a] : <index, mut life> from @Struct
   lit.ref.load %0 : !lit.ref<index, mut *"life">

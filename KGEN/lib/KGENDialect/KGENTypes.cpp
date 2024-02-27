@@ -506,6 +506,9 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Verify input convention and argument types.
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
+    if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
+      return emitError() << "'byref_result' argument must be the last argument";
+
     Type type = argType;
     // Verify variadics.
     if (auto variadic = ::dyn_cast<VariadicType>(type))
@@ -514,13 +517,13 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     // !lit.ref type, after lowering, they should have !kgen.pointer type.
     if (hasAddress(conv)) {
       if (::isa<PointerType>(type))
-        break;
+        continue;
       // TODO: During LowerLIT, we strip off the metadata, but later we lower
       // references to pointers.  This means that LowerLIT needs a
       // kgen.signature (without LIT attribute) with references.  Accept
       // !lit.ref until we can sort this out.
       if (type.getDialect().getNamespace() == "lit")
-        break;
+        continue;
 
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)

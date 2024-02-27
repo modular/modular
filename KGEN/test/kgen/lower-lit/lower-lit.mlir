@@ -69,14 +69,14 @@ lit.func @decorated_fn()
 }
 
 // CHECK-LABEL: @generic_types_retain_convention
-lit.func @generic_types_retain_convention<T: type>(
+lit.func @generic_types_retain_convention[imm a]<T: type>(
   // CHECK: %arg0: !kgen.paramref<T> borrow,
-  // CHECK: %arg1: !kgen.pointer<T> byref,
+  // CHECK: %arg1: !lit.ref<T, imm *[0,0]> byref,
   // CHECK: %arg2: !kgen.paramref<T> owned,
   // CHECK: %arg3: index borrow,
   // CHECK: %arg4: !kgen.pointer<index> owned
   %p: !kgen.paramref<T> borrow,
-  %q: !kgen.pointer<T> byref,
+  %q: !lit.ref<T, imm a> byref,
   %r: !kgen.paramref<T> owned,
   %s1: index borrow,
   %s2: !kgen.pointer<index> owned
@@ -373,8 +373,8 @@ lit.func @return_raise_or(%cond: i1, %err: !lit.declref<@Error>) -> !kgen.varian
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0: !kgen.pointer<index> byref) throws ->
-lit.func @removeMetadata(%arg0: !kgen.pointer<index> byref) throws -> !kgen.variant<@Error, index> {
+// CHECK-SAME: (%arg0: !lit.ref<index, imm *[0,0]> byref) throws ->
+lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> byref) throws -> !kgen.variant<@Error, index> {
   %0 = index.constant 0
   %1 = kgen.variant.create %0, 1 : <@Error, index>
   kgen.return %1 : !kgen.variant<@Error, index>
@@ -549,7 +549,7 @@ lit.package @main {
 
 !Mem = !lit.declref<@Mem>
 lit.struct.decl @Mem   {
-  lit.func @"__init__($test::Mem=&)"(%self: !kgen.pointer<!Mem> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @"__init__($test::Mem=&)"[mut a](%self: !lit.ref<!Mem, mut a> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
@@ -565,11 +565,9 @@ lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, 
   lit.func localTest[mut *"__result__`0"](%__result__[__result__]: !lit.ref<!Mem, mut *"__result__`0"> byref_result, |) capturing -> !kgen.none attributes {sourceName = "localTest", specialFnKind = 0 : i8} {
     // CHECK-NEXT: kgen.param.declare *"__result__`0": lifetime
     // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"__result__`0">
-    // CHECK-NEXT: %4 = lit.ref.to_pointer %3
-    %1 = lit.ref.to_pointer %__result__ : <!Mem, mut *"__result__`0">
-    %2 = lit.call @"$test"::@Mem::@"__init__($test::Mem=&)"(%1) : !lit.signature<("self": !kgen.pointer<!Mem> init_self, |) -> !kgen.none>
-    %none_1 = kgen.param.constant: none = <#kgen.none>
-    kgen.return %none_1 : !kgen.none
+    %1 = lit.call @"$test"::@Mem::@"__init__($test::Mem=&)"[mut *"__result__`0"](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *"__result__`0"> init_self, |) -> !kgen.none>
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
   }
   // CHECK: }
   // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0

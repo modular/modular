@@ -298,9 +298,14 @@ LogicalResult FnMetadataAttr::verifySignature(
 
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
-    Type type = argType;
-    // Verify variadics.
+    if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
+      return emitError() << "'byref_result' argument must be the last argument";
+    if (conv == ArgConvention::InitSelf && i != 0)
+      return emitError() << "'init_self' argument must be the first argument";
 
+    Type type = argType;
+
+    // Verify variadics.
     if (isVarArg(i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
@@ -311,10 +316,11 @@ LogicalResult FnMetadataAttr::verifySignature(
       }
       type = variadic.getElementType();
     }
+
     // Verify argument conventions.
     if (SignatureType::hasAddress(conv)) {
-      if (::isa<PointerType, RefType>(type))
-        break;
+      if (::isa<RefType>(type))
+        continue;
       return emitError() << "argument #" << i << " with convention '"
                          << stringifyEnum(conv)
                          << "' in signature type should be a `!kgen.pointer` "
