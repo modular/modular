@@ -227,7 +227,7 @@ struct Symbol(CollectionElement, Stringable):
     fn _consistent_scalar(self, value: Int) raises -> Symbol:
         return self.graph().scalar(value, self.type().tensor().dtype)
 
-    fn _consistent_scalar(self, value: FloatLiteral) raises -> Symbol:
+    fn _consistent_scalar(self, value: FloatLiteralOld) raises -> Symbol:
         return self.graph().scalar(value, self.type().tensor().dtype)
 
     fn __add__(self, rhs: Symbol) raises -> Symbol:
@@ -238,8 +238,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise addition by an `Int` literal."""
         return add(self, self._consistent_scalar(rhs))
 
-    fn __add__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise addition by a `FloatLiteral`."""
+    fn __add__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise addition by a `FloatLiteralOld`."""
         return add(self, self._consistent_scalar(rhs))
 
     fn __matmul__(self, rhs: Symbol) raises -> Symbol:
@@ -254,8 +254,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise multiplication by an `Int` literal."""
         return mul(self, self._consistent_scalar(rhs))
 
-    fn __mul__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise multiplication by a `FloatLiteral`."""
+    fn __mul__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise multiplication by a `FloatLiteralOld`."""
         return mul(self, self._consistent_scalar(rhs))
 
     fn __neg__(self) raises -> Symbol:
@@ -270,8 +270,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise raise to power by an `Int` literal."""
         return pow(self, self._consistent_scalar(rhs))
 
-    fn __pow__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise raise to power by a `FloatLiteral`."""
+    fn __pow__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise raise to power by a `FloatLiteralOld`."""
         return pow(self, self._consistent_scalar(rhs))
 
     fn __radd__(self, rhs: Symbol) raises -> Symbol:
@@ -282,8 +282,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise addition by an `Int` literal."""
         return add(self._consistent_scalar(rhs), self)
 
-    fn __radd__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise addition by a `FloatLiteral`."""
+    fn __radd__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise addition by a `FloatLiteralOld`."""
         return add(self._consistent_scalar(rhs), self)
 
     fn __rmul__(self, rhs: Symbol) raises -> Symbol:
@@ -294,8 +294,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise multiplication by an `Int` literal."""
         return mul(self._consistent_scalar(rhs), self)
 
-    fn __rmul__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise multiplication by a `FloatLiteral`."""
+    fn __rmul__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise multiplication by a `FloatLiteralOld`."""
         return mul(self._consistent_scalar(rhs), self)
 
     fn __rpow__(self, rhs: Symbol) raises -> Symbol:
@@ -306,8 +306,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise raise to power by an `Int` literal."""
         return pow(self._consistent_scalar(rhs), self)
 
-    fn __rpow__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise raise to power by a `FloatLiteral`."""
+    fn __rpow__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise raise to power by a `FloatLiteralOld`."""
         return pow(self._consistent_scalar(rhs), self)
 
     fn __rsub__(self, rhs: Symbol) raises -> Symbol:
@@ -318,8 +318,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise subtraction by an `Int` literal."""
         return sub(self._consistent_scalar(rhs), self)
 
-    fn __rsub__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise subtraction by a `FloatLiteral`."""
+    fn __rsub__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise subtraction by a `FloatLiteralOld`."""
         return sub(self._consistent_scalar(rhs), self)
 
     fn __rtruediv__(self, rhs: Symbol) raises -> Symbol:
@@ -330,8 +330,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise division by an `Int` literal."""
         return div(self._consistent_scalar(rhs), self)
 
-    fn __rtruediv__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise division by a `FloatLiteral`."""
+    fn __rtruediv__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise division by a `FloatLiteralOld`."""
         return div(self._consistent_scalar(rhs), self)
 
     fn __sub__(self, rhs: Symbol) raises -> Symbol:
@@ -342,8 +342,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise subtraction by an `Int` literal."""
         return sub(self, self._consistent_scalar(rhs))
 
-    fn __sub__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise subtraction by a `FloatLiteral`."""
+    fn __sub__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise subtraction by a `FloatLiteralOld`."""
         return sub(self, self._consistent_scalar(rhs))
 
     fn __truediv__(self, rhs: Symbol) raises -> Symbol:
@@ -354,8 +354,8 @@ struct Symbol(CollectionElement, Stringable):
         """Element-wise division by an `Int` literal."""
         return div(self, self._consistent_scalar(rhs))
 
-    fn __truediv__(self, rhs: FloatLiteral) raises -> Symbol:
-        """Element-wise division by a `FloatLiteral`."""
+    fn __truediv__(self, rhs: FloatLiteralOld) raises -> Symbol:
+        """Element-wise division by a `FloatLiteralOld`."""
         return div(self, self._consistent_scalar(rhs))
 
     # ===------------------------------------------------------------------=== #
