@@ -910,6 +910,14 @@ kgen.func @variadic_create_size(%arg0: i32, %arg1: i32) -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @variadic_splat_size(
+kgen.func @variadic_splat_size(%arg0: i32) -> index {
+  // CHECK-NEXT: kgen.param.constant = <4>
+  %0 = pop.variadic.splat 4, %arg0 : !kgen.variadic<i32>
+  %1 = pop.variadic.size %0 : !kgen.variadic<i32>
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @dtype_to_ui8(
 kgen.func @dtype_to_ui8() -> ui8 {
   // CHECK-NEXT: kgen.param.constant: ui8 = <1>
