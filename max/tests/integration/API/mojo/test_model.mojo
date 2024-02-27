@@ -10,6 +10,7 @@ from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
+    NamedTensor,
 )
 from sys import argv
 from tensor import Tensor, TensorShape
@@ -130,8 +131,7 @@ fn test_model_tuple_input() raises:
 
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
-    var outputs = model.execute(("input", EngineTensorView(input_tensor)))
-    _ = input_tensor ^
+    var outputs = model.execute(NamedTensor("input", input_tensor ^))
     var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
@@ -160,10 +160,9 @@ fn test_model_tuple_input_different_dtypes() raises:
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
     var outputs = model.execute(
-        ("input0", EngineTensorView(input_tensor_float)),
-        ("input1", EngineTensorView(input_tensor_int)),
+        NamedTensor("input0", input_tensor_float ^),
+        NamedTensor("input1", input_tensor_int),
     )
-    _ = input_tensor_float ^
     var output_tensor = outputs.get[DType.int32]("output")
 
     # CHECK: 5xint32
@@ -188,13 +187,8 @@ fn test_model_tuple_input_dynamic() raises:
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
     var tensor_name: String = "input"
-    # TODO: Remove use of StringRef from `model.execute` APIs
-    # once we support std::Tuple on memory-only types.
-    # See https://github.com/modularml/modular/issues/30576
-    var outputs = model.execute(
-        (tensor_name._strref_dangerous(), EngineTensorView(input_tensor))
-    )
-    _ = input_tensor ^
+
+    var outputs = model.execute(NamedTensor(tensor_name, input_tensor ^))
     var output_tensor = outputs.get[DType.float32]("output")
 
     # CHECK: 5xfloat32
@@ -204,7 +198,6 @@ fn test_model_tuple_input_dynamic() raises:
     linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
     # CHECK: True
     print(expected_output == output_tensor)
-    tensor_name._strref_keepalive()
 
 
 fn main() raises:
