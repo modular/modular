@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil
+from math import div_ceil, align_up
 from random import rand
 from sys import argv
-from sys.param_env import env_get_string
+from sys.param_env import env_get_string, env_get_int
 
 from benchmark import keep
 from memory.buffer import NDBuffer
@@ -30,26 +30,15 @@ from utils.index import Index
 
 
 fn bench_conv(inout m: MojoBench, spec: ConvSpec) raises:
-    @parameter
-    @always_inline
-    fn bench_conv_wrapper(
-        inout b: Bencher, concrete_spec: ConvSpec[spec.static_info]
-    ):
-        bench_conv_body(b, concrete_spec)
-
-    m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", str(spec)),
-        spec,
-        throughput_elems=spec.flops(),
-    )
-
-
-fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
     alias input_type = spec.static_info.input_type
     alias filter_type = spec.static_info.filter_type
     alias output_type = spec.static_info.output_type
 
+    # Alignment in terms of number of elmements.
     alias alignment = 64
+    alias input_align = alignment // sizeof[input_type]()
+    alias filter_align = alignment // sizeof[filter_type]()
+    alias output_align = alignment // sizeof[output_type]()
 
     alias simd_size = simdwidthof[filter_type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
@@ -80,33 +69,38 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
     packed_filter_shape[spec.static_info.rank + 1] = spec.c
     packed_filter_shape[spec.static_info.rank + 2] = micro_kernel_f_size
 
+    # Input and output shape, sizes
     var input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
-    var input_ptr = DTypePointer[input_type].alloc(
-        input_shape.flattened_length(), alignment=alignment
+    var input_alloc_size = align_up(input_shape.flattened_length(), input_align)
+    var filter_alloc_size = align_up(
+        packed_filter_shape.flattened_length(), filter_align
     )
-
-    var packed_filter_size = packed_filter_shape.flattened_length()
-    var filter_ptr = DTypePointer[filter_type].alloc(
-        packed_filter_size, alignment=alignment
-    )
-
     var output_shape = extend_shape(output_dims, spec.n, spec.f)
+    var output_alloc_size = align_up(
+        output_shape.flattened_length(), output_align
+    )
+
+    # Set the total buffer allocation to be 4x L3 cache.
+    alias MB = 1024 * 1024
+    alias L3_cache = env_get_int["L3SIZE", 24]() * MB
+    var size_per_copy = input_alloc_size * sizeof[
+        input_type
+    ]() + filter_alloc_size * sizeof[filter_type]()
+    var num_copies = div_ceil(4 * L3_cache, size_per_copy)
+
+    # Allocate input and output buffers.
+    var input_ptr = DTypePointer[input_type].alloc(
+        input_alloc_size * num_copies, alignment=alignment
+    )
+    var filter_ptr = DTypePointer[filter_type].alloc(
+        num_copies * filter_alloc_size, alignment=alignment
+    )
     var output_ptr = DTypePointer[output_type].alloc(
-        output_shape.flattened_length(), alignment=alignment
+        num_copies * output_alloc_size, alignment=alignment
     )
 
-    rand[input_type](input_ptr, input_shape.flattened_length())
-    rand[filter_type](filter_ptr, packed_filter_shape.flattened_length())
-
-    var input = NDBuffer[input_type, spec.static_info.rank + 2](
-        input_ptr, input_shape
-    )
-    var filter = NDBuffer[filter_type, spec.static_info.rank + 3](
-        filter_ptr, packed_filter_shape
-    )
-    var output = NDBuffer[output_type, spec.static_info.rank + 2](
-        output_ptr, output_shape
-    )
+    rand[input_type](input_ptr, num_copies * input_alloc_size)
+    rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
 
     var pad_d = StaticIntTuple[2](0)
     var pad_h = StaticIntTuple[2](0)
@@ -138,36 +132,67 @@ fn bench_conv_body(inout bencher: Bencher, spec: ConvSpec) capturing:
         num_groups: spec.num_groups,
     }
 
-    @always_inline
-    @__copy_capture(conv_shape)
     @parameter
-    fn bench_fn():
-        try:
-            ConvDirectNHWC[
-                spec.static_info.rank + 2,
-                spec.static_info.rank + 3,
-                spec.static_info.rank + 2,
-                DimList.create_unknown[spec.static_info.rank + 2](),
-                DimList.create_unknown[spec.static_info.rank + 3](),
-                DimList.create_unknown[spec.static_info.rank + 2](),
-                input_type,
-                filter_type,
-                output_type,
-                True,
-                ConvInfoStatic.create_unknown[spec.static_info.rank](),
-                elementwise_epilogue_enabled=False,
-            ].run(
-                output,
-                input,
-                filter,
-                rebind[ConvShape[spec.static_info.rank + 2 - 2]](conv_shape),
+    @always_inline
+    fn bench_conv_wrapper(
+        inout b: Bencher, concrete_spec: ConvSpec[spec.static_info]
+    ):
+        # Count the iteration to decide which input copy to use.
+        var counter = 0
+
+        @always_inline
+        @parameter
+        fn bench_fn():
+            var input = NDBuffer[input_type, spec.static_info.rank + 2](
+                input_ptr + (counter % num_copies) * input_alloc_size,
+                input_shape,
             )
-        except e:
-            print(e)
+            var filter = NDBuffer[filter_type, spec.static_info.rank + 3](
+                filter_ptr + (counter % num_copies) * filter_alloc_size,
+                packed_filter_shape,
+            )
+            var output = NDBuffer[output_type, spec.static_info.rank + 2](
+                output_ptr + (counter % num_copies) * output_alloc_size,
+                output_shape,
+            )
 
-        keep(output.data)
+            try:
+                ConvDirectNHWC[
+                    spec.static_info.rank + 2,
+                    spec.static_info.rank + 3,
+                    spec.static_info.rank + 2,
+                    DimList.create_unknown[spec.static_info.rank + 2](),
+                    DimList.create_unknown[spec.static_info.rank + 3](),
+                    DimList.create_unknown[spec.static_info.rank + 2](),
+                    input_type,
+                    filter_type,
+                    output_type,
+                    True,
+                    ConvInfoStatic.create_unknown[spec.static_info.rank](),
+                    elementwise_epilogue_enabled=False,
+                ].run(
+                    output,
+                    input,
+                    filter,
+                    rebind[ConvShape[spec.static_info.rank + 2 - 2]](
+                        conv_shape
+                    ),
+                )
 
-    bencher.iter[bench_fn]()
+                counter += 1
+
+            except e:
+                print(e)
+
+            keep(output.data)
+
+        b.iter[bench_fn]()
+
+    m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
+        BenchId("Conv", str(spec)),
+        spec,
+        throughput_elems=spec.flops(),
+    )
 
     input_ptr.free()
     filter_ptr.free()
