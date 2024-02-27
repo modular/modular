@@ -847,3 +847,10 @@ kgen.func @pack(%arg0: i32) {
   "kgen.pack.create"(%arg0) : (i32) -> !kgen.pack<[index]>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{'byref_result' argument must be the last argument}}
+kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !kgen.none {
+  kgen.unreachable
+}

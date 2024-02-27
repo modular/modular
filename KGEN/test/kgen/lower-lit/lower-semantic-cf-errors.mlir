@@ -12,18 +12,13 @@ lit.func @no_return_result() -> i32 {
   lit.end_func
 }
 
-lit.func @no_return_result2(%x: !kgen.pointer<i32> byref_result) -> !kgen.none {
-// expected-error @below {{return expected at end of function with results}}
-  lit.end_func
-}
-
-lit.func @bad_break(%x: !kgen.pointer<i32> byref_result) -> !kgen.none {
+lit.func @bad_break() {
   // expected-error @below {{'break' is not inside a loop}}
   lit.break
   lit.end_func
 }
 
-lit.func @bad_continue(%x: !kgen.pointer<i32> byref_result) -> !kgen.none {
+lit.func @bad_continue() {
   // expected-error @below {{'continue' is not inside a loop}}
   lit.continue
   lit.end_func
