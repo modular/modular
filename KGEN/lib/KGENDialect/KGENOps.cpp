@@ -1971,6 +1971,47 @@ OpFoldResult FloatLiteralConvertOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralToIntLiteral
+//===----------------------------------------------------------------------===//
+
+static IntLiteralAttr FloatLiteralToIntLiteralOpHelper(FloatLiteralAttr fattr) {
+  IPInt result;
+  switch (fattr.getSpecial().getValue()) {
+  case FloatLiteralSpecialValues::Nan:
+  case FloatLiteralSpecialValues::Inf:
+  case FloatLiteralSpecialValues::NegInf:
+  case FloatLiteralSpecialValues::NegZero:
+    result = 0;
+    break;
+  case FloatLiteralSpecialValues::Normal:
+    assert(fattr.getRational().has_value() &&
+           "normal FloatLiterals have rational");
+    result = fattr.getRational().value().getNumerator() /
+             fattr.getRational().value().getDenominator();
+    break;
+  }
+  return IntLiteralAttr::get(fattr.getContext(), result);
+}
+
+ErrorTreeOrSuccess
+FloatLiteralToIntLiteralOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  assert(!operands.empty() &&
+         "FloatLiteralToIntLiteralOp must have an operand");
+  auto inval = ::dyn_cast<FloatLiteralAttr>(operands[0]);
+  IntLiteralAttr attrResult = FloatLiteralToIntLiteralOpHelper(inval);
+  state.mapResults(attrResult);
+  return success();
+}
+
+OpFoldResult FloatLiteralToIntLiteralOp::fold(FoldAdaptor adaptor) {
+  auto in = dyn_cast_if_present<FloatLiteralAttr>(adaptor.getInput());
+  if (!in)
+    return {};
+  return FloatLiteralToIntLiteralOpHelper(in);
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 

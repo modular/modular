@@ -262,3 +262,34 @@ kgen.func @float_literal_convert()
   kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7
     : f64, f64, f64, f64, f64, f64, f64
 }
+
+// -----
+
+// CHECK-LABEL: @float_literal_to_int_literal
+kgen.func @float_literal_to_int_literal() ->
+  (!kgen.int_literal, !kgen.int_literal, !kgen.int_literal, !kgen.int_literal,
+   !kgen.int_literal) {
+  %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (5|3)>>
+  %fna = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-5|3)>>
+  %fb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (8|3)>>
+  %fnb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-8|3)>>
+  %f0 = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (0|1)>>
+  %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
+  %inf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<inf>>
+  %ninf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_inf>>
+  %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
+
+  // CHECK: kgen.param.constant: !kgen.int_literal = <1>
+  %r1 = kgen.float_literal.to_int_literal %fa
+  // CHECK: kgen.param.constant: !kgen.int_literal = <2>
+  %r2 = kgen.float_literal.to_int_literal %fb
+  // CHECK: kgen.param.constant: !kgen.int_literal = <-1>
+  %r3 = kgen.float_literal.to_int_literal %fna
+  // CHECK: kgen.param.constant: !kgen.int_literal = <-2>
+  %r4 = kgen.float_literal.to_int_literal %fnb
+  // CHECK: kgen.param.constant: !kgen.int_literal = <0>
+  %r5 = kgen.float_literal.to_int_literal %nz
+
+  kgen.return %r1, %r2, %r3, %r4, %r5 : !kgen.int_literal, !kgen.int_literal,
+    !kgen.int_literal, !kgen.int_literal, !kgen.int_literal
+}
