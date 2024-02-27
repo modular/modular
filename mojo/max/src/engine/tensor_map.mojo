@@ -36,6 +36,17 @@ struct TensorMap(SizedRaising):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Internal only. Use InferenceSession.new_tensor_map
+        for external use.
+
+        Creates a new instance of tensor map.
+
+        Args:
+            ctx: Context of API.
+            lib: Handle to library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
+        """
         self._ptr = call_dylib_func[CTensorMap](
             lib, Self._NewTensorMapFnName, ctx
         )
@@ -48,11 +59,27 @@ struct TensorMap(SizedRaising):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Internal only. Use InferenceSession.new_tensor_map
+        for external use.
+
+        Creates a new instance of tensor map.
+
+        Args:
+            ptr: C API pointer of TensorMap.
+            lib: Handle to library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
+        """
         self._ptr = ptr
         self._lib = lib
         self._session = session ^
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move contructor for TensorMap.
+
+        Args:
+            existing: Instance of TensorMap to move from.
+        """
         self._ptr = exchange[CTensorMap](
             existing._ptr, DTypePointer[DType.invalid]()
         )
@@ -63,6 +90,9 @@ struct TensorMap(SizedRaising):
         """Borrow the given tensor into the map at the key location.
            User needs to make sure tensor is alive for
            the duration of map.
+
+        Parameters:
+            type: DType of tensor being borrowed.
 
         Args:
             key: Name of tensor in map.
@@ -133,8 +163,14 @@ struct TensorMap(SizedRaising):
         """Gets the tensor / numpy array indicated by the key.
            The value is copied and returned to the user.
 
+        Parameters:
+            type: DType of tensor to be returned.
+
         Args:
             key: Name of tensor / numpy array in the map.
+
+        Returns:
+            A copy of tensor help by the map.
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
             key._strref_dangerous().data, self._lib
@@ -148,6 +184,9 @@ struct TensorMap(SizedRaising):
 
     fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
         """Gets a buffer to the tensor pointed by the key.
+
+        Parameters:
+            type: DType of buffer to be returned.
 
         Args:
             key: Name in TensorMap.
@@ -179,11 +218,17 @@ struct TensorMap(SizedRaising):
         return Value(value_ptr, self._lib, self._session.copy())
 
     fn __len__(self) raises -> Int:
+        """Gets number of elements in the map.
+
+        Returns:
+            Number of elements the map contains.
+        """
         return self._ptr.size(self._lib)
 
     fn _borrow_ptr(self) -> CTensorMap:
         return self._ptr
 
     fn __del__(owned self):
+        """Destructor for the tensor map."""
         self._ptr.free(self._lib)
         _ = self._session ^

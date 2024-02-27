@@ -66,6 +66,17 @@ struct EngineTensorView:
     var _dtype: DType
 
     fn __init__[type: DType](inout tensor: Tensor[type]) -> Self:
+        """Creates a non-owning view of given Tensor.
+
+        Parameters:
+            type: DType of the tensor.
+
+        Args:
+            tensor: Tensor backing the view.
+
+        Returns:
+            An instance of EngineTensorView of given tensor.
+        """
         return Self {
             _ptr: bitcast[Tensor[DType.invalid]](
                 Pointer[Tensor[type]].address_of(tensor)
@@ -76,6 +87,9 @@ struct EngineTensorView:
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
         """Returns pointer to the start of tensor.
+
+        Parameters:
+            type: Expected type of tensor.
 
         Returns:
             DTypePointer of given type.
@@ -90,7 +104,7 @@ struct EngineTensorView:
     fn data(self) -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of tensor.
 
-        Returns
+        Returns:
             DTypePointer of invalid type.
         """
         return self._data_ptr
@@ -153,6 +167,14 @@ struct EngineNumpyView:
     var _ptr: Pointer[PythonObject]
 
     fn __init__(inout tensor: PythonObject) raises -> Self:
+        """Creates a non-owning view of given numpy array.
+
+        Args:
+            tensor: Numpy Array backing the view.
+
+        Returns:
+            An instance of EngineNumpyView of given array.
+        """
         return Self {
             _np: _Numpy(), _ptr: Pointer[PythonObject].address_of(tensor)
         }
@@ -171,7 +193,7 @@ struct EngineNumpyView:
     fn dtype(self) raises -> DType:
         """Get DataType of the array backing the view.
 
-        Returns
+        Returns:
             DataType of the array backing the view.
         """
         var self_type = __get_address_as_lvalue(self._ptr.address).dtype

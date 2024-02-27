@@ -250,12 +250,17 @@ struct _Specs(CollectionElement):
 
 @value
 struct LoadOptions(CollectionElement):
+    """
+    Configuration options to load model with Max Engine.
+    """
+
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
     var _custom_ops_path: Optional[Path]
     var _input_specs: DynamicVector[_Specs]
 
     fn __init__(inout self):
+        """Creates a new LoadOptions object."""
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
@@ -346,9 +351,14 @@ struct LoadOptions(CollectionElement):
 
 @value
 struct SessionOptions:
+    """
+    Configuration options for InferenceSession.
+    """
+
     var _device: _Device
 
     fn __init__(inout self):
+        """Creates a new SessionOptions object."""
         self = Self(_Device.CPU)
 
     fn _set_device(inout self, device: _Device):
@@ -366,6 +376,14 @@ struct InferenceSession:
     var _ptr: AnyPointer[_InferenceSessionImpl]
 
     fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
+        """Creates a new inference session.
+
+        Args:
+            options: Session options to configure how session is created.
+
+        Returns:
+            A new instance of InferenceSession.
+        """
         var path = _get_engine_path()
         var self = Self._allocateAndInit(path, options._device)
         return Self {_ptr: self}
@@ -525,6 +543,9 @@ struct InferenceSession:
         )
 
     fn __del__(owned self):
+        """Destructor for the session. This will decrement the reference count
+        and when count reaches zero it will free the resources.
+        """
         if __get_address_as_lvalue(self._ptr.value).ref_count.fetch_sub(1) != 1:
             # There are others holding reference to this session. Keep the
             # session alive and let other reference holders deal with

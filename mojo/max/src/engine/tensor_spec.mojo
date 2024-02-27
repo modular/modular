@@ -31,6 +31,11 @@ struct EngineTensorSpec(Stringable, Movable):
     alias _NewTensorSpecFnName = "M_newTensorSpec"
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move constructor for Tensor Spec.
+
+        Args:
+            existing: Instance of TensorSpec to be moved.
+        """
         self._ptr = existing._ptr
         self._lib = existing._lib
         self._session = existing._session ^
@@ -44,6 +49,12 @@ struct EngineTensorSpec(Stringable, Movable):
         """Construct EngineTensorSpec.
         Do not use this function directly.
         Use functions from InferenceSession to create EngineTensorSpec.
+
+        Args:
+            ptr: C API pointer of TensorSpec.
+            lib: Handle to library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
         """
         self._ptr = ptr
         self._lib = lib
@@ -56,6 +67,17 @@ struct EngineTensorSpec(Stringable, Movable):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Creates an instance of EngineTensorSpec.
+        Do not use this function directly.
+        Use functions from InferenceSession to create EngineTensorSpec.
+
+        Args:
+            name: Name of tensor.
+            spec: Descritpion of Tensor in stdlib `TensorSpec` format.
+            lib: Handle to the library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
+        """
         var dtype = spec.dtype()
         var rank = spec.rank()
         var shape = DynamicVector[Int64]()
@@ -83,6 +105,18 @@ struct EngineTensorSpec(Stringable, Movable):
         lib: DLHandle,
         owned session: InferenceSession,
     ):
+        """Creates an instance of EngineTensorSpec.
+        Do not use this function directly.
+        Use functions from InferenceSession to create EngineTensorSpec.
+
+        Args:
+            name: Name of tensor.
+            shape: Shape of the tensor.
+            dtype: DataType of the tensor.
+            lib: Handle to the library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
+        """
         var name_str = name._as_ptr()
         if shape:
             var inner_shape = shape.value()
@@ -161,7 +195,7 @@ struct EngineTensorSpec(Stringable, Movable):
     fn get_as_tensor_spec(self) raises -> TensorSpec:
         """Get the Mojo TensorSpec equivalent of Engine TensorSpec.
 
-        Returns
+        Returns:
             Spec in Mojo TensorSpec format.
 
         Raises
@@ -221,5 +255,6 @@ struct EngineTensorSpec(Stringable, Movable):
         return self._ptr
 
     fn __del__(owned self):
+        """Destructor for EngineTensorSpec."""
         self._ptr.free(self._lib)
         _ = self._session ^

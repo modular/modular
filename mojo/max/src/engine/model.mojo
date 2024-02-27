@@ -53,6 +53,9 @@ struct Model:
 
         Args:
           inputs: A tensor map with input names as keys and inputs as values.
+
+        Returns:
+            A TensorMap with output names as keys.
         """
         var status = Status(self._lib)
         var outputs = call_dylib_func[CTensorMap](
@@ -144,6 +147,9 @@ struct Model:
     ](self, name: String, input: Tensor[type]) raises -> TensorMap:
         """Execute model with given input.
 
+        Parameters:
+            type: DType of input tensor.
+
         Args:
           name: Name of the input tensor.
           input: Input tensor to the model.
@@ -181,6 +187,10 @@ struct Model:
         input2: Tensor[type2],
     ) raises -> TensorMap:
         """Execute model with given inputs.
+
+        Parameters:
+            type1: DType of first input tensor.
+            type2: DType of second input tensor.
 
         Args:
           name1: Name of the first input tensor.
@@ -231,6 +241,11 @@ struct Model:
         input3: Tensor[type3],
     ) raises -> TensorMap:
         """Execute model with given inputs.
+
+        Parameters:
+            type1: DType of first input tensor.
+            type2: DType of second input tensor.
+            type3: DType of third input tensor.
 
         Args:
           name1: Name of the first input tensor.
