@@ -1428,6 +1428,33 @@ def KGEN_FloatLiteralBinop : KGENOp<"float_literal.binop", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralConvertOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralConvertOp : KGENOp<"float_literal.convert",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+  let summary = "Convert float literal to float type usable at runtime.";
+  let description = [{
+    The `kgen.float_literal.convert` operator casts an infinite precision float
+    literal to a fixed width float type.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.float_literal.convert %arg0 : to f64
+    ```
+  }];
+
+  let arguments = (ins KGEN_FloatLiteralType:$input);
+  let results = (outs F64:$output);
+
+  let assemblyFormat = [{
+    $input attr-dict `:` `to` qualified(type($output))
+  }];
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 
