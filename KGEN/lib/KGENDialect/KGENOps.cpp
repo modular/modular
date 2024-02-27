@@ -1385,6 +1385,298 @@ OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralBinop
+//===----------------------------------------------------------------------===//
+
+static std::tuple<FloatLiteralSpecialValues, IPRational>
+FloatLiteralAdd(FloatLiteralSpecialValues lSpecial,
+                FloatLiteralSpecialValues rSpecial, IPRational l,
+                IPRational r) {
+  switch (lSpecial) {
+  case FloatLiteralSpecialValues::NegZero:
+    if (rSpecial == FloatLiteralSpecialValues::NegZero)
+      return {FloatLiteralSpecialValues::Normal, 0};
+    return {rSpecial, r};
+  case FloatLiteralSpecialValues::Inf:
+    if (rSpecial == FloatLiteralSpecialValues::NegInf ||
+        rSpecial == FloatLiteralSpecialValues::Nan)
+      return {FloatLiteralSpecialValues::Nan, 0};
+    return {FloatLiteralSpecialValues::Inf, 0};
+  case FloatLiteralSpecialValues::NegInf:
+    if (rSpecial == FloatLiteralSpecialValues::Inf ||
+        rSpecial == FloatLiteralSpecialValues::Nan)
+      return {FloatLiteralSpecialValues::Nan, 0};
+    return {FloatLiteralSpecialValues::NegInf, 0};
+  case FloatLiteralSpecialValues::Nan:
+    return {FloatLiteralSpecialValues::Nan, 0};
+  case FloatLiteralSpecialValues::Normal:
+    if (rSpecial == FloatLiteralSpecialValues::Normal)
+      return {FloatLiteralSpecialValues::Normal, l + r};
+    return FloatLiteralAdd(rSpecial, lSpecial, r, l);
+  }
+  llvm_unreachable("unknown FloatLiteral special type");
+}
+
+static std::tuple<FloatLiteralSpecialValues, IPRational>
+FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
+                FloatLiteralSpecialValues rSpecial, IPRational l,
+                IPRational r) {
+  switch (lSpecial) {
+  case FloatLiteralSpecialValues::NegZero:
+    // When adding zeroes, the signs are basically XORed, like with
+    // multiplication.
+    if (rSpecial == FloatLiteralSpecialValues::NegZero)
+      return {FloatLiteralSpecialValues::Normal, 0};
+    return FloatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, r);
+  case FloatLiteralSpecialValues::Inf:
+    if (rSpecial == FloatLiteralSpecialValues::Inf ||
+        rSpecial == FloatLiteralSpecialValues::Nan)
+      return {FloatLiteralSpecialValues::Nan, 0};
+    return {FloatLiteralSpecialValues::Inf, 0};
+  case FloatLiteralSpecialValues::NegInf:
+    if (rSpecial == FloatLiteralSpecialValues::NegInf ||
+        rSpecial == FloatLiteralSpecialValues::Nan)
+      return {FloatLiteralSpecialValues::Nan, 0};
+    return {FloatLiteralSpecialValues::NegInf, 0};
+  case FloatLiteralSpecialValues::Nan:
+    return {FloatLiteralSpecialValues::Nan, 0};
+  case FloatLiteralSpecialValues::Normal:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::NegZero:
+      return {lSpecial, l};
+    case FloatLiteralSpecialValues::Inf:
+      return {FloatLiteralSpecialValues::NegInf, 0};
+    case FloatLiteralSpecialValues::NegInf:
+      return {FloatLiteralSpecialValues::Inf, 0};
+    case FloatLiteralSpecialValues::Nan:
+      return {FloatLiteralSpecialValues::Nan, 0};
+    case FloatLiteralSpecialValues::Normal:
+      return {FloatLiteralSpecialValues::Normal, l - r};
+    }
+  }
+  llvm_unreachable("unknown FloatLiteral special type");
+}
+
+static std::tuple<FloatLiteralSpecialValues, IPRational>
+FloatLiteralMul(FloatLiteralSpecialValues lSpecial,
+                FloatLiteralSpecialValues rSpecial, IPRational l,
+                IPRational r) {
+  if (lSpecial == FloatLiteralSpecialValues::Normal &&
+      rSpecial == FloatLiteralSpecialValues::Normal) {
+    IPRational ratResult = l * r;
+    if (ratResult == 0 && ((l < 0) || (r < 0)))
+      return {FloatLiteralSpecialValues::NegZero, 0};
+    return {FloatLiteralSpecialValues::Normal, ratResult};
+  }
+  std::function<FloatLiteralSpecialValues(
+      const FloatLiteralSpecialValues &, const FloatLiteralSpecialValues &,
+      const IPRational &, const IPRational &)>
+      specialCases =
+          [&specialCases](const FloatLiteralSpecialValues &lSpecial,
+                          const FloatLiteralSpecialValues &rSpecial,
+                          const IPRational &l,
+                          const IPRational &r) -> FloatLiteralSpecialValues {
+    switch (lSpecial) {
+    case FloatLiteralSpecialValues::NegZero:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegInf:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegZero:
+        return FloatLiteralSpecialValues::Normal;
+      case FloatLiteralSpecialValues::Normal:
+        if (r < 0)
+          return FloatLiteralSpecialValues::Normal;
+        return FloatLiteralSpecialValues::NegZero;
+      }
+    case FloatLiteralSpecialValues::Inf:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegZero:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegInf:
+        return FloatLiteralSpecialValues::NegInf;
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::Inf;
+      case FloatLiteralSpecialValues::Normal:
+        if (r == 0)
+          return FloatLiteralSpecialValues::Nan;
+        if (r < 0)
+          return FloatLiteralSpecialValues::NegInf;
+        return FloatLiteralSpecialValues::Inf;
+      }
+    case FloatLiteralSpecialValues::NegInf:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegZero:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::NegInf:
+        return FloatLiteralSpecialValues::Inf;
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::NegInf;
+      case FloatLiteralSpecialValues::Normal:
+        if (r == 0)
+          return FloatLiteralSpecialValues::Nan;
+        if (r < 0)
+          return FloatLiteralSpecialValues::Inf;
+        return FloatLiteralSpecialValues::NegInf;
+      }
+    case FloatLiteralSpecialValues::Nan:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Normal:
+      // The case of both being normal is handled up front, so we don't worry
+      // about it here.  Instead just recur with flipped operand order to handle
+      // the case that LHS is normal.
+      return specialCases(rSpecial, lSpecial, r, l);
+    }
+    llvm_unreachable("unknown FloatLiteral special type");
+  };
+
+  return {specialCases(lSpecial, rSpecial, l, r), 0};
+}
+
+static std::tuple<FloatLiteralSpecialValues, IPRational>
+FloatLiteralDiv(FloatLiteralSpecialValues lSpecial,
+                FloatLiteralSpecialValues rSpecial, IPRational l,
+                IPRational r) {
+  if (lSpecial == FloatLiteralSpecialValues::Normal &&
+      rSpecial == FloatLiteralSpecialValues::Normal) {
+    if (r == 0)
+      return {FloatLiteralSpecialValues::Nan, 0};
+    IPRational ratResult = l / r;
+    if (l == 0 && r < 0)
+      return {FloatLiteralSpecialValues::NegZero, 0};
+    return {FloatLiteralSpecialValues::Normal, ratResult};
+  };
+
+  auto specialCases = [&]() -> FloatLiteralSpecialValues {
+    switch (lSpecial) {
+    case FloatLiteralSpecialValues::NegZero:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::NegZero;
+      case FloatLiteralSpecialValues::NegInf:
+        return FloatLiteralSpecialValues::Normal;
+      case FloatLiteralSpecialValues::NegZero:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Normal:
+        if (r == 0)
+          return FloatLiteralSpecialValues::Nan;
+        if (r < 0)
+          return FloatLiteralSpecialValues::Normal;
+        return FloatLiteralSpecialValues::NegZero;
+      }
+    case FloatLiteralSpecialValues::Inf:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+      case FloatLiteralSpecialValues::NegZero:
+      case FloatLiteralSpecialValues::NegInf:
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Normal:
+        if (r == 0)
+          return FloatLiteralSpecialValues::Nan;
+        if (r < 0)
+          return FloatLiteralSpecialValues::NegInf;
+        return FloatLiteralSpecialValues::Inf;
+      }
+    case FloatLiteralSpecialValues::NegInf:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+      case FloatLiteralSpecialValues::NegZero:
+      case FloatLiteralSpecialValues::NegInf:
+      case FloatLiteralSpecialValues::Inf:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Normal:
+        if (r == 0)
+          return FloatLiteralSpecialValues::Nan;
+        if (r < 0)
+          return FloatLiteralSpecialValues::Inf;
+        return FloatLiteralSpecialValues::NegInf;
+      }
+    case FloatLiteralSpecialValues::Nan:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Normal:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Nan:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Inf:
+        if (l < 0)
+          return FloatLiteralSpecialValues::NegZero;
+        return FloatLiteralSpecialValues::Normal;
+      case FloatLiteralSpecialValues::NegInf:
+        if (l < 0)
+          return FloatLiteralSpecialValues::Normal;
+        return FloatLiteralSpecialValues::NegZero;
+      case FloatLiteralSpecialValues::NegZero:
+        return FloatLiteralSpecialValues::Nan;
+      case FloatLiteralSpecialValues::Normal:
+        llvm_unreachable("double normal case handled above");
+      }
+    }
+    llvm_unreachable("unknown FloatLiteral special type");
+  };
+  return {specialCases(), 0};
+}
+
+OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
+  FloatLiteralAttr lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
+  FloatLiteralAttr rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
+  FloatLiteralBinopKind oper = adaptor.getOper();
+  if (!lAttr || !rAttr)
+    return {};
+  FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
+  FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
+  IPRational l;
+  IPRational r;
+  if (lSpecial == FloatLiteralSpecialValues::Normal) {
+    assert(lAttr.getRational().has_value() &&
+           "rational has value when special value is normal");
+    l = lAttr.getRational().value();
+  }
+  if (rSpecial == FloatLiteralSpecialValues::Normal) {
+    assert(rAttr.getRational().has_value() &&
+           "rational has value when special value is normal");
+    r = rAttr.getRational().value();
+  }
+
+  auto mkAttr = [&](FloatLiteralSpecialValues resultSpecial,
+                    IPRational rational) -> FloatLiteralAttr {
+    return FloatLiteralAttr::get(
+        lAttr.getContext(),
+        FloatLiteralSpecialValuesAttr::get(lAttr.getContext(), resultSpecial),
+        rational);
+  };
+
+  switch (oper) {
+  case FloatLiteralBinopKind::Add: {
+    auto [resultSpecial, rational] = FloatLiteralAdd(lSpecial, rSpecial, l, r);
+    return mkAttr(resultSpecial, rational);
+  } break;
+  case FloatLiteralBinopKind::Sub: {
+    auto [resultSpecial, rational] = FloatLiteralSub(lSpecial, rSpecial, l, r);
+    return mkAttr(resultSpecial, rational);
+  } break;
+  case FloatLiteralBinopKind::Mul: {
+    auto [resultSpecial, rational] = FloatLiteralMul(lSpecial, rSpecial, l, r);
+    return mkAttr(resultSpecial, rational);
+  } break;
+  case FloatLiteralBinopKind::TrueDiv: {
+    auto [resultSpecial, rational] = FloatLiteralDiv(lSpecial, rSpecial, l, r);
+    return mkAttr(resultSpecial, rational);
+  } break;
+  }
+  llvm_unreachable("unknown FloatLiteralBinop type");
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 

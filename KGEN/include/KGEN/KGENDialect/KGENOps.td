@@ -1400,6 +1400,34 @@ def KGEN_FloatLiteralCmp : KGENOp<"float_literal.cmp", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralBinop
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralBinop : KGENOp<"float_literal.binop", [Pure]> {
+  let summary = "Binary operations for float_literals";
+  let description = [{
+    The `kgen.float_literal.binop` operator does standard arithmetic binary
+    operations on `!kgen.float_literal` values that return a
+    `!kgen.float_literal`.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.float_literal.binop add(%arg0, %arg1)
+    ```
+  }];
+
+  let arguments = (ins
+    KGEN_FloatLiteralBinopKindAttr:$oper,
+    KGEN_FloatLiteralType:$lhs,
+    KGEN_FloatLiteralType:$rhs);
+  let results = (outs KGEN_FloatLiteralType:$result);
+
+  let assemblyFormat = "$oper `(` $lhs `,` $rhs `)` attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 
