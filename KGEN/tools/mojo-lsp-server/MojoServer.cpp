@@ -89,8 +89,14 @@ struct SymbolRef;
 struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
       : identifier(identifier), declRef(declRef),
-        approximateViewKind(declRef.getApproximateViewKind()),
-        range(getRangeForText(identifierLoc, identifier)) {}
+        approximateViewKind(declRef.getApproximateViewKind()) {
+    // Modules/Packages just point to the direct location, they don't have a
+    // name in the source code.
+    if (isa<FileModuleOp, PackageOp>(*declRef))
+      range = {identifierLoc, identifierLoc};
+    else
+      range = getRangeForText(identifierLoc, identifier);
+  }
 
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;

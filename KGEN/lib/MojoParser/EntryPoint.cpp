@@ -222,8 +222,8 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
                SmallVectorImpl<std::string> *includedFiles,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
-  auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,
-                                     /*column=*/0);
+  auto fileLoc =
+      FileLineColLoc::get(context, moduleIdentifier, /*line=*/1, /*column=*/1);
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
       {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =

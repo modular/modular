@@ -7,13 +7,13 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"fn function():\n  let foo: Int = 420\n  var bar = 1 + foo\n  print(bar)"
+  "text":"import collections.vector\nfn function():\n  var foo: Int = 420\n  var bar = 1 + foo\n  print(bar)"
 }}}
 // -----
 {"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
   "position":{
-    "line":2,
+    "line":3,
     "character":17
   }
 }}
@@ -23,11 +23,11 @@
 // CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
-// CHECK-NEXT:         "line": 1
+// CHECK-NEXT:         "line": 2
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "start": {
 // CHECK-NEXT:         "character": 6,
-// CHECK-NEXT:         "line": 1
+// CHECK-NEXT:         "line": 2
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"
@@ -35,7 +35,7 @@
 {"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
   "position":{
-    "line":3,
+    "line":4,
     "character":8
   }
 }}
@@ -45,11 +45,11 @@
 // CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
-// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:         "line": 3
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "start": {
 // CHECK-NEXT:         "character": 6,
-// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:         "line": 3
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"
@@ -57,7 +57,7 @@
 {"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
   "position":{
-    "line": 1,
+    "line": 2,
     "character": 12
   }
 }}
@@ -65,6 +65,25 @@
 // CHECK-NEXT: "jsonrpc": "2.0"
 // CHECK-NEXT:   "result":
 // CHECK:          "uri": "{{.*}}int.mojo"
+// -----
+{"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
+  "textDocument":{"uri":"test:///foo.mojo"},
+  "position":{
+    "line": 0,
+    "character": 21
+  }
+}}
+// CHECK-LABEL: "id": 3
+// CHECK-NEXT: "jsonrpc": "2.0"
+// CHECK-NEXT:   "result":
+// CHECK:          "range":
+// CHECK:            "end":
+// CHECK:                "character": 0,
+// CHECK:                "line": 0
+// CHECK:            "start":
+// CHECK:                "character": 0,
+// CHECK:                "line": 0
+// CHECK:          "uri": "{{.*}}vector.mojo"
 // -----
 {"jsonrpc":"2.0","id":4,"method":"shutdown"}
 // -----

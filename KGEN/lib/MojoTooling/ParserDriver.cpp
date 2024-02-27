@@ -149,7 +149,7 @@ static ASTDecl *buildModuleDecl(const std::filesystem::path &filepath,
   // Otherwise, create a decl specifically for the module.
   auto fileLoc =
       FileLineColLoc::get(sharedState.getContext(), filepath.string(),
-                          /*line=*/0, /*column=*/0);
+                          /*line=*/1, /*column=*/1);
   return &sharedState.createModule(filepath.stem().string(), sourceBuf,
                                    fileLoc);
 }
