@@ -272,4 +272,21 @@ def KGEN_FloatLiteralCmpPredAttr : EnumAttr<KGENDialect,
                                             KGEN_FloatLiteralCmpPred,
                                             "float_literal.cmp_pred">;
 
+/// This encodes which specific operation is to be performed
+/// for `kgen.float_literal.binop` ops.
+def KGEN_FloatLiteralBinopKind : I32EnumAttr<"FloatLiteralBinopKind",
+  "operation specification for FloatLiteral binary operations", [
+  I32EnumAttrCase<"Add", 0, "add">,
+  I32EnumAttrCase<"Sub", 1, "sub">,
+  I32EnumAttrCase<"Mul", 2, "mul">,
+  I32EnumAttrCase<"TrueDiv", 3, "truediv">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_FloatLiteralBinopKindAttr : EnumAttr<KGENDialect,
+                                              KGEN_FloatLiteralBinopKind,
+                                              "float_literal.binop_kind">;
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD

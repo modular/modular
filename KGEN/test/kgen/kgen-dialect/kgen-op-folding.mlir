@@ -161,3 +161,70 @@ kgen.func @float_literal_cmp_nan() -> (i1, i1, i1, i1, i1, i1) {
 
   kgen.return %b1, %b2, %b3, %b4, %b5, %b6: i1, i1, i1, i1, i1, i1
 }
+
+// -----
+
+// CHECK-LABEL: @float_literal_binop_nan
+kgen.func @float_literal_binop_nan() -> (
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal
+  ) {
+  %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (5|3)>>
+  %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
+  // CHECK: [[NAN:%.*]] = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
+  // CHECK: kgen.return
+
+  // Nan always results in Nan
+  // CHECK-SAME: [[NAN]]
+  %r1 = kgen.float_literal.binop add(%nan, %fa)
+  // CHECK-SAME: [[NAN]]
+  %r2 = kgen.float_literal.binop sub(%nan, %fa)
+  // CHECK-SAME: [[NAN]]
+  %r3 = kgen.float_literal.binop mul(%nan, %fa)
+  // CHECK-SAME: [[NAN]]
+  %r4 = kgen.float_literal.binop truediv(%nan, %fa)
+  // CHECK-SAME: [[NAN]]
+  %r5 = kgen.float_literal.binop add(%nan, %fa)
+  // CHECK-SAME: [[NAN]]
+  %r6 = kgen.float_literal.binop add(%fa, %nan)
+  // CHECK-SAME: [[NAN]]
+  %r7 = kgen.float_literal.binop sub(%fa, %nan)
+  // CHECK-SAME: [[NAN]]
+  %r8 = kgen.float_literal.binop mul(%fa, %nan)
+  // CHECK-SAME: [[NAN]]
+  %r9 = kgen.float_literal.binop truediv(%fa, %nan)
+  // CHECK-SAME: [[NAN]]
+  %r10 = kgen.float_literal.binop add(%fa, %nan)
+
+  kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7, %r8, %r9, %r10
+  :
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal
+}
+
+// -----
+
+// CHECK-LABEL: @float_literal_binop_uniques
+kgen.func @float_literal_binop_uniques() ->
+  (!kgen.float_literal, !kgen.float_literal,
+  !kgen.float_literal, !kgen.float_literal) {
+  %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (5|3)>>
+  %fna = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<normal (-5|3)>>
+
+  // CHECK: (0|1)
+  %r1 = kgen.float_literal.binop add(%fa, %fna)
+  // CHECK: (-25|9)
+  %r2 = kgen.float_literal.binop mul(%fa, %fna)
+  // CHECK: (-1|1)
+  %r3 = kgen.float_literal.binop truediv(%fa, %fna)
+  // CHECK: (10|3)
+  %r4 = kgen.float_literal.binop sub(%fa, %fna)
+
+  kgen.return %r1, %r2, %r3, %r4 :
+    !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
+    !kgen.float_literal
+}
