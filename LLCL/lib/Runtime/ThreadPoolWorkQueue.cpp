@@ -358,12 +358,13 @@ struct WorkQueueThread {
   }
 
   ~WorkQueueThread() {
-    if (workerID == 0)
+    if (workerID == 0) {
       LLCL_PRINT_WORKER_STATS(
           llvm::dbgs() << "WorkerID,schedulerTasks(us),affinityQueueAccess(us),"
                           "affinityQueueWork(us),affinityAccessCount,"
                           "globalAccess(us),globalWork("
                           "us),globalAccessCount,sleep+wakeup(us)\n");
+    }
     LLCL_PRINT_WORKER_STATS(
         llvm::dbgs()
         << "Thread" << workerID << "," << (localWorkTime).count() << ","
@@ -795,8 +796,7 @@ public:
   /// thread per entry in cpuIDs. By the time the constructor finishes, all
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
-  ThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
-                      const std::vector<size_t> &cpuIDs,
+  ThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
                       bool paranoid, std::string_view poolName);
@@ -906,7 +906,7 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, const std::vector<size_t> &cpuIDs,
+    CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
     size_t taskListCapacity, bool mainWillDonate,
     std::chrono::microseconds threadBusyWaitTime, bool paranoid,
     std::string_view poolName)

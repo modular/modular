@@ -10,9 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Support/ThreadAffinity.h"
+#include "Support/MArchTarget/Host.h"
 #include "Support/Threading/ThreadAffinity.h"
 
-#include "Support/MArchTarget/Host.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
@@ -29,9 +29,8 @@
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
                                  size_t maxThreads) {
-  int performanceCores = M::getNumPerformanceCores();
-  int physicalCores = M::getNumPhysicalCores();
-  int logicalCores = M::getNumLogicalCores();
+  size_t performanceCores = M::getNumPerformanceCores();
+  size_t physicalCores = M::getNumPhysicalCores();
   ErrorOr<CPULimits> limitsOr = CPULimits::get();
   bool usingLimits = !limitsOr.isError() && limitsOr->millicores;
 
@@ -53,7 +52,7 @@ M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     } else if (withAffinity) {
       numThreads = physicalCores;
     } else {
-      numThreads = logicalCores;
+      numThreads = M::getNumLogicalCores();
     }
     LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting number of "
                             << "threads to physical cores across all "
@@ -78,7 +77,7 @@ M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     numThreads = maxThreads;
   }
 
-  auto cpuIDs = std::vector<size_t>(numThreads, kNoAffinity);
+  std::vector<size_t> cpuIDs(numThreads, kNoAffinity);
   if (withAffinity && haveThreadAffinity()) {
     ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
     if (const char *err = errOrSystemInfo.getError()) {
