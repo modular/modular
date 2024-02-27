@@ -357,10 +357,9 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       value);
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
-  auto ret =
-      emitter.emitConstructorCall(type, CallOperands({{AnyValue(attr), this}}),
-                                  this, CallSyntax::kImplicitConvert, dest);
-  return ret;
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(attr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

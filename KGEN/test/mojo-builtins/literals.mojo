@@ -21,8 +21,16 @@ fn var_let_decls():
     # CHECK: lit.ref.store %[[V3]], %yy
     var yy = 1.0
 
-    # CHECK: lit.alias.decl {{.*}}fl{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<normal (2|1)>}>
-    alias fl = 2.0
+    # CHECK: lit.alias.decl {{.*}}fl1{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<normal (2|1)>}>
+    alias fl1 = 2.0
+    # CHECK: lit.alias.decl {{.*}}fl2{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<normal (63|10)>}>
+    alias fl2 = 6.3
+    # CHECK: lit.alias.decl {{.*}}fl3{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<normal (41|2)>}>
+    alias fl3 = 20.5
+    # CHECK: lit.alias.decl {{.*}}fl4{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<normal (-41|2)>}>
+    alias fl4 = -20.5
+    # CHECK: lit.alias.decl {{.*}}fl5{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<neg_zero>}>
+    alias fl5 = -0.0
 
     # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<!StringLiteral,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: !StringLiteral = <{:string "hello"}>
