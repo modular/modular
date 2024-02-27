@@ -22,6 +22,15 @@
 COMPILERRT_EXPORT LLVM_ATTRIBUTE_USED bool KGEN_CompilerRT_Initialize();
 
 //===----------------------------------------------------------------------===//
+// Config.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the config handling functions.
+void registerConfig(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
 // Globals.cpp
 //===----------------------------------------------------------------------===//
 
