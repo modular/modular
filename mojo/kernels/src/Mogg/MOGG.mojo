@@ -10,15 +10,16 @@ from math import (
     add,
     ceil,
     cos,
-    div,
     div_ceil,
+    div,
     equal,
     erf,
     exp,
     floor,
     fma,
-    greater,
     greater_equal,
+    greater,
+    isinf,
     isnan,
     log,
     log1p,
@@ -41,7 +42,7 @@ from math import (
     tanh,
     trunc,
 )
-from math.limit import isinf, max_or_inf, min_or_neginf
+from math.limit import max_or_inf, min_or_neginf
 from random import randn, seed
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load

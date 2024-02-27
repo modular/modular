@@ -11,16 +11,16 @@ from math import (
     exp,
     floor,
     iota,
+    isinf,
+    isnan,
     log,
     log1p,
     max,
     min,
-    isnan,
     rsqrt,
     sqrt,
     tanh,
 )
-from math.limit import isinf
 
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
