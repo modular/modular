@@ -334,3 +334,41 @@ kgen.generator export @malloc_nullptr() {
   %0 = kgen.param.constant: pointer<index> = <apply(:() -> !kgen.pointer<index> @size_zero_alloc)>
   kgen.return
 }
+
+// -----
+
+// COM: This test ensures scalar data and a pointer region can co-exist
+// COM: correctly in the same memory allocation.
+
+!ptr_t = !kgen.pointer<variant<index, pointer<none>>>
+
+kgen.generator @fill_ptr() -> !ptr_t {
+  %idx1 = index.constant 1
+  %idx8 = index.constant 8
+  %idx32 = index.constant 32
+
+  // Allocate an array of 2 elements.
+  %0 = pop.aligned_alloc %idx8, %idx32 : !ptr_t
+
+  // Store 1 to the first element.
+  %1 = pop.pointer.bitcast %0 : !ptr_t to !kgen.pointer<index>
+  pop.store %idx1, %1 : !kgen.pointer<index>
+
+  // Store a pointer to the second element.
+  %2 = pop.offset %0[%idx1] : !ptr_t
+  %3 = pop.aligned_alloc %idx1, %idx1 : !kgen.pointer<none>
+  %4 = pop.pointer.bitcast %2 : !ptr_t to !kgen.pointer<pointer<none>>
+  pop.store %3, %4 : !kgen.pointer<pointer<none>>
+
+  kgen.return %0 : !ptr_t
+}
+
+// CHECK-LABEL: kgen.func export @pointer_overwrite
+kgen.generator export @pointer_overwrite() {
+  // CHECK-NEXT: memref<[([[BLOB1:.*]], heap, [(16, 1, 0)]), ([[BLOB2:.*]], heap, [])], 0, 0>>
+  kgen.param.constant: !ptr_t = <apply(:() -> !ptr_t @fill_ptr)>
+  kgen.return
+}
+
+// CHECK: [[BLOB1]]: "0x080000000100000000000000000000000000000020CA9A3B000000000000000000000000"
+// CHECK: [[BLOB2]]: "0x0100000000"
