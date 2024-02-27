@@ -231,7 +231,7 @@ fn bad_tuple(a: Int):
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, FloatLiteral]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, FloatLiteralOld]' value to 'Tuple[Int, Int]' in assignment}}
   iTup = (1, 2.0)
 
 
@@ -299,7 +299,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in field initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteralOld' value to 'Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 
@@ -420,7 +420,7 @@ def testLambda():
 
 def testLambda2():
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
-  _ = lambda (x: Int, y: Float) raises: x+y
+  _ = lambda (x: Int, y: FloatLiteralOld) raises: x+y
 
 def testInExpr(x: Int, y: Int):
   # expected-error @+1 {{'Int' does not implement the '__contains__' method}}

@@ -30,7 +30,7 @@ fn GoodUseOfThing(a: Thing[4, 5]):
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-# expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
+# expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteralOld'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -85,12 +85,12 @@ fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.i
   return callable[a]
 
 # expected-note @+1 {{function declared here}}
-def generic_fn[a: FloatLiteral, b: Int](c : Int):
+def generic_fn[a: FloatLiteralOld, b: Int](c : Int):
   pass
 
-def call_generic[dt: FloatLiteral]():
+def call_generic[dt: FloatLiteralOld]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
-  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'FloatLiteral'}}
+  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'FloatLiteralOld'}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -123,7 +123,7 @@ fn variadic_int_params[*a: Int]():
     pass
 
 fn callVariadic():
-  variadic_int_params[1.0]() # expected-error {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteral'}}
+  variadic_int_params[1.0]() # expected-error {{callee parameter #0 has 'Int' type, but value has type 'FloatLiteralOld'}}
 
 
 ##===----------------------------------------------------------------------===##
@@ -140,7 +140,7 @@ fn testAliases(variable: Int):
 
 
 fn testConversionQoI():
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in alias initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteralOld' value to 'Int' in alias initializer}}
   alias intVal : Int = 1.2
 
 
