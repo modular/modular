@@ -222,6 +222,46 @@ fn exp_mojo_opt[
     # return (val1 < max_val).select(val1, SIMD[type,simd_width](inf[type]()))
 
 
+@always_inline
+fn _exp_taylor_mlas[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return polynomial_evaluate[
+        type,
+        simd_width,
+        VariadicList[SIMD[type, simd_width]](
+            1.0,
+            1.0,
+            0.499999851,
+            0.16666472,
+            0.0416695364,
+            0.00837312452,
+            0.00137805939,
+        ),
+    ](x)
+
+
+@always_inline
+fn exp_mlas[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    constrained[type.is_floating_point(), "must be a floating point value"]()
+    alias neg_ln2 = -0.69314718055966295651160180568695068359375
+    alias inv_lg2 = 1.442695040888963407359924681001892137426646
+
+    alias neg_ln2_hi = -6.93145752e-1
+    alias neg_ln2_lo = -1.42860677e-6
+
+    var min_val = -88.3762626647949
+    var max_val = 88.3762626647950
+
+    var xc = clamp(x, min_val, max_val)
+    var k = floor(xc.fma(inv_lg2, 0.5))
+    var r = k.fma(neg_ln2_hi, xc)
+    var rr = k.fma(neg_ln2_lo, r)
+    return max(ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
+
+
 def main():
     var m = MojoBench()
     var problem_size = range(1 << 10, 1 << 12, 1 << 10)
@@ -229,4 +269,5 @@ def main():
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
     bench_unary[exp_libm, DType.float32](m, problem_size, "libm")
     bench_unary[exp_sleef, DType.float32](m, problem_size, "sleef")
+    bench_unary[exp_mlas, DType.float32](m, problem_size, "mlas")
     m.dump_report()
