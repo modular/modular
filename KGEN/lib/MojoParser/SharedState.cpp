@@ -794,7 +794,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   // If the path was a directory, we're importing a source package.
   if (std::filesystem::is_directory(*modulePath)) {
     auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
-        *modulePath, /*line=*/0, /*column=*/0);
+        *modulePath, /*line=*/1, /*column=*/1);
     return createPackageState(declName, *modulePath, *parentState, fileLoc);
   }
 
@@ -817,7 +817,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   const llvm::MemoryBuffer *moduleBuffer =
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
-      moduleBuffer->getBufferIdentifier(), /*line=*/0, /*column=*/0);
+      moduleBuffer->getBufferIdentifier(), /*line=*/1, /*column=*/1);
   return createModuleState(declName, moduleBuffer, *parentState, fileLoc);
 }
 
@@ -1094,7 +1094,7 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc =
-      FileLineColLoc::get(getContext(), path, /*line=*/0, /*column=*/0);
+      FileLineColLoc::get(getContext(), path, /*line=*/1, /*column=*/1);
   ModuleState &state =
       createPackageState(StringAttr::get(getContext(), name), path,
                          *impl->topLevelModuleState, fileLoc);

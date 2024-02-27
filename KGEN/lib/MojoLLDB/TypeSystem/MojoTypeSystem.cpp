@@ -1045,8 +1045,8 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
   // We create a fake empty file so that parser diagnostics can be emitted if
   // we are doing something wrong when creating the decls. Otherwise, we hit
   // asserts and LLDB aborts.
-  auto loc = FileLineColLoc::get(getMLIRContext(), moduleName, /*line=*/0,
-                                 /*column=*/0);
+  auto loc = FileLineColLoc::get(getMLIRContext(), moduleName, /*line=*/1,
+                                 /*column=*/1);
   std::unique_ptr<llvm::MemoryBuffer> buffer =
       llvm::MemoryBuffer::getMemBufferCopy("", loc.getFilename().getValue());
   auto &sourceMgr = impl->parserContext->getSourceMgr();
