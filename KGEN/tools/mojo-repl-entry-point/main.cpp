@@ -50,7 +50,8 @@ static void forceLinkExportedSymbols() {
 /// Forcibly link in the compiler-rt runtime functions. This allows Mojo code
 /// running in the repl to use the compiler-rt runtime functions.
 static void forceLinkCompilerRT() {
-  llvm::nulls() << (void *)&KGEN::registerGlobals
+  llvm::nulls() << (void *)&KGEN::registerConfig
+                << (void *)&KGEN::registerGlobals
                 << (void *)&KGEN::registerIntelAMX << (void *)&KGEN::registerIO
                 << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerPython
                 << (void *)&KGEN::registerMemory
