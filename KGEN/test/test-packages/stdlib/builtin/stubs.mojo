@@ -55,7 +55,7 @@ struct IntLiteral:
 
 @value
 @register_passable("trivial")
-struct FloatLiteral:
+struct FloatLiteralOld:
     var value: __mlir_type.f64
 
 

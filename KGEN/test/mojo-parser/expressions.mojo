@@ -34,7 +34,7 @@ fn consume(owned a: MemoryOnlyInt): pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
-  var x: FloatLiteral
+  var x: FloatLiteralOld
   fn __init__(inout self, value: MemoryOnlyInt):
     self.x = 1.0
 
@@ -537,7 +537,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:scalar<f64> "2"}, {:scalar<f64> "3"})>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteralOld = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:scalar<f64> "2"}, {:scalar<f64> "3"})>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}

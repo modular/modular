@@ -965,7 +965,7 @@ ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
 }
 
 ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
+  return resolveBuiltinModuleType(context, loc, "FloatLiteralOld", *this);
 }
 
 ASTType SharedState::getBuiltinCoroutineType(ASTDecl &context,
