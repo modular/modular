@@ -93,7 +93,8 @@ struct Value:
         Params:
             type: The expected DType of the tensor.
 
-        Returns: A copy of the tensor contained in this value.
+        Returns:
+            A copy of the tensor contained in this value.
 
         Raises:
             If the value is not a tensor, or the dtype of the tensor value is
@@ -116,7 +117,8 @@ struct Value:
 
         The result is undefined if this value is not a boolean.
 
-        Returns: Boolean contained in this value.
+        Returns:
+            Boolean contained in this value.
         """
         return self._ptr.get_bool(self._lib)
 
@@ -133,7 +135,8 @@ struct Value:
         Ownership of the list is not transferred.  User must ensure the value
         outlives the list.
 
-        Returns: A `List` borrowing the internal storage of this value.
+        Returns:
+            A `List` borrowing the internal storage of this value.
         """
         var ptr = self._ptr.get_list(self._lib)
         if not ptr.ptr:
@@ -206,7 +209,8 @@ struct List(Sized):
     fn __len__(self) -> Int:
         """Get the length of the list.
 
-        Returns: The length of the list.
+        Returns:
+            The length of the list.
         """
         return self._ptr.get_size(self._lib)
 
@@ -220,9 +224,11 @@ struct List(Sized):
         Args:
             index: The index of the item to retrieve within the list.
 
-        Returns: A new reference to an existing value within the list.
+        Returns:
+            A new reference to an existing value within the list.
 
-        Raises: If the index is out of bounds.
+        Raises:
+            If the index is out of bounds.
         """
         var c_value = self._ptr.get_value(self._lib, index)
         if not c_value.ptr:
