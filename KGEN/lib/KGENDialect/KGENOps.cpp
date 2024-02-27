@@ -1292,6 +1292,95 @@ OpFoldResult IntLiteralToFloatLiteralOp::fold(FoldAdaptor adaptor) {
 // FloatLiteralCmp
 //===----------------------------------------------------------------------===//
 
+static bool isNan(FloatLiteralSpecialValues v) {
+  return v == FloatLiteralSpecialValues::Nan;
+}
+static bool isNegZero(FloatLiteralSpecialValues v) {
+  return v == FloatLiteralSpecialValues::NegZero;
+}
+static bool isInf(FloatLiteralSpecialValues v) {
+  return v == FloatLiteralSpecialValues::Inf;
+}
+static bool isNegInf(FloatLiteralSpecialValues v) {
+  return v == FloatLiteralSpecialValues::NegInf;
+}
+static bool isNormal(FloatLiteralSpecialValues v) {
+  return v == FloatLiteralSpecialValues::Normal;
+}
+
+/// Helper for float literal comparison.  The lhs/rhs values are only meaningful
+/// when lSpecial/rSpecial are normal.
+static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
+                                  const FloatLiteralSpecialValues &lSpecial,
+                                  const FloatLiteralSpecialValues &rSpecial,
+                                  const IPRational &lhs,
+                                  const IPRational &rhs) {
+  switch (pred) {
+  case FloatLiteralCmpPred::Eq:
+    if (lSpecial == rSpecial) {
+      if (isNormal(lSpecial))
+        return lhs == rhs;
+      return !isNan(lSpecial);
+    }
+    // Python treats -0 and 0 as equal.
+    if (isNegZero(lSpecial) && isNormal(rSpecial) && rhs == 0)
+      return true;
+    if (isNegZero(rSpecial) && isNormal(lSpecial) && lhs == 0)
+      return true;
+    return false;
+  case FloatLiteralCmpPred::Ne:
+    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                  lhs, rhs);
+  case FloatLiteralCmpPred::Lt:
+    switch (lSpecial) {
+    case FloatLiteralSpecialValues::Normal:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Normal:
+        return lhs < rhs;
+      case FloatLiteralSpecialValues::Inf:
+        return true;
+      case FloatLiteralSpecialValues::NegZero:
+        return lhs < 0;
+      default:
+        return false;
+      }
+    case FloatLiteralSpecialValues::NegZero:
+      switch (rSpecial) {
+      case FloatLiteralSpecialValues::Normal:
+        // This would be <=, but Python treats -0 as equal to 0, so the RHS
+        // needs to be strictly greater than positive zero.
+        return IPRational(0) < rhs;
+      case FloatLiteralSpecialValues::Inf:
+        return true;
+      default:
+        return false;
+      }
+    case FloatLiteralSpecialValues::Inf:
+      return false;
+    case FloatLiteralSpecialValues::NegInf:
+      return !isNan(rSpecial) && !isNegInf(rSpecial);
+    case FloatLiteralSpecialValues::Nan:
+      return false;
+    }
+  case FloatLiteralCmpPred::Le:
+    return floatLiteralCmpHelper(FloatLiteralCmpPred::Lt, lSpecial, rSpecial,
+                                 lhs, rhs) ||
+           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                 lhs, rhs);
+  case FloatLiteralCmpPred::Gt:
+    if (isNan(lSpecial) || isNan(rSpecial))
+      return false;
+    return !floatLiteralCmpHelper(FloatLiteralCmpPred::Le, lSpecial, rSpecial,
+                                  lhs, rhs);
+  case FloatLiteralCmpPred::Ge:
+    return floatLiteralCmpHelper(FloatLiteralCmpPred::Gt, lSpecial, rSpecial,
+                                 lhs, rhs) ||
+           floatLiteralCmpHelper(FloatLiteralCmpPred::Eq, lSpecial, rSpecial,
+                                 lhs, rhs);
+  }
+  llvm_unreachable("invalid cmp predicate");
+}
+
 OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
   FloatLiteralAttr lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
   FloatLiteralAttr rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
@@ -1299,90 +1388,21 @@ OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
     return {};
   FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
   FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
-  IPRational l;
-  IPRational r;
-  if (lSpecial == FloatLiteralSpecialValues::Normal) {
+  IPRational lhs;
+  IPRational rhs;
+  if (isNormal(lSpecial)) {
     assert(lAttr.getRational().has_value() &&
            "rational does not have a value when special value is normal");
-    l = lAttr.getRational().value();
+    lhs = lAttr.getRational().value();
   }
-  if (rSpecial == FloatLiteralSpecialValues::Normal) {
+  if (isNormal(rSpecial)) {
     assert(rAttr.getRational().has_value() &&
            "rational does not have a value when special value is normal");
-    r = rAttr.getRational().value();
+    rhs = rAttr.getRational().value();
   }
-
-  std::function<bool(FloatLiteralCmpPred, FloatLiteralSpecialValues,
-                     FloatLiteralSpecialValues, IPRational, IPRational)>
-      getResult = [&](const FloatLiteralCmpPred &pred,
-                      const FloatLiteralSpecialValues &lSpecial,
-                      const FloatLiteralSpecialValues &rSpecial,
-                      const IPRational &l, const IPRational &r) -> bool {
-    switch (pred) {
-    case FloatLiteralCmpPred::Eq:
-      if (lSpecial == rSpecial) {
-        if (lSpecial == FloatLiteralSpecialValues::Normal)
-          return l == r;
-        return lSpecial != FloatLiteralSpecialValues::Nan;
-      }
-      // Python treats -0 and 0 as equal.
-      if (lSpecial == FloatLiteralSpecialValues::NegZero &&
-          rSpecial == FloatLiteralSpecialValues::Normal && r == 0)
-        return true;
-      if (rSpecial == FloatLiteralSpecialValues::NegZero &&
-          lSpecial == FloatLiteralSpecialValues::Normal && l == 0)
-        return true;
-      return false;
-    case FloatLiteralCmpPred::Ne:
-      return !getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
-    case FloatLiteralCmpPred::Lt:
-      switch (lSpecial) {
-      case FloatLiteralSpecialValues::Normal:
-        switch (rSpecial) {
-        case FloatLiteralSpecialValues::Normal:
-          return l < r;
-        case FloatLiteralSpecialValues::Inf:
-          return true;
-        case FloatLiteralSpecialValues::NegZero:
-          return l < 0;
-        default:
-          return false;
-        }
-      case FloatLiteralSpecialValues::NegZero:
-        switch (rSpecial) {
-        case FloatLiteralSpecialValues::Normal:
-          // This would be <=, but Python treats -0 as equal to 0, so the RHS
-          // needs to be strictly greater than positive zero.
-          return IPRational(0) < r;
-        case FloatLiteralSpecialValues::Inf:
-          return true;
-        default:
-          return false;
-        }
-      case FloatLiteralSpecialValues::Inf:
-        return false;
-      case FloatLiteralSpecialValues::NegInf:
-        return (rSpecial == FloatLiteralSpecialValues::NegInf) ? false : true;
-      case FloatLiteralSpecialValues::Nan:
-        return false;
-      }
-    case FloatLiteralCmpPred::Le:
-      return getResult(FloatLiteralCmpPred::Lt, lSpecial, rSpecial, l, r) ||
-             getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
-    case FloatLiteralCmpPred::Gt:
-      if (lSpecial == FloatLiteralSpecialValues::Nan ||
-          rSpecial == FloatLiteralSpecialValues::Nan)
-        return false;
-      return !getResult(FloatLiteralCmpPred::Le, lSpecial, rSpecial, l, r);
-    case FloatLiteralCmpPred::Ge:
-      return getResult(FloatLiteralCmpPred::Gt, lSpecial, rSpecial, l, r) ||
-             getResult(FloatLiteralCmpPred::Eq, lSpecial, rSpecial, l, r);
-    }
-    llvm_unreachable("invalid cmp predicate");
-  };
-
-  return BoolAttr::get(lAttr.getContext(),
-                       getResult(adaptor.getPred(), lSpecial, rSpecial, l, r));
+  return BoolAttr::get(
+      lAttr.getContext(),
+      floatLiteralCmpHelper(adaptor.getPred(), lSpecial, rSpecial, lhs, rhs));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1391,52 +1411,48 @@ OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
 FloatLiteralAdd(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational l,
-                IPRational r) {
+                FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                IPRational rhs) {
   switch (lSpecial) {
   case FloatLiteralSpecialValues::NegZero:
-    if (rSpecial == FloatLiteralSpecialValues::NegZero)
+    if (isNegZero(rSpecial))
       return {FloatLiteralSpecialValues::Normal, 0};
-    return {rSpecial, r};
+    return {rSpecial, rhs};
   case FloatLiteralSpecialValues::Inf:
-    if (rSpecial == FloatLiteralSpecialValues::NegInf ||
-        rSpecial == FloatLiteralSpecialValues::Nan)
+    if (isNegInf(rSpecial) || isNan(rSpecial))
       return {FloatLiteralSpecialValues::Nan, 0};
     return {FloatLiteralSpecialValues::Inf, 0};
   case FloatLiteralSpecialValues::NegInf:
-    if (rSpecial == FloatLiteralSpecialValues::Inf ||
-        rSpecial == FloatLiteralSpecialValues::Nan)
+    if (isInf(rSpecial) || isNan(rSpecial))
       return {FloatLiteralSpecialValues::Nan, 0};
     return {FloatLiteralSpecialValues::NegInf, 0};
   case FloatLiteralSpecialValues::Nan:
     return {FloatLiteralSpecialValues::Nan, 0};
   case FloatLiteralSpecialValues::Normal:
-    if (rSpecial == FloatLiteralSpecialValues::Normal)
-      return {FloatLiteralSpecialValues::Normal, l + r};
-    return FloatLiteralAdd(rSpecial, lSpecial, r, l);
+    if (isNormal(rSpecial))
+      return {FloatLiteralSpecialValues::Normal, lhs + rhs};
+    return FloatLiteralAdd(rSpecial, lSpecial, rhs, lhs);
   }
   llvm_unreachable("unknown FloatLiteral special type");
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
 FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational l,
-                IPRational r) {
+                FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                IPRational rhs) {
   switch (lSpecial) {
   case FloatLiteralSpecialValues::NegZero:
     // When adding zeroes, the signs are basically XORed, like with
     // multiplication.
-    if (rSpecial == FloatLiteralSpecialValues::NegZero)
+    if (isNegZero(rSpecial))
       return {FloatLiteralSpecialValues::Normal, 0};
-    return FloatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, r);
+    return FloatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, rhs);
   case FloatLiteralSpecialValues::Inf:
-    if (rSpecial == FloatLiteralSpecialValues::Inf ||
-        rSpecial == FloatLiteralSpecialValues::Nan)
+    if (isInf(rSpecial) || isNan(rSpecial))
       return {FloatLiteralSpecialValues::Nan, 0};
     return {FloatLiteralSpecialValues::Inf, 0};
   case FloatLiteralSpecialValues::NegInf:
-    if (rSpecial == FloatLiteralSpecialValues::NegInf ||
-        rSpecial == FloatLiteralSpecialValues::Nan)
+    if (isNegInf(rSpecial) || isNan(rSpecial))
       return {FloatLiteralSpecialValues::Nan, 0};
     return {FloatLiteralSpecialValues::NegInf, 0};
   case FloatLiteralSpecialValues::Nan:
@@ -1444,7 +1460,7 @@ FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
   case FloatLiteralSpecialValues::Normal:
     switch (rSpecial) {
     case FloatLiteralSpecialValues::NegZero:
-      return {lSpecial, l};
+      return {lSpecial, lhs};
     case FloatLiteralSpecialValues::Inf:
       return {FloatLiteralSpecialValues::NegInf, 0};
     case FloatLiteralSpecialValues::NegInf:
@@ -1452,179 +1468,176 @@ FloatLiteralSub(FloatLiteralSpecialValues lSpecial,
     case FloatLiteralSpecialValues::Nan:
       return {FloatLiteralSpecialValues::Nan, 0};
     case FloatLiteralSpecialValues::Normal:
-      return {FloatLiteralSpecialValues::Normal, l - r};
+      return {FloatLiteralSpecialValues::Normal, lhs - rhs};
     }
+  }
+  llvm_unreachable("unknown FloatLiteral special type");
+}
+
+/// Helper for multiplication, to keep the special case matching table separate.
+/// Assumes that at least one of lSpecial and rSpecial is non-normal.
+static FloatLiteralSpecialValues
+floatLiteralMulSpecialCases(const FloatLiteralSpecialValues &lSpecial,
+                            const FloatLiteralSpecialValues &rSpecial,
+                            const IPRational &lhs, const IPRational &rhs) {
+  switch (lSpecial) {
+  case FloatLiteralSpecialValues::NegZero:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+    case FloatLiteralSpecialValues::Inf:
+    case FloatLiteralSpecialValues::NegInf:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::NegZero:
+      return FloatLiteralSpecialValues::Normal;
+    case FloatLiteralSpecialValues::Normal:
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::Normal;
+      return FloatLiteralSpecialValues::NegZero;
+    }
+  case FloatLiteralSpecialValues::Inf:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+    case FloatLiteralSpecialValues::NegZero:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::NegInf:
+      return FloatLiteralSpecialValues::NegInf;
+    case FloatLiteralSpecialValues::Inf:
+      return FloatLiteralSpecialValues::Inf;
+    case FloatLiteralSpecialValues::Normal:
+      if (rhs == 0)
+        return FloatLiteralSpecialValues::Nan;
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::NegInf;
+      return FloatLiteralSpecialValues::Inf;
+    }
+  case FloatLiteralSpecialValues::NegInf:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+    case FloatLiteralSpecialValues::NegZero:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::NegInf:
+      return FloatLiteralSpecialValues::Inf;
+    case FloatLiteralSpecialValues::Inf:
+      return FloatLiteralSpecialValues::NegInf;
+    case FloatLiteralSpecialValues::Normal:
+      if (rhs == 0)
+        return FloatLiteralSpecialValues::Nan;
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::Inf;
+      return FloatLiteralSpecialValues::NegInf;
+    }
+  case FloatLiteralSpecialValues::Nan:
+    return FloatLiteralSpecialValues::Nan;
+  case FloatLiteralSpecialValues::Normal:
+    // The case of both being normal is handled up front, so we don't worry
+    // about it here.  Instead just recur with flipped operand order to handle
+    // the case that LHS is normal.
+    return floatLiteralMulSpecialCases(rSpecial, lSpecial, rhs, lhs);
   }
   llvm_unreachable("unknown FloatLiteral special type");
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
 FloatLiteralMul(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational l,
-                IPRational r) {
-  if (lSpecial == FloatLiteralSpecialValues::Normal &&
-      rSpecial == FloatLiteralSpecialValues::Normal) {
-    IPRational ratResult = l * r;
-    if (ratResult == 0 && ((l < 0) || (r < 0)))
+                FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                IPRational rhs) {
+  if (isNormal(lSpecial) && isNormal(rSpecial)) {
+    IPRational ratResult = lhs * rhs;
+    if (ratResult == 0 && ((lhs < 0) || (rhs < 0)))
       return {FloatLiteralSpecialValues::NegZero, 0};
     return {FloatLiteralSpecialValues::Normal, ratResult};
   }
-  std::function<FloatLiteralSpecialValues(
-      const FloatLiteralSpecialValues &, const FloatLiteralSpecialValues &,
-      const IPRational &, const IPRational &)>
-      specialCases =
-          [&specialCases](const FloatLiteralSpecialValues &lSpecial,
-                          const FloatLiteralSpecialValues &rSpecial,
-                          const IPRational &l,
-                          const IPRational &r) -> FloatLiteralSpecialValues {
-    switch (lSpecial) {
-    case FloatLiteralSpecialValues::NegZero:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegInf:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegZero:
-        return FloatLiteralSpecialValues::Normal;
-      case FloatLiteralSpecialValues::Normal:
-        if (r < 0)
-          return FloatLiteralSpecialValues::Normal;
-        return FloatLiteralSpecialValues::NegZero;
-      }
-    case FloatLiteralSpecialValues::Inf:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegZero:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegInf:
-        return FloatLiteralSpecialValues::NegInf;
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::Inf;
-      case FloatLiteralSpecialValues::Normal:
-        if (r == 0)
-          return FloatLiteralSpecialValues::Nan;
-        if (r < 0)
-          return FloatLiteralSpecialValues::NegInf;
-        return FloatLiteralSpecialValues::Inf;
-      }
-    case FloatLiteralSpecialValues::NegInf:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegZero:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::NegInf:
-        return FloatLiteralSpecialValues::Inf;
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::NegInf;
-      case FloatLiteralSpecialValues::Normal:
-        if (r == 0)
-          return FloatLiteralSpecialValues::Nan;
-        if (r < 0)
-          return FloatLiteralSpecialValues::Inf;
-        return FloatLiteralSpecialValues::NegInf;
-      }
+  return {floatLiteralMulSpecialCases(lSpecial, rSpecial, lhs, rhs), 0};
+}
+
+/// Helper to separate the special case logic for division.  Assumes that at
+/// least one of lSpecial and rSpecial is non-normal.
+static FloatLiteralSpecialValues
+floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
+                            const FloatLiteralSpecialValues &rSpecial,
+                            const IPRational &lhs, const IPRational &rhs) {
+  switch (lSpecial) {
+  case FloatLiteralSpecialValues::NegZero:
+    switch (rSpecial) {
     case FloatLiteralSpecialValues::Nan:
       return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Inf:
+      return FloatLiteralSpecialValues::NegZero;
+    case FloatLiteralSpecialValues::NegInf:
+      return FloatLiteralSpecialValues::Normal;
+    case FloatLiteralSpecialValues::NegZero:
+      return FloatLiteralSpecialValues::Nan;
     case FloatLiteralSpecialValues::Normal:
-      // The case of both being normal is handled up front, so we don't worry
-      // about it here.  Instead just recur with flipped operand order to handle
-      // the case that LHS is normal.
-      return specialCases(rSpecial, lSpecial, r, l);
+      if (rhs == 0)
+        return FloatLiteralSpecialValues::Nan;
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::Normal;
+      return FloatLiteralSpecialValues::NegZero;
     }
-    llvm_unreachable("unknown FloatLiteral special type");
-  };
-
-  return {specialCases(lSpecial, rSpecial, l, r), 0};
+  case FloatLiteralSpecialValues::Inf:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+    case FloatLiteralSpecialValues::NegZero:
+    case FloatLiteralSpecialValues::NegInf:
+    case FloatLiteralSpecialValues::Inf:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Normal:
+      if (rhs == 0)
+        return FloatLiteralSpecialValues::Nan;
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::NegInf;
+      return FloatLiteralSpecialValues::Inf;
+    }
+  case FloatLiteralSpecialValues::NegInf:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+    case FloatLiteralSpecialValues::NegZero:
+    case FloatLiteralSpecialValues::NegInf:
+    case FloatLiteralSpecialValues::Inf:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Normal:
+      if (rhs == 0)
+        return FloatLiteralSpecialValues::Nan;
+      if (rhs < 0)
+        return FloatLiteralSpecialValues::Inf;
+      return FloatLiteralSpecialValues::NegInf;
+    }
+  case FloatLiteralSpecialValues::Nan:
+    return FloatLiteralSpecialValues::Nan;
+  case FloatLiteralSpecialValues::Normal:
+    switch (rSpecial) {
+    case FloatLiteralSpecialValues::Nan:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Inf:
+      if (lhs < 0)
+        return FloatLiteralSpecialValues::NegZero;
+      return FloatLiteralSpecialValues::Normal;
+    case FloatLiteralSpecialValues::NegInf:
+      if (lhs < 0)
+        return FloatLiteralSpecialValues::Normal;
+      return FloatLiteralSpecialValues::NegZero;
+    case FloatLiteralSpecialValues::NegZero:
+      return FloatLiteralSpecialValues::Nan;
+    case FloatLiteralSpecialValues::Normal:
+      llvm_unreachable("double normal case handled above");
+    }
+  }
+  llvm_unreachable("unknown FloatLiteral special type");
 }
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
 FloatLiteralDiv(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational l,
-                IPRational r) {
-  if (lSpecial == FloatLiteralSpecialValues::Normal &&
-      rSpecial == FloatLiteralSpecialValues::Normal) {
-    if (r == 0)
+                FloatLiteralSpecialValues rSpecial, IPRational lhs,
+                IPRational rhs) {
+  if (isNormal(lSpecial) && isNormal(rSpecial)) {
+    if (rhs == 0)
       return {FloatLiteralSpecialValues::Nan, 0};
-    IPRational ratResult = l / r;
-    if (l == 0 && r < 0)
+    IPRational ratResult = lhs / rhs;
+    if (lhs == 0 && rhs < 0)
       return {FloatLiteralSpecialValues::NegZero, 0};
     return {FloatLiteralSpecialValues::Normal, ratResult};
   };
-
-  auto specialCases = [&]() -> FloatLiteralSpecialValues {
-    switch (lSpecial) {
-    case FloatLiteralSpecialValues::NegZero:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::NegZero;
-      case FloatLiteralSpecialValues::NegInf:
-        return FloatLiteralSpecialValues::Normal;
-      case FloatLiteralSpecialValues::NegZero:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Normal:
-        if (r == 0)
-          return FloatLiteralSpecialValues::Nan;
-        if (r < 0)
-          return FloatLiteralSpecialValues::Normal;
-        return FloatLiteralSpecialValues::NegZero;
-      }
-    case FloatLiteralSpecialValues::Inf:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-      case FloatLiteralSpecialValues::NegZero:
-      case FloatLiteralSpecialValues::NegInf:
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Normal:
-        if (r == 0)
-          return FloatLiteralSpecialValues::Nan;
-        if (r < 0)
-          return FloatLiteralSpecialValues::NegInf;
-        return FloatLiteralSpecialValues::Inf;
-      }
-    case FloatLiteralSpecialValues::NegInf:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-      case FloatLiteralSpecialValues::NegZero:
-      case FloatLiteralSpecialValues::NegInf:
-      case FloatLiteralSpecialValues::Inf:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Normal:
-        if (r == 0)
-          return FloatLiteralSpecialValues::Nan;
-        if (r < 0)
-          return FloatLiteralSpecialValues::Inf;
-        return FloatLiteralSpecialValues::NegInf;
-      }
-    case FloatLiteralSpecialValues::Nan:
-      return FloatLiteralSpecialValues::Nan;
-    case FloatLiteralSpecialValues::Normal:
-      switch (rSpecial) {
-      case FloatLiteralSpecialValues::Nan:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Inf:
-        if (l < 0)
-          return FloatLiteralSpecialValues::NegZero;
-        return FloatLiteralSpecialValues::Normal;
-      case FloatLiteralSpecialValues::NegInf:
-        if (l < 0)
-          return FloatLiteralSpecialValues::Normal;
-        return FloatLiteralSpecialValues::NegZero;
-      case FloatLiteralSpecialValues::NegZero:
-        return FloatLiteralSpecialValues::Nan;
-      case FloatLiteralSpecialValues::Normal:
-        llvm_unreachable("double normal case handled above");
-      }
-    }
-    llvm_unreachable("unknown FloatLiteral special type");
-  };
-  return {specialCases(), 0};
+  return {floatLiteralDivSpecialCases(lSpecial, rSpecial, lhs, rhs), 0};
 }
 
 OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
@@ -1635,17 +1648,17 @@ OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
     return {};
   FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
   FloatLiteralSpecialValues rSpecial = rAttr.getSpecial().getValue();
-  IPRational l;
-  IPRational r;
-  if (lSpecial == FloatLiteralSpecialValues::Normal) {
+  IPRational lhs;
+  IPRational rhs;
+  if (isNormal(lSpecial)) {
     assert(lAttr.getRational().has_value() &&
            "rational has value when special value is normal");
-    l = lAttr.getRational().value();
+    lhs = lAttr.getRational().value();
   }
-  if (rSpecial == FloatLiteralSpecialValues::Normal) {
+  if (isNormal(rSpecial)) {
     assert(rAttr.getRational().has_value() &&
            "rational has value when special value is normal");
-    r = rAttr.getRational().value();
+    rhs = rAttr.getRational().value();
   }
 
   auto mkAttr = [&](FloatLiteralSpecialValues resultSpecial,
@@ -1658,19 +1671,23 @@ OpFoldResult FloatLiteralBinop::fold(FoldAdaptor adaptor) {
 
   switch (oper) {
   case FloatLiteralBinopKind::Add: {
-    auto [resultSpecial, rational] = FloatLiteralAdd(lSpecial, rSpecial, l, r);
+    auto [resultSpecial, rational] =
+        FloatLiteralAdd(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::Sub: {
-    auto [resultSpecial, rational] = FloatLiteralSub(lSpecial, rSpecial, l, r);
+    auto [resultSpecial, rational] =
+        FloatLiteralSub(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::Mul: {
-    auto [resultSpecial, rational] = FloatLiteralMul(lSpecial, rSpecial, l, r);
+    auto [resultSpecial, rational] =
+        FloatLiteralMul(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   case FloatLiteralBinopKind::TrueDiv: {
-    auto [resultSpecial, rational] = FloatLiteralDiv(lSpecial, rSpecial, l, r);
+    auto [resultSpecial, rational] =
+        FloatLiteralDiv(lSpecial, rSpecial, lhs, rhs);
     return mkAttr(resultSpecial, rational);
   } break;
   }
@@ -1704,9 +1721,9 @@ static APInt floatLiteralConvertGetBitstring(IPRational input,
   // * most significant 1 bit that is removed in final encoding
   // * extra precision bits to ensure correct rounding
   unsigned maxSignificandIPIntRoundedLength = mantissaLength + 2;
-  static const unsigned significandRoundingLength = 3;
+  static const unsigned kSignificandRoundingLength = 3;
   unsigned maxSignificandIPIntLength =
-      maxSignificandIPIntRoundedLength + significandRoundingLength;
+      maxSignificandIPIntRoundedLength + kSignificandRoundingLength;
 
   // To support subnormal numbers (IE numbers with minimum exponent that have an
   // implicit leading 0 instead of implicit leading 1), we need to support lower
