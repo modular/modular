@@ -137,6 +137,7 @@ struct Model:
           inputs: A variadic list of tuples with first element of tuple is
                   input name and second element is non owning view of a Numpy
                   array.
+
         Returns:
             A TensorMap with output names as keys.
         """

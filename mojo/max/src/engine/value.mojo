@@ -90,7 +90,7 @@ struct Value:
     fn as_tensor_copy[type: DType](self) raises -> Tensor[type]:
         """Return a copy of the tensor contained in this value.
 
-        Params:
+        Parameters:
             type: The expected DType of the tensor.
 
         Returns:

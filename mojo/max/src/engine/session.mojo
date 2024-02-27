@@ -525,19 +525,43 @@ struct InferenceSession:
     fn new_borrowed_tensor_value[
         type: DType
     ](self, tensor: Tensor[type]) raises -> Value:
-        """Create a new Value representing data borrowed from given tensor."""
+        """Create a new Value representing data borrowed from given tensor.
+
+        The user must ensure the tensor stays live through the lifetime of the
+        value.
+
+        Parameters:
+            type: Data type of the tensor to turn into a Value.
+
+        Args:
+            tensor: Tensor to borrow into a value.
+
+        Returns:
+            A value borrowing the tensor.
+        """
         return __get_address_as_lvalue(
             self._ptr.value
         ).new_borrowed_tensor_value(self.copy(), tensor)
 
     fn new_bool_value(self, value: Bool) raises -> Value:
-        """Create a new Value representing a Bool."""
+        """Create a new Value representing a Bool.
+
+        Args:
+            value: Boolean to wrap into a value.
+
+        Returns:
+            Value representing the given boolean.
+        """
         return __get_address_as_lvalue(self._ptr.value).new_bool_value(
             self.copy(), value
         )
 
     fn new_list_value(self) raises -> Value:
-        """Create a new Value representing an empty list."""
+        """Create a new Value representing an empty list.
+
+        Returns:
+            A new value containing an empty list.
+        """
         return __get_address_as_lvalue(self._ptr.value).new_list_value(
             self.copy()
         )

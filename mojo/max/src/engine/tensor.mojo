@@ -26,15 +26,23 @@ struct NamedTensor:
     """A named input tensor."""
 
     var name: String
+    """Name of the tensor."""
     var _tensor: Arc[Tensor[DType.invalid]]
     """Reference-counted pointer keeping the original tensor alive."""
     var _view: EngineTensorView
 
-    # Constructs a new `NamedTensor` that owns its argument via a
-    # reference-counted pointer.
     fn __init__[
         dtype: DType
     ](inout self, owned name: String, owned tensor: Tensor[dtype]):
+        """Creates a `NamedTensor` owning the tensor with a reference count.
+
+        Parameters:
+            dtype: Data type of the tensor to own.
+
+        Args:
+            name: Name of the tensor.
+            tensor: Tensor to take ownership of.
+        """
         self.name = name ^
 
         var tensor_arc = Arc(tensor ^)
