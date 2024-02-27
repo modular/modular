@@ -150,6 +150,11 @@ ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
 
 ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
                                                       size_t align) {
+  // Return nullptr for zero-sized allocations. This is valid but mainly is to
+  // prevent address collisions of zero-sized allocations.
+  if (!size)
+    return 0;
+
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::Heap).addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
