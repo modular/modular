@@ -1445,6 +1445,8 @@ floatLiteralSub(FloatLiteralSpecialValues lSpecial,
     // multiplication.
     if (isNegZero(rSpecial))
       return {FloatLiteralSpecialValues::Normal, 0};
+    if (isNormal(rSpecial) && rhs == 0)
+      return {FloatLiteralSpecialValues::NegZero, 0};
     return floatLiteralSub(FloatLiteralSpecialValues::Normal, rSpecial, 0, rhs);
   case FloatLiteralSpecialValues::Inf:
     if (isInf(rSpecial) || isNan(rSpecial))

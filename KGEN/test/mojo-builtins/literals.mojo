@@ -32,6 +32,14 @@ fn var_let_decls():
     # CHECK: lit.alias.decl {{.*}}fl5{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<neg_zero>}>
     alias fl5 = -0.0
 
+    # TODO - Python raises an error when dividing by zero.  We need support for
+    # parameter-time evaluation of `raise` to support that semantics, in which
+    # case these will be static errors instead.
+    # CHECK: lit.alias.decl {{.*}}flDivZero{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<nan>}>
+    alias flDivZero = 5.0 / 0.0
+    # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}: !FloatLiteral = <{:!kgen.float_literal #kgen.float_literal<nan>}>
+    alias flDivNegZero = 5.0 / -0.0
+
     # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<!StringLiteral,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: !StringLiteral = <{:string "hello"}>
     # CHECK: lit.ref.store [[CONST]], %str
