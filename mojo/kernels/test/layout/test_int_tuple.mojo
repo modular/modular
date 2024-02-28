@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
+# UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
 from kernel_utils.int_tuple import *
@@ -21,7 +21,7 @@ fn test_tuple_basic() raises:
     assert_equal(len(IntTuple(1, IntTuple(2, 3))), 2)
 
     # Test single integer value tuple
-    var t0: IntTuple = 5
+    alias t0: IntTuple = 5
     assert_equal(t0, "5")
 
     # Test simple tuple compositions
@@ -83,9 +83,8 @@ fn test_tuple_slicing() raises:
     alias sl4 = tr[:]
     alias sl5 = tr[:5:2]
     alias sl6 = tr[-3:]
-    # FIXME: turning var to alias crashes the compiler
-    var sl7 = tr[-3:-1]
-    var sl8 = tr[:-1]
+    alias sl7 = tr[-3:-1]
+    alias sl8 = tr[:-1]
     assert_equal(sl0, "4")
     assert_equal(sl1, "3")
     assert_equal(sl2, "(1, 2, 3)")
@@ -108,8 +107,7 @@ fn test_tuple_basic_ops() raises:
     assert_equal(p1, "6")
     assert_equal(p2, "24")
 
-    # FIXME: turning var to alias generates wrong values in the print statement
-    var tt = IntTuple(
+    alias tt = IntTuple(
         5,
         7,
         2,
@@ -117,15 +115,14 @@ fn test_tuple_basic_ops() raises:
         42,
     )
 
-    # FIXME: turning var to alias crashes the compiler
-    var f = flatten(tt)
+    alias f = flatten(tt)
     assert_equal(f, "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
 
-    var ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
+    alias ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
     assert_equal(abs(ts), "(0, 1, (2, 3), 4)")
 
-    var tm = IntTuple(0, 1, IntTuple(2, 3), 4)
-    assert_equal(mul(tm, 4), "(4, 5, (6, 7), 8)")
+    alias tm = IntTuple(0, 1, IntTuple(2, 3), 4)
+    assert_equal(mul(tm, 4), "(0, 4, (8, 12), 16)")
 
     alias s = sum(IntTuple(IntTuple(2, 3), 4))
     assert_equal(s, 9)
@@ -157,14 +154,14 @@ fn test_tuple_basic_ops() raises:
 fn test_sorted() raises:
     print("== test_sorted")
 
-    var t0 = IntTuple(7, 3, 1, 5, 0)
-    assert_equal(sorted[lt](t0), "(0, 1, 3, 5, 7)")
+    alias t0 = sorted[lt](IntTuple(7, 3, 1, 5, 0))
+    assert_equal(t0, "(0, 1, 3, 5, 7)")
 
-    var t1 = IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0))
-    assert_equal(sorted[lt](t1), "((1, 5, 0), (7, 3))")
+    alias t1 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
+    assert_equal(t1, "((1, 5, 0), (7, 3))")
 
-    var t2 = IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0)))
-    assert_equal(sorted[lt](t2), "((1, (5, 0)), (7, 3))")
+    alias t2 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
+    assert_equal(t2, "((1, (5, 0)), (7, 3))")
 
     assert_equal(lt(IntTuple(4, 6, 8), IntTuple(5, 6, 7)), True)
 
@@ -253,15 +250,14 @@ fn test_crd2idx() raises:
 fn test_idx2crd() raises:
     print("== test_idx2crd")
 
-    # FIXME: turning var to alias crashes the compiler
-    var xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
-    var xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
-    var xc2 = idx2crd(2, IntTuple(4, 2), IntTuple(1, 4))
-    var xc3 = idx2crd(3, IntTuple(4, 2), IntTuple(1, 4))
-    var xc4 = idx2crd(4, IntTuple(4, 2), IntTuple(1, 4))
-    var xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
-    var xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
-    var xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc2 = idx2crd(2, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc3 = idx2crd(3, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc4 = idx2crd(4, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
+    alias xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
     assert_equal(xc0, "(0, 0)")
     assert_equal(xc1, "(1, 0)")
     assert_equal(xc2, "(2, 0)")

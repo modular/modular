@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
+# UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
 from kernel_utils.int_tuple import IntTuple
@@ -26,10 +26,9 @@ from testing import assert_equal, assert_not_equal
 # CHECK-LABEL: test_layout_basic
 fn test_layout_basic() raises:
     print("== test_layout_basic")
-    # FIXME: turning var to alias generates wrong results
-    var shape = IntTuple(2, IntTuple(3, IntTuple(4)))
-    var stride = IntTuple(1, IntTuple(2, IntTuple(6)))
-    var layout = Layout(shape, stride)
+    alias shape = IntTuple(2, IntTuple(3, IntTuple(4)))
+    alias stride = IntTuple(1, IntTuple(2, IntTuple(6)))
+    alias layout = Layout(shape, stride)
     assert_equal(
         layout, Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6)))
     )
@@ -282,8 +281,7 @@ fn helper_test_complement(layout: Layout) raises:
 # CHECK-LABEL: test_complement
 fn test_complement() raises:
     print("== test_complement")
-    # FIXME: turning var to alias crashes the compiler
-    var c0 = complement(Layout(4, 1), 24)
+    alias c0 = complement(Layout(4, 1), 24)
     assert_equal(c0, "(6:4)")
     assert_equal(complement(Layout(6, 4), 24), "(4:1)")
     assert_equal(
@@ -338,7 +336,6 @@ fn test_complement() raises:
 # CHECK-LABEL: test_logcial_divide
 fn test_logcial_divide() raises:
     print("== test_logcial_divide")
-    # FIXME: turning var to alias crashes the compiler
     var ld0 = logical_divide(
         Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
     )
@@ -357,7 +354,6 @@ fn test_logcial_divide() raises:
 # CHECK-LABEL: test_logical_product
 fn test_logical_product() raises:
     print("== test_logical_product")
-    # FIXME: turning var to alias crashes the compiler
     var lp0 = logical_product(
         Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)
     )
@@ -409,7 +405,6 @@ fn test_zipped_divide() raises:
         zipped_divide(layout_4x4_row_major, Layout(2, 1)),
         "((2, (2, 4)):(4, (8, 1)))",
     )
-    # FIXME: turning var to alias crashes the compiler
     var zd0 = zipped_divide(
         layout_4x4_row_major,
         MakeLayoutList(Layout(2, 1), Layout(2, 1)),
@@ -424,5 +419,5 @@ def main():
     test_complement()
     test_logcial_divide()
     test_logical_product()
-    # test_print_layout()
+    test_print_layout()
     test_zipped_divide()
