@@ -254,8 +254,8 @@ fn exp_mlas[
     alias neg_ln2_hi = -6.93145752e-1
     alias neg_ln2_lo = -1.42860677e-6
 
-    var min_val = -88.3762626647949
-    var max_val = 88.3762626647950
+    alias min_val = -88.3762626647949
+    alias max_val = 88.3762626647950
 
     var xc = clamp(x, min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
@@ -284,8 +284,8 @@ fn mlas_llvm_ldexp[
     alias neg_ln2_hi = -6.93145752e-1
     alias neg_ln2_lo = -1.42860677e-6
 
-    var min_val = -88.3762626647949
-    var max_val = 88.3762626647950
+    alias min_val = -88.3762626647949
+    alias max_val = 88.3762626647950
 
     var xc = clamp(x, min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
