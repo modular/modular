@@ -352,9 +352,9 @@ fn get_matmul_kernel_shape_ARM[
         if use_i8mm:
             return MicroKernelShape(4, 6)
         elif kernel_type:
-            return MicroKernelShape(8, 2)
-        else:
             return MicroKernelShape(6, 4)
+        else:
+            return MicroKernelShape(8, 2)
 
 
 # AVX512 and Neon have 32 registers and AVX has 16.
@@ -985,7 +985,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
         if is_neoverse_n1():
             return (k % 4096) == 0
         else:
-            return m > 0 and m <= 32
+            return m > 32
 
     else:
         return False
