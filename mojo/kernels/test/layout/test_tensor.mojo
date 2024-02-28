@@ -21,14 +21,14 @@ from memory import stack_allocation
 fn print_raw_major_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
     for i in range(8):
         for j in range(4):
-            print_no_newline(tensor[IntTuple(i, j)], "\t")
+            print_no_newline(tensor[i, j], "\t")
         print("")
 
 
 fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
     for i in range(2):
         for j in range(2):
-            print_no_newline(tensor[IntTuple(i, j)], "\t")
+            print_no_newline(tensor[i, j], "\t")
         print("")
 
 
