@@ -119,6 +119,82 @@ private:
   }
 };
 
+/// Replace:
+///
+/// ```mlir
+/// %0 = index.cmp <pred>(%a, %b)
+/// %1 = cast_from_builtin %0 : i1 to scalar<bool>
+/// %2 = xor %1, %simd_bool_0
+/// %3 = cast_to_builtin %2 : scalar<bool> to i1
+/// ```
+///
+/// With:
+///
+/// ```mlir
+/// %3 = index.cmp <not pred>(%a, %b)
+/// ```
+struct InvertComparison : OpRewritePattern<POP::CastToBuiltinOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(POP::CastToBuiltinOp op,
+                                PatternRewriter &b) const override {
+    if (op.getInput().getType().getResolvedDType() != KGENDType::kBool)
+      return b.notifyMatchFailure(op.getLoc(), "not bool dtype");
+
+    auto notOp = op.getInput().getDefiningOp<POP::XOrOp>();
+    if (!notOp)
+      return b.notifyMatchFailure(op.getLoc(), "parent isn't xor");
+
+    POP::SIMDAttr zeroAttr;
+    if (!mlir::matchPattern(notOp.getRhs(), mlir::m_Constant(&zeroAttr)) ||
+        zeroAttr.getValues().front().getBoolVal() != true)
+      return b.notifyMatchFailure(notOp.getLoc(), "not xor with true");
+
+    auto inCast = notOp.getLhs().getDefiningOp<POP::CastFromBuiltinOp>();
+    if (!inCast)
+      return b.notifyMatchFailure(notOp.getLoc(), "lhs parent isn't cast");
+
+    auto cmpOp = inCast.getInput().getDefiningOp<mlir::index::CmpOp>();
+    if (!cmpOp)
+      return b.notifyMatchFailure(inCast.getLoc(), "parent isn't cmp");
+
+    b.replaceOpWithNewOp<mlir::index::CmpOp>(
+        op, getInvertedPred(cmpOp.getPred()), cmpOp.getLhs(), cmpOp.getRhs());
+    return success();
+  }
+
+private:
+  static mlir::index::IndexCmpPredicate
+  getInvertedPred(mlir::index::IndexCmpPredicate pred) {
+    switch (pred) {
+    case mlir::index::IndexCmpPredicate::EQ:
+      return mlir::index::IndexCmpPredicate::NE;
+    case mlir::index::IndexCmpPredicate::NE:
+      return mlir::index::IndexCmpPredicate::EQ;
+
+    case mlir::index::IndexCmpPredicate::SLT:
+      return mlir::index::IndexCmpPredicate::SGE;
+    case mlir::index::IndexCmpPredicate::SLE:
+      return mlir::index::IndexCmpPredicate::SGT;
+    case mlir::index::IndexCmpPredicate::SGT:
+      return mlir::index::IndexCmpPredicate::SLE;
+    case mlir::index::IndexCmpPredicate::SGE:
+      return mlir::index::IndexCmpPredicate::SLT;
+
+    case mlir::index::IndexCmpPredicate::ULT:
+      return mlir::index::IndexCmpPredicate::UGE;
+    case mlir::index::IndexCmpPredicate::ULE:
+      return mlir::index::IndexCmpPredicate::UGT;
+    case mlir::index::IndexCmpPredicate::UGT:
+      return mlir::index::IndexCmpPredicate::ULE;
+    case mlir::index::IndexCmpPredicate::UGE:
+      return mlir::index::IndexCmpPredicate::ULT;
+    }
+    llvm_unreachable("invalid cmp predicate");
+  }
+};
+
 /// Canonicalize
 /// `(i < x ? x - i : 0) > 0` to `i < x`. or
 /// `(x > i ? x - i : 0) > 0` to `x > i`. or
@@ -240,8 +316,8 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
       op.getCanonicalizationPatterns(owningPatterns, context);
 
-    owningPatterns.insert<IfToSelect, IndexifyComparison, SimplifyCompareSelect,
-                          ConditionPropagation>(context);
+    owningPatterns.insert<IfToSelect, IndexifyComparison, InvertComparison,
+                          SimplifyCompareSelect, ConditionPropagation>(context);
 
     patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
     return success();
