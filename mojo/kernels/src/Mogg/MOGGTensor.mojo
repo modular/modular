@@ -12,6 +12,7 @@ from algorithm.functional import elementwise, vectorize
 from memory.buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
+from sys.info import simdwidthof
 
 from utils._annotations import *
 from utils._optional import Optional
@@ -436,11 +437,12 @@ struct Tensor[
     @mogg_elementwise_hook()
     @no_inline
     fn for_each[
-        simd_width: Int,
         func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
             _t, _width
         ],
     ](inout self):
+        alias simd_width = simdwidthof[Self.type]()
+
         @parameter
         if not Self.has_static_rank():
             self._for_each_dynamic_rank[simd_width, func]()

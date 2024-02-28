@@ -74,7 +74,7 @@ fn unary_op_without_fusion(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -112,7 +112,7 @@ fn copy(x: Tensor) -> Tensor[x.type, x.static_shape]:
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](x.simd_load[width](i))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -134,7 +134,7 @@ fn add_like_custom_op_target(
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -155,13 +155,14 @@ fn recursive_lambda_test_target(x: Tensor) -> Tensor[x.type, x.static_shape]:
             @parameter
             @always_inline
             fn inner2(val2: SIMD[_t, width]) -> SIMD[_t, width]:
-                return val2 + rebind[SIMD[_t, width]](simd1) + simd2
+                var v = rebind[SIMD[_t, 1]](simd1)
+                return val2 + v + simd2
 
             return inner2(val)
 
         return inner(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -365,7 +366,7 @@ fn mo_abs(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return abs(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -384,7 +385,7 @@ fn my_ceil(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return ceil(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -403,7 +404,7 @@ fn mo_erf(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return erf(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -422,7 +423,7 @@ fn mo_exp(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return exp(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -441,7 +442,7 @@ fn my_floor(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return floor(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -460,7 +461,7 @@ fn mo_is_inf(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](isinf(x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -479,7 +480,7 @@ fn mo_is_nan(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](isnan(x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -498,7 +499,7 @@ fn mo_log(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](log(x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -517,7 +518,7 @@ fn mo_log1p(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](log1p(x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -536,7 +537,7 @@ fn my_relu(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -555,7 +556,7 @@ fn my_rsqrt(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rsqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -574,7 +575,7 @@ fn my_sqrt(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -593,7 +594,7 @@ fn mo_tanh(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         return rebind[SIMD[_t, width]](tanh(x.simd_load[width](i)))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -617,7 +618,7 @@ fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -636,7 +637,7 @@ fn mo_and(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) & i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -655,7 +656,7 @@ fn mo_equal(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) == i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -675,7 +676,7 @@ fn mo_greater(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](i1 > i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -695,7 +696,7 @@ fn mo_max(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return max(i1, i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -715,7 +716,7 @@ fn mo_min(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return min(i1, i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -735,7 +736,7 @@ fn mo_mul(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         var i2 = rebind[SIMD[_t, width]](y.simd_load[width](i))
         return i1 * i2
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -754,7 +755,7 @@ fn mo_not_equal(x: Tensor, y: Tensor) -> Tensor[DType.bool, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) != i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -773,7 +774,7 @@ fn mo_sub(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -801,7 +802,7 @@ fn mo_select(
         var i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](c.select(x.simd_load[width](i), i2))
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
@@ -831,7 +832,7 @@ fn mo_range[
             iota[_t, width](i[0]) * rebind[SIMD[_t, 1]](step_)
         )
 
-    out.for_each[1, func]()
+    out.for_each[func]()
     return out
 
 
