@@ -278,31 +278,31 @@ def fn_redecl2() -> FloatLiteral: pass
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'FloatLiteralOld'}}
+# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'FloatDyn'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
-fn overloadIntFloat32(a: FloatLiteralOld): pass
+fn overloadIntFloat32(a: FloatDyn): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
-# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'FloatLiteralOld' to 'Int'}}
+# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'FloatDyn' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
-fn overloadIntFloat32(a: Int, inout b: FloatLiteralOld): pass
+fn overloadIntFloat32(a: Int, inout b: FloatDyn): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntFloat32(a: Int, inout b: FloatLiteralOld, c: Int, *args: Int): pass
+fn overloadIntFloat32(a: Int, inout b: FloatDyn, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
 
-  fn test(self, a: Int, b: FloatLiteralOld):
+  fn test(self, a: Int, b: FloatDyn):
     # expected-error @+1 {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
 
@@ -530,8 +530,8 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[Int(1).value]):
-    var x : __mlir_type[`!pop.simd<`, size, `, FloatLiteralOld>`]
-    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatLiteralOld>' value to 'BadInit[size]' in assignment}}
+    var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
+    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]' in assignment}}
     self = x
 
   # expected-error @+1 {{'__init__' result type must be elided (or None)}}

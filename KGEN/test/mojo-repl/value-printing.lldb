@@ -11,10 +11,8 @@
 # CHECK: (Int) x = 12
 var x = 12
 
-# CHECK: (FloatLiteralOld) x = {
-# CHECK:   (scalar<f64>) value = {
-# CHECK:     (f64) [0] = 4.2{{.*}}
-# CHECK:   }
+# CHECK: (SIMD[f64, 1]) x = {
+# CHECK:   (f64) [0] = 4.2{{.*}}
 # CHECK: }
 var x = 4.2
 
