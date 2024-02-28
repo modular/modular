@@ -740,6 +740,16 @@ kgen.func @index_to_pointer() -> (!kgen.pointer<i8>, !pop.scalar<address>) {
   kgen.return %2, %3 : !kgen.pointer<i8>, !pop.scalar<address>
 }
 
+// CHECK-LABEL: @index_to_ptr_fold
+kgen.func @index_to_ptr_fold(%arg0: !kgen.pointer<none>) -> (!kgen.pointer<none>, !kgen.pointer<index>) {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<index>
+  %0 = pop.pointer_to_index %arg0 : !kgen.pointer<none> to !pop.scalar<index>
+  %1 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<none>
+  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<index>
+  // CHECK-NEXT: return %arg0, %0
+  kgen.return %1, %2 : !kgen.pointer<none>, !kgen.pointer<index>
+}
+
 // CHECK-LABEL: @pointer_to_index
 kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: <1>
