@@ -13,6 +13,7 @@ cc_library(
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
         "lib/Process.cpp",
+        "lib/Progress.cpp",
         "lib/Random.cpp",
         "lib/ReferenceCounted.cpp",
         "lib/Version.cpp",
@@ -34,6 +35,7 @@ cc_library(
         "include/Support/PlatformUtils.h",
         "include/Support/Preprocessor.h",
         "include/Support/Process.h",
+        "include/Support/Progress.h",
         "include/Support/RCRef.h",
         "include/Support/Random.h",
         "include/Support/ReferenceCounted.h",
@@ -563,6 +565,12 @@ cc_library(
     ],
 )
 
+MODULAR_TELEMETRY_COPTS = [
+    "-DWITH_OTLP_HTTP=ON",
+    "-DENABLE_HTTP_SSL_PREVIEW=ON",
+    "-DENABLE_OTLP_HTTP_SSL_PREVIEW=ON",
+]
+
 cc_library(
     name = "Telemetry",
     srcs = glob(["lib/Telemetry/**/*.cpp"]),
@@ -574,12 +582,14 @@ cc_library(
         # This is for Opentelemetry, to use standard types.
         #"OPENTELEMETRY_STL_VERSION=2017",
     ],
+    copts = MODULAR_TELEMETRY_COPTS,
     strip_include_prefix = "include",
     deps = [
         ":Base",
         ":Configuration",
         ":Entitlements",
         ":MArchTarget",
+        ":Settings",
         "@io_opentelemetry_cpp//api",
         "@io_opentelemetry_cpp//exporters/ostream:ostream_log_record_exporter",
         "@io_opentelemetry_cpp//exporters/ostream:ostream_metric_exporter",
@@ -916,6 +926,17 @@ cc_library(
         ":DebugInfoTypes",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "Settings",
+    srcs = glob(["lib/Settings/*.cpp"]),
+    hdrs = glob(["include/Support/Settings/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Configuration",
+        ":Entitlements",
     ],
 )
 
