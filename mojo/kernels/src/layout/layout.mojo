@@ -75,6 +75,9 @@ struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
     fn __eq__(self, other: Layout) -> Bool:
         return self.shape == other.shape and self.stride == other.stride
 
+    fn __ne__(self, other: Layout) -> Bool:
+        return not (self == other)
+
     @always_inline
     fn __len__(self) -> Int:
         return len(self.shape)
