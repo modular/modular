@@ -12,15 +12,19 @@ from .int_tuple import (
     IntTuple,
     IntTupleBase,
     crd2idx,
-    elementwise_min,
+    min,
     flatten,
     inner_product,
     int,
     is_tuple,
+    is_int,
     mul,
+    abs,
     product,
     shape_div,
-    tuple,
+    zip,
+    sorted,
+    prefix_product,
 )
 
 
@@ -40,7 +44,7 @@ struct _LayoutIter:
         return len(self.layout.shape) - self.index
 
 
-struct Layout(Sized, Stringable, CollectionElement):
+struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
     var shape: IntTuple
     var stride: IntTuple
 
@@ -48,9 +52,12 @@ struct Layout(Sized, Stringable, CollectionElement):
         self.shape = IntTuple()
         self.stride = IntTuple()
 
-    fn __init__(inout self, shape: IntTuple, stride: IntTuple):
+    fn __init__(inout self, shape: IntTuple, stride: IntTuple = IntTuple()):
         self.shape = shape
-        self.stride = stride
+        if len(stride) == 0:
+            self.stride = prefix_product(self.shape)
+        else:
+            self.stride = stride
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
@@ -63,9 +70,10 @@ struct Layout(Sized, Stringable, CollectionElement):
         self.stride = existing.stride
 
     fn __str__(self) -> String:
-        return (
-            "Layout(" + self.shape.__str__() + ":" + self.stride.__str__() + ")"
-        )
+        return "(" + str(self.shape) + ":" + str(self.stride) + ")"
+
+    fn __eq__(self, other: Layout) -> Bool:
+        return self.shape == other.shape and self.stride == other.stride
 
     @always_inline
     fn __len__(self) -> Int:
@@ -81,7 +89,8 @@ struct Layout(Sized, Stringable, CollectionElement):
 
     @always_inline
     fn cosize(self) -> Int:
-        return math.max(1, inner_product(self.shape, self.stride))
+        return self(self.size() - 1) + 1
+        # return math.max(1, inner_product(self.shape, self.stride))
 
     @always_inline
     fn __getitem__(self, index: Int) -> Self:
@@ -101,73 +110,44 @@ struct Layout(Sized, Stringable, CollectionElement):
         self.stride.append(item.stride)
 
 
-@value
-struct LayoutList(Sized, Stringable):
-    var elements: DynamicVector[Layout]
-
-    @always_inline
-    fn __init__(inout self):
-        self.elements = DynamicVector[Layout]()
-
-    @always_inline
-    fn __init__(inout self, v0: Layout):
-        self.elements = DynamicVector[Layout](capacity=1)
-        self.elements.append(v0)
-
-    @always_inline
-    fn __init__(inout self, v0: Layout, v1: Layout):
-        self.elements = DynamicVector[Layout](capacity=2)
-        self.elements.append(v0)
-        self.elements.append(v1)
-
-    @always_inline
-    fn __getitem__(self, index: Int) -> Layout:
-        return self.elements[index]
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return len(self.elements)
-
-    fn __str__(self) -> String:
-        var result = String("LayoutList(")
-        for i in range(len(self.elements)):
-            result += str(self.elements[i])
-            if i < len(self.elements) - 1:
-                result += ", "
-        result += ")"
-        return result
+fn size(l: Layout) -> Int:
+    return l.size()
 
 
-fn coalesce(src: Layout) -> Layout:
-    var flatten_shape = flatten(src.shape)
-    var flatten_stride = flatten(src.stride)
+fn cosize(l: Layout) -> Int:
+    return l.cosize()
 
-    debug_assert(
-        len(flatten_shape) == len(flatten_stride),
-        "flattened shapes and stride should be the same length",
-    )
 
+alias LayoutList = DynamicVector[Layout]
+
+
+fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
+    var layout_list = LayoutList(capacity=2)
+    layout_list.append(v0)
+    layout_list.append(v1)
+    return layout_list
+
+
+# Layout coalesce -- flatten and combine as many modes as possible while preserving the int-to-int function
+fn coalesce(layout: Layout) -> Layout:
     var result_shape = IntTuple(1)
     var result_stride = IntTuple(0)
 
-    for i in range(len(flatten_shape)):
-        var shape = flatten_shape[i]
-        var stride = flatten_stride[i]
+    for z in zip(flatten(layout.shape), flatten(layout.stride)):
+        var shape = int(z[0])
+        var stride = int(z[1])
 
-        var shape_last_idx = len(result_shape) - 1
-        var stride_last_idx = len(result_stride) - 1
-
-        if int(shape) == 1:
+        # skip their shape-1s
+        if shape == 1:
             continue
-        elif int(result_shape[shape_last_idx]) == 1:
-            result_shape[shape_last_idx] = shape
-            result_stride[stride_last_idx] = stride
-        elif int(result_shape[shape_last_idx]) * int(
-            result_shape[stride_last_idx]
-        ) == int(stride):
-            result_shape[shape_last_idx] = int(
-                result_shape[shape_last_idx]
-            ) * int(stride)
+        # replace our shape-1 with anything
+        elif result_shape[-1] == 1:
+            result_shape[-1] = shape
+            result_stride[-1] = stride
+        # merge modes if the shape*stride match
+        elif int(result_shape[-1]) * int(result_stride[-1]) == stride:
+            result_shape[-1] = int(result_shape[-1]) * shape
+        # append a new mode
         else:
             result_shape.append(shape)
             result_stride.append(stride)
@@ -178,54 +158,47 @@ fn coalesce(src: Layout) -> Layout:
         return Layout(result_shape, result_stride)
 
 
-fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
-    # Note: len(flatten(layout_b.shape)) > 1 is needed because we cant
-    # get 1:2 layout by default everything is an int!?
-    if is_tuple(layout_b.shape) and len(flatten(layout_b.shape)) > 1:
-        var res_layout_shape = IntTuple()
-        var res_layout_stride = IntTuple()
-        for layout_b_i in layout_b:
-            var a_b_i = composition(layout_a, layout_b_i)
-            res_layout_shape.append(a_b_i.shape)
-            res_layout_stride.append(a_b_i.stride)
-        return Layout(res_layout_shape, res_layout_stride)
+# Layout composition
+fn composition(layoutA: Layout, layoutB: Layout) -> Layout:
+    if len(layoutB) == 0:
+        return layoutA
 
-    if int(layout_b.stride) == 0:
-        return Layout(layout_b.shape, 0)
+    if is_tuple(layoutB.shape):
+        var r = Layout()
+        for layoutB_i in layoutB:
+            r.append(composition(layoutA, layoutB_i))
+        return r
+
+    if layoutB.stride == 0:
+        return Layout(layoutB.shape, 0)
     else:
         var result_shape = IntTuple()
         var result_stride = IntTuple()
+        var rest_shape = layoutB.shape
+        var rest_stride = layoutB.stride
 
-        var rest_shape = layout_b.shape
-        var rest_stride = layout_b.stride
-        var flatten_a_shapes = flatten(layout_a.shape)
-        var flatten_a_strides = flatten(layout_a.stride)
+        for z in zip(flatten(layoutA.shape)[:-1], flatten(layoutA.stride)[:-1]):
+            var s = int(z[0])
+            var d = int(z[1])
 
-        for i in range(len(flatten_a_shapes) - 1):
-            var s = int(flatten_a_shapes[i])
-            var d = int(flatten_a_strides[i])
             var s1 = shape_div(s, rest_stride)
-            result_shape.append(elementwise_min(s1, rest_shape))
+            result_shape.append(min(s1, rest_shape))
             result_stride.append(mul(rest_stride, d))
-            rest_shape = shape_div(rest_shape, s1)
+            rest_shape = shape_div(rest_shape, abs(s1))
             rest_stride = shape_div(rest_stride, s)
 
         result_shape.append(rest_shape)
-        result_stride.append(
-            mul(rest_stride, int(flatten_a_strides[len(flatten_a_strides) - 1]))
-        )
+        result_stride.append(mul(rest_stride, int(flatten(layoutA.stride)[-1])))
 
         return coalesce(Layout(result_shape, result_stride))
 
 
+# Tuple of layouts
 fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
-    var res_shape = IntTuple()
-    var res_stride = IntTuple()
-    for i in range(len(tiler)):
-        var res = composition(layout_a, tiler[i])
-        res_shape.append(res.shape)
-        res_stride.append(res.stride)
-    return Layout(res_shape, res_stride)
+    var result = Layout()
+    for t in tiler:
+        result.append(composition(layout_a, t[]))
+    return result
 
 
 fn complement(layout: Layout, size: Int = 1) -> Layout:
@@ -233,37 +206,22 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     var result_stride = IntTuple()
     var current_idx = 1
 
-    var flat_shape = flatten(layout.shape)
-    var flat_stride = flatten(layout.stride)
+    for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
+        var stride = int(z[0])
+        var shape = int(z[1])
 
-    # Ugly O(n^2) sored idx, should remove later..
-    # use max_int
-    for i in range(len(flat_stride)):
-        var min_val = 4294967295
-        var min_idx = -1
-        for j in range(i, len(flat_stride)):
-            if int(flat_stride[j]) < min_val:
-                min_val = int(flat_stride[j])
-                min_idx = j
-        var tmp_stride = flat_stride[i]
-        var tmp_shape = flat_shape[i]
-        flat_stride[i] = flat_stride[min_idx]
-        flat_shape[i] = flat_shape[min_idx]
-        flat_shape[min_idx] = tmp_shape
-        flat_stride[min_idx] = tmp_stride
-
-    for i in range(len(flat_stride)):
-        var stride_i = int(flat_stride[i])
-        var shape_i = int(flat_shape[i])
-
-        if stride_i == 0 or shape_i == 1:
+        if stride == 0 or shape == 1:
             continue
 
-        result_shape.append(stride_i // current_idx)
-        result_stride.append(current_idx)
-        current_idx = shape_i * stride_i
+        var in_bound = current_idx <= shape * stride
+        if not in_bound:
+            trap("Complement out of bounds.")
 
-    result_shape.append((size + current_idx - 1) // current_idx)  # ceil_div ?
+        result_shape.append(stride // current_idx)
+        result_stride.append(current_idx)
+        current_idx = shape * stride
+
+    result_shape.append((size + current_idx - 1) // current_idx)  # ceil_div
     result_stride.append(current_idx)
 
     return coalesce(Layout(result_shape, result_stride))
@@ -274,32 +232,30 @@ fn apply_tiler[
 ](layout_a: Layout, tiler: LayoutList) -> Layout:
     if len(tiler) == 0:
         return layout_a
-    var res = Layout()
+    var result = Layout()
     for i in range(len(tiler)):
-        var layout_b = tiler[i]
-        res.append(func(layout_a[i], layout_b))
-    return res
+        result.append(func(layout_a[i], tiler[i]))
+    return result
 
 
-fn logical_divide(layout_a: Layout, layout_b: Layout) -> Layout:
-    var res_comp = complement(layout_b, layout_a.size())
-    var res = layout_b
-    res.shape.append(res_comp.shape)
-    res.stride.append(res_comp.stride)
-    return composition(layout_a, res)
+fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
+    var layout_b = _layout_b
+    layout_b.append(complement(layout_b, layout_a.size()))
+    return composition(layout_a, layout_b)
 
 
 fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     return apply_tiler[logical_divide](layout_a, tiler)
 
 
-fn logical_product(layout_a: Layout, layout_b: Layout) -> Layout:
-    var a_comp = complement(layout_a, layout_a.size() * layout_b.cosize())
-    var com_res = composition(a_comp, layout_b)
-    var res = layout_a
-    res.shape.append(com_res.shape)
-    res.stride.append(com_res.stride)
-    return res
+fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
+    var layout_a = _layout_a
+    layout_a.append(
+        composition(
+            complement(layout_a, layout_a.size() * layout_b.cosize()), layout_b
+        )
+    )
+    return layout_a
 
 
 fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
@@ -310,7 +266,7 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 fn hier_unzip[
     splitter: fn (Layout, Layout) -> Layout
-](layout_a: Layout, tiler: LayoutList,) -> Layout:
+](layout_a: Layout, tiler: LayoutList) -> Layout:
     var split = Layout()
     for i in range(len(tiler)):
         split.append(hier_unzip[splitter](layout_a[i], tiler[i]))

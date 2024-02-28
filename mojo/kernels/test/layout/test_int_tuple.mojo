@@ -7,35 +7,32 @@
 # RUN: %mojo %s | FileCheck %s
 
 from kernel_utils.int_tuple import *
-from testing import assert_true
+from testing import assert_equal, assert_not_equal
 
 
 # CHECK-LABEL: test_tuple_basic
-fn test_tuple_basic():
+fn test_tuple_basic() raises:
     print("== test_tuple_basic")
 
-    # CHECK: 0
-    # CHECK: 1
-    # CHECK: 2
-    # CHECK: 2
-    print(len(IntTuple()))
-    print(len(IntTuple(1)))
-    print(len(IntTuple(1, 2)))
-    print(len(IntTuple(1, IntTuple(2, 3))))
+    # Test len() operator
+    assert_equal(len(IntTuple()), 0)
+    assert_equal(len(IntTuple(1)), 1)
+    assert_equal(len(IntTuple(1, 2)), 2)
+    assert_equal(len(IntTuple(1, IntTuple(2, 3))), 2)
 
-    # CHECK: 5
+    # Test single integer value tuple
     var t0: IntTuple = 5
-    print(t0)
+    assert_equal(t0, "5")
 
-    # CHECK: ((()))
-    # CHECK: ((3))
-    # CHECK: (7, (2, 3, 4, (5, 6)))
-    # CHECK: (2, (3, 4))
-    print(IntTuple(IntTuple(IntTuple())))
-    print(IntTuple(IntTuple(IntTuple(3))))
-    print(IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6))))
-    print(IntTuple(2, IntTuple(3, 4)))
-    # Test some basic tuple construction functionality
+    # Test simple tuple compositions
+    assert_equal(IntTuple(IntTuple(IntTuple())), "((()))")
+    assert_equal(IntTuple(IntTuple(IntTuple(3))), "((3))")
+    assert_equal(
+        IntTuple(7, IntTuple(2, 3, 4, IntTuple(5, 6))), "(7, (2, 3, 4, (5, 6)))"
+    )
+    assert_equal(IntTuple(2, IntTuple(3, 4)), "(2, (3, 4))")
+
+    # Test basic tuple operations
     var tt = IntTuple(
         5,
         7,
@@ -43,49 +40,41 @@ fn test_tuple_basic():
         IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))),
         42,
     )
-    # CHECK: (5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)
-    print(tt)
+    assert_equal(tt, "(5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
+
     tt[1] = 8
     tt.append(81)
-    # CHECK: (5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)
-    print(tt)
+    assert_equal(tt, "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)")
+
     tt[3][2][2] = IntTuple(5, 69, 722)
-    print(tt)
-    # CHECK: (5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)
+    assert_equal(tt, "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
 
-    # CHECK: ((2, 2), (2, 3))
+    # Tests interaction with compiler interpreter
     alias works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
-    print(works)
+    assert_equal(works, "((2, 2), (2, 3))")
 
-    # CHECK: ((2, 2), (2, 2))
     alias works_too = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
-    print(works_too)
+    assert_equal(works_too, "((2, 2), (2, 2))")
 
-    # CHECK: True
-    # CHECK: False
-    # CHECK: False
-    # CHECK: True
-    # CHECK: False
-    # CHECK: False
-    print(IntTuple(1, 2) == IntTuple(1, 2))
-    print(IntTuple(1, 2) == IntTuple(1, 3))
-    print(IntTuple(1, 2) == IntTuple(1, 2, 3))
-    print(IntTuple(1, 2, IntTuple(3, 4)) == IntTuple(1, 2, IntTuple(3, 4)))
-    print(IntTuple(1, 2, IntTuple(2, 4)) == IntTuple(1, 2, IntTuple(3, 4)))
-    print(IntTuple(1, 2, IntTuple(3, 5)) == IntTuple(1, 2, IntTuple(3, 4)))
+    # Tests IntTuple equality operations
+    assert_equal(IntTuple(1, 2) == IntTuple(1, 2), True)
+    assert_equal(IntTuple(1, 2) == IntTuple(1, 3), False)
+    assert_equal(IntTuple(1, 2) == IntTuple(1, 2, 3), False)
+    assert_equal(
+        IntTuple(1, 2, IntTuple(3, 4)) == IntTuple(1, 2, IntTuple(3, 4)), True
+    )
+    assert_equal(
+        IntTuple(1, 2, IntTuple(2, 4)) == IntTuple(1, 2, IntTuple(3, 4)), False
+    )
+    assert_equal(
+        IntTuple(1, 2, IntTuple(3, 5)) == IntTuple(1, 2, IntTuple(3, 4)), False
+    )
 
 
 # CHECK-LABEL: test_tuple_slicing
-fn test_tuple_slicing():
+fn test_tuple_slicing() raises:
     print("== test_tuple_slicing")
-    # CHECK: 4
-    # CHECK: 3
-    # CHECK: (1, 2, 3)
-    # CHECK: (1, 3)
-    # CHECK: (0, 1, 2, 3, 4)
-    # CHECK: (0, 2, 4)
-    # CHECK: (2, 3, 4)
-    # CHECK: (2, 3)
+
     alias tr = IntTuple(0, 1, 2, 3, 4)
     alias sl0 = tr[-1]
     alias sl1 = tr[-2]
@@ -96,28 +85,28 @@ fn test_tuple_slicing():
     alias sl6 = tr[-3:]
     # FIXME: turning var to alias crashes the compiler
     var sl7 = tr[-3:-1]
-    print(sl0)
-    print(sl1)
-    print(sl2)
-    print(sl3)
-    print(sl4)
-    print(sl5)
-    print(sl6)
-    print(sl7)
+    var sl8 = tr[:-1]
+    assert_equal(sl0, "4")
+    assert_equal(sl1, "3")
+    assert_equal(sl2, "(1, 2, 3)")
+    assert_equal(sl3, "(1, 3)")
+    assert_equal(sl4, "(0, 1, 2, 3, 4)")
+    assert_equal(sl5, "(0, 2, 4)")
+    assert_equal(sl6, "(2, 3, 4)")
+    assert_equal(sl7, "(2, 3)")
+    assert_equal(sl8, "(0, 1, 2, 3)")
 
 
 # CHECK-LABEL: test_tuple_basic_ops
-fn test_tuple_basic_ops():
+fn test_tuple_basic_ops() raises:
     print("== test_tuple_basic_ops")
-    # CHECK: 2
-    # CHECK: 6
-    # CHECK: 24
+
     alias p0 = product(2)
-    print(p0)
     alias p1 = product(IntTuple(3, 2))
-    print(p1)
     alias p2 = product(IntTuple(IntTuple(2, 3), 4))
-    print(p2)
+    assert_equal(p0, "2")
+    assert_equal(p1, "6")
+    assert_equal(p2, "24")
 
     # FIXME: turning var to alias generates wrong values in the print statement
     var tt = IntTuple(
@@ -127,58 +116,121 @@ fn test_tuple_basic_ops():
         IntTuple(3, 66, IntTuple(6, 99, IntTuple(4, 68, 721))),
         42,
     )
-    # CHECK: (5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)
+
     # FIXME: turning var to alias crashes the compiler
     var f = flatten(tt)
-    print(f)
+    assert_equal(f, "(5, 7, 2, 3, 66, 6, 99, 4, 68, 721, 42)")
 
-    # CHECK: 9
-    # CHECK: 6
-    # CHECK: 7
-    # CHECK: 15
-    # CHECK: 10
+    var ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
+    assert_equal(abs(ts), "(0, 1, (2, 3), 4)")
+
+    var tm = IntTuple(0, 1, IntTuple(2, 3), 4)
+    assert_equal(mul(tm, 4), "(4, 5, (6, 7), 8)")
+
     alias s = sum(IntTuple(IntTuple(2, 3), 4))
-    print(s)
+    assert_equal(s, 9)
+
     alias ip1 = inner_product(IntTuple(2), IntTuple(3))
-    print(ip1)
     alias ip2 = inner_product(IntTuple(1, 2), IntTuple(3, 2))
-    print(ip2)
     alias ip3 = inner_product(
         IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(2, 1), 2)
     )
-    print(ip3)
+    assert_equal(ip1, 6)
+    assert_equal(ip2, 7)
+    assert_equal(ip3, 15)
+
     alias m0 = max(IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10)))
-    print(m0)
+    assert_equal(m0, 10)
+
+    assert_equal(min(IntTuple(1, 5, 6), IntTuple(4, 2, 3)), IntTuple(1, 2, 3))
+
+    assert_equal(
+        min(
+            IntTuple(1, IntTuple(14, 6)),
+            IntTuple(4, IntTuple(2, 32)),
+        ),
+        IntTuple(1, IntTuple(2, 6)),
+    )
+
+
+# CHECK-LABEL: test_sorted
+fn test_sorted() raises:
+    print("== test_sorted")
+
+    var t0 = IntTuple(7, 3, 1, 5, 0)
+    assert_equal(sorted[lt](t0), "(0, 1, 3, 5, 7)")
+
+    var t1 = IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0))
+    assert_equal(sorted[lt](t1), "((1, 5, 0), (7, 3))")
+
+    var t2 = IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0)))
+    assert_equal(sorted[lt](t2), "((1, (5, 0)), (7, 3))")
+
+    assert_equal(lt(IntTuple(4, 6, 8), IntTuple(5, 6, 7)), True)
+
+
+# CHECK-LABEL: test_product
+fn test_product() raises:
+    print("== test_product")
+
+    assert_equal(product(2), 2)
+    assert_equal(product(IntTuple(3, 2)), 6)
+    assert_equal(product(product(IntTuple(IntTuple(2, 3), 4))), 24)
+
+
+# CHECK-LABEL: test_inner_product
+fn test_inner_product() raises:
+    print("== test_inner_product")
+
+    assert_equal(inner_product(2, 3), 6)
+    assert_equal(inner_product(IntTuple(1, 2), IntTuple(3, 2)), 7)
+    assert_equal(
+        inner_product(IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(2, 1), 2)),
+        15,
+    )
 
 
 # CHECK-LABEL: test_shape_div
-fn test_shape_div():
+fn test_shape_div() raises:
     print("== test_shape_div")
-    # CHECK: (1, 2)
-    # CHECK: (1, 1)
-    # CHECK: (1, 1)
-    # CHECK: ((1, 1), 2)
-    # CHECK: (1, (1, 2))
-    # FIXME: turning var to alias crashes the compiler
-    var sd0 = shape_div(IntTuple(3, 4), 6)
-    print(sd0)
-    print(shape_div(IntTuple(3, 4), 12))
-    print(shape_div(IntTuple(3, 4), 36))
-    print(shape_div(IntTuple(IntTuple(3, 4), 6), 36))
-    print(shape_div(IntTuple(6, IntTuple(3, 4)), 36))
+
+    assert_equal(shape_div(IntTuple(3, 4), 6), IntTuple(1, 2))
+    assert_equal(shape_div(IntTuple(3, 4), 12), IntTuple(1, 1))
+    assert_equal(shape_div(IntTuple(3, 4), 36), IntTuple(1, 1))
+    assert_equal(
+        shape_div(IntTuple(IntTuple(3, 4), 6), 36), IntTuple(IntTuple(1, 1), 2)
+    )
+    assert_equal(
+        shape_div(IntTuple(6, IntTuple(3, 4)), 36), IntTuple(1, IntTuple(1, 2))
+    )
+
+
+# CHECK-LABEL: test_prefix_product
+fn test_prefix_product() raises:
+    print("== test_prefix_product")
+
+    assert_equal(prefix_product(2), 1)
+
+    assert_equal(prefix_product(IntTuple(3, 2)), IntTuple(1, 3))
+
+    assert_equal(prefix_product(IntTuple(3, 2, 4)), IntTuple(1, 3, 6))
+
+    assert_equal(
+        prefix_product(IntTuple(IntTuple(2, 3), 4)), IntTuple(IntTuple(1, 2), 6)
+    )
+
+    assert_equal(
+        prefix_product(
+            IntTuple(IntTuple(2, 3), IntTuple(2, 1, 2), IntTuple(5, 2, 1))
+        ),
+        IntTuple(IntTuple(1, 2), IntTuple(6, 12, 12), IntTuple(24, 120, 240)),
+    )
 
 
 # CHECK-LABEL: test_crd2idx
-fn test_crd2idx():
+fn test_crd2idx() raises:
     print("== test_crd2idx")
-    # CHECK: 0
-    # CHECK: 1
-    # CHECK: 2
-    # CHECK: 3
-    # CHECK: 4
-    # CHECK: 5
-    # CHECK: 6
-    # CHECK: 7
+
     alias cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
     alias cx1 = crd2idx(IntTuple(1, 0), IntTuple(4, 2), IntTuple(1, 4))
     alias cx2 = crd2idx(IntTuple(2, 0), IntTuple(4, 2), IntTuple(1, 4))
@@ -187,27 +239,20 @@ fn test_crd2idx():
     alias cx5 = crd2idx(IntTuple(1, 1), IntTuple(4, 2), IntTuple(1, 4))
     alias cx6 = crd2idx(IntTuple(2, 1), IntTuple(4, 2), IntTuple(1, 4))
     alias cx7 = crd2idx(IntTuple(3, 1), IntTuple(4, 2), IntTuple(1, 4))
-    print(cx0)
-    print(cx1)
-    print(cx2)
-    print(cx3)
-    print(cx4)
-    print(cx5)
-    print(cx6)
-    print(cx7)
+    assert_equal(cx0, 0)
+    assert_equal(cx1, 1)
+    assert_equal(cx2, 2)
+    assert_equal(cx3, 3)
+    assert_equal(cx4, 4)
+    assert_equal(cx5, 5)
+    assert_equal(cx6, 6)
+    assert_equal(cx7, 7)
 
 
 # CHECK-LABEL: test_idx2crd
-fn test_idx2crd():
+fn test_idx2crd() raises:
     print("== test_idx2crd")
-    # CHECK: (0, 0)
-    # CHECK: (1, 0)
-    # CHECK: (2, 0)
-    # CHECK: (3, 0)
-    # CHECK: (0, 1)
-    # CHECK: (1, 1)
-    # CHECK: (2, 1)
-    # CHECK: (3, 1)
+
     # FIXME: turning var to alias crashes the compiler
     var xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
     var xc1 = idx2crd(1, IntTuple(4, 2), IntTuple(1, 4))
@@ -217,20 +262,26 @@ fn test_idx2crd():
     var xc5 = idx2crd(5, IntTuple(4, 2), IntTuple(1, 4))
     var xc6 = idx2crd(6, IntTuple(4, 2), IntTuple(1, 4))
     var xc7 = idx2crd(7, IntTuple(4, 2), IntTuple(1, 4))
-    print(xc0)
-    print(xc1)
-    print(xc2)
-    print(xc3)
-    print(xc4)
-    print(xc5)
-    print(xc6)
-    print(xc7)
+    assert_equal(xc0, "(0, 0)")
+    assert_equal(xc1, "(1, 0)")
+    assert_equal(xc2, "(2, 0)")
+    assert_equal(xc3, "(3, 0)")
+    assert_equal(xc4, "(0, 1)")
+    assert_equal(xc5, "(1, 1)")
+    assert_equal(xc6, "(2, 1)")
+    assert_equal(xc7, "(3, 1)")
 
 
-fn main():
+def main():
     test_tuple_basic()
     test_tuple_slicing()
     test_tuple_basic_ops()
+    test_sorted()
+
+    test_product()
+    test_inner_product()
     test_shape_div()
+    test_prefix_product()
+
     test_crd2idx()
     test_idx2crd()

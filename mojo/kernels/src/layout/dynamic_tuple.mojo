@@ -28,36 +28,10 @@ struct DefaultDelegate(ElementDelegate):
         return "#"
 
 
-@value
-struct _DynamicTupleIter[
-    T: CollectionElement, D: ElementDelegate = DefaultDelegate
-]:
-    alias BaseType = DynamicTupleBase[T, D]
-    alias Element = Self.BaseType.Element
-
-    var idx: Int
-    var src: Self.Element
-
-    @always_inline
-    fn __next__(inout self) -> Self.Element:
-        self.idx += 1
-        if self.src.isa[T]():
-            return self.src.get[T]()[]
-        else:
-            return self.src.get[Self.BaseType]()[][self.idx - 1]
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return (
-            1 if self.src.isa[T]() else len(self.src.get[Self.BaseType]()[])
-        ) - self.idx
-
-
 struct DynamicTupleBase[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
 ](CollectionElement, Sized, Stringable, EqualityComparable):
     alias Element = Variant[T, Self]
-    alias IterType = _DynamicTupleIter[T, D]
 
     var _elements: DynamicVector[Self.Element]
 
@@ -66,6 +40,11 @@ struct DynamicTupleBase[
         self._elements = DynamicVector[Self.Element]()
 
     # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
+    # @always_inline
+    # fn __init__(inout self: Self, *v: Self.Element):
+    #     self._elements = DynamicVector[Self.Element](capacity=len(v))
+    #     for e in v:
+    #         self._elements.append(e[])
 
     @always_inline
     fn __init__(inout self: Self, v: Self.Element):
@@ -133,11 +112,10 @@ struct DynamicTupleBase[
         self._elements.append(value)
 
     @always_inline
-    fn __getitem__(self, owned idx: Int) -> Self.Element:
-        if idx < 0:
-            idx = len(self) + idx
+    fn __getitem__(self, _idx: Int) -> Self.Element:
+        var idx = len(self) + _idx if _idx < 0 else _idx
 
-        if idx < 0 or idx > len(self._elements):
+        if idx < 0 or idx >= len(self._elements):
             trap("Index out of bounds.")
         return self._elements[idx]
 
@@ -163,18 +141,16 @@ struct DynamicTupleBase[
         return result
 
     @always_inline
-    fn __setitem__(inout self, idx: Int, val: Self.Element):
-        if idx < 0 or idx > len(self._elements):
+    fn __setitem__(inout self, _idx: Int, val: Self.Element):
+        var idx = len(self) + _idx if _idx < 0 else _idx
+
+        if idx < 0 or idx >= len(self._elements):
             trap("Index out of bounds.")
         self._elements[idx] = val
 
     @always_inline
     fn __len__(self) -> Int:
         return len(self._elements)
-
-    @always_inline
-    fn __iter__(self) -> Self.IterType:
-        return Self.IterType(0, self)
 
     @staticmethod
     fn to_string(v: Self.Element) -> String:
@@ -219,6 +195,23 @@ struct DynamicTupleBase[
 
 
 @value
+struct _DynamicTupleIter[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+]:
+    var idx: Int
+    var src: DynamicTuple[T, D]
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        self.idx += 1
+        return self.src[self.idx - 1]
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return len(self.src) - self.idx
+
+
+@value
 struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     CollectionElement, Sized, Stringable, EqualityComparable
 ):
@@ -251,6 +244,13 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         self._value = value._value ^
 
     # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
+    # @always_inline
+    # fn __init__(inout self: Self, *values: Self):
+    #     var value = Self.BaseType()
+    #     value._elements.reserve(len(values))
+    #     for e in values:
+    #         value._elements.append(e[]._value)
+    #     self._value = value
 
     @always_inline
     fn __init__(inout self: Self, v1: Self):
@@ -276,6 +276,11 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
             v1._value, v2._value, v3._value, v4._value, v5._value
         )
 
+    fn __init__(inout self, zipper: zip[T, D]):
+        self._value = Self.BaseType()
+        for z in zipper:
+            self.append(z)
+
     @always_inline
     fn __len__(self) -> Int:
         if self.is_value():
@@ -285,7 +290,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
-        return Self.IterType(0, self._value)
+        return Self.IterType(0, self)
 
     @always_inline
     fn is_tuple(self) -> Bool:
@@ -304,7 +309,9 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         return self._value.get[T]()[]
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> Self:
+    fn __getitem__(self, _idx: Int) -> Self:
+        var idx = len(self) + _idx if _idx < 0 else _idx
+
         if self.is_value():
             if idx != 0:
                 trap("Index should be 0 for value items.")
@@ -325,7 +332,9 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         return r
 
     @always_inline
-    fn __setitem__(inout self, idx: Int, val: Self):
+    fn __setitem__(inout self, _idx: Int, val: Self):
+        var idx = len(self) + _idx if _idx < 0 else _idx
+
         if self.is_value() and val.is_value():
             if idx != 0:
                 trap("Index should be 0 for value items.")
@@ -364,3 +373,81 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     @always_inline
     fn __str__(self) -> String:
         return Self.BaseType.to_string(self._value)
+
+
+# DynamicTuple zip iterator
+
+
+@value
+struct _ZipIter[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
+    var index: Int
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        self.index += 1
+        return DynamicTuple[T, D](
+            self.a[self.index - 1], self.b[self.index - 1]
+        )
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return math.min(len(self.a), len(self.b)) - self.index
+
+
+@value
+struct zip[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+
+    alias IterType = _ZipIter[T, D]
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(0, self.a, self.b)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return math.min(len(self.a), len(self.b))
+
+
+@value
+struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
+    var index: Int
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+    var c: DynamicTuple[T, D]
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        self.index += 1
+        return DynamicTuple[T, D](
+            self.a[self.index - 1],
+            self.b[self.index - 1],
+            self.c[self.index - 1],
+        )
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return (
+            math.min(len(self.a), math.min(len(self.b), len(self.c)))
+            - self.index
+        )
+
+
+@value
+struct zip3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+    var c: DynamicTuple[T, D]
+
+    alias IterType = _ZipIter3[T, D]
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(0, self.a, self.b, self.c)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return math.min(len(self.a), math.min(len(self.b), len(self.c)))

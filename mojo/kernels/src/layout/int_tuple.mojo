@@ -47,13 +47,8 @@ fn int(owned v: IntTuple) -> Int:
 
 
 @always_inline
-fn tuple(owned tv: IntTuple) -> IntTupleBase:
-    return tv.tuple()
-
-
-@always_inline
 fn is_int(t: IntTuple) -> Bool:
-    return t._value.isa[Int]()
+    return t.is_value()
 
 
 @always_inline
@@ -83,7 +78,7 @@ fn reduce[
     return result
 
 
-# IntTuple reductions
+# IntTuple operations
 
 
 fn flatten(t: IntTuple) -> IntTuple:
@@ -98,6 +93,37 @@ fn flatten(t: IntTuple) -> IntTuple:
         return a
 
     return reduce[IntTuple, reducer](t, IntTuple())
+
+
+fn _insertion_sort[
+    cmp: fn (IntTuple, IntTuple) -> Bool
+](inout tuple: IntTuple, start: Int, end: Int):
+    for i in range(start + 1, end):
+        var value = tuple[i]
+        var j = i
+
+        while j > start and not cmp(tuple[j - 1], value):
+            tuple[j] = tuple[j - 1]
+            j -= 1
+
+        tuple[j] = value
+
+
+fn lt(a: IntTuple, b: IntTuple) -> Bool:
+    for z in zip(a, b):
+        if int(z[0]) == int(z[1]):
+            continue
+        elif int(z[0]) < int(z[1]):
+            return True
+        else:
+            return False
+    return False
+
+
+fn sorted[cmp: fn (IntTuple, IntTuple) -> Bool = lt](t: IntTuple) -> IntTuple:
+    var _t = t
+    _insertion_sort[cmp](_t, 0, len(t))
+    return _t
 
 
 fn sum(t: IntTuple) -> Int:
@@ -127,53 +153,78 @@ fn max(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, 1)
 
 
-# IntTuple zip iterator
+fn apply(func: fn (Int) escaping -> Int, t: IntTuple) -> IntTuple:
+    if is_int(t):
+        return func(int(t))
+    var res = IntTuple()
+    for e in t:
+        res.append(apply(func, e))
+    return res
 
 
-@value
-struct _ZipIter:
-    var index: Int
-    var a: IntTuple
-    var b: IntTuple
-
-    @always_inline
-    fn __next__(inout self) -> IntTuple:
-        self.index += 1
-        return IntTuple(self.a[self.index - 1], self.b[self.index - 1])
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return math.min(len(self.a), len(self.b)) - self.index
+fn apply(func: fn (IntTuple) -> IntTuple, t: IntTuple) -> IntTuple:
+    var r = IntTuple()
+    for v in t:
+        r.append(func(v))
+    return r
 
 
-@value
-struct zip(Sized):
-    var a: IntTuple
-    var b: IntTuple
-
-    alias IterType = _ZipIter
-
-    @always_inline
-    fn __iter__(self) -> Self.IterType:
-        return Self.IterType(0, self.a, self.b)
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return math.min(len(self.a), len(self.b))
+fn apply_zip[
+    func: fn (IntTuple, IntTuple) -> IntTuple
+](t1: IntTuple, t2: IntTuple) -> IntTuple:
+    var r = IntTuple()
+    for z in zip(t1, t2):
+        r.append(func(z[0], z[1]))
+    return r
 
 
-# Layout operations
+fn apply_zip[
+    func: fn (IntTuple, IntTuple) capturing -> IntTuple
+](t1: IntTuple, t2: IntTuple) -> IntTuple:
+    var r = IntTuple()
+    for z in zip(t1, t2):
+        r.append(func(z[0], z[1]))
+    return r
 
 
-fn elementwise_min(a: IntTuple, b: IntTuple) -> IntTuple:
+# fn apply_zip(
+#     func: fn (IntTuple, IntTuple) escaping -> IntTuple,
+#     t1: IntTuple,
+#     t2: IntTuple,
+# ) -> IntTuple:
+#     var r = IntTuple()
+#     for z in zip(t1, t2):
+#         r.append(func(z[0], z[1]))
+#     return r
+
+
+fn apply_zip3[
+    func: fn (IntTuple, IntTuple, IntTuple) -> IntTuple
+](t1: IntTuple, t2: IntTuple, t3: IntTuple,) -> IntTuple:
+    var r = IntTuple()
+    for z in zip3(t1, t2, t3):
+        r.append(func(z[0], z[1], z[2]))
+    return r
+
+
+# fn apply_zip3(
+#     func: fn (IntTuple, IntTuple, IntTuple) escaping -> IntTuple,
+#     t1: IntTuple,
+#     t2: IntTuple,
+#     t3: IntTuple,
+# ) -> IntTuple:
+#     var r = IntTuple()
+#     for z in zip3(t1, t2, t3):
+#         r.append(func(z[0], z[1], z[2]))
+#     return r
+
+
+fn min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
         trap("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
         return math.min(int(a), int(b))
-    var res = IntTuple()
-    for z in zip(a, b):
-        res.append(elementwise_min(z[0], z[1]))
-    return res
+    return apply_zip[min](a, b)
 
 
 fn inner_product(a: IntTuple, b: IntTuple) -> Int:
@@ -187,15 +238,41 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     return r
 
 
+fn abs(t: IntTuple) -> IntTuple:
+    fn int_abs(x: Int) -> Int:
+        return math.abs(x)
+
+    return apply(int_abs, t)
+
+
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
-    var res = IntTuple()
-    for elem in lhs:
-        if is_int(elem):
-            res.append(elem.get[Int]()[] * rhs)
-        else:
-            for elem_i in tuple(elem):
-                res.append(mul(IntTuple(elem_i), rhs))
-    return res
+    fn my_mul(x: Int) -> Int:
+        return x * rhs
+
+    return apply(my_mul, lhs)
+
+
+# Exclusive prefix product with output congruent to input a
+fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
+    if is_tuple(a):
+        if is_tuple(init):  # tuple tuple
+            if len(a) != len(init):
+                trap("len(a) != len(init)")
+
+            return apply_zip[prefix_product](a, init)
+        else:  # tuple "int"
+            var v_init = int(init)
+            var r = IntTuple()
+            for v in a:
+                r.append(prefix_product(v, v_init))
+                v_init = v_init * product(v)
+            return r
+    else:
+        if is_tuple(init):  # "int" tuple
+            trap("'int' tuple not allowed")  # Error
+            return IntTuple()
+        else:  # "int" "int"
+            return init
 
 
 fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
@@ -208,15 +285,11 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                     + " != "
                     + str(len(b))
                 )
-
-            var r = IntTuple()
-            for z in zip(a, b):
-                r.append(shape_div(z[0], z[1]))
-            return r
+            return apply_zip[shape_div](a, b)
         else:  # tuple "int"
             var vb = int(b)
             var r = IntTuple()
-            for v in tuple(a):
+            for v in a:
                 r.append(shape_div(v, vb))
                 vb = int(shape_div(vb, product(v)))
             return r
@@ -233,39 +306,66 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             return va // vb if va % vb == 0 else signum(va * vb)
 
 
-fn crd2idx(crd: IntTuple, shape: IntTuple, stride: IntTuple) -> Int:
+fn idx2crd(
+    idx: IntTuple, shape: IntTuple, _stride: IntTuple = IntTuple()
+) -> IntTuple:
+    var stride = _stride
+    if len(stride) == 0:
+        stride = prefix_product(shape)
+
+    if is_tuple(idx):
+        if is_tuple(shape):  # tuple tuple tuple
+            if len(idx) != len(shape) or len(idx) != len(stride):
+                trap("input shapes mismatch")
+
+            return apply_zip3[idx2crd](idx, shape, stride)
+        else:  # tuple "int" "int"
+            trap("Illegal inputs")  # Error
+            return IntTuple()
+    else:
+        if is_tuple(shape):  # "int" tuple tuple
+            if len(shape) != len(stride):
+                trap("input shapes mismatch")
+
+            @parameter
+            fn idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
+                return idx2crd(idx, shape, stride)
+
+            return apply_zip[idx2crd2](shape, stride)
+        else:  # "int" "int" "int"
+            return (int(idx) // int(stride)) % int(shape)
+
+
+fn crd2idx(
+    crd: IntTuple, shape: IntTuple, _stride: IntTuple = IntTuple()
+) -> Int:
+    var stride = _stride
+    if len(stride) == 0:
+        stride = prefix_product(shape)
+
     if is_tuple(crd):
-        if not is_tuple(shape):
-            trap("crd and shape should be both IntTuple!")
-        var res = 0
-        for i in range(len(shape)):
-            res += crd2idx(crd[i], shape[i], stride[i])
-        return res
+        if is_tuple(shape):  # tuple tuple tuple
+            if len(crd) != len(shape) or len(crd) != len(stride):
+                trap("Shape mismatch")
+            var r: Int = 0
+            for z in zip3(crd, shape, stride):
+                r += crd2idx(z[0], z[1], z[2])
+            return r
+        else:  # tuple "int" "int"
+            trap("Illegal input types")
+            return 0
+    else:
+        var int_crd: Int = 0 if len(crd) == 0 else int(crd)
 
-    if is_tuple(shape):
-        if len(shape) != len(stride):
-            trap("Can't compute idx, shape != stride")
-        var result = 0
-        var curd_int = int(crd)
-        for i in range(len(shape) - 1):
-            result += crd2idx(
-                int(curd_int) % product(shape[i]), shape[i], stride[i]
-            )
-            curd_int = curd_int // product(shape[i])
-        return result + crd2idx(
-            curd_int, shape[len(shape) - 1], stride[len(stride) - 1]
-        )
-
-    return int(stride) * int(crd)
-
-
-fn idx2crd(idx: Int, shape: IntTuple, stride: IntTuple) -> IntTuple:
-    if is_tuple(shape):
-        if len(shape) != len(stride):
-            trap("shape and stride should be the same length")
-        var res = IntTuple()
-        for i in range(len(shape)):
-            res.append(idx2crd(idx, shape[i], stride[i]))
-        return res
-
-    return (idx // int(stride)) % int(shape)
+        if is_tuple(shape):  # "int" tuple tuple
+            if len(shape) != len(stride):
+                trap("Can't compute idx, shape != stride")
+            var result: Int = 0
+            for i in range(len(shape) - 1):
+                result += crd2idx(
+                    int_crd % product(shape[i]), shape[i], stride[i]
+                )
+                int_crd = int_crd // product(shape[i])
+            return result + crd2idx(int_crd, shape[-1], stride[-1])
+        else:  # "int" "int" "int"
+            return int_crd * int(stride)
