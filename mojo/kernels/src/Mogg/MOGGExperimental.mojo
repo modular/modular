@@ -11,8 +11,8 @@ from math import (
     exp,
     floor,
     iota,
-    isinf,
     isnan,
+    isinf,
     log,
     log1p,
     max,
@@ -20,7 +20,12 @@ from math import (
     rsqrt,
     sqrt,
     tanh,
+    add,
+    mul,
 )
+from math.limit import max_or_inf, min_or_neginf
+from algorithm.reduction import reduce_shape, _reduce_generator
+from runtime.tracing import Trace, TraceLevel
 
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -875,3 +880,210 @@ fn test_static_shape(
     unroll[print_if_static, x.static_rank]()
 
     return out
+
+
+# ===----------------------------------------------------------------------===#
+# reduce op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_reduce_output_shape(
+    input: Tensor, axis: Tensor
+) -> IntList[DimList.create_unknown[input.static_rank]()]:
+    var output = IntList[DimList.create_unknown[input.static_rank]()](
+        input.shape
+    )
+    output[int(axis.simd_load[1](IntList(0)))] = 1
+    return output
+
+
+@always_inline
+fn _reduce_wrapper[
+    type: DType,
+    reduce_op: fn[ty: DType, width: Int] (
+        arg1: SIMD[ty, width], arg2: SIMD[ty, width]
+    ) -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](input: Tensor, inout output: Tensor, init: Scalar[type], ax: Int) -> None:
+    constrained[
+        input.has_static_rank(),
+        "reduce kernel does not support dynamic rank inputs",
+    ]()
+
+    @parameter
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) capturing -> SIMD[ty, width]:
+        return reduce_op(v1, v2)
+
+    @parameter
+    @always_inline
+    fn load_input[
+        ty: DType, width: Int, rank: Int
+    ](coords: StaticIntTuple[rank]) capturing -> SIMD[ty, width]:
+        return rebind[SIMD[ty, width]](
+            input.simd_load[width](
+                rebind[StaticIntTuple[input.static_rank]](coords)
+            )
+        )
+
+    @parameter
+    @always_inline
+    fn store_output[
+        ty: DType, width: Int, rank: Int
+    ](coords: StaticIntTuple[rank], val: SIMD[ty, width]) capturing -> None:
+        output.store(
+            rebind[StaticIntTuple[output.static_rank]](coords),
+            rebind[SIMD[output.type, width]](val),
+        )
+
+    try:
+        with Trace[TraceLevel.OP]("mojo.reduce") as t:
+            _reduce_generator[
+                load_input,
+                store_output,
+                reduce_impl,
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](
+                input.shape.to_static_tuple(),
+                init,
+                ax,
+            )
+    except e:
+        print(e)
+
+
+@mogg_register_override("mo.reduce_add", priority=MAX_BENEFIT)
+@always_inline
+@export
+fn reduce_add[
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input: Tensor,
+    axis: Tensor,
+) -> Tensor[
+    input.type,
+    DimList.create_unknown[input.static_rank](),
+]:
+    var ax = int(axis.simd_load[1](0))
+
+    var output_shape = _get_reduce_output_shape(input, axis)
+    var output = empty_tensor[input.type](
+        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+    )
+
+    output.enable_fusion()
+    input.enable_fusion()
+
+    _reduce_wrapper[
+        input.type,
+        add,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input, output, Scalar[input.type](0), ax)
+
+    return output
+
+
+@mogg_register_override("mo.reduce_max", priority=MAX_BENEFIT)
+@always_inline
+@export
+fn reduce_max[
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input: Tensor,
+    axis: Tensor,
+) -> Tensor[
+    input.type,
+    DimList.create_unknown[input.static_rank](),
+]:
+    var ax = int(axis.simd_load[1](0))
+
+    var output_shape = _get_reduce_output_shape(input, axis)
+    var output = empty_tensor[input.type](
+        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+    )
+
+    output.enable_fusion()
+    input.enable_fusion()
+
+    _reduce_wrapper[
+        input.type,
+        max,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input, output, min_or_neginf[input.type](), ax)
+
+    return output
+
+
+@mogg_register_override("mo.reduce_min", priority=MAX_BENEFIT)
+@always_inline
+@export
+fn reduce_min[
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input: Tensor,
+    axis: Tensor,
+) -> Tensor[
+    input.type,
+    DimList.create_unknown[input.static_rank](),
+]:
+    var ax = int(axis.simd_load[1](0))
+
+    var output_shape = _get_reduce_output_shape(input, axis)
+    var output = empty_tensor[input.type](
+        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+    )
+
+    output.enable_fusion()
+    input.enable_fusion()
+
+    _reduce_wrapper[
+        input.type,
+        min,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input, output, max_or_inf[input.type](), ax)
+
+    return output
+
+
+@mogg_register_override("mo.reduce_mul", priority=MAX_BENEFIT)
+@always_inline
+@export
+fn reduce_mul[
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    input: Tensor,
+    axis: Tensor,
+) -> Tensor[
+    input.type,
+    DimList.create_unknown[input.static_rank](),
+]:
+    var ax = int(axis.simd_load[1](0))
+
+    var output_shape = _get_reduce_output_shape(input, axis)
+    var output = empty_tensor[input.type](
+        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+    )
+    input.enable_fusion()
+    output.enable_fusion()
+
+    _reduce_wrapper[
+        input.type,
+        mul,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input, output, Scalar[input.type](1), ax)
+
+    return output
