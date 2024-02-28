@@ -56,9 +56,13 @@ public:
   /// after creation.
   virtual void enable() = 0;
 
-  // disable is used to flush and disable the progress meter. No output should
-  // be emitted after this call.
+  /// disable is used to flush and disable the progress meter. No output should
+  /// be emitted after this call.
   virtual void disable() = 0;
+
+  /// setLabel is used to set the label for the progress meter. This should be
+  /// called once after creation.
+  virtual void setLabel(std::string label) = 0;
 };
 
 /// makeProgress returns an instance of the Progress class which emits a

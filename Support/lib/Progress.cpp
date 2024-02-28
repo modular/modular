@@ -39,6 +39,7 @@ public:
   void skippedFile() override { doneFiles += 1; }
   void enable() override;
   void disable() override;
+  void setLabel(std::string label) override{};
 
 private:
   void emit(std::chrono::time_point<std::chrono::system_clock> now);
@@ -89,6 +90,10 @@ public:
   void skippedFile() override { update(); }
   void enable() override;
   void disable() override;
+  void setLabel(std::string label) override {
+    this->label = label;
+    update();
+  };
 
 private:
   void update();
@@ -115,6 +120,8 @@ private:
   const size_t maxTimePoints = 20; // Adjust as needed for smoothing
 
   void updateRate();
+
+  std::string label = "Downloading";
 };
 
 } // namespace
@@ -349,7 +356,7 @@ void CLIProgress::update() {
   bytes << prettyBytes(doneBytes) << "/" << prettyBytes(totalDisplayedBytes);
 
   std::stringstream prefix;
-  prefix << "Downloading [ ";
+  prefix << std::left << std::setw(12) << label << " [ " << std::right;
 
   double percentage = 0;
   if (totalDisplayedBytes == 0 || doneBytes == 0)
@@ -361,13 +368,8 @@ void CLIProgress::update() {
                           1.0);
 
   std::stringstream postfix;
-  postfix << " ] ";
-  if (enabled == false) {
-    postfix << "100%"; // Emoji width is two characters.
-    percentage = 1.0;
-  } else {
-    postfix << std::setw(3) << static_cast<int>(100.0 * percentage) << "%";
-  }
+  postfix << " ] " << std::setw(3) << static_cast<int>(100.0 * percentage)
+          << "%";
 
   postfix << "  " << std::setw(16) << bytes.str() << " @ " << std::setw(8)
           << prettyBytes(static_cast<size_t>(rate)) << "/s";
