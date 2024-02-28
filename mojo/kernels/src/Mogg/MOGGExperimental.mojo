@@ -372,7 +372,7 @@ fn mo_abs(
 
 @mogg_register_override("mo.ceil", MAX_BENEFIT)
 @export
-fn my_ceil(
+fn mo_ceil(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -429,7 +429,7 @@ fn mo_exp(
 
 @mogg_register_override("mo.floor", MAX_BENEFIT)
 @export
-fn my_floor(
+fn mo_floor(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -524,7 +524,7 @@ fn mo_log1p(
 
 @mogg_register_override("mo.relu", MAX_BENEFIT)
 @export
-fn my_relu(
+fn mo_relu(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -543,7 +543,7 @@ fn my_relu(
 
 @mogg_register_override("mo.rsqrt", MAX_BENEFIT)
 @export
-fn my_rsqrt(
+fn mo_rsqrt(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
@@ -562,7 +562,7 @@ fn my_rsqrt(
 
 @mogg_register_override("mo.sqrt", MAX_BENEFIT)
 @export
-fn my_sqrt(
+fn mo_sqrt(
     x: Tensor,
 ) -> Tensor[x.type, x.static_shape]:
     var out = empty_tensor[x.type](x.shape)
