@@ -304,9 +304,7 @@ struct Graph(CollectionElement, Stringable):
         # TODO: No particular reason not to implement everything else.
         raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
 
-    fn scalar(
-        self, value: FloatLiteralOld, dtype: ElementType
-    ) raises -> Symbol:
+    fn scalar(self, value: Float64, dtype: ElementType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
