@@ -3646,9 +3646,9 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
         )
 
-    let shape = GemmShape.get[False, transpose_b](c, a, b)
-    let n = shape.N
-    let k = shape.K
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var n = shape.N
+    var k = shape.K
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
