@@ -1,0 +1,1063 @@
+load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+td_library(
+    name = "HLCFDialectTdFiles",
+    srcs = glob(["include/KGEN/HLCFDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        ":InterpreterTdFiles",
+        "//Support:MTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "HLCFDialectIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "include/KGEN/HLCFDialect/HLCF.h.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "include/KGEN/HLCFDialect/HLCF.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=hlcf",
+            ],
+            "include/KGEN/HLCFDialect/HLCFDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=hlcf",
+            ],
+            "include/KGEN/HLCFDialect/HLCFDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/HLCFDialect/HLCF.td",
+    deps = [
+        ":HLCFDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "HLCFAttrsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-attrdef-decls"],
+            "include/KGEN/HLCFDialect/HLCFAttrs.h.inc",
+        ),
+        (
+            ["-gen-attrdef-defs"],
+            "include/KGEN/HLCFDialect/HLCFAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/HLCFDialect/HLCFAttrs.td",
+    deps = [
+        ":HLCFDialectIncGen",
+        ":HLCFDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "HLCFEnumsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "include/KGEN/HLCFDialect/HLCFEnums.h.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "include/KGEN/HLCFDialect/HLCFEnums.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/HLCFDialect/HLCFAttrs.td",
+    deps = [
+        ":HLCFDialectIncGen",
+        ":HLCFDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "HLCFInterfacesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/KGEN/HLCFDialect/HLCFInterfaces.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/KGEN/HLCFDialect/HLCFInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/HLCFDialect/HLCFInterfaces.td",
+    deps = [
+        ":HLCFDialectIncGen",
+        ":HLCFDialectTdFiles",
+    ],
+)
+
+td_library(
+    name = "KGENPassTdFile",
+    srcs = ["include/KGEN/KGENPasses.td"],
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENPassesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-pass-decls"],
+            "include/KGEN/KGENPasses.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENPasses.td",
+    deps = [
+        ":KGENPassTdFile",
+        "@llvm-project//mlir:PassBaseTdFiles",
+    ],
+)
+
+td_library(
+    name = "KGENDialectTdFiles",
+    srcs = glob(["include/KGEN/KGENDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "//Support:DebugInfoTdFiles",
+        "//Support:MTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENDialectIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "include/KGEN/KGENDialect/KGEN.h.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "include/KGEN/KGENDialect/KGEN.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=kgen",
+            ],
+            "include/KGEN/KGENDialect/KGENDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=kgen",
+            ],
+            "include/KGEN/KGENDialect/KGENDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGEN.td",
+    deps = [
+        ":HLCFDialectTdFiles",
+        ":InterpreterTdFiles",
+        ":KGENDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+        "@llvm-project//mlir:FunctionInterfacesTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENAttrInterfacesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-attr-interface-decls"],
+            "include/KGEN/KGENDialect/KGENAttrInterfaces.h.inc",
+        ),
+        (
+            ["-gen-attr-interface-defs"],
+            "include/KGEN/KGENDialect/KGENAttrInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENAttrInterfaces.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENAttrsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-attrdef-decls"],
+            "include/KGEN/KGENDialect/KGENAttrs.h.inc",
+        ),
+        (
+            ["-gen-attrdef-defs"],
+            "include/KGEN/KGENDialect/KGENAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENAttrs.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENDialectBytecodeIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=kgen",
+            ],
+            "include/KGEN/KGENDialect/KGENDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENDialectBytecode.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENEnumsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "include/KGEN/KGENDialect/KGENEnums.h.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "include/KGEN/KGENDialect/KGENEnums.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENAttrs.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENInterfacesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/KGEN/KGENDialect/KGENInterfaces.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/KGEN/KGENDialect/KGENInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENInterfaces.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENTypesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-typedef-decls",
+                "-typedefs-dialect=kgen",
+            ],
+            "include/KGEN/KGENDialect/KGENTypes.h.inc",
+        ),
+        (
+            [
+                "-gen-typedef-defs",
+                "-typedefs-dialect=kgen",
+            ],
+            "include/KGEN/KGENDialect/KGENTypes.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENTypes.td",
+    deps = [
+        ":InterpreterTdFiles",
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "KGENTypeInterfacesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-type-interface-decls"],
+            "include/KGEN/KGENDialect/KGENTypeInterfaces.h.inc",
+        ),
+        (
+            ["-gen-type-interface-defs"],
+            "include/KGEN/KGENDialect/KGENTypeInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/KGENDialect/KGENTypeInterfaces.td",
+    deps = [
+        ":KGENDialectIncGen",
+        ":KGENDialectTdFiles",
+    ],
+)
+
+td_library(
+    name = "InterpreterTdFiles",
+    srcs = glob(["include/KGEN/Interpreter/*.td"]),
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "InterpreterIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "include/KGEN/Interpreter/Interpreter.h.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "include/KGEN/Interpreter/Interpreter.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=interp",
+            ],
+            "include/KGEN/Interpreter/InterpreterDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=interp",
+            ],
+            "include/KGEN/Interpreter/InterpreterDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/Interpreter.td",
+    deps = [
+        ":InterpreterTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "InterpreterInterfaceIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/KGEN/Interpreter/InterpreterInterface.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/KGEN/Interpreter/InterpreterInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
+    deps = [
+        ":InterpreterIncGen",
+        ":InterpreterTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "InterpreterAttrsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-attrdef-decls"],
+            "include/KGEN/Interpreter/InterpreterAttrs.h.inc",
+        ),
+        (
+            ["-gen-attrdef-defs"],
+            "include/KGEN/Interpreter/InterpreterAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/InterpreterAttrs.td",
+    deps = [
+        ":InterpreterIncGen",
+        ":InterpreterTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "InterpreterDialectBytecodeIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=interp",
+            ],
+            "include/KGEN/Interpreter/InterpreterDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/InterpreterDialectBytecode.td",
+    deps = [
+        ":InterpreterIncGen",
+        ":InterpreterTdFiles",
+        "//Support:MTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "InterpreterOpInterfaceIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/KGEN/Interpreter/InterpreterOpInterface.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/KGEN/Interpreter/InterpreterOpInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
+    deps = [
+        ":InterpreterIncGen",
+        ":InterpreterTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "MemoryableTypeInterfaceIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-type-interface-decls"],
+            "include/KGEN/Interpreter/MemoryableTypeInterface.h.inc",
+        ),
+        (
+            ["-gen-type-interface-defs"],
+            "include/KGEN/Interpreter/MemoryableTypeInterface.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/Interpreter/InterpreterInterface.td",
+    deps = [
+        ":InterpreterIncGen",
+        ":InterpreterTdFiles",
+    ],
+)
+
+cc_library(
+    name = "Interpreter",
+    srcs = glob(["lib/Interpreter/*.cpp"]),
+    hdrs = glob(["include/KGEN/Interpreter/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":InterpreterAttrsIncGen",
+        ":InterpreterDialectBytecodeIncGen",
+        ":InterpreterIncGen",
+        ":InterpreterOpInterfaceIncGen",
+        ":MemoryableTypeInterfaceIncGen",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:MDialect",
+        "//Support:Threading",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "HLCFDialect",
+    srcs = glob(["lib/HLCFDialect/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/HLCFDialect/*.h",
+        "include/KGEN/KGENDialect/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFAttrsIncGen",
+        ":HLCFDialectIncGen",
+        ":HLCFEnumsIncGen",
+        ":HLCFInterfacesIncGen",
+        ":Interpreter",
+        ":KGENAttrInterfacesIncGen",
+        ":KGENAttrsIncGen",
+        ":KGENDialectIncGen",
+        ":KGENEnumsIncGen",
+        ":KGENInterfacesIncGen",
+        ":KGENTypeInterfacesIncGen",
+        ":KGENTypesIncGen",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:DebugInfoDialect",
+        "//Support:IPInt",
+        "//Support:IPRational",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+td_library(
+    name = "LITDialectTdFiles",
+    srcs = glob(["include/KGEN/LITDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITDialectIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "include/KGEN/LITDialect/LIT.h.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "include/KGEN/LITDialect/LIT.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LIT.td",
+    deps = [
+        ":HLCFDialectTdFiles",
+        ":InterpreterTdFiles",
+        ":KGENDialectTdFiles",
+        ":LITDialectTdFiles",
+        ":POPDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+        "@llvm-project//mlir:FunctionInterfacesTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITDialectBytecodeIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LITDialectBytecode.td",
+    deps = [
+        ":LITDialectIncGen",
+        ":LITDialectTdFiles",
+        "//Support:MTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITAttrsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-attrdef-decls",
+                "-attrdefs-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITAttrs.h.inc",
+        ),
+        (
+            [
+                "-gen-attrdef-defs",
+                "-attrdefs-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LITAttrs.td",
+    deps = [
+        ":KGENDialectTdFiles",
+        ":LITDialectIncGen",
+        ":LITDialectTdFiles",
+        "//Support:MTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITEnumsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "include/KGEN/LITDialect/LITEnums.h.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "include/KGEN/LITDialect/LITEnums.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LITEnums.td",
+    deps = [
+        ":LITDialectIncGen",
+        ":LITDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITInterfacesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/KGEN/LITDialect/LITInterfaces.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/KGEN/LITDialect/LITInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LITInterfaces.td",
+    deps = [
+        ":LITDialectIncGen",
+        ":LITDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "LITTypesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-typedef-decls",
+                "-typedefs-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITTypes.h.inc",
+        ),
+        (
+            [
+                "-gen-typedef-defs",
+                "-typedefs-dialect=lit",
+            ],
+            "include/KGEN/LITDialect/LITTypes.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/LITDialect/LITTypes.td",
+    deps = [
+        ":InterpreterTdFiles",
+        ":KGENDialectTdFiles",
+        ":LITDialectIncGen",
+        ":LITDialectTdFiles",
+    ],
+)
+
+cc_library(
+    name = "LITDialect",
+    srcs = glob(["lib/LITDialect/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/HLCFDialect/*.h",
+        "include/KGEN/KGENDialect/*.h",
+        "include/KGEN/LITDialect/*.h",
+        "include/KGEN/LITDialect/*.def",
+        "include/KGEN/POPDialect/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFAttrsIncGen",
+        ":HLCFDialectIncGen",
+        ":HLCFEnumsIncGen",
+        ":HLCFInterfacesIncGen",
+        ":Interpreter",
+        ":KGENAttrInterfacesIncGen",
+        ":KGENAttrsIncGen",
+        ":KGENDialectIncGen",
+        ":KGENEnumsIncGen",
+        ":KGENInterfacesIncGen",
+        ":KGENTypeInterfacesIncGen",
+        ":KGENTypesIncGen",
+        ":LITAttrsIncGen",
+        ":LITDialectBytecodeIncGen",
+        ":LITDialectIncGen",
+        ":LITEnumsIncGen",
+        ":LITInterfacesIncGen",
+        ":LITTypesIncGen",
+        ":POPDialectIncGen",
+        ":POPEnumsIncGen",
+        ":POPTypesIncGen",
+        "//Support:Base",
+        "//Support:DebugInfoDialect",
+        "//Support:IPInt",
+        "//Support:IPRational",
+    ],
+)
+
+td_library(
+    name = "POPDialectTdFiles",
+    srcs = glob(["include/KGEN/POPDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        ":KGENDialectTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "POPDialectIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "include/KGEN/POPDialect/POP.h.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "include/KGEN/POPDialect/POP.cpp.inc",
+        ),
+        (
+            [
+                "-gen-dialect-decls",
+                "-dialect=pop",
+            ],
+            "include/KGEN/POPDialect/POPDialect.h.inc",
+        ),
+        (
+            [
+                "-gen-dialect-defs",
+                "-dialect=pop",
+            ],
+            "include/KGEN/POPDialect/POPDialect.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/POPDialect/POP.td",
+    deps = [
+        ":InterpreterTdFiles",
+        ":POPDialectTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "POPAttrsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-attrdef-decls"],
+            "include/KGEN/POPDialect/POPAttrs.h.inc",
+        ),
+        (
+            ["-gen-attrdef-defs"],
+            "include/KGEN/POPDialect/POPAttrs.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/POPDialect/POPAttrs.td",
+    deps = [
+        ":POPDialectIncGen",
+        ":POPDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "POPDialectBytecodeIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=pop",
+            ],
+            "include/KGEN/POPDialect/POPDialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/POPDialect/POPDialectBytecode.td",
+    deps = [
+        ":POPDialectIncGen",
+        ":POPDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "POPEnumsIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "include/KGEN/POPDialect/POPEnums.h.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "include/KGEN/POPDialect/POPEnums.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/POPDialect/POPAttrs.td",
+    deps = [
+        ":POPDialectIncGen",
+        ":POPDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "POPTypesIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-typedef-decls",
+                "-typedefs-dialect=pop",
+            ],
+            "include/KGEN/POPDialect/POPTypes.h.inc",
+        ),
+        (
+            [
+                "-gen-typedef-defs",
+                "-typedefs-dialect=pop",
+            ],
+            "include/KGEN/POPDialect/POPTypes.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/POPDialect/POPTypes.td",
+    deps = [
+        ":InterpreterTdFiles",
+        ":POPDialectIncGen",
+        ":POPDialectTdFiles",
+    ],
+)
+
+cc_library(
+    name = "POPDialect",
+    srcs = glob(["lib/POPDialect/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/HLCFDialect/*.h",
+        "include/KGEN/Interpreter/*.h",
+        "include/KGEN/KGENDialect/*.h",
+        "include/KGEN/POPDialect/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFInterfacesIncGen",
+        ":InterpreterAttrsIncGen",
+        ":InterpreterIncGen",
+        ":InterpreterOpInterfaceIncGen",
+        ":KGENAttrInterfacesIncGen",
+        ":KGENAttrsIncGen",
+        ":KGENDialectIncGen",
+        ":KGENEnumsIncGen",
+        ":KGENInterfacesIncGen",
+        ":KGENTypeInterfacesIncGen",
+        ":KGENTypesIncGen",
+        ":MemoryableTypeInterfaceIncGen",
+        ":POPAttrsIncGen",
+        ":POPDialectBytecodeIncGen",
+        ":POPDialectIncGen",
+        ":POPEnumsIncGen",
+        ":POPTypesIncGen",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:DebugInfoDialect",
+        "//Support:IPInt",
+        "//Support:IPRational",
+        "//Support:MDialect",
+        "//Support:Threading",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "KGENDialect",
+    srcs = glob(["lib/KGENDialect/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/KGENDialect/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFDialect",
+        ":Interpreter",
+        ":KGENAttrInterfacesIncGen",
+        ":KGENAttrsIncGen",
+        ":KGENDialectBytecodeIncGen",
+        ":KGENDialectIncGen",
+        ":KGENEnumsIncGen",
+        ":KGENInterfacesIncGen",
+        ":KGENTypeInterfacesIncGen",
+        ":KGENTypesIncGen",
+        ":Support",
+        "//Support:ADT",
+        "//Support:DebugInfoDialect",
+        "//Support:IPInt",
+        "//Support:MDialect",
+    ],
+)
+
+# TODO: This should get replaced with something that actually generates the
+# correct version number. (NOTE: It looks like clang, llvm, and lldb do this...)
+# For now, just hard code some values.
+genrule(
+    name = "kgen_version_gen",
+    outs = ["include/KGEN/KGENVersion/KGENVersion.h"],
+    # TODO: Properly generate a version using shared variables. See Version.h.in
+    #       for all the macro magic to generate versions.
+    cmd = "echo '#define KGEN_VERSION_STRING \"1.0.0\"' >> $@\n",
+)
+
+cc_library(
+    name = "Compiler",
+    srcs = glob(["lib/Compiler/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/Compiler/*.h",
+    ]) + [
+        "include/KGEN/KGENVersion/KGENVersion.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENDialect",
+        ":KGENInterfacesIncGen",
+        ":KGENPassesIncGen",
+        ":KGENTypesIncGen",
+        ":ToolCommon",
+        ":kgen_version_gen",
+        "//Cache:CacheDialect",
+        "//Support:DebugInfoTransforms",
+        "//Support:Telemetry",
+        "@llvm-project//llvm:OrcJIT",
+    ],
+)
+
+# TODO: Move to configure.bzl?
+# Share this across variables:
+# https://bazel.build/build/share-variables#sharing_variables_across_multiple_build_files
+MOJO_CONFIG_COPTS = ["-DMOJO_CONFIG_SECTION=mojo"]
+
+cc_library(
+    name = "Support",
+    srcs = glob(["lib/Support/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/Support/*.h",
+        "include/KGEN/KGENDialect/*.h",
+    ]),
+    copts = MOJO_CONFIG_COPTS,
+    strip_include_prefix = "include",
+    deps = [
+        "//LLCL:Support",
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:ML",
+        "//Support:Profiling",
+    ],
+)
+
+cc_library(
+    name = "ToolCommon",
+    srcs = glob(["lib/ToolCommon/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/ToolCommon/*.h",
+        "include/KGEN/Compiler/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFDialect",
+        ":LITDialect",
+        ":POPDialect",
+        "//Cache:CacheDialect",
+        "//Support:CommonCLOptions",
+        "//Support:DebugInfoDialect",
+        "@llvm-project//llvm:OrcJIT",
+        "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
+    ],
+)

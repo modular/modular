@@ -389,6 +389,17 @@ cc_library(
 )
 
 cc_library(
+    name = "IPRational",
+    srcs = ["lib/IPRational.cpp"],
+    hdrs = ["include/Support/IPRational.h"],
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":IPInt",
+    ],
+)
+
+cc_library(
     name = "Stats",
     srcs = ["lib/Stats.cpp"],
     hdrs = ["include/Support/Stats.h"],
@@ -559,6 +570,7 @@ cc_library(
     deps = [
         ":ADT",
         ":Base",
+        ":Buffer",
         ":MDialect",
         ":Profiling",
         "@llvm-project//mlir:AllPassesAndDialects",
