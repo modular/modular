@@ -1,4 +1,5 @@
-// RUN: kgen-opt -force-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -force-inline=update-debug-info=deferred -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,DEFERRED %s
+// RUN: kgen-opt -force-inline=update-debug-info=immediate -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,IMMEDIATE %s
 
 // COM: The attributes may be printed before or after the functions under test,
 // COM: so we try to keep the attribute close to its corresponding CHECK
@@ -72,7 +73,8 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // CHECK-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // IMMEDIATE-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
   %coroHdl = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %coroHdl : !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
@@ -93,7 +95,8 @@ kgen.func @call_async_indirect() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE]])
-  // CHECK-NEXT: } callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // IMMEDIATE-NEXT: } callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
   %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCaller)
   kgen.return %1 : !pop.coroutine<() -> (index)> loc(#locCaller)
 } loc(#locCaller)

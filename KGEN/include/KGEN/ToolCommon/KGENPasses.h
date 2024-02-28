@@ -57,6 +57,28 @@ class POPDialect;
 } // namespace POP
 
 //===----------------------------------------------------------------------===//
+// Shared Enums
+//===----------------------------------------------------------------------===//
+
+/// Policy for when to update debug info while inlining.
+///
+/// When compiling with debug info, an op's location is tagged with a source
+/// scope (e.g. function scope). This needs to be updated when the op is inlined
+/// into another function (with a different scope).
+enum class InlinerDebugInfoUpdateTime {
+  // Update debug info for each inlined function immediately after it is
+  // inlined. More costly, but allows for more optimization while inlining.
+  kImmediate,
+  // Update debug info after all inlining is done. This requires tagging
+  // each inlined scope with an attribute during inlining, and looking for the
+  // tag at the end to update debug scopes.
+  kDeferred,
+  // Never update debug info. This is only legal when compiling without any
+  // debug info.
+  kNever
+};
+
+//===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration
 //===----------------------------------------------------------------------===//
 

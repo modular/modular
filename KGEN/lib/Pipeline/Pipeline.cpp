@@ -155,7 +155,11 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 
   pm.addPass(createForceInline(
       runtime,
-      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug},
+      {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
+           ? InlinerDebugInfoUpdateTime::kNever
+           : (options.optimizationLevel == 0
+                  ? InlinerDebugInfoUpdateTime::kDeferred
+                  : InlinerDebugInfoUpdateTime::kImmediate)},
       std::move(buildForceInlineFuncPasses)));
 
   // Process debuginfo based on the selected debugging level.
@@ -199,7 +203,11 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 
   pm.addPass(createAutomaticInline(
       runtime,
-      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug,
+      {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
+           ? InlinerDebugInfoUpdateTime::kNever
+           : (options.optimizationLevel == 0
+                  ? InlinerDebugInfoUpdateTime::kDeferred
+                  : InlinerDebugInfoUpdateTime::kImmediate),
        options.optimizationLevel},
       std::move(buildAutomaticInlinerFuncPasses)));
 

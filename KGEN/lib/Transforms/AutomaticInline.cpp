@@ -6,7 +6,6 @@
 
 #include "InliningUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
-#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -118,9 +117,9 @@ struct CallGraphNode {
 
 struct CallGraph {
   explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
-                     bool updateDebugInfo)
+                     const std::optional<StringAttr> updateAttrName)
       : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
-        updateDebugInfo(updateDebugInfo), numWorkItems(0),
+        updateAttrName(updateAttrName), numWorkItems(0),
         done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
   /// Build the CallGraph.
@@ -159,8 +158,12 @@ private:
   /// When a work item ends, call this function for post-processing.
   void endWork();
 
-  /// Whether to also update debuginfo.
-  bool updateDebugInfo;
+  /// How to update debuginfo while inlining.
+  /// - Optional has null StringAttr: Update debuginfo immediately.
+  /// - Optional has non-null StringAttr: Defer debuginfo update. Tag scopes
+  ///   with the StringAttr.
+  /// - Optional does not have value: Do not update debuginfo.
+  std::optional<StringAttr> updateAttrName;
 
   /// Number of work items (i.e. functions to inline)
   std::atomic<size_t> numWorkItems;
@@ -374,11 +377,11 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
   }
 
   auto inlineFunc = [&pms = pms, &innerPipelineFailed = innerPipelineFailed,
-                     caller, updateDebugInfo = updateDebugInfo, threshold,
+                     caller, &updateAttrName = updateAttrName, threshold,
                      this](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [callee, calls] : caller->callSites) {
-      // Make sure we don't call shouldInlineCallee on a callee that we are
-      // not waiting on.
+      // Make sure we don't call shouldInlineCallee on a callee that we are not
+      // waiting on.
       if (!caller->canInlineCallee(callee))
         continue;
 
@@ -398,12 +401,23 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         auto [scope, singleExit] =
             inlineRegion(map, *call, callee->func.getBodyRegion());
 
-        if (updateDebugInfo)
-          updateScopeDebugInfoFrom(scope, nukeDebugInfo);
-
-        if (singleExit)
+        if (updateAttrName) {
+          // We don't know where the op will end up, so tag it with an
+          // attribute. Encode information {singleExit, noDebug} as bits.
+          IntegerAttr tag =
+              OpBuilder(scope->getContext())
+                  .getI8IntegerAttr(singleExit | (nukeDebugInfo << 1));
+          if (*updateAttrName) {
+            // Deferred debuginfo update.
+            scope->setAttr(*updateAttrName, tag);
+          } else {
+            // Immediate debuginfo update.
+            // This will also foldTrivialLoops if applicable.
+            updateScopeDebugInfoFrom(scope, tag, nullptr);
+          }
+        } else if (singleExit) {
           foldTrivialLoop(scope);
-
+        }
         callee->numTimesInlined++;
       }
     }
@@ -505,13 +519,50 @@ void AutomaticInline::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
+  std::optional<StringAttr> updateAttrName;
+  switch (updateDebugInfo) {
+  case InlinerDebugInfoUpdateTime::kImmediate:
+    updateAttrName = StringAttr();
+    break;
+  case InlinerDebugInfoUpdateTime::kDeferred:
+    updateAttrName = StringAttr::get(&getContext(), "inliner_debuginfo_update");
+    break;
+  case InlinerDebugInfoUpdateTime::kNever:
+    break;
+  }
+
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  CallGraph graph(*rt, pms, updateDebugInfo);
+  CallGraph graph(*rt, pms, updateAttrName);
 
   graph.build(getOperation(), symtab);
   graph.performInlining(getInlineThreshold());
   if (graph.innerPipelineFailed)
     return signalPassFailure();
+
+  // If we deferred debuginfo update, do that now.
+  if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
+    CompilerTimeTraceScope traceScope("updateDebugInfo");
+    LLCL::ForkJoin state(*rt);
+    std::atomic<bool> innerPipelineFailed = false;
+    for (auto &[func, node] : graph.nodes) {
+      if (!func ||
+          ((node.isAllInlined() || !node.reachable) && !func.isExported()) ||
+          node.callSites.empty())
+        continue;
+
+      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
+        updateScopeDebugInfo(func, *updateAttrName);
+        // Run the function pipeline here.
+        CompilerTimeTraceScope traceScope("optimizeFunction");
+        if (failed(pms.getPassManager().run(func)))
+          innerPipelineFailed = true;
+      });
+    }
+
+    state.join();
+    if (innerPipelineFailed)
+      signalPassFailure();
+  }
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createAutomaticInline(

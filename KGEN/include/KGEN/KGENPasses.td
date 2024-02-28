@@ -461,8 +461,16 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
   let dependentDialects = ["HLCF::HLCFDialect"];
 
   let options = [
-    Option<"updateDebugInfo", "update-debug-info", "bool", "true",
-           "If true, debug info of inlined functions are updated accordingly.">,
+    Option<"updateDebugInfo", "update-debug-info",
+           "M::KGEN::InlinerDebugInfoUpdateTime",
+           "M::KGEN::InlinerDebugInfoUpdateTime::kDeferred",
+           "How to update debug info of inlined functions.", "llvm::cl::values("
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kImmediate,"
+           "\"immediate\", \"Update immediately.\"),"
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kDeferred,"
+           "\"deferred\", \"Update at the end of the pass.\"),"
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kNever,"
+           "\"never\", \"Do not update debug info.\"))">,
     Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
            "Specify the inner pipeline to use on functions.">
   ];
@@ -947,8 +955,16 @@ def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
 
   let dependentDialects = ["HLCF::HLCFDialect"];
   let options = [
-    Option<"updateDebugInfo", "update-debug-info", "bool", "false",
-           "If true, debug info of inlined functions are updated accordingly.">,
+    Option<"updateDebugInfo", "update-debug-info",
+           "M::KGEN::InlinerDebugInfoUpdateTime",
+           "M::KGEN::InlinerDebugInfoUpdateTime::kNever",
+           "How to update debug info of inlined functions.", "llvm::cl::values("
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kImmediate,"
+           "\"immediate\", \"Update immediately.\"),"
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kDeferred,"
+           "\"deferred\", \"Update at the end of the pass.\"),"
+           "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kNever,"
+           "\"never\", \"Do not update debug info.\"))">,
     Option<"optimizationLevel", "optimization-level", "unsigned", "1",
            "Specify the compilation optimization level.">,
     Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
