@@ -25,3 +25,19 @@ fn op(name: StringLiteral, priority: Int = -1):
       priority: The priority of the op.
     """
     return
+
+
+fn elementwise():
+    """
+    This decorator marks a kernel as being elementwise. This implies the
+    kernel represents a lambda to be executed in the inner loop of an
+    elementwise function.
+
+    For instance:
+    ```mojo
+    @max.register.op("mo.add")
+    @max.register.elementwise()
+    fn my_add[...](x: SIMD[...], y: SIMD[...]) -> SIMD[...]:
+    ```
+    """
+    return

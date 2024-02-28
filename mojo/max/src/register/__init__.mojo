@@ -5,4 +5,4 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the Mojo extensibility registration mechanism."""
 
-from .register import op
+from .register import op, elementwise
