@@ -152,7 +152,6 @@ fn test[
             type,
             True,
             conv_attr,
-            elementwise_epilogue_enabled=False,
         ].run(output, input, packed_filter, conv_shape)
     else:
         ConvDirectNHWC[
@@ -167,7 +166,6 @@ fn test[
             type,
             False,
             conv_attr,
-            elementwise_epilogue_enabled=False,
         ].run(output, input, filter, conv_shape)
 
     input_ptr.free()

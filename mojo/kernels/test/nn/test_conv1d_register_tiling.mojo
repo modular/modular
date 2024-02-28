@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: DISABLED
 # RUN: %mojo -debug-level full %s
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
@@ -71,9 +70,6 @@ fn conv1d_register_tiling(
         num_groups: 1,
     }
 
-    fn null_epilogue(coords: StaticIntTuple[3], f_size: Int):
-        pass
-
     conv1d_update_wo_tile[
         micro_kernel_height,
         micro_kernel_width,
@@ -82,7 +78,6 @@ fn conv1d_register_tiling(
         effected_by_padding=False,
         has_residual=False,
         last_c_tile=False,
-        elementwise_epilogue_enabled=False,
     ](
         output,
         input,
@@ -94,7 +89,6 @@ fn conv1d_register_tiling(
         conv_shape,
         0,
         wo,
-        null_epilogue,
     )
 
 
