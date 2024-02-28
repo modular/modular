@@ -11,6 +11,7 @@
 #ifndef KGEN_LITDIALECT_LITATTRS_TD
 #define KGEN_LITDIALECT_LITATTRS_TD
 
+include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/LITDialect/LITEnums.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "Support/MDialect/MAttrs.td"
