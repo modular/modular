@@ -141,7 +141,7 @@ std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
 
 TelemetryContext::TelemetryContext(
     const EntitlementStore &entitlementStore,
-    const llvm::StringMap<M::Telemetry::Logs::AttributeValue> &resources,
+    const llvm::StringMap<TelemetryContext::AttributeValue> &resources,
     std::optional<Config> config) {
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;

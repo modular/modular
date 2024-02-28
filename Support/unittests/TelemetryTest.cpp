@@ -457,7 +457,7 @@ TEST(Telemetry, Resources) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
 
-  llvm::StringMap<Telemetry::Logs::AttributeValue> extras;
+  llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
   StringRef resourceVal = "aResource value here";
   extras["aResource"] = resourceVal;
   extras["aNumber"] = 32;
