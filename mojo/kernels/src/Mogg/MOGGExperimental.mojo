@@ -85,7 +85,14 @@ fn unary_op_without_fusion(
 
 @mogg_register_override("mo.transpose", MAX_BENEFIT)
 @export
-fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
+fn transpose[
+    out_static_strides: DimList,
+](
+    x: Tensor,
+    perm: Tensor,
+) -> Tensor[
+    x.type, x.same_rank_param(), out_static_strides
+]:
     # Currently we don't support alias.
     # alias rank = x.static_rank
 
@@ -102,7 +109,7 @@ fn transpose(x: Tensor, perm: Tensor) -> Tensor[x.type, x.same_rank_param()]:
 
     unroll[body, x.static_rank]()
 
-    return Tensor[x.type, x.same_rank_param()](
+    return Tensor[x.type, x.same_rank_param(), out_static_strides](
         x.data, new_shape, new_stride, x.refcount()
     )
 
@@ -205,9 +212,11 @@ fn param_expression_shape_test(
 
 @mogg_register_override("view_like_custom_op_target", MAX_BENEFIT)
 @export
-fn view_like_custom_op_target(
-    x: Tensor, y: Tensor
-) -> Tensor[x.type, x.same_rank_param()]:
+fn view_like_custom_op_target[
+    out_static_strides: DimList,
+](x: Tensor, y: Tensor) -> Tensor[
+    x.type, x.same_rank_param(), out_static_strides
+]:
     var new_shape = IntList[x.same_rank_param()]()
     var new_stride = IntList[x.same_rank_param()]()
 
@@ -219,7 +228,9 @@ fn view_like_custom_op_target(
 
     unroll[body, x.static_rank]()
 
-    return Tensor[x.type, x.same_rank_param()](
+    var strides = IntList[x.static_strides](x.strides)
+
+    return Tensor[x.type, x.same_rank_param(), out_static_strides](
         x.data, new_shape, new_stride, x.refcount()
     )
 
@@ -227,9 +238,10 @@ fn view_like_custom_op_target(
 @mogg_register_override("mo.static.broadcast_to", MAX_BENEFIT)
 @export
 fn broadcast[
-    rank: Int
+    rank: Int,
+    out_static_strides: DimList,
 ](x: Tensor, shape: StaticIntTuple[rank]) -> Tensor[
-    x.type, DimList.create_unknown[shape.size]()
+    x.type, DimList.create_unknown[shape.size](), out_static_strides
 ]:
     var new_shape = IntList[DimList.create_unknown[shape.size]()]()
     var new_stride = IntList[DimList.create_unknown[shape.size]()]()
@@ -251,9 +263,9 @@ fn broadcast[
 
     unroll[body, shape.size]()
 
-    return Tensor[x.type, DimList.create_unknown[shape.size]()](
-        x.data, new_shape, new_stride, x.refcount()
-    )
+    return Tensor[
+        x.type, DimList.create_unknown[shape.size](), out_static_strides
+    ](x.data, new_shape, new_stride, x.refcount())
 
 
 fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
@@ -1087,3 +1099,25 @@ fn reduce_mul[
     ](input, output, Scalar[input.type](1), ax)
 
     return output
+
+
+@mogg_register_override("test_static_strides", MAX_BENEFIT)
+@export
+fn test_static_strides(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape]:
+    var out = empty_tensor[x.type](x.shape)
+    var out_strides = IntList[x.static_strides](x.strides)
+
+    @always_inline
+    @parameter
+    fn print_if_static[idx: Int]():
+        @parameter
+        if out_strides.shape_idx_statically_known[idx]():
+            print("static_strides[", idx, "] = ", out_strides[idx])
+        else:
+            print("static_strides[", idx, "] = dyn")
+
+    unroll[print_if_static, x.static_rank]()
+
+    return out
