@@ -306,7 +306,7 @@ LogicalResult FnMetadataAttr::verifySignature(
     Type type = argType;
 
     // Verify variadics.
-    if (isVarArg(i)) {
+    if (isPosVarArg(i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i
@@ -353,8 +353,20 @@ bool FnMetadataAttr::hasParamVarArgs() const {
   return !getParamListAttrs().getVariadicIndices().empty();
 }
 
-bool FnMetadataAttr::isVarArg(size_t idx) const {
-  return llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
+bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
+  return llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx) ||
+         isPackVarArg(idx);
+}
+
+bool FnMetadataAttr::isPosVarArg(size_t idx) const {
+  return llvm::is_contained({PassingKind::PosOnly, PassingKind::PosOrKw},
+                            getArgPassingKinds()[idx]) &&
+         llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
+}
+
+bool FnMetadataAttr::isKwVarArg(size_t idx) const {
+  return getArgPassingKinds()[idx] == PassingKind::KwOnly &&
+         llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
 }
 
 bool FnMetadataAttr::isPackVarArg(size_t idx) const {

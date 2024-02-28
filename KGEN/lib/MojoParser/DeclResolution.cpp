@@ -1178,7 +1178,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     shared.buildArgDebugInfo(*emitter.builder, bbArg, argName);
 
     // VarArg arguments are projected into a VariadicList.
-    if (funcSignature.isVarArg(bbArg.getArgNumber())) {
+    if (funcSignature.isPosVarArg(bbArg.getArgNumber())) {
       auto declOp = makeVarArgWrapper(SRValue(bbArg), argName, decl, emitter,
                                       argDecl.getLoc());
       if (!declOp)

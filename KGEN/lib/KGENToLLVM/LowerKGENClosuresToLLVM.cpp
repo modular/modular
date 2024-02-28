@@ -117,7 +117,7 @@ private:
       wrapperFnArgTypes.push_back(ty);
     }
     auto wrapperFnType = LLVM::LLVMFunctionType::get(
-        context, packedResTy, wrapperFnArgTypes, /*isVarArg*/ false);
+        context, packedResTy, wrapperFnArgTypes, /*varArg=*/false);
 
     // Create the body of the wrapper function
     Block *wrapperFnBody = new Block;

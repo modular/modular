@@ -875,7 +875,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
     ASTType type = argType;
-    if (fullSig.isVarArg(argNo)) {
+    bool isPosVarArg = fullSig.isPosVarArg(argNo);
+    if (isPosVarArg) {
       if (auto variadic = dyn_cast<VariadicType>(type.mlirType)) {
         type = variadic.getElementType();
         if (SignatureType::hasAddress(variadic.getConvention()))
@@ -905,7 +906,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       llvm_unreachable("none convention not permitted in lit");
     }
 
-    if (fullSig.isVarArg(argNo))
+    if (isPosVarArg)
       mangledName += '*';
   }
   mangledName += ')';

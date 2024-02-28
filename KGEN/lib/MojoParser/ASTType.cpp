@@ -528,17 +528,17 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         needSpace = true;
       }
 
-      if (sig.isVarArg(i) || sig.isPackVarArg(i)) {
-        if (needSpace) {
+      bool isPack = sig.isPackVarArg(i);
+      bool isPosVarArg = sig.isPosVarArg(i);
+      if (isPack || isPosVarArg) {
+        if (needSpace)
           os << ' ';
-          needSpace = false;
-        }
         os << '*';
-        needSpace = sig.isPackVarArg(i);
+        needSpace = isPack;
       }
       if (needSpace)
         os << ' ';
-      if (sig.isPackVarArg(i)) {
+      if (isPack) {
         os << '*';
         // This should always be a parameter reference. If not, print the value
         // directly.
@@ -551,7 +551,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       }
       ASTType actualType = type;
       auto actualConv = convention;
-      if (sig.isVarArg(i)) {
+      if (isPosVarArg) {
         auto variadic = cast<VariadicType>(actualType.mlirType);
         actualType = variadic.getElementType();
         actualConv = variadic.getConvention();
