@@ -42,6 +42,11 @@ def bench_unary[
     var input_ptr = DTypePointer[type].alloc(size, alignment=alignment)
     var output_ptr = DTypePointer[type].alloc(size, alignment=alignment)
 
+    var linspace = range(0x3000_0000, 0x42B0_0000, 1)
+    for i in range(size):
+        var f = bitcast[type](UInt32(linspace[i % len(linspace)]))
+        input_ptr[i] = f
+
     @parameter
     fn bench(inout b: Bencher, size: Int):
         @parameter
