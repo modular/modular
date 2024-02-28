@@ -1455,6 +1455,7 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
     $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
   }];
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
