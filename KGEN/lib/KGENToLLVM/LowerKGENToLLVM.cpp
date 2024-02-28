@@ -27,6 +27,7 @@
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -182,6 +183,67 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
   return success();
 }
 
+/// Returns true if type is an empty !llvm.struct type, or an array of empty
+/// types e.g !llvm.array<0 x ..any type..>, !llvm.array<N x empty_struct>
+/// TODO: Consider querying size from DataLayout instead.
+static bool isEmptyType(Type type) {
+  return TypeSwitch<Type, bool>(type)
+      .Case([](LLVM::LLVMArrayType arrayType) {
+        if (arrayType.getNumElements() == 0)
+          return true;
+        return isEmptyType(arrayType.getElementType());
+      })
+      .Case([](LLVM::LLVMStructType structType) {
+        bool emptyType = true;
+        for (Type innerType : structType.getBody())
+          emptyType &= isEmptyType(innerType);
+        return emptyType;
+      })
+      .Default([](Type /* default */) { return false; });
+}
+
+/// Drops empty struct arguments from funcOp and replace usage with an undef
+/// struct.
+static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
+                                     ConversionPatternRewriter &rewriter) {
+  SmallVector<unsigned> emptyArgIdx, nonEmptyArgIdx;
+  SmallVector<Type> emptyArgType, nonEmptyArgTypes;
+  for (auto [idx, argType] : enumerate(func.getArgumentTypes())) {
+    if (isEmptyType(argType)) {
+      emptyArgIdx.push_back(idx);
+      emptyArgType.push_back(argType);
+    } else {
+      nonEmptyArgIdx.push_back(idx);
+      nonEmptyArgTypes.push_back(argType);
+    }
+  }
+
+  if (emptyArgIdx.empty())
+    return;
+
+  // If it has a body block erase empty struct function arguments and
+  // replace their inner usage with undef empty struct types.
+  if (!func.getBody().empty()) {
+    Block *entryBlock = &func.getBody().front();
+    rewriter.setInsertionPointToStart(entryBlock);
+    TypeConverter::SignatureConversion sigConverter(func.getNumArguments());
+    for (auto [idx, type] : zip(nonEmptyArgIdx, nonEmptyArgTypes))
+      sigConverter.addInputs(idx, type);
+
+    for (auto [idx, type] : zip(emptyArgIdx, emptyArgType)) {
+      Value emtpyStruct = rewriter.create<LLVM::UndefOp>(func->getLoc(), type);
+      sigConverter.remapInput(idx, emtpyStruct);
+    }
+    rewriter.applySignatureConversion(&func.getBody(), sigConverter);
+  }
+
+  // Update funcOp type.
+  rewriter.modifyOpInPlace(func, [&]() {
+    func.setType(LLVM::LLVMFunctionType::get(
+        func.getFunctionType().getReturnType(), nonEmptyArgTypes));
+  });
+}
+
 struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
@@ -204,7 +266,6 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
         getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
     if (failed(convertLLVMMetadata(funcOp, func.getLLVMMetadataAttr())))
       return failure();
-
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
@@ -219,6 +280,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     // And move the func's body into the new function.
     b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
     (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
+
+    // Drop empty struct arguments.
+    dropEmptyStructArguments(funcOp, b);
 
     // Remove the function.
     symtab.remove(func);
@@ -254,6 +318,9 @@ struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
         func.getNameAttr(), funcType,
         getLinkageKind(func.getExportKind(), /*isExternFunc=*/true));
 
+    // Drop empty struct arguments.
+    dropEmptyStructArguments(funcOp, rewriter);
+
     // Remove the function.
     symtab.remove(func);
     Block::iterator insertPt(func->getNextNode());
@@ -288,9 +355,15 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");
 
+    // Drop empty struct argument.
+    auto filteredOperands = to_vector(
+        llvm::make_filter_range(adaptor.getOperands(), [](Value operand) {
+          return !isEmptyType(operand.getType());
+        }));
+
     // Create the LLVM call operation.
     LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,
-                                           flatSymbol, adaptor.getOperands());
+                                           flatSymbol, filteredOperands);
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;
