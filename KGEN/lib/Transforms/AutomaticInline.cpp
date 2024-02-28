@@ -53,7 +53,7 @@ struct CallGraphNode {
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~CallGraphNode() {
-    if (func && isAllInlined() && !func.isExported()) {
+    if (func && (isAllInlined() || !reachable) && !func.isExported()) {
       func->remove();
       func->erase();
     }
@@ -339,7 +339,7 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
   mlir::parallelForEach(module.getContext(), nodes, workFn);
 
   for (auto &[func, node] : nodes) {
-    if (node.callers.empty())
+    if (node.callers.empty() || func.isExported())
       externalNode.callSites[&node].emplace_back(std::nullopt);
   }
 

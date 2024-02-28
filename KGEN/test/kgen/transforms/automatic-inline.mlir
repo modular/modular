@@ -106,27 +106,28 @@ kgen.func @scc1_f(%arg0: index) -> index {
   kgen.return %1: index
 }
 
-// Not inlining any functions in the same SCC
-// All functions in this SCC is not being called by any other functions
-// outside of the scc. Pass done should not have a race condition
-// and wait for the work item for both of these two functions to be done
-// although they are not in the chain starting from the externalNode.
+// COM: Not inlining any functions in the same SCC
+// COM: All functions in this SCC is not being called by any other functions
+// COM: outside of the scc. Pass done should not have a race condition
+// COM: and wait for the work item for both of these two functions to be done
+// COM: although they are not in the chain starting from the externalNode.
 
-// FIXME(#33089): Restore dead SCC removal to automatic inliner.
-// XCHECK-NOT: kgen.func @scc2_f(%arg0: index) -> index
+// CHECK-NOT: kgen.func @scc2_f(%arg0: index) -> index
 kgen.func @scc2_f(%arg0: index) -> index {
   %0 = kgen.call @scc2_g(%arg0) : (index) -> index
   %1 = kgen.call @scc2_f(%0) : (index) -> index
   kgen.return %1: index
 }
 
-// FIXME(#33089): Restore dead SCC removal to automatic inliner.
-// XCHECK-NOT: kgen.func @scc2_g(%arg0: index) -> index
+// CHECK-NOT: kgen.func @scc2_g(%arg0: index) -> index
 kgen.func @scc2_g(%arg0: index) -> index {
   %0 = kgen.call @scc2_f(%arg0) : (index) -> index
   kgen.return %0: index
 }
 
+// COM: All functions in this SCC is not being called by any other functions
+// COM: outside of the scc. However, one of the function in the scc is exported.
+// COM: So neither of them should be erased.
 // CHECK: kgen.func export @scc3_f
 kgen.func export @scc3_f(%arg0: index) -> index {
   %0 = kgen.call @scc3_g(%arg0) : (index) -> index
