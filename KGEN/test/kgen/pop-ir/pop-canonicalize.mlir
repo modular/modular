@@ -751,6 +751,18 @@ kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
 }
 
+// CHECK-LABEL: @ptr_to_index_fold
+kgen.func @ptr_to_index_fold(%arg0: !pop.scalar<index>, %arg1: !pop.simd<2, index>) -> (!pop.scalar<index>, !pop.simd<2, index>) {
+  %0 = pop.index_to_pointer %arg0 : !pop.scalar<index> to !kgen.pointer<none>
+  %1 = pop.pointer_to_index %0 : !kgen.pointer<none> to !pop.scalar<index>
+
+  %2 = pop.index_to_pointer %arg1 : !pop.simd<2, index> to !pop.simd<2, address>
+  %3 = pop.pointer_to_index %2 : !pop.simd<2, address> to !pop.simd<2, index>
+
+  // CHECK-NEXT: return %arg0, %arg1
+  kgen.return %1, %3 : !pop.scalar<index>, !pop.simd<2, index>
+}
+
 // CHECK-LABEL: @cast_to_builtin
 kgen.func @cast_to_builtin() -> (
     vector<2xi1>, vector<2xindex>, vector<2xi4>, vector<2xbf16>,

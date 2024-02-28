@@ -1210,6 +1210,7 @@ OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
     DTypeValue index(static_cast<int64_t>(ptr.getAddr()), KGENDType::index);
     return SIMDAttr::get(index, getType());
   }
+
   // Otherwise, the input might be an address vector.
   if (auto simd = dyn_cast_if_present<SIMDAttr>(adaptor.getValue())) {
     SmallVector<DTypeValue> values;
@@ -1217,6 +1218,11 @@ OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
       values.emplace_back(value.getIndexVal(), KGENDType::index);
     return SIMDAttr::get(values, getType());
   }
+
+  if (auto parent = getValue().getDefiningOp<IndexToPointerOp>())
+    if (parent.getValue().getType() == getType())
+      return parent.getValue();
+
   return {};
 }
 
