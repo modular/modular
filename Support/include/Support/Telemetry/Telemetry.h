@@ -30,6 +30,8 @@
 
 namespace M::Telemetry {
 
+using AttributeValue = M::Telemetry::Logs::AttributeValue;
+
 // TODO: Support some of these in config file.
 /// When the TelemetryContext is destroyed, it does a synchronous flush to
 /// ensure that any telemetry that hasn't yet been exported is exported. This
@@ -66,15 +68,6 @@ std::pair<std::string, std::string> createLocalIDs();
 /// subject to change.
 class TelemetryContext {
 public:
-  /// This is just a copy of the OTel MetricAttributeValue - we can use this to
-  /// provide resources to the telemetry context. We don't support the lists
-  /// yet, we can add those as necessary.
-  using AttributeValue =
-      std::variant<bool, int32_t, int64_t, uint32_t, double, StringRef,
-                   ArrayRef<bool>, ArrayRef<int32_t>, ArrayRef<int64_t>,
-                   ArrayRef<uint32_t>, ArrayRef<double>, uint64_t,
-                   ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
-
   /// Construct a TelemetryContext with additional resource strings. These will
   /// be added to the OTel resources that are attached to every log message. The
   /// TelemetryContext does not currently, but will soon require an
@@ -235,6 +228,30 @@ public:
   std::shared_ptr<Logs::Logger> getLogger(StringRef eventDomain) {
 #ifdef MODULAR_ENABLE_TELEMETRY
     auto otelLogger = loggerProvider->GetLogger("modular_logger");
+    auto otelEventLogger =
+        eventLoggerProvider->CreateEventLogger(otelLogger, eventDomain);
+    return std::shared_ptr<Logs::Logger>(
+        new Logs::Logger(otelEventLogger, telemetryLevel));
+#else
+    return std::shared_ptr<Logs::Logger>(new Logs::Logger());
+#endif
+  }
+
+  /// Create a Logger with given domain and attributes applied to all events
+  /// (see
+  /// https://opentelemetry.io/docs/specs/otel/logs/semantic_conventions/events/).
+  std::shared_ptr<Logs::Logger>
+  getLogger(StringRef eventDomain,
+            const std::map<std::string, AttributeValue> &attributes) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    // libName, libVersion, and url are unused in our event processing system.
+    // If we decide to use these, please update the other getLogger()'s to pass
+    // in appropriate values.
+    const std::string libName("");
+    const std::string libVersion("");
+    const std::string url("");
+    auto otelLogger = loggerProvider->GetLogger("modular_logger", libName,
+                                                libVersion, url, attributes);
     auto otelEventLogger =
         eventLoggerProvider->CreateEventLogger(otelLogger, eventDomain);
     return std::shared_ptr<Logs::Logger>(

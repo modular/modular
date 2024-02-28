@@ -48,8 +48,17 @@ enum class Severity : uint8_t {
   kFatal
 };
 
-using AttributeValue = std::variant<bool, int32_t, int64_t, uint32_t, double,
-                                    const char *, std::string, uint64_t>;
+/// This is just a copy of the OTel MetricAttributeValue - we can use this to
+// provide resources to the telemetry context.
+// https://github.com/open-telemetry/opentelemetry-cpp/blob/d036d8227f6f1f988c611aa6a0312f3ccd346d63/api/include/opentelemetry/common/attribute_value.h#L38-L59
+// Note: this uses llvm's StringRef & ArrayRef rather than
+// nostd::string_view and nostd::span
+using AttributeValue =
+    std::variant<bool, int32_t, int64_t, uint32_t, double, const char *,
+                 StringRef, ArrayRef<bool>, ArrayRef<int32_t>,
+                 ArrayRef<int64_t>, ArrayRef<uint32_t>, ArrayRef<double>,
+                 ArrayRef<StringRef>, uint64_t, ArrayRef<uint64_t>,
+                 ArrayRef<uint8_t>>;
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
