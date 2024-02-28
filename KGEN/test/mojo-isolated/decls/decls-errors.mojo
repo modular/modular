@@ -683,6 +683,14 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 parameter, but 0 were specified}}
 
+trait Shape(Copyable, Movable):
+	fn area(self) -> int:
+	    ...
+
+@value
+struct ShapeContainer:
+    var shape: Shape # expected-error {{TODO: dynamic traits not supported yet, please use a compile time generic instead of 'Shape'}}
+
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
 ##===----------------------------------------------------------------------===##
