@@ -34,8 +34,8 @@ fn test_layout_basic() raises:
     )
 
 
-fn helper_test_coalesce(layout: Layout) raises:
-    var layoutR = coalesce(layout)
+fn validate_coalesce[layout: Layout]() raises:
+    alias layoutR = coalesce(layout)
 
     # print(layout, "=> ", layoutR)
 
@@ -48,53 +48,43 @@ fn helper_test_coalesce(layout: Layout) raises:
 # CHECK-LABEL: test_coalesce
 fn test_coalesce() raises:
     print("== test_coalesce")
-    var layout = Layout(
-        IntTuple(2, IntTuple(1, 6)), IntTuple(1, IntTuple(6, 2))
-    )
-    helper_test_coalesce(layout)
 
-    layout = Layout(1, 0)
-    helper_test_coalesce(layout)
+    validate_coalesce[
+        Layout(IntTuple(2, IntTuple(1, 6)), IntTuple(1, IntTuple(6, 2)))
+    ]()
 
-    layout = Layout(1, 1)
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(1, 0)]()
 
-    layout = Layout(IntTuple(2, 4))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(1, 0)]()
 
-    layout = Layout(IntTuple(2, 4, 6))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 4))]()
 
-    layout = Layout(IntTuple(2, 4, 6), IntTuple(1, 6, 2))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 4, 6))]()
 
-    layout = Layout(IntTuple(2, 1, 6), IntTuple(1, 7, 2))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 4, 6), IntTuple(1, 6, 2))]()
 
-    layout = Layout(IntTuple(2, 1, 6), IntTuple(4, 7, 8))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 1, 6), IntTuple(1, 7, 2))]()
 
-    layout = Layout(IntTuple(2, IntTuple(4, 6)))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 1, 6), IntTuple(4, 7, 8))]()
 
-    layout = Layout(IntTuple(2, 4), IntTuple(4, 1))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, IntTuple(4, 6)))]()
 
-    layout = Layout(IntTuple(2, 4, 6), IntTuple(24, 6, 1))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 4), IntTuple(4, 1))]()
 
-    layout = Layout(IntTuple(2, 1, 3), IntTuple(2, 4, 4))
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 4, 6), IntTuple(24, 6, 1))]()
 
-    layout = Layout(
-        IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
-        IntTuple(IntTuple(1, 4), IntTuple(8, 32)),
-    )
-    helper_test_coalesce(layout)
+    validate_coalesce[Layout(IntTuple(2, 1, 3), IntTuple(2, 4, 4))]()
+
+    validate_coalesce[
+        Layout(
+            IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
+            IntTuple(IntTuple(1, 4), IntTuple(8, 32)),
+        )
+    ]()
 
 
-fn validate_composition(layoutA: Layout, layoutB: Layout) raises:
-    var layoutR = composition(layoutA, layoutB)
+fn validate_composition[layoutA: Layout, layoutB: Layout]() raises:
+    alias layoutR = composition(layoutA, layoutB)
 
     # print(layoutA, "o", layoutB, "=>", layoutR)
 
@@ -109,162 +99,153 @@ fn validate_composition(layoutA: Layout, layoutB: Layout) raises:
 fn test_composition() raises:
     print("== test_composition")
 
-    var layoutA = Layout(1, 0)
-    var layoutB = Layout(1, 0)
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(1, 0), Layout(1, 0)]()
 
-    layoutA = Layout(1, 0)
-    layoutB = Layout(1, 1)
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(1, 0), Layout(1, 1)]()
 
-    layoutA = Layout(1, 1)
-    layoutB = Layout(1, 0)
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(1, 1), Layout(1, 0)]()
 
-    layoutA = Layout(1, 1)
-    layoutB = Layout(1, 1)
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(1, 1), Layout(1, 1)]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(4))
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(IntTuple(4)), Layout(IntTuple(4))]()
 
-    layoutA = Layout(IntTuple(4), IntTuple(2))
-    layoutB = Layout(IntTuple(4))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4), IntTuple(2)), Layout(IntTuple(4))
+    ]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(4), IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4)), Layout(IntTuple(4), IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(4), IntTuple(0))
-    layoutB = Layout(IntTuple(4))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4), IntTuple(0)), Layout(IntTuple(4))
+    ]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(4), IntTuple(0))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4)), Layout(IntTuple(4), IntTuple(0))
+    ]()
 
-    layoutA = Layout(IntTuple(1), IntTuple(0))
-    layoutB = Layout(IntTuple(4))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(1), IntTuple(0)), Layout(IntTuple(4))
+    ]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(1), IntTuple(0))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4)), Layout(IntTuple(1), IntTuple(0))
+    ]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(IntTuple(4)), Layout(IntTuple(2))]()
 
-    layoutA = Layout(IntTuple(4), IntTuple(2))
-    layoutB = Layout(IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4), IntTuple(2)), Layout(IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(4))
-    layoutB = Layout(IntTuple(2), IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4)), Layout(IntTuple(2), IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(4), IntTuple(2))
-    layoutB = Layout(IntTuple(2), IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4), IntTuple(2)), Layout(IntTuple(2), IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(12))
-    layoutB = Layout(IntTuple(4, 3))
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(IntTuple(12)), Layout(IntTuple(4, 3))]()
 
-    layoutA = Layout(IntTuple(12), IntTuple(2))
-    layoutB = Layout(IntTuple(4, 3))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(12), IntTuple(2)), Layout(IntTuple(4, 3))
+    ]()
 
-    layoutA = Layout(IntTuple(12))
-    layoutB = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(12)), Layout(IntTuple(4, 3), IntTuple(3, 1))
+    ]()
 
-    layoutA = Layout(IntTuple(12), IntTuple(2))
-    layoutB = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(12), IntTuple(2)),
+        Layout(IntTuple(4, 3), IntTuple(3, 1)),
+    ]()
 
-    layoutA = Layout(IntTuple(12))
-    layoutB = Layout(IntTuple(2, 3), IntTuple(2, 4))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(12)), Layout(IntTuple(2, 3), IntTuple(2, 4))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3))
-    layoutB = Layout(IntTuple(4, 3))
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(IntTuple(4, 3)), Layout(IntTuple(4, 3))]()
 
-    layoutA = Layout(IntTuple(4, 3))
-    layoutB = Layout(IntTuple(12))
-    validate_composition(layoutA, layoutB)
+    validate_composition[Layout(IntTuple(4, 3)), Layout(IntTuple(12))]()
 
-    layoutA = Layout(IntTuple(4, 3))
-    layoutB = Layout(IntTuple(6), IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3)), Layout(IntTuple(6), IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3))
-    layoutB = Layout(IntTuple(6, 2), IntTuple(2, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3)), Layout(IntTuple(6, 2), IntTuple(2, 1))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    layoutB = Layout(IntTuple(4, 3))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3), IntTuple(3, 1)), Layout(IntTuple(4, 3))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    layoutB = Layout(IntTuple(12))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3), IntTuple(3, 1)), Layout(IntTuple(12))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    layoutB = Layout(IntTuple(6), IntTuple(2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3), IntTuple(3, 1)), Layout(IntTuple(6), IntTuple(2))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 3), IntTuple(3, 1))
-    layoutB = Layout(IntTuple(6, 2), IntTuple(2, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 3), IntTuple(3, 1)),
+        Layout(IntTuple(6, 2), IntTuple(2, 1)),
+    ]()
 
-    layoutA = Layout(IntTuple(8, 8))
-    layoutB = Layout(
-        IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
-        IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
-    )
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(8, 8)),
+        Layout(
+            IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
+            IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
+        ),
+    ]()
 
-    layoutA = Layout(IntTuple(8, 8), IntTuple(8, 1))
-    layoutB = Layout(
-        IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
-        IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
-    )
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(8, 8), IntTuple(8, 1)),
+        Layout(
+            IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
+            IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
+        ),
+    ]()
 
-    layoutA = Layout(
-        IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
-        IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
-    )
-    layoutB = Layout(8, 4)
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(
+            IntTuple(IntTuple(2, 2, 2), IntTuple(2, 2, 2)),
+            IntTuple(IntTuple(1, 16, 4), IntTuple(8, 2, 32)),
+        ),
+        Layout(8, 4),
+    ]()
 
-    layoutA = Layout(IntTuple(IntTuple(4, 2)), IntTuple(IntTuple(1, 16)))
-    layoutB = Layout(IntTuple(4, 2), IntTuple(2, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(IntTuple(4, 2)), IntTuple(IntTuple(1, 16))),
+        Layout(IntTuple(4, 2), IntTuple(2, 1)),
+    ]()
 
-    layoutA = Layout(IntTuple(2, 2), IntTuple(2, 1))
-    layoutB = Layout(IntTuple(2, 2), IntTuple(2, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(2, 2), IntTuple(2, 1)),
+        Layout(IntTuple(2, 2), IntTuple(2, 1)),
+    ]()
 
-    layoutA = Layout(IntTuple(4, 8, 2))
-    layoutB = Layout(IntTuple(2, 2, 2), IntTuple(2, 8, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 8, 2)), Layout(IntTuple(2, 2, 2), IntTuple(2, 8, 1))
+    ]()
 
-    layoutA = Layout(IntTuple(4, 8, 2), IntTuple(2, 8, 1))
-    layoutB = Layout(IntTuple(2, 2, 2), IntTuple(1, 8, 2))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 8, 2), IntTuple(2, 8, 1)),
+        Layout(IntTuple(2, 2, 2), IntTuple(1, 8, 2)),
+    ]()
 
-    layoutA = Layout(IntTuple(4, 8, 2), IntTuple(2, 8, 1))
-    layoutB = Layout(IntTuple(4, 2, 2), IntTuple(2, 8, 1))
-    validate_composition(layoutA, layoutB)
+    validate_composition[
+        Layout(IntTuple(4, 8, 2), IntTuple(2, 8, 1)),
+        Layout(IntTuple(4, 2, 2), IntTuple(2, 8, 1)),
+    ]()
 
 
-fn helper_test_complement(layout: Layout) raises:
-    var layoutR = complement(layout)
+fn validate_complement[layout: Layout]() raises:
+    alias layoutR = complement(layout)
 
     # print(layout, " => ", layoutR)
 
@@ -297,40 +278,35 @@ fn test_complement() raises:
     )
 
     var test = Layout(1, 0)
-    helper_test_complement(test)
+    validate_complement[Layout(1, 0)]()
 
-    test = Layout(1, 1)
-    helper_test_complement(test)
+    validate_complement[Layout(1, 1)]()
 
     test = Layout(4, 0)
-    helper_test_complement(test)
+    validate_complement[Layout(4, 0)]()
 
-    test = Layout(IntTuple(2, 4), IntTuple(1, 2))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(2, 4), IntTuple(1, 2))]()
 
-    test = Layout(IntTuple(2, 3), IntTuple(1, 2))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(2, 3), IntTuple(1, 2))]()
 
-    test = Layout(IntTuple(2, 4), IntTuple(1, 4))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(2, 4), IntTuple(1, 4))]()
 
-    test = Layout(IntTuple(2, 4, 8), IntTuple(8, 1, 64))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(2, 4, 8), IntTuple(8, 1, 64))]()
 
-    test = Layout(
-        IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
-        IntTuple(IntTuple(1, 4), IntTuple(8, 32)),
-    )
-    helper_test_complement(test)
+    validate_complement[
+        Layout(
+            IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
+            IntTuple(IntTuple(1, 4), IntTuple(8, 32)),
+        )
+    ]()
 
-    test = Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(3, IntTuple(1, 6)))
-    helper_test_complement(test)
+    validate_complement[
+        Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(3, IntTuple(1, 6)))
+    ]()
 
-    test = Layout(IntTuple(4, 6), IntTuple(1, 6))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(4, 6), IntTuple(1, 6))]()
 
-    test = Layout(IntTuple(4, 10), IntTuple(1, 10))
-    helper_test_complement(test)
+    validate_complement[Layout(IntTuple(4, 10), IntTuple(1, 10))]()
 
 
 # CHECK-LABEL: test_logcial_divide

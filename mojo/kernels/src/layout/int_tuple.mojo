@@ -153,12 +153,12 @@ fn max(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, 1)
 
 
-fn apply(func: fn (Int) escaping -> Int, t: IntTuple) -> IntTuple:
+fn apply[func: fn (Int) capturing -> Int](t: IntTuple) -> IntTuple:
     if is_int(t):
         return func(int(t))
     var res = IntTuple()
     for e in t:
-        res.append(apply(func, e))
+        res.append(apply[func](e))
     return res
 
 
@@ -239,17 +239,30 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
 
 
 fn abs(t: IntTuple) -> IntTuple:
+    @parameter
     fn int_abs(x: Int) -> Int:
         return math.abs(x)
 
-    return apply(int_abs, t)
+    return apply[int_abs](t)
+
+
+# FIXME: the following crashes the compiler
+# fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
+#     @parameter
+#     fn my_mul(x: Int) -> Int:
+#         return x * rhs
+
+#     return apply[my_mul](lhs)
 
 
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
-    fn my_mul(x: Int) -> Int:
-        return x * rhs
+    if is_int(lhs):
+        return int(lhs) * rhs
 
-    return apply(my_mul, lhs)
+    var res = IntTuple()
+    for e in lhs:
+        res.append(mul(e, rhs))
+    return res
 
 
 # Exclusive prefix product with output congruent to input a
