@@ -146,6 +146,11 @@ static size_t termWidth() { return termSize().second; }
 #endif
 
 static std::string prettyBytes(size_t bytes) {
+  auto twoDigits = [](size_t value) -> std::string {
+    if (value < 10)
+      return std::string("0") + std::to_string(value);
+    return std::to_string(value);
+  };
   constexpr size_t KiB = 1024;
   constexpr size_t MiB = 1024 * 1024;
   constexpr size_t GiB = 1024 * 1024 * 1024;
@@ -155,7 +160,7 @@ static std::string prettyBytes(size_t bytes) {
     return std::to_string(bytes / KiB) + "KiB";
   if (bytes < 10 * MiB)
     return std::to_string(bytes / MiB) + "." +
-           std::to_string((bytes % MiB) / (11 * KiB)) + "MiB";
+           twoDigits((bytes % MiB) / (11 * KiB)) + "MiB";
   if (bytes < 100 * MiB)
     return std::to_string(bytes / MiB) + "." +
            std::to_string((bytes % MiB) / (103 * KiB)) + "MiB";
@@ -163,7 +168,7 @@ static std::string prettyBytes(size_t bytes) {
     return std::to_string(bytes / MiB) + "MiB";
   if (bytes < 10 * GiB)
     return std::to_string(bytes / GiB) + "." +
-           std::to_string((bytes % GiB) / (11 * MiB)) + "GiB";
+           twoDigits((bytes % GiB) / (11 * MiB)) + "GiB";
   if (bytes < 100 * GiB)
     return std::to_string(bytes / GiB) + "." +
            std::to_string((bytes % GiB) / (103 * MiB)) + "GiB";
