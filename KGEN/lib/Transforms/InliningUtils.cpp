@@ -116,10 +116,16 @@ void KGEN::foldTrivialLoop(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// updateScopeDebugInfoFrom
+// updateScopeDebugInfo
 //===----------------------------------------------------------------------===//
 
-void KGEN::updateScopeDebugInfoFrom(Operation *scope, bool noDebug) {
+void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
+                                    StringAttr updateAttrName) {
+  // Unpack the bits.
+  auto value = static_cast<uint8_t>(tag.getInt());
+  auto singleExit = static_cast<bool>(value & 1);
+  auto noDebug = static_cast<bool>(value >> 1);
+
   // The scope operations contains the location of the call.
   Region &body = scope->getRegion(0);
   Location callLoc = scope->getLoc();
@@ -145,14 +151,44 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, bool noDebug) {
     if (noDebug || scopeIsNotSubprogram)
       DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
 
-    // Do not need to update locations inside explicit inlined scopes.
-    // Only recurse inside if need to strip debug values or locations.
+    // Recurse into the body if needed and allowed.
     if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
-      if (noDebug)
-        updateScopeDebugInfoFrom(op, noDebug);
+      // Recurse inside if the inlined subprogram has a tag (deferred update),
+      // or noDebug is requried (immediate update, and need to go inside to
+      // erase pre-existing debug info).
+      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName))
+        updateScopeDebugInfoFrom(op, tag, updateAttrName);
+      else if (noDebug)
+        updateScopeDebugInfoFrom(op, tag, nullptr);
+
+      // Always skip walking directly into subprogram scopes.
       return WalkResult::skip();
+    } else if (updateAttrName && isa<HLCF::LoopOp>(op)) {
+      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
+        updateScopeDebugInfoFrom(op, tag, updateAttrName);
+        return WalkResult::skip();
+      }
     }
     return WalkResult::advance();
+  });
+
+  // If this scope is a trivial control-flow scope, fold it away.
+  if (singleExit)
+    foldTrivialLoop(scope);
+}
+
+void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
+  CompilerTimeTraceScope updateScopeDebugInfo(
+      "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
+  func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op))
+      return WalkResult::advance();
+    auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
+    if (!tag)
+      return WalkResult::advance();
+
+    updateScopeDebugInfoFrom(op, tag, updateAttrName);
+    return WalkResult::skip();
   });
 }
 

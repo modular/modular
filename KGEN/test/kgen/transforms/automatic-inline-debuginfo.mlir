@@ -1,4 +1,5 @@
-// RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline=update-debug-info=deferred -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,DEFERRED %s
+// RUN: kgen-opt -automatic-inline=update-debug-info=immediate -mlir-print-debuginfo -split-input-file %s | FileCheck -check-prefixes=CHECK,IMMEDIATE %s
 
 // CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<name = <"inline_me0">
 #callee0Sp = #debuginfo.subprogram<name = <"inline_me0">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
@@ -68,7 +69,8 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: [[V0:%.*]]lit.async.execute <() -> index> {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // CHECK-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  // IMMEDIATE-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
