@@ -231,7 +231,7 @@ fn bad_tuple(a: Int):
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, FloatLiteralOld]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, SIMD[f64, 1]]' value to 'Tuple[Int, Int]' in assignment}}
   iTup = (1, 2.0)
 
 
@@ -420,7 +420,7 @@ def testLambda():
 
 def testLambda2():
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
-  _ = lambda (x: Int, y: FloatLiteralOld) raises: x+y
+  _ = lambda (x: Int, y: Float64) raises: x+y
 
 def testInExpr(x: Int, y: Int):
   # expected-error @+1 {{'Int' does not implement the '__contains__' method}}

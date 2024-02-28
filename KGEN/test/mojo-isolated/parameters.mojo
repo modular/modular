@@ -648,7 +648,7 @@ fn tail_types[T: AnyRegType, *U: AnyRegType](a: T, *b: *U):
 fn call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}FloatLiteralOld]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}FloatDyn]>
     tail_types(1, 1.2)
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
     tail_types(1, 77)

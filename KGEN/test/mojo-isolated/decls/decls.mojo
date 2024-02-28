@@ -14,7 +14,7 @@
 
 # Method overloading.
 # CHECK-LABEL: lit.func @"testThing({{.*}}Int)"
-fn testThing(a: Int) -> FloatLiteralOld:
+fn testThing(a: Int) -> FloatDyn:
     return 1.0
 
 
@@ -23,7 +23,7 @@ fn testThing(a: Int, b: Int) -> Int:
     return 1
 
 
-alias IntToFloat32Type = fn (Int) -> FloatLiteralOld
+alias IntToFloat32Type = fn (Int) -> FloatDyn
 
 
 fn takeIntToFloat32Param[f: IntToFloat32Type]():
@@ -78,21 +78,21 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call @decls::@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatLiteralOld>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteralOld> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatLiteralOld>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteralOld> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatLiteralOld>:
-    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteralOld> @decls::@"testThing({{.*}}Int)")]()
+    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int borrow, |) -> !FloatDyn>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing({{.*}}Int)")]()
     var float2: IntToFloat32Type = testThing
 
-    # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatLiteralOld]()"<:
-    # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !FloatLiteralOld> rebind(:!lit.signature<("a": !Int borrow) -> !FloatLiteralOld> @decls::@"testThing{{.*}}")>()
+    # CHECK: lit.call @decls::@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
+    # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !FloatDyn> rebind(:!lit.signature<("a": !Int borrow) -> !FloatDyn> @decls::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -219,10 +219,10 @@ fn take_variadic_struct[*Ts: AnyRegType](a: VariadicStruct[Ts]):
 
 # CHECK-LABEL: lit.func @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<type> [!Int, !FloatLiteralOld], :!Int {4}>
-    VariadicStruct[Int, FloatLiteralOld].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<type> [!Int, !FloatLiteralOld]
-    take_variadic_struct(VariadicStruct[Int, FloatLiteralOld]())
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<type> [!Int, !FloatDyn], :!Int {4}>
+    VariadicStruct[Int, FloatDyn].param_func[4]()
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<type> [!Int, !FloatDyn]
+    take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
 # Test that pointers don't get confused with by-ref arguments.
@@ -575,16 +575,16 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.type`](x: Int):
 
 
 # CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: [[ARGX:%.*]]: !FloatLiteralOld
+# CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
 # CHECK-SAME: [[ARGY:%.*]]: !Int
-fn usePacks(x: FloatLiteralOld, y: Int):
+fn usePacks(x: FloatDyn, y: Int):
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, !FloatLiteralOld, !Int]>
-    var b: MyTuple[Int, FloatLiteralOld, Int]
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, !FloatDyn, !Int]>
+    var b: MyTuple[Int, FloatDyn, Int]
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
     var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatLiteralOld, index]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatDyn, index]>
     var d = MyTuple(3.14, Int(6).value)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> []>
     var e = MyTuple()
@@ -596,27 +596,27 @@ fn usePacks(x: FloatLiteralOld, y: Int):
     # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
     # CHECK: [[C3:%.*]] = kgen.param.constant{{.*}}3.14
     # CHECK: %[[PACK2:.*]] = kgen.pack.create([[C1]], [[C3]])
-    # CHECK: lit.call @decls::@"pack{{.*}} [index, {{.*}}FloatLiteralOld]>(%[[PACK2]])
+    # CHECK: lit.call @decls::@"pack{{.*}} [index, {{.*}}FloatDyn]>(%[[PACK2]])
     pack(Int(1).value, 3.14)
     # CHECK: %[[PACK3:.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
     # CHECK: lit.call @decls::@"pack{{.*}} []>(%[[PACK3]])
     pack()
 
     # CHECK: %[[PACK4:.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: lit.call @decls::@"pack{{.*}} [index, !FloatLiteralOld, !Int]>(%[[PACK4]])
+    # CHECK: lit.call @decls::@"pack{{.*}} [index, !FloatDyn, !Int]>(%[[PACK4]])
     pack(Int(1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK: %[[PACK5:.*]] = kgen.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: lit.call @decls::@"pack{{.*}} [!Int, !FloatLiteralOld, !Int]>(%[[PACK5]])
-    pack[Int, FloatLiteralOld, Int](Int(1).value, x, y)
+    # CHECK: lit.call @decls::@"pack{{.*}} [!Int, !FloatDyn, !Int]>(%[[PACK5]])
+    pack[Int, FloatDyn, Int](Int(1).value, x, y)
 
     # CHECK: kgen.param.constant = <1>
     # CHECK-NEXT: [[PACK6:%.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK-NEXT: lit.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed(Int(1).value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatLiteralOld]>
-    variadicParameter[Int, FloatLiteralOld](1)
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
+    variadicParameter[Int, FloatDyn](1)
     # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
     variadicParameter(Int(2).value)
 
@@ -710,10 +710,10 @@ fn raise_and_return(a: Error) raises -> Error:
 @value
 @register_passable("trivial")
 struct RaisingGetterSetter:
-    fn __getitem__(self, i: Int) raises -> FloatLiteralOld:
+    fn __getitem__(self, i: Int) raises -> FloatDyn:
         return 1.0
 
-    fn __setitem__(inout self, i: Int, v: FloatLiteralOld) raises:
+    fn __setitem__(inout self, i: Int, v: FloatDyn) raises:
         pass
 
 
@@ -1210,8 +1210,8 @@ fn returnTup1b() -> (Int,):
 
 
 # CHECK-LABEL: lit.func @"returnTup2
-# CHECK-SAME: -> !lit.declref<#Tuple <{{.*}}:variadic<type> [!Int, !FloatLiteralOld]>
-fn returnTup2() -> Tuple[Int, FloatLiteralOld]:
+# CHECK-SAME: -> !lit.declref<#Tuple <{{.*}}:variadic<type> [!Int, !FloatDyn]>
+fn returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK-NEXT: %0 = kgen.param.constant{{.*}}4
     # CHECK-NEXT: %1 = kgen.param.constant{{.*}}:f64 2.0
     # CHECK-NEXT: kgen.pack.create(%0, %1)
@@ -1219,14 +1219,14 @@ fn returnTup2() -> Tuple[Int, FloatLiteralOld]:
 
 
 # CHECK-LABEL: lit.func @"returnTup2a
-# CHECK-SAME: -> !lit.declref<#Tuple <{{.*}}:variadic<type> [!Int, !FloatLiteralOld]>
-fn returnTup2a() -> (Int, FloatLiteralOld):
+# CHECK-SAME: -> !lit.declref<#Tuple <{{.*}}:variadic<type> [!Int, !FloatDyn]>
+fn returnTup2a() -> (Int, FloatDyn):
     # CHECK: kgen.pack.create(%0, %1)
     return (Int(4), 2.0)
 
 
 # CHECK-LABEL: lit.func @"returnTup2b
-fn returnTup2b() -> (Int, FloatLiteralOld):
+fn returnTup2b() -> (Int, FloatDyn):
     return Int(4), 2.0
 
 

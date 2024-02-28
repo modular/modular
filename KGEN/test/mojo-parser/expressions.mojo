@@ -34,7 +34,7 @@ fn consume(owned a: MemoryOnlyInt): pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
-  var x: FloatLiteralOld
+  var x: Float64
   fn __init__(inout self, value: MemoryOnlyInt):
     self.x = 1.0
 
@@ -759,37 +759,9 @@ def literals():
     a = 0B10101       # CHECK: 21
     a = 0o711         # CHECK: 457
     a = 0O711         # CHECK: 457
-    b = FloatLiteralOld(1.1)           # CHECK: "1.10000{{.*}}"
-    b = FloatLiteralOld(.1)            # CHECK: "0.10000{{.*}}"
-    b = FloatLiteralOld(1.)            # CHECK: "1"
-    b = FloatLiteralOld(1e2)           # CHECK: "100"
-    b = FloatLiteralOld(1.1e2)         # CHECK: "110"
-    b = FloatLiteralOld(.1e2)          # CHECK: "10"
-    b = FloatLiteralOld(1.e2)          # CHECK: "100"
-    b = FloatLiteralOld(1e+2)          # CHECK: "100"
-    b = FloatLiteralOld(1.1e-2)        # CHECK: "0.01099{{.*}}"
-    b = FloatLiteralOld(.1e+2)         # CHECK: "10"
-    b = FloatLiteralOld(1.e-2)         # CHECK: "0.01"
-    b = FloatLiteralOld(0.1)           # CHECK: "0.100000{{.*}}"
-    b = FloatLiteralOld(0.)            # CHECK: "0"
-    b = FloatLiteralOld(0e2)           # CHECK: "0"
-    b = FloatLiteralOld(0.1e2)         # CHECK: "10"
-    b = FloatLiteralOld(0.e2)          # CHECK: "0"
-    b = FloatLiteralOld(0e+2)          # CHECK: "0"
-    b = FloatLiteralOld(0.1e-2)        # CHECK: "0.001"
-    b = FloatLiteralOld(0.e-2)         # CHECK: "0"
-    b = FloatLiteralOld(12.31e+11)     # CHECK: "1.231E+12"
-    b = FloatLiteralOld(1_2.3__1e+1_1) # CHECK: "1.231E+12"
-    b = FloatLiteralOld(12.31E-3)      # CHECK: "0.01231"
-    # Check gradual loss of precision for subnormal numbers when
-    # converting from infinite precision literal to Float64.
-    b = FloatLiteralOld(1.1234567e-305)      # CHECK: "1.1234567E-305"
-    b = FloatLiteralOld(1.1234567e-310)      # CHECK: "1.1234567000000234E-310"
-    b = FloatLiteralOld(1.1234567e-315)      # CHECK: "1.1234567021086955E-315"
-    b = FloatLiteralOld(1.1234567e-320)      # CHECK: "1.1235052786429946E-320"
-    b = FloatLiteralOld(1.1234567e-322)      # CHECK: "1.1363509854348671E-322"
-    b = FloatLiteralOld(1.1234567e-323)      # CHECK: "9.8813129168249309E-324"
-    b = FloatLiteralOld(1.1234567e-324)      # CHECK: "0"
+    # Test parsing for this value with lots of underscores here because mblack
+    # can't handle it.
+    alias b = 1_2.3__1e+1_1 # CHECK: #kgen.float_literal<normal (1231000000000|1)>
     c = False         # CHECK: !Bool = <{:scalar<bool> false}>
     c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 

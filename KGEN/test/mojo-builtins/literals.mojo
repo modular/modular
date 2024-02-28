@@ -17,7 +17,7 @@ fn var_let_decls():
     alias il = 43
 
     # CHECK: %yy = lit.var.decl "yy"  var
-    # CHECK: %[[V3:.*]] = kgen.param.constant: !FloatLiteralOld = <{:scalar<f64> "1"}>
+    # CHECK: %[[V3:.*]] = kgen.param.constant: {{.*}}SIMD{{.*}}dtype f64
     # CHECK: lit.ref.store %[[V3]], %yy
     var yy = 1.0
 

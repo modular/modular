@@ -54,7 +54,7 @@ struct IntLiteral:
 
 
 @value
-@nonmaterializable(FloatLiteralOld)
+@nonmaterializable(FloatDyn)
 @register_passable("trivial")
 struct FloatLiteral:
     var value: __mlir_type.`!kgen.float_literal`
@@ -62,7 +62,7 @@ struct FloatLiteral:
 
 @value
 @register_passable("trivial")
-struct FloatLiteralOld:
+struct FloatDyn:
     var value: __mlir_type.f64
 
     @always_inline("nodebug")
