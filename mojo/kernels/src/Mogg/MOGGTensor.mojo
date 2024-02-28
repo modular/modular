@@ -88,6 +88,28 @@ fn _static_strides_from_shape[static_shape: DimList]() -> DimList:
         return DimList.create_unknown[len(static_shape)]()
 
 
+@value
+@register_passable("trivial")
+struct InnerStride:
+    var val: Int
+    alias Broadcast = InnerStride(0)
+    alias Contiguous = InnerStride(1)
+    alias Strided = InnerStride(2)
+
+    @staticmethod
+    fn from_stride(inner_stride: Int) -> Self:
+        if inner_stride == 0:
+            return InnerStride.Broadcast
+        elif inner_stride == 1:
+            return InnerStride.Contiguous
+        else:
+            return InnerStride.Strided
+
+    @always_inline
+    fn __eq__(self, other: InnerStride) -> Bool:
+        return self.val == other.val
+
+
 struct Tensor[
     type: DType,
     static_shape: DimList = DimList(),
@@ -392,29 +414,57 @@ struct Tensor[
         var flat_index = self._compute_flat_index(index)
         var stride = self.strides[self.rank() - 1]
 
-        if self.strides[self.rank() - 1] == 0:
-            return self.data.load(flat_index)
-        elif stride > 1:
-
+        @parameter
+        @always_inline
+        fn _load[
+            stride_type: InnerStride
+        ](stride: Int) -> SIMD[type, simd_width]:
             @parameter
-            if type == DType.bool:
-                var v = strided_load[DType.uint8, simd_width](
-                    self.data.bitcast[DType.uint8]().offset(flat_index), stride
-                )
-                return v.cast[type]()
+            if stride_type == InnerStride.Broadcast:
+                return self.data.load(flat_index)
+            elif stride_type == InnerStride.Contiguous:
+
+                @parameter
+                if type == DType.bool:
+                    var v = self.data.bitcast[DType.uint8]().simd_load[
+                        simd_width
+                    ](flat_index)
+                    return v.cast[type]()
+                else:
+                    return self.data.simd_load[simd_width](flat_index)
+
             else:
-                return strided_load[type, simd_width](
-                    self.data.offset(flat_index), stride
-                )
+
+                @parameter
+                if type == DType.bool:
+                    var v = strided_load[DType.uint8, simd_width](
+                        self.data.bitcast[DType.uint8]().offset(flat_index),
+                        stride,
+                    )
+                    return v.cast[type]()
+                else:
+                    return strided_load[type, simd_width](
+                        self.data.offset(flat_index), stride
+                    )
 
         @parameter
-        if type == DType.bool:
-            var v = self.data.bitcast[DType.uint8]().simd_load[simd_width](
-                flat_index
+        if (
+            self.has_static_rank()
+            and self.static_strides.at[self.static_rank - 1]().__bool__()
+        ):  # we know the exact type of load at compile time
+            # TODO(#33183): should not need __bool__ since Dim is Boolable
+            alias inner_stride_static = self.static_strides.at[
+                self.static_rank - 1
+            ]().get()
+            return _load[InnerStride.from_stride(inner_stride_static)](
+                inner_stride_static
             )
-            return v.cast[type]()
-        else:
-            return self.data.simd_load[simd_width](flat_index)
+        else:  # we need to dispatch on different types of loads depending on runtime stride
+            if self.strides[self.rank() - 1] == 0:
+                return _load[InnerStride.Broadcast](stride)
+            elif stride > 1:
+                return _load[InnerStride.Strided](stride)
+            return _load[InnerStride.Contiguous](stride)
 
     @always_inline
     fn to_buffer[
