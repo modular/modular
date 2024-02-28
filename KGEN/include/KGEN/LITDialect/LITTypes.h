@@ -77,8 +77,14 @@ public:
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
 
-  /// Returns true if the argument at this index is a vararg.
-  bool isVarArg(size_t index);
+  /// Returns true if the argument at this index is any vararg or a pack.
+  bool isAnyVarArg(size_t index);
+
+  /// Returns true if the argument at this index is a positional vararg.
+  bool isPosVarArg(size_t index);
+
+  /// Returns true if the argument at this index is a keyword vararg.
+  bool isKwVarArg(size_t index);
 
   /// Returns true if the argument at this index is a pack vararg.
   bool isPackVarArg(size_t index);

@@ -434,9 +434,9 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
 
     // Handle case when there are no more provided positional operands.
     if (posOperandIdx == numPosOperands) {
-      // If the argument is a varargs argument list, then it can be initialized
-      // with zero values no problem.
-      if (signature.isVarArg(expectedArgIdx) ||
+      // If the argument is a (positional) variadic argument list or pack, then
+      // it can be initialized with zero values no problem.
+      if (signature.isPackVarArg(expectedArgIdx) ||
           signature.isPackVarArg(expectedArgIdx))
         break;
 
@@ -470,7 +470,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
 
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
-    if (signature.isVarArg(expectedArgIdx)) {
+    if (signature.isPosVarArg(expectedArgIdx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands)
@@ -827,7 +827,7 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   // If we have a variadic argument, it will consume all positional operands,
   // but it does not require any.
   size_t lastPosIdx = numPosArgs - 1;
-  if (signature.isVarArg(lastPosIdx))
+  if (signature.isPosVarArg(lastPosIdx))
     return {0, std::numeric_limits<size_t>::max()};
 
   // If we have a non-empty variadic pack argument, we do require a certain
@@ -1045,8 +1045,8 @@ diagnoseKeywordOperands(LITSignatureType signature,
       missingKwOnly.emplace_back(argName);
       continue;
     }
-    if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
-      continue; // Variadic/pack args cannot be specified by keyword.
+    if (signature.isAnyVarArg(argIdx))
+      continue; // Variadic/pack args cannot be specified by their keyword.
     if (argPassingKind == PassingKind::PosOnly) {
       if (callOperands.findKwArg(argName))
         posOnlyPassedByKw.emplace_back(argName);
@@ -1091,9 +1091,10 @@ diagnosePosOperands(LITSignatureType signature,
 
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (size_t argIdx = 0; argIdx != numPosArguments; ++argIdx) {
-    if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
-      // If the argument is variadic, it is not required. But we remember this
-      // because it lifts the limit on the maximum number of arguments.
+    if (signature.isPosVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
+      // If the argument is (positional) variadic or pack, it is not required.
+      // But we remember this because it lifts the limit on the maximum number
+      // of arguments.
       hasVarArg = true;
       continue;
     }
@@ -1365,8 +1366,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames(),
                        signature.getArgPassingKinds())) {
-    assert(!(passingKind == PassingKind::KwOnly &&
-             signature.isVarArg(expectedArgIdx)) &&
+    assert(!signature.isKwVarArg(expectedArgIdx) &&
            "keyword variadics not supported yet");
 
     // Ignore the return slot if present.
@@ -1389,7 +1389,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
-      if (signature.isVarArg(expectedArgIdx) ||
+      if (signature.isPosVarArg(expectedArgIdx) ||
           signature.isPackVarArg(expectedArgIdx)) {
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
@@ -1432,7 +1432,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     // If we have a varargs argument, then it will eat the rest of the
     // positional arguments, but we have to check each of them.
-    if (signature.isVarArg(expectedArgIdx)) {
+    if (signature.isPosVarArg(expectedArgIdx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands) {

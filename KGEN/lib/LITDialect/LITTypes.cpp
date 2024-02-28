@@ -927,8 +927,16 @@ LITSignatureType LITSignatureType::dropParamValues() {
       FnMetadataAttr::get(getArgListAttrs(), /*numImplicitLifetimeDecls=*/0));
 }
 
-bool LITSignatureType::isVarArg(size_t index) {
-  return getMetadata().isVarArg(index);
+bool LITSignatureType::isAnyVarArg(size_t index) {
+  return getMetadata().isAnyVarArg(index);
+}
+
+bool LITSignatureType::isPosVarArg(size_t index) {
+  return getMetadata().isPosVarArg(index);
+}
+
+bool LITSignatureType::isKwVarArg(size_t index) {
+  return getMetadata().isKwVarArg(index);
 }
 
 bool LITSignatureType::isPackVarArg(size_t index) {

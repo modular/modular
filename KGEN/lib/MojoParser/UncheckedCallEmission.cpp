@@ -168,7 +168,7 @@ void CallEmitter::AfterCallActions::emit() {
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx, ArgConvention convention,
                                     Type expectedType, size_t sequenceIndex) {
-  if (calleeSig.isVarArg(argIdx)) {
+  if (calleeSig.isPosVarArg(argIdx)) {
     auto variadic = cast<VariadicType>(expectedType);
     // In the case of a variadic argument, we need to remove the
     // !pop.variadic<> wrapper to get the type to convert to.
@@ -269,8 +269,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   // If this is a variadic list, use the convention of the elements, not the
   // convention of the list itself.
-  bool isVarArg = calleeSig.isVarArg(argIdx);
-  if (isVarArg)
+  bool isPosVarArg = calleeSig.isPosVarArg(argIdx);
+  if (isPosVarArg)
     convention = cast<VariadicType>(expectedType).getConvention();
 
   // If we are emitting in a compile-time context and all of the remaining
@@ -284,7 +284,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     for (ASTExprAnd<AnyValue> operand : remainingOperands)
       args.push_back(operand.ir.getIfPValue().get());
     Attribute attr;
-    if (isVarArg) {
+    if (isPosVarArg) {
       auto varType = cast<VariadicType>(expectedType);
       Type varElType = varType.getElementType();
 
@@ -321,7 +321,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // Memory values are kept alive by their lifetime so they don't need these
     // ops.
     // TODO: Expand this to packs as well.
-    if (isVarArg && SignatureType::hasAddress(convention))
+    if (isPosVarArg && SignatureType::hasAddress(convention))
       isTrivial = true;
 
     if (!isTrivial)
@@ -330,7 +330,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   // If there are lifetimes on anything, create a uniform representation and
   // cast to a common reference type.
-  if (isVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
+  if (isPosVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
     auto expectedVararg = cast<VariadicType>(expectedType);
     // If one arg is a reference, then they all are.
     auto expectedRefType = cast<RefType>(expectedVararg.getElementType());
@@ -355,7 +355,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   }
 
   Value argVal;
-  if (isVarArg) {
+  if (isPosVarArg) {
     // Check for a splat.
     if (!args.empty() &&
         llvm::all_of(args, [&](Value operand) { return operand == args[0]; })) {
@@ -409,7 +409,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If we ran out of operands, fulfill this with a keyword argument, default
     // value, empty variadic list, or empty pack.
     if (posOperandIdx == posOperands.size()) {
-      if (calleeSig.isVarArg(argIdx)) {
+      if (calleeSig.isPosVarArg(argIdx)) {
         // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
         auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                          expectedType.cast<VariadicType>());
@@ -446,9 +446,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     }
 
     // Otherwise, we're applying one or more arguments to this.
-    // For a normal (not a vararg or a pack) argument, we just emit it and add
-    // it to our list.
-    if (!calleeSig.isVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
+    // For a normal (not a vararg or a pack) positional argument, we just emit
+    // it and add it to our list.
+    if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
@@ -732,7 +732,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
     if (SignatureType::hasAddress(convention)) {
       arg = StoreToMemAttr::get(
           arg, RefType::getImmortal(arg.getType(), /*isMut=*/true));
-    } else if (boundSigType.isVarArg(argIdx)) {
+    } else if (boundSigType.isPosVarArg(argIdx)) {
       // If handling a variadic memory argument, put each element into memory.
       auto varType = cast<VariadicType>(arg.getType());
       if (SignatureType::hasAddress(varType.getConvention())) {
@@ -899,7 +899,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
+    if (calleeSig.isPosVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
       convention = ArgConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
@@ -910,7 +910,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // See if we have an implicit lifetime bound for this argument.
     if (SignatureType::hasAddress(convention)) {
       implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
-    } else if (calleeSig.isVarArg(argIdx)) {
+    } else if (calleeSig.isPosVarArg(argIdx)) {
       // If this is a variadic, it will have a wrapper around the ref.
       auto eltType = ASTType(arg.getType()).getVariadicElementType();
       if (auto refType = dyn_cast<RefType>(eltType))
