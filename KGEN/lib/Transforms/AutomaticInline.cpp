@@ -53,8 +53,7 @@ struct CallGraphNode {
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~CallGraphNode() {
-    if (func && (isAllInlined() || !reachable) && !func.isExternal() &&
-        !func.isExported()) {
+    if (func && isAllInlined() && !func.isExported()) {
       func->remove();
       func->erase();
     }
