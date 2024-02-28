@@ -2591,6 +2591,13 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
 
+  if (auto traitType = dyn_cast<LIT::TraitType>(type.mlirType)) {
+    emitError(decl.getLoc(), "TODO: dynamic traits not supported yet, please "
+                             "use a compile time generic instead of ")
+        << traitType;
+    return failure();
+  }
+
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);
   shared.notifyListenerOnStructFieldDecl(decl, identifierLoc);
@@ -2733,8 +2740,9 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
         // give duplicate errors if it is not provided.
         func.setIsInherited(true);
         body.push_back(func);
-        finalizeFuncSignature(func, traitDecl);
-        addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
+        ASTDecl &clonedDecl =
+            addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
+        finalizeFuncSignature(func, clonedDecl);
       }
     }
   }
