@@ -9,6 +9,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Walkers.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -121,24 +122,6 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   TargetInfoAttr targetInfo;
 };
 } // namespace
-
-/// Walk the operations contained within operation in reverse, in post order.
-/// That means `op` is visited after all the ops in its regions. Ops are visited
-/// in reverse order in each region, starting from the last region of each op.
-static void reversePostOrderWalk(Operation *op,
-                                 function_ref<void(Operation *)> walkFn) {
-  for (Region &region : llvm::reverse(op->getRegions())) {
-    // There shouldn't be more than one block here.
-    assert(region.getBlocks().size() <= 1 && "unexpected CFG");
-    if (!region.hasOneBlock())
-      continue;
-    Block &block = region.front();
-    // Ops can get deleted, so make sure to early inc.
-    for (Operation &op : llvm::make_early_inc_range(llvm::reverse(block)))
-      reversePostOrderWalk(&op, walkFn);
-  }
-  walkFn(op);
-}
 
 /// Propagate from `kgen.capture_list.create` the set of required promises from
 /// the callee into the current function. Query them and pack them into a

@@ -7,6 +7,7 @@
 #include "Helpers.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/Support/Walkers.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -63,6 +64,7 @@ struct Reducer {
   ErrorOrSuccess run();
   ErrorOrSuccess reduceFunctions(IRState &curState);
   ErrorOrSuccess reduceRegions(IRState &curState);
+  ErrorOrSuccess reduceOps(IRState &curState);
   ErrorOrSuccess tryDCE(IRState &curState);
 
   /// Run the pass pipeline on a clone of the module and return the diagnostics
@@ -133,18 +135,27 @@ ErrorOrSuccess Reducer::run() {
   if (startAt <= 0) {
     if (auto err = reduceFunctions(curModule))
       return err;
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
-      return err;
     if (auto err = tryDCE(curModule))
+      return err;
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
       return err;
   }
 
   if (startAt <= 1) {
     if (auto err = reduceRegions(curModule))
       return err;
+    if (auto err = tryDCE(curModule))
+      return err;
     if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions"))
       return err;
+  }
+
+  if (startAt <= 2) {
+    if (auto err = reduceOps(curModule))
+      return err;
     if (auto err = tryDCE(curModule))
+      return err;
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops"))
       return err;
   }
 
@@ -301,6 +312,58 @@ ErrorOrSuccess Reducer::reduceRegions(IRState &curState) {
   return success();
 }
 
+ErrorOrSuccess Reducer::reduceOps(IRState &curState) {
+  std::vector<KGEN::FuncOp> funcs;
+  for (auto func : curState.ir->getOps<KGEN::FuncOp>()) {
+    // Ignore stubbed functions.
+    if (isStubbed(func.getBodyRegion()))
+      continue;
+    funcs.push_back(func);
+  }
+
+  size_t funcNum = 0;
+  const size_t totalNumFuncs = funcs.size();
+  log << "[kgen-reduce] reducing operations in " << totalNumFuncs
+      << " functions\n";
+
+  while (!funcs.empty()) {
+    KGEN::FuncOp func = funcs.back();
+    funcs.pop_back();
+
+    log << "[reducing operations " << (funcNum++) << "/" << totalNumFuncs
+        << "] " << func.getSymName();
+
+    reversePostOrderWalk(func, [&](Operation *op) {
+      if (op == func || op->hasTrait<OpTrait::IsTerminator>())
+        return;
+      Operation *next = op->getNextNode();
+      Operation *stub = nullptr;
+      assert(next && "unexpected terminator");
+      if (!op->use_empty()) {
+        OperationState state(op->getLoc(), "kgen-reduce.stub", {},
+                             op->getResultTypes());
+        OpBuilder b(op);
+        stub = b.create(state);
+        op->replaceAllUsesWith(stub->getResults());
+      }
+      op->remove();
+
+      if (doesRepro(*curState.ir)) {
+        op->erase();
+        return;
+      }
+
+      OpBuilder(next).insert(op);
+      if (stub) {
+        stub->replaceAllUsesWith(op->getResults());
+        stub->erase();
+      }
+    });
+  }
+
+  return success();
+}
+
 ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
   // Clone the module and attempt to run DCE.
   IRState nextState(curState.ir->clone());
@@ -322,6 +385,7 @@ int main(int argc, char **argv) {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   MLIRContext ctx;
+  ctx.allowUnregisteredDialects();
   ctx.appendDialectRegistry(registry);
 
   Reducer reducer(&ctx);
