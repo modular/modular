@@ -5,7 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
-from sys import argv
+alias Int = __mlir_type.index
+
+
+fn use(lhs: Int, rhs: Int) -> Int:
+    return rhs
+
 
 # COM: Verify that the Closure Impl defined in `main` copies the captures x, y on the heap in the init and frees in the del.
 
@@ -19,15 +24,15 @@ from sys import argv
 # CHECK: pop.aligned_alloc
 
 # CHECK:  kgen.func @"{{.*}}::`_CI_{{.*}}::__init__{{.*}}"
-# CHECK-SAME: (%arg0: !kgen.struct<(index)>, %arg1: !kgen.struct<(index)>,
+# CHECK-SAME: (%arg0: index, %arg1: index,
 # CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
 # CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {
 # CHECK-NEXT:    %none = kgen.param.constant: none = <#kgen.none>
 
 # CHECK:         [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
-# CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(struct<(index)>, struct<(index)>)>>
-# CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<struct<(index)>>
+# CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
+# CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(index, index)>>
+# CHECK-NEXT:    pop.store %arg0, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<index>
 
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_1:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][1]
 # CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_1]]
@@ -41,7 +46,7 @@ from sys import argv
 
 @no_inline
 fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
-    print(formatter(value))
+    _ = formatter(value)
 
 
 @no_inline
@@ -49,29 +54,27 @@ fn makeEscapingClosure[
     parametricClosure: fn[x: Int] (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
     fn formatter(v: Int) escaping -> Int:
-        return parametricClosure[2](x + v)
+        return parametricClosure[__mlir_attr.`2 : index`](use(x, v))
 
     return formatter
 
 
-fn main():
-    try:
-        var x = atol(argv()[1])
-        var y = atol(argv()[2])
+@export
+fn top(a: Int, b: Int):
+    var x = use(a, b)
+    var y = use(b, a)
 
-        @no_inline
-        @__copy_capture(x)
-        @parameter
-        fn formatter(v: Int) -> Int:
-            return x + v
+    @no_inline
+    @__copy_capture(x)
+    @parameter
+    fn formatter(v: Int) -> Int:
+        return use(x, v)
 
-        @no_inline
-        @__copy_capture(y)
-        @parameter
-        fn formatter2[x: Int](v: Int) -> Int:
-            return y + formatter(v)
+    @no_inline
+    @__copy_capture(y)
+    @parameter
+    fn formatter2[x: Int](v: Int) -> Int:
+        return use(y, formatter(v))
 
-        var f = makeEscapingClosure[formatter2](y)
-        takeClosure(f, y)
-    except e:
-        print(e)
+    var f = makeEscapingClosure[formatter2](y)
+    takeClosure(f, y)
