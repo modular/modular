@@ -145,6 +145,127 @@ def test_accumulate[
     )
 
 
+def test_accumulate_with_offsets[
+    simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
+]():
+    alias type = DType.float32
+
+    # A: [[ 0.0, 0.0 ],
+    #     [ 1.0, 1.0 ],
+    #     [ 2.0, 2.0 ],
+    #     [ 3.0, 3.0 ]]
+    var a = stack_allocation[2 * num_rows * length, type]()
+    for i in range(2 * num_rows):
+        var a_ptr = a + i * length
+        a_ptr[0] = SIMD[type, 1](i)
+        a_ptr[1] = SIMD[type, 1](i)
+
+    # 4 x 0.0 denotes 0.0, 0.0, 0.0, 0.0
+    # B: [[4 x 0.0, 4 x 0.0, 4 x 1.0, 4 x 1.0],
+    #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
+    alias b_size = 2 * num_cols * simd_size * length
+    alias kernel_width = num_cols * simd_size
+    var b = stack_allocation[b_size, type]()
+
+    for i in range(2 * length):
+        var b_ptr = b + i * num_cols * simd_size
+
+        @unroll
+        for j in range(num_cols):
+            (b_ptr + j * simd_size).simd_store(SIMD[type, simd_size](i))
+
+    alias c_size = num_rows * num_cols * simd_size
+    var c = stack_allocation[c_size, type]()
+
+    @__copy_capture(c)
+    @parameter
+    fn fill_c[widthj: Int](offset: Int):
+        (c + offset).simd_store(SIMD[type, simd_size](0.0))
+
+    vectorize[fill_c, simd_size, c_size]()
+
+    var a_base_offsets = Buffer[DType.int32, num_rows].stack_allocation()
+    a_base_offsets[0] = 0
+    a_base_offsets[1] = length
+
+    accumulate[num_rows, num_cols, simd_size](
+        length, c, a, a_base_offsets, 0, b, kernel_width
+    )
+
+    # C results:
+    # [0.0, 0.0, 0.0, 0.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [1.0, 1.0, 1.0, 1.0]
+    # [1.0, 1.0, 1.0, 1.0]
+    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(
+        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+    )
+    assert_equal(
+        c.simd_load[simd_size](2 * simd_size),
+        SIMD[DType.float32, simd_size](1.0),
+    )
+    assert_equal(
+        c.simd_load[simd_size](3 * simd_size),
+        SIMD[DType.float32, simd_size](1.0),
+    )
+
+    a_base_offsets[0] = 0
+    a_base_offsets[1] = 2 * length
+    accumulate[num_rows, num_cols, simd_size](
+        length, c, a, a_base_offsets, 0, b + kernel_width, kernel_width
+    )
+
+    # C results:
+    # [0.0, 0.0, 0.0, 0.0]
+    # [0.0, 0.0, 0.0, 0.0]
+    # [7.0, 7.0, 7.0, 7.0]
+    # [7.0, 7.0, 7.0, 7.0]
+    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(
+        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+    )
+    assert_equal(
+        c.simd_load[simd_size](2 * simd_size),
+        SIMD[DType.float32, simd_size](7.0),
+    )
+    assert_equal(
+        c.simd_load[simd_size](3 * simd_size),
+        SIMD[DType.float32, simd_size](7.0),
+    )
+
+    a_base_offsets[0] = length
+    a_base_offsets[1] = 3 * length
+
+    accumulate[num_rows, num_cols, simd_size](
+        length,
+        c,
+        a,
+        a_base_offsets,
+        0,
+        b + kernel_width,
+        2 * kernel_width,
+    )
+
+    # C results:
+    # [4.0, 4.0, 4.0, 4.0]
+    # [4.0, 4.0, 4.0, 4.0]
+    # [19.0, 19.0, 19.0, 19.0]
+    # [19.0, 19.0, 19.0, 19.0]
+    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](4.0))
+    assert_equal(
+        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
+    )
+    assert_equal(
+        c.simd_load[simd_size](2 * simd_size),
+        SIMD[DType.float32, simd_size](19.0),
+    )
+    assert_equal(
+        c.simd_load[simd_size](3 * simd_size),
+        SIMD[DType.float32, simd_size](19.0),
+    )
+
+
 def test_load_store_register_tile[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
@@ -232,4 +353,5 @@ def test_load_store_register_tile[
 def main():
     test_maybe_partial_load()
     test_accumulate()
+    test_accumulate_with_offsets()
     test_load_store_register_tile()
