@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
@@ -188,7 +189,7 @@ private:
   /// given lambda.
   void rewriteCallWithNewParams(
       CallOp call, SymbolTable symTab,
-      std::function<void(const MOGG::MOGGTensorParamAccessor &,
+      std::function<void(Value operand, const MOGG::MOGGTensorParamAccessor &,
                          SmallVector<TypedAttr> &)>
           updateParams) {
     KGEN::SymbolConstantAttr symbol = call.getCallee();
@@ -207,13 +208,21 @@ private:
     for (TypedAttr param : symbol.getParamValues())
       newParams.push_back(param);
 
+    bool shouldUpdate = false;
+
     // Update the parameters using the caller provided heuristic.
     for (auto [idx, value] : llvm::enumerate(call->getOperands())) {
       std::optional<MOGG::MOGGTensorParamAccessor> callRep =
           getTensorRepFromFunctionInput(calledFunc, idx);
-      if (callRep.has_value())
-        updateParams(*callRep, newParams);
+      if (callRep.has_value()) {
+        updateParams(value, *callRep, newParams);
+        shouldUpdate = true;
+      }
     }
+
+    // Obviously don't do anything if we have no values to update.
+    if (!shouldUpdate)
+      return;
 
     // Now we have the list of parameters which need to be updated we
     // can rewrite the call to reflect the new lambda.
@@ -221,7 +230,7 @@ private:
         newParams, [&]() -> mlir::InFlightDiagnostic {
           return calledFunc->emitError(
               "INTERNAL COMPILER ERROR: Parameter specialization "
-              "failed");
+              "failed: ");
         });
     if (!newSig) {
       signalPassFailure();
@@ -305,7 +314,7 @@ private:
     DenseSet<KGEN::ParamDeclRefAttr> ownedMemParams;
 
     gen.walk([&](CallOp call) {
-      auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
+      auto paramUpdate = [&](Value, const MOGG::MOGGTensorParamAccessor &tensor,
                              SmallVector<TypedAttr> &newParams) {
         if (std::optional<size_t> index = tensor.ownedMemory(gen)) {
           if (auto decl = dyn_cast<KGEN::ParamDeclRefAttr>(newParams[*index]))
@@ -592,8 +601,13 @@ private:
             newParam = newLambdaBinding;
           }
 
-          auto paramUpdate = [&](const MOGG::MOGGTensorParamAccessor &tensor,
+          auto paramUpdate = [&](Value operand,
+                                 const MOGG::MOGGTensorParamAccessor &tensor,
                                  SmallVector<TypedAttr> &newParams) {
+            // Update only the tensors fusion has actually been enabled on.
+            if (operand != tensorFusionEnabledOn)
+              return;
+
             if (isInput) {
               if (std::optional<size_t> index = tensor.inputLambda(gen))
                 newParams[*index] = newParam;
@@ -928,6 +942,7 @@ private:
 
     SmallVector<size_t> paramsToRemove;
     DenseMap<KGEN::ParamDeclRefAttr, TypedAttr> paramsToRewrite;
+    DenseMap<KGEN::ParamDeclRefAttr, TypedAttr> paramsToRewriteSigType;
 
     // Add each tensor parameter as a parameter onto the function.
     for (size_t operand = 0; operand < gen.getNumArguments(); ++operand) {
@@ -985,22 +1000,6 @@ private:
                                           /*replaceTypes=*/true);
     });
 
-    // Update the sig to remove any reference to the index parameters as we are
-    // about to invalidate them.
-    walker.addReplacement(
-        [&](KGEN::ParamIndexRefAttr attr) -> std::optional<TypedAttr> {
-          if (attr.getDepth() == 0 || attr.getIsResult())
-            return {};
-
-          KGEN::ParamDeclAttr decl = gen.getInputParams()[attr.getIndex()];
-          auto ref = KGEN::ParamDeclRefAttr::get(decl);
-
-          auto itr = paramsToRewrite.find(ref);
-          if (itr != paramsToRewrite.end())
-            return itr->second;
-          return ref;
-        });
-
     // Update all the metadata we have added to remove the references to the
     // lambdas. They can't actually be using them but can easy inadvertently
     // reference it. I.E: x.same_rank_param() includes the parameters of `x`.
@@ -1019,26 +1018,24 @@ private:
       }
     }
 
+    // Specialize the generator using the above parameters.
+    SmallVector<TypedAttr> paramsToSpecialize;
+
     // Remove any parameters which we know know are unused.
     std::sort(paramsToRemove.begin(), paramsToRemove.end(),
               std::greater<size_t>());
     for (size_t i : paramsToRemove)
       params.erase(params.begin() + i);
 
-    // Specialize the generator using
-    SmallVector<TypedAttr> paramsToSpecialize;
-    for (KGEN::ParamDeclAttr decl : gen.getInputParams()) {
-      auto asRef = KGEN::ParamDeclRefAttr::get(decl);
-      auto itr = paramsToRewrite.find(asRef);
-      if (itr != paramsToRewrite.end())
-        paramsToSpecialize.push_back(itr->second);
-      else
-        paramsToSpecialize.push_back(UnboundAttr::get(asRef.getType()));
-    }
-
     // Update the sig to partially specialize on those function types.
-    gen.setSignature(gen.getSignature().getSpecializedSignature(
-        paramsToSpecialize, gen.getLoc()));
+    SignatureType oldSig = gen.getSignature();
+    gen.setSignature(SignatureType::remapToSignature(
+        params, {}, gen.getFunctionType(),
+        /*argConventions=*/oldSig.getArgConventions(),
+        /*fnEffects=*/oldSig.getFnEffects(),
+        /*metadata*/ oldSig.getMetadata(), [&] {
+          return gen->emitError("Failed to remap generator signature.");
+        }));
 
     // Remove the old params from the function.
     gen.setInputParams(params);
@@ -1389,7 +1386,6 @@ public:
       userKernel.setDecorators(
           KGEN::DecoratorsAttr::get(ctx, kernelMetadata->nonMOGGDecorators));
 
-      // slicedComputeFunction.dump();
       //  Don't process the function we just added if we see it again.
       seenFuncs.insert(slicedComputeFunction);
     }
