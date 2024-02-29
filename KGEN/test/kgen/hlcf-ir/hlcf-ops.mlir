@@ -139,3 +139,56 @@ kgen.func @switch(%arg0: index, %arg1: i32, %arg2: i64) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @elif
+kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
+  %idx0 = index.constant 0
+  // CHECK:         [[VAR0:%.*]] = hlcf.elif -> index {
+  // CHECK-NEXT:      [[VAR1:%.*]] = index.cmp eq(%arg0, %idx0)
+  // CHECK-NEXT:      hlcf.elif.yield [[VAR1]] : i1
+  // CHECK-NEXT:    } then {
+  // CHECK-NEXT:     hlcf.yield %arg0 : index
+  // CHECK-NEXT:    } {
+  // CHECK-NEXT:     %idx1 = index.constant 1
+  // CHECK-NEXT:     [[VAR2:%.*]] = index.cmp eq(%arg0, %idx1)
+  // CHECK-NEXT:     hlcf.elif.yield [[VAR2]] : i1
+  // CHECK-NEXT:    } then {
+  // CHECK-NEXT:     hlcf.yield %arg0 : index
+  // CHECK-NEXT:   } else {
+  // CHECK-NEXT:     hlcf.yield %arg0 : index
+  // CHECK-NEXT:   }
+  %0 = hlcf.elif -> index {
+    %c = index.cmp eq(%arg0, %idx0)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield %arg0 : index
+  } {
+    %idx1 = index.constant 1
+    %c = index.cmp eq(%arg0, %idx1)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield %arg0 : index
+  } else {
+    hlcf.yield %arg0 : index
+  }
+
+
+  // CHECK:      hlcf.elif {
+  // CHECK-NEXT:   [[VAR3:%.*]] = index.cmp eq(%arg0, %idx0)
+  // CHECK-NEXT:    hlcf.elif.yield [[VAR3]] : i1
+  // CHECK-NEXT:  } then {
+  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:  }
+  hlcf.elif {
+    %c = index.cmp eq(%arg0, %idx0)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return
+}
+
