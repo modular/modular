@@ -9,7 +9,6 @@
 from kernel_utils.layout import Layout, LayoutList, composition
 from kernel_utils.layout_tensor import (
     LayoutTensor,
-    StaticLayout,
     NewLayoutTensor,
 )
 from algorithm import vectorize, parallelize, sync_parallelize
@@ -38,9 +37,9 @@ struct Dim(Stringable):
 trait TiledOp:
     @staticmethod
     fn op[
-        layout_m_n: StaticLayout,
-        layout_m_k: StaticLayout,
-        layout_n_k: StaticLayout,
+        layout_m_n: Layout,
+        layout_m_k: Layout,
+        layout_n_k: Layout,
         dtype: DType,
     ](
         inout dst: LayoutTensor[layout_m_n, dtype],
@@ -54,18 +53,18 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op[
-        layout_m_n: StaticLayout,
-        layout_m_k: StaticLayout,
-        layout_n_k: StaticLayout,
+        layout_m_n: Layout,
+        layout_m_k: Layout,
+        layout_n_k: Layout,
         dtype: DType,
     ](
         inout dst: LayoutTensor[layout_m_n, dtype],
         lhs: LayoutTensor[layout_m_k, dtype],
         rhs: LayoutTensor[layout_n_k, dtype],
     ):
-        alias M = dst.dim(0)
-        alias N = dst.dim(1)
-        alias K = lhs.dim(1)
+        alias M = dst.dim[0]()
+        alias N = dst.dim[1]()
+        alias K = lhs.dim[1]()
 
         for m in range(M):
             for n in range(N):
@@ -77,18 +76,18 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op[
-        layout_m_n: StaticLayout,
-        layout_m_k: StaticLayout,
-        layout_n_k: StaticLayout,
+        layout_m_n: Layout,
+        layout_m_k: Layout,
+        layout_n_k: Layout,
         dtype: DType,
     ](
         inout dst: LayoutTensor[layout_m_n, dtype],
         lhs: LayoutTensor[layout_m_k, dtype],
         rhs: LayoutTensor[layout_n_k, dtype],
     ):
-        alias M = dst.dim(0)
-        alias N = dst.dim(1)
-        alias K = lhs.dim(1)
+        alias M = dst.dim[0]()
+        alias N = dst.dim[1]()
+        alias K = lhs.dim[1]()
 
         alias width = simdwidthof[dtype]() * 2
 
@@ -111,18 +110,18 @@ fn gemm_l2_cache[
     mma: TiledOp,
     L1: Dim,
     L2: Dim,
-    layout_m_n: StaticLayout,
-    layout_m_k: StaticLayout,
-    layout_k_n: StaticLayout,
+    layout_m_n: Layout,
+    layout_m_k: Layout,
+    layout_k_n: Layout,
     dtype: DType,
 ](
     dst: LayoutTensor[layout_m_n, dtype],
     lhs: LayoutTensor[layout_m_k, dtype],
     rhs: LayoutTensor[layout_k_n, dtype],
 ):
-    alias M = dst.dim(0)
-    alias N = dst.dim(1)
-    alias K = lhs.dim(1)
+    alias M = dst.dim[0]()
+    alias N = dst.dim[1]()
+    alias K = lhs.dim[1]()
 
     # Dimensions of the Operation
     alias op_dim = Dim(M, N, K)
@@ -167,18 +166,18 @@ fn gemm_l1_cache[
     mma: TiledOp,
     L1: Dim,
     L2: Dim,
-    layout_m_n: StaticLayout,
-    layout_m_k: StaticLayout,
-    layout_k_n: StaticLayout,
+    layout_m_n: Layout,
+    layout_m_k: Layout,
+    layout_k_n: Layout,
     dtype: DType,
 ](
     dst: LayoutTensor[layout_m_n, dtype],
     lhs: LayoutTensor[layout_m_k, dtype],
     rhs: LayoutTensor[layout_k_n, dtype],
 ):
-    alias M = dst.dim(0)
-    alias N = dst.dim(1)
-    alias K = lhs.dim(1)
+    alias M = dst.dim[0]()
+    alias N = dst.dim[1]()
+    alias K = lhs.dim[1]()
 
     # Dimensions of the Operation
     alias op_dim = Dim(M, N, K)

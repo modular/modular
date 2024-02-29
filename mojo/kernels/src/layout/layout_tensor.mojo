@@ -10,48 +10,6 @@ from .int_tuple import flatten, int
 from .layout import *
 
 
-@register_passable
-struct StaticLayout[size: Int = 2]:
-    var shape: StaticIntTuple[size]
-    var stride: StaticIntTuple[size]
-
-    @always_inline
-    fn __init__(
-        shape: StaticIntTuple[size], stride: StaticIntTuple[size]
-    ) -> Self:
-        return Self {shape: shape, stride: stride}
-
-    @always_inline
-    fn __init__(layout: Layout) -> Self:
-        if len(layout.shape) != size or len(layout.stride) != size:
-            abort("Unsupported Layout dimensions.")
-
-        var shape = StaticIntTuple[size]()
-        var stride = StaticIntTuple[size]()
-
-        @unroll
-        for i in range(size):
-            shape[i] = int(layout.shape[i])
-            stride[i] = int(layout.stride[i])
-
-        return Self {shape: shape, stride: stride}
-
-    @always_inline
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {shape: existing.shape, stride: existing.stride}
-
-    @always_inline
-    fn to_layout(self) -> Layout:
-        var shape = IntTuple()
-        var stride = IntTuple()
-
-        for i in range(size):
-            shape.append(self.shape[i])
-            stride.append(self.stride[i])
-
-        return Layout(shape, stride)
-
-
 fn NewLayoutTensor[
     M: Int,
     N: Int,
@@ -61,13 +19,13 @@ fn NewLayoutTensor[
     return LayoutTensor[layout, dtype]()
 
 
-struct LayoutTensor[layout: StaticLayout, dtype: DType](CollectionElement):
+struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
     var ptr: DTypePointer[dtype]
     var is_view: Bool
 
     @always_inline
     fn __init__(inout self):
-        self.ptr = DTypePointer[dtype].alloc(self.dim(0) * self.dim(1))
+        self.ptr = DTypePointer[dtype].alloc(self.dim[0]() * self.dim[1]())
         self.is_view = False
 
     @always_inline
@@ -92,8 +50,7 @@ struct LayoutTensor[layout: StaticLayout, dtype: DType](CollectionElement):
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
-        var stride = self.layout.stride
-        return stride[0] * m + stride[1] * n
+        return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
     fn __getitem__(self, m: Int, n: Int) -> Scalar[dtype]:
@@ -111,32 +68,50 @@ struct LayoutTensor[layout: StaticLayout, dtype: DType](CollectionElement):
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         return self.ptr.simd_store[width](self._offset(m, n), val)
 
+    @staticmethod
+    fn _toStatic[t: IntTuple]() -> StaticIntTuple[len(t)]:
+        var st = StaticIntTuple[len(t)]()
+        for i in range(len(t)):
+            st[i] = int(t[i])
+        return st
+
     @always_inline
     @staticmethod
-    fn dim(idx: Int) -> Int:
-        return layout.shape[idx]
+    fn shape[idx: Int]() -> Int:
+        alias shape = Self._toStatic[layout.shape]()
+        return shape[idx]
+
+    @always_inline
+    @staticmethod
+    fn stride[idx: Int]() -> Int:
+        alias stride = Self._toStatic[layout.stride]()
+        return stride[idx]
+
+    @always_inline
+    @staticmethod
+    fn dim[idx: Int]() -> Int:
+        return Self.shape[idx]()
 
     @staticmethod
-    fn _compute_layout[layout: StaticLayout, M: Int, N: Int]() -> Layout:
+    fn _compute_tile_layout[layout: Layout, M: Int, N: Int]() -> Layout:
         alias tiler = MakeLayoutList(Layout(M, 1), Layout(N, 1))
-        return zipped_divide(layout.to_layout(), tiler)
+        return zipped_divide(layout, tiler)
 
     fn view[
         M1: Int,
         N1: Int,
-        tiled_layout: Layout = Self._compute_layout[layout, M1, N1](),
+        tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
     ](self, m: Int, n: Int) -> LayoutTensor[tiled_layout[0], dtype]:
-        # TODO: Figure out how expensive this actually is and optimize it
         # var offset = inner_product(IntTuple(m, n), tiled_layout[1].stride)
-        alias inner_tile = StaticLayout(tiled_layout[1])
-        var offset = m * inner_tile.stride[0] + n * inner_tile.stride[1]
+        alias tiled_layout_stride = Self._toStatic[tiled_layout[1].stride]()
+        var offset = m * tiled_layout_stride[0] + n * tiled_layout_stride[1]
         return LayoutTensor[tiled_layout[0], dtype](self.ptr.offset(offset))
 
     fn transpose[
-        M: Int = layout.shape[0],
-        N: Int = layout.shape[1],
+        M: Int = Self.dim[0](),
+        N: Int = Self.dim[1](),
         transposed_layout: Layout = composition(
-            layout.to_layout(),
+            layout,
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
     ](self) -> LayoutTensor[transposed_layout, dtype]:
@@ -144,32 +119,24 @@ struct LayoutTensor[layout: StaticLayout, dtype: DType](CollectionElement):
 
     @always_inline
     fn copy_from[
-        other_layout: StaticLayout
+        other_layout: Layout
     ](self, other: LayoutTensor[other_layout, dtype]):
-        alias M = layout.shape[0]
-        alias N = layout.shape[1]
-        for m in range(M):
-            for n in range(N):
+        for m in range(Self.dim[0]()):
+            for n in range(Self.dim[1]()):
                 self[m, n] = other[m, n]
 
     fn linspace(self):
-        alias M = layout.shape[0]
-        alias N = layout.shape[1]
-        for m in range(M):
-            for n in range(N):
-                self[m, n] = m * N + n
+        for m in range(Self.dim[0]()):
+            for n in range(Self.dim[1]()):
+                self[m, n] = m * Self.dim[1]() + n
 
     fn fill(self, val: Scalar[dtype]):
-        alias M = layout.shape[0]
-        alias N = layout.shape[1]
-        for m in range(M):
-            for n in range(N):
+        for m in range(Self.dim[0]()):
+            for n in range(Self.dim[1]()):
                 self[m, n] = val
 
     fn print(self):
-        alias M = layout.shape[0]
-        alias N = layout.shape[1]
-        for m in range(M):
-            for n in range(N):
+        for m in range(Self.dim[0]()):
+            for n in range(Self.dim[1]()):
                 print_no_newline(self[m, n], "  ")
             print("")

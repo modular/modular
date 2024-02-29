@@ -16,26 +16,25 @@ from kernel_utils.layout import (
 )
 from kernel_utils.layout_tensor import (
     LayoutTensor,
-    StaticLayout,
     NewLayoutTensor,
 )
 from memory import stack_allocation
 
 
 fn print_raw_major_tensor[
-    layout: StaticLayout, dtype: DType
+    layout: Layout, dtype: DType
 ](tensor: LayoutTensor[layout, dtype]):
-    for i in range(tensor.dim(0)):
-        for j in range(tensor.dim(1)):
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
             print_no_newline(tensor[i, j], "\t")
         print("")
 
 
 fn print_tile_tensor[
-    layout: StaticLayout, dtype: DType
+    layout: Layout, dtype: DType
 ](tensor: LayoutTensor[layout, dtype]):
-    for i in range(tensor.dim(0)):
-        for j in range(tensor.dim(1)):
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
             print_no_newline(tensor[i, j], "\t")
         print("")
 
@@ -59,6 +58,11 @@ fn test_basic_tensor_ops():
     print("----original matrix----")
     print_raw_major_tensor(tensor)
 
+    # CHECK: ----transposed matrix----
+    # CHECK: 0.0     4.0     8.0     12.0    16.0    20.0    24.0    28.0
+    # CHECK: 1.0     5.0     9.0     13.0    17.0    21.0    25.0    29.0
+    # CHECK: 2.0     6.0     10.0    14.0    18.0    22.0    26.0    30.0
+    # CHECK: 3.0     7.0     11.0    15.0    19.0    23.0    27.0    31.0
     var transposed_tensor = tensor.transpose()
     print("----transposed matrix----")
     print_raw_major_tensor(transposed_tensor)
