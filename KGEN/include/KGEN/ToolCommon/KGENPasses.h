@@ -86,6 +86,9 @@ enum class InlinerDebugInfoUpdateTime {
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENPasses.h.inc"
 
+/// Register all passes with default options and the provided runtime.
+void registerDefaultKGENPasses(LLCL::Runtime &runtime);
+
 //===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//

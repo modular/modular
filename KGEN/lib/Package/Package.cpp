@@ -399,6 +399,33 @@ void M::KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                         runtime);
       });
 }
+//===----------------------------------------------------------------------===//
+// createElaborateGeneratorsWithDefaultJIT
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass>
+KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+  CompilationOptions options;
+  return createElaborateGenerators(
+      runtime, /*target=*/{}, /*options=*/{},
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
+                    TargetInfoAttr target, EmissionKind emissionKind) {
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    emissionKind, options);
+      },
+      [=, &runtime](PackageLinkOp link, TargetInfoAttr target) {
+        return loadAndElaborateBytecode(link, target, options, runtime);
+      });
+}
 
 //===----------------------------------------------------------------------===//
 // createMaterializePackagesWithDefaultGen

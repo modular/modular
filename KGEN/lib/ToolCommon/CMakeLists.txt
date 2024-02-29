@@ -8,6 +8,7 @@ add_modular_library(KGENToolCommon
   CLOptions.cpp
   CompilationOptions.cpp
   InitAllDialects.cpp
+  PassRegistry.cpp
 
   LINK_LIBS PUBLIC
   DebugInfoDialect
@@ -16,6 +17,12 @@ add_modular_library(KGENToolCommon
   LITDialect
   POPDialect
   CacheDialect
+  LowerLIT
+  KGENToLLVM
+  KGENElaborator
+  KGENTransforms
+  DebugInfoToLLVM
+  MOGGPreElabPasses
 
   MLIRIndexDialect
   MLIRLLVMDialect

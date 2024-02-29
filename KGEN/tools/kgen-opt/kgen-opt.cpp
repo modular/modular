@@ -38,35 +38,6 @@ using namespace M;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// ElaborateGenerators
-//===----------------------------------------------------------------------===//
-
-/// Create an instance of the elaborator pass using the given configuration.
-/// The created elaborator pass uses a default specialization executor that
-/// JITs and executes in-process.
-static std::unique_ptr<Pass>
-createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
-  using namespace KGEN;
-  CompilationOptions options;
-  return createElaborateGenerators(
-      runtime, /*target=*/{}, /*options=*/{},
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      },
-      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
-                    StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind emissionKind) {
-        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    emissionKind, options);
-      },
-      [=, &runtime](PackageLinkOp link, TargetInfoAttr target) {
-        return loadAndElaborateBytecode(link, target, options, runtime);
-      });
-}
-
-//===----------------------------------------------------------------------===//
 // TestDataFlowPass
 //===----------------------------------------------------------------------===//
 
@@ -333,78 +304,19 @@ int main(int argc, char **argv) {
   // Initialize LLVM exporters.
   registerKGENToLLVMTranslation(registry);
 
-  // Register the standard passes we want.
-  mlir::registerCSEPass();
-  mlir::registerCanonicalizerPass();
-  mlir::registerConvertIndexToLLVMPass();
-
   // Register test passes.
   mlir::PassRegistration<TestDataFlowPass>{};
   mlir::PassRegistration<TestGeneratePreElaboratedBody>{};
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
-  // Register opt passes.
-  KGEN::registerCanonicalizer();
-  KGEN::registerCheckLifetimes();
-  KGEN::registerEliminateDeadSymbols();
-  KGEN::registerExternalizePrecompiledFunctions();
-  KGEN::registerFoldGlobalConstLoads();
-  KGEN::registerHoistTrivialInvariants();
-  KGEN::registerLiftAndFoldApply();
-  KGEN::registerLoopUnrolling();
-  KGEN::registerLowerCallingConvention();
-  KGEN::registerLowerClosures();
-  KGEN::registerLowerControlFlow();
-  KGEN::registerLowerGlobalPOPToLLVM();
-  KGEN::registerLowerArgConventions();
-  KGEN::registerLowerLoops();
-  KGEN::registerLowerKGENCoroutinesAsync();
-  KGEN::registerLowerKGENToLLVM();
-  KGEN::registerLowerLIT();
-  KGEN::registerLowerPOPToLLVM();
-  KGEN::registerLowerRuntimeClosures();
-  KGEN::registerLowerSemanticCF();
-  KGEN::registerLowerLITTypes();
-  KGEN::registerMem2Reg();
-  KGEN::registerOutlineClosures();
-  KGEN::registerPruneImpossibleVariants();
-  KGEN::registerRaiseForLoops();
-  KGEN::registerSROA();
-  KGEN::registerSimplifyCF();
-  KGEN::registerStackReuse();
-  KGEN::registerSynthesizeDebugInfo();
-  KGEN::registerTweakSpilledAllocas();
-  KGEN::registerVerifyParameters();
-  KGEN::registerLowerToLLVMPipeline();
-  KGEN::registerSCCP();
-  KGEN::registerStripParserMetadata();
-  DebugInfo::registerDebugInfoToLLVM();
-  DebugInfo::registerDebugInfoStrip();
-
-  KGEN::MOGGPreElab::registerSliceMOGGFuncs();
-
-  // Register passes that require a runtime.
   LLCL::RuntimeOptions llclOpts;
   llclOpts.withLeakCheckedAllocator();
   if (llclSingleThread)
     llclOpts.withSingleThreaded();
   std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(llclOpts);
 
-  mlir::registerPass(
-      [&] { return createElaborateGeneratorsWithDefaultJIT(*runtime); });
-  mlir::registerPass([&] { return KGEN::createForceInline(*runtime); });
-  mlir::registerPass([&] { return KGEN::createInlineParametric(*runtime); });
-  mlir::registerPass([&] { return KGEN::createAutomaticInline(*runtime); });
-  mlir::registerPass(
-      [&] { return KGEN::createDeadArgumentElimination(*runtime); });
-  mlir::registerPass(
-      [&] { return KGEN::createResolveCompilerPromises(*runtime); });
-
-  // Register passes that require other arguments.
-  KGEN::CompilationOptions options;
-  mlir::registerPass([&] {
-    return KGEN::createMaterializePackagesWithDefaultGen(*runtime, options);
-  });
+  // Register passes.
+  KGEN::registerDefaultKGENPasses(*runtime);
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};
