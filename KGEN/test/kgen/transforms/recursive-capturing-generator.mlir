@@ -38,10 +38,10 @@ kgen.generator export @top() {
     %idx22 = index.constant 22
     kgen.return %idx22 : index
   }
-  // CHECK-NEXT: kgen.param.constant = <11>
+  // CHECK-NEXT: index.constant 11
   %idx11 = index.constant 11
-  // CHECK-NEXT: call @use(%index11)
-  // CHECK-NEXT: call @use(%index11)
+  // CHECK-NEXT: call @use(%idx11)
+  // CHECK-NEXT: call @use(%idx11)
   kgen.call @test<:i1 1, :() capturing -> index noop>(%idx11) : (index) -> ()
   // CHECK-NEXT: return
   kgen.return
