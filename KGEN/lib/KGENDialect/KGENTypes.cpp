@@ -284,6 +284,14 @@ SignatureType SignatureType::getSpecializedSignature(
                               argConventions, effects, metadata);
   }
 
+  // Verify the number of input parameters.
+  if (inputParamTypes.size() != inputParamValues.size()) {
+    assert(emitErrorFn && "unexpected invalid signature");
+    emitErrorFn() << "callee expects " << inputParamTypes.size()
+                  << " parameters but only got " << inputParamValues.size();
+    return {};
+  }
+
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
   //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
@@ -315,10 +323,11 @@ SignatureType SignatureType::getSpecializedSignature(
     // We must remap the value type being provided as well, because it may be
     // referring to outer-context indexed parameters, whose depth will be
     // increased when substituted into this signature.
-    if (adjuster.replace(value.getType()) != remappedDeclType) {
+    Type reboundType = adjuster.replace(value.getType());
+    if (reboundType != remappedDeclType) {
       assert(emitErrorFn && "unexpected invalid signature");
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                    << value.getType() << " but callee expected type "
+                    << reboundType << " but callee expected type "
                     << remappedDeclType;
       return SignatureType();
     }
