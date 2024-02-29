@@ -62,7 +62,7 @@ class ExecutionManager extends DisposableContext {
 
     // Find the config for processing this file.
     let config = await this.context.sdk.resolveConfig(
-        vscode.workspace.getWorkspaceFolder(doc.uri));
+        {workspaceFolder : vscode.workspace.getWorkspaceFolder(doc.uri)});
     if (!config)
       return;
 
