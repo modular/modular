@@ -115,14 +115,10 @@ struct Tensor[
     static_shape: DimList = DimList(),
     static_strides: DimList = _static_strides_from_shape[static_shape](),
     _internal_in_lambda: Optional[
-        fn[
-            _w: Int, _t: DType, _v: DimList
-        ] (IntList[_v]) capturing -> SIMD[_t, _w]
+        fn[_w: Int, _v: DimList] (IntList[_v]) capturing -> SIMD[type, _w]
     ] = None,
     _internal_out_lambda: Optional[
-        fn[
-            _w: Int, _t: DType, _v: DimList
-        ] (IntList[_v], SIMD[_t, _w]) capturing -> None
+        fn[_w: Int, _v: DimList] (IntList[_v], SIMD[type, _w]) capturing -> None
     ] = None,
     _OWNED_MEMORY: Bool = True,
 ]:
@@ -251,9 +247,9 @@ struct Tensor[
         @always_inline
         @parameter
         fn _default_lambda[
-            _w: Int, _t: DType, _v: DimList
-        ](i: IntList[_v]) -> SIMD[_t, _w]:
-            return rebind[SIMD[_t, _w]](self._simd_load_internal[_w](i))
+            _w: Int, _v: DimList
+        ](i: IntList[_v]) -> SIMD[type, _w]:
+            return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
 
         # This should return a rebind but until that works we just call this nop.
         Tensor[
@@ -266,8 +262,8 @@ struct Tensor[
         @always_inline
         @parameter
         fn _default_output[
-            _w: Int, _t: DType, _v: DimList
-        ](i: IntList[_v], value: SIMD[_t, _w]):
+            _w: Int, _v: DimList
+        ](i: IntList[_v], value: SIMD[type, _w]):
             self._simd_store_internal(i, rebind[SIMD[type, _w]](value))
 
         # This should return a rebind but until that works we just call this nop.
@@ -331,7 +327,7 @@ struct Tensor[
         @parameter
         if Self._internal_out_lambda:
             alias func = Self._internal_out_lambda.value()
-            func[val.size, type, index.static_values](index, val)
+            func[val.size, index.static_values](index, val)
         else:
             self._simd_store_internal(index, val)
 
@@ -391,7 +387,7 @@ struct Tensor[
         @parameter
         if Self._internal_in_lambda:
             alias func = Self._internal_in_lambda.value()
-            return func[simd_width, type, index.static_values](index)
+            return func[simd_width, index.static_values](index)
         else:
             return self._simd_load_internal[simd_width](index)
 
@@ -477,9 +473,7 @@ struct Tensor[
     @mogg_elementwise_hook()
     @no_inline
     fn for_each[
-        func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
-            _t, _width
-        ],
+        func: fn[_width: Int] (IntList) capturing -> SIMD[type, _width],
     ](inout self):
         alias simd_width = simdwidthof[Self.type]()
 
@@ -498,7 +492,7 @@ struct Tensor[
                         coords_static
                     )
                 )
-                var val = func[width, Self.type, dims](coords)
+                var val = func[width, dims](coords)
                 self.store(coords, val)
 
             elementwise[
@@ -511,9 +505,7 @@ struct Tensor[
 
     fn _for_each_dynamic_rank[
         simd_width: Int,
-        func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
-            _t, _width
-        ],
+        func: fn[_width: Int] (IntList) capturing -> SIMD[type, _width],
     ](inout self):
         var rank = len(self.shape)
         var total_size: Int = self.shape.nelems()
@@ -532,7 +524,7 @@ struct Tensor[
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
-                var out = func[width, Self.type, indices.static_values](indices)
+                var out = func[width, indices.static_values](indices)
                 self.store(indices, out)
 
             # We vectorize over the innermost dimension.
