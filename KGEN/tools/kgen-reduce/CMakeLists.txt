@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_tool(kgen-reduce
+  Helpers.cpp
   kgen-reduce.cpp
 
   LINK_LIBS PRIVATE
