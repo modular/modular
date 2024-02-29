@@ -241,7 +241,7 @@ struct EngineTensorSpec(Stringable, Movable):
                 try:
                     dim = self[i]
                 except err:
-                    trap("unreachable condition")
+                    abort("unreachable condition")
 
                 if not dim:
                     _repr += "-1x"
