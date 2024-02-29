@@ -422,7 +422,7 @@ fn flash_attention[
             )
 
     except e:
-        trap(e)
+        abort(e)
 
 
 @parameter
@@ -1314,24 +1314,24 @@ fn _naive_attention_with_transpose[
     try:
         transpose(qt, q, q_perm.data)
     except e:
-        trap(e)
+        abort(e)
 
     try:
         transpose(kt, k, k_perm.data)
     except e:
-        trap(e)
+        abort(e)
 
     try:
         transpose(vt, v, q_perm.data)
     except e:
-        trap(e)
+        abort(e)
 
     _naive_attention[type, transpose_k](ot, qt, kt, vt, mask, scale)
 
     try:
         transpose(output, ot, o_perm.data)
     except e:
-        trap(e)
+        abort(e)
 
     qt_ptr.free()
     kt_ptr.free()
@@ -1391,7 +1391,7 @@ fn _naive_attention[
             axis=3,
         )
     except e:
-        trap(e)
+        abort(e)
 
     batched_matmul[4, type, type, type, False, False](output, score, v)
 

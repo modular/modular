@@ -1254,7 +1254,7 @@ fn _concat_gpu_impl[
         else:
             raise Error("Unsupported concat with num_inputs > 32")
     except e:
-        return trap(e)
+        return abort(e)
 
 
 @always_inline

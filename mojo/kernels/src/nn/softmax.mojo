@@ -365,7 +365,7 @@ fn _softmax_3_pass_base[
             reduce_dim=0,
         )
     except e:
-        trap(e)
+        abort(e)
 
     var max_val = max_buff[0]
 

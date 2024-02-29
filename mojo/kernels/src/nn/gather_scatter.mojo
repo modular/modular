@@ -718,7 +718,7 @@ fn scatter_nd_generator[
                 stream,
             )
         except e:
-            trap(e)
+            abort(e)
 
     @parameter
     if target != "cuda":
