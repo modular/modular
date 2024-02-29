@@ -3,7 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Defines the Module Graph container."""
+"""Module primitives.
+
+A `Module` is a very basic container that holds `Graph`s for the purpose of
+compiling or exporting them as a whole.
+
+Note: `Module`s are not to be confused with layers or modules found in other
+high-level APIs (like `torch.nn.Module`, or `tf.Module`). The MAX Graph API
+is a low level library. Rather, a `Module` is closer to ONNX Models.
+"""
 
 from tensor import Tensor
 from pathlib import Path
@@ -16,8 +24,9 @@ import ._c
 
 @value
 struct Module(Stringable):
+    """A Module is a container that holds `Graph`s."""
+
     var _module: _mlir.Module
-    """A Module is a container that holds a Graph."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
@@ -46,51 +55,35 @@ struct Module(Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn verify(self) raises:
-        """Verifies the module, and the validity of the graph structure.
+        """Verifies the `Module` and its contents.
 
-        The module is valid if every op inside of it is valid.
-
-        A graph is valid if
-        1. it has an `output` op whose types match the `out_types` of the graph
-        2. every op in the graph is valid
-            a. it has a valid op name
-            b. it has the right number and type of operands and attributes
-                for that operation (see the [`mo`](/engine/reference/mlir/mo)
-                reference for op documentation).
-        3. there are no cycles in the graph
-        4. every symbol in the graph is defined before its first use
-
-        If a graph is constructed forwards with only op construction and no
-        op mutations, 3) and 4) will always be true.
+        Examples of cases when a `Graph` may not be valid (the list is not
+        exhaustive):
+        1. it has an `output` op whose types don't match its `out_types`
+        2. it has an op with an invalid name, number, type of operands,
+            output types, etc. See the [`MO dialect`](/engine/reference/mlir/mo)
+            reference for more details).
+        3. it contains cycles
 
         Raises:
-            If the module is invalid. In this case it will also print a diagonstic
-            to help debug why the graph is invalid.
+            If the `Module` did not pass verification. In this case it will also
+            print a diagnostic message indicating the error.
         """
         if not self._module.as_op().verify():
-            raise "Module did not verify"
+            raise "module did not verify"
 
     fn save_to_file(self, path: Path) raises:
-        """Save the module to a file.
+        """Saves this `Module` to a file.
 
-        > ⚠️⚠️⚠️ **THIS IS NOT A DURABLE REPRESENTATION!!!** Saved modules may
-        > not correctly load or execute in future versions of the API or engine.
+        Important: The file contents uses internal MLIR Bytecode format that is
+        not guaranteed to be cross-version compatible and may change without
+        notice.
 
         Args:
-            path: The path to save the module to.
-
-        Raises:
-            If writing to the file fails.
+            path: The path to save the `Module` to.
         """
         with open(path, "w") as file:
             self._module.as_op().write(file)
-
-    # ===------------------------------------------------------------------=== #
-    # Location factories
-    # ===------------------------------------------------------------------=== #
-
-    fn unknown_loc(self) -> _mlir.Location:
-        return _mlir.Location.unknown(self._module.context())
 
     # ===------------------------------------------------------------------=== #
     # Attribute factories
@@ -99,6 +92,23 @@ struct Module(Stringable):
     fn tensor_attr[
         dtype: DType
     ](self, name: String, owned value: Tensor[dtype]) -> _mlir.NamedAttribute:
+        """Creates a new `Tensor`-valued `Attribute`.
+
+        The value of this attribute will have the type `MOTensor` with the same
+        shape and dtype as `value`.
+        This method takes ownership of `value` and is suitable for use with
+        very large `Tensor` values (such as model weights).
+
+        Params:
+            dtype: The attribute tensor's element type.
+
+        Args:
+            name: The `Attribute` name.
+            value: The `Attribute` value.
+
+        Returns:
+            An internal representation of an `Attribute`.
+        """
         var t = MOTensor(value.spec()).to_mlir(self)
         return _c.attr_new_tensor(
             self._module,
@@ -111,6 +121,20 @@ struct Module(Stringable):
     fn tensor_resource_attr(
         self, name: String, file_name: String, type: MOTensor
     ) -> _mlir.NamedAttribute:
+        """Creates a new `Tensor` `Attribute` from an external file.
+
+        The value of this constant will have the type `type`.
+        The file must contain the `Tensor`s raw data, as returned by
+        `Tensor.data`. No endianness transformation is performed.
+
+        Args:
+            name: The `Attribute` name.
+            file_name: The file name to load from.
+            type: The `Tensor` type (element type, shape).
+
+        Returns:
+            An internal representation of an `Attribute`.
+        """
         return _c.attr_new_tensor_from_file(
             self._module, name, file_name, type.to_mlir(self)
         )
@@ -120,6 +144,21 @@ struct Module(Stringable):
     ](
         self, name: String, values: DynamicVector[Scalar[dtype]]
     ) -> _mlir.NamedAttribute:
+        """Creates a new `Tensor`-valued `Attribute`.
+
+        The value of this attribute will have the type `MOTensor` with 1D shape,
+        consistent with the size of `values`.
+
+        Params:
+            dtype: The attribute tensor's element type.
+
+        Args:
+            name: The `Attribute` name.
+            values: A vector representing the attribute's value.
+
+        Returns:
+            An internal representation of an `Attribute`.
+        """
         return _c.attr_new_tensor(
             self._module,
             name,
@@ -133,6 +172,22 @@ struct Module(Stringable):
     ](
         self, name: String, value: Scalar[dtype], rank: Int = 0
     ) raises -> _mlir.NamedAttribute:
+        """Creates a new `Tensor`-valued `Attribute`.
+
+        The `Tensor` is considered to contain a single element, and its shape
+        be of the specified rank (for example, `rank=0` denotes a scalar).
+
+        Params:
+            dtype: The attribute tensor's element type.
+
+        Args:
+            name: The `Attribute` name.
+            value: The `Attribute` value.
+            rank: The attribute tensor's rank.
+
+        Returns:
+            An internal representation of an `Attribute`.
+        """
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
         var shape = DynamicVector[Int](capacity=rank)
@@ -141,6 +196,15 @@ struct Module(Stringable):
         return self.tensor_attr[dtype](name, Tensor(shape, value))
 
     fn string_attr(self, name: String, value: String) -> _mlir.NamedAttribute:
+        """Creates a new `String`-valued `Attribute`.
+
+        Args:
+            name: The `Attribute` name.
+            value: The `Attribute` value.
+
+        Returns:
+            An internal representation of an `Attribute`.
+        """
         var ctx = self._module.context()
         return _mlir.NamedAttribute(
             name=_mlir.Identifier(ctx, name),
@@ -154,20 +218,15 @@ struct Module(Stringable):
     fn graph(
         self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ) -> Graph:
-        """Constructs a new Graph object in the Module.
+        """Adds an empty `Graph` to this `Module`.
 
-        The constructed Graph will not be valid unless it has no outputs;
-        a graph with outputs will need a `graph.output` call to tell it
-        what to return. The graph's validity can be checked by calling
-        `graph.verify()`.
-
-        Args
-            name: A name for the graph.
-            in_types: The input types of the graph's computation.
-            out_types: The output types of the graph's computation.
+        Args:
+            name: The `Graph`'s name.
+            in_types: The `Graphs`'s input types.
+            out_types: The `Graphs`'s return types.
 
         Returns:
-            A new `Graph` instance inside the module.
+            An empty `Graph` ready to be filled with ops.
         """
         var ctx = self._module.context()
         var loc = _mlir.Location.unknown(ctx)
@@ -176,11 +235,24 @@ struct Module(Stringable):
             ctx, in_types.to_mlir(self), out_types.to_mlir(self)
         )
         var op = _c.graph_new(
-            self._module, loc, name._strref_dangerous(), function_type
+            self._module,
+            loc,
+            name,
+            _mlir.builtin_types.FunctionType(
+                ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+            ),
         )
-        name._strref_keepalive()
 
         return Graph(op)
 
     fn graph(self, in_types: TypeTuple, out_types: TypeTuple) -> Graph:
+        """Adds an empty `Graph` with a default name to this `Module`.
+
+        Args:
+            in_types: The `Graphs`'s input types.
+            out_types: The `Graphs`'s return types.
+
+        Returns:
+            An empty `Graph` ready to be filled with ops.
+        """
         return self.graph("graph", in_types, out_types)
