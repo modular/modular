@@ -14,20 +14,28 @@ from kernel_utils.layout import (
     print_layout,
     zipped_divide,
 )
-from kernel_utils.layout_tensor import LayoutTensor
+from kernel_utils.layout_tensor import (
+    LayoutTensor,
+    StaticLayout,
+    NewLayoutTensor,
+)
 from memory import stack_allocation
 
 
-fn print_raw_major_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
-    for i in range(8):
-        for j in range(4):
+fn print_raw_major_tensor[
+    layout: StaticLayout, dtype: DType
+](tensor: LayoutTensor[layout, dtype]):
+    for i in range(tensor.dim(0)):
+        for j in range(tensor.dim(1)):
             print_no_newline(tensor[i, j], "\t")
         print("")
 
 
-fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
-    for i in range(2):
-        for j in range(2):
+fn print_tile_tensor[
+    layout: StaticLayout, dtype: DType
+](tensor: LayoutTensor[layout, dtype]):
+    for i in range(tensor.dim(0)):
+        for j in range(tensor.dim(1)):
             print_no_newline(tensor[i, j], "\t")
         print("")
 
@@ -35,14 +43,10 @@ fn print_tile_tensor[dtype: DType](tensor: LayoutTensor[dtype]):
 # CHECK-LABEL: test_basic_tensor_ops
 fn test_basic_tensor_ops():
     print("== test_basic_tensor_ops")
-    var data_ptr = stack_allocation[32, DType.float32]()
-    for i in range(32):
-        data_ptr[i] = i
 
-    var layout_8x4 = Layout(IntTuple(8, 4), IntTuple(4, 1))  # 4 x 2
-    var row_major_tensor = LayoutTensor[DType.float32, 8, 4](
-        layout_8x4, data_ptr
-    )
+    var tensor = NewLayoutTensor[8, 4, DType.float32]()
+    tensor.linspace()
+
     # CHECK: ----original matrix----
     # CHECK: 0.0      1.0     2.0     3.0
     # CHECK: 4.0      5.0     6.0     7.0
@@ -53,7 +57,11 @@ fn test_basic_tensor_ops():
     # CHECK: 24.0     25.0    26.0    27.0
     # CHECK: 28.0     29.0    30.0    31.0
     print("----original matrix----")
-    print_raw_major_tensor(row_major_tensor)
+    print_raw_major_tensor(tensor)
+
+    var transposed_tensor = tensor.transpose()
+    print("----transposed matrix----")
+    print_raw_major_tensor(transposed_tensor)
 
     # CHECK: ----tile[ 0 , 0 ]----
     # CHECK: 0.0     1.0
@@ -82,7 +90,7 @@ fn test_basic_tensor_ops():
     for tile_i in range(4):
         for tile_j in range(2):
             print("----tile[", tile_i, ",", tile_j, "]----")
-            var tile_2x2 = row_major_tensor.view[2, 2](tile_i, tile_j)
+            var tile_2x2 = tensor.view[2, 2](tile_i, tile_j)
             print_tile_tensor(tile_2x2)
 
 
