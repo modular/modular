@@ -1977,7 +1977,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // the future.
   if (getToken().is(Token::kw_let)) {
     auto loc = getToken().getLoc();
-    emitWarning(loc, "'let' is being removed, please use 'var' instead")
+    emitError(loc, "'let' is being removed, please use 'var' instead")
         << FixIt::replaceToken(loc, "var");
   }
 
