@@ -175,14 +175,15 @@ public:
   }
 
   void recordProfilingSamples() {
-    MemProfilerEntry::sample(numBytesAllocated.load(), "mem.outstanding");
+    MemProfilerEntry::sample(numBytesAllocated.load(),
+                             StringLiteral("mem.outstanding"));
     if constexpr (kCaptureMalloc) {
       MemProfilerEntry::sample(llvm::sys::Process::GetMallocUsage(),
-                               "mem.malloc_outstanding");
+                               StringLiteral("mem.malloc_outstanding"));
     }
     if constexpr (kCaptureSysMem) {
       MemProfilerEntry::sample(getProcessPhysicalMemUsage(),
-                               "mem.sys_resident");
+                               StringLiteral("mem.sys_resident"));
     }
   }
 
