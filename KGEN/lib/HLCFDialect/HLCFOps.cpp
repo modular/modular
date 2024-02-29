@@ -692,7 +692,8 @@ ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
 
 ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  return ErrorTree(getLoc(), "TODO: implement interpret for elif.");
+  state.transferControlFlowTo(&getElifRegions()[0].front(), {});
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -719,7 +720,26 @@ void ElifYieldOp::getBranchTargets(
 
 ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  return ErrorTree(getLoc(), "TODO: implement interpret for elif yield.");
+  // If the operand is constant and true, transfer control to
+  assert(operands.size() == 1);
+  auto parent = cast<ElifOp>(getOperation()->getParentOp());
+  unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber() - 1;
+  if (auto cond = dyn_cast_if_present<BoolAttr>(operands[0])) {
+    if (cond.getValue()) {
+      state.transferControlFlowTo(&parent.getElifRegions()[myIndex + 1].front(),
+                                  {});
+      return success();
+    }
+    unsigned nextIndex = myIndex + 2;
+    if (nextIndex < parent.getElifRegions().size()) {
+      state.transferControlFlowTo(&parent.getElifRegions()[myIndex + 2].front(),
+                                  {});
+    } else {
+      state.transferControlFlowTo(&parent.getElseRegion().front(), {});
+    }
+    return success();
+  }
+  return ErrorTree(getLoc(), "non-constant condition in elif chain.");
 }
 
 //===----------------------------------------------------------------------===//
