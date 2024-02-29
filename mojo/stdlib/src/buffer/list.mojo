@@ -264,6 +264,19 @@ struct DimList(Sized, Stringable):
         constrained[i >= 0, "index must be positive"]()
         return self.value[i]
 
+    @always_inline("nodebug")
+    fn has_value[i: Int](self) -> Bool:
+        """Returns True if the dimension at the given index has a static value.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            Whether the specified dimension has a static value.
+        """
+        constrained[i >= 0, "index must be positive"]()
+        return self.value[i].__bool__()
+
     @always_inline
     fn _product_impl[i: Int, end: Int](self) -> Dim:
         @parameter
