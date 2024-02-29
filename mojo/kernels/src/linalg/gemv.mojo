@@ -80,7 +80,7 @@ fn gemv[
         )
 
     except e:
-        trap(e)
+        abort(e)
 
 
 fn naive_gemv[

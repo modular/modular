@@ -155,7 +155,7 @@ fn _small_batched_matmul[
                     reduce_dim=0,
                 )
             except e:
-                trap(e)
+                abort(e)
 
     else:
         for batch in range(B):
@@ -533,7 +533,7 @@ fn _batched_matmul_gpu[
             stream=stream,
         )
     except e:
-        trap(e)
+        abort(e)
 
 
 @always_inline
