@@ -761,16 +761,21 @@ struct ConvDirectNHWC[
         ) + f_tile_offset
 
         if self.is_new_c_accum(c_tile_offset):
-            self._init_output_micro_tile[
+            init_register_tile[
                 micro_kernel_height, micro_kernel_width, simd_size
-            ](output_micro_tile)
+            ](output_micro_tile.data)
         else:
-            self._load_output_micro_tile[
+            load_register_tile[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
-                has_residual,
-            ](self.output.data + output_offset, output_micro_tile)
+                partial_load=has_residual,
+            ](
+                output_micro_tile.data,
+                self.output.data + output_offset,
+                self.conv_shape.f,
+                self.conv_shape.f_per_group() % simd_size,
+            )
 
         var filter_ptr: DTypePointer[filter_type] = self.filter.data
 
@@ -819,16 +824,15 @@ struct ConvDirectNHWC[
                     micro_kernel_height,
                     micro_kernel_width,
                     simd_size,
-                    c_fully_cached,
-                    has_residual,
-                    # prefetch offset
-                    4 if not has_neon() else -1,
+                    has_residual and not filter_packed,
+                    prefetch_offset=4,
                 ](
                     input_base_offsets,
                     input_offset,
                     c_tile_size,
+                    self.input.data,
                     filter_ptr,
-                    output_micro_tile,
+                    output_micro_tile.data,
                 )
 
                 # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
@@ -837,12 +841,17 @@ struct ConvDirectNHWC[
                         self.conv_shape.c_per_group() * micro_kernel_f_size
                     )
 
-        self._store_output_micro_tile[
+        store_register_tile[
             micro_kernel_height,
             micro_kernel_width,
             simd_size,
-            has_residual,
-        ](output_micro_tile, self.output.data + output_offset)
+            partial_store=has_residual,
+        ](
+            self.output.data + output_offset,
+            self.conv_shape.f,
+            output_micro_tile.data,
+            self.conv_shape.f_per_group() % simd_size,
+        )
 
         @parameter
         if elementwise_epilogue.__bool__() and last_c_tile.__bool__():
@@ -1020,215 +1029,10 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr.offset(self.conv_shape.f)
 
     @always_inline
-    fn _load_filter_vec[
-        has_residual: Bool, simd_size: Int
-    ](self, filter_ptr: DTypePointer[filter_type], offset: Int) -> SIMD[
-        filter_type, simd_size
-    ]:
-        """Load a simd vector from the filter.
-        There may be residual elements i.e. F - offset < simd_size. Partial
-        simd load instrinc is used if the filter is not packed.  Otherwise,
-        it's safe to load a vector since the filter has been properly padded.
-        """
-        var filter_vec: SIMD[filter_type, simd_size]
-
-        # Partial load if F is not multiple of simd_size.
-        @parameter
-        if has_residual and not filter_packed:
-            var residual = self.conv_shape.f - (
-                self.conv_shape.f // simd_size
-            ) * simd_size
-            # TODO: Follow #20211 to optimize it for NEON.
-            filter_vec = partial_simd_load[simd_size](
-                filter_ptr, 0, residual, 0.0
-            )
-        # It's always safe to load a full vector from packed filter because
-        # the filter is padded to multiple simd_size during pre-packing.
-        else:
-            filter_vec = filter_ptr.simd_load[simd_size](offset)
-
-        return filter_vec
-
-    @always_inline
-    fn _accumulate_default[
-        micro_kernel_height: Int,
-        micro_kernel_width: Int,
-        simd_size: Int,
-        c_fully_cached: Bool,
-        has_residual: Bool,
-        prefetch_offset: Int,
-    ](
-        self,
-        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
-        input_offset: Int,
-        c_tile_size: Int,
-        filter_base: DTypePointer[filter_type],
-        output_micro_tile: NDBuffer[
-            output_type,
-            2,
-            DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        ],
-    ):
-        """Accumulate with register tiling on SIMD ISAs other than NEON.
-        It has been optimized for AVX512 and AVX2.
-        """
-        constrained[not has_neon()]()
-
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
-
-        var offset = input_offset
-        var filter_ptr = filter_base
-
-        for c in range(c_tile_size):
-
-            @parameter
-            if prefetch_offset > 0:
-                # fmt: off
-                var dist = prefetch_offset * micro_kernel_f_size \
-                            if c_fully_cached or c < c_tile_size - prefetch_offset \
-                            else ( \
-                                prefetch_offset + self.conv_shape.c - c_tile_size \
-                            ) * micro_kernel_f_size
-                # fmt: on
-                @unroll
-                for idx in range(micro_kernel_width):
-                    filter_ptr.offset(dist + idx * simd_size).prefetch[
-                        PrefetchOptions()
-                        .for_read()
-                        .high_locality()
-                        .to_data_cache()
-                    ]()
-
-            # micro kernel with register blocking
-            @unroll
-            for i in range(micro_kernel_height):
-                var input_val = self.input.data.offset(
-                    input_base_offsets[i].value + offset
-                ).simd_load[1]()
-                var input_vec = SIMD[input_type, simd_size](input_val)
-
-                @unroll
-                for j in range(micro_kernel_width):
-                    var filter_vec = self._load_filter_vec[
-                        has_residual, simd_size
-                    ](filter_ptr, j * simd_size)
-
-                    # The following should be lifted to registers and show up as
-                    # FMA instructions.
-                    var output_micro_idx = Index(i, j * simd_size)
-                    var output_vec = output_micro_tile.simd_load[simd_size](
-                        output_micro_idx
-                    )
-                    output_vec = fma[output_type, simd_size](
-                        input_vec.cast[output_type](),
-                        filter_vec.cast[output_type](),
-                        output_vec,
-                    )
-                    output_micro_tile.simd_store[simd_size](
-                        output_micro_idx, output_vec
-                    )
-
-            # FRSCf: micro f segments are packed continuously.
-            @parameter
-            if filter_packed:
-                filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-            # RSCF: jump to the next row for the next f segment.
-            else:
-                filter_ptr = filter_ptr.offset(self.conv_shape.f)
-
-            offset += 1
-
-    @always_inline
-    fn _accumulate_neon[
-        micro_kernel_height: Int,
-        micro_kernel_width: Int,
-        simd_size: Int,
-        c_fully_cached: Bool,
-        has_residual: Bool,
-        prefetch_offset: Int,
-    ](
-        self,
-        input_base_offsets: Buffer[DType.int32, micro_kernel_height],
-        input_offset: Int,
-        c_tile_size: Int,
-        filter_base: DTypePointer[filter_type],
-        output_micro_tile: NDBuffer[
-            output_type,
-            2,
-            DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        ],
-    ):
-        """Accumulate with register tiling on NEON architectures."""
-
-        constrained[has_neon()]()
-
-        alias micro_kernel_f_size = micro_kernel_width * simd_size
-
-        @parameter
-        @always_inline
-        fn micro_kernel[num_lanes: Int](offset: Int):
-            var input_vecs = stack_allocation[
-                micro_kernel_height, SIMD[input_type, num_lanes]
-            ]()
-
-            # Load vectors of size num_lanes from input.
-            @unroll
-            for i in range(micro_kernel_height):
-                # input_base_offset + input_offset is the actual offset
-                # for the accumulation.
-                var input_vec = self.input.data.offset(
-                    input_base_offsets[i].value + input_offset + offset
-                ).simd_load[num_lanes]()
-                input_vecs[i] = input_vec
-
-            var filter_ptr: DTypePointer[filter_type]
-
-            @parameter
-            if filter_packed:
-                filter_ptr = filter_base.offset(offset * micro_kernel_f_size)
-            else:
-                filter_ptr = filter_base.offset(offset * self.conv_shape.f)
-
-            @unroll
-            for lane in range(num_lanes):
-
-                @unroll
-                for j in range(micro_kernel_width):
-                    var filter_vec = self._load_filter_vec[
-                        has_residual, simd_size
-                    ](filter_ptr, j * simd_size)
-
-                    @unroll
-                    for i in range(micro_kernel_height):
-                        var input_vec = input_vecs[i]
-                        var output_micro_idx = Index(i, j * simd_size)
-                        var output_vec = output_micro_tile.simd_load[simd_size](
-                            output_micro_idx
-                        )
-                        # Neon can broadcast from an element in simd vector.
-                        output_vec = fma[output_type, simd_size](
-                            input_vec[lane].cast[output_type](),
-                            filter_vec.cast[output_type](),
-                            output_vec,
-                        )
-                        output_micro_tile.simd_store[simd_size](
-                            output_micro_idx, output_vec
-                        )
-
-                @parameter
-                if filter_packed:
-                    filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-                else:
-                    filter_ptr = filter_ptr.offset(self.conv_shape.f)
-
-        tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
-
-    @always_inline
     fn _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
-        c_fully_cached: Bool,
         has_residual: Bool,
         prefetch_offset: Int,
     ](
@@ -1236,44 +1040,31 @@ struct ConvDirectNHWC[
         input_base_offsets: Buffer[DType.int32, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
-        filter_base: DTypePointer[filter_type],
-        output_micro_tile: NDBuffer[
-            output_type,
-            2,
-            DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        ],
+        input: DTypePointer[input_type],
+        filter: DTypePointer[filter_type],
+        output: DTypePointer[output_type],
     ):
-        @parameter
-        if has_neon():
-            self._accumulate_neon[
-                micro_kernel_height,
-                micro_kernel_width,
-                simd_size,
-                c_fully_cached,
-                has_residual,
-                prefetch_offset,
-            ](
-                input_base_offsets,
-                input_offset,
-                c_tile_size,
-                filter_base,
-                output_micro_tile,
-            )
-        else:
-            self._accumulate_default[
-                micro_kernel_height,
-                micro_kernel_width,
-                simd_size,
-                c_fully_cached,
-                has_residual,
-                prefetch_offset,
-            ](
-                input_base_offsets,
-                input_offset,
-                c_tile_size,
-                filter_base,
-                output_micro_tile,
-            )
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        var F = self.output.dim[3]()
+        var filter_stride = micro_kernel_f_size if filter_packed else F
+
+        accumulate[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            prefetch_offset=prefetch_offset,
+            partial_load_b = has_residual and not filter_packed,
+        ](
+            c_tile_size,
+            output,
+            input,
+            input_base_offsets,
+            input_offset,
+            filter,
+            filter_stride,
+            F % simd_size,
+        )
 
     @always_inline
     fn _accumulate[
