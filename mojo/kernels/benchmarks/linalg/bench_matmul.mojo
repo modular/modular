@@ -42,7 +42,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
             try:
                 assert_almost_equal(c[(i, j)], c_ref[(i, j)])
             except e:
-                trap(e)  # this function should raise, blocked by #31795
+                abort(e)  # this function should raise, blocked by #31795
     c_ref_ptr.free()
 
 
