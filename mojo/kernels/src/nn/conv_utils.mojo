@@ -509,6 +509,41 @@ struct ConvInfoStatic:
     var num_groups: Dim
 
     @always_inline
+    fn __init__(
+        pad: DimList,
+        stride: DimList,
+        dilation: DimList,
+        input_c: Dim,
+        filter_c: Dim,
+    ) -> Self:
+        var pad_d = Index(0, 0)
+        var pad_h = Index(0, 0)
+        var pad_w = Index(0, 0)
+
+        if len(pad) == 2:
+            pad_w = Index(pad.at[0](), pad.at[1]())
+        elif len(pad) == 4:
+            pad_h = Index(pad.at[0](), pad.at[1]())
+            pad_w = Index(pad.at[2](), pad.at[3]())
+        elif len(pad) == 6:
+            pad_d = Index(pad.at[0](), pad.at[1]())
+            pad_h = Index(pad.at[2](), pad.at[3]())
+            pad_w = Index(pad.at[4](), pad.at[5]())
+
+        var num_groups = Dim()
+        if input_c.has_value() and filter_c.has_value():
+            num_groups = Dim(input_c.get() // filter_c.get())
+
+        return Self {
+            pad_d: DimList(pad_d[0], pad_d[1]),
+            pad_h: DimList(pad_h[0], pad_h[1]),
+            pad_w: DimList(pad_w[0], pad_w[1]),
+            stride: stride,
+            dilation: dilation,
+            num_groups: num_groups,
+        }
+
+    @always_inline
     fn all_known[rank: Int](self) -> Bool:
         return (
             self.pad_d.all_known[2]()
@@ -658,7 +693,7 @@ fn get_micro_kernel_shape[
                 var min_num_residual = 3 * WO_val * F_val
                 var micro_kernel_height = -1
                 var micro_kernel_width = -1
-                for n in range(2, 3):
+                for n in range(2, 4):
                     var m = (num_avx2_registers - 1) // n - 1
                     var num_residual = WO_val * (F_val % (n * simd_size)) + (
                         WO_val % m
@@ -668,7 +703,7 @@ fn get_micro_kernel_shape[
                         micro_kernel_width = n
                         min_num_residual = num_residual
                 return Index(micro_kernel_height, micro_kernel_width)
-            return Index(6, 2)
+            return Index(4, 3)
 
         return Index(6, 2)
 

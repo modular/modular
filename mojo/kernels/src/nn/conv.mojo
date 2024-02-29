@@ -563,9 +563,14 @@ struct ConvDirectNHWC[
     fn _c_tile_loop[padded: Bool](self, n: Int, g: Int, tile_size: Int):
         """Loop over C tiles."""
 
-        alias apply_static_shape_optimization = self.packed_and_fully_static and padded and conv_attr.num_groups == Dim(
-            1
-        )
+        # TODO: Extend to 1D/3D.
+        # fmt: off
+        alias apply_static_shape_optimization = \
+            self.packed_and_fully_static \
+            and padded \
+            and conv_attr.num_groups == Dim(1) \
+            and input_rank == 4
+        # fmt: on
 
         @always_inline
         @parameter
@@ -2771,6 +2776,72 @@ fn pack_conv_filter_shape[
 
 
 @always_inline
+fn pack_filter_shape[
+    filter_type: DType,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    strides: DimList,
+    dilations: DimList,
+    paddings: DimList,
+    num_groups: Int,
+    single_thread_blocking_override: Bool,
+](filter: NDBuffer) -> StaticIntTuple[filter.rank + 1]:
+    """
+    Compute the shape of packed filter. The packed layout is FRSCf.
+    shape_ref should be allocated with size 5 outside this kernel.
+
+    Returns:
+        The output shape.
+    """
+    alias simd_size = simdwidthof[filter_type]()
+
+    var F = filter.dim[filter.rank - 1]()  # RSCF layout
+
+    debug_assert(
+        F % num_groups == 0,
+        "number of filters F must be divisible by number of groups",
+    )
+    var F_per_group = F // num_groups
+
+    # TODO: extend to 1D/3D.
+    alias conv_attr = ConvInfoStatic {
+        pad_d: DimList(0, 0),  # assuming 2D.
+        pad_h: DimList(paddings.at[0](), paddings.at[1]()),
+        pad_w: DimList(paddings.at[2](), paddings.at[3]()),
+        stride: strides,
+        dilation: dilations,
+        num_groups: Dim(num_groups),
+    }
+
+    # TODO: extend to 1D/3D.
+    alias WO = output_shape.at[2]() if filter.rank == 4 else Dim()
+    alias micro_kernel_shape = get_micro_kernel_shape[
+        WO,
+        output_shape.at[filter.rank - 1](),  # F , NHWC layout
+        conv_attr,
+        simd_size,
+    ]()
+
+    alias micro_kernel_width = micro_kernel_shape[1]
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    # FSCf/FRSCf/FQRSCf layout.
+    var packed_shape = StaticIntTuple[filter.rank + 1]()
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
+    packed_shape[filter.rank] = micro_kernel_f_size
+
+    @always_inline
+    @parameter
+    fn assign[i: Int]():
+        packed_shape[i + 1] = filter.dim[i]()
+
+    unroll[assign, filter.rank - 1]()
+
+    return packed_shape
+
+
+@always_inline
 fn _get_group_filter_base(
     packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
 ) -> DTypePointer[packed_filter.type, packed_filter.address_space]:
@@ -2836,7 +2907,7 @@ fn pack_filter(
 @always_inline
 fn pack_filter[
     simd_size: Int,
-    micro_kernel_f_size: Int,
+    micro_kernel_f_size: Int,  # 64
 ](filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
     """This packs the filter form RSCF to FRSCf.
 
