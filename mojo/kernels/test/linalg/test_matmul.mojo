@@ -218,7 +218,7 @@ fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
         for m in range(64):
             for n in range(64):
                 for k in range(64):
-                    let kernel_type_m = m if mixed else 0
+                    var kernel_type_m = m if mixed else 0
                     errors += test_matmul[
                         False,  # transpose_b
                         bPacked,  # b_packed
@@ -229,7 +229,7 @@ fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
                         saturated=saturated,
                     ](m, n, k, kernel_type_m)
     else:
-        let kernel_type_m1 = M1 if mixed else 0
+        var kernel_type_m1 = M1 if mixed else 0
         errors += test_matmul[
             False,  # transpose_b
             bPacked,  # b_packed
@@ -239,7 +239,7 @@ fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
             DimList.create_unknown[2](),
             saturated=saturated,
         ](M1, N, K, kernel_type_m1)
-        let kernel_type_m2 = M2 if mixed else 0
+        var kernel_type_m2 = M2 if mixed else 0
         errors += test_matmul[
             False,  # transpose_b
             bPacked,  # b_packed
