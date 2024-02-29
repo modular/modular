@@ -9,7 +9,21 @@ add_modular_tool(kgen-reduce
 
   LINK_LIBS PRIVATE
   KGENToolCommon
-  MSupportGlobals
-  MLIRIR
+  DebugInfoToLLVM
+  KGENCompiler
+  KGENElaborator
+  KGENToLLVM
+  KGENTransforms
+  KGENPackage
+  LowerLIT
+
   LLCLRuntimeGlobals
+  MSupportGlobals
+
+  MLIRIR
+  MLIRIndexToLLVM
+  MLIROptLib
+  MLIRParser
+  MLIRSupport
+  MLIRTransforms
 )
