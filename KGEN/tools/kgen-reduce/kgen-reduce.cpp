@@ -14,9 +14,11 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 #include <chrono>
+#include <queue>
 
 using namespace M;
 using namespace KGEN;
@@ -30,10 +32,14 @@ struct IRState {
 };
 } // namespace
 
-static std::string getTempName() {
+static uint64_t getCurTimeMs() {
   using namespace std::chrono;
   auto ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
-  return ("kgen-reduce." + Twine(ms.count())).str();
+  return ms.count();
+}
+
+static std::string getTempName() {
+  return ("kgen-reduce." + Twine(getCurTimeMs())).str();
 }
 
 static ErrorOr<std::unique_ptr<llvm::ToolOutputFile>>
@@ -54,6 +60,21 @@ static ErrorOrSuccess stashFile(ModuleOp module, const Twine &fileName) {
     return err.takeError();
   err.takeValue()->keep();
   return success();
+}
+
+/// HACK: Unkeep a file and mark it for deletion. Access private members of the
+/// type.
+static void unkeep(llvm::ToolOutputFile &file) {
+  struct DirtyHack {
+    struct CleanupInstaller {
+      std::string filename;
+      bool keep;
+    } installer;
+
+    std::optional<llvm::raw_fd_ostream> osHolder;
+    llvm::raw_fd_ostream *os;
+  };
+  ((DirtyHack *)&file)->installer.keep = false;
 }
 
 static ErrorOrSuccess reduceLoop(OwningOpRef<ModuleOp> origModule,
@@ -89,9 +110,15 @@ static ErrorOrSuccess reduceLoop(OwningOpRef<ModuleOp> origModule,
   llvm::errs() << "[kgen-reduce] trimming functions\n";
 
   std::vector<StringAttr> funcNames;
-  for (auto func : origModule->getOps<KGEN::FuncOp>())
+  bool anyKgenFunc = false;
+  for (auto func : origModule->getOps<KGEN::FuncOp>()) {
+    anyKgenFunc = true;
+    // Ignore functions that are already stubbed.
+    if (isa<KGEN::UnreachableOp>(func.getBody()->front()))
+      continue;
     funcNames.push_back(func.getSymNameAttr());
-  if (funcNames.empty()) {
+  }
+  if (!anyKgenFunc) {
     return Error("zero 'kgen.func' operations found, 'kgen-reduce' only works "
                  "on post-elaboration IR right now");
   }
@@ -103,6 +130,38 @@ static ErrorOrSuccess reduceLoop(OwningOpRef<ModuleOp> origModule,
   llvm::errs() << "[kgen-reduce] attempt to stub " << totalNumFuncs
                << " functions\n";
 
+  // Persist the last N successfully reduce reproducers. This is so that if the
+  // tool crashes, is interrupted, or whatever, the user still has access to the
+  // last 10 snapshotted files.
+  constexpr size_t keepCount = 10;
+  std::queue<std::unique_ptr<llvm::ToolOutputFile>> lastNAttempts;
+  uint64_t lastSnapshotTimeMs = getCurTimeMs();
+  // Save a snapshot every 2 seconds to avoid bottlenecking on the filesystem.
+  constexpr uint64_t snapshotDelta = 2000;
+  auto maybeSnapshotModule = [&](ModuleOp module) -> ErrorOrSuccess {
+    uint64_t curTime = getCurTimeMs();
+    if (curTime - lastSnapshotTimeMs < snapshotDelta)
+      return success();
+    lastSnapshotTimeMs = curTime;
+
+    llvm::errs() << "[kgen-reduce] snapshotting (!!) current function\n";
+
+    auto fileOr = getTempFile(module, getTempName());
+    if (fileOr.isError())
+      return fileOr.takeError();
+    auto file = fileOr.takeValue();
+    file->keep();
+    llvm::sys::DontRemoveFileOnSignal(file->getFilename());
+    lastNAttempts.push(std::move(file));
+    // Pop the oldest file off and unkeep it.
+    if (lastNAttempts.size() > keepCount) {
+      auto drop = std::move(lastNAttempts.front());
+      lastNAttempts.pop();
+      unkeep(*drop);
+    }
+    return success();
+  };
+
   // TODO: This is a linear search, which gets faster as more functions are
   // stubbed but it would be even faster to do a bisect search.
   //
@@ -110,13 +169,12 @@ static ErrorOrSuccess reduceLoop(OwningOpRef<ModuleOp> origModule,
   // only the first half and then repeat until repro. Then repeat on remaining
   // functions.
   while (!funcNames.empty()) {
+    IRState nextModule(curModule.ir->clone());
+    if (auto err = maybeSnapshotModule(*nextModule.ir))
+      return err.takeError();
+
     StringAttr toRemove = funcNames.back();
     funcNames.pop_back();
-
-    IRState nextModule(curModule.ir->clone());
-    auto fileOr = getTempFile(*nextModule.ir, getTempName());
-    if (fileOr.isError())
-      return fileOr.takeError();
 
     auto func = nextModule.symtab.lookup<KGEN::FuncOp>(toRemove);
     if (!func)
