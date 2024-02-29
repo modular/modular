@@ -11,6 +11,7 @@ include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFDialect.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
+include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
@@ -480,7 +481,7 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
-    ParentOneOf<["IfOp", "SwitchOp"]>,
+    ParentOneOf<["IfOp", "SwitchOp", "ElifOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
@@ -560,4 +561,80 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// ElifYieldOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
+    ParentOneOf<["ElifOp"]>, 
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "yield operation for elif operations";
+  let description = [{
+    The `hlcf.lazy.yield` operation is a control-flow terminator that 
+    transfers control-flow either to the subsequent region or after the
+     parent `hlcf.elif`.
+
+    Example:
+
+    ```mlir
+    %0 = hlcf.elif -> index {
+      hlcf.elif.yield %arg1 : i1
+    } then {
+      hlcf.yield %arg0 : index
+    } else {
+      hlcf.yield %arg0 : index
+    }
+    ```
+  }];
+  let arguments = (ins I1:$operand);
+  let assemblyFormat = [{
+    attr-dict $operand `:` type($operand)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ElifOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ElifOp : HLCFParentOp<"elif"> {
+  let summary = "elif operation";
+  let description = [{
+    The `hlcf.elif` operation defines N scoped control-flow regions.
+    Control-flow transfers from the operation to the beginning of the first
+    region whose condition is true, or the else block if none are true.
+
+    This operation is a chain of paired regions. The even indexed regions
+    represent condition regions and contain a boolean valued expression
+    terminated by a `hlcf.elif.yield` operation that will transfer control
+    either to the subsequent region (if true) or the subsequent even indexed
+    on false.
+
+    The odd indexed regions represent value regions. These regions are 
+    terminated by a `hlcf.yield` operation whose result type matches that of 
+    the parent elif operation. The `hlcf.yield` operations transfer control 
+    to after the `hlcf.elif` operation.
+
+    Example:
+
+    ```mlir
+    %0 = hlcf.elif -> index {
+      hlcf.elif.yield %arg1 : i1
+    } then {
+      hlcf.yield %arg0 : index
+    } else {
+      hlcf.yield %arg0 : index
+    }
+    ```
+  }];
+
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$elseRegion, 
+                        VariadicRegion<SizedRegion<1>>:$elifRegions);
+
+  let assemblyFormat = [{
+    (`->` type($results)^)? custom<Elif>($elifRegions, $elseRegion) attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
 #endif // HLCFOPS_TD

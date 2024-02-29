@@ -479,7 +479,9 @@ ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-bool YieldOp::isParentNode(Operation *op) { return isa<IfOp, SwitchOp>(op); }
+bool YieldOp::isParentNode(Operation *op) {
+  return isa<IfOp, SwitchOp, ElifOp>(op);
+}
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
                                SmallVectorImpl<ControlFlowTarget> &targets) {
@@ -620,6 +622,104 @@ LogicalResult ForYieldOp::verify() {
   }
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ElifOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseElif(OpAsmParser &parser,
+          SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
+          Region &elseRegion) {
+  do {
+    // Parse condition region.
+    if (parser
+            .parseRegion(
+                *elifRegionsRegions.emplace_back(std::make_unique<Region>()))
+            .failed())
+      return failure();
+
+    // Parse result region.
+    if (failed(parser.parseKeyword("then")))
+      return failure();
+    if (failed(parser.parseRegion(
+            *elifRegionsRegions.emplace_back(std::make_unique<Region>()))))
+      return failure();
+  } while (failed(parser.parseOptionalKeyword("else")));
+  if (failed(parser.parseRegion(elseRegion)))
+    return failure();
+  return success();
+}
+
+static void printElif(OpAsmPrinter &printer, Operation *elifOp,
+                      MutableArrayRef<Region> conditionalRegions,
+                      Region &elseRegion) {
+  unsigned i = 0;
+  assert(conditionalRegions.size() % 2 == 0);
+  unsigned conditionCount = conditionalRegions.size() / 2;
+  for (unsigned r = 0; r < conditionCount; r++) {
+    printer.printRegion(conditionalRegions[i++]);
+    printer << " then ";
+    printer.printRegion(conditionalRegions[i++]);
+    printer << " ";
+  }
+  printer << "else ";
+  printer.printRegion(elseRegion);
+}
+
+LogicalResult ElifOp::verify() {
+  if (getElifRegions().size() % 2 != 0) {
+    return emitOpError(
+        "operator elif conditions do not match the number of elif regions.");
+  }
+  return success();
+}
+
+void ElifOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == 0);
+  targets.push_back(std::optional<unsigned>(0));
+}
+
+ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
+  if (!target)
+    return getResults();
+  assert(*target >= 0 && *target < getNumRegions());
+  return getRegion(target.value()).getArguments();
+}
+
+ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  return ErrorTree(getLoc(), "TODO: implement interpret for elif.");
+}
+
+//===----------------------------------------------------------------------===//
+// ElifYieldOp
+//===----------------------------------------------------------------------===//
+
+bool ElifYieldOp::isParentNode(Operation *op) { return isa<ElifOp>(op); }
+
+void ElifYieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == 1);
+  int myIndex = getOperation()->getParentRegion()->getRegionNumber() - 1;
+  int nextValueRegion = myIndex + 1;
+  int nextConditionRegionOrElse = nextValueRegion + 1;
+  if (auto constantResult = dyn_cast_or_null<BoolAttr>(operands.front())) {
+    targets.emplace_back(constantResult.getValue() ? nextValueRegion
+                                                   : nextConditionRegionOrElse);
+    return;
+  }
+  targets.emplace_back(nextValueRegion);
+  targets.emplace_back(nextConditionRegionOrElse);
+}
+
+ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  return ErrorTree(getLoc(), "TODO: implement interpret for elif yield.");
 }
 
 //===----------------------------------------------------------------------===//
