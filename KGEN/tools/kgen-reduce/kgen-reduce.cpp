@@ -5,10 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Helpers.h"
+#include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "PreOrderRegionIterator.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -27,10 +29,9 @@ using namespace KGEN;
 namespace {
 /// This struct tracks the current IR state of the reducer.
 struct IRState {
-  IRState(OwningOpRef<ModuleOp> ir) : ir(std::move(ir)), symtab(*this->ir) {}
+  IRState(OwningOpRef<ModuleOp> ir) : ir(std::move(ir)) {}
 
   OwningOpRef<ModuleOp> ir;
-  SymbolTable symtab;
 };
 
 /// This is the reducer class that keeps track of all state during reduction.
@@ -51,21 +52,28 @@ struct Reducer {
       llvm::cl::desc("delta between snapshots in millseconds"),
       llvm::cl::init(2000)};
 
+  cl::opt<unsigned> startAt{"start-at",
+                            llvm::cl::desc("the reducer phase to start at"),
+                            llvm::cl::init(0)};
+
   Reducer(MLIRContext *ctx) : ctx(ctx), reproPm(ctx), dcePm(ctx) {
     dcePm.addPass(createEliminateDeadSymbols());
   }
 
   ErrorOrSuccess run();
+  ErrorOrSuccess reduceFunctions(IRState &curState);
+  ErrorOrSuccess reduceRegions(IRState &curState);
+  ErrorOrSuccess tryDCE(IRState &curState);
 
   /// Run the pass pipeline on a clone of the module and return the diagnostics
   /// if any were emitted.
   std::optional<std::string> attemptRepro(ModuleOp ir);
+  /// Return true if the supplied module repros the error.
+  bool doesRepro(ModuleOp ir);
 
   /// Maybe save a snapshot of the current module if enough time has passed
   /// since the last.
   ErrorOrSuccess maybeSnapshot(ModuleOp ir);
-
-  ErrorOrSuccess reduceFunctions(IRState &curState);
 
   /// The MLIR context.
   MLIRContext *ctx;
@@ -116,17 +124,29 @@ ErrorOrSuccess Reducer::run() {
     return Error("original input IR does not fail the provided pipeline");
   expectedDiag = std::move(*initDiag);
 
-  llvm::errs() << "[kgen-reduce] expected diagnostic:\n"
-               << expectedDiag << "\n\n";
+  log << "[kgen-reduce] expected diagnostic:\n" << expectedDiag << "\n\n";
 
   IRState curModule(std::move(inputModule));
   if (auto err = stashFile(*curModule.ir, "kgen-reduce.base"))
     return err;
 
-  if (auto err = reduceFunctions(curModule))
-    return err;
-  if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
-    return err;
+  if (startAt <= 0) {
+    if (auto err = reduceFunctions(curModule))
+      return err;
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
+      return err;
+    if (auto err = tryDCE(curModule))
+      return err;
+  }
+
+  if (startAt <= 1) {
+    if (auto err = reduceRegions(curModule))
+      return err;
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions"))
+      return err;
+    if (auto err = tryDCE(curModule))
+      return err;
+  }
 
   return success();
 }
@@ -142,6 +162,21 @@ std::optional<std::string> Reducer::attemptRepro(ModuleOp ir) {
   return std::move(diag);
 }
 
+bool Reducer::doesRepro(ModuleOp ir) {
+  std::optional<std::string> nextDiag = attemptRepro(ir);
+  if (nextDiag && nextDiag == expectedDiag) {
+    log << "[kgen-reduce] same failure 🛑\n\n";
+    return true;
+  }
+
+  if (!nextDiag) {
+    log << "[kgen-reduce] succeeded 🟢\n\n";
+  } else {
+    log << "[kgen-reduce] different failure 🟠:\n" << *nextDiag << "\n\n";
+  }
+  return false;
+}
+
 ErrorOrSuccess Reducer::maybeSnapshot(ModuleOp module) {
   uint64_t curTime = getCurTimeMs();
   if (curTime - lastSnapshotTime < snapshotDelta.getValue())
@@ -153,8 +188,7 @@ ErrorOrSuccess Reducer::maybeSnapshot(ModuleOp module) {
     return fileOr.takeError();
   auto file = fileOr.takeValue();
 
-  llvm::errs() << "[kgen-reduce] snapshotting IR to " << file->getFilename()
-               << "\n";
+  log << "[kgen-reduce] snapshotting IR to " << file->getFilename() << "\n";
 
   file->keep();
   llvm::sys::DontRemoveFileOnSignal(file->getFilename());
@@ -176,7 +210,7 @@ ErrorOrSuccess Reducer::reduceFunctions(IRState &curState) {
   for (auto func : curState.ir->getOps<KGEN::FuncOp>()) {
     anyKgenFunc = true;
     // Ignore functions that are already stubbed.
-    if (isa<KGEN::UnreachableOp>(func.getBody()->front()))
+    if (isStubbed(func.getBodyRegion()))
       continue;
     funcs.push_back(func);
   }
@@ -187,8 +221,7 @@ ErrorOrSuccess Reducer::reduceFunctions(IRState &curState) {
 
   size_t funcNum = 0;
   const size_t totalNumFuncs = funcs.size();
-  llvm::errs() << "[kgen-reduce] attempt to stub " << totalNumFuncs
-               << " functions\n";
+  log << "[kgen-reduce] attempt to stub " << totalNumFuncs << " functions\n";
 
   // TODO: This is a linear search, which gets faster as more functions are
   // stubbed but it would be even faster to do a bisect search.
@@ -203,38 +236,84 @@ ErrorOrSuccess Reducer::reduceFunctions(IRState &curState) {
     KGEN::FuncOp func = funcs.back();
     funcs.pop_back();
 
-    llvm::errs() << "[stubbing function " << (funcNum++) << "/" << totalNumFuncs
-                 << "] " << func.getSymName() << "\n";
-
-    // Remove the body of the function and store it here.
-    Region owner;
-    owner.takeBody(func.getBodyRegion());
-
-    // Create a new block with the same argument kinds.
-    func.getBodyRegion().push_back(new Block);
-    for (BlockArgument arg : owner.getArguments())
-      func.getBody()->addArgument(arg.getType(), arg.getLoc());
+    log << "[stubbing function " << (funcNum++) << "/" << totalNumFuncs << "] "
+        << func.getSymName() << "\n";
 
     // Stub the function with an unreachable.
-    OpBuilder b(func.getBody(), func.getBody()->begin());
-    b.create<KGEN::UnreachableOp>(func.getLoc());
+    Region owner;
+    stubRegion(func.getBodyRegion(), owner);
 
-    std::optional<std::string> nextDiag = attemptRepro(*curState.ir);
-    if (nextDiag && nextDiag == expectedDiag) {
-      llvm::errs() << "[kgen-reduce] same failure 🛑\n\n";
+    if (doesRepro(*curState.ir))
       continue;
-    }
-
-    if (!nextDiag) {
-      llvm::errs() << "[kgen-reduce] succeeded 🟢\n\n";
-    } else {
-      llvm::errs() << "[kgen-reduce] different failure 🟠:\n"
-                   << *nextDiag << "\n\n";
-    }
 
     // Revert the transformation.
     func.getBodyRegion().takeBody(owner);
   }
+
+  return success();
+}
+
+ErrorOrSuccess Reducer::reduceRegions(IRState &curState) {
+  std::vector<KGEN::FuncOp> funcs;
+  for (auto func : curState.ir->getOps<KGEN::FuncOp>()) {
+    // Ignore stubbed functions.
+    if (isStubbed(func.getBodyRegion()))
+      continue;
+    funcs.push_back(func);
+  }
+
+  size_t funcNum = 0;
+  const size_t totalNumFuncs = funcs.size();
+  log << "[kgen-reduce] reducing regions in " << totalNumFuncs
+      << " functions\n";
+
+  while (!funcs.empty()) {
+    KGEN::FuncOp func = funcs.back();
+    funcs.pop_back();
+
+    log << "[reducing regions " << (funcNum++) << "/" << totalNumFuncs << "] "
+        << func.getSymName();
+
+    size_t regionNum = 0;
+    auto it = PreOrderRegionIterator::begin(func);
+    auto end = PreOrderRegionIterator::end(func);
+    for (; it != end; ++it) {
+      Region &region = *it;
+
+      // Skip the region if we don't understand its semantics.
+      if (!isa<HLCF::ControlFlowNode>(region.getParentOp()))
+        continue;
+
+      if (auto err = maybeSnapshot(*curState.ir))
+        return err;
+
+      log << "[region #" << regionNum++ << "]\n";
+
+      Region owner;
+      stubRegion(region, owner);
+
+      if (doesRepro(*curState.ir))
+        continue;
+      region.takeBody(owner);
+    }
+  }
+
+  return success();
+}
+
+ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
+  // Clone the module and attempt to run DCE.
+  IRState nextState(curState.ir->clone());
+  if (failed(dcePm.run(*nextState.ir)))
+    return Error("DCE failed");
+
+  // If the failure still reproduces after running DCE, swap the module.
+  if (doesRepro(*nextState.ir)) {
+    log << "[kgen-reduce] fails with DCE\n";
+    curState.ir = std::move(nextState.ir);
+    return success();
+  }
+  log << "[kgen-reduce] does not fail with DCE\n";
 
   return success();
 }
