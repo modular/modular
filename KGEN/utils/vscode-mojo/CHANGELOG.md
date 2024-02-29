@@ -1,6 +1,16 @@
 # Change Log
 
-## Next version
+## Current version
+
+### Fixed
+
+- Debugging of dangling Mojo files that don't belong to any mounted workspace
+  folders is now supported. The extension will look for a suitable Mojo SDK in
+  the User-level settings or in the MODULAR_HOME environment variable. Also, if
+  only one workspace folder is mounted on VSCode with a Mojo SDK specified in
+  its settings, this SDK might be reused for such dangling Mojo files.
+
+## 24.1
 
 ### Added
 

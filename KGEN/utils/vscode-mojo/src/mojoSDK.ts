@@ -16,6 +16,7 @@ import {LoggingService} from './logging';
 import * as config from './utils/config';
 import {substituteVariables} from './utils/vscodeVariables';
 import {isNightlyExtension} from './utils/buildInfo';
+import {WorkspaceFolder} from 'vscode-languageclient';
 
 /**
  * This class represents a subset of the Modular config object used by extension
@@ -115,9 +116,9 @@ export class MOJOSDKConfig {
  */
 export class MOJOSDK {
   /**
-   * The resolved Modular config for a set of workspaces.
+   * Cache for the `resolveConfig` method.
    */
-  private workspaceConfigs: Map<string, MOJOSDKConfig> = new Map();
+  private resolveConfigCache: Map<string, MOJOSDKConfig> = new Map();
 
   /**
    * A service that can be used to log message in the Mojo output channel.
@@ -224,54 +225,51 @@ export class MOJOSDK {
   /**
    * Resolve the Modular config for the given context.
    *
-   * - If `context` is a string, then the resolver will use it as the SDK path.
-   * - If `context` is a WorkspaceFolder, then the resolver will look for the
-   * mojo.modularHomePath the WorkspaceFolder's settings and use it as the SDK
-   * path. In case of failures, it'll resort to the global settings for the IDE.
-   * - If `context` is undefined, then the resolver will look at the global
-   * settings of the IDE.
-   * - If the SDK was not found in the previous checks, then the resolver will
-   * look for MODULAR_HOME in the environment of the IDE process.
+   * - If `context` contains `sdkPath`, then the resolver will use it as the SDK
+   * path.
+   * - Otherwise, the resolver will look for the SDK path based on the
+   * `mojo.modularHomePath` setting. This doesn't have a consistent behavior,
+   * though:
+   *   - If `context.workspaceFolder` is provided, then VSCode will search for
+   * the setting at the workspace-level, and then at the user-level as fallback.
+   *   - If `context.workspaceFolder` is not provided and there's only one
+   * workspace mounted, then VSCode will search for the setting in that
+   * workspace, and then at user-level as fallback.
+   *   - If `context.workspaceFolder` is not provided and there's 0 or more than
+   * one workspace mounted, then VSCode will search for the setting only at the
+   * user-level.
+   * - If the config is not yet found, then the resolver will try to use the
+   * MODULAR_HOME environment variable.
    *
-   * @param context The current workspace folder if its type is
-   *     vscode.WorkspaceFolder, or the Mojo SDK path if its type is string, or
-   *     undefined.
    * @param promptSDKInstall Whether to prompt the user to install the SDK if it
    *     is missing.
    */
-  public async resolveConfig(context: vscode.WorkspaceFolder|string|
-                             undefined): Promise<MOJOSDKConfig|undefined> {
-    let key = "";
-    if (typeof context === "string") {
-      key = context;
-    } else if (context) {
-      key = context.uri.fsPath;
-    }
-
-    let mojoConfig = this.workspaceConfigs.get(key);
+  public async resolveConfig(context: {
+    workspaceFolder?: vscode.WorkspaceFolder,
+    sdkPath?: string
+  }): Promise<MOJOSDKConfig|undefined> {
+    const key = JSON.stringify({
+      workspaceFolder : context.workspaceFolder?.uri.fsPath,
+      sdkPath : context.sdkPath
+    });
+    let mojoConfig = this.resolveConfigCache.get(key);
     if (mojoConfig)
       return mojoConfig;
 
-    let modularPath: string|undefined;
-
-    // Check to see if a path was specified explicitly.
-    if (typeof (context) == "string") {
-      modularPath = context;
-
-      // Check to see if a path was specified in the config.
-    } else {
-      modularPath = await this.tryGetModularHomePathFromConfig(context);
-    }
+    let modularPath: string|undefined =
+        context.sdkPath ||
+        await this.tryGetModularHomePathFromConfig(context.workspaceFolder);
 
     // Otherwise, check to see if the environment variable is set.
-    if (!modularPath) {
-      modularPath = process.env.MODULAR_HOME;
-    } else {
+    if (modularPath) {
       this.loggingService.logInfo("MODULAR_HOME found in VS Code settings.");
-    }
+    } else if (process.env.MODULAR_HOME) {
+      modularPath = process.env.MODULAR_HOME;
+      this.loggingService.logInfo(
+          "MODULAR_HOME found as an environment variable.");
 
-    // If we still don't have a path, prompt the user to install the SDK.
-    if (!modularPath) {
+      // If we still don't have a path, prompt the user to install the SDK.
+    } else {
       this.loggingService.logInfo("MODULAR_HOME not found.");
       this.promptInstallSDK();
       return undefined;
@@ -329,8 +327,8 @@ export class MOJOSDK {
     // Now that we have a resolved SDK, warn if it's out of date.
     await this.warnIfSDKOutOfDate(modularPath, mojoConfig.mojoDriverPath);
 
-    // Cache the config for the workspace.
-    this.workspaceConfigs.set(key, mojoConfig);
+    // Cache the config.
+    this.resolveConfigCache.set(key, mojoConfig);
     return mojoConfig;
   }
 

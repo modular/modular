@@ -20,7 +20,8 @@ export function registerFormatter(loggingService: LoggingService,
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      const mojoConfig = await mojoSDK.resolveConfig(workspaceFolder);
+      const mojoConfig =
+          await mojoSDK.resolveConfig({workspaceFolder : workspaceFolder});
       if (!mojoConfig)
         return [];
 

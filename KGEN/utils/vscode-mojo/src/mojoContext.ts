@@ -168,7 +168,8 @@ export class MOJOContext extends DisposableContext {
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    let mojoConfig = await this.sdk.resolveConfig(workspaceFolder);
+    let mojoConfig =
+        await this.sdk.resolveConfig({workspaceFolder : workspaceFolder});
     if (!mojoConfig)
       return [ undefined, "" ];
 

@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 
 import {MOJOContext} from '../mojoContext';
+import {MOJOSDKConfig} from '../mojoSDK';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
@@ -44,6 +45,26 @@ type MojoDebugConfiguration = {
 const DEBUG_TYPE: string = "mojo-lldb";
 
 /**
+ * Find a suitable SDK config for a set of debug session settings. Some debug
+ * sessions have a workspace folder and other don't, in which case the mojoFile,
+ * if it's a part of the config, is used to find a workspace folder.
+ */
+async function resolveSDKConfigForDebugSession(
+    context: MOJOContext, configuration: MojoDebugConfiguration,
+    workspaceFolder
+    ?: vscode.WorkspaceFolder): Promise<MOJOSDKConfig|undefined> {
+  let resolvedWorkspace = workspaceFolder;
+  if (!workspaceFolder && configuration.mojoFile) {
+    resolvedWorkspace = await vscode.workspace.getWorkspaceFolder(
+        vscode.Uri.file(configuration.mojoFile));
+  }
+  return await context.sdk.resolveConfig({
+    sdkPath : configuration.modularHomePath,
+    workspaceFolder : resolvedWorkspace
+  });
+}
+
+/**
  * This class defines a factory used to find the lldb-vscode binary to use
  * depending on the session configuration.
  */
@@ -57,11 +78,10 @@ class MojoDebugAdapterDescriptorFactory implements
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|undefined> {
-    let config = await this.context.sdk.resolveConfig(
-        session.configuration.modularHomePath || session.workspaceFolder ||
-        session.configuration.mojoFile);
-    // We don't need to show error messages here because `resolveConfig` does
-    // that.
+    let config = await resolveSDKConfigForDebugSession(
+        this.context, session.configuration, session.workspaceFolder);
+    // We don't need to show error messages here because
+    // `resolveSDKConfigForDebugSession` does that.
     if (!config)
       return undefined;
     return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath,
@@ -86,11 +106,10 @@ class MojoDebugConfigurationResolver implements
           Promise<undefined|vscode.DebugConfiguration> {
     // Load the MojoLLDB plugin. The SDK must be present because otherwise we
     // can't get access to the debug adapter.
-    let config = await this.context.sdk.resolveConfig(
-        debugConfiguration.modularHomePath || folder ||
-        debugConfiguration.mojoFile);
-    // We don't need to show error messages here because `resolveConfig` does
-    // that.
+    let config = await resolveSDKConfigForDebugSession(
+        this.context, debugConfiguration, folder);
+    // We don't need to show error messages here because
+    // `resolveSDKConfigForDebugSession` does that.
     if (!config)
       return undefined;
 
