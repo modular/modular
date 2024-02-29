@@ -19,7 +19,7 @@ struct IntDelegate(ElementDelegate):
         if a.isa[Int]() and b.isa[Int]():
             return a.get[Int]()[] == b.get[Int]()[]
         else:
-            trap("Unexpected data type.")
+            abort("Unexpected data type.")
             return False
 
     @always_inline
@@ -28,7 +28,7 @@ struct IntDelegate(ElementDelegate):
         if a.isa[Int]():
             return a.get[Int]()[]
         else:
-            trap("Unexpected data type.")
+            abort("Unexpected data type.")
             return "#"
 
 
@@ -221,7 +221,7 @@ fn apply_zip3[
 
 fn min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
-        trap("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
+        abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
         return math.min(int(a), int(b))
     return apply_zip[min](a, b)
@@ -229,7 +229,7 @@ fn min(a: IntTuple, b: IntTuple) -> IntTuple:
 
 fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     if len(a) != len(b):
-        trap("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
+        abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
         return int(a) * int(b)
     var r: Int = 0
@@ -270,7 +270,7 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
     if is_tuple(a):
         if is_tuple(init):  # tuple tuple
             if len(a) != len(init):
-                trap("len(a) != len(init)")
+                abort("len(a) != len(init)")
 
             return apply_zip[prefix_product](a, init)
         else:  # tuple "int"
@@ -282,7 +282,7 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
             return r
     else:
         if is_tuple(init):  # "int" tuple
-            trap("'int' tuple not allowed")  # Error
+            abort("'int' tuple not allowed")  # Error
             return IntTuple()
         else:  # "int" "int"
             return init
@@ -292,7 +292,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
             if len(a) != len(b):
-                trap(
+                abort(
                     "Tuple sizes don't match: "
                     + str(len(a))
                     + " != "
@@ -314,7 +314,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             var vb = int(b)
 
             if not (va % vb == 0 or vb % va == 0):
-                trap("Incompatible shape values: " + str(va) + " " + str(vb))
+                abort("Incompatible shape values: " + str(va) + " " + str(vb))
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
@@ -329,16 +329,16 @@ fn idx2crd(
     if is_tuple(idx):
         if is_tuple(shape):  # tuple tuple tuple
             if len(idx) != len(shape) or len(idx) != len(stride):
-                trap("input shapes mismatch")
+                abort("input shapes mismatch")
 
             return apply_zip3[idx2crd](idx, shape, stride)
         else:  # tuple "int" "int"
-            trap("Illegal inputs")  # Error
+            abort("Illegal inputs")  # Error
             return IntTuple()
     else:
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):
-                trap("input shapes mismatch")
+                abort("input shapes mismatch")
 
             @parameter
             fn idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
@@ -359,20 +359,20 @@ fn crd2idx(
     if is_tuple(crd):
         if is_tuple(shape):  # tuple tuple tuple
             if len(crd) != len(shape) or len(crd) != len(stride):
-                trap("Shape mismatch")
+                abort("Shape mismatch")
             var r: Int = 0
             for z in zip3(crd, shape, stride):
                 r += crd2idx(z[0], z[1], z[2])
             return r
         else:  # tuple "int" "int"
-            trap("Illegal input types")
+            abort("Illegal input types")
             return 0
     else:
         var int_crd: Int = 0 if len(crd) == 0 else int(crd)
 
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):
-                trap("Can't compute idx, shape != stride")
+                abort("Can't compute idx, shape != stride")
             var result: Int = 0
             for i in range(len(shape) - 1):
                 result += crd2idx(

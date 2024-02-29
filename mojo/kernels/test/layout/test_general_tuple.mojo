@@ -27,7 +27,7 @@ struct GeneralDelegate(ElementDelegate):
                 return a.get[Float32]()[] == b.get[Float32]()[]
             elif a.isa[String]() and b.isa[String]():
                 return a.get[String]()[] == b.get[String]()[]
-        trap("Unexpected data type.")
+        abort("Unexpected data type.")
         return False
 
     @always_inline
@@ -41,7 +41,7 @@ struct GeneralDelegate(ElementDelegate):
                 return v.get[Float32]()[]
             if v.isa[String]():
                 return v.get[String]()[]
-        trap("Unexpected data type.")
+        abort("Unexpected data type.")
         return "#"
 
 

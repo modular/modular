@@ -24,7 +24,7 @@ struct StaticLayout[size: Int = 2]:
     @always_inline
     fn __init__(layout: Layout) -> Self:
         if len(layout.shape) != size or len(layout.stride) != size:
-            trap("Unsupported Layout dimensions.")
+            abort("Unsupported Layout dimensions.")
 
         var shape = StaticIntTuple[size]()
         var stride = StaticIntTuple[size]()

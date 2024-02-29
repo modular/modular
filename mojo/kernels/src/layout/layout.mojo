@@ -218,7 +218,7 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
         var in_bound = current_idx <= shape * stride
         if not in_bound:
-            trap("Complement out of bounds.")
+            abort("Complement out of bounds.")
 
         result_shape.append(stride // current_idx)
         result_stride.append(current_idx)
@@ -303,7 +303,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 fn print_layout(layout: Layout):
     if layout.rank() != 2:
-        trap("print_layout only supports 2D layouts")
+        abort("print_layout only supports 2D layouts")
 
     var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
     var delim = "+-----------------------"

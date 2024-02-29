@@ -116,7 +116,7 @@ struct DynamicTupleBase[
         var idx = len(self) + _idx if _idx < 0 else _idx
 
         if idx < 0 or idx >= len(self._elements):
-            trap("Index out of bounds.")
+            abort("Index out of bounds.")
         return self._elements[idx]
 
     @always_inline
@@ -145,7 +145,7 @@ struct DynamicTupleBase[
         var idx = len(self) + _idx if _idx < 0 else _idx
 
         if idx < 0 or idx >= len(self._elements):
-            trap("Index out of bounds.")
+            abort("Index out of bounds.")
         self._elements[idx] = val
 
     @always_inline
@@ -314,7 +314,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
         if self.is_value():
             if idx != 0:
-                trap("Index should be 0 for value items.")
+                abort("Index should be 0 for value items.")
             return self.value()
 
         # FIXME: we should be able to return Self(self.tuple()[idx])
@@ -325,7 +325,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     @always_inline
     fn __getitem__(self, span: Slice) -> Self:
         if self.is_value():
-            trap("Can't slice a value.")
+            abort("Can't slice a value.")
 
         var r = Self()
         r._value = self.tuple()[span]
@@ -337,7 +337,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
         if self.is_value() and val.is_value():
             if idx != 0:
-                trap("Index should be 0 for value items.")
+                abort("Index should be 0 for value items.")
 
             self._value = val.value()
         else:
