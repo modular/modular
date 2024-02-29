@@ -35,6 +35,7 @@ from NN.GatherScatter import gather as _gather
 from NN.GatherScatter import gather_shape
 
 from utils._annotations import *
+from collections import Optional
 
 alias MAX_BENEFIT = 1000
 
@@ -107,7 +108,7 @@ fn transpose[
         new_shape[i] = x.shape[dim]
         new_stride[i] = x.strides[dim]
 
-    unroll[body, x.static_rank]()
+    unroll[body, x.static_rank.value()]()
 
     return Tensor[x.type, x.same_rank_param(), out_static_strides](
         x.data, new_shape, new_stride, x.refcount()
@@ -195,12 +196,14 @@ fn param_expression_shape_test(
 ) -> Tensor[
     input1.type,
     DimList.create_unknown[
-        multiparam_user(input1.static_rank, input2.static_rank)
+        multiparam_user(input1.static_rank.value(), input2.static_rank.value())
     ](),
 ]:
     var shape = IntList[
         DimList.create_unknown[
-            multiparam_user(input1.static_rank, input2.static_rank)
+            multiparam_user(
+                input1.static_rank.value(), input2.static_rank.value()
+            )
         ]()
     ](3, 2, 1, 3, 2)
     var output = empty_tensor[input1.type](shape)
@@ -226,7 +229,7 @@ fn view_like_custom_op_target[
         new_shape[i] = x.shape[i] * y.shape[i]
         new_stride[i] = 0
 
-    unroll[body, x.static_rank]()
+    unroll[body, x.static_rank.value()]()
 
     var strides = IntList[x.static_strides](x.strides)
 
@@ -269,8 +272,6 @@ fn broadcast[
 
 
 fn gather_rank(input_rank: Int, indices_rank: Int) -> Int:
-    if input_rank == -1 or indices_rank == -1:
-        return 0
     return input_rank + indices_rank - 1
 
 
@@ -287,20 +288,24 @@ fn gather[
 ) raises -> Tensor[
     input.type,
     DimList.create_unknown[
-        gather_rank(input.static_rank, indices.static_rank)
+        gather_rank(input.static_rank.value(), indices.static_rank.value())
     ](),
 ]:
     constrained[
-        input.has_static_rank() and indices.has_static_rank(),
+        input.static_rank.__bool__() and indices.static_rank.__bool__(),
         "gather kernel does not support dynamic rank inputs",
     ]()
-    var input_buf = input.to_buffer[input.static_rank]().make_dims_unknown()
+    var input_buf = input.to_buffer[
+        input.static_rank.value()
+    ]().make_dims_unknown()
     var indices_buf = indices.to_buffer[
-        indices.static_rank
+        indices.static_rank.value()
     ]().make_dims_unknown()
     var axis_buf = axis.to_buffer[1]().make_dims_unknown()
 
-    alias out_rank = gather_rank(input.static_rank, indices.static_rank)
+    alias out_rank = gather_rank(
+        input.static_rank.value(), indices.static_rank.value()
+    )
     var out_shape = gather_shape[out_rank](input_buf, indices_buf, axis_buf)
 
     @__copy_capture(indices_buf)
@@ -310,7 +315,7 @@ fn gather[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[indices.type, width]:
         return indices_buf.simd_load[width](
-            rebind[StaticIntTuple[indices.static_rank]](coords)
+            rebind[StaticIntTuple[indices.static_rank.value()]](coords)
         )
 
     var output = empty_tensor[input.type](
@@ -318,7 +323,9 @@ fn gather[
             DimList.create_unknown[
                 # cannot use out_rank because then output type does not match return type
                 # kgen cannot see that the values are equivalent
-                gather_rank(input.static_rank, indices.static_rank)
+                gather_rank(
+                    input.static_rank.value(), indices.static_rank.value()
+                )
             ]()
         ](out_shape)
     )
@@ -332,7 +339,7 @@ fn gather[
         width: Int, rank: Int
     ](coords: StaticIntTuple[rank]) capturing -> SIMD[input.type, width]:
         return input.simd_load[width](
-            rebind[StaticIntTuple[input.static_rank]](coords)
+            rebind[StaticIntTuple[input.static_rank.value()]](coords)
         )
 
     @parameter
@@ -342,7 +349,9 @@ fn gather[
     ](
         coords: StaticIntTuple[rank], val: SIMD[output.type, width]
     ) capturing -> None:
-        output.store(rebind[StaticIntTuple[output.static_rank]](coords), val)
+        output.store(
+            rebind[StaticIntTuple[output.static_rank.value()]](coords), val
+        )
 
     _gather[
         input.type,
@@ -354,7 +363,7 @@ fn gather[
         # target=target,
         # single_thread_blocking_override=single_thread_blocking_override,
     ](
-        Axis(axis_buf[0], input.static_rank),
+        Axis(axis_buf[0], input.static_rank.value()),
         input.shape.to_static_tuple(),
         indices.shape.to_static_tuple(),
         output.shape.to_static_tuple(),
@@ -889,7 +898,7 @@ fn test_static_shape(
         if out_shape.shape_idx_statically_known[idx]():
             print(idx)
 
-    unroll[print_if_static, x.static_rank]()
+    unroll[print_if_static, x.static_rank.value()]()
 
     return out
 
@@ -902,8 +911,8 @@ fn test_static_shape(
 @always_inline
 fn _get_reduce_output_shape(
     input: Tensor, axis: Tensor
-) -> IntList[DimList.create_unknown[input.static_rank]()]:
-    var output = IntList[DimList.create_unknown[input.static_rank]()](
+) -> IntList[DimList.create_unknown[input.static_rank.value()]()]:
+    var output = IntList[DimList.create_unknown[input.static_rank.value()]()](
         input.shape
     )
     output[int(axis.simd_load[1](IntList(0)))] = 1
@@ -921,7 +930,7 @@ fn _reduce_wrapper[
     target: StringLiteral = "cpu",
 ](input: Tensor, inout output: Tensor, init: Scalar[type], ax: Int) -> None:
     constrained[
-        input.has_static_rank(),
+        input.static_rank.__bool__(),
         "reduce kernel does not support dynamic rank inputs",
     ]()
 
@@ -939,7 +948,7 @@ fn _reduce_wrapper[
     ](coords: StaticIntTuple[rank]) capturing -> SIMD[ty, width]:
         return rebind[SIMD[ty, width]](
             input.simd_load[width](
-                rebind[StaticIntTuple[input.static_rank]](coords)
+                rebind[StaticIntTuple[input.static_rank.value()]](coords)
             )
         )
 
@@ -949,7 +958,7 @@ fn _reduce_wrapper[
         ty: DType, width: Int, rank: Int
     ](coords: StaticIntTuple[rank], val: SIMD[ty, width]) capturing -> None:
         output.store(
-            rebind[StaticIntTuple[output.static_rank]](coords),
+            rebind[StaticIntTuple[output.static_rank.value()]](coords),
             rebind[SIMD[output.type, width]](val),
         )
 
@@ -981,13 +990,15 @@ fn reduce_add[
     axis: Tensor,
 ) -> Tensor[
     input.type,
-    DimList.create_unknown[input.static_rank](),
+    DimList.create_unknown[input.static_rank.value()](),
 ]:
     var ax = int(axis.simd_load[1](0))
 
     var output_shape = _get_reduce_output_shape(input, axis)
     var output = empty_tensor[input.type](
-        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+        IntList[DimList.create_unknown[input.static_rank.value()]()](
+            output_shape
+        )
     )
 
     output.enable_fusion()
@@ -1014,13 +1025,15 @@ fn reduce_max[
     axis: Tensor,
 ) -> Tensor[
     input.type,
-    DimList.create_unknown[input.static_rank](),
+    DimList.create_unknown[input.static_rank.value()](),
 ]:
     var ax = int(axis.simd_load[1](0))
 
     var output_shape = _get_reduce_output_shape(input, axis)
     var output = empty_tensor[input.type](
-        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+        IntList[DimList.create_unknown[input.static_rank.value()]()](
+            output_shape
+        )
     )
 
     output.enable_fusion()
@@ -1047,13 +1060,15 @@ fn reduce_min[
     axis: Tensor,
 ) -> Tensor[
     input.type,
-    DimList.create_unknown[input.static_rank](),
+    DimList.create_unknown[input.static_rank.value()](),
 ]:
     var ax = int(axis.simd_load[1](0))
 
     var output_shape = _get_reduce_output_shape(input, axis)
     var output = empty_tensor[input.type](
-        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+        IntList[DimList.create_unknown[input.static_rank.value()]()](
+            output_shape
+        )
     )
 
     output.enable_fusion()
@@ -1080,13 +1095,15 @@ fn reduce_mul[
     axis: Tensor,
 ) -> Tensor[
     input.type,
-    DimList.create_unknown[input.static_rank](),
+    DimList.create_unknown[input.static_rank.value()](),
 ]:
     var ax = int(axis.simd_load[1](0))
 
     var output_shape = _get_reduce_output_shape(input, axis)
     var output = empty_tensor[input.type](
-        IntList[DimList.create_unknown[input.static_rank]()](output_shape)
+        IntList[DimList.create_unknown[input.static_rank.value()]()](
+            output_shape
+        )
     )
     input.enable_fusion()
     output.enable_fusion()
@@ -1118,6 +1135,6 @@ fn test_static_strides(
         else:
             print("static_strides[", idx, "] = dyn")
 
-    unroll[print_if_static, x.static_rank]()
+    unroll[print_if_static, x.static_rank.value()]()
 
     return out

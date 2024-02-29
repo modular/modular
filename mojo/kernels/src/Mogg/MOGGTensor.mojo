@@ -126,7 +126,9 @@ struct Tensor[
     ] = None,
     _OWNED_MEMORY: Bool = True,
 ]:
-    alias static_rank = -1 if len(static_shape) == 0 else len(static_shape)
+    alias static_rank = Optional[Int](None) if len(static_shape) == 0 else len(
+        static_shape
+    )
 
     var data: DTypePointer[type]
     var shape: IntList[static_shape]
@@ -284,14 +286,9 @@ struct Tensor[
     @always_inline
     fn rank(self) -> Int:
         @parameter
-        if Self.static_rank != -1:
-            return Self.static_rank
+        if Self.static_rank:
+            return Self.static_rank.value()
         return self.dyn_rank
-
-    @always_inline
-    @staticmethod
-    fn has_static_rank() -> Bool:
-        return Self.static_rank != -1
 
     @always_inline
     fn _compute_flat_index(
@@ -301,14 +298,14 @@ struct Tensor[
         var flat_index: Int = 0
 
         @parameter
-        if Self.static_rank != -1:
+        if Self.static_rank:
 
             @always_inline
             @parameter
             fn body[idx: Int]():
                 flat_index = fma(index[idx], self.strides[idx], flat_index)
 
-            unroll[body, Self.static_rank]()
+            unroll[body, Self.static_rank.value()]()
         else:
             # Dynamic case for dynamic ranks.
             for idx in range(self.dyn_rank):
@@ -316,16 +313,12 @@ struct Tensor[
         return flat_index
 
     @always_inline
-    fn store(inout self, index: StaticIntTuple[Self.static_rank], value: SIMD):
-        constrained[
-            Self.has_static_rank(),
-            (
-                "store using statically ranked index argument requires tensor"
-                " to have static rank"
-            ),
-        ]()
+    fn store(
+        inout self, index: StaticIntTuple[Self.static_rank.value()], value: SIMD
+    ):
         self.store(
-            IntList[DimList.create_unknown[Self.static_rank]()](index), value
+            IntList[DimList.create_unknown[Self.static_rank.value()]()](index),
+            value,
         )
 
     @always_inline
@@ -345,7 +338,7 @@ struct Tensor[
     @always_inline
     fn store(inout self, index: Int, value: SIMD):
         constrained[
-            self.static_rank == 1,
+            self.static_rank.value() == 1,
             (
                 "Single int access to kernels only allowed on tensors"
                 " statically known to be 1D"
@@ -368,7 +361,7 @@ struct Tensor[
     @always_inline
     fn simd_load[simd_width: Int](self, index: Int) -> SIMD[type, simd_width]:
         constrained[
-            self.static_rank == 1,
+            self.static_rank.value() == 1,
             (
                 "Single int access to kernels only allowed on tensors"
                 " statically known to be 1D"
@@ -381,16 +374,11 @@ struct Tensor[
     @always_inline
     fn simd_load[
         simd_width: Int,
-    ](self, index: StaticIntTuple[Self.static_rank]) -> SIMD[type, simd_width]:
-        constrained[
-            Self.has_static_rank(),
-            (
-                "simd_load using statically ranked index argument requires"
-                " tensor to have static rank"
-            ),
-        ]()
+    ](self, index: StaticIntTuple[Self.static_rank.value()]) -> SIMD[
+        type, simd_width
+    ]:
         return self.simd_load[simd_width](
-            IntList[DimList.create_unknown[Self.static_rank]()](index)
+            IntList[DimList.create_unknown[Self.static_rank.value()]()](index)
         )
 
     @always_inline
@@ -449,12 +437,14 @@ struct Tensor[
 
         @parameter
         if (
-            self.has_static_rank()
-            and self.static_strides.at[self.static_rank - 1]().__bool__()
+            self.static_rank.__bool__()
+            and self.static_strides.at[
+                self.static_rank.value() - 1
+            ]().__bool__()
         ):  # we know the exact type of load at compile time
             # TODO(#33183): should not need __bool__ since Dim is Boolable
             alias inner_stride_static = self.static_strides.at[
-                self.static_rank - 1
+                self.static_rank.value() - 1
             ]().get()
             return _load[InnerStride.from_stride(inner_stride_static)](
                 inner_stride_static
@@ -494,7 +484,7 @@ struct Tensor[
         alias simd_width = simdwidthof[Self.type]()
 
         @parameter
-        if not Self.has_static_rank():
+        if not Self.static_rank:
             self._for_each_dynamic_rank[simd_width, func]()
         else:
 
@@ -502,15 +492,19 @@ struct Tensor[
             fn elementwise_fn_wrapper[
                 width: Int, rank: Int
             ](coords_static: StaticIntTuple[rank]) capturing:
-                alias dims = DimList.create_unknown[Self.static_rank]()
+                alias dims = DimList.create_unknown[Self.static_rank.value()]()
                 var coords = IntList[dims](
-                    rebind[StaticIntTuple[Self.static_rank]](coords_static)
+                    rebind[StaticIntTuple[Self.static_rank.value()]](
+                        coords_static
+                    )
                 )
                 var val = func[width, Self.type, dims](coords)
                 self.store(coords, val)
 
-            elementwise[Self.static_rank, simd_width, elementwise_fn_wrapper](
-                rebind[StaticIntTuple[Self.static_rank]](
+            elementwise[
+                Self.static_rank.value(), simd_width, elementwise_fn_wrapper
+            ](
+                rebind[StaticIntTuple[Self.static_rank.value()]](
                     self.shape.to_static_tuple()
                 )
             )
