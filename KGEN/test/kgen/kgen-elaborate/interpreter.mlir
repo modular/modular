@@ -372,3 +372,41 @@ kgen.generator export @pointer_overwrite() {
 
 // CHECK: [[BLOB1]]: "0x080000000100000000000000000000000000000020CA9A3B000000000000000000000000"
 // CHECK: [[BLOB2]]: "0x0100000000"
+
+// -----
+
+kgen.generator @elif(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %0 = hlcf.elif -> index {
+    %cond0 = index.cmp eq(%arg0, %idx0)
+    hlcf.elif.yield %cond0 : i1
+  } then {
+    hlcf.yield %idx0 : index
+  } {
+    %cond1 = index.cmp eq(%arg0, %idx1)
+    hlcf.elif.yield %cond1 : i1
+  } then {
+    hlcf.yield %idx1 : index
+  } {
+    %cond2 = index.cmp eq(%arg0, %idx2)
+    hlcf.elif.yield %cond2 : i1
+  } then {
+    hlcf.yield %idx2 : index
+  } else {
+    hlcf.yield %arg1 : index
+  }
+
+  %2 = index.mul %0, %0
+  kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func export @constexpr_elif
+kgen.generator export @constexpr_elif() -> index {
+  // CHECK-NEXT: kgen.param.constant = <4>
+  %0 = kgen.param.constant = <apply(:(index, index) -> index @elif, 2, 3)>
+  // CHECK-NEXT: kgen.param.constant = <25>
+  %1 = kgen.param.constant = <apply(:(index, index) -> index @elif, 3, 5)>
+  kgen.return %1 : index
+}
