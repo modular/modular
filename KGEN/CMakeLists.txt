@@ -59,6 +59,7 @@ add_subdirectory(lib/MojoJupyter)
 add_subdirectory(tools/hash-mlir)
 add_subdirectory(tools/kgen)
 add_subdirectory(tools/kgen-opt)
+add_subdirectory(tools/kgen-reduce)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
 
