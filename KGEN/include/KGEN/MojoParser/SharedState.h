@@ -445,7 +445,7 @@ private:
   /// decl, returning the module state. Always returns a valid module state,
   /// even if the module could not be found.
   ModuleState &importSubModuleState(StringRef name, ASTDecl *parentDecl,
-                                    llvm::SMLoc loc);
+                                    llvm::SMLoc loc, llvm::SMLoc identifierLoc);
 
   /// Import the specified module or package, which contains `.` indexing,
   /// returning the module state. Always returns a valid module state, even if

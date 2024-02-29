@@ -739,12 +739,13 @@ SharedState::ModuleState &SharedState::importModuleState(StringRef name,
     return importRelativeModuleState(name, context, loc);
 
   // Otherwise, we're importing an absolute module or package at the top-level.
-  return importSubModuleState(name, impl->topLevelDecl, loc);
+  return importSubModuleState(name, impl->topLevelDecl, loc, loc);
 }
 
-SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
-                                                            ASTDecl *parentDecl,
-                                                            llvm::SMLoc loc) {
+SharedState::ModuleState &
+SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
+                                  llvm::SMLoc loc, llvm::SMLoc identifierLoc) {
+
   // Grab the parent module state.
   ModuleState *parentState = impl->moduleStates[parentDecl];
   assert(parentState && "parent decl must have a module state");
@@ -759,7 +760,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   std::optional<std::string> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath) {
-      return createErrorModuleState(loc, declName, *parentState->decl,
+      return createErrorModuleState(identifierLoc, declName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
     modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
@@ -796,7 +797,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
   if (!modulePath) {
-    return createErrorModuleState(loc, declName, *parentState->decl,
+    return createErrorModuleState(identifierLoc, declName, *parentState->decl,
                                   "unable to locate module '" + name + "'");
   }
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
@@ -834,14 +835,17 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
 SharedState::ModuleState &
 SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
                                        llvm::SMLoc loc) {
+  llvm::SMLoc identifierLoc = loc;
   auto emitError = [&](const Twine &message = "") -> ModuleState & {
-    return createErrorModuleState(loc, StringAttr::get(getContext(), name),
+    return createErrorModuleState(identifierLoc,
+                                  StringAttr::get(getContext(), name),
                                   *parentDecl, message);
   };
 
   // If the name starts with a `.`, it is relative to the current package.
   if (name.consume_front(".")) {
     // Find the current package.
+    identifierLoc = llvm::SMLoc::getFromPointer(identifierLoc.getPointer() + 1);
     while (!isa<PackageOp>(*parentDecl) && parentDecl->parentDecl)
       parentDecl = parentDecl->parentDecl;
     if (!isa<PackageOp>(*parentDecl))
@@ -849,6 +853,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
     // Otherwise, this is a package relative to the current parent.
     while (name.consume_front(".")) {
+      identifierLoc =
+          llvm::SMLoc::getFromPointer(identifierLoc.getPointer() + 1);
       if (!parentDecl->parentDecl || !isa<PackageOp>(*parentDecl->parentDecl)) {
         return emitError(
             "attempted relative import with no known parent package");
@@ -863,6 +869,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
     // Otherwise, we're resolving relative to a top-level package.
     StringRef parentName;
     std::tie(parentName, name) = name.split('.');
+    identifierLoc = llvm::SMLoc::getFromPointer(identifierLoc.getPointer() +
+                                                parentName.size() + 1);
     parentDecl = importModuleState(parentName, impl->topLevelDecl, loc).decl;
   }
 
@@ -882,6 +890,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
     if (!isa<PackageOp>(*parentDecl))
       return emitError("'" + parentName +
                        "' does not refer to a nested package");
+    identifierLoc = llvm::SMLoc::getFromPointer(identifierLoc.getPointer() +
+                                                parentName.size() + 1);
   }
 
   // Now we can import the final decl. If the parent package has an unresolved
@@ -902,7 +912,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       return emitError("'" + name + "' does not refer to a package or module");
     existingDecls.clear();
   }
-  return importSubModuleState(name, parentDecl, loc);
+
+  return importSubModuleState(name, parentDecl, loc, identifierLoc);
 }
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
