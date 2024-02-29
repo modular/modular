@@ -83,7 +83,7 @@ from NN.Concat import concat as _concat
 from NN.Concat import concat_shape as concat_from_list_shape
 from NN.Concat import variadic_list_to_vector
 from NN.Conv import ConvInfo, ConvInfoStatic, conv_nhwc_direct, conv_shape
-from NN.Conv import pack_conv_filter_shape as _pack_conv_filter_shape
+from NN.Conv import pack_filter_shape as _pack_conv_filter_shape
 from NN.Conv import pack_filter as _pack_conv_filter
 from NN.ConvTranspose import conv_transpose_shape
 from NN.ConvTranspose import conv_transposed as conv_transpose_impl
@@ -3014,12 +3014,15 @@ fn conv[
     dilation_rank: Int,
     padding_rank: Int,
     input_type: DType,
+    input_0_static_shape: DimList,
     filter_type: DType,
+    input_1_static_shape: DimList,
     strides_type: DType,
     dilation_type: DType,
     padding_type: DType,
     num_groups_type: DType,
     output_type: DType,
+    input_6_static_shape: DimList,
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
     static_strides: DimList,
@@ -3029,15 +3032,14 @@ fn conv[
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[input_type, input_rank],
-    filter: NDBuffer[filter_type, filter_rank],
+    input: NDBuffer[input_type, input_rank, input_0_static_shape],
+    filter: NDBuffer[filter_type, filter_rank, input_1_static_shape],
     strides: NDBuffer[strides_type, strides_rank],
     dilation: NDBuffer[dilation_type, dilation_rank],
     paddings: NDBuffer[padding_type, padding_rank],
     num_groups: NDBuffer[num_groups_type, 1],
-    output: NDBuffer[
-        output_type, input_rank
-    ],  # output and input have the same rank.
+    # output and input have the same rank.
+    output: NDBuffer[output_type, input_rank, input_6_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
     """Including this function in MOGG.mojo since it is intended to be a temporary
@@ -3094,7 +3096,13 @@ fn conv[
         pad_h_tuple = Index(padding_flat[2], padding_flat[3])
         pad_w_tuple = Index(padding_flat[4], padding_flat[5])
 
-    alias conv_attr = ConvInfoStatic.create_unknown[input_rank - 2]()
+    alias conv_attr = ConvInfoStatic(
+        static_padding,
+        static_strides,
+        static_dilations,
+        input_0_static_shape.at[input_rank - 1](),  # input C, NHWC
+        input_1_static_shape.at[filter_rank - 2](),  # filter C, RSCF or FRSCf
+    )
 
     # Specialize the function to take 4D coordiantes.
     # The bias is broadcasted to the same shape as output and
@@ -3142,9 +3150,9 @@ fn conv[
         conv_nhwc_direct[
             input_rank,
             filter_rank,
-            DimList.create_unknown[input_rank](),  # input shape
-            DimList.create_unknown[filter_rank](),  # filter shape
-            DimList.create_unknown[input_rank](),  # output shape
+            input_0_static_shape,  # input shape
+            input_1_static_shape,  # filter shape
+            input_6_static_shape,  # output shape
             input_type,
             filter_type,
             output_type,
@@ -3451,9 +3459,10 @@ fn pack_conv_filter[
     filter_type: DType,
     rank: Int,
     num_groups: Int,
+    input_1_static_shape: DimList,
 ](
     filter: NDBuffer[filter_type, rank],
-    packed_filter: NDBuffer[filter_type, rank + 1],
+    packed_filter: NDBuffer[filter_type, rank + 1, input_1_static_shape],
     ctx: MojoCallContextPtr,
 ):
     _pack_conv_filter(filter, packed_filter, num_groups)
@@ -3508,9 +3517,18 @@ fn pack_conv_filter_shape[
     Returns:
         The output shape.
     """
-    return _pack_conv_filter_shape[single_thread_blocking_override](
-        filter_buf, num_groups
-    )
+
+    return _pack_conv_filter_shape[
+        filter_type,
+        input_shape,
+        filter_shape,
+        output_shape,
+        strides,
+        dilations,
+        paddings,
+        num_groups,
+        single_thread_blocking_override,
+    ](filter_buf)
 
 
 @always_inline
