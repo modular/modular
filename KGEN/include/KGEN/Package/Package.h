@@ -80,6 +80,12 @@ std::unique_ptr<Pass>
 createMaterializePackagesWithDefaultGen(LLCL::Runtime &runtime,
                                         const CompilationOptions &options);
 
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
+
 } // namespace M::KGEN
 
 #endif // KGEN_PACKAGE_PACKAGE_H
