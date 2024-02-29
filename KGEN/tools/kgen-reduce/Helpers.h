@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_REDUCE_HELPERS_H
+#define KGEN_REDUCE_HELPERS_H
+
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -31,4 +34,12 @@ ErrorOrSuccess stashFile(ModuleOp module, const Twine &fileName);
 
 /// Indicate that a file should be removed on exit from the process instead.
 void unkeepToolOutputFile(llvm::ToolOutputFile &file);
+
+/// Return true if a region is stubbed.
+bool isStubbed(Region &region);
+
+/// Stub a region and hold its old body in `owner`.
+void stubRegion(Region &region, Region &owner);
 } // namespace M
+
+#endif // KGEN_REDUCE_HELPERS_H

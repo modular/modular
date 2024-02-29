@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Helpers.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Parser/Parser.h"
@@ -58,4 +59,21 @@ void M::unkeepToolOutputFile(llvm::ToolOutputFile &file) {
     llvm::raw_fd_ostream *os;
   };
   ((DirtyHack *)&file)->installer.keep = false;
+}
+
+bool M::isStubbed(Region &region) {
+  return isa<KGEN::UnreachableOp>(region.front().front());
+}
+
+void M::stubRegion(Region &region, Region &owner) {
+  owner.takeBody(region);
+
+  // Create a new block with the same argument kinds.
+  region.push_back(new Block);
+  for (BlockArgument arg : owner.getArguments())
+    region.addArgument(arg.getType(), arg.getLoc());
+
+  // Stub the function with an unreachable.
+  OpBuilder b(&region.front(), region.front().begin());
+  b.create<KGEN::UnreachableOp>(region.getLoc());
 }
