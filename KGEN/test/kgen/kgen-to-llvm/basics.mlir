@@ -57,6 +57,16 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   kgen.return
 }
 
+//CHECK: "noinline"
+kgen.func @test_no_inline(%a: i64) no_inline {
+  kgen.return
+}
+
+//CHECK: "alwaysinline"
+kgen.func @test_always_inline(%a: i64) always_inline {
+  kgen.return
+}
+
 kgen.func @reference_me(%a: i64) -> i64 {
   kgen.return %a : i64
 }

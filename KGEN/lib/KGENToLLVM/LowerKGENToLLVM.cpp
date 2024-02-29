@@ -183,6 +183,32 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
   return success();
 }
 
+/// Convert inline level to an LLVM passthrough attribute.
+/// compatible representation. Unsupport metadata values are rejected.
+static void convertInlineLevel(LLVM::LLVMFuncOp func, InlineLevel inlineLevel) {
+  if (inlineLevel == InlineLevel::Automatic)
+    return;
+
+  SmallVector<Attribute> passthrough =
+      llvm::to_vector(func.getPassthroughAttr());
+  Builder b(func.getContext());
+
+  const char *attrName;
+  switch (inlineLevel) {
+  case InlineLevel::Always:
+  case InlineLevel::AlwaysNoDebug:
+    attrName = "alwaysinline";
+    break;
+  case InlineLevel::Never:
+    attrName = "noinline";
+    break;
+  default:
+    llvm_unreachable("invalid InlineLevel enum");
+  }
+  passthrough.push_back(b.getStringAttr(attrName));
+  func.setPassthroughAttr(b.getArrayAttr(passthrough));
+}
+
 /// Returns true if type is an empty !llvm.struct type, or an array of empty
 /// types e.g !llvm.array<0 x ..any type..>, !llvm.array<N x empty_struct>
 /// TODO: Consider querying size from DataLayout instead.
@@ -276,6 +302,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
         funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
                         b.getUnitAttr());
     }
+
+    // Propagate InlineLevel as a passthrough LLVM attribute.
+    convertInlineLevel(funcOp, func.getInlineLevel());
 
     // And move the func's body into the new function.
     b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
