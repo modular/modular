@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CallGraphUtils.h"
 #include "InliningUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -31,23 +32,20 @@
 using namespace M;
 using namespace KGEN;
 
-struct CallGraph;
+namespace {
 
 //===----------------------------------------------------------------------===//
 // CallGraphNode
 //===----------------------------------------------------------------------===//
 
-struct CallGraphNode {
-  /// If the function will be inlined, removed it from the module so that it can
-  /// later be erased in parallel. Ownership is passed to the node.
+struct CallGraphNode
+    : CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
   explicit CallGraphNode(FuncOp func, LLCL::Runtime &runtime)
-      : func(func),
+      : CallGraphNodeBase(func),
         doneInlining(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
-
   CallGraphNode(CallGraphNode &&other)
-      : func(other.func), doneInlining(std::move(other.doneInlining)) {
-    other.func = nullptr;
-  }
+      : CallGraphNodeBase(std::move(other)),
+        doneInlining(std::move(other.doneInlining)) {}
 
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
@@ -80,22 +78,6 @@ struct CallGraphNode {
   /// if so the operation can be erased.
   bool isAllInlined();
 
-  /// The function represented by the node.
-  FuncOp func;
-
-  /// Nodes of functions that inline call this function. These are the child
-  /// edges.
-  std::vector<CallGraphNode *> callers;
-  /// Maps the callees to their callsites inside of this function.
-  /// Key: callee's CallGraphNode.
-  /// Value: list of callsites of the callee.
-  using CallSitesVec =
-      SmallVector<std::pair<KGENCallOpInterface, CallGraphNode *>>;
-  CallSitesVec callsites;
-  /// This mutex guards `callsites` and `callers` during parallel graph
-  /// construction.
-  llvm::sys::SmartRWMutex<true> mutex;
-
   /// The number of callers this callgraph node has.
   std::atomic<size_t> numCallers = 0;
 
@@ -123,7 +105,7 @@ struct CallGraphNode {
 // CallGraph
 //===----------------------------------------------------------------------===//
 
-struct CallGraph {
+struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
                      const std::optional<StringAttr> updateAttrName)
       : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
@@ -132,6 +114,11 @@ struct CallGraph {
 
   /// Build the CallGraph.
   void build(ModuleOp module, const SymbolTable &symtab);
+
+  bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
+    ++node->numCallers;
+    return true;
+  }
 
   /// Inline callees in caller.
   void inlineNode(CallGraphNode *caller, uint64_t threshold);
@@ -147,12 +134,6 @@ struct CallGraph {
 
   /// The pass managers to use.
   PerThreadPassManagers &pms;
-
-  using NodesType = typename llvm::MapVector<FuncOp, CallGraphNode>;
-  using iterator = typename NodesType::iterator;
-
-  /// Nodes in the CallGraph.
-  NodesType nodes;
 
   /// External node that has all the functions that do not have a caller in the
   /// Module as callees. This node is the entry node of the CallGraph for
@@ -181,98 +162,11 @@ private:
   LLCL::AsyncValueRef<LLCL::Chain> done;
 };
 
-namespace {
-//===----------------------------------------------------------------------===//
-// LLVM iterator helpers
-//===----------------------------------------------------------------------===//
-
-struct CallGraphNodeRef;
-
-struct CallGraphNodeIterator {
-  CallGraphNode *node;
-  CallGraphNode::CallSitesVec::iterator iter;
-
-  bool operator==(const CallGraphNodeIterator &rhs) const {
-    return node == rhs.node && iter == rhs.iter;
-  }
-  bool operator!=(const CallGraphNodeIterator &rhs) const {
-    return node != rhs.node || iter != rhs.iter;
-  }
-  CallGraphNodeIterator operator++() {
-    ++iter;
-    return *this;
-  }
-
-  CallGraphNodeIterator operator++(int) {
-    CallGraphNodeIterator tmp = *this;
-    ++*this;
-    return tmp;
-  }
-
-  CallGraphNodeRef operator*();
-};
-
-struct CallGraphNodeRef {
-  CallGraphNode *node;
-
-  bool operator==(const CallGraphNodeRef &rhs) const {
-    return node == rhs.node;
-  }
-  bool operator!=(const CallGraphNodeRef &rhs) const { return !(*this == rhs); }
-
-  CallGraphNodeIterator begin() const {
-    return {node, node->callsites.begin()};
-  }
-
-  CallGraphNodeIterator end() const { return {node, node->callsites.end()}; }
-};
 } // namespace
-
-CallGraphNodeRef CallGraphNodeIterator::operator*() { return {iter->second}; }
 
 namespace llvm {
 template <>
-struct DenseMapInfo<CallGraphNodeRef> {
-  static CallGraphNodeRef getEmptyKey() {
-    return {DenseMapInfo<CallGraphNode *>::getEmptyKey()};
-  }
-  static CallGraphNodeRef getTombstoneKey() {
-    return {DenseMapInfo<CallGraphNode *>::getTombstoneKey()};
-  }
-  static unsigned getHashValue(const CallGraphNodeRef &node) {
-    return DenseMapInfo<CallGraphNode *>::getHashValue(node.node);
-  }
-  static bool isEqual(const CallGraphNodeRef &lhs,
-                      const CallGraphNodeRef &rhs) {
-    return lhs == rhs;
-  }
-};
-
-// Provide graph traits for traversing call graphs using standard graph
-// traversals.
-template <>
-struct GraphTraits<CallGraphNode *> {
-  using NodeRef = CallGraphNodeRef;
-  using ChildIteratorType = CallGraphNodeIterator;
-
-  static NodeRef getEntryNode(NodeRef node) { return node; }
-
-  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
-  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
-};
-
-template <>
-struct GraphTraits<CallGraph *> : public GraphTraits<CallGraphNode *> {
-  /// The entry node into the graph is the external node.
-  static NodeRef getEntryNode(CallGraph *cg) {
-    return {cg->getExternalCallerNode()};
-  }
-
-  // nodes_iterator/begin/end - Allow iteration over all nodes in the graph
-  using nodes_iterator = CallGraph::iterator;
-  static nodes_iterator nodes_begin(CallGraph *cg) { return cg->nodes.begin(); }
-  static nodes_iterator nodes_end(CallGraph *cg) { return cg->nodes.end(); }
-};
+struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
 } // namespace llvm
 
 bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
@@ -307,47 +201,7 @@ void CallGraph::endWork() {
 }
 
 void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
-  CompilerTimeTraceScope traceScope("CallGraphBase::build");
-
-  // Instantiate the nodes for the graph first.
-  for (auto func : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
-    if (func.isExternal())
-      continue;
-    nodes.insert(std::make_pair(func, CallGraphNode(func, runtime)));
-  }
-
-  // Build the graph by walking all the calls in each function and adding edges
-  // as appropriate.
-  auto workFn = [this, &symtab](std::pair<FuncOp, CallGraphNode> &value) {
-    auto &[func, node] = value;
-    CallGraphNode *callerNode = &node;
-    func.getBodyRegion().walk([&](KGENCallOpInterface call) {
-      Operation *calleeOp = symtab.lookup(
-          cast<FlatSymbolRefAttr>(
-              cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
-              .getAttr());
-      assert(calleeOp && "Can't find callee in the SymbolTable, invalid IR?");
-
-      // Only add the edge if the symbol we found is of the type we expect.
-      auto callee = dyn_cast<FuncOp>(calleeOp);
-      if (!callee)
-        return;
-
-      CallGraphNode *calleeNode = &nodes.find(callee)->second;
-      {
-        llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);
-        callerNode->callsites.emplace_back(call, calleeNode);
-      }
-      {
-        llvm::sys::SmartScopedWriter<true> lock(calleeNode->mutex);
-        calleeNode->callers.push_back(callerNode);
-      }
-
-      ++calleeNode->numCallers;
-    });
-  };
-
-  mlir::parallelForEach(module.getContext(), nodes, workFn);
+  CallGraphBase::build(module, symtab, runtime);
 
   for (auto &[func, node] : nodes) {
     if (node.callers.empty() || func.isExported())
@@ -356,13 +210,13 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
 
   for (auto scc = llvm::scc_begin(this); scc != llvm::scc_end(this); ++scc) {
     llvm::SmallSet<CallGraphNode *, 6> sccNodes;
-    for (auto node : (*scc)) {
-      sccNodes.insert(node.node);
-      node.node->reachable = true;
+    for (CallGraphNode *node : (*scc)) {
+      sccNodes.insert(node);
+      node->reachable = true;
     }
 
-    for (CallGraphNodeRef node : (*scc))
-      node.node->sccNodes = sccNodes;
+    for (CallGraphNode *node : (*scc))
+      node->sccNodes = sccNodes;
   }
   // Function nodes plus externalNode
   numWorkItems = nodes.size() + 1;
