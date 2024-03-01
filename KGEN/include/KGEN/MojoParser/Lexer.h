@@ -12,7 +12,6 @@
 #define KGEN_MOJOPARSER_LEXER_H
 
 #include "Support/Compiler/Diags.h"
-#include "Support/IPRational.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -21,6 +20,7 @@
 
 namespace M {
 class Diags;
+class IPRational;
 } // namespace M
 
 namespace M::KGEN::LIT {
