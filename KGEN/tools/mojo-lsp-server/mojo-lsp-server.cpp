@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
   URIForFile::registerSupportedScheme("vscode-notebook-cell");
 
   if (attach)
-    attachToRemoteDebugger();
+    attachToNewRemoteDebugSession();
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
