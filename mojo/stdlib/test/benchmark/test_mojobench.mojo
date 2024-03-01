@@ -32,7 +32,7 @@ def main():
     var m = MojoBench(MojoBenchConfig(max_iters=10_000))
     m.bench_function[bench1](BenchId("bench1"))
 
-    var inputs = DynamicVector[String]()
+    var inputs = List[String]()
     inputs.push_back("input1")
     inputs.push_back("input2")
     for i in range(len(inputs)):

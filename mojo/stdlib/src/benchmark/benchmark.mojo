@@ -137,7 +137,7 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
-from collections.vector import DynamicVector
+from collections.vector import List
 from math import max, min
 from math.limit import max_finite, min_finite
 from sys._assembly import inlined_assembly
@@ -217,8 +217,8 @@ struct Report(CollectionElement):
     """The total warmup iterations."""
     var warmup_duration: Int
     """The total duration it took to warmup."""
-    var runs: DynamicVector[Batch]
-    """A `DynamicVector` of benchmark runs."""
+    var runs: List[Batch]
+    """A `List` of benchmark runs."""
 
     fn __init__(inout self):
         """
@@ -228,7 +228,7 @@ struct Report(CollectionElement):
         """
         self.warmup_iters = 0
         self.warmup_duration = 0
-        self.runs = DynamicVector[Batch]()
+        self.runs = List[Batch]()
 
     fn __copyinit__(inout self, existing: Self):
         """
