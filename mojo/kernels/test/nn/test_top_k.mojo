@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from collections.vector import List
+from collections import List
 from math import iota
 
 from algorithm.reduction import _get_nd_indices_from_flat_index

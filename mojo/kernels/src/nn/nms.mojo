@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import List
+from collections import List
 from math import abs, iota, max, min
 from math.limit import min_or_neginf
 

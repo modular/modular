@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.vector import List
+from collections import List
 from math import iota
 
 from algorithm.functional import parallelize_over_rows
