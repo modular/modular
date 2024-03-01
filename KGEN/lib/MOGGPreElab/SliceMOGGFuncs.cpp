@@ -11,6 +11,7 @@
 #include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
@@ -457,6 +458,45 @@ private:
     }
 
     gen->setAttrs(newAttrs);
+  }
+
+  // An elementwise op is an op which is purely represented by a call to the
+  // elementwise generator. I.E there are no other calls left after slicing.
+  CallOp checkKernelIsPureElementwise(CallOp elementwiseOp,
+                                      KGEN::GeneratorOp gen) {
+    auto opHasSideEffect = [=](Operation *op) {
+      return (!isa<POP::StackAllocationOp>(op) && !isPure(op)) ||
+             op->hasTrait<OpTrait::IsTerminator>();
+    };
+
+    // Apply trivial DCE on top level ops to remove now unused operations.
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (Operation &op : gen.getOps()) {
+        if (opHasSideEffect(&op) || op.hasTrait<OpTrait::IsTerminator>())
+          continue;
+
+        if (op.use_empty()) {
+          op.erase();
+          changed = true;
+        }
+      }
+    }
+
+    for (Operation &op : gen.getOps()) {
+      if (&op == elementwiseOp)
+        continue;
+
+      if (isa<KGEN::ParamDeclareOp, KGEN::ParamDeclareRegionOp, KGEN::ReturnOp,
+              KGEN::ParamConstantOp>(op))
+        continue;
+
+      // Should not be marked elementwise.
+      return nullptr;
+    }
+
+    return elementwiseOp;
   }
 
   // By checking which tensors have called the `enableFusion` function we can
@@ -1373,6 +1413,13 @@ public:
         seenFuncs.insert(slicedShapeFunction);
       }
 
+      // Ensure elementwise kernels are actually elementwise.
+      elementwiseOp =
+          checkKernelIsPureElementwise(elementwiseOp, slicedComputeFunction);
+
+      // Outline the actual work of the function.
+      // 1. If it is elementwise, outline the body of the elementwise lambda
+      // 2. Otherwise outline everything other than the lambdas.
       outlineFunction(slicedComputeFunction, addedLambdas, elementwiseOp,
                       symTab);
 
