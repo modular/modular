@@ -15,7 +15,7 @@ from ._status import Status
 from ._utils import call_dylib_func, exchange, OwningVector
 from ._tensor_spec_impl import CTensorSpec
 from tensor import TensorSpec
-from collections.vector import List
+from collections import List
 from ._dtypes import EngineDType
 from pathlib import Path
 

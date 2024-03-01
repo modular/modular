@@ -7,7 +7,7 @@
 Implements functionalities useful for giving input to Max Engine
 model for execution.
 """
-from collections.vector import List
+from collections import List
 from memory.unsafe import bitcast, DTypePointer, Pointer
 from utils.list import Dim
 from sys.ffi import DLHandle

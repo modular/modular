@@ -9,7 +9,7 @@ from sys.ffi import DLHandle
 from ._utils import call_dylib_func, CString
 from tensor import TensorSpec
 from ._dtypes import EngineDType
-from collections.vector import List
+from collections import List
 from .session import InferenceSession
 
 

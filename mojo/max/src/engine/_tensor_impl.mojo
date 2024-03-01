@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import List
+from collections import List
 from memory.anypointer import AnyPointer
 from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
