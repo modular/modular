@@ -11,7 +11,7 @@
 # FIXME(26700): split this single long expression into smaller ones. Right now
 # the REPL breaks after using List.
 
-from collections.vector import List
+from collections import List
 
 @register_passable("trivial")
 struct Point(CollectionElement):
