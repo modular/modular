@@ -27,6 +27,6 @@ fn functionWithParametrizedArgument(x: StaticIntTuple[2]) -> StaticIntTuple[2]:
 
 fn parametrizedFunction[
     size: Int
-](x: StaticTuple[size, Int]) -> StaticTuple[size, Int]:
-    var copy: StaticTuple[size, Int] = x
+](x: StaticTuple[Int, size]) -> StaticTuple[Int, size]:
+    var copy: StaticTuple[Int, size] = x
     return copy

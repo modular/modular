@@ -129,7 +129,7 @@ async def test_refs(client: LanguageClient):
         requests,
         doc,
         "Int",
-        doc.find_first_range("Int", in_line_with="StaticTuple[size, Int]"),
+        doc.find_first_range("Int", in_line_with="StaticTuple[Int, size]"),
     )
     await assert_ref(
         "module",
