@@ -3934,3 +3934,12 @@ fn set_ctx_error_and_destruct_error(
 ):
     ctx.set_to_error(error)
     # mojo lowering will insert destructor call for `error`
+
+
+@mogg_register("pytorch_operator_custom_test")
+@export
+fn pytorch_test_custom[
+    type: DType,
+    rank: Int,
+](data: NDBuffer[type, rank], out: NDBuffer[type, rank]):
+    print("hello")
