@@ -9,9 +9,9 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # FIXME(26700): split this single long expression into smaller ones. Right now
-# the REPL breaks after using DynamicVector.
+# the REPL breaks after using List.
 
-from collections.vector import DynamicVector
+from collections.vector import List
 
 @register_passable("trivial")
 struct Point(CollectionElement):
@@ -20,14 +20,14 @@ struct Point(CollectionElement):
   fn __init__(x: Int, y:Int) -> Self:
     return Point {x: x, y: y}
 
-# CHECK: (DynamicVector[Int]) vec = (size 5) {
+# CHECK: (List[Int]) vec = (size 5) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-# CHECK: (DynamicVector[SIMD[f32, 1]]) vec2 = (size 2) {
+# CHECK: (List[SIMD[f32, 1]]) vec2 = (size 2) {
 # CHECK:   (SIMD[f32, 1]) [0] = {
 # CHECK:     (f32) [0] = 4.3{{[0-9]*}}
 # CHECK:   }
@@ -35,7 +35,7 @@ struct Point(CollectionElement):
 # CHECK:     (f32) [0] = 8.8{{[0-9]*}}
 # CHECK:   }
 # CHECK: }
-# CHECK: (DynamicVector[Point]) vec3 = (size 3) {
+# CHECK: (List[Point]) vec3 = (size 3) {
 # CHECK:   (Point) [0] = {
 # CHECK:     (Int) x = 1
 # CHECK:     (Int) y = 1
@@ -50,16 +50,16 @@ struct Point(CollectionElement):
 # CHECK:   }
 # CHECK: }
 
-var vec = DynamicVector[Int](capacity=5)
+var vec = List[Int](capacity=5)
 vec.push_back(1)
 vec.push_back(2)
 vec.push_back(3)
 vec.push_back(4)
 vec.push_back(5)
-var vec2 = DynamicVector[Float32](capacity=2)
+var vec2 = List[Float32](capacity=2)
 vec2.push_back(4.3)
 vec2.push_back(8.8)
-var vec3 = DynamicVector[Point](capacity=3)
+var vec3 = List[Point](capacity=3)
 var p1 = Point(1, 1)
 var p2 = Point(2, 2)
 var p3 = Point(3, 3)

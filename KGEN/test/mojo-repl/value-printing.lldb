@@ -93,13 +93,13 @@ var a_bool = True
 var another_bool = False
 
 
-# CHECK: (DynamicVector[Int]) z = (size 3) {
+# CHECK: (List[Int]) z = (size 3) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK: }
-from collections.vector import DynamicVector
-var z = DynamicVector[Int](capacity=2)
+from collections.vector import List
+var z = List[Int](capacity=2)
 z.push_back(1)
 z.push_back(2)
 z.push_back(3)

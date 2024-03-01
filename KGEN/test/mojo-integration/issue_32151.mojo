@@ -8,20 +8,20 @@
 # RUN: mojo -O0 %s | FileCheck %s
 
 from utils.variant import Variant
-from collections.vector import DynamicVector
+from collections.vector import List
 
 
 struct MTuple[T: CollectionElement](CollectionElement, Stringable):
     alias Element = Variant[T, Self]
-    var elts: DynamicVector[Self.Element]
+    var elts: List[Self.Element]
 
     @always_inline
     fn __init__(inout self: Self):
-        self.elts = DynamicVector[Self.Element]()
+        self.elts = List[Self.Element]()
 
     @always_inline
     fn __init__(inout self: Self, value: Self.Element):
-        self.elts = DynamicVector[Self.Element]()
+        self.elts = List[Self.Element]()
         self.elts.append(value)
 
     @always_inline
