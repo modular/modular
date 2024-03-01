@@ -188,10 +188,10 @@ fn gemm_l1_cache[
     # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
     # The RHS tile is also cached to minimize the transpose operatipons.
 
-    # var l1_lhs_cache = DynamicVector[LayoutTensor[dtype, L1.m, L1.k]](
+    # var l1_lhs_cache = List[LayoutTensor[dtype, L1.m, L1.k]](
     #     capacity=l1_size.m
     # )
-    # var l1_rhs_cache = DynamicVector[LayoutTensor[dtype, L1.n, L1.k]](
+    # var l1_rhs_cache = List[LayoutTensor[dtype, L1.n, L1.k]](
     #     capacity=l1_size.m
     # )
     # for m in range(l1_size.m):

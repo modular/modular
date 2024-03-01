@@ -33,27 +33,27 @@ struct DynamicTupleBase[
 ](CollectionElement, Sized, Stringable, EqualityComparable):
     alias Element = Variant[T, Self]
 
-    var _elements: DynamicVector[Self.Element]
+    var _elements: List[Self.Element]
 
     @always_inline
     fn __init__(inout self: Self):
-        self._elements = DynamicVector[Self.Element]()
+        self._elements = List[Self.Element]()
 
     # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
     # @always_inline
     # fn __init__(inout self: Self, *v: Self.Element):
-    #     self._elements = DynamicVector[Self.Element](capacity=len(v))
+    #     self._elements = List[Self.Element](capacity=len(v))
     #     for e in v:
     #         self._elements.append(e[])
 
     @always_inline
     fn __init__(inout self: Self, v: Self.Element):
-        self._elements = DynamicVector[Self.Element](capacity=1)
+        self._elements = List[Self.Element](capacity=1)
         self._elements.append(v)
 
     @always_inline
     fn __init__(inout self, owned v1: Self.Element, owned v2: Self.Element):
-        self._elements = DynamicVector[Self.Element](capacity=2)
+        self._elements = List[Self.Element](capacity=2)
         self._elements.append(v1)
         self._elements.append(v2)
 
@@ -64,7 +64,7 @@ struct DynamicTupleBase[
         owned v2: Self.Element,
         owned v3: Self.Element,
     ):
-        self._elements = DynamicVector[Self.Element](capacity=3)
+        self._elements = List[Self.Element](capacity=3)
         self._elements.append(v1)
         self._elements.append(v2)
         self._elements.append(v3)
@@ -77,7 +77,7 @@ struct DynamicTupleBase[
         owned v3: Self.Element,
         owned v4: Self.Element,
     ):
-        self._elements = DynamicVector[Self.Element](capacity=4)
+        self._elements = List[Self.Element](capacity=4)
         self._elements.append(v1)
         self._elements.append(v2)
         self._elements.append(v3)
@@ -92,7 +92,7 @@ struct DynamicTupleBase[
         owned v4: Self.Element,
         owned v5: Self.Element,
     ):
-        self._elements = DynamicVector[Self.Element](capacity=5)
+        self._elements = List[Self.Element](capacity=5)
         self._elements.append(v1)
         self._elements.append(v2)
         self._elements.append(v3)

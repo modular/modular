@@ -121,7 +121,7 @@ fn cosize(l: Layout) -> Int:
     return l.cosize()
 
 
-alias LayoutList = DynamicVector[Layout]
+alias LayoutList = List[Layout]
 
 
 fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
