@@ -724,6 +724,9 @@ struct ParametricInliningGraphNode
   ParameterUseDefGraph calleeParamGraph;
   /// A set of all declarations, regardless of type, in the callee.
   llvm::SetVector<StringAttr> allDecls;
+  /// The number of processed calls. When the value of this counter equals the
+  /// size of `callsites`, then all calls for this function have been processed.
+  std::atomic<size_t> numProcessedCalls = 0;
 };
 
 struct ParametricInliningGraph
@@ -995,6 +998,9 @@ struct InliningGraphNode
   /// Track the number of times the function has been inlined. Once the counter
   /// reaches the number of callers, the function can be erased.
   std::atomic<size_t> numTimesInlined = 0;
+  /// The number of processed calls. When the value of this counter equals the
+  /// size of `callsites`, then all calls for this function have been processed.
+  std::atomic<size_t> numProcessedCalls = 0;
 };
 
 struct InliningGraph
@@ -1142,7 +1148,7 @@ static void diagnoseInliningCycle(InliningGraph &g) {
   InliningGraphNode::EdgeT nextNode = sccIt->front();
 
   while (nodesInPath.insert(nextNode).second) {
-    InliningGraphNode::EdgeIteratorT it = nextNode.begin();
+    auto it = nextNode.begin();
     while (!sccNodes.contains(*it))
       ++it;
     path.push_back(it);
@@ -1153,13 +1159,13 @@ static void diagnoseInliningCycle(InliningGraph &g) {
   InFlightDiagnostic diag =
       mlir::emitError(nextNode.node->func.getLoc())
       << "function has recursive call to 'always_inline' function";
-  for (InliningGraphNode::EdgeIteratorT &edge : path) {
-    InliningGraphNode::EdgeT node = *edge;
+  for (auto &it : path) {
+    InliningGraphNode::EdgeT node = *it;
     diag.attachNote(node.call.getLoc())
-        << (&edge == &path.back() ? "call here recurses" : "through call here");
+        << (&it == &path.back() ? "call here recurses" : "through call here");
     diag.attachNote(node.node->func.getLoc())
-        << (&edge == &path.back() ? "back to function here"
-                                  : "to function marked 'always_inline' here");
+        << (&it == &path.back() ? "back to function here"
+                                : "to function marked 'always_inline' here");
   }
 }
 

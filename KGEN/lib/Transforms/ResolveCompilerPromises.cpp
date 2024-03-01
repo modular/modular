@@ -77,9 +77,15 @@ private:
 
 struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, FuncOp, CallLikeOp> {
-  using CallGraphNodeBase::CallGraphNodeBase;
+  CallGraphNode(FuncOp func) : CallGraphNodeBase(func) {}
+  CallGraphNode(CallGraphNode &&other) : CallGraphNodeBase(std::move(other)) {}
 
+  /// The names and types of the required promise values of the callgraph node.
   std::vector<std::pair<StringAttr, Type>> requiredPromises;
+
+  /// The number of processed calls. When the value of this counter equals the
+  /// size of `callsites`, then all calls for this function have been processed.
+  std::atomic<size_t> numProcessedCalls = 0;
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
