@@ -24,6 +24,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/PatternMatch.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -64,6 +65,7 @@ private:
                   bool &doesFallThrough);
   bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
                     bool &enclosingBlockDoesBreak);
+  bool lowerElif(HLCF::ElifOp elifOp);
   bool checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
@@ -164,6 +166,54 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
   return ImplicitLocOpBuilder(op.getLoc(), op.getBlock(),
                               std::next(Block::iterator(&op)));
 };
+
+bool LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp) {
+  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
+  builder.setInsertionPoint(elifOp);
+  Region *currentRegion = elifOp->getParentRegion();
+
+  // Lift condition ops into parent region.
+  Block &firstBlock = elifOp.getElifRegions().front().front();
+  assert(firstBlock.getNumArguments() == 0);
+  auto firstElifYieldOp = cast<HLCF::ElifYieldOp>(firstBlock.getTerminator());
+  currentRegion->front().getOperations().splice(builder.getInsertionPoint(),
+                                                firstBlock.getOperations());
+  // Replace ElifYield with IfOp.
+  HLCF::IfOp outerMostIfOp = builder.create<HLCF::IfOp>(
+      elifOp.getResultTypes(), firstElifYieldOp->getOperand(0));
+  currentRegion = &outerMostIfOp.getThenRegion();
+  firstElifYieldOp->erase();
+
+  // Nest Elif Regions into IfOp Else Regions.
+  for (Region &region : elifOp.getElifRegions().slice(1)) {
+    currentRegion->takeBody(region);
+    builder.setInsertionPointToEnd(&currentRegion->front());
+    // We moved Elif Condition region into If's Else region. Spawn a new IfOp
+    // and update current region to If's Then region.
+    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(
+            currentRegion->front().getTerminator())) {
+      auto newIfOp = builder.create<HLCF::IfOp>(elifOp.getResultTypes(),
+                                                elifYieldOp->getOperand(0));
+      mlir::IRRewriter rewriter{builder};
+      rewriter.replaceOp(elifYieldOp,
+                         builder.create<HLCF::YieldOp>(newIfOp.getResults()));
+      currentRegion = &newIfOp.getThenRegion();
+      continue;
+    }
+    // Otherwise, we moved Elif then region into If's Then region. Update the
+    // current region to If's Else region.
+    if (auto yieldOp =
+            dyn_cast<HLCF::YieldOp>(currentRegion->front().getTerminator())) {
+      auto ifOpParent = yieldOp->getParentOfType<HLCF::IfOp>();
+      currentRegion = &ifOpParent.getElseRegion();
+    }
+  }
+  currentRegion->takeBody(elifOp.getElseRegion());
+  builder.setInsertionPoint(elifOp);
+  mlir::IRRewriter rewriter{builder};
+  rewriter.replaceOp(elifOp, outerMostIfOp);
+  return false;
+}
 
 /// Lower a LIT::LoopOp to HLCF::LoopOp.  Return true if the lowering should
 /// stop traversing the rest of the operations because this is an infinite loop
@@ -429,6 +479,13 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     // Process a LIT::LoopOp.
     if (auto loopOp = dyn_cast<LIT::LoopOp>(op)) {
       if (lowerLITLoop(loopOp, doesRaise, doesBreak))
+        return;
+      continue;
+    }
+
+    // Process a HLCF::ElifOp
+    if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
+      if (lowerElif(elifOp))
         return;
       continue;
     }
