@@ -493,8 +493,8 @@ fn _process_tile[
     var input_tile_offset = M * n + m
     var output_tile_offset = N * m + n
 
-    var input_vals = StaticTuple[tile_size_n, SIMD[type, tile_size_m]]()
-    var output_vals = StaticTuple[tile_size_m, SIMD[type, tile_size_n]]()
+    var input_vals = StaticTuple[SIMD[type, tile_size_m], tile_size_n]()
+    var output_vals = StaticTuple[SIMD[type, tile_size_n], tile_size_m]()
 
     @__copy_capture(input_tile_offset)
     @parameter

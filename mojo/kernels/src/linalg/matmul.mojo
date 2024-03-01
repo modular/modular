@@ -2510,7 +2510,7 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
 @__llvm_metadata(
-    `nvvm.maxntid`=StaticTuple[1, Int32](NUM_THREADS.cast[DType.int32]())
+    `nvvm.maxntid`=StaticTuple[Int32, 1](NUM_THREADS.cast[DType.int32]())
 )
 fn sgemm_warp_tiling_kernel[
     c_type: DType,

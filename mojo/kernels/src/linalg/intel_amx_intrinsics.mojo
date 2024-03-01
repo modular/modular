@@ -118,9 +118,9 @@ fn init_intel_amx() -> Bool:
 struct tileconfig:
     var pavarte_id: UInt8
     var start_row: UInt8
-    var reserved: StaticTuple[14, __mlir_type.`!pop.scalar<ui8>`]
-    var colb: StaticTuple[16, __mlir_type.`!pop.scalar<ui16>`]
-    var rows: StaticTuple[16, __mlir_type.`!pop.scalar<ui8>`]
+    var reserved: StaticTuple[__mlir_type.`!pop.scalar<ui8>`, 14]
+    var colb: StaticTuple[__mlir_type.`!pop.scalar<ui16>`, 16]
+    var rows: StaticTuple[__mlir_type.`!pop.scalar<ui8>`, 16]
 
 
 fn _tile_dpbssd_emulated(
