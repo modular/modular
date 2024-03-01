@@ -103,7 +103,7 @@ fn test_concat_4_inputs_rank5() raises:
     var func = Function[
         fn (
             NDBuffer[DType.float32, 5],
-            StaticTuple[4, NDBuffer[DType.float32, 5]],
+            StaticTuple[NDBuffer[DType.float32, 5], 4],
         ) -> None, _concat_inner_most_single_dim[
             rank=5, type = DType.float32, num_inputs=4, block_size=B_SIZE
         ]
