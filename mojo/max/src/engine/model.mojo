@@ -302,7 +302,7 @@ struct Model:
 
         return self._compiled_model.num_model_inputs()
 
-    fn get_model_input_names(self) raises -> DynamicVector[String]:
+    fn get_model_input_names(self) raises -> List[String]:
         """Gets the names of model inputs.
 
         Returns:
@@ -320,7 +320,7 @@ struct Model:
 
         return self._compiled_model.num_model_outputs()
 
-    fn get_model_output_names(self) raises -> DynamicVector[String]:
+    fn get_model_output_names(self) raises -> List[String]:
         """Gets the names of model outputs.
 
         Returns:

@@ -50,7 +50,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
             + String(input_type.rank())
         )
 
-    var dims = DynamicVector[Dim]()
+    var dims = List[Dim]()
     for i in range(input_type.rank()):
         if i == axis:
             for j in range(indices_type.rank()):
@@ -67,8 +67,8 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
 
 def slice(
     input: Symbol,
-    slices: DynamicVector[SymbolicSlice],
-    static_shape: Optional[DynamicVector[Dim]] = None,
+    slices: List[SymbolicSlice],
+    static_shape: Optional[List[Dim]] = None,
 ) -> Symbol:
     """Slices a symbolic tensor along each dimension.
 
@@ -90,11 +90,11 @@ def slice(
     var g = input.graph()
     var input_type = input.tensor_type()
 
-    var out_shape: DynamicVector[Dim]
+    var out_shape: List[Dim]
     if static_shape:
         out_shape = static_shape.value()
     else:
-        var dims = DynamicVector[Dim]()
+        var dims = List[Dim]()
         for axis in range(input_type.rank()):
             if axis < len(slices):
                 dims.append(Dim.dynamic())
@@ -103,9 +103,9 @@ def slice(
         out_shape = dims
 
     var input_shape = shape_of(input)
-    var starts = DynamicVector[Symbol]()
-    var stops = DynamicVector[Symbol]()
-    var steps = DynamicVector[Symbol]()
+    var starts = List[Symbol]()
+    var stops = List[Symbol]()
+    var steps = List[Symbol]()
 
     for axis in range(input_type.rank()):
         var start: Optional[Symbol] = None
@@ -141,7 +141,7 @@ def slice(
     )
 
 
-# TODO: Change to DynamicVector once Slice is a CollectionElement.
+# TODO: Change to List once Slice is a CollectionElement.
 def slice(input: Symbol, s: Slice) -> Symbol:
     """Slices a symbolic tensor along its first dimension.
 
@@ -156,8 +156,8 @@ def slice(input: Symbol, s: Slice) -> Symbol:
         slice.
     """
     var t = input.tensor_type()
-    var dims = DynamicVector[Dim]()
-    var sym_slices = DynamicVector[SymbolicSlice]()
+    var dims = List[Dim]()
+    var sym_slices = List[SymbolicSlice]()
     # There's a lot of corner cases we're getting wrong here:
     # - if `s` has no `end` then it uses math.limit.max_finite[DType.index]
     #    which causes `len` to be very wrong
@@ -189,8 +189,8 @@ def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
     if axis < 0:
         axis = rank + axis
 
-    var slices = DynamicVector[SymbolicSlice]()
-    var dims = DynamicVector[Dim]()
+    var slices = List[SymbolicSlice]()
+    var dims = List[Dim]()
     for i in range(rank):
         if i == axis:
             slices.append(SymbolicSlice(idx, idx + 1, None))
@@ -230,7 +230,7 @@ def split[
     var type = input.tensor_type()
     var norm_axis = axis + type.rank() if axis < 0 else axis
 
-    var split_sizes = DynamicVector[Int64]()
+    var split_sizes = List[Int64]()
     var out_types = TypeTuple()
     for i in range(n):
         split_sizes.append(sizes[i])
@@ -305,12 +305,12 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
                 concat_dim.num_elements() + dim.num_elements()
             )
 
-    var concat_args = DynamicVector[Symbol]()
+    var concat_args = List[Symbol]()
     concat_args.append(g.scalar(Int64(norm_axis)))
     for i in range(len(values)):
         concat_args.append(values[i])
 
-    var dims = DynamicVector[Dim](capacity=rank)
+    var dims = List[Dim](capacity=rank)
     for i in range(rank):
         dims.append(v0_type.dims[i])
     dims[norm_axis] = concat_dim
@@ -340,7 +340,7 @@ def stack(values: SymbolTuple, axis: Int = 0) -> Symbol:
     """
     if axis < 0:
         axis += values[0].tensor_type().rank() + 1
-    var unsqueezed = DynamicVector[Symbol]()
+    var unsqueezed = List[Symbol]()
     for i in range(len(values)):
         unsqueezed.append(unsqueeze(values[i], axis))
     return concat(unsqueezed, axis=axis)

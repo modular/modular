@@ -7,7 +7,7 @@
 Implements functionalities useful for giving input to Max Engine
 model for execution.
 """
-from collections.vector import DynamicVector
+from collections.vector import List
 from memory.unsafe import bitcast, DTypePointer, Pointer
 from utils.list import Dim
 from sys.ffi import DLHandle
@@ -242,7 +242,7 @@ struct EngineNumpyView:
         @always_inline
         @parameter
         fn get_spec[ty: DType]() raises -> TensorSpec:
-            var shape = DynamicVector[Int]()
+            var shape = List[Int]()
             var array_shape = __get_address_as_lvalue(self._ptr.address).shape
             for dim in array_shape:
                 shape.push_back(dim.__index__())

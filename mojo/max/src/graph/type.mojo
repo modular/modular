@@ -385,7 +385,7 @@ struct MOTensor(MOType, CollectionElement):
 
     var dtype: ElementType
     """The element type of the tensor value."""
-    var dims: DynamicVector[Dim]
+    var dims: List[Dim]
     """The dimensions of the tensor value, if it is known-rank."""
     var ranked: Bool
     """Whether the tensor has a known static rank or not."""
@@ -403,7 +403,7 @@ struct MOTensor(MOType, CollectionElement):
                   is the rank of the tensor.
         """
         self.dtype = dtype
-        self.dims = DynamicVector[Dim](capacity=len(dims))
+        self.dims = List[Dim](capacity=len(dims))
         for d in dims:
             self.dims.append(d[])
         self.ranked = True
@@ -418,7 +418,7 @@ struct MOTensor(MOType, CollectionElement):
                     the constructor with just a dtype argument.
         """
         self.dtype = dtype
-        self.dims = DynamicVector[Dim]()
+        self.dims = List[Dim]()
         self.ranked = ranked
 
     fn __init__(inout self, dtype: ElementType, dim: Int):
@@ -434,7 +434,7 @@ struct MOTensor(MOType, CollectionElement):
         """
         self.__init__(dtype, Dim(dim))
 
-    fn __init__(inout self, dtype: ElementType, dims: DynamicVector[Dim]):
+    fn __init__(inout self, dtype: ElementType, dims: List[Dim]):
         """Constructs a ranked tensor type.
 
         Args:
@@ -459,7 +459,7 @@ struct MOTensor(MOType, CollectionElement):
         Args:
             spec: The dtype and static shape of the tensor.
         """
-        var dims = DynamicVector[Dim](capacity=spec.rank())
+        var dims = List[Dim](capacity=spec.rank())
         for i in range(spec.rank()):
             dims.append(Dim.static(spec[i]))
         self.__init__(spec.dtype(), dims)
@@ -477,7 +477,7 @@ struct MOTensor(MOType, CollectionElement):
         Returns:
             An _mlir.Type in the specified Context.
         """
-        var dims = DynamicVector[_mlir.Attribute](capacity=len(self.dims))
+        var dims = List[_mlir.Attribute](capacity=len(self.dims))
         for i in range(len(self.dims)):
             dims.append(self.dims[i].to_mlir(m))
         return _c.tensor_type_new(
@@ -512,7 +512,7 @@ struct MOTensor(MOType, CollectionElement):
         var ranked = _c.tensor_type_is_ranked(t)
         if ranked:
             var rank = _c.tensor_type_get_rank(t)
-            var dims = DynamicVector[Dim](capacity=rank.to_int())
+            var dims = List[Dim](capacity=rank.to_int())
             for i in range(rank):
                 var dim_attr = _c.tensor_type_get_dim(t, i)
                 var dim: Dim
@@ -803,7 +803,7 @@ struct TypeTuple(Sized):
     This is a helper type for graph construction.
     """
 
-    var elts: DynamicVector[AnyMOType]
+    var elts: List[AnyMOType]
     """The sequence of types."""
 
     # ===------------------------------------------------------------------=== #
@@ -816,7 +816,7 @@ struct TypeTuple(Sized):
         Args:
             elts: The sequence of types.
         """
-        self.elts = DynamicVector[AnyMOType]()
+        self.elts = List[AnyMOType]()
         for t in elts:
             self.elts.append(t[])
 
@@ -832,7 +832,7 @@ struct TypeTuple(Sized):
         Args:
             t: The tensor type.
         """
-        self.elts = DynamicVector[AnyMOType]()
+        self.elts = List[AnyMOType]()
         self.elts.append(t)
 
     fn __init__(inout self, t: MOList):
@@ -841,7 +841,7 @@ struct TypeTuple(Sized):
         Args:
             t: The list type.
         """
-        self.elts = DynamicVector[AnyMOType]()
+        self.elts = List[AnyMOType]()
         self.elts.append(t)
 
     # ===------------------------------------------------------------------=== #
@@ -860,7 +860,7 @@ struct TypeTuple(Sized):
     # _mlir conversion
     # ===------------------------------------------------------------------=== #
 
-    fn to_mlir(self, m: Module) -> DynamicVector[_mlir.Type]:
+    fn to_mlir(self, m: Module) -> List[_mlir.Type]:
         """Converts to a sequence of _mlir.Type instances.
 
         Args:
@@ -869,7 +869,7 @@ struct TypeTuple(Sized):
         Returns:
             A list of _mlir.Types representing the tuple's types.
         """
-        var retval = DynamicVector[_mlir.Type]()
+        var retval = List[_mlir.Type]()
         for i in range(len(self.elts)):
             retval.append(self.elts[i].to_mlir(m))
         return retval

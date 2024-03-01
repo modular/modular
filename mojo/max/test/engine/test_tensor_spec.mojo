@@ -34,7 +34,7 @@ fn test_tensor_spec() raises:
     # CHECK: True
     print(engine_spec.get_as_tensor_spec() == spec)
 
-    var dynamic_dim_shape = DynamicVector[Optional[Int64]]()
+    var dynamic_dim_shape = List[Optional[Int64]]()
     dynamic_dim_shape.push_back(None)
     dynamic_dim_shape.push_back(Int64(1))
     dynamic_dim_shape.push_back(Int64(2))

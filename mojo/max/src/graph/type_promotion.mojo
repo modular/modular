@@ -78,7 +78,7 @@ from max.graph.symbol import Symbol
 from max.graph.ops import cast
 
 
-fn promotion_semilattice() -> Dict[DType, DynamicVector[DType]]:
+fn promotion_semilattice() -> Dict[DType, List[DType]]:
     """The promotion semilattice structure.
 
     - Keys of this dictionary are DTypes.
@@ -89,11 +89,11 @@ fn promotion_semilattice() -> Dict[DType, DynamicVector[DType]]:
     Returns:
         The promotion semilattice as a dictionary of direct promotions.
     """
-    var semilattice = Dict[DType, DynamicVector[DType]]()
+    var semilattice = Dict[DType, List[DType]]()
 
     @parameter
     fn promotes_to(dtype: DType, *promotes_to: DType):
-        var ps = DynamicVector[DType]()
+        var ps = List[DType]()
         for p in promotes_to:
             ps.append(p)
         semilattice[dtype] = ps
@@ -123,9 +123,7 @@ fn promotion_semilattice() -> Dict[DType, DynamicVector[DType]]:
 
 fn min[
     T: KeyElement
-](
-    semilattice: Dict[T, DynamicVector[T]], owned elements: Set[T]
-) raises -> Optional[T]:
+](semilattice: Dict[T, List[T]], owned elements: Set[T]) raises -> Optional[T]:
     """The smallest given element in the semilattice, if it exists and is
     unique, otherwise None.
 
@@ -155,7 +153,7 @@ fn min[
 
 fn all_greater_or_equal_elements[
     T: KeyElement
-](semilattice: Dict[T, DynamicVector[T]], element: T) raises -> Set[T]:
+](semilattice: Dict[T, List[T]], element: T) raises -> Set[T]:
     """Find all elements in the partial ordering which are greater than
     or equal to the element, including itself.
 
@@ -187,7 +185,7 @@ fn all_greater_or_equal_elements[
 
 fn join[
     T: KeyElement
-](semilattice: Dict[T, DynamicVector[T]], e0: T, *elts: T) raises -> T:
+](semilattice: Dict[T, List[T]], e0: T, *elts: T) raises -> T:
     """The join of any number of elements in the semilattice.
 
     This is the smallest element which is greater than or equal to

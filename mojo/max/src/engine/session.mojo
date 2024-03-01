@@ -8,7 +8,7 @@ The entry point to Max Engine and can be used to load models
 for inference.
 """
 from collections.optional import Optional
-from collections.vector import InlinedFixedVector, DynamicVector
+from collections.vector import InlinedFixedVector, List
 from memory.anypointer import AnyPointer
 from os.atomic import Atomic
 from sys.ffi import DLHandle
@@ -173,7 +173,7 @@ struct _InferenceSessionImpl(Movable):
     fn get_as_engine_tensor_spec(
         self,
         name: String,
-        shape: Optional[DynamicVector[Optional[Int64]]],
+        shape: Optional[List[Optional[Int64]]],
         dtype: DType,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
@@ -226,7 +226,7 @@ struct _InferenceSessionImpl(Movable):
 struct _Specs(CollectionElement):
     var static: Optional[TensorSpec]
 
-    alias dynamic_type = Optional[DynamicVector[Optional[Int64]]]
+    alias dynamic_type = Optional[List[Optional[Int64]]]
     var dynamic: Self.dynamic_type
     var dtype: DType
 
@@ -236,7 +236,7 @@ struct _Specs(CollectionElement):
         self.dtype = spec.dtype()
 
     fn __init__(
-        inout self, spec: Optional[DynamicVector[Optional[Int64]]], dtype: DType
+        inout self, spec: Optional[List[Optional[Int64]]], dtype: DType
     ):
         self.static = None
         self.dynamic = spec
@@ -257,14 +257,14 @@ struct LoadOptions(CollectionElement):
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
     var _custom_ops_path: Optional[Path]
-    var _input_specs: DynamicVector[_Specs]
+    var _input_specs: List[_Specs]
 
     fn __init__(inout self):
         """Creates a new LoadOptions object."""
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
-        self._input_specs = DynamicVector[_Specs]()
+        self._input_specs = List[_Specs]()
 
     fn _set_model_source(inout self, module: Module):
         """Specifies the Max Graph Module to load model from.
@@ -321,7 +321,7 @@ struct LoadOptions(CollectionElement):
 
     fn add_input_specs(
         inout self,
-        specs: DynamicVector[TensorSpec],
+        specs: List[TensorSpec],
     ) raises:
         """Add valid input specs for model to be given at compile time.
            Only applicable for PyTorch.
@@ -335,7 +335,7 @@ struct LoadOptions(CollectionElement):
 
     fn add_input_specs(
         inout self,
-        shapes: DynamicVector[_Specs.dynamic_type],
+        shapes: List[_Specs.dynamic_type],
         dtypes: InlinedFixedVector[DType],
     ) raises:
         """Add valid input specs for model to be given at compile time.
@@ -493,7 +493,7 @@ struct InferenceSession:
     fn get_as_engine_tensor_spec(
         self,
         name: String,
-        shape: Optional[DynamicVector[Optional[Int64]]],
+        shape: Optional[List[Optional[Int64]]],
         dtype: DType,
     ) raises -> EngineTensorSpec:
         """Gets a TensorSpec compatible with Max Engine.

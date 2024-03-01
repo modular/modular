@@ -15,7 +15,7 @@ from ._status import Status
 from ._utils import call_dylib_func, exchange, OwningVector
 from ._tensor_spec_impl import CTensorSpec
 from tensor import TensorSpec
-from collections.vector import DynamicVector
+from collections.vector import List
 from ._dtypes import EngineDType
 from pathlib import Path
 
@@ -81,7 +81,7 @@ struct CCompileConfig:
     fn set_torch_input_specs(
         self,
         torch_lib: DLHandle,
-        specs_ptr: DynamicVector[CTorchInputSpec],
+        specs_ptr: List[CTorchInputSpec],
     ):
         call_dylib_func(
             torch_lib,
@@ -110,7 +110,7 @@ struct CTorchInputSpec(CollectionElement):
 
 
 struct TorchInputSpec(Movable):
-    alias shape_type = DynamicVector[Int64]
+    alias shape_type = List[Int64]
     var shape: Self.shape_type
     var dtype: DType
     var ptr: CTorchInputSpec
@@ -137,7 +137,7 @@ struct TorchInputSpec(Movable):
 
     fn __init__(
         inout self,
-        shape: DynamicVector[Optional[Int64]],
+        shape: List[Optional[Int64]],
         dtype: DType,
         lib: DLHandle,
         engine_lib: DLHandle,
@@ -259,7 +259,7 @@ struct CompileConfig:
         if not self.torch_lib:
             raise "cannot find torch extension libraries"
 
-        var inner_spec = DynamicVector[CTorchInputSpec]()
+        var inner_spec = List[CTorchInputSpec]()
         for i in range(len(self.input_specs)):
             var spec_ptr = self.input_specs.get(i)
             inner_spec.push_back(__get_address_as_lvalue(spec_ptr.value).ptr)
@@ -274,7 +274,7 @@ struct CompileConfig:
 
     fn add_input_spec(
         inout self,
-        shape_or: Optional[DynamicVector[Optional[Int64]]],
+        shape_or: Optional[List[Optional[Int64]]],
         dtype: DType,
     ):
         if not shape_or:
@@ -369,13 +369,13 @@ struct CompiledModel:
 
         return self.ptr.num_model_inputs(self.lib)
 
-    fn get_model_input_names(self) raises -> DynamicVector[String]:
+    fn get_model_input_names(self) raises -> List[String]:
         """Gets the names of model inputs."""
 
         var names = InputTensorNames(
             self.ptr, self.num_model_inputs(), self.lib
         )
-        var name_vec = DynamicVector[String]()
+        var name_vec = List[String]()
         name_vec.reserve(len(names))
         for i in range(len(names)):
             name_vec.push_back(names[i])
@@ -386,13 +386,13 @@ struct CompiledModel:
 
         return self.ptr.num_model_outputs(self.lib)
 
-    fn get_model_output_names(self) raises -> DynamicVector[String]:
+    fn get_model_output_names(self) raises -> List[String]:
         """Gets the names of model outputs."""
 
         var names = OutputTensorNames(
             self.ptr, self.num_model_outputs(), self.lib
         )
-        var name_vec = DynamicVector[String]()
+        var name_vec = List[String]()
         name_vec.reserve(len(names))
         for i in range(len(names)):
             name_vec.push_back(names[i])

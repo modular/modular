@@ -135,7 +135,7 @@ struct Graph(CollectionElement, Stringable):
         # TODO: Add input verification.
         var ctx = self._op.context()
 
-        var operands = DynamicVector[_mlir.Value]()
+        var operands = List[_mlir.Value]()
         for i in range(len(inputs)):
             operands.append(inputs[i].handle)
 
@@ -153,7 +153,7 @@ struct Graph(CollectionElement, Stringable):
         else:
             self._body().append(op)
 
-        var results = DynamicVector[Symbol]()
+        var results = List[Symbol]()
         for i in range(op.num_results()):
             results.append(op.result(i))
         return results
@@ -230,9 +230,7 @@ struct Graph(CollectionElement, Stringable):
             AttrMap(self.module().tensor_attr("value", value)),
         )
 
-    fn vector[
-        dtype: DType
-    ](self, values: DynamicVector[Scalar[dtype]]) raises -> Symbol:
+    fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with 1-D shape,
@@ -272,7 +270,7 @@ struct Graph(CollectionElement, Stringable):
         Returns:
             The symbolic output of this node.
         """
-        var shape = DynamicVector[Int](capacity=rank)
+        var shape = List[Int](capacity=rank)
         for i in range(rank):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))

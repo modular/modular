@@ -43,12 +43,12 @@ fn execute_nullary[
 
 fn execute_nullary_list[
     outtype: DType = DType.float32
-](
-    module: Module, load_options: Optional[LoadOptions] = None
-) raises -> DynamicVector[Tensor[outtype]]:
+](module: Module, load_options: Optional[LoadOptions] = None) raises -> List[
+    Tensor[outtype]
+]:
     var result_map = execute_no_args(module, load_options)
     var engine_list = result_map.get_value("output0").as_list()
-    var results = DynamicVector[Tensor[outtype]]()
+    var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
     _ = result_map ^
@@ -72,10 +72,10 @@ fn execute_unary_list[
     module: Module,
     input: Tensor[intype],
     load_options: Optional[LoadOptions] = None,
-) raises -> DynamicVector[Tensor[outtype]]:
+) raises -> List[Tensor[outtype]]:
     var result_map = execute_base(module, input, load_options=load_options)
     var engine_list = result_map.get_value("output0").as_list()
-    var results = DynamicVector[Tensor[outtype]]()
+    var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
     _ = result_map ^

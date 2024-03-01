@@ -96,7 +96,7 @@ fn attr_new_tensor[
 ](
     m: _mlir.Module,
     name: String,
-    data: DynamicVector[T],
+    data: List[T],
     type: _mlir.Type,
     is_owned: Bool,
 ) -> _mlir.NamedAttribute:
@@ -160,7 +160,7 @@ fn dim_type_new_dynamic() -> Int64:
 fn tensor_type_new(
     m: _mlir.Module,
     dtype: _mlir.Type,
-    dims: DynamicVector[_mlir.Attribute],
+    dims: List[_mlir.Attribute],
     ranked: Bool,
 ) -> _mlir.Type:
     var result = cfunc[

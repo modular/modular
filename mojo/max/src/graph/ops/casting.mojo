@@ -81,7 +81,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
         MOTensor(DType.int64, rank - 1),
     )
 
-    var squeezed_dims = DynamicVector[Dim]()
+    var squeezed_dims = List[Dim]()
     for i in range(rank):
         if i != axis:
             squeezed_dims.push_back(v_type.dims[i])
@@ -127,7 +127,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
         MOTensor(DType.int64, rank + 1),
     )
 
-    var dims = DynamicVector[Dim]()
+    var dims = List[Dim]()
     for i in range(rank):
         if i == axis:
             dims.push_back(1)
@@ -138,9 +138,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     return reshape(v, new_shape, dims)
 
 
-fn reshape(
-    v: Symbol, shape: Symbol, out_dims: DynamicVector[Dim]
-) raises -> Symbol:
+fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     """Reshapes a symbolic tensor to a specified shape.
 
     Args:
@@ -202,7 +200,7 @@ fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
     var g = v.graph()
 
     if len(shape) == 0:  # Can't `stack` an empty tuple
-        var dims = DynamicVector[Dim]()
+        var dims = List[Dim]()
         return reshape(v, g.constant(Tensor[DType.int64](TensorShape(0))), dims)
 
     for i in range(len(shape)):
@@ -242,7 +240,7 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
     var shape_t = shape.tensor_type()
     if (shape_t.rank() != 1) or (not shape_t.dims[0].is_static()):
         raise "reshape shape requires static shape shape"
-    var out_dims = DynamicVector[Dim]()
+    var out_dims = List[Dim]()
     for _ in range(shape_t.dims[0].num_elements()):
         out_dims.append(Dim.dynamic())
 
@@ -301,7 +299,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     if x < 0 or x >= input_type.rank() or y < 0 or y >= input_type.rank():
         raise "transpose dim outside range"
 
-    var dims = DynamicVector[Dim]()
+    var dims = List[Dim]()
     var ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
         dims.push_back(input_type.dims[i])

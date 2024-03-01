@@ -75,7 +75,7 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     #   1. The smaller shape is filled with 1 from the left
     #   2. Dimensions are promoted by the rule 1 -> N -> dynamic
     # TODO: Raise error if static dumensions don't match and can't be promoted.
-    var broadcast_dims = DynamicVector[Dim]()
+    var broadcast_dims = List[Dim]()
     var larger = lhs_type if lhs_rank > rhs_rank else rhs_type
     var smaller = rhs_type if lhs_rank > rhs_rank else lhs_type
     var offset = larger.rank() - smaller.rank()

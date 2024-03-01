@@ -23,7 +23,7 @@ import _mlir
 struct AttrMap(Sized):
     """Holds a set of attributes."""
 
-    var attrs: DynamicVector[_mlir.NamedAttribute]
+    var attrs: List[_mlir.NamedAttribute]
     """The list of attributes held by this map.
 
     The list values are an opaque handle to an `Attribute`.
@@ -35,7 +35,7 @@ struct AttrMap(Sized):
 
     fn __init__(inout self, *attrs: _mlir.NamedAttribute):
         """Constructs an `AttrMap` from a set of opaque `Attribute` handles."""
-        self.attrs = DynamicVector[_mlir.NamedAttribute]()
+        self.attrs = List[_mlir.NamedAttribute]()
         for attr in attrs:
             self.attrs.append(attr[])
 

@@ -13,7 +13,7 @@ from sys.ffi import DLHandle
 from ._utils import call_dylib_func
 from tensor import TensorSpec
 from ._dtypes import EngineDType
-from collections.vector import DynamicVector
+from collections.vector import List
 from collections.optional import Optional
 from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec
@@ -80,7 +80,7 @@ struct EngineTensorSpec(Stringable, Movable):
         """
         var dtype = spec.dtype()
         var rank = spec.rank()
-        var shape = DynamicVector[Int64]()
+        var shape = List[Int64]()
         var name_str = name._as_ptr()
         for i in range(rank):
             shape.push_back(spec[i])
@@ -100,7 +100,7 @@ struct EngineTensorSpec(Stringable, Movable):
     fn __init__(
         inout self,
         name: String,
-        shape: Optional[DynamicVector[Optional[Int64]]],
+        shape: Optional[List[Optional[Int64]]],
         dtype: DType,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -121,7 +121,7 @@ struct EngineTensorSpec(Stringable, Movable):
         if shape:
             var inner_shape = shape.value()
             var rank = len(inner_shape)
-            var adjusted_shape = DynamicVector[Int64]()
+            var adjusted_shape = List[Int64]()
             adjusted_shape.reserve(rank)
             var dynamic_value = CTensorSpec.get_dynamic_dimension_value(lib)
             for i in range(rank):
@@ -205,7 +205,7 @@ struct EngineTensorSpec(Stringable, Movable):
         if not rank_or:
             raise "tensors with dynamic rank cannot be converted to Mojo TensorSpec."
 
-        var shape = DynamicVector[Int]()
+        var shape = List[Int]()
         var rank = rank_or.value()
         for i in range(rank):
             shape.push_back(self[i].value())

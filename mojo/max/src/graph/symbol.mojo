@@ -118,13 +118,13 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             A new `Symbol` that has the given shape.
         """
-        var static_shape = DynamicVector[Dim]()
-        var symbolic_dims = DynamicVector[Symbol]()
+        var static_shape = List[Dim]()
+        var symbolic_dims = List[Symbol]()
 
         if len(dims) == 0:
             return ops.reshape(
                 self,
-                self.graph().vector[DType.int64](DynamicVector[Int64]()),
+                self.graph().vector[DType.int64](List[Int64]()),
                 static_shape,
             )
 
@@ -200,7 +200,7 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             The slicing result.
         """
-        var slices = DynamicVector[SymbolicSlice]()
+        var slices = List[SymbolicSlice]()
         for sval in s:
             slices.append(sval[])
         return ops.slice(self, slices)
@@ -444,12 +444,12 @@ struct SymbolTuple(Sized):
 
     This struct mainly offers the convenience of building a tuple of `Symbol`s
     using the tuple literal (`(a, b, c)`) notation. It is largely equivalent
-    to a `DynamicVector[Symbol]`.
+    to a `List[Symbol]`.
     """
 
-    # TODO: Drop this once DynamicVector can do this.
+    # TODO: Drop this once List can do this.
 
-    var symbols: DynamicVector[Symbol]
+    var symbols: List[Symbol]
     """The actual list of symbols."""
 
     # ===------------------------------------------------------------------=== #
@@ -458,7 +458,7 @@ struct SymbolTuple(Sized):
 
     fn __init__(inout self, *symbols: Symbol):
         """Constructor from a variadic list of `Symbol`s."""
-        self.symbols = DynamicVector[Symbol]()
+        self.symbols = List[Symbol]()
         for symbol in symbols:
             self.symbols.append(symbol[])
 

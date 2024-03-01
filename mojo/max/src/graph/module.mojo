@@ -141,9 +141,7 @@ struct Module(Stringable):
 
     fn vector_attr[
         dtype: DType
-    ](
-        self, name: String, values: DynamicVector[Scalar[dtype]]
-    ) -> _mlir.NamedAttribute:
+    ](self, name: String, values: List[Scalar[dtype]]) -> _mlir.NamedAttribute:
         """Creates a new `Tensor`-valued `Attribute`.
 
         The value of this attribute will have the type `MOTensor` with 1D shape,
@@ -190,7 +188,7 @@ struct Module(Stringable):
         """
         # Note: while this could generalize to something like splat, MO doesn't
         # really make use of those.
-        var shape = DynamicVector[Int](capacity=rank)
+        var shape = List[Int](capacity=rank)
         for i in range(rank):
             shape.append(1)
         return self.tensor_attr[dtype](name, Tensor(shape, value))
