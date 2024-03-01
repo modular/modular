@@ -12,9 +12,20 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Threading.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/Support/RWMutex.h"
 
 namespace M::KGEN {
+
+template <typename DerivedT, typename FuncT, typename CallT>
+struct CallGraphEdge;
+template <typename DerivedT, typename FuncT, typename CallT>
+struct CallGraphEdgeIterator;
+
+//===----------------------------------------------------------------------===//
+// CallGraphNode
+//===----------------------------------------------------------------------===//
+
 /// A node in a call graph contains a function, edges to its callers, and edges
 /// to its callees. A node is ready to inline its callees when all of its
 /// callees have been processed.
@@ -22,6 +33,9 @@ template <typename DerivedT, typename FuncT, typename CallT>
 struct CallGraphNodeBase {
   using FuncOpT = FuncT;
   using CallOpT = CallT;
+  using BaseT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
+  using EdgeT = CallGraphEdge<DerivedT, FuncT, CallT>;
+  using EdgeIteratorT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
 
   /// Create the node for the given function.
   explicit CallGraphNodeBase(FuncT func) : func(func) {}
@@ -49,6 +63,10 @@ struct CallGraphNodeBase {
   /// size of `callsites`, then all calls for this function have been processed.
   std::atomic<size_t> numProcessedCalls = 0;
 };
+
+//===----------------------------------------------------------------------===//
+// CallGraph
+//===----------------------------------------------------------------------===//
 
 /// A callgraph is a graph where the nodes represent functions and the edges
 /// represent calls between functions. This is a generic callgraph that provides
@@ -123,6 +141,98 @@ void CallGraphBase<DerivedT, NodeT>::dump() {
     llvm::errs() << "\n";
   }
 }
+
+//===----------------------------------------------------------------------===//
+// CallGraphEdgeIterator
+//===----------------------------------------------------------------------===//
+
+/// Iterator over the edges in a callgraph. The iterator refers to a node in the
+/// callgraph and a specific callsite within the function, representing the edge
+/// from one node to the callee function's node.
+template <typename DerivedT, typename FuncT, typename CallT>
+struct CallGraphEdgeIterator {
+  using NodeT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
+  using ItT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
+  using RefT = CallGraphEdge<DerivedT, FuncT, CallT>;
+
+  NodeT *node;
+  size_t childIdx;
+
+  bool operator==(const ItT &rhs) const {
+    return node == rhs.node && childIdx == rhs.childIdx;
+  }
+  bool operator!=(const ItT &rhs) const { return !(*this == rhs); }
+  ItT operator++() {
+    ++childIdx;
+    return *this;
+  }
+  ItT operator++(int) {
+    ItT tmp = *this;
+    ++*this;
+    return tmp;
+  }
+  RefT operator*();
+};
+
+/// This struct represents a edge in a callgraph. It contains a callee node and
+/// the call operation in the caller from edge originates to the callee node.
+template <typename DerivedT, typename FuncT, typename CallT>
+struct CallGraphEdge {
+  using NodeT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
+  using ItT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
+  using RefT = CallGraphEdge<DerivedT, FuncT, CallT>;
+
+  NodeT *node;
+  CallT call;
+
+  bool operator==(const RefT &rhs) const {
+    return node == rhs.node && call == rhs.call;
+  }
+  bool operator!=(const RefT &rhs) const { return !(*this == rhs); }
+
+  ItT begin() const { return {node, 0}; }
+  ItT end() const { return {node, node->callsites.size()}; }
+};
+
+template <typename DerivedT, typename FuncT, typename CallT>
+auto CallGraphEdgeIterator<DerivedT, FuncT, CallT>::operator*() -> RefT {
+  auto [call, child] = node->callsites[childIdx];
+  return {child, call};
+}
+
 } // namespace M::KGEN
+
+namespace llvm {
+template <typename DerivedT, typename FuncT, typename CallT>
+struct DenseMapInfo<M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>> {
+  using EltT = M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>;
+  using NodeT = typename EltT::NodeT;
+
+  static EltT getEmptyKey() {
+    return {DenseMapInfo<NodeT *>::getEmptyKey(), nullptr};
+  }
+  static EltT getTombstoneKey() {
+    return {DenseMapInfo<NodeT *>::getTombstoneKey(), nullptr};
+  }
+  static unsigned getHashValue(const EltT &node) {
+    return llvm::hash_combine(
+        DenseMapInfo<NodeT *>::getHashValue(node.node),
+        DenseMapInfo<mlir::Operation *>::getHashValue(node.call));
+  }
+  static bool isEqual(const EltT &lhs, const EltT &rhs) { return lhs == rhs; }
+};
+
+template <typename DerivedT, typename FuncT, typename CallT>
+struct GraphTraits<M::KGEN::CallGraphNodeBase<DerivedT, FuncT, CallT> *> {
+  using NodeRef = M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>;
+  using ChildIteratorType = typename NodeRef::ItT;
+
+  static NodeRef getEntryNode(typename NodeRef::NodeT *node) {
+    return {node, nullptr};
+  }
+  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
+  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
+};
+} // namespace llvm
 
 #endif // KGEN_LIB_TRANSFORMS_CALLGRAPHUTILS_H

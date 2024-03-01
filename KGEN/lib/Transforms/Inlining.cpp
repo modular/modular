@@ -1111,85 +1111,10 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
 // diagnoseInliningCycle
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct InliningGraphNodeRef;
-
-struct InliningGraphNodeIterator {
-  InliningGraphNode *node;
-  size_t childIdx;
-
-  bool operator==(const InliningGraphNodeIterator &rhs) const {
-    return node == rhs.node && childIdx == rhs.childIdx;
-  }
-  bool operator!=(const InliningGraphNodeIterator &rhs) const {
-    return node != rhs.node || childIdx != rhs.childIdx;
-  }
-  InliningGraphNodeIterator operator++() {
-    ++childIdx;
-    return *this;
-  }
-  InliningGraphNodeIterator operator++(int) {
-    InliningGraphNodeIterator tmp = *this;
-    ++*this;
-    return tmp;
-  }
-  InliningGraphNodeRef operator*();
-};
-
-struct InliningGraphNodeRef {
-  InliningGraphNode *node;
-  KGENCallOpInterface call;
-
-  bool operator==(const InliningGraphNodeRef &rhs) const {
-    return node == rhs.node && call == rhs.call;
-  }
-  bool operator!=(const InliningGraphNodeRef &rhs) const {
-    return !(*this == rhs);
-  }
-
-  InliningGraphNodeIterator begin() const { return {node, 0}; }
-  InliningGraphNodeIterator end() const {
-    return {node, node->callsites.size()};
-  }
-};
-} // namespace
-
-InliningGraphNodeRef InliningGraphNodeIterator::operator*() {
-  auto [call, child] = node->callsites[childIdx];
-  return {child, call};
-}
-
 namespace llvm {
 template <>
-struct DenseMapInfo<InliningGraphNodeRef> {
-  static InliningGraphNodeRef getEmptyKey() {
-    return {DenseMapInfo<InliningGraphNode *>::getEmptyKey(), nullptr};
-  }
-  static InliningGraphNodeRef getTombstoneKey() {
-    return {DenseMapInfo<InliningGraphNode *>::getTombstoneKey(), nullptr};
-  }
-  static unsigned getHashValue(const InliningGraphNodeRef &node) {
-    return llvm::hash_combine(
-        DenseMapInfo<InliningGraphNode *>::getHashValue(node.node),
-        DenseMapInfo<Operation *>::getHashValue(node.call));
-  }
-  static bool isEqual(const InliningGraphNodeRef &lhs,
-                      const InliningGraphNodeRef &rhs) {
-    return lhs == rhs;
-  }
-};
-
-template <>
-struct GraphTraits<InliningGraphNode *> {
-  using NodeRef = InliningGraphNodeRef;
-  using ChildIteratorType = InliningGraphNodeIterator;
-
-  static NodeRef getEntryNode(InliningGraphNode *root) {
-    return {root, nullptr};
-  }
-  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
-  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
-};
+struct GraphTraits<InliningGraphNode *>
+    : GraphTraits<InliningGraphNode::BaseT *> {};
 } // namespace llvm
 
 /// Given an inlining graph with a known cycle, diagnose the cycle error.
@@ -1207,17 +1132,17 @@ static void diagnoseInliningCycle(InliningGraph &g) {
     ++sccIt;
   assert(sccIt.hasCycle() && "expected a cycle in the SCC");
   // Build a set of nodes in the SCC for efficient queries.
-  DenseSet<InliningGraphNodeRef> sccNodes;
-  for (InliningGraphNodeRef ref : *sccIt)
+  DenseSet<InliningGraphNode::EdgeT> sccNodes;
+  for (InliningGraphNode::EdgeT ref : *sccIt)
     sccNodes.insert(ref);
 
   // Determine the first cycle we can see in the SCC.
-  SmallVector<InliningGraphNodeIterator> path;
-  DenseSet<InliningGraphNodeRef> nodesInPath;
-  InliningGraphNodeRef nextNode = sccIt->front();
+  SmallVector<InliningGraphNode::EdgeIteratorT> path;
+  DenseSet<InliningGraphNode::EdgeT> nodesInPath;
+  InliningGraphNode::EdgeT nextNode = sccIt->front();
 
   while (nodesInPath.insert(nextNode).second) {
-    InliningGraphNodeIterator it = nextNode.begin();
+    InliningGraphNode::EdgeIteratorT it = nextNode.begin();
     while (!sccNodes.contains(*it))
       ++it;
     path.push_back(it);
@@ -1228,8 +1153,8 @@ static void diagnoseInliningCycle(InliningGraph &g) {
   InFlightDiagnostic diag =
       mlir::emitError(nextNode.node->func.getLoc())
       << "function has recursive call to 'always_inline' function";
-  for (InliningGraphNodeIterator &edge : path) {
-    InliningGraphNodeRef node = *edge;
+  for (InliningGraphNode::EdgeIteratorT &edge : path) {
+    InliningGraphNode::EdgeT node = *edge;
     diag.attachNote(node.call.getLoc())
         << (&edge == &path.back() ? "call here recurses" : "through call here");
     diag.attachNote(node.node->func.getLoc())
