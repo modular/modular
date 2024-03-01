@@ -35,8 +35,8 @@ struct CallGraphEdgeBase {
 
   using BaseT = CallGraphEdgeBase<DerivedT, FuncT, CallT>;
 
-  auto begin() { return node->callsites.begin(); }
-  auto end() { return node->callsites.end(); }
+  auto begin() { return node->begin(); }
+  auto end() { return node->end(); }
 
   bool operator==(const BaseT &rhs) const {
     return std::tie(call, node) == std::tie(rhs.call, rhs.node);
@@ -64,7 +64,12 @@ struct CallGraphNodeBase {
   /// `InliningGraphBase` is resized. That occurs before any references are
   /// taken to instances of this object, so just default-construct all other
   /// members of this class.
-  CallGraphNodeBase(CallGraphNodeBase &&other) : func(other.func) {}
+  CallGraphNodeBase(CallGraphNodeBase &&other) : func(other.func) {
+    other.func = nullptr;
+  }
+
+  auto begin() { return callsites.begin(); }
+  auto end() { return callsites.end(); }
 
   /// The function represented by the node.
   FuncOpT func;
@@ -91,12 +96,14 @@ template <typename DerivedT, typename NodeT>
 struct CallGraphBase {
   using FuncOpT = typename NodeT::FuncOpT;
   using CallOpT = typename NodeT::CallOpT;
+  using BaseT = CallGraphBase<DerivedT, NodeT>;
 
   /// Get a reference to the derived class.
   DerivedT &getDerived() { return *static_cast<DerivedT *>(this); }
 
   /// Build the inlining graph for a module.
-  void build(ModuleOp module, const SymbolTable &symtab);
+  template <typename... NodeArgTs>
+  void build(ModuleOp module, const SymbolTable &symtab, NodeArgTs &&...args);
 
   /// Dump the callgraph. For debugging.
   void dump();
@@ -107,13 +114,17 @@ struct CallGraphBase {
 };
 
 template <typename DerivedT, typename NodeT>
+template <typename... NodeArgTs>
 void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
-                                           const SymbolTable &symtab) {
+                                           const SymbolTable &symtab,
+                                           NodeArgTs &&...args) {
   CompilerTimeTraceScope traceScope("CallGraphBase::build");
 
   // Instantiate the nodes for each generator first.
-  for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>()))
-    nodes.insert(std::make_pair(func, NodeT(func)));
+  for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>())) {
+    nodes.insert(
+        std::make_pair(func, NodeT(func, std::forward<NodeArgTs>(args)...)));
+  }
 
   // Build the graph by walking all the calls in each function and adding edges
   // as appropriate.
@@ -190,6 +201,23 @@ struct GraphTraits<M::KGEN::CallGraphNodeBase<DerivedT, FuncT, CallT> *> {
   static NodeRef getEntryNode(DerivedT *node) { return {nullptr, node}; }
   static ChildIteratorType child_begin(NodeRef edge) { return edge.begin(); }
   static ChildIteratorType child_end(NodeRef edge) { return edge.end(); }
+};
+
+template <typename DerivedT, typename NodeT>
+struct GraphTraits<M::KGEN::CallGraphBase<DerivedT, NodeT> *> {
+  static NodeT *getEntryNode(DerivedT *graph) { return &graph->externalNode; }
+  static NodeT *getNode(typename NodeT::EdgeT edge) { return edge.node; }
+
+  using NodeRef = NodeT *;
+  using ChildIteratorType =
+      llvm::mapped_iterator<typename NodeT::EdgeIteratorT, decltype(&getNode)>;
+
+  static ChildIteratorType child_begin(NodeRef node) {
+    return ChildIteratorType(node->begin(), &getNode);
+  }
+  static ChildIteratorType child_end(NodeRef node) {
+    return ChildIteratorType(node->end(), &getNode);
+  }
 };
 } // namespace llvm
 
