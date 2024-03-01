@@ -68,6 +68,14 @@ struct CallGraphNode {
   /// are defined in the shouldInlineCallee() function.
   bool canInlineCallee(CallGraphNode *callee);
 
+  /// Lazily compute and return the number of operations in the function.
+  uint64_t getNumOps() {
+    if (numOps != -1)
+      return numOps;
+    numOps = KGEN::getNumOperations(func);
+    return numOps;
+  }
+
   /// Is all callsite of this function inlined,
   /// if so the operation can be erased.
   bool isAllInlined();
@@ -109,6 +117,10 @@ struct CallGraphNode {
   /// If node is reachable in the CallGraph
   /// (e.g. not in any scc that has no callers outside of the scc.)
   bool reachable = false;
+
+  /// Cached number of operations on the function. If -1, then it has not been
+  /// computed yet.
+  std::atomic<int64_t> numOps = -1;
 };
 
 //===----------------------------------------------------------------------===//
@@ -286,7 +298,7 @@ bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
 
   // TODO: Add more sophisticated heuristics for cost model based inlining
   // strategy.
-  return KGEN::getNumOperations(callee->func) < threshold;
+  return callee->getNumOps() < threshold;
 }
 
 bool CallGraphNode::isAllInlined() {
@@ -364,7 +376,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
 
   SmallVector<AnyAsyncValueRef> calleeAsynchValues;
   // Collect callee dependencies to wait.
-  for (auto [callee, calls] : caller->callSites) {
+  for (auto [callee, _] : caller->callSites) {
     if (!caller->canInlineCallee(callee))
       continue;
     calleeAsynchValues.emplace_back(callee->doneInlining.copy());
