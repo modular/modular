@@ -805,3 +805,38 @@ lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
   lit.return %none : !kgen.none
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @elif
+// CHECK: %idx0 = index.constant 0
+// CHECK-NEXT: %idx1 = index.constant 1
+// CHECK-NEXT: %idx2 = index.constant 2
+// CHECK-NEXT: %0 = index.cmp eq(%arg0, %idx0)
+// CHECK-NEXT: %1 = hlcf.if %0 -> index {
+// CHECK-NEXT:   hlcf.yield %arg0 : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   %2 = index.cmp eq(%arg0, %idx1)
+// CHECK-NEXT:   %3 = hlcf.if %2 -> index {
+// CHECK-NEXT:       hlcf.yield %arg1 : index
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield %arg2 : index
+// CHECK:       hlcf.yield %3 : index
+// CHECK: kgen.return %1 : index
+lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %0 = hlcf.elif -> index {
+    %c = index.cmp eq(%arg0, %idx0)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield %arg0 : index
+  } {
+    %c = index.cmp eq(%arg0, %idx1)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield %arg1 : index
+  } else {
+    hlcf.yield %arg2 : index
+  }
+  kgen.return %0 : index
+}
