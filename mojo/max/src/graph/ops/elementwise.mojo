@@ -691,9 +691,6 @@ def logsoftmax(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise logsoftmax of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.logsoftmax`](/engine/reference/mlir/mo#mologsoftmax-mmologsoftmaxop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the logsoftmax
             computation.
@@ -713,9 +710,6 @@ def relu(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise relu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.relu`](/engine/reference/mlir/mo#morelu-mmoreluop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the relu
@@ -737,9 +731,6 @@ def softmax(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise softmax of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.softmax`](/engine/reference/mlir/mo#mosoftmax-mmosoftmaxop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the softmax
             computation.
@@ -759,9 +750,6 @@ def sigmoid(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise sigmoid of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.sigmoid`](/engine/reference/mlir/mo#mosigmoid-mmosigmoidop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the sigmoid
@@ -805,9 +793,6 @@ def cos(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise cosine of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.cos`](/engine/reference/mlir/mo#mocos-mmocosop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the trunc
             computation. If it's not a floating-point DType, it will be promoted
@@ -829,9 +814,6 @@ def floor(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise floor of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.floor`](/engine/reference/mlir/mo#mofloor-mmofloorop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the trunc
@@ -855,9 +837,6 @@ def round(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise round of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.round`](/engine/reference/mlir/mo#moround-mmoroundop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the trunc
             computation. If it's not a floating-point DType, it will be promoted
@@ -879,9 +858,6 @@ def roundeven(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise roundeven of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.roundeven`](/engine/reference/mlir/mo#moroundeven-mmoroundevenop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the trunc
@@ -905,9 +881,6 @@ def rsqrt(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise rsqrt of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.rsqrt`](/engine/reference/mlir/mo#morsqrt-mmorsqrtop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the trunc
             computation. If it's not a floating-point DType, it will be promoted
@@ -929,9 +902,6 @@ def sqrt(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise sqrt of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.sqrt`](/engine/reference/mlir/mo#mosqrt-mmosqrtop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the trunc
@@ -955,9 +925,6 @@ def sin(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise sine of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.sin`](/engine/reference/mlir/mo#mosin-mmosinop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the trunc
             computation. If it's not a floating-point DType, it will be promoted
@@ -979,9 +946,6 @@ def tanh(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise tanh of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.tanh`](/engine/reference/mlir/mo#motanh-mmotanhop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the trunc
@@ -1005,9 +969,6 @@ def trunc(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise trunc of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.trunc`](/engine/reference/mlir/mo#motrunc-mmotruncop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the trunc
             computation. If it's not a floating-point DType, it will be promoted
@@ -1030,9 +991,6 @@ def is_nan(value: Symbol) -> Symbol:
     Creates a new op node to compute the elementwise is_nan of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
-    See [`mo.is_nan`](/engine/reference/mlir/mo#mois_nan-mmois_nanop)
-    for more details.
-
     Args:
         value: The symbolic tensor to use as the input to the is_nan
             computation.
@@ -1054,9 +1012,6 @@ def is_inf(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise is_inf of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    See [`mo.is_inf`](/engine/reference/mlir/mo#mois_inf-mmois_infop)
-    for more details.
 
     Args:
         value: The symbolic tensor to use as the input to the is_inf

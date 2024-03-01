@@ -22,9 +22,6 @@ from max.graph.symbol import SymbolTuple, SymbolicSlice
 def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     """Selects elements out of an input tensor by index.
 
-    See [`mo.gather`](/engine/reference/mlir/mo#mogather-mmogatherop)
-    for more details.
-
     Args:
         input: The input symbolic tensor to select elements from.
         indices: A symbolic tensor of index values to use for selection.
