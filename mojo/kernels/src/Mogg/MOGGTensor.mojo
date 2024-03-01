@@ -496,7 +496,7 @@ struct Tensor[
                 self.store(coords, val)
 
             elementwise[
-                Self.static_rank.value(), simd_width, elementwise_fn_wrapper
+                elementwise_fn_wrapper, simd_width, Self.static_rank.value()
             ](
                 rebind[StaticIntTuple[Self.static_rank.value()]](
                     self.shape.to_static_tuple()
