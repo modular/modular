@@ -109,10 +109,9 @@ struct CallGraphNode {
   /// Maps the callees to their callsites inside of this function.
   /// Key: callee's CallGraphNode.
   /// Value: list of callsites of the callee.
-  using CallSitesMap =
-      DenseMap<CallGraphNode *,
-               std::vector<std::optional<KGENCallOpInterface>>>;
-  CallSitesMap callSites;
+  using CallSitesVec =
+      SmallVector<std::pair<KGENCallOpInterface, CallGraphNode *>>;
+  CallSitesVec callsites;
 
   /// If node is reachable in the CallGraph
   /// (e.g. not in any scc that has no callers outside of the scc.)
@@ -194,7 +193,7 @@ struct CallGraphNodeRef;
 
 struct CallGraphNodeIterator {
   CallGraphNode *node;
-  CallGraphNode::CallSitesMap::iterator iter;
+  CallGraphNode::CallSitesVec::iterator iter;
 
   bool operator==(const CallGraphNodeIterator &rhs) const {
     return node == rhs.node && iter == rhs.iter;
@@ -225,14 +224,14 @@ struct CallGraphNodeRef {
   bool operator!=(const CallGraphNodeRef &rhs) const { return !(*this == rhs); }
 
   CallGraphNodeIterator begin() const {
-    return {node, node->callSites.begin()};
+    return {node, node->callsites.begin()};
   }
 
-  CallGraphNodeIterator end() const { return {node, node->callSites.end()}; }
+  CallGraphNodeIterator end() const { return {node, node->callsites.end()}; }
 };
 } // namespace
 
-CallGraphNodeRef CallGraphNodeIterator::operator*() { return {iter->first}; }
+CallGraphNodeRef CallGraphNodeIterator::operator*() { return {iter->second}; }
 
 namespace llvm {
 template <>
@@ -340,7 +339,7 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
       CallGraphNode *calleeNode = &nodes.find(callee)->second;
       {
         llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);
-        callerNode->callSites[calleeNode].emplace_back(call);
+        callerNode->callsites.emplace_back(call, calleeNode);
       }
       {
         llvm::sys::SmartScopedWriter<true> lock(calleeNode->mutex);
@@ -355,7 +354,7 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
 
   for (auto &[func, node] : nodes) {
     if (node.callers.empty() || func.isExported())
-      externalNode.callSites[&node].emplace_back(std::nullopt);
+      externalNode.callsites.emplace_back(nullptr, &node);
   }
 
   for (auto scc = llvm::scc_begin(this); scc != llvm::scc_end(this); ++scc) {
@@ -375,11 +374,13 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
 void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
 
   SmallVector<AnyAsyncValueRef> calleeAsynchValues;
+  DenseSet<CallGraphNode *> seenNodes;
   // Collect callee dependencies to wait.
-  for (auto [callee, _] : caller->callSites) {
+  for (auto [_, callee] : caller->callsites) {
     if (!caller->canInlineCallee(callee))
       continue;
-    calleeAsynchValues.emplace_back(callee->doneInlining.copy());
+    if (seenNodes.insert(callee).second)
+      calleeAsynchValues.emplace_back(callee->doneInlining.copy());
   }
 
   if (calleeAsynchValues.empty()) {
@@ -391,7 +392,10 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
   auto inlineFunc = [&pms = pms, &innerPipelineFailed = innerPipelineFailed,
                      caller, &updateAttrName = updateAttrName, threshold,
                      this](ArrayRef<AnyAsyncValueRef>) mutable {
-    for (auto [callee, calls] : caller->callSites) {
+    for (auto [call, callee] : caller->callsites) {
+      if (!call)
+        continue;
+
       // Make sure we don't call shouldInlineCallee on a callee that we are not
       // waiting on.
       if (!caller->canInlineCallee(callee))
@@ -400,38 +404,33 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       if (!caller->shouldInlineCallee(callee, threshold))
         continue;
 
-      for (std::optional<KGENCallOpInterface> &call : calls) {
-        if (!call)
-          continue;
+      IRMapping map;
+      // Nuke debuginfo from the callee if inlining a function without
+      // debuginfo into one that does.
+      bool nukeDebugInfo =
+          !callee->func.getLocScope() && caller->func.getLocScope();
+      // Inline the callee.
+      auto [scope, singleExit] =
+          inlineRegion(map, call, callee->func.getBodyRegion());
 
-        IRMapping map;
-        // Nuke debuginfo from the callee if inlining a function without
-        // debuginfo into one that does.
-        bool nukeDebugInfo =
-            !callee->func.getLocScope() && caller->func.getLocScope();
-        // Inline the callee.
-        auto [scope, singleExit] =
-            inlineRegion(map, *call, callee->func.getBodyRegion());
-
-        if (updateAttrName) {
-          // We don't know where the op will end up, so tag it with an
-          // attribute. Encode information {singleExit, noDebug} as bits.
-          IntegerAttr tag =
-              OpBuilder(scope->getContext())
-                  .getI8IntegerAttr(singleExit | (nukeDebugInfo << 1));
-          if (*updateAttrName) {
-            // Deferred debuginfo update.
-            scope->setAttr(*updateAttrName, tag);
-          } else {
-            // Immediate debuginfo update.
-            // This will also foldTrivialLoops if applicable.
-            updateScopeDebugInfoFrom(scope, tag, nullptr);
-          }
-        } else if (singleExit) {
-          foldTrivialLoop(scope);
+      if (updateAttrName) {
+        // We don't know where the op will end up, so tag it with an
+        // attribute. Encode information {singleExit, noDebug} as bits.
+        IntegerAttr tag =
+            OpBuilder(scope->getContext())
+                .getI8IntegerAttr(singleExit | (nukeDebugInfo << 1));
+        if (*updateAttrName) {
+          // Deferred debuginfo update.
+          scope->setAttr(*updateAttrName, tag);
+        } else {
+          // Immediate debuginfo update.
+          // This will also foldTrivialLoops if applicable.
+          updateScopeDebugInfoFrom(scope, tag, nullptr);
         }
-        callee->numTimesInlined++;
+      } else if (singleExit) {
+        foldTrivialLoop(scope);
       }
+      callee->numTimesInlined++;
     }
 
     if (caller->func)
@@ -559,7 +558,7 @@ void AutomaticInline::runOnOperation() {
     for (auto &[func, node] : graph.nodes) {
       if (!func ||
           ((node.isAllInlined() || !node.reachable) && !func.isExported()) ||
-          node.callSites.empty())
+          node.callsites.empty())
         continue;
 
       state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
