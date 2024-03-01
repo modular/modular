@@ -17,34 +17,9 @@
 
 using namespace M;
 
-void M::attachToRemoteDebugger() {
-  // Find the path to the mojo executable.
-  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
-  if (failed(configOr)) {
-    llvm::errs() << configOr.takeError() << "\n";
-    return;
-  }
-
-  std::error_code ec;
-  StringRef mojo = configOr->getDriverPath();
-  if (!std::filesystem::exists(mojo.str(), ec) || ec) {
-    llvm::errs() << "error: unable to resolve the mojo path\n";
-    return;
-  }
-
-  std::string pidStr = std::to_string(llvm::sys::Process::getProcessId());
-  SmallVector<StringRef> args{mojo, "debug", "--rpc", "--pid", pidStr};
-
-  int exitCode = llvm::sys::ExecuteAndWait(mojo, args, /*Env=*/std::nullopt,
-                                           /*Redirects=*/{});
-  if (exitCode != 0) {
-    llvm::errs()
-        << "error: unable to attach to the remote debugger. You might need "
-           "attach manually to this process. Its pid is "
-        << pidStr << ".\n";
-  }
-
-  llvm::errs() << "Waiting for debugger to attach...\n";
+void M::waitForDebuggerToAttach() {
+  llvm::errs() << "Waiting for debugger to attach...\nCurrent pid is "
+               << llvm::sys::Process::getProcessId() << ".\n";
 
 #ifdef _WIN32
   while (!IsDebuggerPresent())
@@ -52,4 +27,39 @@ void M::attachToRemoteDebugger() {
 #else
   std::raise(SIGSTOP);
 #endif
+}
+
+void M::attachToNewRemoteDebugSession() {
+  StringRef initializationError =
+      "couldn't initiate the debug session. You might want to attach manually "
+      "to this process";
+
+  // Find the path to the mojo executable.
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr)) {
+    llvm::errs() << "error: " << initializationError << ": "
+                 << configOr.takeError() << "\n";
+  } else {
+    std::error_code ec;
+    StringRef mojo = configOr->getDriverPath();
+    if (!std::filesystem::exists(mojo.str(), ec) || ec) {
+      llvm::errs()
+          << "error: " << initializationError
+          << ": unable to resolve the mojo path from the modular.cfg\n";
+    } else {
+      std::string pidStr = std::to_string(llvm::sys::Process::getProcessId());
+      SmallVector<StringRef> args{mojo, "debug", "--rpc", "--pid", pidStr};
+
+      // `mojo debug --rpc` succeeds if lldb-dap was launched, but it might
+      // still be possible that the actual attach failed.
+      int exitCode = llvm::sys::ExecuteAndWait(mojo, args, /*Env=*/std::nullopt,
+                                               /*Redirects=*/{});
+      if (exitCode != 0) {
+        llvm::errs()
+            << "error: the remote debugger seems to have failed to attach. "
+               "You might need attach manually to this process\n";
+      }
+    }
+  }
+  waitForDebuggerToAttach();
 }

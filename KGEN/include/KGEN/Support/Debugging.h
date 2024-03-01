@@ -8,13 +8,33 @@
 #define SUPPORT_DEBUGGING_H
 
 namespace M {
+
+/// Suspend the current process and wait for a debugger to attach. The PID of
+/// the current process will be printed for convenience.
+void waitForDebuggerToAttach();
+
 /// Assuming that VS Code and the Mojo extension are active, this starts a debug
-/// session attaching to the current program on the IDE. Once the debugger
-/// attaches to current program, it might auto resume, because of which it's
-/// recommended to place breakpoints before starting the debug session.
+/// session that attaches to the current program. Once the attaching succeeds,
+/// the debugger might auto-resume, because of which it's recommended to place
+/// breakpoints before starting the debug session.
+///
+/// In the case in which the remote debug session fails to launch, the current
+/// process will suspend itself, giving the chance for the developer to manually
+/// attach to it. An appropriate message will be printed.
+///
+/// Example:
+///
+/// ```
+///   void my_function() {
+///     do something...
+///     attachToNewRemoteDebugSession();
+///     do something else...
+///   }
 ///
 /// This uses `mojo debug --rpc` under the hood.
-void attachToRemoteDebugger();
+///
+/// ```
+void attachToNewRemoteDebugSession();
 } // namespace M
 
 #endif // SUPPORT_DEBUGGING_H
