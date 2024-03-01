@@ -10,43 +10,17 @@ from .int_tuple import flatten, int
 from .layout import *
 
 
-fn NewLayoutTensor[
-    M: Int,
-    N: Int,
-    dtype: DType,
-    layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
-]() -> LayoutTensor[layout, dtype]:
-    return LayoutTensor[layout, dtype]()
-
-
+@register_passable
 struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
     var ptr: DTypePointer[dtype]
-    var is_view: Bool
-
-    @always_inline
-    fn __init__(inout self):
-        self.ptr = DTypePointer[dtype].alloc(self.dim[0]() * self.dim[1]())
-        self.is_view = False
 
     @always_inline
     fn __init__(inout self, ptr: DTypePointer[dtype]):
         self.ptr = ptr
-        self.is_view = True
-
-    @always_inline
-    fn __del__(owned self):
-        if not self.is_view:
-            self.ptr.free()
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
         self.ptr = existing.ptr
-        self.is_view = True
-
-    @always_inline
-    fn __moveinit__(inout self: Self, owned existing: Self):
-        self.ptr = existing.ptr
-        self.is_view = True
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:

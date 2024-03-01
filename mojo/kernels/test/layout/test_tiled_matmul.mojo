@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+from kernel_utils._utils import ManagedLayoutTensor
+
 from kernel_utils.layout import Layout, LayoutList, composition
-from kernel_utils.layout_tensor import (
-    LayoutTensor,
-    NewLayoutTensor,
-)
+from kernel_utils.layout_tensor import LayoutTensor, IntTuple
+
 from algorithm import vectorize, parallelize, sync_parallelize
 
 
@@ -130,7 +130,9 @@ fn gemm_l2_cache[
     alias l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
-    var l2_rhs_cache = NewLayoutTensor[L2.n, L2.k, dtype]()
+    var l2_rhs_cache = ManagedLayoutTensor[
+        Layout(IntTuple(L2.n, L2.k)), dtype
+    ]()
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
     for m_1 in range(l1_size.m):
@@ -155,10 +157,14 @@ fn gemm_l2_cache[
                             )
 
                             # Materialize L2 rhs transposed tile
-                            l2_rhs_cache.copy_from(rhs_l2_tile.transpose())
+                            l2_rhs_cache.tensor.copy_from(
+                                rhs_l2_tile.transpose()
+                            )
 
                             # Execute mma.op - rhs_l2_tile is already transposed
-                            mma.op(dst_l2_tile, lhs_l2_tile, l2_rhs_cache)
+                            mma.op(
+                                dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor
+                            )
 
 
 fn gemm_l1_cache[
@@ -201,17 +207,21 @@ fn gemm_l1_cache[
     @parameter
     fn process_raw(m_1: Int) capturing:
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
-        var l1_lhs_cache = NewLayoutTensor[L1.m, L1.k, dtype]()
-        var l1_rhs_cache = NewLayoutTensor[L1.n, L1.k, dtype]()
+        var l1_lhs_cache = ManagedLayoutTensor[
+            Layout(IntTuple(L1.m, L1.k)), dtype
+        ]()
+        var l1_rhs_cache = ManagedLayoutTensor[
+            Layout(IntTuple(L1.n, L1.k)), dtype
+        ]()
 
         for k_1 in range(l1_size.k):
-            l1_lhs_cache.copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
+            l1_lhs_cache.tensor.copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
 
             for n_1 in range(l1_size.n):
                 var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
 
                 # Materialize L1 rhs transposed tile
-                l1_rhs_cache.copy_from(
+                l1_rhs_cache.tensor.copy_from(
                     rhs.view[L1.k, L1.n](k_1, n_1).transpose()
                 )
 
@@ -221,13 +231,13 @@ fn gemm_l1_cache[
                         var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = l1_lhs_cache.view[L2.m, L2.k](
-                                m_2, k_2
-                            )
+                            var lhs_l2_tile = l1_lhs_cache.tensor.view[
+                                L2.m, L2.k
+                            ](m_2, k_2)
                             # Transposed tile -> transposed indices
-                            var rhs_l2_tile = l1_rhs_cache.view[L2.n, L2.k](
-                                n_2, k_2
-                            )
+                            var rhs_l2_tile = l1_rhs_cache.tensor.view[
+                                L2.n, L2.k
+                            ](n_2, k_2)
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op(dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
@@ -245,27 +255,27 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
     else:
         print("=== test_tiled_matmul_l2_cache")
 
-    var dst = NewLayoutTensor[8, 8, DType.float32]()
-    var rhs = NewLayoutTensor[8, 8, DType.float32]()
-    var lhs = NewLayoutTensor[8, 8, DType.float32]()
+    var dst = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
+    var rhs = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
+    var lhs = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
 
-    dst.fill(0)
-    rhs.linspace()
-    lhs.linspace()
+    dst.tensor.fill(0)
+    rhs.tensor.linspace()
+    lhs.tensor.linspace()
 
     if use_l1_cache:
         gemm_l1_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst, lhs, rhs)
+        ](dst.tensor, lhs.tensor, rhs.tensor)
     else:
         gemm_l2_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst, lhs, rhs)
-    dst.print()
+        ](dst.tensor, lhs.tensor, rhs.tensor)
+    dst.tensor.print()
 
 
 fn main():

@@ -1,0 +1,58 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# REQUIRES: disabled
+
+from kernel_utils.int_tuple import IntTuple
+from kernel_utils.layout import Layout
+from kernel_utils.layout_tensor import LayoutTensor
+
+
+from gpu.host.memory import _malloc_managed, _free
+
+alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> DTypePointer[dtype]
+
+alias free_fn_type = fn[dtype: DType] (ptr: DTypePointer[dtype]) -> None
+
+
+fn cpu_alloc[layout: Layout, dtype: DType]() -> DTypePointer[dtype]:
+    return DTypePointer[dtype].alloc(layout.size())
+
+
+@always_inline
+fn cpu_free[dtype: DType](ptr: DTypePointer[dtype]):
+    ptr.free()
+
+
+fn gpu_managed_alloc[layout: Layout, dtype: DType]() -> DTypePointer[dtype]:
+    try:
+        return _malloc_managed[dtype](layout.size())
+    except e:
+        abort("Can't free gpu memory")
+        return DTypePointer[dtype]()
+
+
+fn gpu_free[dtype: DType](ptr: DTypePointer[dtype]):
+    try:
+        return _free(ptr)
+    except e:
+        abort("Can't free gpu memory")
+
+
+struct ManagedLayoutTensor[
+    layout: Layout,
+    dtype: DType,
+    alloc_fn: alloc_fn_type = cpu_alloc,
+    free_fn: free_fn_type = cpu_free,
+]:
+    var tensor: LayoutTensor[layout, dtype]
+
+    @always_inline
+    fn __init__(inout self):
+        self.tensor = LayoutTensor[layout, dtype](alloc_fn[layout, dtype]())
+
+    @always_inline
+    fn __del__(owned self):
+        free_fn[dtype](self.tensor.ptr)

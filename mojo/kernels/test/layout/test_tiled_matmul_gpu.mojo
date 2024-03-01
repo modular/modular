@@ -9,20 +9,13 @@
 from gpu.host import Function, Context, synchronize
 from gpu.id import BlockDim, ThreadIdx, BlockIdx
 
-from gpu.host.memory import _malloc_managed, _free
-
-from builtin.io import _printf
+from kernel_utils._utils import ManagedLayoutTensor, gpu_managed_alloc, gpu_free
 
 from kernel_utils.layout_tensor import LayoutTensor
-
 from kernel_utils.layout import Layout
 from kernel_utils.int_tuple import IntTuple
 
-from builtin.io import _printf
 
-
-# FIXME: Make LayoutTensor register_passable to so we can use this
-# type as an argument.
 fn naive_matmul[
     layout_dst: Layout,
     layout_lhs: Layout,
@@ -30,16 +23,11 @@ fn naive_matmul[
     BM: Int,
     BN: Int,
 ](
-    dst_ptr: DTypePointer[DType.float32],
-    lhs_ptr: DTypePointer[DType.float32],
-    rhs_ptr: DTypePointer[DType.float32],
+    dst: LayoutTensor[layout_dst, DType.float32],
+    lhs: LayoutTensor[layout_dst, DType.float32],
+    rhs: LayoutTensor[layout_dst, DType.float32],
 ):
-    var dst = LayoutTensor[layout_dst, DType.float32](dst_ptr)
-    var lhs = LayoutTensor[layout_dst, DType.float32](lhs_ptr)
-    var rhs = LayoutTensor[layout_dst, DType.float32](rhs_ptr)
-
     var dst_tile = dst.view[BM, BN](BlockIdx.y(), BlockIdx.x())
-
     dst_tile[ThreadIdx.y(), ThreadIdx.x()] = 0
     for k in range(dst.shape[0]()):
         var lhs_tile = rhs.view[BM, 1](BlockIdx.y(), k)
@@ -47,14 +35,6 @@ fn naive_matmul[
         dst_tile[ThreadIdx.y(), ThreadIdx.x()] += (
             lhs_tile[ThreadIdx.y(), k] * rhs_tile[k, ThreadIdx.x()]
         )
-
-
-@always_inline
-fn tensor_malloc_managed[
-    layout: Layout, dtype: DType
-]() raises -> LayoutTensor[layout, dtype]:
-    var ptr = _malloc_managed[dtype](layout.size())
-    return LayoutTensor[layout, dtype](ptr)
 
 
 fn test_naive_matmul_kernel() raises:
@@ -69,13 +49,19 @@ fn test_naive_matmul_kernel() raises:
     alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var mat_a = tensor_malloc_managed[layout_a, DType.float32]()
-    var mat_b = tensor_malloc_managed[layout_b, DType.float32]()
-    var mat_c = tensor_malloc_managed[layout_c, DType.float32]()
+    var mat_a = ManagedLayoutTensor[
+        layout_a, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
+    var mat_b = ManagedLayoutTensor[
+        layout_b, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
+    var mat_c = ManagedLayoutTensor[
+        layout_c, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
 
-    mat_a.linspace()
-    mat_b.linspace()
-    mat_c.fill(0)
+    mat_a.tensor.linspace()
+    mat_b.tensor.linspace()
+    mat_c.tensor.fill(0)
 
     alias naive_matmul_kernel = naive_matmul[
         layout_c, layout_a, layout_b, BM, BN
@@ -83,20 +69,15 @@ fn test_naive_matmul_kernel() raises:
 
     var kernel = Function[__type_of(naive_matmul_kernel), naive_matmul_kernel]()
     kernel(
-        mat_c.ptr,
-        mat_a.ptr,
-        mat_b.ptr,
+        mat_c,
+        mat_a,
+        mat_b,
         grid_dim=(M // BM, N // BN),
         block_dim=(BM, BN),
     )
 
     synchronize()
-
-    mat_c.print()
-
-    _free(mat_c.ptr)
-    _free(mat_a.ptr)
-    _free(mat_b.ptr)
+    mat_c.tensor.print()
 
 
 fn main() raises:
