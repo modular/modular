@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.vector import DynamicVector
+from collections.vector import List
 from math import iota
 
 from algorithm.functional import parallelize_over_rows
@@ -114,7 +114,7 @@ fn _top_k[
     @__copy_capture(shape)
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
-        var idxs = DynamicVector[Int64](capacity=shape[axis])
+        var idxs = List[Int64](capacity=shape[axis])
         idxs.resize(shape[axis], 0)
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index[rank](

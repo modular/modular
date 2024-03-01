@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from collections.vector import DynamicVector
+from collections.vector import List
 from math import iota
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -15,13 +15,11 @@ from NN.TopK import _top_k
 
 
 struct TestTensor[rank: Int, type: DType]:
-    var storage: DynamicVector[SIMD[type, 1]]
+    var storage: List[SIMD[type, 1]]
     var shape: StaticIntTuple[rank]
 
     fn __init__(inout self, shape: StaticIntTuple[rank]):
-        self.storage = DynamicVector[SIMD[type, 1]](
-            capacity=shape.flattened_length()
-        )
+        self.storage = List[SIMD[type, 1]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
 

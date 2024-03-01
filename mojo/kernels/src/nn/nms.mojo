@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import DynamicVector
+from collections.vector import List
 from math import abs, iota, max, min
 from math.limit import min_or_neginf
 
@@ -77,7 +77,7 @@ fn non_max_suppression[
     score_threshold: Float32,
 ) -> Tensor[DType.int64]:
     """Value semantic overload. Graph compiler does not support this yet."""
-    var output_predictions = DynamicVector[Int64]()
+    var output_predictions = List[Int64]()
 
     @parameter
     @always_inline
@@ -198,10 +198,10 @@ fn non_max_suppression[
     if max_output_boxes_per_class == 0:
         return
 
-    var box_idxs = DynamicVector[Int64](capacity=num_boxes)
+    var box_idxs = List[Int64](capacity=num_boxes)
     box_idxs.resize(num_boxes, 0)
 
-    var per_class_scores = DynamicVector[SIMD[type, 1]](capacity=num_boxes)
+    var per_class_scores = List[SIMD[type, 1]](capacity=num_boxes)
     per_class_scores.resize(num_boxes, 0)
 
     for b in range(batch_size):

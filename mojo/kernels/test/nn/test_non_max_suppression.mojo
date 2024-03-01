@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from collections.vector import DynamicVector
+from collections.vector import List
 
 from NN.NonMaxSuppression import (
     non_max_suppression,
