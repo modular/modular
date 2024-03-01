@@ -8,7 +8,7 @@
 # RUN: mojo -O0 %s | FileCheck %s
 
 from utils.variant import Variant
-from collections.vector import List
+from collections import List
 
 
 struct MTuple[T: CollectionElement](CollectionElement, Stringable):

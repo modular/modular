@@ -181,7 +181,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
   constexpr const char *kListRegex =
-      R"(^!lit.declref<@stdlib::@collections::@vector::@"?List[\[<].*)";
+      R"(^!lit.declref<@stdlib::@collections::@list::@"?List[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
       R"(.* {@stdlib::debug::visualizers::lldb_formatter_wrapping_type\(.*)";
 
@@ -228,7 +228,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   summaryFlags.SetDontShowChildren(false);
   summaryFlags.SetDontShowValue(false);
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-                "utils::vector::List summary provider", kListRegex,
+                "collections::list::List summary provider", kListRegex,
                 summaryFlags, /*regex=*/true);
 }
 
