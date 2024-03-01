@@ -13,18 +13,18 @@ from memory.unsafe import bitcast
 @always_inline
 fn _to_StaticTuple[
     type: DType, size: Int
-](data: SIMD[type, size]) -> StaticTuple[size, SIMD[type, 1]]:
+](data: SIMD[type, size]) -> StaticTuple[SIMD[type, 1], size]:
     """Convert SIMD to StaticTuple."""
 
     @parameter
     if size == 1:
-        return StaticTuple[size](data[0])
+        return StaticTuple[_, size](data[0])
     elif size == 2:
-        return StaticTuple[size](data[0], data[1])
+        return StaticTuple[_, size](data[0], data[1])
     elif size == 4:
-        return StaticTuple[size](data[0], data[1], data[2], data[3])
+        return StaticTuple[_, size](data[0], data[1], data[2], data[3])
     elif size == 8:
-        return StaticTuple[size](
+        return StaticTuple[_, size](
             data[0],
             data[1],
             data[2],
@@ -35,7 +35,7 @@ fn _to_StaticTuple[
             data[7],
         )
     elif size == 16:
-        return StaticTuple[size](
+        return StaticTuple[_, size](
             data[0],
             data[1],
             data[2],
@@ -55,7 +55,7 @@ fn _to_StaticTuple[
         )
     else:
         constrained[size == 32]()
-        return StaticTuple[size](
+        return StaticTuple[_, size](
             data[0],
             data[1],
             data[2],
@@ -94,7 +94,7 @@ fn _to_StaticTuple[
 @always_inline
 fn _to_SIMD[
     type: DType, size: Int
-](data: StaticTuple[size, SIMD[type, 1]]) -> SIMD[type, size]:
+](data: StaticTuple[SIMD[type, 1], size]) -> SIMD[type, size]:
     """Convert StaticTuple to SIMD."""
 
     @parameter
@@ -266,10 +266,10 @@ struct Q4sym[
          of GGML Q4_0.
     """
 
-    var scale: StaticTuple[2, UInt8]
+    var scale: StaticTuple[UInt8, 2]
     """The FP16 scale of the group, stored as individual bytes."""
 
-    var bits: StaticTuple[group_size // 2, UInt8]
+    var bits: StaticTuple[UInt8, group_size // 2]
     """The bits of the encoded uint4 numbers."""
 
     @staticmethod
@@ -290,8 +290,8 @@ struct Q4sym[
     @always_inline
     fn __init__(inout self):
         """Construct a default initialized Q4sym."""
-        self.scale = StaticTuple[2, UInt8]()
-        self.bits = StaticTuple[group_size // 2, UInt8]()
+        self.scale = StaticTuple[UInt8, 2]()
+        self.bits = StaticTuple[UInt8, group_size // 2]()
         self._check_constraints()
 
     @always_inline
