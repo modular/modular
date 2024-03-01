@@ -71,15 +71,36 @@ struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
         alias tiler = MakeLayoutList(Layout(M, 1), Layout(N, 1))
         return zipped_divide(layout, tiler)
 
-    fn view[
+    fn tile[
         M1: Int,
         N1: Int,
         tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
     ](self, m: Int, n: Int) -> LayoutTensor[tiled_layout[0], dtype]:
-        # var offset = inner_product(IntTuple(m, n), tiled_layout[1].stride)
         alias tiled_layout_stride = Self._toStatic[tiled_layout[1].stride]()
         var offset = m * tiled_layout_stride[0] + n * tiled_layout_stride[1]
         return LayoutTensor[tiled_layout[0], dtype](self.ptr.offset(offset))
+
+    @staticmethod
+    fn _compute_distribute_layout[
+        data_layout: Layout, threads_layout: Layout
+    ]() -> Layout:
+        var thread_tile = LayoutList()
+        for dim in threads_layout.shape:
+            thread_tile.append(Layout(dim))
+        return zipped_divide(layout, thread_tile)
+
+    fn distribute[
+        threads_layout: Layout,
+        tiled_layout: Layout = Self._compute_distribute_layout[
+            layout, threads_layout
+        ](),
+    ](self, m: Int, n: Int) -> LayoutTensor[tiled_layout[1], dtype]:
+        alias composed_layout = composition(tiled_layout[0], threads_layout)
+        alias fragments_layout_stride = Self._toStatic[composed_layout.stride]()
+        var offset = m * fragments_layout_stride[
+            0
+        ] + n * fragments_layout_stride[1]
+        return LayoutTensor[tiled_layout[1], dtype](self.ptr.offset(offset))
 
     fn transpose[
         M: Int = Self.dim[0](),

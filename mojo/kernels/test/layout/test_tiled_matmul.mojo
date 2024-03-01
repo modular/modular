@@ -137,22 +137,22 @@ fn gemm_l2_cache[
     # First level of tiling (grid_blocks, L1 cache ..etc).
     for m_1 in range(l1_size.m):
         for n_1 in range(l1_size.n):
-            var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
+            var dst_l1_tile = dst.tile[L1.m, L1.n](m_1, n_1)
 
             for k_1 in range(l1_size.k):
-                var lhs_l1_tile = lhs.view[L1.m, L1.k](m_1, k_1)
-                var rhs_l1_tile = rhs.view[L1.k, L1.n](k_1, n_1)
+                var lhs_l1_tile = lhs.tile[L1.m, L1.k](m_1, k_1)
+                var rhs_l1_tile = rhs.tile[L1.k, L1.n](k_1, n_1)
 
                 # Second level of tiling (instruction, vectorization..etc)
                 for m_2 in range(l2_size.m):
                     for n_2 in range(l2_size.n):
-                        var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
+                        var dst_l2_tile = dst_l1_tile.tile[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = lhs_l1_tile.view[L2.m, L2.k](
+                            var lhs_l2_tile = lhs_l1_tile.tile[L2.m, L2.k](
                                 m_2, k_2
                             )
-                            var rhs_l2_tile = rhs_l1_tile.view[L2.k, L2.n](
+                            var rhs_l2_tile = rhs_l1_tile.tile[L2.k, L2.n](
                                 k_2, n_2
                             )
 
@@ -215,27 +215,27 @@ fn gemm_l1_cache[
         ]()
 
         for k_1 in range(l1_size.k):
-            l1_lhs_cache.tensor.copy_from(lhs.view[L1.m, L1.k](m_1, k_1))
+            l1_lhs_cache.tensor.copy_from(lhs.tile[L1.m, L1.k](m_1, k_1))
 
             for n_1 in range(l1_size.n):
-                var dst_l1_tile = dst.view[L1.m, L1.n](m_1, n_1)
+                var dst_l1_tile = dst.tile[L1.m, L1.n](m_1, n_1)
 
                 # Materialize L1 rhs transposed tile
                 l1_rhs_cache.tensor.copy_from(
-                    rhs.view[L1.k, L1.n](k_1, n_1).transpose()
+                    rhs.tile[L1.k, L1.n](k_1, n_1).transpose()
                 )
 
                 # Second level of tiling (instruction, vectorization..etc)
                 for m_2 in range(l2_size.m):
                     for n_2 in range(l2_size.n):
-                        var dst_l2_tile = dst_l1_tile.view[L2.m, L2.n](m_2, n_2)
+                        var dst_l2_tile = dst_l1_tile.tile[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = l1_lhs_cache.tensor.view[
+                            var lhs_l2_tile = l1_lhs_cache.tensor.tile[
                                 L2.m, L2.k
                             ](m_2, k_2)
                             # Transposed tile -> transposed indices
-                            var rhs_l2_tile = l1_rhs_cache.tensor.view[
+                            var rhs_l2_tile = l1_rhs_cache.tensor.tile[
                                 L2.n, L2.k
                             ](n_2, k_2)
 

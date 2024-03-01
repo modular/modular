@@ -27,11 +27,11 @@ fn naive_matmul[
     lhs: LayoutTensor[layout_dst, DType.float32],
     rhs: LayoutTensor[layout_dst, DType.float32],
 ):
-    var dst_tile = dst.view[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     dst_tile[ThreadIdx.y(), ThreadIdx.x()] = 0
     for k in range(dst.shape[0]()):
-        var lhs_tile = rhs.view[BM, 1](BlockIdx.y(), k)
-        var rhs_tile = lhs.view[1, BN](k, BlockIdx.x())
+        var lhs_tile = rhs.tile[BM, 1](BlockIdx.y(), k)
+        var rhs_tile = lhs.tile[1, BN](k, BlockIdx.x())
         dst_tile[ThreadIdx.y(), ThreadIdx.x()] += (
             lhs_tile[ThreadIdx.y(), k] * rhs_tile[k, ThreadIdx.x()]
         )
