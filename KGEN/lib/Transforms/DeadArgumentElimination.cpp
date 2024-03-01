@@ -58,8 +58,7 @@ struct CallGraphNode
 
   CallGraphNode *getCalleeNode(KGENCallOpInterface callOp);
 
-  std::vector<std::pair<KGENCallOpInterface, CallGraphNode *>>
-  getCallSites(CallGraphNode *callee);
+  std::vector<CallGraphNode::EdgeT> getCallSites(CallGraphNode *callee);
 
   FuncOp newFunc;
   IRMapping irMap;
@@ -209,19 +208,16 @@ private:
 CallGraphNode *CallGraphNode::getCalleeNode(KGENCallOpInterface callOp) {
   auto iter = std::find_if(
       callsites.begin(), callsites.end(),
-      [&](const std::pair<KGENCallOpInterface, CallGraphNode *> &p) {
-        return p.first == callOp;
-      });
-  return iter->second;
+      [&](const CallGraphNode::EdgeT &edge) { return edge.call == callOp; });
+  return iter->node;
 }
 
-std::vector<std::pair<KGENCallOpInterface, CallGraphNode *>>
+std::vector<CallGraphNode::EdgeT>
 CallGraphNode::getCallSites(CallGraphNode *callee) {
-  std::vector<std::pair<KGENCallOpInterface, CallGraphNode *>> result;
-  std::copy_if(callsites.begin(), callsites.end(), std::back_inserter(result),
-               [&](const std::pair<KGENCallOpInterface, CallGraphNode *> &p) {
-                 return p.second == callee;
-               });
+  std::vector<CallGraphNode::EdgeT> result;
+  std::copy_if(
+      callsites.begin(), callsites.end(), std::back_inserter(result),
+      [&](const CallGraphNode::EdgeT &edge) { return edge.node == callee; });
   return result;
 }
 
@@ -354,9 +350,7 @@ void DeadArgumentElimination::surveyFunction(FuncOp func) {
   CallGraphNode *node = &callGraph.nodes.find(func)->second;
 
   for (CallGraphNode *caller : node->callers) {
-    for (std::pair<KGENCallOpInterface, CallGraphNode *> &pair :
-         caller->getCallSites(node)) {
-      KGENCallOpInterface call = pair.first;
+    for (auto [call, node] : caller->getCallSites(node)) {
       if (!isa<CallOp>(call)) {
         // Only support caller is CallOp for now, so that things like
         // AsyncCallOp, kgen.create_closure which are KGENCallOpInterface but

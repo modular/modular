@@ -86,14 +86,18 @@ struct CallGraphNode {
   /// Nodes of functions that inline call this function. These are the child
   /// edges.
   std::vector<CallGraphNode *> callers;
-
+  /// Maps the callees to their callsites inside of this function.
+  /// Key: callee's CallGraphNode.
+  /// Value: list of callsites of the callee.
+  using CallSitesVec =
+      SmallVector<std::pair<KGENCallOpInterface, CallGraphNode *>>;
+  CallSitesVec callsites;
   /// This mutex guards `callsites` and `callers` during parallel graph
   /// construction.
   llvm::sys::SmartRWMutex<true> mutex;
 
-  /// The number of processed calls. When the value of this counter equals the
-  /// size of `callsites`, then all calls for this function have been processed.
-  std::atomic<size_t> numProcessedCalls = 0;
+  /// The number of callers this callgraph node has.
+  std::atomic<size_t> numCallers = 0;
 
   /// Track the number of times the function has been inlined. Once the counter
   /// reaches the number of callers, the function can be erased.
@@ -105,13 +109,6 @@ struct CallGraphNode {
 
   /// Nodes in the same SCC as the current one.
   llvm::SmallSet<CallGraphNode *, 6> sccNodes;
-
-  /// Maps the callees to their callsites inside of this function.
-  /// Key: callee's CallGraphNode.
-  /// Value: list of callsites of the callee.
-  using CallSitesVec =
-      SmallVector<std::pair<KGENCallOpInterface, CallGraphNode *>>;
-  CallSitesVec callsites;
 
   /// If node is reachable in the CallGraph
   /// (e.g. not in any scc that has no callers outside of the scc.)
@@ -301,7 +298,7 @@ bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
 }
 
 bool CallGraphNode::isAllInlined() {
-  return numProcessedCalls == numTimesInlined && numTimesInlined > 0;
+  return numCallers == numTimesInlined && numTimesInlined > 0;
 }
 
 void CallGraph::endWork() {
@@ -346,7 +343,7 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
         calleeNode->callers.push_back(callerNode);
       }
 
-      calleeNode->numProcessedCalls++;
+      ++calleeNode->numCallers;
     });
   };
 

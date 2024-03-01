@@ -26,6 +26,24 @@ struct CallGraphEdgeIterator;
 // CallGraphNode
 //===----------------------------------------------------------------------===//
 
+template <typename DerivedT, typename FuncT, typename CallT>
+struct CallGraphEdgeBase {
+  CallGraphEdgeBase(CallT call, DerivedT *node) : call(call), node(node) {}
+
+  CallT call;
+  DerivedT *node;
+
+  using BaseT = CallGraphEdgeBase<DerivedT, FuncT, CallT>;
+
+  auto begin() { return node->callsites.begin(); }
+  auto end() { return node->callsites.end(); }
+
+  bool operator==(const BaseT &rhs) const {
+    return std::tie(call, node) == std::tie(rhs.call, rhs.node);
+  }
+  bool operator!=(const BaseT &rhs) const { return !(*this == rhs); }
+};
+
 /// A node in a call graph contains a function, edges to its callers, and edges
 /// to its callees. A node is ready to inline its callees when all of its
 /// callees have been processed.
@@ -33,9 +51,11 @@ template <typename DerivedT, typename FuncT, typename CallT>
 struct CallGraphNodeBase {
   using FuncOpT = FuncT;
   using CallOpT = CallT;
+
   using BaseT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
-  using EdgeT = CallGraphEdge<DerivedT, FuncT, CallT>;
-  using EdgeIteratorT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
+  using EdgeT = CallGraphEdgeBase<DerivedT, FuncT, CallT>;
+  using EdgeListT = SmallVector<EdgeT>;
+  using EdgeIteratorT = typename EdgeListT::iterator;
 
   /// Create the node for the given function.
   explicit CallGraphNodeBase(FuncT func) : func(func) {}
@@ -54,14 +74,10 @@ struct CallGraphNodeBase {
   SmallVector<DerivedT *> callers;
   /// Calls and callees to inline inside this function. These are the parent
   /// edges.
-  SmallVector<std::pair<CallOpT, DerivedT *>> callsites;
+  EdgeListT callsites;
   /// This mutex guards `callsites` and `callers` during parallel graph
   /// construction.
   llvm::sys::SmartRWMutex<true> mutex;
-
-  /// The number of processed calls. When the value of this counter equals the
-  /// size of `callsites`, then all calls for this function have been processed.
-  std::atomic<size_t> numProcessedCalls = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -142,96 +158,38 @@ void CallGraphBase<DerivedT, NodeT>::dump() {
   }
 }
 
-//===----------------------------------------------------------------------===//
-// CallGraphEdgeIterator
-//===----------------------------------------------------------------------===//
-
-/// Iterator over the edges in a callgraph. The iterator refers to a node in the
-/// callgraph and a specific callsite within the function, representing the edge
-/// from one node to the callee function's node.
-template <typename DerivedT, typename FuncT, typename CallT>
-struct CallGraphEdgeIterator {
-  using NodeT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
-  using ItT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
-  using RefT = CallGraphEdge<DerivedT, FuncT, CallT>;
-
-  NodeT *node;
-  size_t childIdx;
-
-  bool operator==(const ItT &rhs) const {
-    return node == rhs.node && childIdx == rhs.childIdx;
-  }
-  bool operator!=(const ItT &rhs) const { return !(*this == rhs); }
-  ItT operator++() {
-    ++childIdx;
-    return *this;
-  }
-  ItT operator++(int) {
-    ItT tmp = *this;
-    ++*this;
-    return tmp;
-  }
-  RefT operator*();
-};
-
-/// This struct represents a edge in a callgraph. It contains a callee node and
-/// the call operation in the caller from edge originates to the callee node.
-template <typename DerivedT, typename FuncT, typename CallT>
-struct CallGraphEdge {
-  using NodeT = CallGraphNodeBase<DerivedT, FuncT, CallT>;
-  using ItT = CallGraphEdgeIterator<DerivedT, FuncT, CallT>;
-  using RefT = CallGraphEdge<DerivedT, FuncT, CallT>;
-
-  NodeT *node;
-  CallT call;
-
-  bool operator==(const RefT &rhs) const {
-    return node == rhs.node && call == rhs.call;
-  }
-  bool operator!=(const RefT &rhs) const { return !(*this == rhs); }
-
-  ItT begin() const { return {node, 0}; }
-  ItT end() const { return {node, node->callsites.size()}; }
-};
-
-template <typename DerivedT, typename FuncT, typename CallT>
-auto CallGraphEdgeIterator<DerivedT, FuncT, CallT>::operator*() -> RefT {
-  auto [call, child] = node->callsites[childIdx];
-  return {child, call};
-}
-
 } // namespace M::KGEN
 
 namespace llvm {
 template <typename DerivedT, typename FuncT, typename CallT>
-struct DenseMapInfo<M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>> {
-  using EltT = M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>;
-  using NodeT = typename EltT::NodeT;
+struct DenseMapInfo<M::KGEN::CallGraphEdgeBase<DerivedT, FuncT, CallT>>
+    : DenseMapInfo<std::pair<CallT, DerivedT *>> {
+  using EdgeT = M::KGEN::CallGraphEdgeBase<DerivedT, FuncT, CallT>;
 
-  static EltT getEmptyKey() {
-    return {DenseMapInfo<NodeT *>::getEmptyKey(), nullptr};
+  static EdgeT getEmptyKey() {
+    return {DenseMapInfo<CallT>::getEmptyKey(),
+            DenseMapInfo<DerivedT *>::getEmptyKey()};
   }
-  static EltT getTombstoneKey() {
-    return {DenseMapInfo<NodeT *>::getTombstoneKey(), nullptr};
+  static EdgeT getTombstoneKey() {
+    return {DenseMapInfo<CallT>::getTombstoneKey(),
+            DenseMapInfo<DerivedT *>::getTombstoneKey()};
   }
-  static unsigned getHashValue(const EltT &node) {
-    return llvm::hash_combine(
-        DenseMapInfo<NodeT *>::getHashValue(node.node),
-        DenseMapInfo<mlir::Operation *>::getHashValue(node.call));
+  static unsigned getHashValue(const EdgeT &node) {
+    return DenseMapInfo<std::pair<CallT, DerivedT *>>::getHashValue(
+        {node.call, node.node});
   }
-  static bool isEqual(const EltT &lhs, const EltT &rhs) { return lhs == rhs; }
+  static bool isEqual(const EdgeT &lhs, const EdgeT &rhs) { return lhs == rhs; }
 };
 
 template <typename DerivedT, typename FuncT, typename CallT>
 struct GraphTraits<M::KGEN::CallGraphNodeBase<DerivedT, FuncT, CallT> *> {
-  using NodeRef = M::KGEN::CallGraphEdge<DerivedT, FuncT, CallT>;
-  using ChildIteratorType = typename NodeRef::ItT;
+  using NodeT = M::KGEN::CallGraphNodeBase<DerivedT, FuncT, CallT>;
+  using NodeRef = typename NodeT::EdgeT;
+  using ChildIteratorType = typename NodeT::EdgeListT::iterator;
 
-  static NodeRef getEntryNode(typename NodeRef::NodeT *node) {
-    return {node, nullptr};
-  }
-  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
-  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
+  static NodeRef getEntryNode(DerivedT *node) { return {nullptr, node}; }
+  static ChildIteratorType child_begin(NodeRef edge) { return edge.begin(); }
+  static ChildIteratorType child_end(NodeRef edge) { return edge.end(); }
 };
 } // namespace llvm
 
