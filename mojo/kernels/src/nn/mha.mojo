@@ -520,7 +520,7 @@ fn _fill[
 
 
 @__llvm_metadata(
-    `nvvm.maxntid`=StaticTuple[1, Int32](num_threads.cast[DType.int32]())
+    `nvvm.maxntid`=StaticTuple[Int32, 1](num_threads.cast[DType.int32]())
 )
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
@@ -849,7 +849,7 @@ fn flash_attention_kernel[
 
 
 @__llvm_metadata(
-    `nvvm.maxntid`=StaticTuple[1, Int32](num_threads.cast[DType.int32]())
+    `nvvm.maxntid`=StaticTuple[Int32, 1](num_threads.cast[DType.int32]())
 )
 fn flash_attention_kernel_flexible_seqlen[
     BM: _uint32,  # number of queries per block

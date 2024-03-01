@@ -76,7 +76,8 @@ fn _softmax_2_pass_step1[
     buffer_size: Dim,
     type: DType,
 ](input: Buffer[type, buffer_size]) -> StaticTuple[
-    2, __mlir_type[`!pop.scalar<`, type.value, `>`]
+    __mlir_type[`!pop.scalar<`, type.value, `>`],
+    2,
 ]:
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
@@ -120,7 +121,7 @@ fn _softmax_2_pass_step1[
         )
         running_max = new_max
 
-    return StaticTuple[2, __mlir_type[`!pop.scalar<`, type.value, `>`]](
+    return StaticTuple[__mlir_type[`!pop.scalar<`, type.value, `>`], 2](
         running_max[0].value, running_sum[0].value
     )
 

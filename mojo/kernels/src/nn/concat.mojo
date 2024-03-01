@@ -520,31 +520,31 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=1](
                 output,
                 axis,
-                StaticTuple[1](inputs[0]),
+                StaticTuple[_, 1](inputs[0]),
             )
         if num_inputs == 2:
             return _concat_gpu[num_inputs=2](
                 output,
                 axis,
-                StaticTuple[2](inputs[0], inputs[1]),
+                StaticTuple[_, 2](inputs[0], inputs[1]),
             )
         if num_inputs == 3:
             return _concat_gpu[num_inputs=3](
                 output,
                 axis,
-                StaticTuple[3](inputs[0], inputs[1], inputs[2]),
+                StaticTuple[_, 3](inputs[0], inputs[1], inputs[2]),
             )
         if num_inputs == 4:
             return _concat_gpu[num_inputs=4](
                 output,
                 axis,
-                StaticTuple[4](inputs[0], inputs[1], inputs[2], inputs[3]),
+                StaticTuple[_, 4](inputs[0], inputs[1], inputs[2], inputs[3]),
             )
         if num_inputs == 5:
             return _concat_gpu[num_inputs=5](
                 output,
                 axis,
-                StaticTuple[5](
+                StaticTuple[_, 5](
                     inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]
                 ),
             )
@@ -552,7 +552,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=6](
                 output,
                 axis,
-                StaticTuple[6](
+                StaticTuple[_, 6](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -565,7 +565,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=7](
                 output,
                 axis,
-                StaticTuple[7](
+                StaticTuple[_, 7](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -579,7 +579,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=8](
                 output,
                 axis,
-                StaticTuple[8](
+                StaticTuple[_, 8](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -594,7 +594,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=9](
                 output,
                 axis,
-                StaticTuple[9](
+                StaticTuple[_, 9](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -610,7 +610,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=10](
                 output,
                 axis,
-                StaticTuple[10](
+                StaticTuple[_, 10](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -627,7 +627,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=11](
                 output,
                 axis,
-                StaticTuple[11](
+                StaticTuple[_, 11](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -645,7 +645,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=12](
                 output,
                 axis,
-                StaticTuple[12](
+                StaticTuple[_, 12](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -664,7 +664,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=13](
                 output,
                 axis,
-                StaticTuple[13](
+                StaticTuple[_, 13](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -684,7 +684,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=14](
                 output,
                 axis,
-                StaticTuple[14](
+                StaticTuple[_, 14](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -705,7 +705,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=15](
                 output,
                 axis,
-                StaticTuple[15](
+                StaticTuple[_, 15](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -727,7 +727,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=16](
                 output,
                 axis,
-                StaticTuple[16](
+                StaticTuple[_, 16](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -750,7 +750,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=17](
                 output,
                 axis,
-                StaticTuple[17](
+                StaticTuple[_, 17](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -774,7 +774,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=18](
                 output,
                 axis,
-                StaticTuple[18](
+                StaticTuple[_, 18](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -799,7 +799,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=19](
                 output,
                 axis,
-                StaticTuple[19](
+                StaticTuple[_, 19](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -825,7 +825,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=20](
                 output,
                 axis,
-                StaticTuple[20](
+                StaticTuple[_, 20](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -852,7 +852,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=21](
                 output,
                 axis,
-                StaticTuple[21](
+                StaticTuple[_, 21](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -880,7 +880,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=22](
                 output,
                 axis,
-                StaticTuple[22](
+                StaticTuple[_, 22](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -909,7 +909,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=23](
                 output,
                 axis,
-                StaticTuple[23](
+                StaticTuple[_, 23](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -939,7 +939,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=24](
                 output,
                 axis,
-                StaticTuple[24](
+                StaticTuple[_, 24](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -970,7 +970,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=25](
                 output,
                 axis,
-                StaticTuple[25](
+                StaticTuple[_, 25](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1002,7 +1002,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=26](
                 output,
                 axis,
-                StaticTuple[26](
+                StaticTuple[_, 26](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1035,7 +1035,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=27](
                 output,
                 axis,
-                StaticTuple[27](
+                StaticTuple[_, 27](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1069,7 +1069,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=28](
                 output,
                 axis,
-                StaticTuple[28](
+                StaticTuple[_, 28](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1104,7 +1104,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=29](
                 output,
                 axis,
-                StaticTuple[29](
+                StaticTuple[_, 29](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1140,7 +1140,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=30](
                 output,
                 axis,
-                StaticTuple[30](
+                StaticTuple[_, 30](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1177,7 +1177,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=31](
                 output,
                 axis,
-                StaticTuple[31](
+                StaticTuple[_, 31](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1215,7 +1215,7 @@ fn _concat_gpu_impl[
             return _concat_gpu[num_inputs=32](
                 output,
                 axis,
-                StaticTuple[32](
+                StaticTuple[_, 32](
                     inputs[0],
                     inputs[1],
                     inputs[2],
@@ -1277,7 +1277,7 @@ fn _concat_inner_most_single_dim[
     rank: Int, type: DType, num_inputs: Int, block_size: Int
 ](
     output: NDBuffer[type, rank],
-    inputs: StaticTuple[num_inputs, NDBuffer[type, rank]],
+    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
 ):
     var idx = BlockIdx.x() * block_size + ThreadIdx.x()
     var index = _get_start_indices_of_nth_subvolume[rank, 1](
@@ -1302,7 +1302,7 @@ fn _concat_gpu[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: StaticTuple[num_inputs, NDBuffer[type, rank]],
+    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
 ) raises:
     var stream = Stream.get_current_stream()
 
@@ -1366,8 +1366,8 @@ fn _concat_gpu[
                 fn (
                     NDBuffer[type, rank],
                     StaticTuple[
-                        num_inputs,
                         NDBuffer[type, rank],
+                        num_inputs,
                     ],
                 ) -> None, _concat_inner_most_single_dim[
                     rank, type, num_inputs, block_size

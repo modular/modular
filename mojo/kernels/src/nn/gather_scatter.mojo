@@ -188,9 +188,9 @@ fn gather_reduce[
                 fn reduce_j_tile[
                     unroll_factor: Int
                 ](
-                    accums: StaticTuple[unroll_factor, SIMD[type, simd_width]],
+                    accums: StaticTuple[SIMD[type, simd_width], unroll_factor],
                     j: Int,
-                ) -> StaticTuple[unroll_factor, SIMD[type, simd_width]]:
+                ) -> StaticTuple[SIMD[type, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = normalize_neg_index(
                         indices.simd_load[unroll_factor](i, j), gather_axis_size
@@ -207,7 +207,7 @@ fn gather_reduce[
                     return out
 
                 var j_residual_start = align_down(indices.dim[1](), j_tile_size)
-                var accums = StaticTuple[j_tile_size, SIMD[type, simd_width]](
+                var accums = StaticTuple[SIMD[type, simd_width], j_tile_size](
                     reduce_init
                 )
                 for j in range(0, j_residual_start, j_tile_size):
@@ -222,7 +222,7 @@ fn gather_reduce[
 
                 for j in range(j_residual_start, indices.dim[1](), 1):
                     accum = reduce_j_tile[1](
-                        StaticTuple[1, SIMD[type, simd_width]](accum), j
+                        StaticTuple[SIMD[type, simd_width], 1](accum), j
                     )[0]
 
                 var out_idx = StaticIntTuple[2](i, k)

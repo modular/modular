@@ -118,7 +118,7 @@ fn resize_nearest_neighbor[
     rank: Int,
     type: DType,
 ](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
-    var scales = StaticTuple[rank, Float32]()
+    var scales = StaticTuple[Float32, rank]()
     for i in range(rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
 
@@ -258,7 +258,7 @@ fn _resize[
     rank: Int,
     type: DType,
 ](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
-    var scales = StaticTuple[rank, Float32]()
+    var scales = StaticTuple[Float32, rank]()
 
     var resize_dims = InlinedFixedVector[Int, size=rank](rank)
     var tmp_dims = StaticIntTuple[rank](0)
