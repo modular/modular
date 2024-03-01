@@ -49,7 +49,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
                              const TypeSummaryOptions &summaryOptions) {
   // If we fail to read the string, we show some placeholder error text.
   // Otherwise, if we return false, for example, LLDB would print the contents
-  // of the inner DynamicVector.
+  // of the inner List.
   auto onError = [&stream]() {
     stream << "Summary Unavailable";
     return true;
@@ -180,8 +180,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   SyntheticChildren::Flags synthFlags;
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
 
-  constexpr const char *kDynamicVectorRegex =
-      R"(^!lit.declref<@stdlib::@collections::@vector::@"?DynamicVector[\[<].*)";
+  constexpr const char *kListRegex =
+      R"(^!lit.declref<@stdlib::@collections::@vector::@"?List[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
       R"(.* {@stdlib::debug::visualizers::lldb_formatter_wrapping_type\(.*)";
 
@@ -192,8 +192,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                   kLLDBFormatterWrappingTypeRegex, synthFlags,
                   /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
-                  "Mojo DynamicVector synthetic children", kDynamicVectorRegex,
-                  synthFlags, /*regex=*/true);
+                  "Mojo List synthetic children", kListRegex, synthFlags,
+                  /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoKGENVariantSyntheticFrontEndCreator,
                   "Mojo !kgen.variant synthetic children",
                   R"(^!kgen\.variant<.*>)", synthFlags, /*regex=*/true);
@@ -228,8 +228,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   summaryFlags.SetDontShowChildren(false);
   summaryFlags.SetDontShowValue(false);
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
-                "utils::vector::DynamicVector summary provider",
-                kDynamicVectorRegex, summaryFlags, /*regex=*/true);
+                "utils::vector::List summary provider", kListRegex,
+                summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {

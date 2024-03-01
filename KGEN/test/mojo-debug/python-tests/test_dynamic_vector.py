@@ -7,9 +7,9 @@
 from LLDBTestBase import LLDBTestBase
 
 
-class TestDynamicVector(LLDBTestBase):
+class TestList(LLDBTestBase):
     def test_dynamic_vector(self):
-        """Tests that DynamicVector can be parsed correctly and its data
+        """Tests that List can be parsed correctly and its data
         formatter works correctly as well."""
 
         # TODO(#29440): Re-enable asserts when debugger uses SourceName for structs.
