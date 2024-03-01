@@ -28,7 +28,7 @@ fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
         var index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
-    elementwise[in_rank, 1, print_elements_lambda](
+    elementwise[print_elements_lambda, 1, in_rank](
         rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
     )
 

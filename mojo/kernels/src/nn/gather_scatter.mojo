@@ -1066,7 +1066,7 @@ fn scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[rank, 1, update_func](indices.get_shape())
+    elementwise[update_func, 1, rank](indices.get_shape())
 
 
 @always_inline
@@ -1182,7 +1182,7 @@ fn gather_elements[
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[rank, 1, gather_func](output.get_shape())
+    elementwise[gather_func, 1, rank](output.get_shape())
 
 
 # ===----------------------------------------------------------------------===#

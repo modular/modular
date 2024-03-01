@@ -164,7 +164,7 @@ fn resize_nearest_neighbor[
         output[rebind[StaticIntTuple[rank]](out_coords)] = input[in_coords]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[rank, 1, nn_interpolate](output.get_shape())
+    elementwise[nn_interpolate, 1, rank](output.get_shape())
 
 
 @always_inline
