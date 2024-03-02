@@ -1222,7 +1222,10 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: lit.ref.store %0, %b_0
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
-    # CHECK: pop.variadic.get %{{.*}}[%index3]
+
+    # CHECK: %v1 = lit.var.decl "v1"
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <variadic_get(:variadic<!Int> a, 3)>
+    # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
     # CHECK: %[[LIST:.*]] = lit.ref.load %b_0
     # CHECK: lit.call {{.*}}__getitem__{{.*}}(%[[LIST]],
