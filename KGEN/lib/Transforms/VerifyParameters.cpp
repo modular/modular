@@ -153,7 +153,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     // item.
     ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
         paramCache, getContext().isMultithreadingEnabled()
-                        ? getContext().getThreadPool().getThreadCount()
+                        ? getContext().getThreadPool().getMaxConcurrency()
                         : 1);
 
     std::vector<Region *> declRegions;
