@@ -167,11 +167,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ArgConvention::BorrowedInMem:
-    // This is actually a register value passed to VariadicListMem - it
-    // doesn't need to be tracked.
-    if (isa<VariadicType>(bbArg.getType()))
-      return;
-
     // Borrowed memory objects don't need lifetime tracking given that they are
     // immutable, but we do want to reason about their aliasing properties for
     // return slot optimization etc.
@@ -181,17 +176,11 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     break;
 
   case ArgConvention::OwnedInReg:
-    // TODO(#21861): support variadic arguments
-    assert(!isa<VariadicType>(bbArg.getType()) &&
-           "variadic OwnedInMem not supported yet");
     isIndirect = false;
     startsUninit = false;
     endsUninit = true;
     break;
   case ArgConvention::OwnedInMem:
-    // TODO(#21861): support variadic arguments
-    assert(!isa<VariadicType>(bbArg.getType()) &&
-           "variadic OwnedInMem not supported yet");
     isIndirect = true;
     startsUninit = false;
     endsUninit = true;
@@ -215,9 +204,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isFullObjectLiveOnEntry = true;
     break;
   case ArgConvention::ByRef:
-    // TODO(#21861): support variadic inout arguments
-    assert(!isa<VariadicType>(bbArg.getType()) &&
-           "variadic inout not supported yet");
     isIndirect = true;
     startsUninit = false;
     endsUninit = false;
