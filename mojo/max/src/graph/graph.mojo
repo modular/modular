@@ -111,9 +111,7 @@ struct Graph(CollectionElement, Stringable):
     ) raises -> SymbolTuple:
         """Adds a new `Node` to the `Graph`.
 
-        The node represents a single MAX Graph operation. For a list of
-        supported operations, see the
-        [MO dialect reference](/engine/reference/mlir/mo).
+        The node represents a single MAX Graph operation.
 
         This is a very low level API meant to enable creating any supported op.
         In general, it's less ergonomic compared to the higher level helpers in

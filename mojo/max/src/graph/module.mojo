@@ -61,8 +61,7 @@ struct Module(Stringable):
         exhaustive):
         1. it has an `output` op whose types don't match its `out_types`
         2. it has an op with an invalid name, number, type of operands,
-            output types, etc. See the [`MO dialect`](/engine/reference/mlir/mo)
-            reference for more details).
+            output types, etc.
         3. it contains cycles
 
         Raises:
