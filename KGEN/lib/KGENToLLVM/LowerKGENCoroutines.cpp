@@ -235,7 +235,7 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.opaquePtr),
       Linkage::Internal);
 
-  b.setInsertionPointToStart(endFn.addEntryBlock());
+  b.setInsertionPointToStart(endFn.addEntryBlock(b));
   Value ctxt = endFn.getArgument(0);
   Type closureType = LLVMStructType::getLiteral(
       b.getContext(), {cache.opaquePtr, cache.opaquePtr});
@@ -274,7 +274,7 @@ static LLVMFuncOp synthesizeCoroCtxtProjFn(SymbolTable &symtab, LLVMBuilder &b,
                    LLVMFunctionType::get(cache.opaquePtr, cache.opaquePtr),
                    Linkage::Internal);
 
-  b.setInsertionPointToStart(projFn.addEntryBlock());
+  b.setInsertionPointToStart(projFn.addEntryBlock(b));
   b.create<ReturnOp>(projFn.getArgument(0));
   symtab.insert(projFn);
 
@@ -497,7 +497,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Generate the code to marshall the async function arguments and store the
   // ramp function as the initial resume function.
   b.setLoc(func.getLoc());
-  b.setInsertionPointToStart(func.addEntryBlock());
+  b.setInsertionPointToStart(func.addEntryBlock(b));
   // Read the required context size from the async function pointer.
   // NOTE: Hide the global read behind a "prepare" intrinsic to prevent the size
   // from being inlined into the allocator call until after coroutine splitting,
