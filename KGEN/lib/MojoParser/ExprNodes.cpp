@@ -1697,10 +1697,14 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // __getitem__ and __setitem__ implementations.
   ASTType baseType = baseValue.getRValueType();
 
-  // Check if we are subscripting a variadic. Emit `pop.variadic.get`.
+  // Support subscripting a variadic in a parameter list.  This enables us to
+  // work with parameter backs in a more natural way, e.g.
+  // fn thing[*Ts: CollectionElement]():
+  //      type = Ts[123]
+  // We should really remove this when going to a better parameter pack rep.
+  //
   // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
   // a standard library type that implements `__getitem__` and `__setitem__`.
-  // FIXME(#28389): really this should go.
   if (auto variadic = dyn_cast<VariadicType>(baseType)) {
     // Attempt to convert the index.
     if (posOperands.size() != 2 || !kwOperands.empty()) {
@@ -1712,23 +1716,14 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!index)
       return {};
     // Inside a parameter context, emit a parameter operator.
-    if (!emitter.builder) {
-      return ParamOperatorAttr::get(
-          POC::VariadicGet,
-          {emitter.emitPValue(posOperands.front(), EC_Subscript),
-           index.getIfPValue()});
-    }
-    // Otherwise, emit an MLIR operation.
-    auto baseReg = emitter.emitSRValue(posOperands[0], EC_Subscript);
-    if (!baseReg)
-      return {};
-    auto idxReg =
-        emitter.emitSRValue({index, posOperands[1].expr}, EC_Subscript);
-    if (!idxReg)
-      return {};
-    Value value = emitter.builder->create<POP::VariadicGetOp>(
-        emitter.translateLocation(getLoc()), baseReg, idxReg);
-    return emitter.emitResult(SRValue(value), this, dest);
+    if (auto indexPV = index.getIfPValue())
+      if (auto basePV = baseValue.getIfPValue()) {
+        auto res = ParamOperatorAttr::get(POC::VariadicGet, {basePV, indexPV});
+        return emitter.emitResult(PValue(res), this, dest);
+      }
+    emitter.emitError(getLoc())
+        << "can only subscript variadics in parameter expressions";
+    return {};
   }
 
   auto lookupError = [&] {
