@@ -77,28 +77,6 @@ from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 
-from .AccumulateSIMD import (
-    accumulate,
-    init_register_tile,
-    load_register_tile,
-    store_register_tile,
-)
-from .ConvUtils import (  # elementwise_epilogue_type,; null_elementwise_epilogue,
-    ConvInfo,
-    ConvInfoStatic,
-    ConvPartition,
-    ConvShape,
-    get_conv2d_shape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_shape,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-    get_micro_kernel_shape,
-    get_partition,
-)
-from .Image import Image2DLayout, ImageData, ImageShape
 from .ShapeFuncUtils import get_sliding_window_out_dim
 
 
@@ -421,8 +399,12 @@ struct ConvDirectNHWC[
         conv_shape: ConvShape[input_rank - 2],
     ) raises:
         alias simd_size = simdwidthof[output_type]()
+        # TODO: extend to 1d/3d.
+        alias WO = output_shape.at[
+            output_rank - 2
+        ]() if input_rank == 4 else Dim()
         alias micro_kernel_shape = get_micro_kernel_shape[
-            output_shape.at[output_rank - 2](),  # WO
+            WO,
             output_shape.at[output_rank - 1](),  # F
             conv_attr,
             simd_size,
