@@ -705,6 +705,12 @@ fn get_micro_kernel_shape[
                 return Index(micro_kernel_height, micro_kernel_width)
             return Index(4, 3)
 
+        @parameter
+        if is_neoverse_n1():
+            return Index(8, 2)
+        elif has_neon():  # neon other than neoverse-N1
+            return Index(6, 4)
+
         return Index(6, 2)
 
     else:  # Default options for dynamic shapes.
