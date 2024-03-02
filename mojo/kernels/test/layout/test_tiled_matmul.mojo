@@ -207,21 +207,21 @@ fn gemm_l1_cache[
     @parameter
     fn process_raw(m_1: Int) capturing:
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
-        var l1_lhs_cache = ManagedLayoutTensor[
+        var l1_lhs_cache = LayoutTensor[
             Layout(IntTuple(L1.m, L1.k)), dtype
-        ]()
-        var l1_rhs_cache = ManagedLayoutTensor[
+        ].stack_allocation()
+        var l1_rhs_cache = LayoutTensor[
             Layout(IntTuple(L1.n, L1.k)), dtype
-        ]()
+        ].stack_allocation()
 
         for k_1 in range(l1_size.k):
-            l1_lhs_cache.tensor.copy_from(lhs.tile[L1.m, L1.k](m_1, k_1))
+            l1_lhs_cache.copy_from(lhs.tile[L1.m, L1.k](m_1, k_1))
 
             for n_1 in range(l1_size.n):
                 var dst_l1_tile = dst.tile[L1.m, L1.n](m_1, n_1)
 
                 # Materialize L1 rhs transposed tile
-                l1_rhs_cache.tensor.copy_from(
+                l1_rhs_cache.copy_from(
                     rhs.tile[L1.k, L1.n](k_1, n_1).transpose()
                 )
 
@@ -231,13 +231,13 @@ fn gemm_l1_cache[
                         var dst_l2_tile = dst_l1_tile.tile[L2.m, L2.n](m_2, n_2)
 
                         for k_2 in range(l2_size.k):
-                            var lhs_l2_tile = l1_lhs_cache.tensor.tile[
-                                L2.m, L2.k
-                            ](m_2, k_2)
+                            var lhs_l2_tile = l1_lhs_cache.tile[L2.m, L2.k](
+                                m_2, k_2
+                            )
                             # Transposed tile -> transposed indices
-                            var rhs_l2_tile = l1_rhs_cache.tensor.tile[
-                                L2.n, L2.k
-                            ](n_2, k_2)
+                            var rhs_l2_tile = l1_rhs_cache.tile[L2.n, L2.k](
+                                n_2, k_2
+                            )
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op(dst_l2_tile, lhs_l2_tile, rhs_l2_tile)

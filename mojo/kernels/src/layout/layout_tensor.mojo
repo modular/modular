@@ -11,11 +11,17 @@ from .layout import *
 
 
 @register_passable
-struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
-    var ptr: DTypePointer[dtype]
+struct LayoutTensor[
+    layout: Layout,
+    dtype: DType,
+    /,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+](CollectionElement):
+    var ptr: DTypePointer[dtype, address_space]
 
     @always_inline
-    fn __init__(inout self, ptr: DTypePointer[dtype]):
+    fn __init__(inout self, ptr: DTypePointer[dtype, address_space]):
         self.ptr = ptr
 
     @always_inline
@@ -41,6 +47,13 @@ struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         return self.ptr.simd_store[width](self._offset(m, n), val)
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn stack_allocation() -> Self:
+        return stack_allocation[
+            layout.size(), dtype, address_space=address_space
+        ]()
 
     @staticmethod
     fn _toStatic[t: IntTuple]() -> StaticIntTuple[len(t)]:
@@ -75,10 +88,14 @@ struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
         M1: Int,
         N1: Int,
         tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
-    ](self, m: Int, n: Int) -> LayoutTensor[tiled_layout[0], dtype]:
+    ](self, m: Int, n: Int) -> LayoutTensor[
+        tiled_layout[0], dtype, address_space
+    ]:
         alias tiled_layout_stride = Self._toStatic[tiled_layout[1].stride]()
         var offset = m * tiled_layout_stride[0] + n * tiled_layout_stride[1]
-        return LayoutTensor[tiled_layout[0], dtype](self.ptr.offset(offset))
+        return LayoutTensor[tiled_layout[0], dtype, address_space](
+            self.ptr.offset(offset)
+        )
 
     @staticmethod
     fn _compute_distribute_layout[
@@ -94,13 +111,17 @@ struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
         tiled_layout: Layout = Self._compute_distribute_layout[
             layout, threads_layout
         ](),
-    ](self, m: Int, n: Int) -> LayoutTensor[tiled_layout[1], dtype]:
+    ](self, m: Int, n: Int) -> LayoutTensor[
+        tiled_layout[1], dtype, address_space
+    ]:
         alias composed_layout = composition(tiled_layout[0], threads_layout)
         alias fragments_layout_stride = Self._toStatic[composed_layout.stride]()
         var offset = m * fragments_layout_stride[
             0
         ] + n * fragments_layout_stride[1]
-        return LayoutTensor[tiled_layout[1], dtype](self.ptr.offset(offset))
+        return LayoutTensor[tiled_layout[1], dtype, address_space](
+            self.ptr.offset(offset)
+        )
 
     fn transpose[
         M: Int = Self.dim[0](),
@@ -109,8 +130,8 @@ struct LayoutTensor[layout: Layout, dtype: DType](CollectionElement):
             layout,
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
-    ](self) -> LayoutTensor[transposed_layout, dtype]:
-        return LayoutTensor[transposed_layout, dtype](self.ptr)
+    ](self) -> LayoutTensor[transposed_layout, dtype, address_space]:
+        return LayoutTensor[transposed_layout, dtype, address_space](self.ptr)
 
     @always_inline
     fn copy_from[
