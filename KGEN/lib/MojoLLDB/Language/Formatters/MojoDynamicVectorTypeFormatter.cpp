@@ -35,11 +35,11 @@ MojoDynamicVectorSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
                                       elementType);
 }
 
-bool MojoDynamicVectorSyntheticFrontEnd::Update() {
+lldb::ChildCacheState MojoDynamicVectorSyntheticFrontEnd::Update() {
   std::optional<std::pair<ValueObjectSP, size_t>> parsed =
       MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(m_backend.GetSP());
   if (!parsed)
-    return false;
+    return lldb::ChildCacheState::eRefetch;
 
   ValueObjectSP data = parsed->first;
   start = data->GetPointerValue();
@@ -52,10 +52,10 @@ bool MojoDynamicVectorSyntheticFrontEnd::Update() {
       // This means that we were able to parse everything we needed, so this is
       // where we set the size.
       size = parsed->second;
-      return false;
+      return lldb::ChildCacheState::eRefetch;
     }
   }
-  return false;
+  return lldb::ChildCacheState::eRefetch;
 }
 
 std::optional<std::pair<ValueObjectSP, size_t>>
