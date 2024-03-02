@@ -31,14 +31,14 @@ MojoKGENVariantTypeSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
   return content;
 }
 
-bool MojoKGENVariantTypeSyntheticFrontEnd::Update() {
+lldb::ChildCacheState MojoKGENVariantTypeSyntheticFrontEnd::Update() {
   std::optional<ValueObjectSP> parsed =
       MojoKGENVariantTypeSyntheticFrontEnd::parseKGENVariant(m_backend.GetSP());
   if (!parsed)
-    return false;
+    return lldb::ChildCacheState::eRefetch;
 
   content = *parsed;
-  return true;
+  return lldb::ChildCacheState::eRefetch;
 }
 
 std::optional<ValueObjectSP>
