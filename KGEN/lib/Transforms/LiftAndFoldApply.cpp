@@ -224,7 +224,7 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
     // item.
     ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
         paramCache, getContext().isMultithreadingEnabled()
-                        ? getContext().getThreadPool().getThreadCount()
+                        ? getContext().getThreadPool().getMaxConcurrency()
                         : 1);
 
     auto workFunc = [&threadCaches, &totNumDedupedApplies](GeneratorOp func) {

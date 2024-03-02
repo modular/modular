@@ -202,7 +202,7 @@ PerThreadPassManagers::PerThreadPassManagers(
     : ctx(ctx), buildFuncPasses(buildFuncPasses) {
   // Reserve the thread-local cache map so that it never resizes.
   pms.reserve(ctx->isMultithreadingEnabled()
-                  ? ctx->getThreadPool().getThreadCount()
+                  ? ctx->getThreadPool().getMaxConcurrency()
                   : 1);
 }
 
