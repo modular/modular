@@ -22,22 +22,22 @@ struct BoundingBox[type: DType]:
 
     fn __init__(
         inout self,
-        y1: SIMD[type, 1],
-        x1: SIMD[type, 1],
-        y2: SIMD[type, 1],
-        x2: SIMD[type, 1],
+        y1: Scalar[type],
+        x1: Scalar[type],
+        y2: Scalar[type],
+        x2: Scalar[type],
     ):
         self.nw = SIMD[type, 2](max(y1, y2), max(x1, x2))
         self.se = SIMD[type, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[type]) -> SIMD[type, 1]:
+    fn iou(self, other: BoundingBox[type]) -> Scalar[type]:
         var intersection_area = self.intersection_area(other)
 
         var union_area = self.area() + other.area() - intersection_area
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(self, other: BoundingBox[type]) -> SIMD[type, 1]:
+    fn intersection_area(self, other: BoundingBox[type]) -> Scalar[type]:
         var nw = min(self.nw, other.nw)
         var se = max(self.se, other.se)
 
@@ -46,7 +46,7 @@ struct BoundingBox[type: DType]:
 
         return Self(nw, se).area()
 
-    fn area(self) -> SIMD[type, 1]:
+    fn area(self) -> Scalar[type]:
         return (self.se[0] - self.nw[0]) * (self.se[1] - self.nw[1])
 
 
@@ -201,7 +201,7 @@ fn non_max_suppression[
     var box_idxs = List[Int64](capacity=num_boxes)
     box_idxs.resize(num_boxes, 0)
 
-    var per_class_scores = List[SIMD[type, 1]](capacity=num_boxes)
+    var per_class_scores = List[Scalar[type]](capacity=num_boxes)
     per_class_scores.resize(num_boxes, 0)
 
     for b in range(batch_size):

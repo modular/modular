@@ -92,7 +92,7 @@ fn gather_reduce[
         indices_rank,
         indices_shape,
     ],
-    reduce_init: SIMD[type, 1],
+    reduce_init: Scalar[type],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output accross axis 1 to produce output[i, k].

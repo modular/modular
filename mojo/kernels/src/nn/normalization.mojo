@@ -35,7 +35,7 @@ fn layer_norm[
     out_buf: NDBuffer[type, 2, shape],
     gamma_buf: NDBuffer[type, 1, inner_dim],
     beta_buf: NDBuffer[type, 1, inner_dim],
-    eps: SIMD[type, 1],
+    eps: Scalar[type],
 ):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma + beta$.
@@ -85,7 +85,7 @@ fn layer_norm[
 
         @__copy_capture(sum_val, n)
         @parameter
-        fn _sum_to_mean() -> SIMD[type, 1]:
+        fn _sum_to_mean() -> Scalar[type]:
             @parameter
             if type.is_integral():
                 return sum_val // n

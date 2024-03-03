@@ -15,11 +15,11 @@ from NN.TopK import _top_k
 
 
 struct TestTensor[rank: Int, type: DType]:
-    var storage: List[SIMD[type, 1]]
+    var storage: List[Scalar[type]]
     var shape: StaticIntTuple[rank]
 
     fn __init__(inout self, shape: StaticIntTuple[rank]):
-        self.storage = List[SIMD[type, 1]](capacity=shape.flattened_length())
+        self.storage = List[Scalar[type]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
 

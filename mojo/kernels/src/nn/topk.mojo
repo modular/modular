@@ -124,7 +124,7 @@ fn _top_k[
 
             @parameter
             @always_inline
-            fn indices_to_val(idx: Int64) -> SIMD[type, 1]:
+            fn indices_to_val(idx: Int64) -> Scalar[type]:
                 indices[axis] = int(idx)
                 return input[indices]
 

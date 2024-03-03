@@ -47,7 +47,7 @@ fn reduce_add_simd[
     step_simd_width: Int,
     type: DType,
 ](
-    inout scalar: SIMD[type, 1],
+    inout scalar: Scalar[type],
     inout vector: SIMD[type, simd_width],
     val: SIMD[type, step_simd_width],
 ):
@@ -134,8 +134,8 @@ fn _softmax_2_pass_step2[
 ](
     output: Buffer[type, buffer_size],
     input: Buffer[type, buffer_size],
-    running_max: SIMD[type, 1],
-    running_sum: SIMD[type, 1],
+    running_max: Scalar[type],
+    running_sum: Scalar[type],
 ):
     # Step 2:
     #   for i = 0 to N do
@@ -225,7 +225,7 @@ fn _softmax_3_pass_step_2[
     post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-](output: Buffer[type, buffer_size], max_val: SIMD[type, 1],) -> SIMD[type, 1]:
+](output: Buffer[type, buffer_size], max_val: Scalar[type],) -> Scalar[type]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -233,7 +233,7 @@ fn _softmax_3_pass_step_2[
     # end for
     alias outer_simd_width = simd_width
 
-    var accum_scalar: SIMD[type, 1] = 0
+    var accum_scalar: Scalar[type] = 0
     var accum_simd: SIMD[type, outer_simd_width] = 0
 
     @always_inline
@@ -265,7 +265,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[type, buffer_size], accum: SIMD[type, 1]):
+](output: Buffer[type, buffer_size], accum: Scalar[type]):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
@@ -715,7 +715,7 @@ fn softmax_kernel[
         barrier()
 
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
-        var exp_sum = SIMD[type, 1](0)
+        var exp_sum = Scalar[type](0)
         for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
             var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:

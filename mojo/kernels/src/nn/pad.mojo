@@ -24,9 +24,7 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
 
-fn _fill[
-    type: DType
-](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
+fn _fill[type: DType](dst: DTypePointer[type], value: Scalar[type], count: Int):
     _ = Buffer[type](dst, count).fill(value)
 
 
@@ -138,7 +136,7 @@ fn pad_constant[
     """
 
     alias init_axis = 0
-    var constant_cast = rebind[SIMD[type, 1]](constant[0])
+    var constant_cast = rebind[Scalar[type]](constant[0])
 
     @__copy_capture(constant_cast)
     @parameter
@@ -329,7 +327,7 @@ fn _pad_constant_impl[
     output: DTypePointer[type],
     input: DTypePointer[type],
     paddings: DTypePointer[paddings_type],
-    constant: SIMD[type, 1],
+    constant: Scalar[type],
     output_shape: StaticIntTuple[rank],
     output_strides: DTypePointer[DType.index],
     input_strides: DTypePointer[DType.index],

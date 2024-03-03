@@ -219,7 +219,7 @@ struct ImageData[
         debug_assert(False, "Invalid layout")
         return 0
 
-    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[type, 1]:
+    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[type]:
         """Reads the underlying data buffer based on the tensor index and under-
         lying data layout.
 
@@ -234,7 +234,7 @@ struct ImageData[
         """
         return self.data[self._get_index(n, c, h, w)]
 
-    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[type, 1]):
+    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: Scalar[type]):
         """Writes the underlying data buffer based on the tensor index and under-
         lying data layout.
 

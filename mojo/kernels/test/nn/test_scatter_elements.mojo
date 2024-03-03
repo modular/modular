@@ -18,10 +18,10 @@ fn test_case[
     input_shape: TensorShape,
     indices_shape: TensorShape,
     axis: Int,
-    data_vals: VariadicList[SIMD[type, 1]],
+    data_vals: VariadicList[Scalar[type]],
     indices_vals: VariadicList[Int32],
-    updates_vals: VariadicList[SIMD[type, 1]],
-    output_ref_vals: VariadicList[SIMD[type, 1]],
+    updates_vals: VariadicList[Scalar[type]],
+    output_ref_vals: VariadicList[Scalar[type]],
 ) raises:
     @always_inline
     @parameter
@@ -52,10 +52,10 @@ fn test_case[
     input_shape: TensorShape,
     indices_shape: TensorShape,
     axis: Int,
-    data_vals: VariadicList[SIMD[type, 1]],
+    data_vals: VariadicList[Scalar[type]],
     indices_vals: VariadicList[Int32],
-    updates_vals: VariadicList[SIMD[type, 1]],
-    output_ref_vals: VariadicList[SIMD[type, 1]],
+    updates_vals: VariadicList[Scalar[type]],
+    output_ref_vals: VariadicList[Scalar[type]],
 ) raises:
     var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)

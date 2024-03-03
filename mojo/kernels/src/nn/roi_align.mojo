@@ -18,9 +18,9 @@ struct Weighted2DPoint[type: DType]:
 
     var y: Int
     var x: Int
-    var w: SIMD[type, 1]
+    var w: Scalar[type]
 
-    fn __init__(y: Int, x: Int, weight: SIMD[type, 1]) -> Self:
+    fn __init__(y: Int, x: Int, weight: Scalar[type]) -> Self:
         return Self {y: y, x: x, w: weight}
 
 
@@ -194,7 +194,7 @@ fn roi_align_nhwc[
         # mode
         @parameter
         @always_inline
-        fn init_fn[type: DType]() -> SIMD[type, 1]:
+        fn init_fn[type: DType]() -> Scalar[type]:
             if mode == "AVG":
                 return 0
             else:
@@ -204,7 +204,7 @@ fn roi_align_nhwc[
         @always_inline
         fn update_fn[
             type: DType
-        ](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
             if mode == "AVG":
                 return a + b
             else:
@@ -214,7 +214,7 @@ fn roi_align_nhwc[
         @always_inline
         fn reduce_fn[
             type: DType
-        ](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
             if mode == "AVG":
                 return a / b
             else:

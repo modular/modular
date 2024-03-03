@@ -46,8 +46,8 @@ def test_accumulate[
     var a = stack_allocation[2 * num_rows * length, type]()
     for i in range(2 * num_rows):
         var a_ptr = a + i * length
-        a_ptr[0] = SIMD[type, 1](i)
-        a_ptr[1] = SIMD[type, 1](i)
+        a_ptr[0] = Scalar[type](i)
+        a_ptr[1] = Scalar[type](i)
 
     # 4 x 0.0 denotes 0.0, 0.0, 0.0, 0.0
     # B: [[4 x 0.0, 4 x 0.0, 4 x 1.0, 4 x 1.0],
@@ -157,8 +157,8 @@ def test_accumulate_with_offsets[
     var a = stack_allocation[2 * num_rows * length, type]()
     for i in range(2 * num_rows):
         var a_ptr = a + i * length
-        a_ptr[0] = SIMD[type, 1](i)
-        a_ptr[1] = SIMD[type, 1](i)
+        a_ptr[0] = Scalar[type](i)
+        a_ptr[1] = Scalar[type](i)
 
     # 4 x 0.0 denotes 0.0, 0.0, 0.0, 0.0
     # B: [[4 x 0.0, 4 x 0.0, 4 x 1.0, 4 x 1.0],

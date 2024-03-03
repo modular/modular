@@ -66,7 +66,7 @@ fn cumsum[
             outer_index_adj = outer_index
 
         for inner_index in range(inner):
-            var accumulator: SIMD[type, 1] = 0
+            var accumulator: Scalar[type] = 0
             var inner_index_adj: Int
 
             @parameter

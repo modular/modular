@@ -26,8 +26,8 @@ fn is_ndbuffer_close[
 ](
     a: NDBuffer[type, rank],
     b: NDBuffer[type, rank],
-    abs_tol: SIMD[type, 1] = 1e-5,
-    rel_tol: SIMD[type, 1] = 1e-4,
+    abs_tol: Scalar[type] = 1e-5,
+    rel_tol: Scalar[type] = 1e-4,
     print_wrong_value: Bool = True,
     max_num_print: Int = 1,
 ) -> Bool:

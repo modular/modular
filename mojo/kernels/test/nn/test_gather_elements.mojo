@@ -18,9 +18,9 @@ fn test_case[
     input_shape: TensorShape,
     indices_shape: TensorShape,
     axis: Int,
-    data_vals: VariadicList[SIMD[type, 1]],
+    data_vals: VariadicList[Scalar[type]],
     indices_vals: VariadicList[Int32],
-    output_ref_vals: VariadicList[SIMD[type, 1]],
+    output_ref_vals: VariadicList[Scalar[type]],
 ) raises:
     var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)

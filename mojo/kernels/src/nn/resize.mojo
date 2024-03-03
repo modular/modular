@@ -124,7 +124,7 @@ fn resize_nearest_neighbor[
 
     @parameter
     @always_inline
-    fn round[type: DType](val: SIMD[type, 1]) -> SIMD[type, 1]:
+    fn round[type: DType](val: Scalar[type]) -> Scalar[type]:
         @parameter
         if round_mode == RoundMode.HalfDown:
             return round_half_down(val)
@@ -208,8 +208,8 @@ fn interpolate_point_1d[
     var xmin = max(0, int(center - support + 0.5))
     var xmax = min(input.dim(dim), int(center + support + 0.5))
     var in_coords = out_coords
-    var sum = SIMD[type, 1](0)
-    var acc = SIMD[type, 1](0)
+    var sum = Scalar[type](0)
+    var acc = Scalar[type](0)
     var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin

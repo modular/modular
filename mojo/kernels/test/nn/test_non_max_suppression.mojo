@@ -18,16 +18,16 @@ from utils.index import Index
 
 @register_passable("trivial")
 struct BoxCoords[type: DType]:
-    var y1: SIMD[type, 1]
-    var x1: SIMD[type, 1]
-    var y2: SIMD[type, 1]
-    var x2: SIMD[type, 1]
+    var y1: Scalar[type]
+    var x1: Scalar[type]
+    var y2: Scalar[type]
+    var x2: Scalar[type]
 
     fn __init__(
-        y1: SIMD[type, 1],
-        x1: SIMD[type, 1],
-        y2: SIMD[type, 1],
-        x2: SIMD[type, 1],
+        y1: Scalar[type],
+        x1: Scalar[type],
+        y2: Scalar[type],
+        x2: Scalar[type],
     ) -> Self:
         return Self {y1: y1, x1: x1, y2: y2, x2: x2}
 
@@ -64,7 +64,7 @@ fn linear_offset_to_coords[
 fn fill_scores[
     type: DType
 ](
-    batch_size: Int, num_classes: Int, scores_list: VariadicList[SIMD[type, 1]]
+    batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[type]]
 ) -> Tensor[type]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
@@ -87,7 +87,7 @@ fn test_case[
     score_threshold: Float32,
     max_output_boxes_per_class: Int,
     box_list: VariadicList[BoxCoords[type]],
-    scores_list: VariadicList[SIMD[type, 1]],
+    scores_list: VariadicList[Scalar[type]],
 ):
     var boxes = fill_boxes[type](batch_size, box_list)
     var scores = fill_scores[type](batch_size, num_classes, scores_list)

@@ -58,7 +58,7 @@ def main():
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
+        linear_fill[type](input, VariadicList[Scalar[type]](1, 2, 3, 4))
         var output = Tensor[type](1, 1, 4, 6)
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
@@ -73,7 +73,7 @@ def main():
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
-            input, VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8)
+            input, VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
         )
         var output = Tensor[type](1, 1, 1, 2)
 
@@ -91,7 +91,7 @@ def main():
         var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
@@ -109,7 +109,7 @@ def main():
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
+        linear_fill[type](input, VariadicList[Scalar[type]](1, 2, 3, 4))
         var output = Tensor[type](1, 1, 7, 8)
 
         test_case_nearest[
@@ -126,7 +126,7 @@ def main():
         var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -146,7 +146,7 @@ def main():
         var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -166,7 +166,7 @@ def main():
         var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -186,7 +186,7 @@ def main():
         var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](1, 2, 3, 4),
+            VariadicList[Scalar[type]](1, 2, 3, 4),
         )
         var output = Tensor[type](1, 1, 4, 4)
         var reference = Tensor[type](1, 1, 4, 4)
@@ -198,7 +198,7 @@ def main():
 
         linear_fill[type](
             reference,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 1.0000,
                 1.2500,
                 1.7500,
@@ -232,7 +232,7 @@ def main():
         var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](1, 2, 3, 4),
+            VariadicList[Scalar[type]](1, 2, 3, 4),
         )
         var output = Tensor[type](1, 1, 4, 4)
         var reference = Tensor[type](1, 1, 4, 4)
@@ -244,7 +244,7 @@ def main():
         # print(y.flatten())
         linear_fill[type](
             reference,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 1.0000,
                 1.3333,
                 1.6667,
@@ -278,7 +278,7 @@ def main():
         var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
+            VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
         )
         var output = Tensor[type](1, 1, 1, 2)
         var reference = Tensor[type](1, 1, 1, 2)
@@ -287,7 +287,7 @@ def main():
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
         linear_fill[type](
-            reference, VariadicList[SIMD[type, 1]](3.50000, 5.50000)
+            reference, VariadicList[Scalar[type]](3.50000, 5.50000)
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -304,7 +304,7 @@ def main():
         var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
+            VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
         )
         var output = Tensor[type](1, 1, 1, 2)
         var reference = Tensor[type](1, 1, 1, 2)
@@ -314,7 +314,7 @@ def main():
         #     torch.Tensor(x), (1, 2), mode="bilinear", align_corners=True
         # )
         # print(y.flatten())
-        linear_fill[type](reference, VariadicList[SIMD[type, 1]](1, 4))
+        linear_fill[type](reference, VariadicList[Scalar[type]](1, 4))
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
@@ -330,7 +330,7 @@ def main():
         var input = Tensor[type](1, 4, 2, 2)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
@@ -345,7 +345,7 @@ def main():
         linear_fill[type](
             reference,
             # fmt: off
-            VariadicList[SIMD[type, 1]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
+            VariadicList[Scalar[type]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
                 1.50000,  1.50000,  1.75000,  2.25000,  2.50000,  2.00000,  2.25000,
                 2.75000,  3.00000,  2.00000,  2.25000,  2.75000,  3.00000,  2.50000,
                 2.75000,  3.25000,  3.50000,  3.50000,  3.75000,  4.25000,  4.50000,
@@ -376,7 +376,7 @@ def main():
         var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
-            VariadicList[SIMD[type, 1]](
+            VariadicList[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
@@ -390,7 +390,7 @@ def main():
         # print(y.flatten())
         linear_fill[type](
             reference,
-            VariadicList[SIMD[type, 1]](3.57143, 5.14286, 9.85714, 11.42857),
+            VariadicList[Scalar[type]](3.57143, 5.14286, 9.85714, 11.42857),
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](
