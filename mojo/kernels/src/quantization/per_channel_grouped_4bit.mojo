@@ -8,6 +8,7 @@ from sys.info import alignof, sizeof
 
 from memory.buffer import NDBuffer, prod_dims
 from memory.unsafe import bitcast
+from utils.list import DimList
 
 
 @always_inline
