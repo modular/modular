@@ -501,23 +501,21 @@ fn to_buffer_list[
 ) -> InlinedFixedVector[NDBuffer[type, rank]]:
     # Cast input list pointer
     var abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
-    var elems_ptr = Pointer(
-        __get_address_as_lvalue(abi_list_ptr.address).elements
-    )
+    var elems_ptr = Pointer(abi_list_ptr[].elements)
     var abi_tensors_ptr = bitcast[ABI_Tensor](elems_ptr)
 
     # Create output list
-    var num_elements = __get_address_as_lvalue(abi_list_ptr.address).num_elems
+    var num_elements = abi_list_ptr[].num_elems
     var out_list = InlinedFixedVector[NDBuffer[type, rank]](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
     for i in range(num_elements):
         var abi_tensor_ptr = abi_tensors_ptr.offset(i)
-        var dims = __get_address_as_lvalue(abi_tensor_ptr.address).dims
+        var dims = abi_tensor_ptr[].dims
         var data = __mlir_op.`pop.pointer.bitcast`[
             _type = __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`]
-        ](__get_address_as_lvalue(abi_tensor_ptr.address).data)
+        ](abi_tensor_ptr[].data)
         var buffer = to_buffer[type, rank](data, dims)
         out_list.append(buffer)
 
