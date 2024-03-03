@@ -82,7 +82,7 @@ struct Buffer[
         }
 
     @always_inline
-    fn __init__(ptr: Pointer[SIMD[type, 1], address_space]) -> Self:
+    fn __init__(ptr: Pointer[Scalar[type], address_space]) -> Self:
         """Constructs a Buffer with statically known size and type.
 
         Constraints:
@@ -117,7 +117,7 @@ struct Buffer[
 
     @always_inline
     fn __init__(
-        ptr: Pointer[SIMD[type, 1], address_space],
+        ptr: Pointer[Scalar[type], address_space],
         in_size: Int,
     ) -> Self:
         """Constructs a Buffer with statically known type.
@@ -184,7 +184,7 @@ struct Buffer[
         return size.get()
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> SIMD[type, 1]:
+    fn __getitem__(self, idx: Int) -> Scalar[type]:
         """Loads a single element (SIMD of size 1) from the buffer at the
         specified index.
 
@@ -243,10 +243,10 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[1](idx, SIMD[type, 1](val))
+        self.simd_store[1](idx, Scalar[type](val))
 
     @always_inline
-    fn __setitem__(self, idx: Int, val: SIMD[type, 1]):
+    fn __setitem__(self, idx: Int, val: Scalar[type]):
         """Stores a single value into the buffer at the specified index.
 
         Args:
@@ -334,7 +334,7 @@ struct Buffer[
             (False).__mlir_i1__(),
         )
 
-    fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
+    fn simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -355,7 +355,7 @@ struct Buffer[
         vectorize[_fill, simd_width](len(self))
 
     @always_inline
-    fn fill(self, val: SIMD[type, 1]):
+    fn fill(self, val: Scalar[type]):
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
@@ -663,7 +663,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        ptr: Pointer[SIMD[type, 1], address_space],
+        ptr: Pointer[Scalar[type], address_space],
     ) -> Self:
         """Constructs an NDBuffer with statically known rank, shapes and
         type.
@@ -769,7 +769,7 @@ struct NDBuffer[
             The NDBuffer object.
         """
         return Self {
-            data: ptr.bitcast[SIMD[type, 1]](),
+            data: ptr.bitcast[Scalar[type]](),
             dynamic_shape: dynamic_shape,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
@@ -802,7 +802,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        ptr: Pointer[SIMD[type, 1], address_space],
+        ptr: Pointer[Scalar[type], address_space],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_stride: StaticIntTuple[rank],
     ) -> Self:
@@ -993,7 +993,7 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __getitem__(self, *idx: Int) -> SIMD[type, 1]:
+    fn __getitem__(self, *idx: Int) -> Scalar[type]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -1005,7 +1005,7 @@ struct NDBuffer[
         return self.simd_load[1](idx)
 
     @always_inline
-    fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[type, 1]:
+    fn __getitem__(self, idx: StaticIntTuple[rank]) -> Scalar[type]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -1205,7 +1205,7 @@ struct NDBuffer[
         return self._offset(idx).aligned_simd_load[width, alignment]()
 
     @always_inline
-    fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[type, 1]):
+    fn __setitem__(self, idx: StaticIntTuple[rank], val: Scalar[type]):
         """Stores a single value into the buffer at the specified index.
 
         Args:
@@ -1431,7 +1431,7 @@ struct NDBuffer[
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         memset_zero(self.data, len(self))
 
-    fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
+    fn simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -1456,7 +1456,7 @@ struct NDBuffer[
             f._write(self.data.bitcast[DType.int8](), self.bytecount())
 
     @always_inline
-    fn fill(self, val: SIMD[type, 1]):
+    fn fill(self, val: Scalar[type]):
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
