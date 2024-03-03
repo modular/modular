@@ -11,8 +11,8 @@ from random import rand
 from BatchedMatmul import batched_matmul
 from memory.buffer import NDBuffer, _compute_nd_index
 from memory.unsafe import DTypePointer
-from NN.MultiHeadAttention import _naive_attention, fused_attention
-from NN.Softmax import softmax
+from nn.mha import _naive_attention, fused_attention
+from nn.softmax import softmax
 from testing import assert_true
 
 from utils.index import Index

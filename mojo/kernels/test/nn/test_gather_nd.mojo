@@ -7,7 +7,7 @@
 
 from memory import stack_allocation
 from memory.buffer import NDBuffer
-from NN.GatherScatter import gather_nd, gather_nd_shape
+from nn.gather_scatter import gather_nd, gather_nd_shape
 
 
 # CHECK-LABEL: test_gather_nd

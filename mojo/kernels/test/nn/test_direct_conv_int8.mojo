@@ -12,13 +12,13 @@ from sys.info import num_physical_cores, simdwidthof
 
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from NN.Conv import (
+from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_filter,
 )
-from NN.ConvUtils import (
+from nn.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -26,7 +26,7 @@ from NN.ConvUtils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-from NN.Image import Image2DLayout, ImageData, ImageShape
+from nn.image import Image2DLayout, ImageData, ImageShape
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

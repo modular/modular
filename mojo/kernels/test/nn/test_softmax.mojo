@@ -8,7 +8,7 @@
 from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
-from NN.Softmax import logsoftmax, softmax_2_pass
+from nn.softmax import logsoftmax, softmax_2_pass
 
 from utils.list import Dim, DimList
 

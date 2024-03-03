@@ -14,8 +14,8 @@ from memory.buffer import NDBuffer
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
-from .Image import Image2DLayout, ImageData, ImageShape
-from .ShapeFuncUtils import get_sliding_window_out_dim
+from .image import Image2DLayout, ImageData, ImageShape
+from .shapes import get_sliding_window_out_dim
 
 
 # Pooling method.

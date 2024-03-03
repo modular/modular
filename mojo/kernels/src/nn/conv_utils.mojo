@@ -23,7 +23,7 @@ from utils._optional_param import OptionalParamInt, OptionalParamInts
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 
-from .Image import Image2DLayout, ImageData
+from .image import Image2DLayout, ImageData
 
 # ===----------------------------------------------------------------------=== #
 # Epilogue Helper                                                              #

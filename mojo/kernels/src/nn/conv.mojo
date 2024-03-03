@@ -23,13 +23,13 @@ from algorithm import (
     unswitch,
     vectorize,
 )
-from .AccumulateSIMD import (
+from .accumulate import (
     accumulate,
     init_register_tile,
     load_register_tile,
     store_register_tile,
 )
-from .ConvUtils import (
+from .conv_utils import (
     ConvInfoStatic,
     ConvShape,
     ConvPartition,
@@ -45,7 +45,7 @@ from .ConvUtils import (
     get_conv_shape,
     reorder_padding,
 )
-from .Image import Image2DLayout, ImageData, ImageShape
+from .image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -77,7 +77,7 @@ from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 
-from .ShapeFuncUtils import get_sliding_window_out_dim
+from .shapes import get_sliding_window_out_dim
 
 
 @value

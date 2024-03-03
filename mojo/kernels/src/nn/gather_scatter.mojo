@@ -26,7 +26,7 @@ from utils._optional_param import OptionalParamInt
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
-from .Reshape import reshape
+from .reshape import reshape
 
 
 @always_inline

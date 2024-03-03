@@ -10,8 +10,8 @@ from math import mul
 from algorithm import elementwise
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from NN.Arange import arange, arange_shape
-from NN.Slice import slice_as_copy, slice_as_view
+from nn.arange import arange, arange_shape
+from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

@@ -14,7 +14,7 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
 )
 from memory.buffer import Buffer, NDBuffer
-from NN.Reshape import reshape
+from .reshape import reshape
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 

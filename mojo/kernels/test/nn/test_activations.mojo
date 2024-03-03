@@ -9,7 +9,7 @@
 from math import iota
 from random import randn, seed
 
-from NN.Activations import (
+from nn.activations import (
     elu,
     gelu,
     gelu_approximate,

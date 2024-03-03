@@ -8,8 +8,8 @@
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
 from memory.buffer import NDBuffer
-from NN.Conv import conv1d_update_wo_tile
-from NN.ConvUtils import ConvShape
+from nn.conv import conv1d_update_wo_tile
+from nn.conv_utils import ConvShape
 from testing import *
 
 from utils.index import Index

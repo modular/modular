@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from NN.Tile import tile
+from nn.tile import tile
 
 
 # CHECK-LABEL: test_tile_eg1

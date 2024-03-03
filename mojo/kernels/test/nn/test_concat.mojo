@@ -7,7 +7,7 @@
 
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
-from NN.Concat import (
+from nn.concat import (
     _concat_parallel,
     _concat_serial,
     concat,

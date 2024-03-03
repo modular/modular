@@ -33,7 +33,7 @@ from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
-from .Softmax import softmax, softmax_3_pass
+from .softmax import softmax, softmax_3_pass
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

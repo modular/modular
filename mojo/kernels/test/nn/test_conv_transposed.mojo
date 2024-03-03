@@ -13,13 +13,13 @@ from sys.info import simdwidthof
 from algorithm.functional import vectorize
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from NN.ConvTranspose import (
+from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
     pack_filter,
     pack_filter_shape,
 )
-from NN.ConvUtils import (
+from nn.conv_utils import (
     ConvInfoStatic,
     ConvShape,
     append_shape,

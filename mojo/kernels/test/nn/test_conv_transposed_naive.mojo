@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from NN.ConvTranspose import conv_transpose_naive
+from nn.conv_transpose import conv_transpose_naive
 
 from utils.index import Index
 

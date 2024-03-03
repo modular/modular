@@ -10,8 +10,8 @@ from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
 from memory.buffer import NDBuffer
-from NN.Conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
-from NN.ConvUtils import (
+from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
+from nn.conv_utils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,

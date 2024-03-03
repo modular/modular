@@ -11,8 +11,8 @@ from math import div_ceil
 from sys.info import simdwidthof
 
 from memory.buffer import NDBuffer
-from NN.Conv import ConvDirectNHWC, ConvInfoStatic
-from NN.ConvUtils import (
+from nn.conv import ConvDirectNHWC, ConvInfoStatic
+from nn.conv_utils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,

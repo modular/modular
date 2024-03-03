@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -I %S/.. %s | FileCheck %s
 
-from NN.Resize import (
+from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
     resize_linear,

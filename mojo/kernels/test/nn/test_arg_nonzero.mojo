@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
+from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
 
 from utils.list import DimList

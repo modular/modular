@@ -41,13 +41,13 @@ from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 
-from .AccumulateSIMD import (
+from .accumulate import (
     accumulate,
     init_register_tile,
     load_register_tile,
     store_register_tile,
 )
-from .ConvUtils import (
+from .conv_utils import (
     ConvInfoStatic,
     ConvPartition,
     ConvShape,

@@ -8,8 +8,8 @@
 import builtin
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
-from NN.Image import Image2DLayout, ImageData, ImageShape
-from NN.Pool import PoolMethod, avg_pool, max_pool, pool_shape
+from nn.image import Image2DLayout, ImageData, ImageShape
+from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape
 from tensor import Tensor
 
 from utils.index import StaticIntTuple
