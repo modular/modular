@@ -2407,7 +2407,7 @@ fn _small_matmul[
         for m in range(M):
             for n in range(N):
                 var acc_vector = SIMD[type, simd_width]()
-                var acc_scalar = SIMD[type, 1]()
+                var acc_scalar = Scalar[type]()
 
                 @always_inline
                 @parameter
