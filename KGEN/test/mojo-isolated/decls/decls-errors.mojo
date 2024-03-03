@@ -258,6 +258,12 @@ fn badPackCalls(value: Int):
   # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 parameters, but 0 were specified}}
   first_and_rest(value)
 
+struct TestPackErrorMessage[*Ts: AnyType]:
+    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type '*Ts'}}
+    fn __init__(*args: *Ts):
+         pass
+
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##
