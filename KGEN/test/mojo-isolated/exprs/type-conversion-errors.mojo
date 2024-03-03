@@ -42,5 +42,5 @@ struct WrapsMadeFromPack[*Ts: AnyRegType]:
     var data: MadeFromPack[Ts]
 
     fn __init__(inout self, *args: *Ts):
-        # expected-error @+1 {{cannot implicitly convert '!kgen.pack<Ts>' value to 'MadeFromPack[Ts]' in assignment}}
+        # expected-error @+1 {{cannot implicitly convert '*Ts' value to 'MadeFromPack[Ts]' in assignment}}
         self.data = args

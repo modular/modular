@@ -30,7 +30,7 @@
 # CHECK: (ParamStruct[_"stdlib::builtin::int::Int"]) p_struct_int = (t = 8)
 # CHECK: (scalar<f32>) another_float = ([0] = 4.125)
 # CHECK: (string) a_string_literal = "fofofo"
-# CHECK: (!kgen.pack<[index, scalar<f64>, index]>) a_list = {
+# CHECK: (*index, scalar<f64>, index) a_list = {
 # CHECK:   [0] = 1
 # CHECK:   [1] = ([0] = 2.125)
 # CHECK:   [2] = 3

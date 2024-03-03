@@ -170,37 +170,37 @@ fn paramOverload2[*x: MyInt]():
 
 # CHECK-LABEL: lit.func @"callParametricOverload
 fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
-    # CHECK: lit.call @decls::@"paramOverload[{{.*}}Int]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload[{{.*}}Int]()"
     paramOverload[a]()
 
-    # CHECK: lit.call @decls::@"paramOverload[{{.*}}Int,{{.*}}Int]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload{{.*}}<:!Int a, :!Int b>()
     paramOverload[a, b]()
 
-    # CHECK: lit.call @decls::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload{{.*}}<:variadic<!Int> [a, b, c]>()
     paramOverload[a, b, c]()
 
-    # CHECK: lit.call @decls::@"paramOverload({{.*}}Int)"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload({{.*}}Int)"
     paramOverload(x)
 
-    # CHECK: lit.call @decls::@"paramOverload[{{.*}}Int,AnyRegType]($1)"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload[{{.*}}Int,AnyRegType]($1)"
     paramOverload[a](x)
 
-    # CHECK: lit.call @decls::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]({{.*}}Int)"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
     paramOverload[a, b](x)
 
-    # CHECK: lit.call @decls::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2{{.*}}<:variadic<!Int> [a]>()
     paramOverload2[a]()
 
-    # CHECK: lit.call @decls::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2{{.*}}<:variadic<!Int> [a, b]>()
     paramOverload2[a, b]()
 
-    # CHECK: lit.call @decls::@"paramOverload2[decls::MyInt]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2[decls::MyInt]()"
     paramOverload2[MyInt(a)]()
 
-    # CHECK: lit.call @decls::@"paramOverload2[decls::MyInt,decls::MyInt]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2[decls::MyInt,decls::MyInt]()"
     paramOverload2[MyInt(a), b]()
 
-    # CHECK: lit.call @decls::@"paramOverload2[{{.*}}variadic<{{.*}}MyInt{{.*}}>]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2[{{.*}}<:variadic<!MyInt>
     paramOverload2[MyInt(a), b, c]()
 
 

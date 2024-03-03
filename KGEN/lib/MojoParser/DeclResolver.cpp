@@ -851,10 +851,17 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   ArrayRef<Type> params =
       fullSig.getParamTypes().take_back(signature.getNumParams());
   if (!params.empty()) {
+    size_t numSkipped = fullSig.getParamTypes().size() - params.size();
     os << '[';
     llvm::interleave(
-        params, os,
-        [&](ASTType type) {
+        llvm::enumerate(params), os,
+        [&](auto typeAndIdx) {
+          auto [idx, implType] = typeAndIdx;
+          ASTType type = implType;
+          if (fullSig.getParamListAttrs().isVariadic(idx + numSkipped)) {
+            os << "*";
+            type = type.getVariadicElementType();
+          }
           os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
         },
         ",");

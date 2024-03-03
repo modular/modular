@@ -518,36 +518,18 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       if (!name.empty())
         os << name.getValue() << " = ";
 
-      bool needSpace = false;
       if (convention == ArgConvention::OwnedInMem ||
-          convention == ArgConvention::OwnedInReg) {
-        os << "owned";
-        needSpace = true;
-      } else if (convention == ArgConvention::ByRef) {
-        os << "inout";
-        needSpace = true;
-      }
+          convention == ArgConvention::OwnedInReg)
+        os << "owned ";
+      else if (convention == ArgConvention::ByRef)
+        os << "inout ";
 
       bool isPack = sig.isPackVarArg(i);
       bool isPosVarArg = sig.isPosVarArg(i);
       if (isPack || isPosVarArg) {
-        if (needSpace)
+        os << '*';
+        if (isPack)
           os << ' ';
-        os << '*';
-        needSpace = isPack;
-      }
-      if (needSpace)
-        os << ' ';
-      if (isPack) {
-        os << '*';
-        // This should always be a parameter reference. If not, print the value
-        // directly.
-        TypedAttr types = cast<PackType>(type).getVariadic();
-        if (auto ref = dyn_cast<ParamIndexRefAttr>(types))
-          os << '$' << ref.getIndex();
-        else
-          os << cast<PackType>(type).getVariadic();
-        continue;
       }
       ASTType actualType = type;
       auto actualConv = convention;
@@ -603,6 +585,10 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     llvm::interleaveComma(variantType.getTypes(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << "]";
+
+  } else if (auto packType = dyn_cast<PackType>(type)) {
+    os << '*';
+    printParam(os, cast<PackType>(type).getVariadic(), forDiag, demangleParams);
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)
