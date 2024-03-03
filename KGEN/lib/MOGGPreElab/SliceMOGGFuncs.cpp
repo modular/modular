@@ -461,7 +461,7 @@ private:
   }
 
   // An elementwise op is an op which is purely represented by a call to the
-  // elementwise generator. I.E there are no other calls left after slicing.
+  // elementwise generator. I.E there are no other ops left after slicing.
   CallOp checkKernelIsPureElementwise(CallOp elementwiseOp,
                                       KGEN::GeneratorOp gen) {
     auto opHasSideEffect = [=](Operation *op) {
@@ -473,7 +473,7 @@ private:
     bool changed = true;
     while (changed) {
       changed = false;
-      for (Operation &op : gen.getOps()) {
+      for (Operation &op : llvm::make_early_inc_range(gen.getOps())) {
         if (opHasSideEffect(&op) || op.hasTrait<OpTrait::IsTerminator>())
           continue;
 
