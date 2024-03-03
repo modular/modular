@@ -76,62 +76,62 @@ from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGTensor import Tensor
 from MOGGIntList import IntList
-from NN.Activations import gelu, relu, sigmoid
-from NN.Arange import arange, arange_shape
-from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
-from NN.Concat import concat as _concat
-from NN.Concat import concat_shape as concat_from_list_shape
-from NN.Concat import variadic_list_to_vector
-from NN.Conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
-from NN.Conv import pack_filter_shape as _pack_conv_filter_shape
-from NN.Conv import pack_filter as _pack_conv_filter
-from NN.ConvTranspose import conv_transpose_shape
-from NN.ConvTranspose import conv_transposed as conv_transpose_impl
-from NN.ConvTranspose import pack_filter as _pack_conv_transpose_filter
-from NN.ConvTranspose import (
+from nn.activations import gelu, relu, sigmoid
+from nn.arange import arange, arange_shape
+from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
+from nn.concat import concat as _concat
+from nn.concat import concat_shape as concat_from_list_shape
+from nn.concat import variadic_list_to_vector
+from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.conv import pack_filter_shape as _pack_conv_filter_shape
+from nn.conv import pack_filter as _pack_conv_filter
+from nn.conv_transpose import conv_transpose_shape
+from nn.conv_transpose import conv_transposed as conv_transpose_impl
+from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
+from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
-from NN.Cumsum import cumsum as _cumsum
-from NN.GatherScatter import Axis
-from NN.GatherScatter import async_gather as _async_gather
-from NN.GatherScatter import gather as _gather
-from NN.GatherScatter import gather_nd as _gather_nd
-from NN.GatherScatter import (
+from nn.cumsum import cumsum as _cumsum
+from nn.gather_scatter import Axis
+from nn.gather_scatter import async_gather as _async_gather
+from nn.gather_scatter import gather as _gather
+from nn.gather_scatter import gather_nd as _gather_nd
+from nn.gather_scatter import (
     gather_nd_shape,
     gather_reduce,
     gather_shape,
     normalize_neg_index,
     scatter_elements,
 )
-from NN.GatherScatter import scatter_elements_shape as scatter_shape
-from NN.GatherScatter import scatter_nd as _scatter_nd
-from NN.GatherScatter import scatter_nd_generator, scatter_nd_shape
-from NN.MultiHeadAttention import flash_attention
-from NN.MultiHeadAttention import fused_attention as cpu_fused_attention_impl
-from NN.NonMaxSuppression import (
+from nn.gather_scatter import scatter_elements_shape as scatter_shape
+from nn.gather_scatter import scatter_nd as _scatter_nd
+from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
+from nn.mha import flash_attention
+from nn.mha import fused_attention as cpu_fused_attention_impl
+from nn.nms import (
     non_max_suppression,
     non_max_suppression_shape_func,
 )
-from NN.Normalization import layer_norm as _layer_norm
-from NN.Pad import pad_constant as _pad_constant
-from NN.Pad import pad_reflect as _pad_reflect
-from NN.Pad import pad_repeat as _pad_repeat
-from NN.Pad import pad_shape
-from NN.Pool import avg_pool as _avg_pool
-from NN.Pool import max_pool as _max_pool
-from NN.Pool import pool_shape, pool_shape_ceil
-from NN.Reshape import reshape, reshape_shape
-from NN.Resize import CoordinateTransformationMode, RoundMode
-from NN.Resize import resize_linear as resize_linear_kernel
-from NN.Resize import resize_nearest_neighbor
-from NN.ROIAlign import roi_align_nhwc
-from NN.Slice import slice_as_view, slice_shape
-from NN.Softmax import logsoftmax as _logsoftmax
-from NN.Softmax import softmax as _softmax
-from NN.Split import split as _split
-from NN.Tile import tile, tile_shape
-from NN.TopK import top_k as _top_k
-from NN.TopK import top_k_shape
+from nn.normalization import layer_norm as _layer_norm
+from nn.pad import pad_constant as _pad_constant
+from nn.pad import pad_reflect as _pad_reflect
+from nn.pad import pad_repeat as _pad_repeat
+from nn.pad import pad_shape
+from nn.pool import avg_pool as _avg_pool
+from nn.pool import max_pool as _max_pool
+from nn.pool import pool_shape, pool_shape_ceil
+from nn.reshape import reshape, reshape_shape
+from nn.resize import CoordinateTransformationMode, RoundMode
+from nn.resize import resize_linear as resize_linear_kernel
+from nn.resize import resize_nearest_neighbor
+from nn.roi_align import roi_align_nhwc
+from nn.slice import slice_as_view, slice_shape
+from nn.softmax import logsoftmax as _logsoftmax
+from nn.softmax import softmax as _softmax
+from nn.split import split as _split
+from nn.tile import tile, tile_shape
+from nn.topk import top_k as _top_k
+from nn.topk import top_k_shape
 from runtime.llcl import (
     MojoCallContextPtr,
     MojoCallRaisingTask,

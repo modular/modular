@@ -29,10 +29,10 @@ from runtime.tracing import Trace, TraceLevel
 
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
-from NN.Activations import relu
-from NN.GatherScatter import Axis
-from NN.GatherScatter import gather as _gather
-from NN.GatherScatter import gather_shape
+from nn.activations import relu
+from nn.gather_scatter import Axis
+from nn.gather_scatter import gather as _gather
+from nn.gather_scatter import gather_shape
 
 from utils._annotations import *
 from collections import Optional
