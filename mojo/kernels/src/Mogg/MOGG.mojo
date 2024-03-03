@@ -82,7 +82,7 @@ from NN.ArgNonzero import arg_nonzero, arg_nonzero_shape
 from NN.Concat import concat as _concat
 from NN.Concat import concat_shape as concat_from_list_shape
 from NN.Concat import variadic_list_to_vector
-from NN.Conv import ConvInfo, ConvInfoStatic, conv_nhwc_direct, conv_shape
+from NN.Conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
 from NN.Conv import pack_filter_shape as _pack_conv_filter_shape
 from NN.Conv import pack_filter as _pack_conv_filter
 from NN.ConvTranspose import conv_transpose_shape
@@ -3096,7 +3096,7 @@ fn conv[
         pad_h_tuple = Index(padding_flat[2], padding_flat[3])
         pad_w_tuple = Index(padding_flat[4], padding_flat[5])
 
-    alias conv_attr = ConvInfoStatic(
+    alias conv_attr = ConvInfoStatic[input_rank - 2](
         static_padding,
         static_strides,
         static_dilations,
