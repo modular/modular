@@ -13,7 +13,7 @@ from memory.unsafe import bitcast
 @always_inline
 fn _to_StaticTuple[
     type: DType, size: Int
-](data: SIMD[type, size]) -> StaticTuple[SIMD[type, 1], size]:
+](data: SIMD[type, size]) -> StaticTuple[Scalar[type], size]:
     """Convert SIMD to StaticTuple."""
 
     @parameter
@@ -94,7 +94,7 @@ fn _to_StaticTuple[
 @always_inline
 fn _to_SIMD[
     type: DType, size: Int
-](data: StaticTuple[SIMD[type, 1], size]) -> SIMD[type, size]:
+](data: StaticTuple[Scalar[type], size]) -> SIMD[type, size]:
     """Convert StaticTuple to SIMD."""
 
     @parameter
