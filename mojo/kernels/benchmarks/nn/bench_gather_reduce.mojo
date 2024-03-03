@@ -9,7 +9,7 @@ from random import random_si64
 
 from memory.buffer import NDBuffer
 from mojobench import Bencher, BenchId, MojoBench
-from NN.GatherScatter import gather, gather_reduce
+from nn.gather_scatter import gather, gather_reduce
 from runtime.llcl import Runtime
 
 from utils.index import Index
