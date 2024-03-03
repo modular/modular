@@ -1075,9 +1075,6 @@ fn lvalue_utilities(inout a: Int):
   # Get the address of the specified physical lvalue as a pop.pointer value.
   var addr : __mlir_type[`!kgen.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
 
-  # Get and use an lvalue from an address.
-  __get_address_as_lvalue(addr) = 42
-  var val = __get_address_as_lvalue(addr)
 
 # CHECK-LABEL: lit.func @"ref_utilities
 fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,

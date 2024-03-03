@@ -60,7 +60,6 @@ public:
 
     // Magic functions
     kGetLValueAsAddress,       // __get_lvalue_as_address(x)
-    kGetAddressAsLValue,       // __get_address_as_lvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kLifetimeOf,               // __lifetime_of(x)
