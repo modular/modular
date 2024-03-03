@@ -29,18 +29,18 @@ struct UnsafeRefCounter[type: DType]:
     under the hood.
     """
 
-    var _underlying_value: Pointer[SIMD[type, 1]]
+    var _underlying_value: Pointer[Scalar[type]]
 
     fn deallocate(owned self):
         self._underlying_value.free()
 
-    fn increment(self) -> SIMD[type, 1]:
+    fn increment(self) -> Scalar[type]:
         return Atomic[type]._fetch_add(self._underlying_value, 1)
 
-    fn decrement(self) -> SIMD[type, 1]:
+    fn decrement(self) -> Scalar[type]:
         return Atomic[type]._fetch_add(self._underlying_value, -1)
 
-    fn _value(inout self) -> SIMD[type, 1]:
+    fn _value(inout self) -> Scalar[type]:
         return self._underlying_value.load()
 
 
