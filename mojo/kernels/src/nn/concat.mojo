@@ -393,12 +393,15 @@ fn _concat_small[
     # If we are concat'ing along the last dimension we can do a simd load.
     if axis == rank - 1 and inputs_simd_aligned:
         _elementwise_impl[
-            rank, simd_width, single_thread_blocking_override, concat_lambda
+            concat_lambda, simd_width, rank, single_thread_blocking_override
         ](output.dynamic_shape)
     else:
         # Otherwise we must run scalar.
         _elementwise_impl[
-            rank, 1, single_thread_blocking_override, concat_lambda
+            concat_lambda,
+            1,
+            rank,
+            single_thread_blocking_override,
         ](output.dynamic_shape)
 
 
@@ -1389,9 +1392,9 @@ fn _concat_gpu[
     # using the elementwise generator with simd_width=1.
     alias target = "cuda"
     _elementwise_impl[
-        rank,
-        1,
-        False,
         per_output_elem,
+        1,
+        rank,
+        False,
         target,
     ](output.get_shape())

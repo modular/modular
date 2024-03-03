@@ -526,20 +526,20 @@ fn gather[
         # If we are gathering on the last dimension then we have to be scalar.
         if int(axis) == input_rank - 1:
             _elementwise_impl[
-                output_rank,
-                1,
-                single_thread_blocking_override,
                 gather_elementwise_fn,
+                1,
+                output_rank,
+                single_thread_blocking_override,
                 target,
             ](
                 output_shape,
             )
         else:
             _elementwise_impl[
-                output_rank,
-                simdwidthof[type](),
-                single_thread_blocking_override,
                 gather_elementwise_fn,
+                simdwidthof[type](),
+                output_rank,
+                single_thread_blocking_override,
                 target,
             ](
                 output_shape,
@@ -610,18 +610,18 @@ async fn async_gather[
         # If we are gathering on the last dimension then we have to be scalar.
         if int(axis) == input_rank - 1:
             await _async_elementwise_impl[
-                output_rank,
-                1,
                 gather_elementwise_fn,
+                1,
+                output_rank,
                 target,
             ](
                 output_shape,
             )
         else:
             await _async_elementwise_impl[
-                output_rank,
-                simdwidthof[type](),
                 gather_elementwise_fn,
+                simdwidthof[type](),
+                output_rank,
                 target,
             ](
                 output_shape,
@@ -811,10 +811,10 @@ fn scatter_nd_generator[
         iter_shape[i] = indices.get_shape()[i]
 
     _elementwise_impl[
-        indices_rank - 1,
-        1,
-        single_thread_blocking_override,
         update_func,
+        1,
+        indices_rank - 1,
+        single_thread_blocking_override,
         target,
     ](iter_shape)
 
