@@ -62,8 +62,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
     @always_inline
     fn __init__(inout self, *elems: Int):
-        var elems_list: VariadicList[Int] = elems
-        var num_elements = len(elems_list)
+        var num_elements = len(elems)
 
         self.length = Self._length
         self.data = Pointer[Int]()
@@ -82,13 +81,13 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
             @unroll
             for i in range(Self._length):
-                self.stack_alloc_data[i] = elems_list[i]
+                self.stack_alloc_data[i] = elems[i]
         else:
             # Worst case we allocate the memory on the heap.
             self.length = num_elements
             self.data = Pointer[Int].alloc(num_elements)
             for i in range(num_elements):
-                self.data[i] = elems_list[i]
+                self.data[i] = elems[i]
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
     @always_inline
