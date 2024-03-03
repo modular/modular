@@ -144,7 +144,7 @@ fn test[
     if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
-    alias conv_attr = ConvInfoStatic.create_unknown[rank]()
+    alias conv_attr = ConvInfoStatic[rank + 2 - 2].create_unknown()
 
     @always_inline
     @parameter

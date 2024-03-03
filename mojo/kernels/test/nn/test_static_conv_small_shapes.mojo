@@ -41,10 +41,8 @@ alias HO = (H + pad_left + pad_right - dilation_h * (R - 1) - 1) // stride_h + 1
 alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
 alias num_groups = 1
 
-alias conv_attr = ConvInfoStatic(
-    DimList(0, 0),
-    DimList(pad_bottom, pad_top),
-    DimList(pad_left, pad_right),
+alias conv_attr = ConvInfoStatic[2](
+    DimList(pad_bottom, pad_left, pad_top, pad_right),
     DimList(stride_h, stride_w),
     DimList(dilation_h, dilation_w),
     Dim(num_groups),
@@ -52,7 +50,9 @@ alias conv_attr = ConvInfoStatic(
 
 alias value_type = DType.float32
 alias simd_size = simdwidthof[value_type]()
-alias micro_kernel_shape = get_micro_kernel_shape[WO, F, conv_attr, simd_size]()
+alias micro_kernel_shape = get_micro_kernel_shape[
+    2, WO, F, conv_attr, simd_size
+]()
 # alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 alias num_micro_tile = div_ceil(F, micro_kernel_f_size)

@@ -497,13 +497,29 @@ fn append_shape[
     return out_shape
 
 
+@always_inline
+fn reorder_padding[rank: Int](pad: DimList) -> DimList:
+    @parameter
+    if rank == 1:
+        return pad
+    elif rank == 2:
+        return DimList(pad.at[0](), pad.at[2](), pad.at[1](), pad.at[3]())
+    else:
+        return DimList(
+            pad.at[0](),
+            pad.at[2](),
+            pad.at[4](),
+            pad.at[1](),
+            pad.at[3](),
+            pad.at[5](),
+        )
+
+
 # must be register passable because it is used as a parameter
 @value
 @register_passable("trivial")
-struct ConvInfoStatic:
-    var pad_d: DimList
-    var pad_h: DimList
-    var pad_w: DimList
+struct ConvInfoStatic[rank: Int]:
+    var pad: DimList
     var stride: DimList
     var dilation: DimList
     var num_groups: Dim
@@ -516,39 +532,26 @@ struct ConvInfoStatic:
         input_c: Dim,
         filter_c: Dim,
     ) -> Self:
-        var pad_d = Index(0, 0)
-        var pad_h = Index(0, 0)
-        var pad_w = Index(0, 0)
-
-        if len(pad) == 2:
-            pad_w = Index(pad.at[0](), pad.at[1]())
-        elif len(pad) == 4:
-            pad_h = Index(pad.at[0](), pad.at[1]())
-            pad_w = Index(pad.at[2](), pad.at[3]())
-        elif len(pad) == 6:
-            pad_d = Index(pad.at[0](), pad.at[1]())
-            pad_h = Index(pad.at[2](), pad.at[3]())
-            pad_w = Index(pad.at[4](), pad.at[5]())
+        constrained[
+            rank == 3 or rank == 2 or rank == 1,
+            "Only support 1d/2d/3d/ conv attributes",
+        ]()
 
         var num_groups = Dim()
         if input_c.has_value() and filter_c.has_value():
             num_groups = Dim(input_c.get() // filter_c.get())
 
         return Self {
-            pad_d: DimList(pad_d[0], pad_d[1]),
-            pad_h: DimList(pad_h[0], pad_h[1]),
-            pad_w: DimList(pad_w[0], pad_w[1]),
+            pad: reorder_padding[rank](pad),
             stride: stride,
             dilation: dilation,
             num_groups: num_groups,
         }
 
     @always_inline
-    fn all_known[rank: Int](self) -> Bool:
+    fn all_known(self) -> Bool:
         return (
-            self.pad_d.all_known[2]()
-            and self.pad_h.all_known[2]()
-            and self.pad_w.all_known[2]()
+            self.pad.all_known[2 * rank]()
             and self.stride.all_known[rank]()
             and self.dilation.all_known[rank]()
             and self.num_groups.has_value()
@@ -556,55 +559,33 @@ struct ConvInfoStatic:
 
     @always_inline
     fn pad_left(self) -> Int:
-        return self.pad_w.at[0]().get()
+        # TODO: extend to 1d/3d.
+        return self.pad.get[1]()
 
     @always_inline
     fn pad_bottom(self) -> Int:
-        return self.pad_h.at[0]().get()
+        # TODO: extend to 1d/3d.
+        return self.pad.get[0]()
 
     @always_inline
     fn strides(self) -> StaticIntTuple[2]:
-        return Index(self.stride.at[0]().get(), self.stride.at[1]().get())
+        return Index(self.stride.get[0](), self.stride.get[1]())
 
     @always_inline
     fn dilations(self) -> StaticIntTuple[2]:
-        return Index(self.dilation.at[0]().get(), self.dilation.at[1]().get())
+        return Index(self.dilation.get[0](), self.dilation.get[1]())
 
     @always_inline
     @staticmethod
-    fn create_unknown[rank: Int]() -> Self:
+    fn create_unknown() -> Self:
         return rebind[Self](
-            ConvInfoStatic(
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
+            ConvInfoStatic[rank](
+                DimList.create_unknown[2 * rank](),
                 DimList.create_unknown[rank](),
                 DimList.create_unknown[rank](),
                 Dim(),
             )
         )
-
-
-struct ConvInfo[conv_info_static: ConvInfoStatic]:
-    var pad_h: OptionalParamInts[2, conv_info_static.pad_h]
-    var pad_w: OptionalParamInts[2, conv_info_static.pad_w]
-    var stride: OptionalParamInts[2, conv_info_static.stride]
-    var dilation: OptionalParamInts[2, conv_info_static.dilation]
-    var num_groups: OptionalParamInt[conv_info_static.num_groups]
-
-    fn __init__(
-        inout self,
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
-        num_groups: Int,
-    ):
-        self.pad_h = pad_h
-        self.pad_w = pad_w
-        self.stride = stride
-        self.dilation = dilation
-        self.num_groups = num_groups
 
 
 fn get_direct_conv_micro_kernel_height() -> Int:
@@ -630,11 +611,9 @@ fn get_direct_conv_micro_kernel_width() -> Int:
 
 
 fn get_micro_kernel_shape[
-    WO: Dim, F: Dim, conv_attr: ConvInfoStatic, simd_size: Int
+    rank: Int, WO: Dim, F: Dim, conv_attr: ConvInfoStatic[rank], simd_size: Int
 ]() -> StaticIntTuple[2]:
-    alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known[
-        2
-    ]()
+    alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known()
 
     # Number of named simd registers for each architecture.
     # TODO: configure micro kernel shape are other architectures.
@@ -645,12 +624,9 @@ fn get_micro_kernel_shape[
     if optimize_static_shapes:
         alias WO_val = WO.get()
         alias F_val = F.get()
-        alias pad_h_val = Index(
-            conv_attr.pad_h.at[0]().get(), conv_attr.pad_h.at[1]().get()
-        )
-        alias pad_w_val = Index(
-            conv_attr.pad_w.at[0]().get(), conv_attr.pad_w.at[1]().get()
-        )
+        # TODO: extend to 1d/3d.
+        alias pad_h_val = Index(conv_attr.pad.get[0](), conv_attr.pad.get[2]())
+        alias pad_w_val = Index(conv_attr.pad.get[1](), conv_attr.pad.get[3]())
         alias has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(0, 0)
 
         @parameter

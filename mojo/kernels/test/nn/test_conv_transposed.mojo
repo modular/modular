@@ -244,7 +244,7 @@ fn test_conv_transposed[
             vectorize[body0, simd_size](F)
 
     # Test.
-    alias conv_attr = ConvInfoStatic.create_unknown[2]()
+    alias conv_attr = ConvInfoStatic[rank + 2 - 2].create_unknown()
 
     # Test epilogue
     @always_inline

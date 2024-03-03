@@ -48,7 +48,6 @@ from .AccumulateSIMD import (
     store_register_tile,
 )
 from .ConvUtils import (
-    ConvInfo,
     ConvInfoStatic,
     ConvPartition,
     ConvShape,
@@ -404,7 +403,7 @@ struct ConvTransposedPacked[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    conv_attr: ConvInfoStatic,
+    conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ]:
     var output: NDBuffer[output_type, output_rank, output_shape]
@@ -429,6 +428,7 @@ struct ConvTransposedPacked[
     ) raises:
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
+            input_rank - 2,
             output_shape.at[output_rank - 2](),  # WO
             output_shape.at[output_rank - 1](),  # F
             conv_attr,
@@ -1388,7 +1388,7 @@ fn conv_transposed[
     if not filter_packed:
         pack_filter(filter, packed_filter, 1)
 
-    alias conv_attr = ConvInfoStatic.create_unknown[input_rank - 2]()
+    alias conv_attr = ConvInfoStatic[input_rank - 2].create_unknown()
 
     var conv_shape = get_conv_shape[input_rank - 2, True](
         output,

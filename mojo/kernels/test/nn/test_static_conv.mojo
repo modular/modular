@@ -108,7 +108,7 @@ fn test[
     pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
-    alias conv_attr_dynamic = ConvInfoStatic.create_unknown[2]()
+    alias conv_attr_dynamic = ConvInfoStatic[2].create_unknown()
 
     ConvDirectNHWC[
         4,
@@ -129,17 +129,15 @@ fn test[
         conv_shape,
     )
 
-    alias conv_attr_static = ConvInfoStatic(
-        DimList(0, 0),
-        DimList(pad_h[0], pad_h[1]),
-        DimList(pad_w[0], pad_w[1]),
+    alias conv_attr_static = ConvInfoStatic[2](
+        DimList(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
         DimList(stride[0], stride[1]),
         DimList(dilation[0], dilation[1]),
         Dim(num_groups),
     )
 
     alias micro_kernel_shape = get_micro_kernel_shape[
-        WO, F, conv_attr_static, simd_size
+        2, WO, F, conv_attr_static, simd_size
     ]()
     alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
     alias num_f_micro_tiles = div_ceil(F, micro_kernel_f_size)

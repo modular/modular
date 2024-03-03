@@ -30,7 +30,6 @@ from .AccumulateSIMD import (
     store_register_tile,
 )
 from .ConvUtils import (
-    ConvInfo,
     ConvInfoStatic,
     ConvShape,
     ConvPartition,
@@ -44,6 +43,7 @@ from .ConvUtils import (
     get_micro_kernel_shape,
     get_partition,
     get_conv_shape,
+    reorder_padding,
 )
 from .Image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
@@ -355,7 +355,7 @@ struct ConvDirectNHWC[
     filter_type: DType,
     output_type: DType,
     filter_packed: Bool,
-    conv_attr: ConvInfoStatic,
+    conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ]:
     """Implement the outer loops for direct convolution.
@@ -383,9 +383,9 @@ struct ConvDirectNHWC[
     var cf_tile_size: StaticIntTuple[2]
 
     # If shapes and attributes are known at compile time
-    alias packed_and_fully_static = conv_attr.all_known[
-        input_rank - 2
-    ]() and input_shape.all_known[1, input_rank]() and output_shape.all_known[
+    alias packed_and_fully_static = conv_attr.all_known() and input_shape.all_known[
+        1, input_rank
+    ]() and output_shape.all_known[
         1, output_rank
     ]() and filter_shape.all_known[
         filter_rank
@@ -404,6 +404,7 @@ struct ConvDirectNHWC[
             output_rank - 2
         ]() if input_rank == 4 else Dim()
         alias micro_kernel_shape = get_micro_kernel_shape[
+            input_rank - 2,
             WO,
             output_shape.at[output_rank - 1](),  # F
             conv_attr,
@@ -1490,7 +1491,7 @@ struct ConvDirectNHWC[
         alias F = output_shape.get[3]()  # NHWC
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
-            WO, F, conv_attr, simd_size
+            input_rank - 2, WO, F, conv_attr, simd_size
         ]()
         alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 
@@ -2577,11 +2578,8 @@ fn pack_filter_shape[
     )
     var F_per_group = F // num_groups
 
-    # TODO: extend to 1D/3D.
-    alias conv_attr = ConvInfoStatic {
-        pad_d: DimList(0, 0),  # assuming 2D.
-        pad_h: DimList(paddings.at[0](), paddings.at[1]()),
-        pad_w: DimList(paddings.at[2](), paddings.at[3]()),
+    alias conv_attr = ConvInfoStatic[filter.rank - 2] {
+        pad: reorder_padding[filter.rank - 2](paddings),
         stride: strides,
         dilation: dilations,
         num_groups: Dim(num_groups),
@@ -2590,6 +2588,7 @@ fn pack_filter_shape[
     # TODO: extend to 1D/3D.
     alias WO = output_shape.at[2]() if filter.rank == 4 else Dim()
     alias micro_kernel_shape = get_micro_kernel_shape[
+        filter.rank - 2,
         WO,
         output_shape.at[filter.rank - 1](),  # F , NHWC layout
         conv_attr,
@@ -2972,7 +2971,7 @@ fn conv_nhwc_direct[
     filter_type: DType,
     output_type: DType,
     filter_packed: Bool,
-    conv_info_static: ConvInfoStatic,
+    conv_info_static: ConvInfoStatic[input_rank - 2],
     lambdas_have_fusion: Bool,
     elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
         StaticIntTuple[rank], SIMD[type, width]
