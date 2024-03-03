@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _memset,
 )
 from memory.buffer import Buffer, NDBuffer
-from NN.Softmax import softmax, softmax_2_pass
+from nn.softmax import softmax, softmax_2_pass
 
 from utils.list import Dim, DimList
 

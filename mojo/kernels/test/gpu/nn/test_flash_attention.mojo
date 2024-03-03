@@ -22,12 +22,12 @@ from gpu.host.memory import (
 )
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from NN.MultiHeadAttention import (
+from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention_kernel,
     flash_attention_kernel_flexible_seqlen,
 )
-from NN.Softmax import softmax
+from nn.softmax import softmax
 
 from utils.index import Index
 from utils.list import DimList

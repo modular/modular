@@ -18,7 +18,7 @@ from gpu.host.memory import (
 )
 from gpu.host.sync import synchronize
 from memory.buffer import NDBuffer
-from NN.GatherScatter import gather
+from nn.gather_scatter import gather
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
