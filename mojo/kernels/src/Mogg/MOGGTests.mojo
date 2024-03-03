@@ -261,10 +261,10 @@ fn test_custom_identity[
         output_0_fn[simd_width, rank](idx, x)
 
     _elementwise_impl[
-        rank,
-        simd_width,
-        single_thread_blocking_override,
         identity,
+        simd_width,
+        rank,
+        single_thread_blocking_override,
         target="cpu",
     ](
         input_shape,
@@ -338,10 +338,10 @@ fn custom_op_that_raises[
         output_0_fn[simd_width, rank](idx, x)
 
     _elementwise_impl[
-        rank,
-        simd_width,
-        single_thread_blocking_override,
         identity,
+        simd_width,
+        rank,
+        single_thread_blocking_override,
         target="cpu",
     ](
         input_shape,

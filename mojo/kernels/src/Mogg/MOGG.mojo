@@ -571,19 +571,19 @@ fn elementwise_wrapper[
         @parameter
         if single_thread_blocking_override:
             _elementwise_impl[
-                rank,
-                simd_width,
-                single_thread_blocking_override,
                 func,
+                simd_width,
+                rank,
+                single_thread_blocking_override,
                 target=target,
             ](
                 buffer.dynamic_shape,
             )
         else:
             var coro = _async_elementwise_impl[
-                rank,
-                simd_width,
                 func,
+                simd_width,
+                rank,
                 target=target,
             ](
                 buffer.dynamic_shape,
