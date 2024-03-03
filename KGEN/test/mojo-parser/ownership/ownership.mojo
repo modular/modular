@@ -166,11 +166,6 @@ struct Complicated:
   var a: MemExample
   var b: MemExample
 
-# Issue #12068 - This shouldn't crash.
-fn testPointerGEP(ptr: __mlir_type[`!kgen.pointer<`, Complicated, `>`]) -> Int:
-  var addr = ptr
-  return __get_address_as_lvalue(addr).b.x
-
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
 # pointer magically from memory.
 # CHECK-LABEL: lit.func @"testTakePointeeAsOwned
@@ -202,28 +197,12 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
 
 
 # CHECK-LABEL: testGetAsUnitializedObject
-fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
-                             i1ptr: __mlir_type.`!kgen.pointer<i1>`):
-  # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
-  # before the overwrite.
-
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr :
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
-  __get_address_as_lvalue(ptr) = MemExample()
-
-  # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
+fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
+   # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   __get_address_as_uninit_lvalue(ptr) = MemExample()
-
-  # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: %i1Val = lit.var.decl "i1Val"
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr :
-  # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load [[REF]]
-  # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1Val
-  var i1Val = __get_address_as_lvalue(i1ptr)
 
   # CHECK-NEXT: kgen.param.constant: none
 

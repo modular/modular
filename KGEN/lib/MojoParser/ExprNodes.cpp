@@ -2960,8 +2960,8 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  // __get_address_as_lvalue and __get_address_as_uninit_lvalue and
-  // __get_address_as_owned_value all take a !kgen.pointer.
+  // __get_address_as_uninit_lvalue and __get_address_as_owned_value take a
+  // !kgen.pointer.
   RValue exprRVal =
       emitter.emitRValue({subExprValue, subExpr}, dest.getContext());
   if (!exprRVal)
@@ -2989,9 +2989,8 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == ExprNode::kGetAddressAsOwned)
     return emitter.emitResult(MRValue(exprVal), this, dest);
 
-  // These both return an MLValue with different ownership semantics.
-  // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
-  assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
+  // __get_address_as_uninit_lvalue(ptr) returns an MLValue
+  assert(kind == kGetAddressAsUninitLValue);
   return emitter.emitResult(MLValue(exprVal), this, dest);
 }
 

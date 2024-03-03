@@ -390,13 +390,6 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{cannot use a dynamic LValue}}
   _ = __get_lvalue_as_address(b[1])
 
-  # Get and use an lvalue from an address.
-  __get_address_as_lvalue(addr) = 42
-
-  var addr2 : __mlir_type.index
-  # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'index'}}
-  __get_address_as_lvalue(addr2) = 42
-
 struct NoSelfCtor:
   var x: Int
   fn __init__(inout self: Self, x: Int):
@@ -435,12 +428,6 @@ struct CopyAndInitMemType:
   # expected-note @+1 {{function declared here}}
   fn __le__(self, other: Self) -> Self: return self
   fn __mlir_i1__(self) -> __mlir_type.i1: pass
-
-fn getaddr_mem():
-  var x = CopyAndInitMemType()
-  # https://github.com/modularml/mojo/issues/912
-  # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'CopyAndInitMemType'}}
-  __get_address_as_lvalue(x)
 
 fn compare_mem_result():
   var x = CopyAndInitMemType()

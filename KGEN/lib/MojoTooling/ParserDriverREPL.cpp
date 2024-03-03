@@ -401,11 +401,9 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
          << "(inout __mojo_repl_arg: __mojo_repl_context__):\n"
             "  try:\n"
             "    __mojo_repl_expr_impl__(__mojo_repl_arg";
-  for (auto &[name, type] : variables) {
-    exprOS << formatv(
-        ", __get_address_as_lvalue(__mojo_repl_arg.`{0}`.load().address)",
-        name);
-  }
+  for (auto &[name, type] : variables)
+    exprOS << formatv(", __mojo_repl_arg.`{0}`.load()[]", name);
+
   exprOS << ")\n"
             "  except error:\n"
             "    print(\"Error:\", error)\n\n";
