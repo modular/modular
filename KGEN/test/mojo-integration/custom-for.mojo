@@ -60,7 +60,7 @@ struct MyList:
 
 
 fn printInt(x: Int):
-    print(x.value)
+    print(x)
 
 
 fn main():

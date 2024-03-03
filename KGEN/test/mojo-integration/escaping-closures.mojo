@@ -180,7 +180,7 @@ fn main():
     var x = 2
     var c = makes_escaping_closure(x.value)
     # CHECK: 4
-    print(c(x.value))
+    print(Int(c(x.value)))
 
     var result: MemType = makes_escaping_closure_position_only(MemType(43))(42)
     # CHECK: 85

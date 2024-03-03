@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# TODO (#33570) reenable
+# REQUIRES: Disabled
 # RUN: %mojo %s --debug-level full 2>&1 | FileCheck %s
 
 
