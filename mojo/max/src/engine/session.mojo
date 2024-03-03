@@ -8,7 +8,8 @@ The entry point to Max Engine and can be used to load models
 for inference.
 """
 from collections.optional import Optional
-from collections.vector import InlinedFixedVector, List
+from collections.vector import InlinedFixedVector
+from collections import List
 from memory.anypointer import AnyPointer
 from os.atomic import Atomic
 from sys.ffi import DLHandle
