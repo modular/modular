@@ -240,17 +240,15 @@ struct CompileConfig:
         self.torch_lib = existing.torch_lib
 
     fn set_model_source(self, model_source: ModelSource):
-        __get_address_as_lvalue(self.ptr.address).set_model_source(
-            model_source, self.lib
-        )
+        self.ptr[].set_model_source(model_source, self.lib)
 
     fn set_model_path(self, path: String):
         """Sets the path of model to compile."""
-        __get_address_as_lvalue(self.ptr.address).set_model_path(path, self.lib)
+        self.ptr[].set_model_path(path, self.lib)
 
     fn set_replace_ops_path(self, path: String) raises:
         """Replace Modular kernels with user-defined kernels."""
-        __get_address_as_lvalue(self.ptr.address).replace_ops(path, self.lib)
+        self.ptr[].replace_ops(path, self.lib)
 
     fn set_torch_input_specs(self) raises:
         if len(self.input_specs) == 0:
@@ -262,10 +260,8 @@ struct CompileConfig:
         var inner_spec = List[CTorchInputSpec]()
         for i in range(len(self.input_specs)):
             var spec_ptr = self.input_specs.get(i)
-            inner_spec.push_back(__get_address_as_lvalue(spec_ptr.value).ptr)
-        __get_address_as_lvalue(self.ptr.address).set_torch_input_specs(
-            self.torch_lib.value(), inner_spec
-        )
+            inner_spec.push_back(spec_ptr[].ptr)
+        self.ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
     fn add_input_spec(inout self, spec: TensorSpec):
         self.input_specs.emplace_back(
@@ -301,7 +297,7 @@ struct CompileConfig:
             var torch = self.torch_lib.value()
             torch.close()
 
-        __get_address_as_lvalue(self.ptr.address).free(self.lib)
+        self.ptr[].free(self.lib)
         _ = __get_address_as_owned_value(self.ptr.address)
         self.ptr.free()
 

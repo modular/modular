@@ -403,7 +403,7 @@ struct InferenceSession:
         Returns:
             An instance of inference session with incremented reference count.
         """
-        _ = __get_address_as_lvalue(self._ptr.value).ref_count.fetch_add(1)
+        _ = self._ptr[].ref_count.fetch_add(1)
         return Self {_ptr: self._ptr}
 
     fn load_model(
@@ -429,9 +429,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_path(path)
-        return __get_address_as_lvalue(self._ptr.value).load_model(
-            load_config ^, self.copy()
-        )
+        return self._ptr[].load_model(load_config ^, self.copy())
 
     fn load_model(
         self, graph: Graph, config: Optional[LoadOptions] = None
@@ -469,9 +467,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_source(module)
-        return __get_address_as_lvalue(self._ptr.value).load_model(
-            load_config ^, self.copy()
-        )
+        return self._ptr[].load_model(load_config ^, self.copy())
 
     fn get_as_engine_tensor_spec(
         self, name: String, spec: TensorSpec
@@ -486,9 +482,7 @@ struct InferenceSession:
            EngineTensorSpec to be used with Max Engine APIs.
 
         """
-        return __get_address_as_lvalue(
-            self._ptr.value
-        ).get_as_engine_tensor_spec(name, spec, self.copy())
+        return self._ptr[].get_as_engine_tensor_spec(name, spec, self.copy())
 
     fn get_as_engine_tensor_spec(
         self,
@@ -508,9 +502,9 @@ struct InferenceSession:
         Returns:
             EngineTensorSpec to be used with Max Engine APIs.
         """
-        return __get_address_as_lvalue(
-            self._ptr.value
-        ).get_as_engine_tensor_spec(name, shape, dtype, self.copy())
+        return self._ptr[].get_as_engine_tensor_spec(
+            name, shape, dtype, self.copy()
+        )
 
     fn new_tensor_map(self) raises -> TensorMap:
         """Gets a new TensorMap. This can be used to pass inputs to model.
@@ -518,9 +512,7 @@ struct InferenceSession:
         Returns:
             A new instance of TensorMap.
         """
-        return __get_address_as_lvalue(self._ptr.value).new_tensor_map(
-            self.copy()
-        )
+        return self._ptr[].new_tensor_map(self.copy())
 
     fn new_borrowed_tensor_value[
         type: DType
@@ -539,9 +531,7 @@ struct InferenceSession:
         Returns:
             A value borrowing the tensor.
         """
-        return __get_address_as_lvalue(
-            self._ptr.value
-        ).new_borrowed_tensor_value(self.copy(), tensor)
+        return self._ptr[].new_borrowed_tensor_value(self.copy(), tensor)
 
     fn new_bool_value(self, value: Bool) raises -> Value:
         """Create a new Value representing a Bool.
@@ -552,9 +542,7 @@ struct InferenceSession:
         Returns:
             Value representing the given boolean.
         """
-        return __get_address_as_lvalue(self._ptr.value).new_bool_value(
-            self.copy(), value
-        )
+        return self._ptr[].new_bool_value(self.copy(), value)
 
     fn new_list_value(self) raises -> Value:
         """Create a new Value representing an empty list.
@@ -562,15 +550,13 @@ struct InferenceSession:
         Returns:
             A new value containing an empty list.
         """
-        return __get_address_as_lvalue(self._ptr.value).new_list_value(
-            self.copy()
-        )
+        return self._ptr[].new_list_value(self.copy())
 
     fn __del__(owned self):
         """Destructor for the session. This will decrement the reference count
         and when count reaches zero it will free the resources.
         """
-        if __get_address_as_lvalue(self._ptr.value).ref_count.fetch_sub(1) != 1:
+        if self._ptr[].ref_count.fetch_sub(1) != 1:
             # There are others holding reference to this session. Keep the
             # session alive and let other reference holders deal with
             # managing it.

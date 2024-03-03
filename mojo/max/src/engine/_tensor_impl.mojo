@@ -136,7 +136,7 @@ struct _Numpy:
         return Self {np: np_ptr}
 
     fn __getattr__(self, attr: StringLiteral) raises -> PythonObject:
-        return __get_address_as_lvalue(self.np.value).__getattr__(attr)
+        return self.np[].__getattr__(attr)
 
     fn __del__(owned self):
         _ = __get_address_as_owned_value(self.np.value)

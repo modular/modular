@@ -42,7 +42,7 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
 
 
 fn _destroy_dylib(ptr: Pointer[NoneType]):
-    __get_address_as_lvalue(ptr.bitcast[DLHandle]().address).close()
+    ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
 

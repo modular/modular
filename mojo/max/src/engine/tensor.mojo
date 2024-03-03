@@ -51,9 +51,7 @@ struct NamedTensor:
         # construct an EngineTensorView from that.
         # This is valid because the data owned by an `Arc` in memory does
         # not move memory location.
-        self._view = EngineTensorView(
-            __get_address_as_lvalue(tensor_arc._data_ptr().value)
-        )
+        self._view = EngineTensorView(tensor_arc._data_ptr()[])
 
         # Store a type-erased owned copy of the tensor. Erase the type so that
         # `NamedTensor` does not have to be generic.
@@ -160,7 +158,7 @@ struct EngineTensorView:
 
     @always_inline("nodebug")
     fn _get_value[type: DType](self) -> Tensor[type]:
-        return __get_address_as_lvalue(bitcast[Tensor[type]](self._ptr).address)
+        return bitcast[Tensor[type]](self._ptr)[]
 
 
 @value
@@ -193,9 +191,7 @@ struct EngineNumpyView:
         Returns:
             DTypePointer of given type.
         """
-        var data_ptr = __get_address_as_lvalue(
-            self._ptr.address
-        ).ctypes.data.__index__()
+        var data_ptr = self._ptr[].ctypes.data.__index__()
         return bitcast[DType.invalid](data_ptr)
 
     fn dtype(self) raises -> DType:
@@ -204,7 +200,7 @@ struct EngineNumpyView:
         Returns:
             DataType of the array backing the view.
         """
-        var self_type = __get_address_as_lvalue(self._ptr.address).dtype
+        var self_type = self._ptr[].dtype
         if self_type == self._np.int8:
             return DType.int8
         if self_type == self._np.int16:
@@ -243,7 +239,7 @@ struct EngineNumpyView:
         @parameter
         fn get_spec[ty: DType]() raises -> TensorSpec:
             var shape = List[Int]()
-            var array_shape = __get_address_as_lvalue(self._ptr.address).shape
+            var array_shape = self._ptr[].shape
             for dim in array_shape:
                 shape.push_back(dim.__index__())
             return TensorSpec(ty, shape)

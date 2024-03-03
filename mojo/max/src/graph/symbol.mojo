@@ -470,39 +470,27 @@ struct SymbolTuple(Sized):
         """Convenience constructor from a 2-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
-            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
-            ),
+            ptr.bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
         """Convenience constructor from a 3-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
-            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
-            ),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[2]()).bitcast[Symbol]().address
-            ),
+            ptr.bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[2]()).bitcast[Symbol]()[],
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
         """Convenience constructor from a 4-tuple."""
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
-            __get_address_as_lvalue(ptr.bitcast[Symbol]().address),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[1]()).bitcast[Symbol]().address
-            ),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[2]()).bitcast[Symbol]().address
-            ),
-            __get_address_as_lvalue(
-                ptr.offset(symbols._offset[3]()).bitcast[Symbol]().address
-            ),
+            ptr.bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[2]()).bitcast[Symbol]()[],
+            ptr.offset(symbols._offset[3]()).bitcast[Symbol]()[],
         )
 
     # ===------------------------------------------------------------------=== #
