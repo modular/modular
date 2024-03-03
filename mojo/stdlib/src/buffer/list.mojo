@@ -394,9 +394,9 @@ struct DimList(Sized, Stringable):
         Returns:
             The string representation of the type.
         """
-        var res = String("")
+        var res = String("[")
         for i in range(len(self)):
             if i:
                 res += ", "
             res += str(self.value[i])
-        return res
+        return res + "]"
