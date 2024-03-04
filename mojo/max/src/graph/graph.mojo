@@ -16,6 +16,7 @@ compiled and executed by MAX Engine, for example using the MAX Engine API.
 """
 
 from collections import Optional
+from sys.info import has_neon
 
 import _mlir
 
@@ -289,15 +290,37 @@ struct Graph(CollectionElement, Stringable):
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
         """
+        if dtype.dtype == DType.uint8:
+            return self.scalar(UInt8(value))
+        if dtype.dtype == DType.uint16:
+            return self.scalar(UInt16(value))
+        if dtype.dtype == DType.uint32:
+            return self.scalar(UInt32(value))
+        if dtype.dtype == DType.uint64:
+            return self.scalar(UInt64(value))
+
+        if dtype.dtype == DType.int8:
+            return self.scalar(Int8(value))
+        if dtype.dtype == DType.int16:
+            return self.scalar(Int16(value))
         if dtype.dtype == DType.int32:
             return self.scalar(Int32(value))
-        elif dtype.dtype == DType.int64:
+        if dtype.dtype == DType.int64:
             return self.scalar(Int64(value))
-        elif dtype.dtype == DType.float32:
-            return self.scalar(Int32(value))
-        elif dtype.dtype == DType.float64:
-            return self.scalar(Int64(value))
-        # TODO: No particular reason not to implement everything else.
+
+        # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
+        @parameter
+        if not has_neon():
+            if dtype.dtype == DType.bfloat16:
+                return self.scalar(BFloat16(value))
+
+        if dtype.dtype == DType.float16:
+            return self.scalar(Float16(value))
+        if dtype.dtype == DType.float32:
+            return self.scalar(Float32(value))
+        if dtype.dtype == DType.float64:
+            return self.scalar(Float64(value))
+
         raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
 
     fn scalar(self, value: Float64, dtype: ElementType) raises -> Symbol:
@@ -316,11 +339,20 @@ struct Graph(CollectionElement, Stringable):
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
         """
+
+        # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
+        @parameter
+        if not has_neon():
+            if dtype.dtype == DType.bfloat16:
+                return self.scalar(BFloat16(value))
+
+        if dtype.dtype == DType.float16:
+            return self.scalar(Float16(value))
         if dtype.dtype == DType.float32:
-            return self.scalar(Int32(value))
-        elif dtype.dtype == DType.float64:
-            return self.scalar(Int64(value))
-        # TODO: No particular reason not to implement everything else.
+            return self.scalar(Float32(value))
+        if dtype.dtype == DType.float64:
+            return self.scalar(Float64(value))
+
         raise "unimplemented FloatLiteral conversion dtype: " + str(dtype.dtype)
 
     fn range[
