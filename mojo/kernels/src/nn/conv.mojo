@@ -23,29 +23,6 @@ from algorithm import (
     unswitch,
     vectorize,
 )
-from .accumulate import (
-    accumulate,
-    init_register_tile,
-    load_register_tile,
-    store_register_tile,
-)
-from .conv_utils import (
-    ConvInfoStatic,
-    ConvShape,
-    ConvPartition,
-    elementwise_epilogue_type,
-    get_conv2d_shape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-    get_micro_kernel_shape,
-    get_partition,
-    get_conv_shape,
-    reorder_padding,
-)
-from .image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -77,6 +54,29 @@ from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 
+from .accumulate import (
+    accumulate,
+    init_register_tile,
+    load_register_tile,
+    store_register_tile,
+)
+from .conv_utils import (
+    ConvInfoStatic,
+    ConvPartition,
+    ConvShape,
+    elementwise_epilogue_type,
+    get_conv2d_shape,
+    get_conv_num_partitions,
+    get_conv_num_tasks,
+    get_conv_shape,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+    get_micro_kernel_shape,
+    get_partition,
+    reorder_padding,
+)
+from .image import Image2DLayout, ImageData, ImageShape
 from .shapes import get_sliding_window_out_dim
 
 

@@ -14,13 +14,14 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
 )
 from memory.buffer import Buffer, NDBuffer
-from .reshape import reshape
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
+
+from .reshape import reshape
 
 
 fn layer_norm[

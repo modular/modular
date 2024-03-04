@@ -18,6 +18,7 @@ from math import (
     sub,
 )
 from math.limit import min_or_neginf, neginf
+from os import abort
 
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
@@ -35,7 +36,6 @@ from runtime.tracing import Trace, TraceLevel
 from utils.index import product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
-from os import abort
 
 # ===----------------------------------------------------------------------===#
 # Utilities

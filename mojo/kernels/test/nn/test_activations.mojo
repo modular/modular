@@ -9,13 +9,7 @@
 from math import iota
 from random import randn, seed
 
-from nn.activations import (
-    elu,
-    gelu,
-    gelu_approximate,
-    relu,
-    relu_n1,
-)
+from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from tensor import Tensor, TensorShape
 from test_utils import compare, get_minmax, libm_call
 
