@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 # RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
+
 from sys import argv
 
 
@@ -16,11 +16,9 @@ struct MemType:
         return MemType(self.member + other.member)
 
 
-fn makes_escaping_closure(
-    m: __mlir_type.index,
-) -> fn (n: __mlir_type.index) escaping -> __mlir_type.index:
-    fn myclosure(n: __mlir_type.index) escaping -> __mlir_type.index:
-        return __mlir_op.`index.add`(n, m)
+fn makes_escaping_closure(m: Int) -> fn (n: Int) escaping -> Int:
+    fn myclosure(n: Int) escaping -> Int:
+        return n + m
 
     return myclosure
 
@@ -180,7 +178,7 @@ fn main():
     var x = 2
     var c = makes_escaping_closure(x.value)
     # CHECK: 4
-    print(Int(c(x.value)))
+    print(c(x))
 
     var result: MemType = makes_escaping_closure_position_only(MemType(43))(42)
     # CHECK: 85
