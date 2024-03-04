@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ControlFlowUtils.h"
+#include "KGEN/TransformUtils/ControlFlowUtils.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 
 using namespace M;

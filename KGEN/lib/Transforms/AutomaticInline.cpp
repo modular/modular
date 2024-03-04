@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallGraphUtils.h"
-#include "InliningUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/CallGraphUtils.h"
+#include "KGEN/TransformUtils/InliningUtils.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"

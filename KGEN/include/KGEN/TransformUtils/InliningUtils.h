@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LIB_TRANSFORMS_INLININGUTILS_H
-#define KGEN_LIB_TRANSFORMS_INLININGUTILS_H
+#ifndef KGEN_TRANSFORMUTILS_INLININGUTILS_H
+#define KGEN_TRANSFORMUTILS_INLININGUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Pass/PassManager.h"
@@ -68,4 +68,4 @@ uint64_t getNumOperations(Operation *op);
 
 } // namespace M::KGEN
 
-#endif // KGEN_LIB_TRANSFORMS_INLININGUTILS_H
+#endif // KGEN_TRANSFORMUTILS_INLININGUTILS_H
