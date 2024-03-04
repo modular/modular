@@ -34,6 +34,7 @@ from .elementwise import (
     sub,
 )
 from .linalg import (
+    band_part,
     batch_matmul,
     matmul,
     matmul_by_matrix,

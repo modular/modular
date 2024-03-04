@@ -324,7 +324,7 @@ struct Graph(CollectionElement, Stringable):
         raise "unimplemented FloatLiteral conversion dtype: " + str(dtype.dtype)
 
     fn range[
-        dtype: DType = DType.int64
+        dtype: DType
     ](
         self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
@@ -349,6 +349,35 @@ struct Graph(CollectionElement, Stringable):
                 self.scalar[dtype](step),
             ),
             MOTensor(dtype, len(range(start, stop, step))),
+        )
+
+    fn full[
+        dtype: DType
+    ](self, value: Scalar[dtype], dims: SymbolTuple) raises -> Symbol:
+        """Creates a constant-valued symbolic tensor of a specified shape.
+
+        Params:
+            dtype: The output tensor's element type.
+
+        Args:
+            value: The value to fill the resulting tensor with.
+            dims: The shape dimensions of the zero-valued tensor.
+
+        Returns:
+            A symbolic tensor of the specified shape and dtype, where
+            every value is the specified fill value.
+        """
+        var out_dims = List[Dim]()
+        var shape = List[Symbol]()
+        for i in range(len(dims)):
+            if dims[i].tensor_type().rank() != 0:
+                raise "zeros inputs must be scalars"
+            shape.append(dims[i])
+            out_dims.append(Dim.dynamic())
+        return self.op(
+            "mo.broadcast_to",
+            (self.scalar(value), ops.stack(shape)),
+            MOTensor(dtype, out_dims),
         )
 
     fn output(self, outs: SymbolTuple) raises:
