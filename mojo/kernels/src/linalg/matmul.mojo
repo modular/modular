@@ -20,6 +20,7 @@ from algorithm.functional import tile_and_unswitch
 from Gemv import gemv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
+from gpu.host.memory import _memset_async
 from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from MatmulUtils import (
@@ -3166,6 +3167,8 @@ fn _matmul_gpu_dispatch[
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
             alias NUM_WARPS = NUM_THREADS / WARP_SIZE
 
+            # TODO: gemm kernel should not assume that output buffer is zeroed
+            _memset_async(c.data, 0, m * n, stream)
             alias mm = sgemm_warp_tiling_kernel[
                 c_type,
                 c_shape,
