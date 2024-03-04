@@ -8,10 +8,10 @@
 # A^T.B where A and B are 16x16 Float32 matrices.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: apple-silicone
+# REQUIRES: apple-silicon
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from sys.info import is_apple_silicone, sizeof
+from sys.info import is_apple_silicon, sizeof
 
 from AppleAMX import amx_detail
 from memory.buffer import NDBuffer
@@ -79,7 +79,7 @@ fn print_matrix(
 
 # CHECK-LABEL: test_amx_matmul
 fn test_amx_matmul():
-    if is_apple_silicone():
+    if is_apple_silicon():
         print("== test_amx_matmul")
 
     var a_matrix = NDBuffer[
@@ -365,5 +365,5 @@ fn test_amx_matmul():
 
 fn main():
     @parameter
-    if is_apple_silicone():
+    if is_apple_silicon():
         test_amx_matmul()
