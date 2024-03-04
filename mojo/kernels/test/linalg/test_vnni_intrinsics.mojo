@@ -10,6 +10,8 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from sys.info import has_avx512f
+
 from memory import memcmp
 from memory.buffer import Buffer
 from VNNI import (
@@ -18,7 +20,6 @@ from VNNI import (
     dot_i8_to_i32_saturated_x86,
     dot_i8_to_i32_x86,
 )
-from sys.info import has_avx512f
 
 
 fn main():
