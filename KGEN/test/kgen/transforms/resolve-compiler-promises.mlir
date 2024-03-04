@@ -14,7 +14,7 @@ kgen.func @use_i32(%arg0: i32) {
 }
 
 // CHECK-LABEL: kgen.func @top(%arg0: i32, %arg1: index)
-kgen.func @top(%arg0: index) {
+kgen.func @top(%arg0: index) capturing {
   pop.compiler.global_store "foobar", %arg0 : index
   // CHECK: call @transitive(%arg0, %arg1) : (i32, index) capturing -> ()
   kgen.call @transitive() : () capturing -> ()
@@ -84,7 +84,7 @@ kgen.func @unused_store(%arg0: index) {
 }
 
 // CHECK-LABEL kgen.func @store_does_not_dominate(%arg0: index, %arg1: index)
-kgen.func @store_does_not_dominate(%arg0: index) {
+kgen.func @store_does_not_dominate(%arg0: index) capturing {
   // CHECK: loop
   hlcf.loop {
     pop.compiler.global_store "foobar", %arg0 : index
@@ -184,6 +184,10 @@ kgen.func @copy_fn(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
 
 // -----
 
+// COM: Test that an empty callgraph does not crash.
+
+// -----
+
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @init_fn
@@ -222,4 +226,131 @@ kgen.func @call_fn(%cl: !kgen.pointer<none>) {
   kgen.return
 }
 
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @entry
+// CHECK-SAME: (%arg0: i32)
+kgen.func @entry(%arg0: i32) {
+  pop.compiler.global_store "x", %arg0 : i32
+  // CHECK-NEXT: call @simple_recursion(%arg0)
+  kgen.call @simple_recursion() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @simple_recursion(%arg0: i32)
+kgen.func @simple_recursion() capturing {
+  // CHECK-NEXT: call @simple_recursion(%arg0)
+  kgen.call @simple_recursion() : () capturing -> ()
+  %0 = pop.compiler.global_load "x" : i32
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @entry
+// CHECK-SAME: (%arg0: i32, %arg1: i64)
+kgen.func @entry(%arg0: i32, %arg1: i64) {
+  pop.compiler.global_store "x", %arg0 : i32
+  pop.compiler.global_store "y", %arg1 : i64
+  // CHECK-NEXT: call @recursion_foo(%arg1, %arg0)
+  kgen.call @recursion_foo() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @recursion_foo(%arg0: i32, %arg1: i64)
+kgen.func @recursion_foo() capturing {
+  %1 = pop.compiler.global_load "y" : i64
+  // CHECK-NEXT: call @recursion_bar(%arg1, %arg0)
+  kgen.call @recursion_bar() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @recursion_bar(%arg0: i64, %arg1: i32)
+kgen.func @recursion_bar() capturing {
+  %0 = pop.compiler.global_load "x" : i32
+  // CHECK-NEXT: call @recursion_foo(%arg1, %arg0)
+  kgen.call @recursion_foo() : () capturing -> ()
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @root(%arg0: i1)
+kgen.func @root() capturing {
+  // CHECK-NEXT: call @a(%arg0)
+  kgen.call @a() : () capturing -> ()
+  // CHECK-NEXT: call @b(%arg0)
+  kgen.call @b() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @a(%arg0: i1)
+kgen.func @a() capturing {
+  // CHECK-NEXT: call @b(%arg0)
+  kgen.call @b() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @b(%arg0: i1)
+kgen.func @b() capturing {
+  // CHECK-NEXT: call @a(%arg0)
+  kgen.call @a() : () capturing -> ()
+  %0 = pop.compiler.global_load "x" : i1
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @root(%arg0: i1)
+kgen.func @root() capturing {
+  // CHECK-NEXT: call @a()
+  kgen.call @a() : () capturing -> ()
+  // CHECK-NEXT: call @b(%arg0)
+  kgen.call @b() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @a()
+kgen.func @a() capturing {
+  // CHECK-NEXT: %0 = kgen.param.constant
+  %0 = kgen.param.constant: i1 = <0>
+  pop.compiler.global_store "x", %0 : i1
+  // CHECK-NEXT: call @b(%0)
+  kgen.call @b() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @b(%arg0: i1)
+kgen.func @b() capturing {
+  // CHECK-NEXT: call @a()
+  kgen.call @a() : () capturing -> ()
+  %0 = pop.compiler.global_load "x" : i1
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @foo(%arg0: index)
+kgen.func @foo() capturing {
+  // CHECK-NEXT: call @xd(%arg0)
+  kgen.call @xd() : () capturing -> ()
+  // CHECK-NEXT: call @foo(%arg0)
+  kgen.call @foo() : () capturing -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @xd(%arg0: index)
+kgen.func @xd() capturing {
+  %0 = pop.compiler.global_load "var" : index
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @top(%arg0: index)
+kgen.func export @top(%arg0: index) {
+  pop.compiler.global_store "var", %arg0 : index
+  // CHECK-NEXT: call @foo(%arg0)
+  kgen.call @foo() : () capturing -> ()
+  kgen.return
 }

@@ -223,7 +223,6 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
 }
 
 void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
-
   SmallVector<AnyAsyncValueRef> calleeAsynchValues;
   DenseSet<CallGraphNode *> seenNodes;
   // Collect callee dependencies to wait.

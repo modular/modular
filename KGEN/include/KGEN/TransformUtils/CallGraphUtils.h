@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LIB_TRANSFORMS_CALLGRAPHUTILS_H
-#define KGEN_LIB_TRANSFORMS_CALLGRAPHUTILS_H
+#ifndef KGEN_TRANSFORMUTILS_CALLGRAPHUTILS_H
+#define KGEN_TRANSFORMUTILS_CALLGRAPHUTILS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -221,4 +221,4 @@ struct GraphTraits<M::KGEN::CallGraphBase<DerivedT, NodeT> *> {
 };
 } // namespace llvm
 
-#endif // KGEN_LIB_TRANSFORMS_CALLGRAPHUTILS_H
+#endif // KGEN_TRANSFORMUTILS_CALLGRAPHUTILS_H
