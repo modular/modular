@@ -7,16 +7,13 @@
 # RUN: %mojo %s
 
 
-from gpu.host import Function, Context
-from gpu.id import BlockDim, ThreadIdx, BlockIdx
-
-from gpu.host.memory import _malloc_managed
-
 from builtin.io import _printf
-
-from kernel_utils.layout_tensor import LayoutTensor
-from kernel_utils.layout import Layout
+from gpu.host import Context, Function
+from gpu.host.memory import _malloc_managed
+from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from kernel_utils.int_tuple import IntTuple
+from kernel_utils.layout import Layout
+from kernel_utils.layout_tensor import LayoutTensor
 
 
 fn gpu_kernel(
