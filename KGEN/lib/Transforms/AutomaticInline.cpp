@@ -90,7 +90,7 @@ struct CallGraphNode
   LLCL::AsyncValueRef<LLCL::Chain> doneInlining;
 
   /// Nodes in the same SCC as the current one.
-  llvm::SmallSet<CallGraphNode *, 6> sccNodes;
+  llvm::SmallPtrSet<CallGraphNode *, 6> sccNodes;
 
   /// If node is reachable in the CallGraph
   /// (e.g. not in any scc that has no callers outside of the scc.)
@@ -209,7 +209,7 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
   }
 
   for (auto scc = llvm::scc_begin(this); scc != llvm::scc_end(this); ++scc) {
-    llvm::SmallSet<CallGraphNode *, 6> sccNodes;
+    llvm::SmallPtrSet<CallGraphNode *, 6> sccNodes;
     for (CallGraphNode *node : (*scc)) {
       sccNodes.insert(node);
       node->reachable = true;
