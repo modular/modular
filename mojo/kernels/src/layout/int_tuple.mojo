@@ -32,7 +32,6 @@ struct IntDelegate(ElementDelegate):
             return "#"
 
 
-alias IntTupleBase = DynamicTupleBase[Int, IntDelegate]
 alias IntTuple = DynamicTuple[Int, IntDelegate]
 
 
@@ -255,6 +254,8 @@ fn abs(t: IntTuple) -> IntTuple:
 #     return apply[my_mul](lhs)
 
 
+# Multiply lhs tuple elements by rhs
+#
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     if is_int(lhs):
         return int(lhs) * rhs
@@ -265,7 +266,77 @@ fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     return res
 
 
+# Return the product of elements in a mode
+#
+fn size(a: IntTuple) -> Int:
+    return product(a)
+
+
+# Test if two IntTuple have the same profile (hierarchical rank division)
+#
+fn congruent(a: IntTuple, b: IntTuple) -> Bool:
+    if is_tuple(a) and is_tuple(b):
+        if len(a) != len(b):
+            return False
+        for z in zip(a, b):
+            if not congruent(z[0], z[1]):
+                return False
+        return True
+    if is_int(a) and is_int(b):
+        return True
+    return False
+
+
+fn apply_predicate[
+    predicate: fn (IntTuple, IntTuple) -> Bool
+](a: IntTuple, b: IntTuple) -> Bool:
+    if is_tuple(a) and is_tuple(b):
+        if len(a) != len(b):
+            return False
+        for z in zip(a, b):
+            if not apply_predicate[predicate](z[0], z[1]):
+                return False
+        return True
+    if is_int(a):
+        return predicate(a, b)
+    return False
+
+
+# Test if two IntTuple have the similar profiles up to Shape A (hierarchical rank division)
+# weakly_congruent is a partial order on A and B: A <= B
+#
+fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
+    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+        return True
+
+    return apply_predicate[predicate](a, b)
+
+
+#  Test if Shape A is compatible with Shape B:
+#    the size of A and B are the same, and
+#    any coordinate into A can also be used as a coordinate into B
+# compatible is a partial order on A and B: A <= B
+#
+fn compatible(a: IntTuple, b: IntTuple) -> Bool:
+    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+        return int(a) == size(b)
+
+    return apply_predicate[predicate](a, b)
+
+
+#  Test if Shape A is weakly compatible with Shape B:
+#    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
+# weakly_compatible is a partial order on A and B: A <= B
+#
+fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
+    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+        return size(b) % int(a) == 0
+
+    return apply_predicate[predicate](a, b)
+
+
 # Exclusive prefix product with output congruent to input a
+#
 fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
     if is_tuple(a):
         if is_tuple(init):  # tuple tuple
@@ -288,6 +359,18 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
             return init
 
 
+#  Division for Shapes
+# Case Tuple Tuple:
+#   Perform shape_div element-wise
+# Case Tuple Int:
+#   Fold the division of b across each element of a
+#   Example: shape_div((4,5,6),40) -> shape_div((1,5,6),10) -> shape_div((1,1,6),2) -> (1,1,3)
+# Case Int Tuple:
+#   Return shape_div(a, product(b))
+# Case Int Int:
+#   Enforce the divisibility condition a % b == 0 || b % a == 0 when possible
+#   Return a / b with rounding away from 0 (that is, 1 or -1 when a < b)
+#
 fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
@@ -319,6 +402,13 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             return va // vb if va % vb == 0 else signum(va * vb)
 
 
+# idx2crd(i,s) splits an index into a coordinate within Shape
+# via a colexicographical enumeration of coordinates in Shape.
+# c0 = (idx / 1) % s0
+# c1 = (idx / s0) % s1
+# c2 = (idx / (s0 * s1)) % s2
+# ...
+#
 fn idx2crd(
     idx: IntTuple, shape: IntTuple, _stride: IntTuple = IntTuple()
 ) -> IntTuple:
@@ -349,6 +439,8 @@ fn idx2crd(
             return (int(idx) // int(stride)) % int(shape)
 
 
+# Map a logical coordinate to a linear index
+#
 fn crd2idx(
     crd: IntTuple, shape: IntTuple, _stride: IntTuple = IntTuple()
 ) -> Int:

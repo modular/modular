@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from kernel_utils.int_tuple import *
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal, assert_not_equal, assert_true, assert_false
 
 
 # CHECK-LABEL: test_tuple_basic
@@ -268,6 +268,100 @@ fn test_idx2crd() raises:
     assert_equal(xc7, "(3, 1)")
 
 
+# CHECK-LABEL: test_weakly_congruent
+fn test_weakly_congruent() raises:
+    print("== test_weakly_congruent")
+    alias a = IntTuple(1)
+    alias b = IntTuple(2)
+
+    assert_true(weakly_congruent(a, a))
+
+    alias a0 = IntTuple(IntTuple(1))
+    alias b0 = IntTuple(IntTuple(2))
+    assert_true(weakly_congruent(a, a0))
+    assert_true(weakly_congruent(b, b0))
+    assert_true(weakly_congruent(a, b0))
+    assert_true(weakly_congruent(b, a0))
+    assert_false(weakly_congruent(a0, a))
+    assert_false(weakly_congruent(b0, b))
+    assert_false(weakly_congruent(a0, b))
+    assert_false(weakly_congruent(b0, a))
+    assert_true(weakly_congruent(a0, a0))
+    assert_true(weakly_congruent(b0, b0))
+    assert_true(weakly_congruent(a0, b0))
+
+    alias a1 = IntTuple(1, 1)
+    assert_true(weakly_congruent(a, a1))
+    assert_false(weakly_congruent(a0, a1))
+    assert_true(weakly_congruent(a1, a1))
+
+    alias a2 = IntTuple(1, IntTuple(1, 1))
+    assert_true(weakly_congruent(a, a2))
+    assert_false(weakly_congruent(a0, a2))
+    assert_true(weakly_congruent(a1, a2))
+
+    alias b1 = IntTuple(2, 2)
+    assert_true(weakly_congruent(b, b1))
+    assert_false(weakly_congruent(b0, b1))
+    assert_true(weakly_congruent(a1, b1))
+
+    alias b2 = IntTuple(2, IntTuple(2, 2))
+    assert_false(weakly_congruent(a2, b0))
+    assert_false(weakly_congruent(a2, a1))
+    assert_true(weakly_congruent(a2, b2))
+
+    alias b3 = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
+    assert_false(weakly_congruent(a0, b3))
+    assert_true(weakly_congruent(a1, b3))
+    assert_true(weakly_congruent(a2, b3))
+
+
+# CHECK-LABEL: test_weakly_compatible
+fn test_weakly_compatible() raises:
+    print("== test_weakly_compatible")
+    alias a = IntTuple(16)
+    alias b = IntTuple(12)
+    alias c = IntTuple(8)
+    assert_true(weakly_compatible(a, a))
+    assert_true(weakly_compatible(b, b))
+    assert_true(weakly_compatible(c, c))
+    assert_false(weakly_compatible(a, b))
+    assert_false(weakly_compatible(a, c))
+    assert_true(weakly_compatible(c, a))
+
+    alias a0 = IntTuple(IntTuple(16))
+    assert_true(weakly_compatible(a0, a0))
+    assert_true(weakly_compatible(a, a0))
+    assert_false(weakly_compatible(a0, a))
+    assert_true(weakly_compatible(c, a0))
+    assert_false(weakly_compatible(a0, c))
+    assert_false(weakly_compatible(b, a0))
+    assert_false(weakly_compatible(a0, b))
+
+    alias a1 = IntTuple(2, 8)
+    assert_true(weakly_compatible(a1, a1))
+    assert_true(weakly_compatible(a, a1))
+    assert_false(weakly_compatible(a0, a1))
+    assert_false(weakly_compatible(a1, a0))
+    assert_true(weakly_compatible(a1, IntTuple(2, IntTuple(2, 4))))
+
+    alias a2 = IntTuple(IntTuple(2, 8))
+    assert_true(weakly_compatible(a2, a2))
+    assert_true(weakly_compatible(a, a2))
+    assert_true(weakly_compatible(c, a2))
+    assert_true(weakly_compatible(a0, a2))
+    assert_false(weakly_compatible(a2, a0))
+
+    alias a3 = IntTuple(IntTuple(2, IntTuple(4, 2)))
+    assert_true(weakly_compatible(a3, a3))
+    assert_true(weakly_compatible(a, a3))
+    assert_true(weakly_compatible(c, a3))
+    assert_true(weakly_compatible(a0, a3))
+    assert_false(weakly_compatible(a3, a0))
+    assert_true(weakly_compatible(a2, a3))
+    assert_false(weakly_compatible(a3, a2))
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -281,3 +375,6 @@ def main():
 
     test_crd2idx()
     test_idx2crd()
+
+    test_weakly_congruent()
+    test_weakly_compatible()

@@ -10,7 +10,6 @@ from builtin.string import _calc_initial_buffer_size_int32
 from .dynamic_tuple import *
 from .int_tuple import (
     IntTuple,
-    IntTupleBase,
     crd2idx,
     min,
     flatten,
