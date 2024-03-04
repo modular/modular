@@ -13,14 +13,12 @@ from kernel_utils.layout_tensor import LayoutTensor, IntTuple
 from algorithm import vectorize, parallelize, sync_parallelize
 
 
+@value
 @register_passable
 struct Dim(Stringable):
     var m: Int
     var n: Int
     var k: Int
-
-    fn __init__(m: Int, n: Int, k: Int) -> Self:
-        return Self {m: m, n: n, k: k}
 
     fn subrange(self, sub_dim: Self) -> Self:
         return Self(
