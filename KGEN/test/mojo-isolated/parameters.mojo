@@ -541,6 +541,21 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
+# Variadic list initialization of List does not work in alias domain
+# https://github.com/modularml/modular/issues/33579
+
+# CHECK-LABEL: lit.func @"init_self_memory_variadics
+fn init_self_memory_variadics():
+    # 1 and 2 need to be passed through memory in the variadics.
+    # CHECK-NEXT: lit.alias.decl *"x`1x0":
+    # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]))>
+    alias x = MyList[Int](1, 2)
+
+struct MyList[T: Copyable]:
+    fn __init__(inout self, *values: T): pass
+
+
+
 ##===----------------------------------------------------------------------===##
 # Parameter Inference
 ##===----------------------------------------------------------------------===##

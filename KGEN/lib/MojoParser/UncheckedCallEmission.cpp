@@ -288,9 +288,12 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       auto varType = cast<VariadicType>(expectedType);
       Type varElType = varType.getElementType();
 
-      // If dealing with a memory-only type, remove the reference.
-      if (SignatureType::hasAddress(convention))
-        varElType = ASTType(varElType).getReferenceElementType();
+      // If the element has a memory-only type, drop it into memory.
+      if (SignatureType::hasAddress(convention)) {
+        SmallVector<TypedAttr> storedAttrs;
+        for (TypedAttr &arg : args)
+          arg = StoreToMemAttr::get(arg, varElType);
+      }
       auto newVarType = VariadicType::get(varElType, varType.getConvention());
       attr = VariadicAttr::get(args, newVarType);
     } else {
@@ -721,8 +724,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
     argConventions = argConventions.drop_front();
   }
 
-  for (auto [argIdx, argValAndExpr, calleeArgType, convention] :
-       llvm::enumerate(argumentValues, argTypes, argConventions)) {
+  for (auto [argValAndExpr, calleeArgType, convention] :
+       llvm::zip(argumentValues, argTypes, argConventions)) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
@@ -732,19 +735,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
     if (SignatureType::hasAddress(convention)) {
       arg = StoreToMemAttr::get(
           arg, RefType::getImmortal(arg.getType(), /*isMut=*/true));
-    } else if (boundSigType.isPosVarArg(argIdx)) {
-      // If handling a variadic memory argument, put each element into memory.
-      auto varType = cast<VariadicType>(arg.getType());
-      if (SignatureType::hasAddress(varType.getConvention())) {
-        bool isMut = varType.getConvention() != ArgConvention::BorrowedInMem;
-        auto varElType = RefType::getImmortal(varType.getElementType(), isMut);
-        SmallVector<TypedAttr> storedAttrs;
-        for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
-          storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
-        auto newVarType = VariadicType::get(varElType, varType.getConvention());
-        arg = VariadicAttr::get(storedAttrs, newVarType);
-      }
     }
+
     // Emit a rebind if the refined type does not match the callee arg type.
     if (arg.getType() != calleeArgType)
       arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);

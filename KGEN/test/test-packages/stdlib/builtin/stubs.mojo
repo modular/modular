@@ -76,7 +76,7 @@ struct FloatDyn:
 
 @value
 @register_passable("trivial")
-struct Int:
+struct Int(Copyable):
     var value: int
 
     @always_inline("nodebug")
