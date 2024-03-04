@@ -3,11 +3,26 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import abs, ceil, div_ceil, floor, is_power_of_2, max, roundeven
-from sys.info import alignof, sizeof
+from math import (
+    abs,
+    align_down,
+    ceil,
+    div_ceil,
+    floor,
+    is_power_of_2,
+    max,
+    min,
+    roundeven,
+)
+from sys.info import alignof, has_avx2, has_neon_int8_dotprod, sizeof
 
+from algorithm import sync_parallelize
 from memory.buffer import NDBuffer, prod_dims
 from memory.unsafe import bitcast
+from Neon import _neon_dotprod
+from VNNI import dot_i8_to_i32_saturated_x86
+
+from utils.index import Index
 from utils.list import DimList
 
 
@@ -537,16 +552,6 @@ struct Q4sym[
                 output_tensor.data.simd_store[group_size](
                     flat_index_output, encoded.decode_fully()
                 )
-
-
-from math import align_down, min
-from sys.info import has_avx2, has_neon_int8_dotprod
-
-from algorithm import sync_parallelize
-from Neon import _neon_dotprod
-from VNNI import dot_i8_to_i32_saturated_x86
-
-from utils.index import Index
 
 
 fn _block_quantize_a[
