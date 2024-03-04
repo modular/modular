@@ -12,7 +12,6 @@ class TestList(LLDBTestBase):
         """Tests that List can be parsed correctly and its data
         formatter works correctly as well."""
 
-        # TODO(#29440): Re-enable asserts when debugger uses SourceName for structs.
         with self.build_and_launch("dynamic_vector.mojo") as ctx:
             var = ctx.frame.FindVariable("point_vec")
             assert var.GetSummary() == "(size 2)"
