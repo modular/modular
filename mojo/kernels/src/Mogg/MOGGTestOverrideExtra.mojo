@@ -3,8 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from utils._annotations import *
 from math import min
+
+from utils._annotations import *
 
 
 @mogg_register_override("mo.min", 10)

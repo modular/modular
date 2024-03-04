@@ -10,15 +10,15 @@ from math import (
     add,
     ceil,
     cos,
-    div_ceil,
     div,
+    div_ceil,
     equal,
     erf,
     exp,
     floor,
     fma,
-    greater_equal,
     greater,
+    greater_equal,
     isinf,
     isnan,
     log,
@@ -74,8 +74,8 @@ from MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer, bitcast
-from MOGGTensor import Tensor
 from MOGGIntList import IntList
+from MOGGTensor import Tensor
 from nn.activations import gelu, relu, sigmoid
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
@@ -83,8 +83,8 @@ from nn.concat import concat as _concat
 from nn.concat import concat_shape as concat_from_list_shape
 from nn.concat import variadic_list_to_vector
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
-from nn.conv import pack_filter_shape as _pack_conv_filter_shape
 from nn.conv import pack_filter as _pack_conv_filter
+from nn.conv import pack_filter_shape as _pack_conv_filter_shape
 from nn.conv_transpose import conv_transpose_shape
 from nn.conv_transpose import conv_transposed as conv_transpose_impl
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
@@ -108,10 +108,7 @@ from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
-from nn.nms import (
-    non_max_suppression,
-    non_max_suppression_shape_func,
-)
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm as _layer_norm
 from nn.pad import pad_constant as _pad_constant
 from nn.pad import pad_reflect as _pad_reflect
@@ -139,6 +136,7 @@ from runtime.llcl import (
     Runtime,
 )
 from runtime.tracing import Trace, TraceLevel
+
 from utils._annotations import *
 from utils._optional import Optional
 from utils._optional_param import OptionalParamInt

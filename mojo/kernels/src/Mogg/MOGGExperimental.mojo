@@ -4,38 +4,38 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
 from math import (
     abs,
+    add,
     ceil,
     erf,
     exp,
     floor,
     iota,
-    isnan,
     isinf,
+    isnan,
     log,
     log1p,
     max,
     min,
+    mul,
     rsqrt,
     sqrt,
     tanh,
-    add,
-    mul,
 )
 from math.limit import max_or_inf, min_or_neginf
-from algorithm.reduction import reduce_shape, _reduce_generator
-from runtime.tracing import Trace, TraceLevel
 
+from algorithm.reduction import _reduce_generator, reduce_shape
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu
 from nn.gather_scatter import Axis
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_shape
+from runtime.tracing import Trace, TraceLevel
 
 from utils._annotations import *
-from collections import Optional
 
 alias MAX_BENEFIT = 1000
 

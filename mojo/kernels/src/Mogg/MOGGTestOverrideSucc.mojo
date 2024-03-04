@@ -3,8 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from utils._annotations import *
 from math import max
+
+from utils._annotations import *
 
 
 @mogg_register_override("mo.max", 1)

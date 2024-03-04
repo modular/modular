@@ -6,13 +6,13 @@
 # A temporary home for the experimental tensor type.
 
 from math import fma
+from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise, vectorize
 from memory.buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
-from sys.info import simdwidthof
 
 from utils._annotations import *
 from utils._optional import Optional

@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from MOGGExperimental import empty_tensor
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
-from MOGGExperimental import empty_tensor
+
 from utils._annotations import *
 
 # Dummy kernels to test fundamental mechanisms without overwriting the normal
