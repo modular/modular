@@ -1539,6 +1539,40 @@ OpFoldResult DTypeFromUI8::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+OpFoldResult DTypeSizeOf::fold(FoldAdaptor adaptor) {
+  auto dtypeAttr =
+      dyn_cast_if_present<KGEN::DTypeConstantAttr>(adaptor.getDType());
+  if (!dtypeAttr)
+    return {};
+  KGENDType dtype = dtypeAttr.getDType();
+  // Folding index and address types is target dependent.
+  if (llvm::is_contained({KGENDType::index, KGENDType::address},
+                         dtype.getValue()))
+    return {};
+
+  return IntegerAttr::get(IndexType::get(getContext()), dtype.getSizeInBytes());
+}
+
+ErrorTreeOrSuccess DTypeSizeOf::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  auto dtypeAttr = dyn_cast_or_null<KGEN::DTypeConstantAttr>(operands[0]);
+  if (!dtypeAttr)
+    return ErrorTree(getLoc(), Error("non-constant inputs"));
+
+  Builder b(getContext());
+  TargetInfoAttr target = state.getTarget();
+  KGENDType dtype = dtypeAttr.getDType();
+
+  ssize_t sizeInBytes =
+      llvm::is_contained({KGENDType::index, KGENDType::address},
+                         dtype.getValue())
+          ? target.getDataLayout().getPointerSize()
+          : dtype.getSizeInBytes();
+
+  state.mapResults(b.getIndexAttr(sizeInBytes));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
