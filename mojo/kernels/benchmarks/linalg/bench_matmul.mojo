@@ -46,15 +46,11 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     c_ref_ptr.free()
 
 
-fn bench_matmul(inout m: MojoBench, spec: MatmulSpec) raises:
-    @parameter
-    @always_inline
-    fn bench_matmul_wrapper(
-        inout b: Bencher, concrete_spec: MatmulSpec[spec.static_info]
-    ):
-        bench_matmul(b, concrete_spec)
-
-    m.bench_with_input[MatmulSpec[spec.static_info], bench_matmul_wrapper](
+fn bench_matmul_spec(inout m: MojoBench, spec: MatmulSpec) raises:
+    # disatch to bench_matmul with concrete spec type
+    m.bench_with_input[
+        MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
+    ](
         BenchId("matmul", str(spec)),
         spec,
         throughput_elems=spec.flops(),
@@ -178,9 +174,9 @@ def main():
         c_type=DType.float32,
     )
 
-    bench_matmul(m, MatmulSpec[packed_float32](m=256, n=256, k=256))
-    bench_matmul(m, MatmulSpec[packed_float32](m=512, n=512, k=512))
-    bench_matmul(m, MatmulSpec[packed_float32](m=1024, n=1024, k=1024))
-    bench_matmul(m, MatmulSpec[unpacked_float32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[packed_float32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[packed_float32](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[packed_float32](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_float32](m=256, n=256, k=256))
 
     m.dump_report()
