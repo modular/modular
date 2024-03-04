@@ -17,6 +17,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "llvm/ADT/SCCIterator.h"
 
 using namespace M;
 using namespace KGEN;
@@ -59,8 +60,9 @@ public:
   operator bool() const { return op; }
   operator Operation *() const { return op; }
   Operation &operator*() { return *op; }
+  Operation *operator->() { return op; }
 
-  // Required CallGraph interface.
+  /// Required CallGraph interface.
   TypedAttr getCallee() {
     // Micro-optimization: `isa` on operations is faster than interfaces.
     if (auto create = dyn_cast<CaptureListCreateOp>(op))
@@ -75,44 +77,56 @@ private:
   Operation *op;
 };
 
+/// A basic callgraph node, containing state for this dataflow analysis across
+/// the callgraph.
 struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, FuncOp, CallLikeOp> {
   CallGraphNode(FuncOp func) : CallGraphNodeBase(func) {}
   CallGraphNode(CallGraphNode &&other) : CallGraphNodeBase(std::move(other)) {}
 
-  /// The names and types of the required promise values of the callgraph node.
-  std::vector<std::pair<StringAttr, Type>> requiredPromises;
+  /// The unit of analysis for this pass is a single SCC in the callgraph. This
+  /// struct contains the nodes in an SCC and is the dependency node for it in
+  /// the work processing graph.
+  struct SCC {
+    SCC(LLCL::Runtime &runtime)
+    //: done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime))
+    {}
 
-  /// The number of processed calls. When the value of this counter equals the
-  /// size of `callsites`, then all calls for this function have been processed.
-  std::atomic<size_t> numProcessedCalls = 0;
+    /// The nodes in the SCC. In most cases, SCCs should have a single node (no
+    /// or self recursion).
+    llvm::SetVector<CallGraphNode *, SmallVector<CallGraphNode *, 2>,
+                    llvm::SmallPtrSet<CallGraphNode *, 2>, 2>
+        nodes;
+
+    std::vector<SCC *> callers;
+    unsigned numCallees = 0;
+    unsigned numReady = 0;
+    bool hasRecursion = false;
+
+    /// The async value indicating the current processing state of the SCC.
+    // LLCL::AsyncValueRef<LLCL::Chain> done;
+  };
+
+  /// Pointer to the SCC the node is contained in.
+  SCC *scc;
+
+  /// The current set of required promises for the function.
+  llvm::MapVector<StringAttr, std::pair<Type, unsigned>> requiredPromises;
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
-  explicit CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab,
-                     TargetInfoAttr targetInfo)
-      : worklist(runtime), symtab(symtab), targetInfo(targetInfo) {}
-  using Base = CallGraphBase<CallGraph, CallGraphNode>;
+  CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab,
+            TargetInfoAttr target)
+      : runtime(runtime), symtab(symtab), target(target) {}
 
-  /// It turns out we have to rely on propagation of the `capturing` bit on
-  /// functions in the parser, where a function with a `capturing` signature in
-  /// its input or result parameters also needs to be marked as `capturing`,
-  /// because otherwise `kgen.create_closure` does not know whether to create a
-  /// function pointer or a closure with a capture list.
-  ///
-  /// In that case, we can also rely on the bit to form the edges in the graph
-  /// to be processed, circumventing the issue with cycles.
+  /// Only add nodes to the graph that are to functions that are capturing,
+  /// since those are the only functions we need to handle.
   bool shouldAddToGraph(CallLikeOp call, CallGraphNode *node) {
     return node->func.getSignature().isCapturing() ||
            isa<CaptureListCreateOp, CaptureListCopyOp>(*call);
   }
 
-  /// Process a single function. Resolve all the promises in the function by
-  /// processing `pop.compiler.global_load` and `pop.compiler.global_store` ops,
-  /// prepending arguments if necessary.
-  void resolvePromises(CallGraphNode *node);
-
-  /// Lookup the call graph node for the given operation.
+  /// Lookup the call graph node for the given symbol reference.
   CallGraphNode *getCalleeNode(TypedAttr symbol) {
     auto callee = symtab.lookup<FuncOp>(
         cast<SymbolConstantAttr>(symbol).getSymbol().getRootReference());
@@ -120,12 +134,22 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
     return &nodes.find(callee)->second;
   }
 
-  /// Initialize the worklist and run to completion.
+  /// Run an iteration of the analysis and transformation on a single node.
+  /// Return true if anything changed.
+  bool resolvePromises(CallGraphNode *node);
+  void resolvePromises(CallGraphNode::SCC *scc);
+  void resolveAndCleanUp(FuncOp func);
+
+  /// Run the analysis and rewrite.
   void run();
 
-  LLCL::ForkJoin worklist;
-  const SymbolTable symtab;
-  TargetInfoAttr targetInfo;
+  /// The virtual root node of the callgraph. This node points to every other
+  /// node in the callgraph.
+  CallGraphNode externalNode{nullptr};
+
+  LLCL::Runtime &runtime;
+  const SymbolTable &symtab;
+  TargetInfoAttr target;
 };
 } // namespace
 
@@ -133,8 +157,9 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 /// the callee into the current function. Query them and pack them into a
 /// heap-allocated slot.
 static void resolveCaptureListCreate(CaptureListCreateOp op,
-                                     TargetInfoAttr target,
-                                     ArrayRef<Value> captures) {
+                                     TargetInfoAttr target) {
+  ValueRange captures = op->getOperands();
+
   auto clType = StructType::get(
       op.getContext(),
       llvm::map_to_vector(captures, [](Value v) { return v.getType(); }));
@@ -156,9 +181,13 @@ static void resolveCaptureListCreate(CaptureListCreateOp op,
 
 /// Using knowledge of the required promises, emit IR for a copy of the capture
 /// list for a particular closure.
-static void resolveCaptureListCopy(CaptureListCopyOp op, TargetInfoAttr target,
-                                   ArrayRef<Type> captures) {
-  auto clType = StructType::get(op.getContext(), captures);
+static void resolveCaptureListCopy(CaptureListCopyOp op,
+                                   CallGraphNode *calleeNode,
+                                   TargetInfoAttr target) {
+  auto clType = StructType::get(
+      op.getContext(),
+      llvm::map_to_vector(calleeNode->requiredPromises,
+                          [](auto &promise) { return promise.second.first; }));
 
   ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
   // Allocate the memory for the copy.
@@ -181,51 +210,93 @@ static void resolveCaptureListCopy(CaptureListCopyOp op, TargetInfoAttr target,
 /// Rewrite `kgen.capture_list.expand %cl` given the current set of required
 /// promises by propagating the required promises into the node of the enclosing
 /// function.
-static void resolveCaptureListExpand(
-    CaptureListExpandOp op, CallGraphNode *node,
-    llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
-        &requiredPromises) {
+static void resolveCaptureListExpand(CaptureListExpandOp op) {
   ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
   b.setInsertionPoint(op);
 
   // Compute the capture list type based on the set of required promises.
-  SmallVector<Type> types =
-      llvm::map_to_vector(requiredPromises, [](auto &nameLoads) {
-        return nameLoads.second.front().getType();
-      });
-  auto clType = StructType::get(op.getContext(), types);
+  auto clType =
+      StructType::get(op.getContext(), llvm::to_vector(op->getResultTypes()));
   Value captures = b.create<POP::PointerBitcastOp>(PointerType::get(clType),
                                                    op.getCaptureList());
 
-  for (auto [idx, nameLoads] : llvm::enumerate(requiredPromises)) {
+  for (auto [idx, value] : llvm::enumerate(op->getResults())) {
     // Extract each captured value out of the capture state and use it as
     // input to the call of the closure.
-    auto &[name, loads] = nameLoads;
     Value promise = b.create<POP::LoadOp>(b.create<StructGEPOp>(captures, idx));
-    Type type = loads.front().getType();
-    for (POP::CompilerGlobalLoadOp load : loads) {
-      load.replaceAllUsesWith(promise);
-      load.erase();
-    }
-    // Forward the required promise onto the node of the enclosing function.
-    // The invariant is that the enclosing function is not 'capturing', so the
-    // promises must be propagated through `kgen.capture_list.create`.
-    node->requiredPromises.emplace_back(name, type);
+    value.replaceAllUsesWith(promise);
   }
 
   // Clear the required promises set. It has been fully satisfied by this op.
-  requiredPromises.clear();
   op.erase();
 }
 
-void CallGraph::resolvePromises(CallGraphNode *node) {
-  FuncOp func = node->func;
-  CompilerTimeTraceScope traceScope("resolvePromises", [func]() mutable {
-    return func.getSymNameAttr().str();
+void CallGraph::resolveAndCleanUp(FuncOp func) {
+  func.walk([this](Operation *op) {
+    if (isa<POP::CompilerGlobalStoreOp>(op))
+      op->erase();
+    else if (auto create = dyn_cast<CaptureListCreateOp>(op))
+      resolveCaptureListCreate(create, target);
+    else if (auto copy = dyn_cast<CaptureListCopyOp>(op))
+      resolveCaptureListCopy(copy, getCalleeNode(copy.getCallee()), target);
+    else if (auto expand = dyn_cast<CaptureListExpandOp>(op))
+      resolveCaptureListExpand(expand);
   });
+}
 
+bool CallGraph::resolvePromises(CallGraphNode *node) {
+  FuncOp func = node->func;
   llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
       requiredPromises;
+  unsigned curNumPromises = node->requiredPromises.size();
+
+  // This functor will, given an operation that points to another node, create
+  // new required promises based on any additional required promises from the
+  // callee.
+  auto computeRequiredCaptures = [&requiredPromises](Operation *op,
+                                                     CallGraphNode *calleeNode,
+                                                     unsigned fulfilled) {
+    ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
+    // Create new loads to keep the state. Because the walk uses an early
+    // inc, it will not visit the loads twice.
+    SmallVector<Value> captures;
+    for (auto [name, type] :
+         llvm::drop_begin(calleeNode->requiredPromises, fulfilled)) {
+      auto load = b.create<POP::CompilerGlobalLoadOp>(type.first, name);
+      requiredPromises[name].push_back(load);
+      captures.push_back(load);
+    }
+    return captures;
+  };
+
+  /// This functor will, given the current set of required promises, transfer
+  /// any new ones to the enclosing function.
+  auto consumeRequiredPromises = [node,
+                                  &requiredPromises](ValueRange fulfilled) {
+    SmallVector<std::pair<Type, SmallVector<POP::CompilerGlobalLoadOp>>>
+        newTypes;
+    for (auto &[name, loads] : requiredPromises) {
+      // If this required promise is already fulfilled on the node, then replace
+      // the request immediately.
+      if (auto it = node->requiredPromises.find(name);
+          it != node->requiredPromises.end()) {
+        auto [type, index] = it->second;
+        for (POP::CompilerGlobalLoadOp load : loads) {
+          load.replaceAllUsesWith(fulfilled[index]);
+          load.erase();
+        }
+        continue;
+      }
+      // Otherwise, save the request for the new promise.
+      Type type = loads.front().getType();
+      node->requiredPromises.insert(
+          {name, {type, node->requiredPromises.size()}});
+      newTypes.emplace_back(type, std::move(loads));
+    }
+    // Consume the current state.
+    requiredPromises.clear();
+    return newTypes;
+  };
 
   reversePostOrderWalk(func, [&](Operation *op) {
     // When we encounter a load, mark it as a requested promise within the
@@ -239,10 +310,9 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
     // value.
     if (auto store = dyn_cast<POP::CompilerGlobalStoreOp>(op)) {
       auto it = requiredPromises.find(store.getNameAttr());
-      if (it == requiredPromises.end()) {
-        store.erase();
+      if (it == requiredPromises.end())
         return;
-      }
+
       SmallVector<POP::CompilerGlobalLoadOp> leftover;
       for (POP::CompilerGlobalLoadOp load : it->second) {
         // Make sure the store dominates the load in terms of regions.
@@ -258,41 +328,29 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
         requiredPromises.erase(it);
       else
         it->second = std::move(leftover);
-      store.erase();
       return;
     }
-
-    auto computeRequiredCaptures =
-        [&requiredPromises](Operation *op, CallGraphNode *calleeNode) {
-          ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-          // Create new loads to keep the state. Because the walk uses an early
-          // inc, it will not visit the loads twice.
-          SmallVector<Value> captures;
-          for (auto [name, type] : calleeNode->requiredPromises) {
-            auto load = b.create<POP::CompilerGlobalLoadOp>(type, name);
-            requiredPromises[name].push_back(load);
-            captures.push_back(load);
-          }
-          return captures;
-        };
 
     // When a call is encountered, look up the required promises of the
     // function it is calling. Rewrite the call to provide them.
     if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
       auto symbol = cast<SymbolConstantAttr>(call.getCallee());
+      SignatureType sig = symbol.getType();
       // Calls to functions that are not capturing cannot have captures.
-      if (!symbol.getType().isCapturing())
+      if (!sig.isCapturing())
         return;
-      auto callee =
-          symtab.lookup<FuncOp>(symbol.getSymbol().getRootReference());
-      assert(callee);
-      CallGraphNode *calleeNode = &nodes.find(callee)->second;
+      CallGraphNode *calleeNode = getCalleeNode(symbol);
+      FuncOp callee = calleeNode->func;
 
       // Exit early if there is nothing to do.
       if (calleeNode->requiredPromises.empty())
         return;
 
-      SmallVector<Value> captures = computeRequiredCaptures(call, calleeNode);
+      unsigned fulfilled =
+          calleeNode->requiredPromises.size() -
+          (calleeNode->func.getNumArguments() - sig.getNumArguments());
+      SmallVector<Value> captures =
+          computeRequiredCaptures(call, calleeNode, fulfilled);
       // Prepend the captures and update the callee signature on the call. The
       // function already has the updated signature. `kgen.create_closure`
       // applies arguments from the front, so we cannot append.
@@ -303,43 +361,63 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
     }
 
     if (auto create = dyn_cast<CaptureListCreateOp>(op)) {
-      CallGraphNode *closureNode = getCalleeNode(create.getCallee());
-      SmallVector<Value> captures = computeRequiredCaptures(op, closureNode);
-      resolveCaptureListCreate(create, targetInfo, captures);
-      return;
-    }
-
-    if (auto copy = dyn_cast<CaptureListCopyOp>(op)) {
-      CallGraphNode *closureNode = getCalleeNode(copy.getCallee());
-      SmallVector<Type> captures = llvm::to_vector(
-          llvm::make_second_range(closureNode->requiredPromises));
-      resolveCaptureListCopy(copy, targetInfo, captures);
+      CallGraphNode *calleeNode = getCalleeNode(create.getCallee());
+      SmallVector<Value> captures =
+          computeRequiredCaptures(create, calleeNode, create->getNumOperands());
+      create->insertOperands(0, captures);
       return;
     }
 
     if (auto expand = dyn_cast<CaptureListExpandOp>(op)) {
-      resolveCaptureListExpand(expand, node, requiredPromises);
+      // Consume all promises.
+      auto newTypes = consumeRequiredPromises(expand->getResults());
+      if (newTypes.empty())
+        return;
+
+      // Now fulfill any new promises by resizing the results on the op.
+      OperationState state(expand.getLoc(), op->getName(), op->getOperands(),
+                           op->getResultTypes());
+      for (auto [type, _] : newTypes)
+        state.types.push_back(type);
+
+      OpBuilder b(op);
+      Operation *newOp = b.create(state);
+      op->replaceAllUsesWith(
+          llvm::drop_end(newOp->getResults(), newTypes.size()));
+      for (auto [newPromise, loads] :
+           llvm::zip(llvm::drop_begin(newOp->getResults(), op->getNumResults()),
+                     newTypes)) {
+        for (POP::CompilerGlobalLoadOp load : loads.second) {
+          load.replaceAllUsesWith(newPromise);
+          load.erase();
+        }
+      }
+      op->erase();
       return;
     }
   });
 
+  if (!func.getSignature().isCapturing())
+    return node->requiredPromises.size() != curNumPromises;
+
   // At the end of the walk, assess the leftover required promises. Prepend
   // them to the signature and block arguments.
-  Block *body = func.getBody();
+  auto newTypes = consumeRequiredPromises(
+      func.getArguments().take_back(node->requiredPromises.size()));
+  if (newTypes.empty())
+    return false;
 
+  Block *body = func.getBody();
   unsigned i = 0;
-  for (auto &[name, loads] : requiredPromises) {
-    assert(!loads.empty() && "no requested loads?");
-    Type type = loads.front().getType();
-    node->requiredPromises.emplace_back(name, type);
+  for (auto &[type, loads] : newTypes) {
     Value arg = body->insertArgument(i++, type, func.getLoc());
     for (POP::CompilerGlobalLoadOp load : loads) {
       load.replaceAllUsesWith(arg);
       load.erase();
     }
   }
+
   SignatureType sig = func.getSignature();
-  // TODO: what conventions should we use here?
   SmallVector<ArgConvention> convs(i, ArgConvention::None);
   convs.append(sig.getArgConventions().begin(), sig.getArgConventions().end());
   assert(body->getNumArguments() == convs.size());
@@ -359,52 +437,100 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
                   StringArrayAttr::get(func.getContext(), captures));
   }
 
-  // Now go schedule all the nodes that have been made available.
-  for (CallGraphNode *node : node->callers)
-    if (++node->numProcessedCalls == node->callsites.size())
-      worklist.fork([this, node] { resolvePromises(node); });
+  return true;
 }
 
-void CallGraph::run() {
-  for (CallGraphNode &node : llvm::make_second_range(nodes))
-    if (node.callsites.empty())
-      worklist.fork([node = &node, this] { resolvePromises(node); });
-  worklist.join();
+void CallGraph::resolvePromises(CallGraphNode::SCC *scc) {
+  // The common case of a single node in the SCC.
+  if (LLVM_LIKELY(scc->nodes.size() == 1)) {
+    CallGraphNode *node = scc->nodes.front();
+    bool changed = resolvePromises(node);
+    // The common case of no self-recursion. We can exit immediately regardless
+    // of whether anything changed.
+    if (LLVM_LIKELY(!scc->hasRecursion) || !changed)
+      return;
+    // Fixed-point iterate the same function. We expect it to converge after at
+    // most a single iteration.
+    changed = resolvePromises(node);
+    assert(!changed && "self recursion didn't converge in 2 iterations");
+    return;
+  }
 
-  // FIXME: Actually, this pass should be able to handle cycles. I.e., the
-  // following should work:
-  //
-  // ```mlir
-  // kgen.func @recursive_closure() capturing {
-  //   %0 = pop.compiler.global_load "var" : index
-  //   use(%0)
-  //   pop.compiler.global_store "var", %0 : index
-  //   kgen.call @recursive_closure()
-  // }
-  // ```
-  //
-  // Fixed-point iterating on this should yield:
-  //
-  // ```mlir
-  // kgen.func @recursive_closure(%x: index) capturing {
-  //   use(%x)
-  //   pop.compiler.global_store "var", %x : index
-  //   kgen.call @recursive_closure()
-  // }
-  // ```
-  //
-  // And the next iteration will converge:
-  //
-  // ```mlir
-  // kgen.func @recursive_closure(%x: index) capturing {
-  //   use(%x)
-  //   kgen.call @recursive_closure(%x)
-  // }
-  //
-  // In order to do this without killing compile time, the fixed-point iteration
-  // should be bound to SCCs. That is, the pass needs to organize CG nodes into
-  // SCCs and then resolve the SCCs as a DAG, where each SCC is resolved by
-  // fixed-point iterating until convergence.
+  // Each node get visited at least once.
+  SmallVector<CallGraphNode *, 2> worklist;
+  llvm::append_range(worklist, scc->nodes);
+
+  while (!worklist.empty()) {
+    CallGraphNode *node = worklist.pop_back_val();
+    if (!resolvePromises(node))
+      continue;
+
+    // The node changed, so reschedule its dependendees in the SCC.
+    for (CallGraphNode *caller : node->callers)
+      if (caller->scc == scc)
+        worklist.push_back(caller);
+  }
+}
+
+namespace llvm {
+template <>
+struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
+} // namespace llvm
+
+void CallGraph::run() {
+  // Add every node as a child of the virtual root node.
+  for (auto &[func, node] : nodes)
+    externalNode.callsites.emplace_back(nullptr, &node);
+
+  // There cannot be more SCCs than there are nodes (plus 1 for the root node).
+  // Reserve to avoid indirection and iterator invalidation.
+  std::vector<CallGraphNode::SCC> sccs;
+  sccs.reserve(nodes.size() + 1);
+
+  for (auto sccIt = llvm::scc_begin(this); !sccIt.isAtEnd(); ++sccIt) {
+    CallGraphNode::SCC &scc = sccs.emplace_back(CallGraphNode::SCC(runtime));
+    for (CallGraphNode *node : *sccIt) {
+      scc.nodes.insert(node);
+      node->scc = &scc;
+    }
+    scc.hasRecursion = sccIt.hasCycle();
+  }
+
+  std::vector<CallGraphNode::SCC *> worklist;
+
+  // Compute the dependency graph between the SCCs.
+  llvm::SetVector<CallGraphNode::SCC *, std::vector<CallGraphNode::SCC *>>
+      callers;
+  for (CallGraphNode::SCC &scc : sccs) {
+    for (CallGraphNode *node : scc.nodes) {
+      for (CallGraphNode *caller : node->callers) {
+        if (caller->scc != node->scc) {
+          if (callers.insert(caller->scc))
+            ++caller->scc->numCallees;
+        }
+      }
+    }
+    scc.callers = callers.takeVector();
+  }
+  for (CallGraphNode::SCC &scc : sccs)
+    if (!scc.numCallees)
+      worklist.push_back(&scc);
+
+  while (!worklist.empty()) {
+    CallGraphNode::SCC *scc = worklist.back();
+    worklist.pop_back();
+    // Skip the root node.
+    if (!scc->nodes.front()->func)
+      continue;
+    resolvePromises(scc);
+
+    for (CallGraphNode::SCC *caller : scc->callers)
+      if (++caller->numReady == caller->numCallees)
+        worklist.push_back(caller);
+
+    for (CallGraphNode *node : scc->nodes)
+      resolveAndCleanUp(node->func);
+  }
 }
 
 void ResolveCompilerPromisesPass::runOnOperation() {

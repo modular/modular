@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LIB_TRANSFORMS_CONTROLFLOWUTILS_H
-#define KGEN_LIB_TRANSFORMS_CONTROLFLOWUTILS_H
+#ifndef KGEN_TRANSFORMUTILS_CONTROLFLOWUTILS_H
+#define KGEN_TRANSFORMUTILS_CONTROLFLOWUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -17,4 +17,4 @@ namespace M::KGEN {
 bool userCrossesFunctionCFG(Operation *op, Operation *user);
 } // namespace M::KGEN
 
-#endif // KGEN_LIB_TRANSFORMS_CONTROLFLOWUTILS_H
+#endif // KGEN_TRANSFORMUTILS_CONTROLFLOWUTILS_H
