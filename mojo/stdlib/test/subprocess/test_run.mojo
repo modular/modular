@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from _subprocess import run
+from subprocess import run
 from testing import *
 
 
