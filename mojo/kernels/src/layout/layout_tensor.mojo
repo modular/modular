@@ -156,3 +156,14 @@ struct LayoutTensor[
             for n in range(Self.dim[1]()):
                 print_no_newline(self[m, n], "  ")
             print("")
+
+
+fn stack_allocation_like[
+    layout: Layout,
+    dtype: DType,
+    address_space: AddressSpace,
+    target_address_space: AddressSpace = AddressSpace.GENERIC,
+](in_tensor: LayoutTensor[layout, dtype, address_space]) -> LayoutTensor[
+    layout, dtype, target_address_space
+]:
+    return LayoutTensor[layout, dtype, target_address_space].stack_allocation()
