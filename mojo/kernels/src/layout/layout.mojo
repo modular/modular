@@ -10,20 +10,20 @@ from builtin.string import _calc_initial_buffer_size_int32
 from .dynamic_tuple import *
 from .int_tuple import (
     IntTuple,
+    abs,
     crd2idx,
-    min,
     flatten,
     inner_product,
     int,
-    is_tuple,
     is_int,
+    is_tuple,
+    min,
     mul,
-    abs,
+    prefix_product,
     product,
     shape_div,
-    zip,
     sorted,
-    prefix_product,
+    zip,
 )
 
 

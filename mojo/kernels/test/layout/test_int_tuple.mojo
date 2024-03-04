@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from kernel_utils.int_tuple import *
-from testing import assert_equal, assert_not_equal, assert_true, assert_false
+from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 # CHECK-LABEL: test_tuple_basic

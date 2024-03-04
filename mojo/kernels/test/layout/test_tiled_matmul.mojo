@@ -5,12 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+from algorithm import parallelize, sync_parallelize, vectorize
 from kernel_utils._utils import ManagedLayoutTensor
-
 from kernel_utils.layout import Layout, LayoutList, composition
-from kernel_utils.layout_tensor import LayoutTensor, IntTuple
-
-from algorithm import vectorize, parallelize, sync_parallelize
+from kernel_utils.layout_tensor import IntTuple, LayoutTensor
 
 
 @value

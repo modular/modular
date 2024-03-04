@@ -10,14 +10,14 @@ from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import (
     Layout,
     MakeLayoutList,
-    size,
-    cosize,
     coalesce,
     complement,
     composition,
+    cosize,
     logical_divide,
     logical_product,
     print_layout,
+    size,
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal

@@ -6,18 +6,15 @@
 # REQUIRES: cuda
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host import Function, Context, synchronize
-from gpu.id import BlockDim, ThreadIdx, BlockIdx
-from gpu import AddressSpace
-from gpu.sync import barrier
-
-from kernel_utils._utils import ManagedLayoutTensor, gpu_managed_alloc, gpu_free
-
-from kernel_utils.layout_tensor import LayoutTensor, stack_allocation_like
-from kernel_utils.layout import Layout
-from kernel_utils.int_tuple import IntTuple
-
 from builtin.io import _printf
+from gpu import AddressSpace
+from gpu.host import Context, Function, synchronize
+from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.sync import barrier
+from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from kernel_utils.int_tuple import IntTuple
+from kernel_utils.layout import Layout
+from kernel_utils.layout_tensor import LayoutTensor, stack_allocation_like
 
 
 fn naive_matmul[
