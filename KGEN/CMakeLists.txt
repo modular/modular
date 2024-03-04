@@ -153,13 +153,19 @@ add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
                         "STDLIB;DISABLE_PRIME_CODEGEN_CACHE;DISABLE_PRIME_CACHE"
-                        "PACKAGE_DIR;OUTPUT_NAME;DOCS_DIR"
+                        "PACKAGE_DIR;PACKAGE_OUTPUT_DIR;OUTPUT_NAME;DOCS_DIR"
                         "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
 
   if (NOT KGEN_PACKAGE_DIR)
     set(KGEN_PACKAGE_DIR ${CMAKE_CURRENT_LIST_DIR})
+  endif ()
+  if (NOT KGEN_PACKAGE_OUTPUT_DIR)
+    set(KGEN_PACKAGE_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
+  else()
+    # Make sure that the directory is created.
+    file(MAKE_DIRECTORY ${KGEN_PACKAGE_OUTPUT_DIR})
   endif ()
   if (NOT KGEN_OUTPUT_NAME)
     get_filename_component(KGEN_OUTPUT_NAME ${KGEN_PACKAGE_DIR} NAME_WE)
@@ -172,7 +178,7 @@ function(add_mojo_package target visibility)
   # CMake emits build targets as relative paths but Ninja doesn't identify
   # absolute paths (in *.d) as relative paths (in build.ninja).
   set(package_file_name "${KGEN_OUTPUT_NAME}.mojopkg")
-  file(RELATIVE_PATH package_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
+  file(RELATIVE_PATH package_file_name_rel ${CMAKE_BINARY_DIR} ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name})
 
   set(KGEN_SOURCE_FILES "")
   foreach(file ${KGEN_UNPARSED_ARGUMENTS})
