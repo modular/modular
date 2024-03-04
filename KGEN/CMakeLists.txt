@@ -218,21 +218,21 @@ function(add_mojo_package target visibility)
       set(KGEN_PRIME_DISABLE_FLAG "--disable-codegen-priming")
     endif ()
 
-    add_custom_command(OUTPUT ${package_file_name}.prime
-      COMMAND $<TARGET_FILE:mojo-prime-package-cache> ${package_file_name}
+    add_custom_command(OUTPUT ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
+      COMMAND $<TARGET_FILE:mojo-prime-package-cache> ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}
               ${KGEN_INCLUDE_FLAGS} ${KGEN_PRIME_DISABLE_FLAG}
-      COMMAND ${CMAKE_COMMAND} -E touch ${package_file_name}.prime
+      COMMAND ${CMAKE_COMMAND} -E touch ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
       DEPENDS ${package_file_name} mojo-prime-package-cache
     )
-    add_custom_target(${target} DEPENDS ${package_file_name}.prime)
+    add_custom_target(${target} DEPENDS ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime)
   else ()
-    add_custom_target(${target} DEPENDS ${package_file_name})
+    add_custom_target(${target} DEPENDS ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name})
   endif ()
 
   set_target_properties(${target}
     PROPERTIES
-    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
-    PACKAGE_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
+    INCLUDE_DIRECTORIES ${KGEN_PACKAGE_OUTPUT_DIR}
+    PACKAGE_LOCATION ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name})
 
   # If this is a standard library package, then we need to add it to the
   # mojo-sdk and mojo-stdlib target.
