@@ -4,14 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "InliningUtils.h"
+#include "KGEN/TransformUtils/InliningUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/IRMapping.h"

@@ -7,14 +7,12 @@
 add_modular_library(KGENTransforms
   AutomaticInline.cpp
   Canonicalizer.cpp
-  ControlFlowUtils.cpp
   DeadArgumentElimination.cpp
   EliminateDeadSymbols.cpp
   ExternalizePrecompiledFunctions.cpp
   FoldGlobalConstLoads.cpp
   HoistTrivialInvariants.cpp
   Inlining.cpp
-  InliningUtils.cpp
   KnownVariant.cpp
   LiftAndFoldApply.cpp
   LoopUnrolling.cpp
@@ -37,6 +35,7 @@ add_modular_library(KGENTransforms
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  KGENTransformUtils
   HLCFAnalysis
   KGENDialect
   POPDialect

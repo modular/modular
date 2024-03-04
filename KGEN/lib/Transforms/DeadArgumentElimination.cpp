@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallGraphUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"

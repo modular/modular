@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallGraphUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/Walkers.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/TransformUtils/CallGraphUtils.h"
+#include "KGEN/TransformUtils/Walkers.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"

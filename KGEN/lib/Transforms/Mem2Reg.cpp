@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ControlFlowUtils.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/TransformUtils/ControlFlowUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
