@@ -21,8 +21,10 @@ struct Weighted2DPoint[type: DType]:
     var x: Int
     var w: Scalar[type]
 
-    fn __init__(y: Int, x: Int, weight: Scalar[type]) -> Self:
-        return Self {y: y, x: x, w: weight}
+    fn __init__(inout self, y: Int, x: Int, weight: Scalar[type]):
+        self.y = y
+        self.x = x
+        self.w = weight
 
 
 @always_inline
