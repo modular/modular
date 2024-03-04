@@ -193,9 +193,6 @@ struct BlogPost2Step:
     alias PARALLELIZE_FINE_32 = BlogPost2Step(11)
     """Implements fine-grained parallelism (thirty-two times num_cores)."""
 
-    fn __init__(value: Int) -> Self:
-        return Self {value: value}
-
     @always_inline("nodebug")
     fn __eq__(self, rhs: BlogPost2Step) -> Bool:
         return self.value == rhs.value
