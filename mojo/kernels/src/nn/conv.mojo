@@ -1593,9 +1593,9 @@ struct ConvDirectNHWC[
 
             # The entire row fits in one micro kernel.
             @parameter
-            if WO == micro_kernel_height:
+            if WO <= micro_kernel_height:
                 self._inner_loops_static[
-                    micro_kernel_height,
+                    WO,
                     micro_kernel_width,
                     True,
                     True,
@@ -1734,6 +1734,10 @@ struct ConvDirectNHWC[
         ho: Int,  # index in output height
         wo: Int,  # index in output width
     ):
+        @parameter
+        if micro_kernel_height == 0:
+            return
+
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 

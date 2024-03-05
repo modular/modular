@@ -234,6 +234,19 @@ fn main() raises:
         Index(1, 1),  # pad_h
         Index(1, 1),  # pad_w
     ]()
+    test[
+        1,  # N
+        2,  # H
+        2,  # W
+        64,  # C
+        3,  # R
+        3,  # S
+        64,  # F
+        Index(2, 2),  # stride
+        Index(1, 1),  # dilation
+        Index(1, 1),  # pad_h
+        Index(1, 1),  # pad_w
+    ]()
 
     # Each test will build a specialization of the conv kernel.
     # Disable the following tests for now to monitor build time.
