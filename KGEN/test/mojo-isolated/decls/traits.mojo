@@ -316,7 +316,6 @@ struct CrazyRegisterPassable[a: int](CrazyTrait):
         return self
 
 
-@register_passable
 trait ChangedResultTypeTrait:
     @staticmethod
     fn result_type() -> Self:
