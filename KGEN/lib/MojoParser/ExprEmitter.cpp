@@ -1023,7 +1023,17 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  auto type = ASTType(typeValue.getRValueType());
+  ASTType type(typeValue.getRValueType());
+
+  // Cannot bind parametric types to traits.
+  if (auto metatype = dyn_cast<MetaTypeType>(type)) {
+    if (!metatype.getSignature().getParamTypes().empty()) {
+      emitError(value.expr->getLoc(), "parametric type ")
+          << type << " cannot bind to trait with missing parameters"
+          << value.expr->getRange();
+      return {};
+    }
+  }
 
   // Check that the struct implements the trait.
   ASTDecl *typeDecl = type.getDecl(shared);
