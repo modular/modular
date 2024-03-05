@@ -410,8 +410,14 @@ static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg) {
   // Otherwise, read it from the config.
   std::error_code ec;
   std::string orcRTPath = cfg.getOrcRTPath().str();
-  if (!std::filesystem::exists(orcRTPath, ec) || ec)
-    return Error("unable to locate orc_rt at " + Twine(orcRTPath));
+  if (!std::filesystem::exists(orcRTPath, ec) || ec) {
+    ErrorOr<std::filesystem::path> cfgPath = cfg.getConfigFilePath();
+    if (cfgPath.isError())
+      return cfgPath.takeError();
+    return Error("unable to locate orc_rt at " + Twine(orcRTPath) + ". " +
+                 "Tried reading the config from: " + cfgPath.get().c_str() +
+                 ".");
+  }
   return Buffer::getFile(orcRTPath);
 }
 
