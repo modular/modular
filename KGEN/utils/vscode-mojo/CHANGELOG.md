@@ -8,6 +8,11 @@
   search paths for the Mojo LSP Server to use when resolving imported modules in
   a document.
 
+- A new `Mojo Language Server` output channel has been created, dedicated solely
+  to Language Server logs. With this, the main `Mojo` output channel shows only
+  higher level information and the logs of other tools, such as the debugger and
+  the formatter.
+
 ### Fixed
 
 - Debugging of dangling Mojo files that don't belong to any mounted workspace

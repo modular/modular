@@ -221,7 +221,7 @@ export class InlineLocalVariablesProvider implements
     if (tracker === undefined) {
       // This could be a non-bug if there are two simultaneous debug sessions
       // with different debuggers.
-      this.context.loggingService.logError(
+      this.context.loggingService.main.logError(
           `Couldn't find the local variable tracker for sessionId ${
               vscode.debug.activeDebugSession?.id} and frameId ${
               context.frameId}.`);

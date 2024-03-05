@@ -39,7 +39,7 @@ export class MOJOContext extends DisposableContext {
    *  Activate the Mojo context, and start the language clients.
    */
   async activate(launchAndDebugLanguageServer: boolean = false) {
-    this.loggingService
+    this.loggingService.main
         .logInfo("Activating the Mojo Context.")
 
         // Initialize the commands of the extension.
@@ -94,7 +94,7 @@ export class MOJOContext extends DisposableContext {
     // Initialize the decorations.
     this.pushSubscription(new MojoDecoratorContext());
 
-    this.loggingService.logInfo("MojoContext activated.");
+    this.loggingService.main.logInfo("MojoContext activated.");
   }
 
   /**
@@ -107,11 +107,12 @@ export class MOJOContext extends DisposableContext {
         !uri.fsPath.endsWith(".ipynb"))
       return undefined;
 
-    this.loggingService.logInfo(`Activating language client for URI '${uri}'`)
+    this.loggingService.lsp.logInfo(
+        `Activating language client for URI '${uri}'`)
     // Check the scheme of the uri.
     let validSchemes = [ 'file', 'vscode-notebook-cell' ];
     if (!validSchemes.includes(uri.scheme)) {
-      this.loggingService.logInfo(`Unsupported URI scheme '${uri.scheme}'`)
+      this.loggingService.lsp.logInfo(`Unsupported URI scheme '${uri.scheme}'`)
       return undefined;
     }
 
@@ -162,8 +163,8 @@ export class MOJOContext extends DisposableContext {
                             loggingService: LoggingService,
                             launchAndDebugLanguageServer: boolean):
       Promise<[ vscodelc.LanguageClient | undefined, string ]> {
-    loggingService.logInfo("Starting language client for workspace",
-                           workspaceFolder);
+    loggingService.lsp.logInfo("Starting language client for workspace",
+                               workspaceFolder);
     const clientTitle = 'Mojo Language Client';
 
     // Get the path of the lsp-server that is used to provide language
@@ -236,7 +237,7 @@ export class MOJOContext extends DisposableContext {
         // the workspace.
         fileEvents : vscode.workspace.createFileSystemWatcher(filePattern)
       },
-      outputChannel : loggingService.outputChannel,
+      outputChannel : loggingService.lsp.outputChannel,
       workspaceFolder : workspaceFolder,
       middleware : middleware,
 
@@ -248,8 +249,8 @@ export class MOJOContext extends DisposableContext {
     let languageClient = new vscodelc.LanguageClient(
         'mojo-lsp', clientTitle, serverOptions, clientOptions);
     languageClient.start();
-    loggingService.logInfo("Launching Language Server with options:",
-                           serverOptions.args)
+    loggingService.lsp.logInfo("Launching Language Server with options:",
+                               serverOptions.args)
     return [ languageClient, mojoConfig.mojoLanguageServerPath ];
   }
 
@@ -265,7 +266,7 @@ export class MOJOContext extends DisposableContext {
   }
 
   dispose() {
-    this.loggingService.logInfo("Disposing MOJOContext.");
+    this.loggingService.main.logInfo("Disposing MOJOContext.");
     super.dispose();
     this.workspaceClients.forEach((client) => {
       if (client) {
