@@ -101,17 +101,11 @@ fn layer_norm[
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
         fn _normalize[simd_width: Int](idx: Int):
-            var out_val = out_slice.simd_load[simd_width](idx)
-            var norm_val = (
-                out_val - mean_val
-            ) * norm_factor * gamma_buf.simd_load[simd_width](
-                idx
-            ) + beta_buf.simd_load[
+            var out_val = out_slice.load[simd_width](idx)
+            var norm_val = (out_val - mean_val) * norm_factor * gamma_buf.load[
                 simd_width
-            ](
-                idx
-            )
-            out_slice.simd_store(idx, norm_val)
+            ](idx) + beta_buf.load[simd_width](idx)
+            out_slice.store(idx, norm_val)
 
         vectorize[_normalize, simd_width](n)
 

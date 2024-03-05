@@ -1417,7 +1417,7 @@ fn conv_transposed[
             var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
             curr_coords[input_rank - 1] += idx
 
-            var vec = output.simd_load[width](curr_coords)
+            var vec = output.load[width](curr_coords)
             elementwise_lambda(curr_coords, vec)
 
         vectorize[body, simd_size](f_size)

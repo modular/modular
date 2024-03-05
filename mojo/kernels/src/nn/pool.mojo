@@ -249,9 +249,7 @@ fn max_pool[
     fn load_fn[
         simd_width: Int, type: DType
     ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return rebind[SIMD[type, simd_width]](
-            input.simd_load[simd_width](point)
-        )
+        return rebind[SIMD[type, simd_width]](input.load[simd_width](point))
 
     @always_inline
     @parameter
@@ -274,7 +272,7 @@ fn max_pool[
     fn max_pool_compute_finalize[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
-        output.simd_store(point, val)
+        output.store(point, val)
 
     @always_inline
     @parameter
@@ -431,9 +429,7 @@ fn avg_pool[
     fn load_fn[
         simd_width: Int, type: DType
     ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return rebind[SIMD[type, simd_width]](
-            input.simd_load[simd_width](point)
-        )
+        return rebind[SIMD[type, simd_width]](input.load[simd_width](point))
 
     @always_inline
     @parameter
@@ -490,7 +486,7 @@ fn avg_pool[
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
         var res = val / (window_h * window_w)
-        output.simd_store(point, res)
+        output.store(point, res)
 
     @always_inline
     @__copy_capture(pool_window_h, pool_window_w)
@@ -499,7 +495,7 @@ fn avg_pool[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
-        output.simd_store(point, res)
+        output.store(point, res)
 
     @always_inline
     @parameter

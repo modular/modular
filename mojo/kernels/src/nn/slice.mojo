@@ -105,9 +105,7 @@ fn slice_as_copy[
     @parameter
     fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var index = rebind[StaticIntTuple[in_rank]](idx)
-        output.simd_store[simd_width](
-            index, sliced.simd_load[simd_width](index)
-        )
+        output.store[simd_width](index, sliced.load[simd_width](index))
 
     # Invoke copy.
     elementwise[copy, 1, in_rank](output.dynamic_shape)
