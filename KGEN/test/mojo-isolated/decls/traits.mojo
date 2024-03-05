@@ -713,3 +713,23 @@ struct ABCOptionalParamInt[dim_parametric: ABCDim]:
 struct ABCDim:
     fn __init__[type: SomeTrait](inout self, value: type):
         pass
+
+
+trait TraitParameterized:
+    fn foo[T: SomeTrait](self):
+        ...
+
+
+struct ConcreteType(TraitParameterized):
+    fn foo[T: SomeTrait](self):
+        pass
+
+
+trait KeysBuilder:
+    fn add[x: int](inout self):
+        ...
+
+
+struct KeysContainer[end: int](KeysBuilder):
+    fn add[x: int](inout self):
+        pass
