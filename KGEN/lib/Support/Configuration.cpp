@@ -13,6 +13,10 @@ using namespace M::KGEN;
 #define _X_STRINGIFY(str) _STRINGIFY(str)
 #define STRINGIFY_MOJO_CONFIG(path) _X_STRINGIFY(MOJO_CONFIG_SECTION) path
 
+ErrorOr<std::filesystem::path> MojoConfig::getConfigFilePath() const {
+  return config.getConfigFilePath();
+}
+
 //===----------------------------------------------------------------------===//
 // MojoConfig
 //===----------------------------------------------------------------------===//

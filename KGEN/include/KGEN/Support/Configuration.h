@@ -10,6 +10,8 @@
 #include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 
+#include <filesystem>
+
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
@@ -20,6 +22,9 @@ namespace M::KGEN {
 /// of the modular configuration file.
 class MojoConfig {
 public:
+  /// Returns the path to the modular.cfg file.
+  ErrorOr<std::filesystem::path> getConfigFilePath() const;
+
   /// Open the default configuration, and parse it.
   static ErrorOr<MojoConfig> open();
 
