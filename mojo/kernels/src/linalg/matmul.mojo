@@ -2536,6 +2536,8 @@ fn sgemm_warp_tiling_kernel[
     mat_c: NDBuffer[c_type, 2, c_shape],
     mat_a: NDBuffer[a_type, 2, a_shape],
     mat_b: NDBuffer[b_type, 2, b_shape],
+    alpha: Scalar[c_type],
+    beta: Scalar[c_type],
 ):
     var M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
     var K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
@@ -2737,9 +2739,11 @@ fn sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    var vec = C_interim.aligned_simd_load[4, 16](
+                    var vec = alpha * result_vec + beta * C_interim.aligned_simd_load[
+                        4, 16
+                    ](
                         int(c_idx)
-                    ) + result_vec
+                    )
 
                     @parameter
                     if elementwise_lambda_fn:
@@ -3167,8 +3171,6 @@ fn _matmul_gpu_dispatch[
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
             alias NUM_WARPS = NUM_THREADS / WARP_SIZE
 
-            # TODO: gemm kernel should not assume that output buffer is zeroed
-            _memset_async(c.data, 0, m * n, stream)
             alias mm = sgemm_warp_tiling_kernel[
                 c_type,
                 c_shape,
@@ -3196,6 +3198,8 @@ fn _matmul_gpu_dispatch[
                 c,
                 a,
                 b,
+                1,
+                0,
                 grid_dim=(div_ceil(n, BN), div_ceil(m, BM)),
                 block_dim=(NUM_THREADS),
                 stream=stream,
