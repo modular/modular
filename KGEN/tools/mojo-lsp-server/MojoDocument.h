@@ -251,7 +251,7 @@ public:
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
-               LLCL::AnyAsyncValueRef chain);
+               LLCL::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -497,7 +497,8 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
+                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                   ArrayRef<std::string> includeDirs);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 
@@ -607,7 +608,8 @@ public:
                        ArrayRef<mlir::lsp::NotebookCell> cellInfos,
                        ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
                        SendDiagnosticsFnRef sendDiagnosticsFn,
-                       LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
+                       LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                       ArrayRef<std::string> includeDirs);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;
 

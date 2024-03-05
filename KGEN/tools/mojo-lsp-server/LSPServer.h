@@ -7,6 +7,7 @@
 #ifndef KGEN_LIB_MOJO_LSP_LSPSERVER_H
 #define KGEN_LIB_MOJO_LSP_LSPSERVER_H
 
+#include "Support/LLVMForwardDecls.h"
 #include <memory>
 
 namespace mlir {
@@ -24,7 +25,8 @@ class WorkQueue;
 namespace M::KGEN::LIT {
 /// Run the main loop using the given transport.
 mlir::LogicalResult runMojoLSPServer(mlir::lsp::JSONTransport &transport,
-                                     bool singleThreaded, bool waitOnShutdown);
+                                     bool singleThreaded, bool waitOnShutdown,
+                                     ArrayRef<std::string> includeDirs);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H

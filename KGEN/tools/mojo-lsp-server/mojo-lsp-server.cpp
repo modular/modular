@@ -68,6 +68,9 @@ int main(int argc, char **argv) {
                      "it on VS Code"),
       llvm::cl::init(false),
   };
+  llvm::cl::list<std::string> includeDirs{
+      "I", llvm::cl::desc("Append directory to the search path list used to "
+                          "resolve imported modules in a document")};
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
 
@@ -97,6 +100,6 @@ int main(int argc, char **argv) {
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
-  return failed(
-      runMojoLSPServer(transport, /*singleThreaded=*/mojoTest, waitOnShutdown));
+  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
+                                 waitOnShutdown, includeDirs));
 }
