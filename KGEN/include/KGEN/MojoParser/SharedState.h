@@ -280,8 +280,7 @@ public:
   /// Builds the debug info for a block argument if needed.
   void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
   /// Generate a debug subprogram for this function and set it in its location.
-  void setLocationDebugScope(DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
-                             LIT::FuncOp funcOp);
+  void setLocationDebugScope(LIT::FuncOp funcOp);
   /// Get the debug source name for a function.
   DebugInfo::SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
 

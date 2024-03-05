@@ -117,8 +117,7 @@ LIT::FuncOp StructEmitter::createFunction(
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
   // Generate a debug subprogram for this function.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  shared.setLocationDebugScope(diScopeGuard, funcOp);
+  shared.setLocationDebugScope(funcOp);
   if (!funcOp.getBody())
     funcOp.getBodyRegion().push_back(new Block());
   for (Type argType : adjustedArgTypes)
