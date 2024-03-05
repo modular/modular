@@ -1974,14 +1974,13 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
 VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
                                    VarDeclKind kind) {
-  StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
+  StringAttr lifetimeAttr = declScope.mangleParamName(name);
   return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
 }
 
 VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
                                    VarDeclKind kind) {
-  StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
-  return builder->create<VarDeclOp>(loc, type, name.str(), lifetimeAttr, kind);
+  return emitVarDecl(name.strref(), type, loc, kind);
 }
 
 /// Create a mutable VarDecl for a function argument that captures its value.

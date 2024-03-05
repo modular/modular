@@ -465,7 +465,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1):
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`0">
+    # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`1x0">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}1}
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
@@ -1299,11 +1299,11 @@ struct MyStruct:
 
 
 # CHECK-LABEL: lit.func @"getThing()"
-# CHECK-SAME: [mut *"__result__`"](?, %__result__:
+# CHECK-SAME: [mut *"__result__`1x0"](?, %__result__:
 fn getThing() -> MyStruct:
     # result slot parameter should get a different name to avoid conflict.
     # CHECK: lit.func *"localTest()"
-    # CHECK-SAME: [mut *"__result__`0"](?, %__result___0[__result__]:
+    # CHECK-SAME: [mut *"__result__`2x0"](?, %__result___0[__result__]:
     fn localTest() -> MyStruct:
         return MyStruct()
 
@@ -1311,7 +1311,7 @@ fn getThing() -> MyStruct:
 
 
 # CHECK-LABEL: lit.func @"callThing()"
-# CHECK-SAME: [mut *"__result__`"](?, %__result__:
+# CHECK-SAME: [mut *"__result__`1x0"](?, %__result__:
 fn callThing() -> MyStruct:
     return getThing()
 
@@ -1341,29 +1341,30 @@ struct BarSelf(BarTrait):
 # CHECK-LABEL: lit.struct.decl @RegPassableInitSelfInit
 @register_passable
 struct RegPassableInitSelfInit:
-  var a: Int
+    var a: Int
 
-  # CHECK: lit.func @"__init__
-  # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
-  fn __init__(inout self):
-    self.a = 42
+    # CHECK: lit.func @"__init__
+    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+    fn __init__(inout self):
+        self.a = 42
 
-  # CHECK: lit.func @"__copyinit__
-  # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
-  fn __copyinit__(inout self, existing: Self):
-    self.a = existing.a
+    # CHECK: lit.func @"__copyinit__
+    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+    fn __copyinit__(inout self, existing: Self):
+        self.a = existing.a
+
 
 # CHECK-LABEL: testRegPassableInitSelf
 fn testRegPassableInitSelf():
-  # CHECK-NEXT: %x = lit.var.decl
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
-  var x = RegPassableInitSelfInit()
-  # CHECK-NEXT: %x2 = lit.var.decl
-  # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x2, [[TMP]])
-  var x2 = x
+    # CHECK-NEXT: %x = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
+    var x = RegPassableInitSelfInit()
+    # CHECK-NEXT: %x2 = lit.var.decl
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x2, [[TMP]])
+    var x2 = x
 
-  # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]
-  # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
-  # CHECK-NEXT: lit.ref.store [[ONE:%.*]], [[AP]]
-  x.a = 1
+    # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]
+    # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
+    # CHECK-NEXT: lit.ref.store [[ONE:%.*]], [[AP]]
+    x.a = 1

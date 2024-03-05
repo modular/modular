@@ -48,7 +48,7 @@ struct CapturingMember[f: fn () capturing -> None]:
 fn makeClosure[p: int](x: int) -> int:
     var z = __mlir_op.`index.add`(x, x)
 
-    # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <index, mut *"z`0">
+    # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <index, mut *"z`1x0">
     # CHECK: %index = kgen.param.constant = <p>
     @__copy_capture(z, p)
     @parameter

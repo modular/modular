@@ -78,8 +78,8 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
 /// Mangle a parameter name for the given parameter scope and scope depth. Due
 /// to the use of depth, the mangling doesn't change when the order of function
 /// declarations change, so we have hash stability.
-static StringAttr mangleParamName(const Twine &name, size_t depth,
-                                  ASTDecl *paramScope) {
+static StringAttr mangleParamNameImpl(const Twine &name, size_t depth,
+                                      ASTDecl *paramScope) {
   return StringAttr::get(paramScope->getContext(),
                          name + "`" + Twine(depth) + "x" +
                              Twine(paramScope->getNextUniqueID()));
@@ -95,62 +95,14 @@ StringAttr ASTDecl::mangleUserDefinedParamName(StringAttr name) {
   if (!hasCollision)
     return name;
 
-  return mangleParamName(name.strref(), depth, paramScope);
+  return mangleParamNameImpl(name.strref(), depth, paramScope);
 }
 
-StringAttr ASTDecl::getUniqueParamNameNew(const Twine &name) {
+StringAttr ASTDecl::mangleParamName(const Twine &name) {
   // This function always mangles, so no need to check for collisions.
   auto [paramScope, depth] =
       getNearestParamScopeAndDepth(this, [&](const ASTDecl *) {});
-  return mangleParamName(name, depth, paramScope);
-}
-
-StringAttr ASTDecl::getUniqueParamName(const Twine &name, bool isLifetime,
-                                       bool dontRenameOutermost) {
-  // Find the enclosing isolated from above decl that will scope parameter
-  // names.
-  ASTDecl *outermostFuncScope = nullptr;
-  ASTDecl *innermostFuncScope = nullptr;
-  ASTDecl *scope = this;
-  while (scope) {
-    // If we see a function scope, remember it but see if we are nested in some
-    // other function.
-    if (isa<LIT::FuncOp>(*scope) ||
-        (!isLifetime && isa<StructDeclOp>(*scope))) {
-      if (!innermostFuncScope)
-        innermostFuncScope = scope;
-      outermostFuncScope = scope;
-    }
-
-    // If we found the file module, then we're at the top level.
-    if (isa<FileModuleOp>(*scope)) {
-      // If we haven't found the either the inner- or outermost scope yet, we
-      // need to set them. This can happen, for example, with top level aliases.
-      if (!outermostFuncScope)
-        outermostFuncScope = scope;
-      if (!innermostFuncScope)
-        innermostFuncScope = scope;
-      break;
-    }
-
-    scope = scope->getParentDecl();
-  }
-  assert(outermostFuncScope && "couldn't find an enclosing function");
-
-  // If this is a declaration in the outermost function, then we don't need to
-  // unique it - there are no other names it could conflict with.
-  MLIRContext *ctx = outermostFuncScope->getContext();
-  if (innermostFuncScope == outermostFuncScope && dontRenameOutermost)
-    return StringAttr::get(ctx, name + (isLifetime ? "`" : ""));
-
-  return StringAttr::get(ctx, name + "`" +
-                                  Twine(outermostFuncScope->getNextUniqueID()));
-}
-
-StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
-                                            bool dontRenameOutermost) {
-  return getUniqueParamName(valueName, /*isLifetime=*/true,
-                            dontRenameOutermost);
+  return mangleParamNameImpl(name, depth, paramScope);
 }
 
 void ASTDecl::dump() const {
