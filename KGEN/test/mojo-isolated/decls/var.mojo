@@ -48,7 +48,7 @@ def var_decls_implicit() -> None:
 # CHECK-LABEL: lit.func @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
-    # CHECK: if
+    # CHECK: hlcf.if
     var c = `10`
     if cond:
         # CHECK: lit.var.decl "c"
@@ -57,6 +57,30 @@ fn test_var_let_scopes(cond: Bool):
     else:
         # CHECK: lit.var.decl "c"
         var c = `123`
+
+
+# CHECK-LABEL: lit.func @"test_var_lifetime_mangling
+fn test_var_lifetime_mangling[x: int](c: Bool):
+    # CHECK: hlcf.if
+    if c:
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`0">
+        var y = x
+    # CHECK: } else {
+    else:
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1">
+        var y = x
+
+# CHECK-LABEL: lit.func @"test_nested_var_lifetime_mangling
+fn test_nested_var_lifetime_mangling[x: int](c: Bool):
+    # CHECK: hlcf.if
+    if c:
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`0">
+        var y = x
+
+    # CHECK: lit.func *"nested()"
+    fn nested():
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1">
+        var y = x
 
 
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
