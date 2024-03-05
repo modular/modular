@@ -84,8 +84,8 @@ fn flatten(t: IntTuple) -> IntTuple:
     @always_inline
     @parameter
     fn reducer(owned a: IntTuple, b: IntTuple) -> IntTuple:
-        if is_int(b):
-            a.append(int(b))
+        if b.is_value():
+            a.append(b)
         else:
             for e in flatten(b):
                 a.append(e)
@@ -149,7 +149,9 @@ fn max(t: IntTuple) -> Int:
     fn reducer(owned a: Int, b: IntTuple) -> Int:
         return math.max(a, int(b) if is_int(b) else max(b))
 
-    return reduce[Int, reducer](t, 1)
+    # FIXME: limit.min_finite[DType.index]() doesn't seem to work
+    alias int_min_val = -2147483648
+    return reduce[Int, reducer](t, int_min_val)
 
 
 fn apply[func: fn (Int) capturing -> Int](t: IntTuple) -> IntTuple:

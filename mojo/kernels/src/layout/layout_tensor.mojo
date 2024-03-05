@@ -8,6 +8,9 @@ from memory.unsafe import DTypePointer
 
 from .int_tuple import flatten, int
 from .layout import *
+from sys.intrinsics import PrefetchOptions
+from algorithm import vectorize
+from memory import memcpy
 
 
 @register_passable
@@ -43,6 +46,11 @@ struct LayoutTensor[
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         return self.ptr.simd_load[width](self._offset(m, n))
+
+    @always_inline
+    fn load_aligned[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
+        alias alignment = alignof[SIMD[dtype, width]]()
+        return self.ptr.aligned_simd_load[width, alignment](self._offset(m, n))
 
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
@@ -87,13 +95,14 @@ struct LayoutTensor[
     fn tile[
         M1: Int,
         N1: Int,
-        tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
+        *,
+        __tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
     ](self, m: Int, n: Int) -> LayoutTensor[
-        tiled_layout[0], dtype, address_space
+        __tiled_layout[0], dtype, address_space
     ]:
-        alias tiled_layout_stride = Self._toStatic[tiled_layout[1].stride]()
+        alias tiled_layout_stride = Self._toStatic[__tiled_layout[1].stride]()
         var offset = m * tiled_layout_stride[0] + n * tiled_layout_stride[1]
-        return LayoutTensor[tiled_layout[0], dtype, address_space](
+        return LayoutTensor[__tiled_layout[0], dtype, address_space](
             self.ptr.offset(offset)
         )
 
@@ -136,10 +145,23 @@ struct LayoutTensor[
     @always_inline
     fn copy_from[
         other_layout: Layout
-    ](self, other: LayoutTensor[other_layout, dtype]):
+    ](self, other: LayoutTensor[other_layout, dtype, address_space]):
         for m in range(Self.dim[0]()):
-            for n in range(Self.dim[1]()):
-                self[m, n] = other[m, n]
+
+            @parameter
+            if (
+                int(self.layout.stride[1]) <= 1
+                and int(other.layout.stride[1]) <= 1
+            ):
+                # Optimize copy for row major layouts.
+                memcpy(
+                    self.ptr.offset(self._offset(m, 0)),
+                    other.ptr.offset(other._offset(m, 0)),
+                    Self.dim[1](),
+                )
+            else:
+                for n in range(Self.dim[1]()):
+                    self[m, n] = other[m, n]
 
     fn linspace(self):
         for m in range(Self.dim[0]()):
