@@ -2656,9 +2656,9 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // trait.
   // - T: a ParamRef to MT which is the type of MT.
   // TODO: build AnyType instead
-  auto mt = ParamDeclAttr::get(decl.getUniqueParamNameNew("MT"),
+  auto mt = ParamDeclAttr::get(decl.mangleParamName("MT"),
                                TypeType::get(getContext()));
-  auto mtRef = ParamDeclAttr::get(decl.getUniqueParamNameNew("T"),
+  auto mtRef = ParamDeclAttr::get(decl.mangleParamName("T"),
                                   ParamRefType::get(ParamDeclRefAttr::get(mt)));
 
   auto params = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});

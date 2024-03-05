@@ -195,7 +195,7 @@ struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}[imm *"self`"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK: call {{.*}}[imm *"self`2x0"]<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         # CHECK-SAME: !lit.ref<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
@@ -655,7 +655,7 @@ fn mvalueStructField():
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.var.decl "a" imp
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.var.decl "b" imp : !lit.ref<!Int, mut *"b`1">
+  # CHECK: %b_1 = lit.var.decl "b" imp : !lit.ref<!Int, mut *"b`1x2">
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: %[[B:.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store %[[B]], %a_0
@@ -1104,8 +1104,8 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   var ref4 = Reference(localVar).value
 
   # CHECK: %ref5 = lit.var.decl "ref5"
-  # CHECK: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}> {
-  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`")}> {
+  # CHECK: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`1x0", (mutcast mut *"b`1x1"), (mutcast mut *"c`1x2")}> {
+  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`1x0", (mutcast mut *"b`1x1")}> {
   # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
   # CHECK-NEXT:     [[REF1V:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT:     hlcf.yield [[REF1V]]
@@ -1115,11 +1115,11 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT:     hlcf.yield [[REF2V]]{{.*}}>
   # CHECK-NEXT:   }
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
-  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}>
+  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`1x0", (mutcast mut *"b`1x1")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`1x0", (mutcast mut *"b`1x1"), (mutcast mut *"c`1x2")}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
   # CHECK:         [[TMP:%.*]] = kgen.rebind
-  # CHECK-SAME:             : !lit.ref<!MemoryOnlyInt, mut *"c`"> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`"), (mutcast mut *"c`")}>
+  # CHECK-SAME:             : !lit.ref<!MemoryOnlyInt, mut *"c`1x2"> to !lit.ref<!MemoryOnlyInt, imm {*"a`1x0", (mutcast mut *"b`1x1"), (mutcast mut *"c`1x2")}>
   # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
   # CHECK-NEXT: }
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5

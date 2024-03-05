@@ -2457,8 +2457,8 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
 
   // For memory values, we create a new lifetime since this is a conceptually
   // new thing and the old thing is dead.
-  StringAttr lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(
-      trackable.name.str() + "(transfer)");
+  StringAttr lifetimeAttr = emitter.declScope.mangleParamName(
+      trackable.name.str() + Twine("(transfer)"));
   auto newVal =
       emitter.builder->create<TransferMemOwnershipOp>(loc, value, lifetimeAttr);
   return emitter.emitResult(MRValue(newVal), this, dest);

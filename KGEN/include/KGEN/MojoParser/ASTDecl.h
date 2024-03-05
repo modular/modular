@@ -189,18 +189,6 @@ public:
   /// to persist until body resolution.
   void setBodyDecorators(ArrayRef<ExprNode *> decorators, SharedState &state);
 
-  /// Create a unique parameter name from the given name that cannot collide
-  /// with any other parameters. This is done by postpending a backtick ("`")
-  /// and followed by a unique ID.
-  ///
-  /// By default, the name will not be modified if the declaration is on the top
-  /// level, but this behavior can be overridden by passing false for
-  /// `dontRenameOutermost`. If this is for a lifetime parameter, scopes
-  /// introduced by structs are ignored, and a backtick is _always_ postpended
-  /// (even if `dontRenameOutermost` is true).
-  StringAttr getUniqueParamName(const Twine &name, bool isLifetime = false,
-                                bool dontRenameOutermost = true);
-
   /// Check if the given name collides with an existing user declared parameter
   /// name in the scope, and if so, uniquely mangle it by postpending a backtick
   /// ("`"), scope depth, and a unique ID.
@@ -208,15 +196,7 @@ public:
 
   /// Create a unique parameter name by postpending a backtick ("`"), scope
   /// depth, and a unique ID.
-  /// TODO: rename when the migration is complete
-  StringAttr getUniqueParamNameNew(const Twine &name);
-
-  /// Create an anonymous (and unique) lifetime parameter name for the specified
-  /// value name that cannot collide with any other parameters. This uses the
-  /// same uniquing scheme as `getUniqueParamName`, but ignores non-function
-  /// scopes.
-  StringAttr getAnonymousLifetimeFor(const Twine &valueName,
-                                     bool dontRenameOutermost = false);
+  StringAttr mangleParamName(const Twine &name);
 
   /// Move the children decls of `src` into this decl. This is useful when a
   /// temporary decl needs to be created for parsing subexpressions but whose

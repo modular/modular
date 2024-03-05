@@ -429,7 +429,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
   ParserParamEvaluator evaluator(*shared.declResolver);
   for (Type type : params) {
     auto funcDecl =
-        ParamDeclAttr::get(declScope.getUniqueParamNameNew(arg.name.strref()),
+        ParamDeclAttr::get(declScope.mangleParamName(arg.name.strref()),
                            evaluator.getReboundType(type));
     paramList.names.push_back(StringAttr::get(type.getContext()));
     paramList.passingKinds.push_back(PassingKind::Implicit);
@@ -509,17 +509,12 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 static std::pair<ParamDeclAttr, RefType>
 getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
                                     ASTDecl &declScope) {
-  // Given a memory argument named "foo" we give the implicit lifetime a
-  // name of "`foo".  We do this because of Rust precedent, but also
-  // because you can't spell this identifier in Mojo, even with backticks!
   StringAttr lifetimeName;
   if (arg.name) {
-    lifetimeName = declScope.getAnonymousLifetimeFor(
-        arg.name.str(), /*dontRenameOutermost=*/true);
+    lifetimeName = declScope.mangleParamName(arg.name.strref());
   } else { // Used by function types, for example.
     lifetimeName =
-        declScope.getAnonymousLifetimeFor(Twine(llvm::utostr(idx)) + "_unnamed",
-                                          /*dontRenameOutermost=*/true);
+        declScope.mangleParamName(Twine(llvm::utostr(idx)) + "_unnamed");
   }
 
   // The reference is immutable when borrowing, mutable otherwise.

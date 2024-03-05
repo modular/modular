@@ -18,13 +18,13 @@ struct A[x: int, x_0: int]:
     alias y = __mlir_attr.`11: index`
 
     # CHECK-LABEL: lit.func @"foo
-    # CHECK-SAME: <*"x`2x0", x_1>
+    # CHECK-SAME: [imm *"self`2x1"]<*"x`2x0", x_1>
     fn foo[x: int, x_1: int](self):
-        # CHECK: lit.alias.decl *"z`2x1" = <2>
+        # CHECK: lit.alias.decl *"z`2x2" = <2>
         alias z = __mlir_attr.`2: index`
-        # CHECK: lit.alias.decl *"y`2x2" = <12>
+        # CHECK: lit.alias.decl *"y`2x3" = <12>
         alias y = __mlir_attr.`12: index`
-        # CHECK: lit.alias.decl *"yy`2x3" = <22>
+        # CHECK: lit.alias.decl *"yy`2x4" = <22>
         alias yy = __mlir_attr.`22: index`
 
         # CHECK-LABEL: lit.func *"bar
@@ -40,7 +40,7 @@ struct MyStruct[a: int, b: int]:
 
 
 # CHECK-LABEL: lit.func @"test_implicit_parameters
-# CHECK-SAME: <?, *"x`1x0", *"x`1x1", *"y`1x2", *"y`1x3">
+# CHECK-SAME: [imm *"x`1x2", imm *"y`1x5"]<?, *"x`1x0", *"x`1x1", *"y`1x3", *"y`1x4">
 fn test_implicit_parameters(x: MyStruct, y: MyStruct):
     pass
 

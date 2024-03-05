@@ -63,23 +63,23 @@ fn test_var_let_scopes(cond: Bool):
 fn test_var_lifetime_mangling[x: int](c: Bool):
     # CHECK: hlcf.if
     if c:
-        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`0">
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1x0">
         var y = x
     # CHECK: } else {
     else:
-        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1">
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1x1">
         var y = x
 
 # CHECK-LABEL: lit.func @"test_nested_var_lifetime_mangling
 fn test_nested_var_lifetime_mangling[x: int](c: Bool):
     # CHECK: hlcf.if
     if c:
-        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`0">
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1x0">
         var y = x
 
     # CHECK: lit.func *"nested()"
     fn nested():
-        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`1">
+        # CHECK: lit.var.decl "y"  var : !lit.ref<index, mut *"y`2x0">
         var y = x
 
 

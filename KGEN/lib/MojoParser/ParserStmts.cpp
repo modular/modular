@@ -2132,7 +2132,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   //     alias z = __mlir_attr.`1: index`
   // So we treat them as implicitly declared to force a mangling. We could
   // probably fix this when parameters stop being non-lexical.
-  StringAttr mangledName = parentDecl.getUniqueParamNameNew(name.strref());
+  StringAttr mangledName = parentDecl.mangleParamName(name.strref());
   auto decl = ParamDeclAttr::get(mangledName, type);
   auto declOp = builder.create<AliasDeclOp>(loc, decl, value);
 
