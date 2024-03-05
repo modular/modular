@@ -62,9 +62,9 @@ export class UriLaunchServer implements UriHandler {
 
   async handleUri(uri: Uri) {
     try {
-      this.loggingService.logInfo(`Handling uri: ${uri}`);
+      this.loggingService.main.logInfo(`Handling uri: ${uri}`);
       let query = decodeURIComponent(uri.query);
-      this.loggingService.logInfo(`Decoded query:\n${query}`);
+      this.loggingService.main.logInfo(`Decoded query:\n${query}`);
 
       if (uri.path == '/debug') {
         let params = querystring.parse(uri.query, ',') as {
@@ -146,7 +146,7 @@ export class RpcLaunchServer extends DisposableContext {
     this.addServerSecret(secret);
 
     this.pushSubscription(this.errorEmitter.event((e: Error) => {
-      this.loggingService.logError(
+      this.loggingService.main.logError(
           "RPC Server error. You might need to restart VS Code to fix this issue.",
           e);
     }));
@@ -205,7 +205,7 @@ export class RpcLaunchServer extends DisposableContext {
    * the same value as the one defined to create the RPC server.
    */
   async processRequest(request: Object): Promise<RPCServerResponse> {
-    this.loggingService.logInfo("Received RPC debug request", request);
+    this.loggingService.main.logInfo("Received RPC debug request", request);
     let debugConfig: DebugConfiguration = {
       type : 'mojo-lldb',
       request : 'launch',

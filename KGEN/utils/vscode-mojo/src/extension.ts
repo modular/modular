@@ -20,12 +20,11 @@ class MojoExtension {
 
   constructor(context: vscode.ExtensionContext) {
     const isNightly = isNightlyExtension(context);
-    this.loggingService =
-        new LoggingService('Mojo' + (isNightly ? ' (nightly)' : ''));
-    this.loggingService.logInfo("Initializing the Mojo extension.");
+    this.loggingService = new LoggingService(isNightly);
+    this.loggingService.main.logInfo("Initializing the Mojo extension.");
     this.mojoContext = new MOJOContext(context, this.loggingService);
     this.mojoContext.activate();
-    this.loggingService.logInfo("Mojo extension initialized.");
+    this.loggingService.main.logInfo("Mojo extension initialized.");
 
     // Check and warn for incompatible extensions.
     this.checkForIncompatibleExtensions(isNightly);
@@ -59,7 +58,7 @@ class MojoExtension {
   }
 
   public dispose() {
-    this.loggingService.logInfo("Deactivating extension.");
+    this.loggingService.main.logInfo("Deactivating extension.");
     this.mojoContext.dispose();
     this.loggingService.dispose();
   }

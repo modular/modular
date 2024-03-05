@@ -94,15 +94,16 @@ export class MOJOSDKConfig {
       stderr = (stderr || "") as string;
 
       if (stdout.indexOf("101") != -1) {
-        this.loggingService.logInfo("Python scripting support in LLDB found.");
+        this.loggingService.main.logInfo(
+            "Python scripting support in LLDB found.");
         return true;
       } else {
-        this.loggingService.logInfo(
+        this.loggingService.main.logInfo(
             `Python scripting support in LLDB not found. The test script returned:\n${
                 stdout}\n${stderr}`);
       }
     } catch (e) {
-      this.loggingService.logError(
+      this.loggingService.main.logError(
           "Python scripting support in LLDB not found. The test script failed with",
           e);
     }
@@ -189,7 +190,7 @@ export class MOJOSDK {
       // Grab the version string from the output.
       const match = stdout.match(/mojo\s+\b([0-9]+)\.([0-9]+)\.([0-9]+)\b.*/);
       if (!match) {
-        this.loggingService.logError(
+        this.loggingService.main.logError(
             "`mojo` returned an unexpected version string: " + stdout);
         return;
       }
@@ -200,8 +201,8 @@ export class MOJOSDK {
       const extensionVersionMatch =
           extensionVersion.match(/([0-9]+)\.([0-9]+)\.([0-9]+)/);
       if (!extensionVersionMatch) {
-        this.loggingService.logError("Unable to compute extension version: " +
-                                     extensionVersion);
+        this.loggingService.main.logError(
+            "Unable to compute extension version: " + extensionVersion);
         return;
       }
 
@@ -216,7 +217,7 @@ export class MOJOSDK {
             "to ensure the extension behaves correctly.");
       }
     } catch (e) {
-      this.loggingService.logError(
+      this.loggingService.main.logError(
           "Unable to invoke `mojo` to check the SDK version, failed with: ", e);
     }
   }
@@ -261,20 +262,21 @@ export class MOJOSDK {
 
     // Otherwise, check to see if the environment variable is set.
     if (modularPath) {
-      this.loggingService.logInfo("MODULAR_HOME found in VS Code settings.");
+      this.loggingService.main.logInfo(
+          "MODULAR_HOME found in VS Code settings.");
     } else if (process.env.MODULAR_HOME) {
       modularPath = process.env.MODULAR_HOME;
-      this.loggingService.logInfo(
+      this.loggingService.main.logInfo(
           "MODULAR_HOME found as an environment variable.");
 
       // If we still don't have a path, prompt the user to install the SDK.
     } else {
-      this.loggingService.logInfo("MODULAR_HOME not found.");
+      this.loggingService.main.logInfo("MODULAR_HOME not found.");
       this.promptInstallSDK();
       return undefined;
     }
 
-    this.loggingService.logInfo(`MODULAR_HOME is ${modularPath}.`);
+    this.loggingService.main.logInfo(`MODULAR_HOME is ${modularPath}.`);
 
     // Read in the config file.
     const modularCfg = path.join(modularPath, "modular.cfg");
@@ -298,8 +300,8 @@ export class MOJOSDK {
     }
     let modularConfig = ini.parse(new TextDecoder().decode(
         await vscode.workspace.fs.readFile(configPath)));
-    this.loggingService.logInfo("modular.cfg file with contents",
-                                modularConfig);
+    this.loggingService.main.logInfo("modular.cfg file with contents",
+                                     modularConfig);
 
     // Find the appropriate mojo configuration key in the config file.
     let mojoKeys: string[] =
@@ -336,7 +338,7 @@ export class MOJOSDK {
    * installation instructions.
    */
   private async promptInstallSDK() {
-    this.loggingService.logInfo("Prompting Install SDK.")
+    this.loggingService.main.logInfo("Prompting Install SDK.")
     let value = await vscode.window.showInformationMessage(
         ("The Mojo🔥 development environment was not found. If the Mojo " +
          "SDK is installed, please set the MODULAR_HOME environment variable to the " +
@@ -400,7 +402,7 @@ export class MOJOSDK {
    */
   private showSDKErrorMessage(message: string, error?: unknown): void {
     message = "Mojo SDK initialization error: " + message;
-    this.loggingService.logError(message, error);
+    this.loggingService.main.logError(message, error);
     vscode.window.showErrorMessage(message);
   }
 }

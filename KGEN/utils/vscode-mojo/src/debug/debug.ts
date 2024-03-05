@@ -123,7 +123,7 @@ class MojoDebugConfigurationResolver implements
         const message = `Mojo Debug error: the file '${
             debugConfiguration
                 .mojoFile}' doesn't have the .🔥 or .mojo extension.`;
-        this.context.loggingService.logError(message);
+        this.context.loggingService.main.logError(message);
         vscode.window.showErrorMessage(message);
         return undefined;
       }
@@ -351,7 +351,7 @@ export class MojoDebugContext extends DisposableContext {
     } else {
       let rpcServer =
           new RpcLaunchServer(this.context.loggingService, port, secret || "");
-      this.context.loggingService.logInfo(
+      this.context.loggingService.main.logInfo(
           `Starting RPC server for port '${port}' and secret '${secret}'`);
       this.pushSubscription(rpcServer);
       rpcServer.listen();

@@ -40,7 +40,7 @@ export function registerFormatter(loggingService: LoggingService,
           // necessarily fatal, so this doesn't prevent edits from being
           // applied.
           if (error) {
-            loggingService.logError(`Formatting error:\n${stderr}`);
+            loggingService.main.logError(`Formatting error:\n${stderr}`);
             reject(error);
             return;
           }

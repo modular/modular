@@ -11,9 +11,11 @@
 import * as vscode from 'vscode';
 import {window} from "vscode";
 
+import {DisposableContext} from './utils/disposableContext';
+
 type LogLevel = "DEBUG"|"INFO"|"WARN"|"ERROR"|"NONE";
 
-export class LoggingService {
+class LogChannel {
   readonly outputChannel: vscode.OutputChannel;
   private logLevel: LogLevel = "INFO";
 
@@ -109,4 +111,20 @@ export class LoggingService {
   }
 
   public dispose(): void { this.outputChannel.dispose(); }
+}
+
+export class LoggingService extends DisposableContext {
+  public main: LogChannel;
+  public lsp: LogChannel;
+
+  constructor(isNightly: boolean) {
+    super();
+
+    const suffix = isNightly ? ' (nightly)' : '';
+    this.main = new LogChannel("Mojo" + suffix);
+    this.lsp = new LogChannel("Mojo Language Server" + suffix);
+
+    this.pushSubscription(this.main);
+    this.pushSubscription(this.lsp);
+  }
 }
