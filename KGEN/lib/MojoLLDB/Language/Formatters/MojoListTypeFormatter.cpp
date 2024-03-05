@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MojoDynamicVectorTypeFormatter.h"
+#include "MojoListTypeFormatter.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 
@@ -13,7 +13,7 @@ using namespace lldb_private;
 using namespace lldb_private::formatters;
 using namespace M::KGEN::Mojo;
 
-MojoDynamicVectorSyntheticFrontEnd::MojoDynamicVectorSyntheticFrontEnd(
+MojoListSyntheticFrontEnd::MojoListSyntheticFrontEnd(
     const lldb::ValueObjectSP &backend)
     : SyntheticChildrenFrontEnd(*backend), start(0), size(0), elementType(),
       elementSize(0) {
@@ -21,12 +21,9 @@ MojoDynamicVectorSyntheticFrontEnd::MojoDynamicVectorSyntheticFrontEnd(
     Update();
 }
 
-size_t MojoDynamicVectorSyntheticFrontEnd::CalculateNumChildren() {
-  return size;
-}
+size_t MojoListSyntheticFrontEnd::CalculateNumChildren() { return size; }
 
-lldb::ValueObjectSP
-MojoDynamicVectorSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
+lldb::ValueObjectSP MojoListSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
   if (idx >= size)
     return ValueObjectSP();
   uint64_t addr = start + (idx * elementSize);
@@ -35,9 +32,9 @@ MojoDynamicVectorSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
                                       elementType);
 }
 
-lldb::ChildCacheState MojoDynamicVectorSyntheticFrontEnd::Update() {
+lldb::ChildCacheState MojoListSyntheticFrontEnd::Update() {
   std::optional<std::pair<ValueObjectSP, size_t>> parsed =
-      MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(m_backend.GetSP());
+      MojoListSyntheticFrontEnd::parseList(m_backend.GetSP());
   if (!parsed)
     return lldb::ChildCacheState::eRefetch;
 
@@ -59,8 +56,7 @@ lldb::ChildCacheState MojoDynamicVectorSyntheticFrontEnd::Update() {
 }
 
 std::optional<std::pair<ValueObjectSP, size_t>>
-MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
-    lldb::ValueObjectSP valobj) {
+MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
   if (!valobj || !valobj->GetError().Success())
     return {};
 
@@ -108,9 +104,9 @@ MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
   return std::make_pair(dataPointer, size);
 }
 
-bool MojoDynamicVectorSyntheticFrontEnd::MightHaveChildren() { return true; }
+bool MojoListSyntheticFrontEnd::MightHaveChildren() { return true; }
 
-size_t MojoDynamicVectorSyntheticFrontEnd::GetIndexOfChildWithName(
+size_t MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
     lldb_private::ConstString name) {
   if (size == 0)
     return 0;
@@ -118,12 +114,12 @@ size_t MojoDynamicVectorSyntheticFrontEnd::GetIndexOfChildWithName(
 }
 
 SyntheticChildrenFrontEnd *
-M::KGEN::Mojo::mojoDynamicVectorSyntheticFrontEndCreator(
-    CXXSyntheticChildren *, const ValueObjectSP &valobjSP) {
+M::KGEN::Mojo::mojoListSyntheticFrontEndCreator(CXXSyntheticChildren *,
+                                                const ValueObjectSP &valobjSP) {
   if (!valobjSP)
     return nullptr;
   CompilerType type = valobjSP->GetCompilerType();
   if (!type.IsValid())
     return nullptr;
-  return new M::KGEN::Mojo::MojoDynamicVectorSyntheticFrontEnd(valobjSP);
+  return new M::KGEN::Mojo::MojoListSyntheticFrontEnd(valobjSP);
 }

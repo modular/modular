@@ -4,19 +4,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LIB_MOJOLLDB_LANGUAGE_MOJODYNAMICVECTORTYPEFORMATTER_H
-#define KGEN_LIB_MOJOLLDB_LANGUAGE_MOJODYNAMICVECTORTYPEFORMATTER_H
+#ifndef KGEN_LIB_MOJOLLDB_LANGUAGE_MOJOLISTTYPEFORMATTER_H
+#define KGEN_LIB_MOJOLLDB_LANGUAGE_MOJOLISTTYPEFORMATTER_H
 
 #include "lldb/DataFormatters/TypeSynthetic.h"
 #include "lldb/lldb-forward.h"
 
 namespace M::KGEN::Mojo {
-class MojoDynamicVectorSyntheticFrontEnd
+class MojoListSyntheticFrontEnd
     : public lldb_private::SyntheticChildrenFrontEnd {
 public:
-  MojoDynamicVectorSyntheticFrontEnd(const lldb::ValueObjectSP &backend);
+  MojoListSyntheticFrontEnd(const lldb::ValueObjectSP &backend);
 
-  ~MojoDynamicVectorSyntheticFrontEnd() override = default;
+  ~MojoListSyntheticFrontEnd() override = default;
 
   size_t CalculateNumChildren() override;
 
@@ -28,7 +28,7 @@ public:
 
   size_t GetIndexOfChildWithName(lldb_private::ConstString name) override;
 
-  /// Parse the given `ValueObject` representing a DynamicVector.
+  /// Parse the given `ValueObject` representing a List.
   ///
   /// Return a pair `<data pointer, size>`, where `data pointer` represents
   /// the start of the underlying data, and `size` represents the number of
@@ -40,7 +40,7 @@ public:
   /// This function returns null if it was not possible to read some of these
   /// fields, or if the invariants mentioned above don't hold.
   static std::optional<std::pair<lldb::ValueObjectSP, size_t>>
-  parseDynamicVector(lldb::ValueObjectSP valobj);
+  parseList(lldb::ValueObjectSP valobj);
 
 private:
   lldb::addr_t start;
@@ -50,8 +50,8 @@ private:
 };
 
 lldb_private::SyntheticChildrenFrontEnd *
-mojoDynamicVectorSyntheticFrontEndCreator(lldb_private::CXXSyntheticChildren *,
-                                          const lldb::ValueObjectSP &valobjSP);
+mojoListSyntheticFrontEndCreator(lldb_private::CXXSyntheticChildren *,
+                                 const lldb::ValueObjectSP &valobjSP);
 } // namespace M::KGEN::Mojo
 
-#endif // KGEN_LIB_MOJOLLDB_LANGUAGE_MOJODYNAMICVECTORTYPEFORMATTER_H
+#endif // KGEN_LIB_MOJOLLDB_LANGUAGE_MOJOLISTYPEFORMATTER_H
