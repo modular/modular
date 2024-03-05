@@ -78,6 +78,11 @@
 #include <mutex>
 #include <optional>
 
+#ifdef MODULAR_PROFILING_NSIGHT
+#include "CUDASupport/Globals/Globals.h"
+#define NSIGHT_POC
+#endif
+
 namespace llvm {
 class raw_pwrite_stream;
 namespace json {
@@ -890,6 +895,11 @@ struct ProfilerEntry<true> {
 
   template <size_t N, typename... Args>
   static ProfilerEntry create(const char (&s)[N], Args &&...args) {
+#ifdef NSIGHT_POC
+    // minimal example of pushing some information into nsight profiles
+    // this only actually gets hit on a very small number of calls
+    nvtxMarkA(StringLiteral::withInnerNUL(s).str().c_str());
+#endif
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
       return ProfilerEntry(ctx->begin(StringLiteral::withInnerNUL(s),
                                       std::forward<Args>(args)...));
