@@ -6,8 +6,8 @@
 
 #include "MojoLanguage.h"
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
-#include "Formatters/MojoDynamicVectorTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
+#include "Formatters/MojoListTypeFormatter.h"
 #include "lldb/API/SBValue.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -56,7 +56,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
   };
 
   std::optional<std::pair<ValueObjectSP, size_t>> parsed =
-      MojoDynamicVectorSyntheticFrontEnd::parseDynamicVector(
+      MojoListSyntheticFrontEnd::parseList(
           valobj.GetChildMemberWithName("_buffer"));
   if (!parsed)
     return onError();
@@ -191,7 +191,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                   "Mojo decorator-based synthetic children",
                   kLLDBFormatterWrappingTypeRegex, synthFlags,
                   /*regex=*/true);
-  AddCXXSynthetic(mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
+  AddCXXSynthetic(mojoCategorySP, mojoListSyntheticFrontEndCreator,
                   "Mojo List synthetic children", kListRegex, synthFlags,
                   /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP, mojoKGENVariantSyntheticFrontEndCreator,
