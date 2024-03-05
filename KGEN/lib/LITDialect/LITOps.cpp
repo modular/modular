@@ -715,7 +715,8 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
       return failure();
     isParamDecl = true;
   }
-  result.addAttribute(getSymNameAttrName(result.name), nameAttr);
+  if (!isParamDecl)
+    result.addAttribute(getSymNameAttrName(result.name), nameAttr);
 
   // Parse the function signature.
   SmallVector<OpAsmParser::Argument> entryArgs;
