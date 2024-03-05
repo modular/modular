@@ -14,7 +14,7 @@ from python import Python
 
 from kernel_utils.layout import Layout
 from kernel_utils.layout_tensor import LayoutTensor
-from kernel_utils.int_tuple import IntTuple
+from kernel_utils.int_tuple import IntTuple, int
 
 
 alias M = 512  # rows of A and C
@@ -75,35 +75,40 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
     # simdwidth of = amount of `dtype` elements that fit into a single SIMD register
     # 2x multiplier will use multiple SIMD registers in parallel where possible
     alias nelts = simdwidthof[dtype]() * 2
+    alias tile_m = 8  # M must be a multiple of this
     alias tile_n = 64  # N must be a multiple of this
     alias tile_k = 4  # K must be a multiple of this
 
+    constrained[M % tile_m == 0, "M must be a multiple of tile_m"]()
     constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
     constrained[K % tile_k == 0, "K must be a multiple of tile_k"]()
 
     @parameter
-    fn calc_row(m: Int):
-        @parameter
-        fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
-            @unroll(tile_y)
-            for k in range(y, y + tile_y):
-                var A_m_k_val = A[m, k]
+    fn calc_row(m0: Int):
+        for m in range(tile_m * m0, tile_m * m0 + tile_m):
 
-                @parameter
-                fn dot[nelts: Int](n: Int):
-                    C.store(
-                        m,
-                        n + x,
-                        C.load[nelts](m, n + x)
-                        + A_m_k_val * B.load[nelts](k, n + x),
-                    )
+            @parameter
+            fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
+                @unroll(tile_y)
+                for k in range(y, y + tile_y):
+                    var A_val = A[m, k]
 
-                alias unroll_factor = tile_x // nelts
-                vectorize[dot, nelts, tile_x, unroll_factor]()
+                    @parameter
+                    fn dot[simd_size: Int](n: Int):
+                        var idx = n + x
+                        C.store(
+                            m,
+                            idx,
+                            C.load[simd_size](m, idx)
+                            + A_val * B.load[simd_size](k, idx),
+                        )
 
-        tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
+                    alias unroll_factor = tile_x // nelts
+                    vectorize[dot, nelts, tile_x, unroll_factor]()
 
-    parallelize[calc_row](C.rows, C.rows)
+            tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
+
+    sync_parallelize[calc_row](C.rows // tile_m)
 
 
 struct TensorBuilder[
@@ -119,49 +124,128 @@ struct TensorBuilder[
         return Self.Type(ptr)
 
 
-fn matmul_tiled_l(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
     var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
     var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
     var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
 
-    alias block_m = 2
-    alias block_n = 64
-    alias block_k = 4
-
-    constrained[M % block_m == 0, "N must be a multiple of block_m"]()
-    constrained[N % block_n == 0, "N must be a multiple of block_n"]()
-    constrained[K % block_k == 0, "K must be a multiple of block_k"]()
-
     alias vec_size = simdwidthof[dtype]() * 2
+
+    alias tile_m = 2
+    alias tile_n = 64
+    alias tile_k = 4
+
+    constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
+    constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
+    constrained[K % tile_k == 0, "K must be a multiple of tile_k"]()
 
     @parameter
     fn calc_row(m_1: Int):
-        for k_1 in range(K // block_k):
-            for n_1 in range(N // block_n):
-                var lhs_view = lhs.tile[block_m, block_k](m_1, k_1)
-                var dst_view = dst.tile[block_m, block_n](m_1, n_1)
-                var rhs_view = rhs.tile[block_k, block_n](k_1, n_1)
+        for k_1 in range(K // tile_k):
+            for n_1 in range(N // tile_n):
+                var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
+                var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
+                var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1)
 
                 @unroll
-                for m_2 in range(block_m):
+                for m in range(tile_m):
 
                     @unroll
-                    for k_2 in range(block_k):
-                        var lhs_val = lhs_view[m_2, k_2]
+                    for k in range(tile_k):
+                        var lhs_val = lhs_view[m, k]
 
                         @parameter
-                        fn dot[size: Int](n: Int):
-                            dst_view.store[size](
-                                m_2,
+                        fn dot[simd_size: Int](n: Int):
+                            constrained[
+                                dst_view.layout.stride[1] == 1,
+                                "elements of dst should be contiguous",
+                            ]()
+                            constrained[
+                                rhs_view.layout.stride[1] == 1,
+                                "elements of rhs should be contiguous",
+                            ]()
+
+                            dst_view.store[simd_size](
+                                m,
                                 n,
-                                dst_view.load[size](m_2, n)
-                                + lhs_val * rhs_view.load[size](k_2, n),
+                                dst_view.load[simd_size](m, n)
+                                + lhs_val * rhs_view.load[simd_size](k, n),
                             )
 
-                        alias unroll_factor = block_n // vec_size
-                        vectorize[dot, vec_size, block_n, unroll_factor]()
+                        alias unroll_factor = tile_n // vec_size
+                        vectorize[dot, vec_size, tile_n, unroll_factor]()
 
-    sync_parallelize[calc_row](M // block_m)
+    sync_parallelize[calc_row](M // tile_m)
+
+
+fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
+    var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
+    var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
+    var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
+
+    alias vec_size = simdwidthof[dtype]() * 2
+
+    alias tile_m = 4
+    alias tile_n = 64
+    alias tile_k = 4
+
+    constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
+    constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
+    constrained[K % tile_k == 0, "K must be a multiple of tile_k"]()
+
+    @parameter
+    fn calc_row(m_1: Int):
+        alias alignment = alignof[SIMD[dtype]]()
+        alias cache_width = (tile_n // alignment + 1) * alignment
+        var rhs_cache_data = DTypePointer[dtype].alloc(
+            tile_k * cache_width, alignment=alignment
+        )
+        var rhs_cache_aligned = TensorBuilder[tile_k, cache_width, dtype].Wrap(
+            rhs_cache_data
+        )
+        var rhs_cache = rhs_cache_aligned.tile[tile_k, tile_n](0, 0)
+
+        # var rhs_cache_data = DTypePointer[dtype].alloc(tile_k * tile_n)
+        # var rhs_cache = TensorBuilder[tile_k, tile_n, dtype].Wrap(
+        #     rhs_cache_data
+        # )
+
+        for k_1 in range(K // tile_k):
+            for n_1 in range(N // tile_n):
+                var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
+                var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
+                var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1)
+
+                rhs_cache.copy_from(rhs_view)
+
+                @unroll
+                for m in range(tile_m):
+
+                    @unroll
+                    for k in range(tile_k):
+                        var lhs_val = lhs_view[m, k]
+
+                        @parameter
+                        fn dot[simd_size: Int](n: Int):
+                            constrained[
+                                dst_view.layout.stride[1] == 1,
+                                "elements of dst should be contiguous",
+                            ]()
+
+                            dst_view.store[simd_size](
+                                m,
+                                n,
+                                dst_view.load[simd_size](m, n)
+                                + lhs_val
+                                * rhs_cache.load_aligned[simd_size](k, n),
+                            )
+
+                        alias unroll_factor = tile_n // vec_size
+                        vectorize[dot, vec_size, tile_n, unroll_factor]()
+
+        rhs_cache_data.free()
+
+    sync_parallelize[calc_row](M // tile_m)
 
 
 @always_inline
@@ -212,13 +296,18 @@ fn test_all() raises:
 
     matmul_naive(C, A, B)
 
-    if not test_matrix_equal[matmul_tiled_l](C, A, B):
+    if not test_matrix_equal[matmul_unrolled](C, A, B):
+        raise Error("Unroll output does not match naive implementation")
+    if not test_matrix_equal[matmul_tiled_layout](C, A, B):
         raise Error(
             "Layout Tiled Parallel Vectorized output does not match naive"
             " implementation"
         )
-    if not test_matrix_equal[matmul_unrolled](C, A, B):
-        raise Error("Unroll output does not match naive implementation")
+    if not test_matrix_equal[matmul_tiled_layout_cache](C, A, B):
+        raise Error(
+            "Layout Tiled Parallel Vectorized output does not match naive"
+            " implementation"
+        )
 
     A.data.free()
     B.data.free()
@@ -231,4 +320,5 @@ fn main() raises:
 
     bench[matmul_naive, "Naive:"]()
     bench[matmul_unrolled, "Unrolled:"]()
-    bench[matmul_tiled_l, "LayoutTensor:"]()
+    bench[matmul_tiled_layout, "LayoutTensor:"]()
+    bench[matmul_tiled_layout_cache, "LayoutTensor Cached:"]()
