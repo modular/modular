@@ -2489,6 +2489,13 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
                 "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
             ](x.bitcast[DType.float32](), alignment)
         )
+    elif type == DType.bfloat16:
+        return bitcast[type, 4](
+            llvm_intrinsic[
+                "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
+                SIMD[DType.bfloat16, 4],
+            ](x.bitcast[DType.bfloat16](), alignment)
+        )
     else:
         constrained[False, "Unhandled DType"]()
         return 0
@@ -3053,9 +3060,18 @@ fn _matmul_gpu[
     constrained[transpose_b == False, "only NN matmul is supported"]()
     constrained[not b_packed, "pre-packing not yet supported"]()
     constrained[not saturated_vnni, "saturated_vnni_flag not applicable"]()
-    constrained[a_type == DType.float32, "only Float32 type is supported"]()
-    constrained[b_type == DType.float32, "only Float32 type is supported"]()
-    constrained[c_type == DType.float32, "only Float32 type is supported"]()
+    constrained[
+        a_type == DType.float32 or a_type == DType.bfloat16,
+        "only Float32/BFloat16 types are supported",
+    ]()
+    constrained[
+        b_type == DType.float32 or b_type == DType.bfloat16,
+        "only Float32/BFloat16 types are supported",
+    ]()
+    constrained[
+        c_type == DType.float32 or c_type == DType.bfloat16,
+        "only Float32/BFloat16 types are supported",
+    ]()
 
     var shape = GemmShape.get[False, False](c, a, b)
     var m = shape.M
@@ -3136,6 +3152,56 @@ fn _matmul_gpu_dispatch[
     try:
         var stream = Stream.get_current_stream()
 
+        # TODO implement optimized matmul for half types #33364
+        @parameter
+        if (
+            a_type == DType.bfloat16
+            or b_type == DType.bfloat16
+            or c_type == DType.bfloat16
+        ):
+            alias BLOCK_DIM = 16
+            var gpu_func = Function[
+                fn (
+                    DTypePointer[a_type],
+                    DTypePointer[b_type],
+                    DTypePointer[c_type],
+                    Int,
+                    Int,
+                    Int,
+                ) capturing -> None, matmul_kernel_naive[
+                    a_type,
+                    b_type,
+                    c_type,
+                    BLOCK_DIM,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            gpu_func(
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+                stream=stream,
+            )
+            return
+
+        constrained[
+            a_type == DType.float32,
+            "Only Float32 types have optimized implementations",
+        ]()
+        constrained[
+            b_type == DType.float32,
+            "Only Float32 types have optimized implementations",
+        ]()
+        constrained[
+            c_type == DType.float32,
+            "Only Float32 types have optimized implementations",
+        ]()
+
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
         var warp_tiled_matmul_suppoered_shape = (
@@ -3163,7 +3229,6 @@ fn _matmul_gpu_dispatch[
             alias TM = 8
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
             alias NUM_WARPS = NUM_THREADS / WARP_SIZE
-
             alias mm = sgemm_warp_tiling_kernel[
                 c_type,
                 c_shape,
