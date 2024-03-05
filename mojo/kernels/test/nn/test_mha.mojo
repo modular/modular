@@ -63,10 +63,7 @@ fn is_ndbuffer_close[
     return is_close
 
 
-alias type = DType.float32
-
-
-def test_mha():
+def test_mha[type: DType]():
     # Query, key, value dimensions.
     alias batch_size = 1
     alias num_heads = 12
@@ -98,7 +95,7 @@ def test_mha():
         for i in range(seq_len // 2):
             mask_ptr[b * seq_len + i] = 0
         for i in range(seq_len // 2, seq_len):
-            mask_ptr[b * seq_len + i] = mask_val
+            mask_ptr[b * seq_len + i] = mask_val.cast[type]()
 
     # Contruct buffers.
     var q = NDBuffer[type, 4, BHSD](q_ptr)
@@ -160,4 +157,4 @@ def test_mha():
 
 
 def main():
-    test_mha()
+    test_mha[DType.float32]()
