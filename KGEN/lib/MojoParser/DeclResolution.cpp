@@ -711,13 +711,13 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
 static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
                                    SMLoc loc) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
-  auto parentFn = nestedFn->getParentOfType<LIT::FuncOp>();
-  assert(parentFn && "expected nested function to have a parent FuncOp");
+  Location mlirLoc = shared.translateLocation(loc);
+  if (shared.diBuilder)
+    mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
 
   // Save the insertion point before closure creation since closure creation
   // nukes the nested function.
-  ImplicitLocOpBuilder builder =
-      ImplicitLocOpBuilder::atBlockEnd(parentFn.getLoc(), parentFn.getBody());
+  ImplicitLocOpBuilder builder(mlirLoc, shared.getContext());
   builder.setInsertionPointAfter(nestedFn);
   OpBuilder::InsertPoint insertPoint = builder.saveInsertionPoint();
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
@@ -762,9 +762,6 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl,
                                     fromImplToWrapperParameterMap, loc);
 
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = parentFn.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
   builder.restoreInsertionPoint(insertPoint);
 
   ExprEmitter exprEmitter(shared, *nestedFnDecl.getParentDecl(), builder);
@@ -998,10 +995,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     getDeclResolver().exportMain(decl);
 
   // Generate a debug subprogram for this function.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  shared.setLocationDebugScope(diScopeGuard, funcOp);
+  shared.setLocationDebugScope(funcOp);
 
-  // Change the location to be in the debug scope of the function.
   for (auto [parsedArg, bbArg] :
        llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
@@ -1016,8 +1011,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       if (failed(resolveBody(funcOp, lexer, decl)))
         return failure();
 
-      // If the function doesn't actually capture anything, don't demote it to a
-      // runtime value.
+      // If the function doesn't actually capture anything, don't demote it to
+      // a runtime value.
       if (signature.isEscaping() ||
           !shared.getCaptureRangeInScope(decl).empty()) {
         if (!paramList.paramDeclAttrs.empty())

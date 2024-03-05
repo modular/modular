@@ -102,8 +102,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
   return SourceNameAttr::get(getTypeAsString(type));
 }
 
-void SharedState::setLocationDebugScope(
-    DebugInfo::DIBuilder::ScopeGuard &diScopeGuard, LIT::FuncOp funcOp) {
+void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
   if (!diBuilder)
     return;
   FileLineColLoc fileLineCol =
@@ -128,7 +127,7 @@ void SharedState::setLocationDebugScope(
       funcOp.getContext(),
       llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
       llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
-  diScopeGuard = diBuilder->pushSubprogram(
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard = diBuilder->pushSubprogram(
       getSourceName(funcOp), funcOp.getNameAttr(),
       diBuilder->createFile(fileLineCol), fileLineCol.getLine(),
       fileLineCol.getLine(), spFlags, type);

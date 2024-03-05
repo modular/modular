@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s -debug-level full -mlir-print-debuginfo | FileCheck %s
+# RUN: %parse-mojo-isolated %s -debug-level full -mlir-print-debuginfo -split-input-file | FileCheck %s
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
@@ -27,3 +27,36 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
         return m
 
     return myclosure
+
+
+# // -----
+
+# COM: This tests that code generated for closures inside lexical blocks have the correct debug scope.
+
+# CHECK-DAG: #Bool_name = #debuginfo.source_name<(struct)"Bool" from {{.*}}>
+# CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(<"index">, <"index">, #Bool_name) from <(module)"debuginfo">>
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #closure_in_block_name, linkageName = "closure_in_block{{.*}}", file = #file,
+
+# CHECK-LABEL: lit.func @"closure_in_block
+# CHECK:       hlcf.if
+# CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
+# CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:    %anonymous2A_0 = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.ref.immut %anonymous2A_0 : {{.*}} loc(#[[LOC1:.*]])
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
+
+# CHECK-DAG: #[[LEXBLOCK:.*]] = #debuginfo.lexical_block<scope = #[[SP]], file = #file,
+# CHECK-DAG: #[[LOC0]] = loc(fused<#[[LEXBLOCK]]>[#
+# CHECK-DAG: #[[LOC1]] = loc(fused<#[[LEXBLOCK]]>[#
+
+
+fn closure_in_block(m: int, z: int, b: Bool) -> int:
+    if b:
+
+        fn myclosure(n: int) escaping -> int:
+            return m
+
+        return myclosure(z)
+
+    return z
