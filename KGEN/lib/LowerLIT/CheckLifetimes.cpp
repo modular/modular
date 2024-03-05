@@ -59,6 +59,44 @@ collectFunctionsAndTypes(Operation *module) {
           std::move(traitMap)};
 }
 
+/// Create DebugInfo::ValueOp if this VarDecl needs it.
+/// `funcSpAttr` is the DISubprogramAttr of the surrounding function.
+static DebugInfo::ValueOp
+insertDebugValueForVarDecl(VarDeclOp op,
+                           DebugInfo::DISubprogramAttr funcSpAttr) {
+  if (op.getKind() == VarDeclKind::Synthesized)
+    return nullptr;
+
+  Location loc = op->getLoc();
+  auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
+  if (!fileLoc)
+    return nullptr;
+
+  auto localScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(
+      loc, DebugInfo::ScopeWalkPolicy::CalleePriority);
+  if (!localScope)
+    return nullptr;
+
+  // The source type is the decl type with ref unwrapped.
+  auto sourceType =
+      DebugInfo::DIUnresolvedMLIRType::get(op.getType().getElementType());
+  auto varAttr = DebugInfo::DILocalVariableAttr::get(
+      localScope, op.getNameAttr(), funcSpAttr.getFile(), fileLoc.getLine(),
+      /*arg=*/0,
+      /*alignInBits=*/0, sourceType);
+
+  // The IR type needs to be deref'ed to get the source type. Encode the IR
+  // type as a pointer type.
+  auto diPointerType =
+      DebugInfo::DITargetIndependentPointerType::get(sourceType);
+  auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
+  auto conversion = DebugInfo::DIDerefExprAttr::get(newIrValue);
+
+  OpBuilder b(op->getContext());
+  b.setInsertionPointAfter(op);
+  return b.create<DebugInfo::ValueOp>(loc, op, varAttr, conversion);
+}
+
 //===----------------------------------------------------------------------===//
 // TypeDeclInfo
 //===----------------------------------------------------------------------===//
@@ -2602,9 +2640,16 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func);
 
-  /// This is set to true if the function has nested functions inside of it.
-  /// Some of our analyses are not safe in the face of closures yet.
+  // This is set to true if the function has nested functions inside of it.
+  // Some of our analyses are not safe in the face of closures yet.
   bool hasClosures = false;
+
+  // Check if the local variables of this function need debug info.
+  DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
+  DebugInfo::DICompileUnitAttr compileUnit =
+      funcSpAttr ? funcSpAttr.getCompileUnit() : nullptr;
+  const bool genDebugInfo = compileUnit && compileUnit.getEmissionKind() ==
+                                               DebugInfo::EmissionKind::Full;
 
   func->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
     // Skip looking at nested functions, they are handled as separate contexts.
@@ -2614,9 +2659,17 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
     }
 
     // All the ops that define trackable values have a single result.
-    if (op->getNumResults() == 1)
-      if (auto trackable = LifetimeTrackable(op->getResult(0)))
-        valueSet.addValue(op->getResult(0), trackable);
+    if (op->getNumResults() == 1) {
+      Value result = op->getResult(0);
+      if (auto trackable = LifetimeTrackable(result)) {
+        // Generate debug info for VarDecls if needed.
+        if (genDebugInfo)
+          if (auto varDecl = result.getDefiningOp<VarDeclOp>())
+            insertDebugValueForVarDecl(varDecl, funcSpAttr);
+
+        valueSet.addValue(result, trackable);
+      }
+    }
 
     // If there are any regions, check the block arguments for arguments.
     for (auto &region : op->getRegions()) {

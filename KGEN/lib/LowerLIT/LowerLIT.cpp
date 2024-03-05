@@ -39,28 +39,6 @@ namespace M::KGEN {
 // Utilities
 //===----------------------------------------------------------------------===//
 
-static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
-                                DebugInfo::DIFileAttr fileAttr, Value value,
-                                Type type,
-                                DebugInfo::DIExprAttr conversion = {}) {
-  Location loc = op->getLoc();
-  auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
-  if (!fileLoc)
-    return;
-  auto varScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(
-      loc, DebugInfo::ScopeWalkPolicy::CalleePriority);
-  if (!varScope)
-    return;
-
-  auto sourceType = DebugInfo::DIUnresolvedMLIRType::get(type);
-  auto varAttr = DebugInfo::DILocalVariableAttr::get(
-      varScope, varName, fileAttr, fileLoc.getLine(), /*arg=*/0,
-      /*alignInBits=*/0, sourceType);
-  if (!conversion)
-    conversion = DebugInfo::DIIRValueExprAttr::get(sourceType);
-  b.create<DebugInfo::ValueOp>(loc, value, varAttr, conversion);
-}
-
 /// Flatten the given symbol reference, collapsing all nested scopes into one
 /// mangled name.
 static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
@@ -174,11 +152,6 @@ static SmallVector<Value> castCallOperands(OperandRange operands,
 }
 
 void LITLowerer::lowerLITOps(LIT::FuncOp func) {
-  // Check if we are building debug info for source variables.
-  DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
-  bool buildingDebugVars =
-      funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
-                        DebugInfo::EmissionKind::Full;
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
     mlir::IRRewriter b{OpBuilder(op)};
@@ -227,9 +200,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       call.setImplicitLifetimes({});
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
-      StringAttr varName = varDecl.getNameAttr();
       RefType varRegType = varDecl.getType();
-      bool isSynth = varDecl.isSynthetic();
 
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),
@@ -237,22 +208,11 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // Lower a lit.varlet.decl to pop.stack_allocation.
       auto allocOp = b.create<POP::StackAllocationOp>(
           varDecl.getLoc(), varRegType.getAsPointerType(), 1);
+
       // Replace !lit.ref result type with a cast from the pointer.  This will
       // get squashed by LowerLITTypes.
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
           varDecl, ArrayRef<Type>(varDecl.getType()), allocOp.getResult());
-
-      // Build information for this variable if necessary.
-      if (buildingDebugVars && !isSynth) {
-        b.setInsertionPointAfter(allocOp);
-        auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
-            DebugInfo::DIUnresolvedMLIRType::get(varRegType.getElementType()));
-        buildDebugInfoValue(
-            b, allocOp, varName, funcSpAttr.getFile(), allocOp,
-            varRegType.getElementType(),
-            DebugInfo::DIDerefExprAttr::get(
-                DebugInfo::DIIRValueExprAttr::get(diPointerType)));
-      }
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
