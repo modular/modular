@@ -201,14 +201,15 @@ public:
   StringAttr getUniqueParamName(const Twine &name, bool isLifetime = false,
                                 bool dontRenameOutermost = true);
 
+  /// Check if the given name collides with an existing user declared parameter
+  /// name in the scope, and if so, uniquely mangle it by postpending a backtick
+  /// ("`"), scope depth, and a unique ID.
+  StringAttr mangleUserDefinedParamName(StringAttr name);
+
   /// Create a unique parameter name by postpending a backtick ("`"), scope
   /// depth, and a unique ID.
-  ///
-  /// If `isUserDefinedDecl` is true, the function checks if the name collides
-  /// with a known user declared parameter name, and only mangles if needed.
   /// TODO: rename when the migration is complete
-  StringAttr getUniqueParamNameNew(StringAttr name,
-                                   bool isUserDefinedDecl = true);
+  StringAttr getUniqueParamNameNew(const Twine &name);
 
   /// Create an anonymous (and unique) lifetime parameter name for the specified
   /// value name that cannot collide with any other parameters. This uses the

@@ -376,8 +376,8 @@ TypeCheckedParamList::TypeCheckedParamList(
     // Bind the parsed type expression so references from other parameters
     // can be resolved. The parameter names in ParamDeclAttr are mangled with
     // the location so that parameter names in mojo are unique in the IR.
-    auto newDecl =
-        ParamDeclAttr::get(declScope.getUniqueParamNameNew(arg.name), type);
+    auto newDecl = ParamDeclAttr::get(
+        declScope.mangleUserDefinedParamName(arg.name), type);
     paramDeclAttrs.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
@@ -428,9 +428,9 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
   SmallVector<TypedAttr> paramValues;
   ParserParamEvaluator evaluator(*shared.declResolver);
   for (Type type : params) {
-    auto funcDecl = ParamDeclAttr::get(
-        declScope.getUniqueParamNameNew(arg.name, /*isUserDefinedDecl=*/false),
-        evaluator.getReboundType(type));
+    auto funcDecl =
+        ParamDeclAttr::get(declScope.getUniqueParamNameNew(arg.name.strref()),
+                           evaluator.getReboundType(type));
     paramList.names.push_back(StringAttr::get(type.getContext()));
     paramList.passingKinds.push_back(PassingKind::Implicit);
     paramList.paramDeclAttrs.push_back(funcDecl);

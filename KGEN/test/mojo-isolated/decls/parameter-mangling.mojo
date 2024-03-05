@@ -43,3 +43,32 @@ struct MyStruct[a: int, b: int]:
 # CHECK-SAME: <?, *"x`1x0", *"x`1x1", *"y`1x2", *"y`1x3">
 fn test_implicit_parameters(x: MyStruct, y: MyStruct):
     pass
+
+
+# CHECK-LABEL: lit.func @"test_nested_alias_mangling_1
+fn test_nested_alias_mangling_1[x: int](c: Bool):
+    # CHECK: hlcf.if
+    if c:
+        # CHECK: lit.alias.decl *"y`1x0"
+        alias y = x
+        _ = y
+    # CHECK: } else {
+    else:
+        # CHECK: lit.alias.decl *"y`1x1"
+        alias y = x
+        _ = y
+
+
+# CHECK-LABEL: lit.func @"test_nested_alias_mangling_2
+fn test_nested_alias_mangling_2[x: int](c: Bool):
+    # CHECK: hlcf.if
+    if c:
+        # CHECK: lit.alias.decl *"y`1x0"
+        alias y = x
+        _ = y
+
+    # CHECK: lit.func *"nested()"
+    fn nested():
+        # CHECK: lit.alias.decl *"y`2x0"
+        alias y = x
+        _ = y
