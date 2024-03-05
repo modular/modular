@@ -524,8 +524,8 @@ fn _run_impl(opts: _RunOptions) -> Report:
     var min_time_ns = int(opts.min_runtime_secs * 1_000_000_000)
     var max_time_ns = int(opts.max_runtime_secs * 1_000_000_000)
 
-    while time_elapsed < max_time_ns:
-        if total_iters > opts.max_iters and time_elapsed > min_time_ns:
+    while time_elapsed < min_time_ns:
+        if time_elapsed > max_time_ns or total_iters > opts.max_iters:
             break
 
         var n = Float64(opts.max_batch_size)
