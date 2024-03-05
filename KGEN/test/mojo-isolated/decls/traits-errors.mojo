@@ -31,3 +31,8 @@ fn invalid_trait_bind():
 fn different_trait_types[T: Copyable, U: Copyable](x: T) -> U:
     # expected-error @below {{cannot implicitly convert 'T' value to 'U' in return value}}
     return x
+
+
+@register_passable  # expected-error {{decorators not supported on this statement}}
+trait NoDecorators:
+    pass

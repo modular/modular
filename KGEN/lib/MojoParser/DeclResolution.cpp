@@ -2617,6 +2617,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
+  rejectDecorators(decoratorExprs, decl, shared);
 
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_trait, "internal error: checked by stmt parser") ||
