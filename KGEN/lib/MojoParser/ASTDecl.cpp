@@ -52,39 +52,57 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   counter = src.counter;
 }
 
-StringAttr ASTDecl::getUniqueParamNameNew(StringAttr name,
-                                          bool isUserDefinedDecl) {
-  // First, calculate depths and check if we need to mangle due to collisions.
-  const ASTDecl *curScope = this;
-  bool hasCollision = false;
+/// Return the nearest parameter scope (i.e. DeclInterface) for the given decl,
+/// as well as the total depth from the nearest file module.
+static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
+    ASTDecl *decl, function_ref<void(const ASTDecl *)> checkForCollision) {
+  ASTDecl *paramScope = nullptr;
   size_t depth = 0;
-  while (curScope) {
-    // We only check for collisions if this is a user defined decl. Implicit
-    // declarations always get mangled.
-    if (isUserDefinedDecl && !hasCollision) {
-      ArrayRef<ASTDecl *> result = curScope->lookupInCurrentScope(name);
-      hasCollision = !result.empty();
+  while (decl) {
+    checkForCollision(decl);
+
+    if (isa<DeclInterface>(*decl)) {
+      ++depth;
+      if (!paramScope)
+        paramScope = decl;
+      if (isa<FileModuleOp>(*decl))
+        break;
     }
-    depth++;
 
-    if (isa<FileModuleOp>(*curScope))
-      break;
-    curScope = curScope->parentDecl;
+    decl = decl->getParentDecl();
   }
-  depth--; // Adjust so depth starts at 0.
 
-  // User visible declarations only get mangled if there is a collision.
-  if (isUserDefinedDecl && !hasCollision)
+  return {paramScope, --depth}; // Adjust so depth starts at 0.
+}
+
+/// Mangle a parameter name for the given parameter scope and scope depth. Due
+/// to the use of depth, the mangling doesn't change when the order of function
+/// declarations change, so we have hash stability.
+static StringAttr mangleParamName(const Twine &name, size_t depth,
+                                  ASTDecl *paramScope) {
+  return StringAttr::get(paramScope->getContext(),
+                         name + "`" + Twine(depth) + "x" +
+                             Twine(paramScope->getNextUniqueID()));
+}
+
+StringAttr ASTDecl::mangleUserDefinedParamName(StringAttr name) {
+  bool hasCollision = false;
+  auto [paramScope, depth] =
+      getNearestParamScopeAndDepth(this, [&](const ASTDecl *curScope) {
+        hasCollision =
+            hasCollision || !curScope->lookupInCurrentScope(name).empty();
+      });
+  if (!hasCollision)
     return name;
 
-  // This mangling guarantees that whatever name we generate is unique,
-  // independently of whether the name we are mangling comes from an explicit
-  // declaration by the Mojo user. Due to the use of depth, the mangling doesn't
-  // change when the order of function declarations change, so we have hash
-  // stability as well.
-  return StringAttr::get(name.getContext(), name.getValue() + "`" +
-                                                Twine(depth) + "x" +
-                                                Twine(getNextUniqueID()));
+  return mangleParamName(name.strref(), depth, paramScope);
+}
+
+StringAttr ASTDecl::getUniqueParamNameNew(const Twine &name) {
+  // This function always mangles, so no need to check for collisions.
+  auto [paramScope, depth] =
+      getNearestParamScopeAndDepth(this, [&](const ASTDecl *) {});
+  return mangleParamName(name, depth, paramScope);
 }
 
 StringAttr ASTDecl::getUniqueParamName(const Twine &name, bool isLifetime,
