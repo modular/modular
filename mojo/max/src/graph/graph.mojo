@@ -320,6 +320,8 @@ struct Graph(CollectionElement, Stringable):
             return self.scalar(Int32(value))
         elif dtype.dtype == DType.float64:
             return self.scalar(Int64(value))
+        elif dtype.dtype == DType.bfloat16:
+            return self.scalar(Int16(value))
         # TODO: No particular reason not to implement everything else.
         raise "unimplemented FloatLiteral conversion dtype: " + str(dtype.dtype)
 

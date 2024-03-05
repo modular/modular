@@ -27,6 +27,7 @@ struct EngineDType:
     alias float16: Int32 = 20
     alias float32: Int32 = 21
     alias float64: Int32 = 22
+    alias bfloat16: Int32 = 23
 
     alias bool: Int32 = 30
 
@@ -55,6 +56,8 @@ struct EngineDType:
             return Self {dtype: EngineDType.float32}
         if dtype == DType.float64:
             return Self {dtype: EngineDType.float64}
+        if dtype == DType.bfloat16:
+            return Self {dtype: EngineDType.bfloat16}
 
         if dtype == DType.bool:
             return Self {dtype: EngineDType.bool}
@@ -89,6 +92,9 @@ struct EngineDType:
 
         if self == EngineDType.bool:
             return DType.bool
+
+        if self == EngineDType.bfloat16:
+            return DType.bfloat16
 
         return DType.invalid
 
