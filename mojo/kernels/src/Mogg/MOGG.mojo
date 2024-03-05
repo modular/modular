@@ -232,7 +232,7 @@ fn MOGGExport():
     alias _trunc = trunc
     alias _elementwise_wrapper = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
-    alias _shape_to_tensor = shape_to_tensor
+    alias _shape_to_ndbuffer = shape_to_ndbuffer
     alias _tensor_to_shape = tensor_to_shape
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
@@ -483,7 +483,7 @@ fn get_int_from_shape[
 
 
 @always_inline
-fn shape_to_tensor[
+fn shape_to_ndbuffer[
     shape_rank: Int, buf_rank: Int, type: DType
 ](shape: StaticIntTuple[shape_rank], buf: NDBuffer[type, buf_rank]):
     @unroll
