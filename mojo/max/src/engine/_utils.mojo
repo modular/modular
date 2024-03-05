@@ -6,6 +6,7 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
+from utils import StringRef
 
 
 @value

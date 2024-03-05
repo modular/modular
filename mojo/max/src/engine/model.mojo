@@ -16,6 +16,7 @@ from ._utils import call_dylib_func, exchange
 from ._status import Status
 from .tensor_map import CTensorMap
 from sys.intrinsics import _mlirtype_is_eq
+from utils import StringRef
 
 
 @value

@@ -9,6 +9,7 @@ from os import getenv
 from tensor import Tensor
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from pathlib import Path
+from utils import StringRef
 
 import _mlir
 
