@@ -16,34 +16,34 @@ from utils.list import DimList
 
 fn test(m: NDBuffer[DType.int32, 2, DimList(4, 4)]):
     # CHECK: [0, 1, 2, 3]
-    print(m.simd_load[4](0, 0))
+    print(m.load[width=4](0, 0))
     # CHECK: [4, 5, 6, 7]
-    print(m.simd_load[4](1, 0))
+    print(m.load[width=4](1, 0))
     # CHECK: [8, 9, 10, 11]
-    print(m.simd_load[4](2, 0))
+    print(m.load[width=4](2, 0))
     # CHECK: [12, 13, 14, 15]
-    print(m.simd_load[4](3, 0))
+    print(m.load[width=4](3, 0))
 
     var v = iota[DType.int32, 4]()
-    m.simd_store[4](StaticIntTuple[2](3, 0), v)
+    m.store[width=4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
-    print(m.simd_load[4](3, 0))
+    print(m.load[width=4](3, 0))
 
 
 fn test_dynamic_shape(m: NDBuffer[DType.int32, 2, DimList.create_unknown[2]()]):
     # CHECK: [0, 1, 2, 3]
-    print(m.simd_load[4](0, 0))
+    print(m.load[width=4](0, 0))
     # CHECK: [4, 5, 6, 7]
-    print(m.simd_load[4](1, 0))
+    print(m.load[width=4](1, 0))
     # CHECK: [8, 9, 10, 11]
-    print(m.simd_load[4](2, 0))
+    print(m.load[width=4](2, 0))
     # CHECK: [12, 13, 14, 15]
-    print(m.simd_load[4](3, 0))
+    print(m.load[width=4](3, 0))
 
     var v = iota[DType.int32, 4]()
-    m.simd_store[4](StaticIntTuple[2](3, 0), v)
+    m.store[width=4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
-    print(m.simd_load[4](3, 0))
+    print(m.load[width=4](3, 0))
 
 
 fn test_matrix_static():

@@ -38,7 +38,7 @@ def matrix_band_part[
         width: Int,
         _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        return input.load[width=width](rebind[StaticIntTuple[rank]](coords))
 
     _matrix_band_part[
         type,
