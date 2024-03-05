@@ -137,6 +137,19 @@ lit.func @ref_pointer<life: lifetime<1>, ilife: lifetime<0>>
   lit.end_func
 }
 
+// CHECK-LABEL: lit.func @nested_function_region
+lit.func @nested_function_region() {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop {
+    // CHECK-NEXT: lit.func nested_fn()
+    lit.func nested_fn() {
+      kgen.return
+    }
+    hlcf.continue
+  }
+  kgen.return
+}
+
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A
