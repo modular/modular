@@ -121,7 +121,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
     return true;
   // Types with the same metatype are always equal. This is used to detect when
   // two type aliases refer to the same underlying type.
-  if (Type meta = getMetaType())
+  if (auto meta = dyn_cast_or_null<MetaTypeType>(getMetaType()))
     if (meta == other.getMetaType())
       return true;
   return false;
