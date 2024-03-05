@@ -26,3 +26,8 @@ struct ParamType[x: int](FooTrait):
 fn invalid_trait_bind():
     # expected-error @below {{parametric type 'ParamType[?]' cannot bind to trait with missing parameters}}
     alias Bound: FooTrait = ParamType
+
+
+fn different_trait_types[T: Copyable, U: Copyable](x: T) -> U:
+    # expected-error @below {{cannot implicitly convert 'T' value to 'U' in return value}}
+    return x
