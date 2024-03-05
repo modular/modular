@@ -457,9 +457,15 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
   bitsToShift = bitWidth - semBitWidth;
 
   for (const APFloat &value : values) {
-    // Extend FloatTF32 bits to 32 and left shift 32 - 19 = 13 bits; Other
-    // types, this is no-op.
-    intVals.push_back(value.bitcastToAPInt().zext(bitWidth).shl(bitsToShift));
+    const auto &sem = value.getSemantics();
+    if (floatType.isBF16()) {
+      // TODO we need to investigate why BF16 returns a 32-bit width int #33856
+      intVals.push_back(value.bitcastToAPInt());
+    } else {
+      // Extend FloatTF32 bits to 32 and left shift 32 - 19 = 13 bits; Other
+      // types, this is no-op.
+      intVals.push_back(value.bitcastToAPInt().zext(bitWidth).shl(bitsToShift));
+    }
   }
 
   std::vector<uint8_t> rawData =
